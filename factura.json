@@ -1,0 +1,62 @@
+{
+    "codigo_generacion": "43553",
+    "numero_control": "3455",
+    "sello_recepcion": "ce",
+    "fecha_hora": "345/345",
+    "emisor": {
+        "nombre": "fsdf",
+        "nit": "23432434",
+        "nrc": "2342434",
+        "giro": "dcdsf",
+        "direccion": "sefsdf",
+        "telefono": "324243243",
+        "correo": "fsfesfds",
+        "nombre_comercial": "3223442",
+        "tipo_establecimiento": "dsfsdfsdf"
+    },
+    "receptor": {
+        "nombre": "gsddgdf",
+        "nit": "345345345",
+        "nrc": "35354535",
+        "giro": "fgdfgdf",
+        "direccion": "gdfgdgd",
+        "correo": "gf"
+    },
+    "productos": [
+        {
+            "cantidad": "5",
+            "unidad": "4",
+            "descripcion": "dsf",
+            "precio_unitario": 2.0,
+            "descuento": 0.0,
+            "ventas_no_sujetas": 3.0,
+            "ventas_exentas": 4.0,
+            "ventas_gravadas": 2.0
+        },
+        {
+            "cantidad": "2",
+            "unidad": "3",
+            "descripcion": "4",
+            "precio_unitario": 5.0,
+            "descuento": 6.0,
+            "ventas_no_sujetas": 7.0,
+            "ventas_exentas": 6.0,
+            "ventas_gravadas": 5.0
+        },
+        {
+            "cantidad": "4",
+            "unidad": "3",
+            "descripcion": "2",
+            "precio_unitario": 4.0,
+            "descuento": 5.0,
+            "ventas_no_sujetas": 6.0,
+            "ventas_exentas": 7.0,
+            "ventas_gravadas": 8.0
+        }
+    ],
+    "total_operacion": 800.0,
+    "total_a_pagar": 890.0,
+    "responsable_emisor": "xcvv",
+    "responsable_receptor": "xcvv",
+    "observaciones": "vsd"
+}

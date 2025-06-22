@@ -38,15 +38,3 @@ if __name__ == "__main__":
             QMessageBox.critical(window, "Error", f"No se pudo cargar el inventario:\n{e}")
 
     sys.exit(app.exec_())
-
-# Ejemplo de cómo abrir el diálogo de compra desde tu ventana principal (MainWindow)
-def registrar_compra(self):
-    from dialogs import RegisterPurchaseDialog
-    productos = self.manager._products
-    Distribuidores = self.manager._Distribuidores
-    vendedores = self.manager._vendedores
-    dialog = RegisterPurchaseDialog(productos, Distribuidores, vendedores, parent=self)
-    if dialog.exec_():
-        self._actualizar_inventario_actual()
-        self._actualizar_historial()
-        QMessageBox.information(self, "Compra registrada", "La compra se registró correctamente.")

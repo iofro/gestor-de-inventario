@@ -1,0 +1,1 @@
+C:/Users/ariel/Desktop/Gestion de inventario/templates/clientes.json

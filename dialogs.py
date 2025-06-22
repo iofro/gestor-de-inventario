@@ -1153,19 +1153,19 @@ class RegisterPurchaseDialog(QDialog):
         iva_tipo = "ninguno"
         if self.iva_checkbox.isChecked():
             if self.iva_desglosado_radio.isChecked():
-                iva = subtotal * 13 / 113  # o el cálculo que uses
+                iva = subtotal_con_descuento * 13 / 113
                 iva_tipo = "desglosado"
-                total = subtotal  # <--- El total es el precio ingresado, NO se suma el IVA
+                total = subtotal_con_descuento
             elif self.iva_añadido_radio.isChecked():
-                iva = subtotal * 0.13
+                iva = subtotal_con_descuento * 0.13
                 iva_tipo = "añadido"
-                total = subtotal + iva  # <--- Aquí sí se suma el IVA
+                total = subtotal_con_descuento + iva
             else:
-                total = subtotal
+                total = subtotal_con_descuento
                 iva = 0
                 iva_tipo = "ninguno"
         else:
-            total = subtotal
+            total = subtotal_con_descuento
             iva = 0
             iva_tipo = "ninguno"
             
@@ -1173,10 +1173,10 @@ class RegisterPurchaseDialog(QDialog):
         comision_pct = self.comision_pct_spin.value()
         comision_tipo = self.comision_tipo_combo.currentText()
         if comision_tipo == "Añadida al total":
-            comision_monto = subtotal * (comision_pct / 100)
+            comision_monto = subtotal_con_descuento * (comision_pct / 100)
             total_con_comision = total + comision_monto
         elif comision_tipo == "Desglosada (incluida en el precio)":
-            comision_monto = subtotal * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
             total_con_comision = total  # El total ya incluye la comisión
         else:
             comision_monto = 0

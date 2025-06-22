@@ -517,7 +517,7 @@ class MainWindow(QMainWindow):
         inventario_actual_tab = QWidget()
         inventario_actual_layout = QVBoxLayout()
 
-        # Filtros (opcional, puedes agregar por vendegoría, Distribuidor, búsqueda, etc.)
+        # Filtros (opcional, puedes agregar por vendedor, categoría, Distribuidor, búsqueda, etc.)
         filtros_actual_layout = QHBoxLayout()
         self.actual_search_bar = QLineEdit()
         self.actual_search_bar.setPlaceholderText("Buscar por nombre o código...")

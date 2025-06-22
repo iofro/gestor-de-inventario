@@ -372,33 +372,6 @@ class ProductTableModel(QAbstractTableModel):
             return self.headers[section]
         return None
 
-    def headerData(self, section, orientation, role=Qt.DisplayRole):
-        if orientation == Qt.Horizontal and role == Qt.DisplayRole:
-            return self.headers[section]
-        return None
-
-    def filter_products(self):
-        search = self.search_bar.text()
-        vendedor_nombre = None
-        if hasattr(self, "vendedor_combo_filtro"):
-            idx = self.vendedor_combo_filtro.currentIndex()
-            if idx > 0:
-                vendedor_nombre = self.vendedor_combo_filtro.currentText()
-        self.manager.filter_products(vendedor_nombre=vendedor_nombre, search=search)
-        self.product_table.setModel(self.manager.get_products_model())
-
-    def _actualizar_lista_vendedores(self):
-        self.vendedores_list.clear()
-        for vend in self.manager.get_vendedor_names():
-            self.vendedores_list.addItem(vend)
-        # Actualiza el combo de filtro si existe
-        if hasattr(self, "vendedor_combo_filtro"):
-            self.vendedor_combo_filtro.blockSignals(True)
-            self.vendedor_combo_filtro.clear()
-            self.vendedor_combo_filtro.addItem("Todas")
-            self.vendedor_combo_filtro.addItems(self.manager.get_vendedor_names())
-            self.vendedor_combo_filtro.blockSignals(False)
-
 class LoteTableModel(QAbstractTableModel):
     def __init__(self, detalles_compra, productos, Distribuidores):
         super().__init__()

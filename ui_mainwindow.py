@@ -393,14 +393,22 @@ class MainWindow(QMainWindow):
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
+        self.btn_add_product.setObjectName("btn_add_product")
         self.btn_edit_product = QPushButton("Editar Producto")
+        self.btn_edit_product.setObjectName("btn_edit_product")
         self.btn_register_sale = QPushButton("Registrar Venta")
+        self.btn_register_sale.setObjectName("btn_register_sale")
         # Botón con salto de línea para que el texto quepa bien
         self.btn_register_credito_fiscal = QPushButton("Registrar Venta\nCrédito Fiscal")
+        self.btn_register_credito_fiscal.setObjectName("btn_register_credito_fiscal")
         self.btn_register_purchase = QPushButton("Registrar Compra")
+        self.btn_register_purchase.setObjectName("btn_register_purchase")
         self.btn_delete_product = QPushButton("Eliminar Producto")
+        self.btn_delete_product.setObjectName("btn_delete_product")
         self.btn_guardar_rapido = QPushButton("Guardar\nRápido")
+        self.btn_guardar_rapido.setObjectName("btn_guardar_rapido")
         self.btn_cargar_inventario = QPushButton("Cargar Inventario")
+        self.btn_cargar_inventario.setObjectName("btn_cargar_inventario")
 
         # Botones más pequeños
         for btn in [
@@ -412,16 +420,8 @@ class MainWindow(QMainWindow):
             btn.setMaximumHeight(28)
             btn.setMinimumWidth(140)
             btn.setMaximumWidth(200)
-            btn.setStyleSheet("font-size:11px; padding:4px 0;")
+            # estilos definidos en style.qss
 
-        # Botones verdes más pequeños y debajo de los celestes pero encima del rojo
-        self.btn_guardar_rapido.setStyleSheet(
-            "background-color: #27ae60; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
-        self.btn_cargar_inventario.setStyleSheet(
-            "background-color: #27ae60; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
-
-        self.btn_delete_product.setStyleSheet(
-            "background-color: #b71c1c; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
 
         btn_layout = QVBoxLayout()
         btn_layout.addWidget(self.btn_add_product)
@@ -496,16 +496,16 @@ class MainWindow(QMainWindow):
         self.vendedores_tree.setHeaderHidden(True)
         vend_layout.addWidget(self.vendedores_tree)
         btn_add_vend = QPushButton("Añadir Vendedor")
+        btn_add_vend.setObjectName("btn_add_vend")
         btn_add_vend.setMinimumHeight(24)
         btn_add_vend.setMaximumHeight(28)
-        btn_add_vend.setStyleSheet("font-size:11px;")
         btn_add_vend.clicked.connect(self._agregar_vendedor)
         vend_layout.addWidget(btn_add_vend)
 
         btn_edit_vend = QPushButton("Editar Vendedor")
+        btn_edit_vend.setObjectName("btn_edit_vend")
         btn_edit_vend.setMinimumHeight(24)
         btn_edit_vend.setMaximumHeight(28)
-        btn_edit_vend.setStyleSheet("font-size:11px;")
         btn_edit_vend.clicked.connect(self._editar_vendedor)
         vend_layout.addWidget(btn_edit_vend)
 
@@ -520,27 +520,25 @@ class MainWindow(QMainWindow):
 
         btns_h_layout = QHBoxLayout()
         btn_add_dist = QPushButton("Añadir Distribuidor")
+        btn_add_dist.setObjectName("btn_add_dist")
         btn_add_dist.setMinimumHeight(24)
         btn_add_dist.setMaximumHeight(28)
-        btn_add_dist.setStyleSheet("font-size:11px;")
         btn_add_dist.clicked.connect(self._agregar_Distribuidor)
         btns_h_layout.addWidget(btn_add_dist, alignment=Qt.AlignLeft)
 
         btn_info_dist = QPushButton("Info de Distribuidor")
+        btn_info_dist.setObjectName("btn_info_dist")
         btn_info_dist.setFixedHeight(24)
         btn_info_dist.setFixedWidth(110)
-        btn_info_dist.setStyleSheet(
-            "background-color: #f1c40f; color: #222; font-size:10px; font-weight:bold; border-radius: 8px;"
-        )
         btn_info_dist.clicked.connect(self._mostrar_info_Distribuidor)
         btns_h_layout.addWidget(btn_info_dist, alignment=Qt.AlignRight)
 
         dist_layout.addLayout(btns_h_layout)
 
         btn_edit_dist = QPushButton("Editar Distribuidor")
+        btn_edit_dist.setObjectName("btn_edit_dist")
         btn_edit_dist.setMinimumHeight(24)
         btn_edit_dist.setMaximumHeight(28)
-        btn_edit_dist.setStyleSheet("font-size:11px;")
         btn_edit_dist.clicked.connect(self._editar_Distribuidor)
         dist_layout.addWidget(btn_edit_dist)
 
@@ -752,45 +750,9 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()
 
     def _apply_styles(self):
-        self.setStyleSheet("""
-            QPushButton {
-                background-color: #0097e6;
-                color: #fff;
-                border-radius: 8px;
-                padding: 8px 0px;
-                font-size: 12px;
-                font-weight: bold;
-                margin: 4px 0;
-                min-width: 180px;
-                min-height: 26px;
-                max-width: 220px;
-            }
-            QPushButton:hover {
-                background-color: #00a8ff;
-            }
-            QPushButton#btn_delete_product {
-                background-color: #b71c1c;
-                color: #fff;
-            }
-            QPushButton#btn_delete_product:hover {
-                background-color: #d32f2f;
-            }
-            QLineEdit {
-                border: 1px solid #dcdde1;
-                border-radius: 6px;
-                padding: 7px;
-                font-size: 14px;
-            }
-            QTableView {
-                background: #fff;
-                border-radius: 8px;
-                font-size: 13px;
-            }
-        """)
-        # Si tienes el objectName para el botón de crédito fiscal, puedes agregarlo así:
-        self.btn_register_credito_fiscal.setStyleSheet(
-            "font-size:11px; min-width:200px; max-width:240px; min-height:26px; padding:6px 0;"
-        )
+        with open("style.qss", "r", encoding="utf-8") as f:
+            styles = f.read()
+        self.setStyleSheet(styles)
 
     def filter_products(self):
         search = self.search_bar.text()

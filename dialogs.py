@@ -2224,9 +2224,6 @@ class VendedorDialog(QDialog):
             "descripcion": self.descripcion_edit.text(),
             "Distribuidor_id": Distribuidor_id
         }
-
-    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QTableWidget, QTableWidgetItem
-
 class CompraDetalleDialog(QDialog):
     def __init__(self, compra, detalles, parent=None):
         super().__init__(parent)

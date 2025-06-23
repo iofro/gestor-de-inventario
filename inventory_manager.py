@@ -373,12 +373,28 @@ class ProductTableModel(QAbstractTableModel):
         return None
 
 class LoteTableModel(QAbstractTableModel):
-    def __init__(self, detalles_compra, productos, Distribuidores):
+    def __init__(self, detalles_compra, productos, Distribuidores, db=None):
         super().__init__()
         self.headers = ["Producto", "Código", "Cantidad", "Precio compra", "Distribuidor", "Vencimiento", "Comisión"]
         self._data = detalles_compra
         self._productos = {p["id"]: p for p in productos}
         self._Distribuidores = {d["id"]: d["nombre"] for d in Distribuidores}
+        self._compra_distribuidores = {}
+
+        # Prefetch distributor information if a DB instance is provided
+        if db is not None:
+            compra_ids = {d.get("compra_id") for d in detalles_compra if d.get("compra_id")}
+            if compra_ids:
+                placeholders = ",".join("?" * len(compra_ids))
+                db.cursor.execute(
+                    f"SELECT id, Distribuidor_id FROM compras WHERE id IN ({placeholders})",
+                    tuple(compra_ids),
+                )
+                for row in db.cursor.fetchall():
+                    self._compra_distribuidores[row["id"]] = self._Distribuidores.get(
+                        row["Distribuidor_id"],
+                        "Desconocido",
+                    )
 
     def rowCount(self, parent=None):
         return len(self._data)
@@ -402,16 +418,10 @@ class LoteTableModel(QAbstractTableModel):
             elif col == 3:
                 return f"${row.get('precio_unitario', 0):.2f}"
             elif col == 4:
-                # Busca el Distribuidor de la compra de este lote
-                Distribuidor_id = None
-                if "compra_id" in row:
-                    from db import DB
-                    db = DB()
-                    db.cursor.execute("SELECT Distribuidor_id FROM compras WHERE id=?", (row["compra_id"],))
-                    compra = db.cursor.fetchone()
-                    if compra:
-                        Distribuidor_id = compra["Distribuidor_id"]
-                return self._Distribuidores.get(Distribuidor_id, "Desconocido")
+                compra_id = row.get("compra_id")
+                return self._compra_distribuidores.get(
+                    compra_id, "Desconocido"
+                )
             elif col == 5:
                 return row.get("fecha_vencimiento", "")
         return None

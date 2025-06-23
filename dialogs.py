@@ -497,7 +497,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             return
         nombre = self.product_list.currentItem().text()
         prod = None
-        if self.productos_data:
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        elif self.productos_data:
             for p in self.productos_data:
                 nombre_prod = get_field(p, "nombre", "")
                 if nombre.startswith(nombre_prod):
@@ -728,11 +730,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
             self.table.setItem(i, 4, QTableWidgetItem(item.get("tipo_fiscal", "")))
             btn = QPushButton("Eliminar")
-            btn.setFixedHeight(22)
             btn.setStyleSheet(
-                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;"
-                "min-width:70px; max-width:70px;"
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
+                "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
             )
+
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 5, btn)
 
@@ -1250,11 +1252,9 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setItem(i, 6, QTableWidgetItem(f"${item['total']:.2f}"))
             self.table.setItem(i, 7, QTableWidgetItem(item.get("fecha_vencimiento", "")))
             btn = QPushButton("Eliminar")
-            btn.setFixedHeight(22)
-            btn.setFixedWidth(70)
             btn.setStyleSheet(
-                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;"
-                "min-width:70px; max-width:70px;"
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
+                "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
             )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 8, btn)
@@ -1630,7 +1630,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             return
         nombre = self.product_list.currentItem().text()
         prod = None
-        if self.productos_data:
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        elif self.productos_data:
             for p in self.productos_data:
                 nombre_prod = get_field(p, "nombre", "")
                 if nombre.startswith(nombre_prod):
@@ -1822,10 +1824,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.table.setItem(i, 4, QTableWidgetItem(str(item.get("iva", ""))))
             self.table.setItem(i, 5, QTableWidgetItem(item.get("tipo_fiscal", "")))
             btn = QPushButton("Eliminar")
-            btn.setFixedHeight(22)
             btn.setStyleSheet(
-                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;"
-                "min-width:70px; max-width:70px;"
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
+                "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
             )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 6, btn)

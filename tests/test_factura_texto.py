@@ -26,7 +26,6 @@ def test_factura_texto_contains_client_and_total():
         'sumas': 5.00,
         'iva': 0.65,
         'subtotal': 5.65,
-        'iva_retenido': 0.0,
         'ventas_exentas': 0.0,
         'ventas_no_sujetas': 0.0,
         'total': 5.65,
@@ -48,7 +47,7 @@ def test_factura_texto_contains_client_and_total():
     cliente = {'nombre': 'Juan Perez', 'direccion': 'Calle 1', 'nit': '0614-010101-101-1', 'nrc': '1234-5', 'giro': 'Comercio'}
     distribuidor = {'nombre': 'Distribuidor', 'direccion': 'Direc', 'nit': '0000-0', 'nrc': '0'}
 
-    texto = generar(venta, detalles, cliente, distribuidor)
+    texto = generar(None, venta, detalles, cliente, distribuidor)
 
     assert 'Juan Perez' in texto
     assert '5.65' in texto

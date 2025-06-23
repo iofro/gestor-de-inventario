@@ -157,7 +157,85 @@ class ClienteSelectorDialog(QDialog):
     def get_selected_cliente(self):
         return self.selected_cliente
 
-class RegisterSaleDialog(QDialog):
+class ProductDialogBase:
+    """Mixin with shared helper methods for product selection dialogs."""
+
+    def _mostrar_productos(self, productos):
+        self.product_list.clear()
+        for p in productos:
+            texto = (
+                f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | "
+                f"Vence: {p.get('fecha_vencimiento', '')}"
+            )
+            self.product_list.addItem(texto)
+        self.productos = productos
+
+    def _filtrar_productos(self, texto):
+        texto = texto.lower()
+        filtrados = [
+            p for p in self._productos_original
+            if texto in p.get("nombre", "").lower()
+            or texto in p.get("codigo", "").lower()
+            or texto in (
+                f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | "
+                f"Vence: {p.get('fecha_vencimiento', '')}"
+            ).lower()
+        ]
+        self._mostrar_productos(filtrados)
+
+    def _toggle_iva_radios(self, state):
+        checked = self.iva_checkbox.isChecked()
+        self.iva_agregado_radio.setEnabled(checked)
+        self.iva_desglosado_radio.setEnabled(checked)
+        if not checked:
+            self.iva_agregado_radio.setAutoExclusive(False)
+            self.iva_desglosado_radio.setAutoExclusive(False)
+            self.iva_agregado_radio.setChecked(False)
+            self.iva_desglosado_radio.setChecked(False)
+            self.iva_agregado_radio.setAutoExclusive(True)
+            self.iva_desglosado_radio.setAutoExclusive(True)
+        else:
+            if not self.iva_agregado_radio.isChecked() and not self.iva_desglosado_radio.isChecked():
+                self.iva_agregado_radio.setChecked(True)
+        if hasattr(self, "_recalcular_totales"):
+            self._recalcular_totales()
+
+    def _actualizar_Distribuidor_por_producto(self):
+        idx = self.product_list.currentRow()
+        if idx < 0 or idx >= len(self.productos):
+            return
+        lote = self.productos[idx]
+        distribuidor_id = lote.get("Distribuidor_id")
+        Distribuidores = getattr(self, "Distribuidores", None)
+        if Distribuidores is None and hasattr(self, "parent") and self.parent() and hasattr(self.parent(), "manager"):
+            Distribuidores = getattr(self.parent().manager, "_Distribuidores", None)
+        if Distribuidores:
+            for i, dist in enumerate(Distribuidores):
+                if dist.get("id") == distribuidor_id:
+                    self.Distribuidor_combo.setCurrentIndex(i)
+                    break
+
+    def _abrir_selector_cliente(self):
+        selector = ClienteSelectorDialog(self.clientes, self)
+        if selector.exec_():
+            cli = selector.get_selected_cliente()
+            if cli:
+                nombre = get_field(cli, "codigo", "") or get_field(cli, "nombre", "")
+                nit = get_field(cli, "nit", "")
+                self.selected_cliente = cli
+                self.cliente_label.setText(f"{nombre} | NIT: {nit}")
+                for attr, key in [
+                    ("nrc_edit", "nrc"),
+                    ("nit_edit", "nit"),
+                    ("giro_edit", "giro"),
+                    ("email_edit", "email"),
+                ]:
+                    widget = getattr(self, attr, None)
+                    if widget is not None:
+                        widget.setText(get_field(cli, key, ""))
+
+
+class RegisterSaleDialog(QDialog, ProductDialogBase):
     def __init__(self, productos, clientes, Distribuidores, vendedores_trabajadores, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Registrar Venta")
@@ -403,78 +481,6 @@ class RegisterSaleDialog(QDialog):
         # --- INICIO BLOQUE NUEVO: Actualizar combo de Distribuidor en tiempo real según producto seleccionado ---
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
         # --- FIN BLOQUE NUEVO ---
-
-        if productos:
-            self.product_list.setCurrentRow(0)
-            self._actualizar_precio_defecto()
-
-    # --- INICIO BLOQUE NUEVO: Método para actualizar combo de Distribuidor según producto seleccionado ---
-    def _actualizar_Distribuidor_por_producto(self):
-        idx = self.product_list.currentRow()
-        if idx < 0 or idx >= len(self.productos):
-            return
-        lote = self.productos[idx]
-        distribuidor_id = lote.get("Distribuidor_id")
-        # Busca el nombre del distribuidor en la lista del combo
-        for i in range(self.Distribuidor_combo.count()):
-            # Compara por ID si tienes la lista de distribuidores como dicts
-            if hasattr(self, "parent") and self.parent() and hasattr(self.parent(), "manager"):
-                for dist in self.parent().manager._Distribuidores:
-                    if dist["id"] == distribuidor_id and self.Distribuidor_combo.itemText(i) == dist["nombre"]:
-                        self.Distribuidor_combo.setCurrentIndex(i)
-                        return
-            # Si solo tienes nombres, compara por nombre
-            if "nombre" in lote and self.Distribuidor_combo.itemText(i) == lote["nombre"]:
-                self.Distribuidor_combo.setCurrentIndex(i)
-                return
- 
-    def _mostrar_productos(self, productos):
-        self.product_list.clear()
-        for p in productos:
-            texto = f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | Vence: {p.get('fecha_vencimiento', '')}"
-            self.product_list.addItem(texto)
-        self.productos = productos  # Actualiza la lista de productos mostrados
-
-    def _filtrar_productos(self, texto):
-        texto = texto.lower()
-        filtrados = [
-            p for p in self._productos_original
-            if texto in p.get("nombre", "").lower()
-            or texto in p.get("codigo", "").lower()
-            or texto in f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | Vence: {p.get('fecha_vencimiento', '')}".lower()
-        ]
-        self._mostrar_productos(filtrados)
-
-    # --- LÓGICA PARA HABILITAR/DESHABILITAR RADIOS DE IVA Y SELECCIONAR UNO POR DEFECTO ---
-    def _toggle_iva_radios(self, state):
-        checked = self.iva_checkbox.isChecked()
-        self.iva_agregado_radio.setEnabled(checked)
-        self.iva_desglosado_radio.setEnabled(checked)
-        # Si se desactiva, deselecciona ambos radios
-        if not checked:
-            self.iva_agregado_radio.setAutoExclusive(False)
-            self.iva_desglosado_radio.setAutoExclusive(False)
-            self.iva_agregado_radio.setChecked(False)
-            self.iva_desglosado_radio.setChecked(False)
-            self.iva_agregado_radio.setAutoExclusive(True)
-            self.iva_desglosado_radio.setAutoExclusive(True)
-        else:
-            # Si ninguno está seleccionado, selecciona el primero por defecto
-            if not self.iva_agregado_radio.isChecked() and not self.iva_desglosado_radio.isChecked():
-                self.iva_agregado_radio.setChecked(True)
-        # Siempre actualiza el preview al cambiar el estado
-        self._recalcular_totales()
-
-    def _abrir_selector_cliente(self):
-        selector = ClienteSelectorDialog(self.clientes, self)
-        if selector.exec_():
-            cli = selector.get_selected_cliente()
-            if cli:
-                nombre = get_field(cli, "codigo", "") or get_field(cli, "nombre", "")
-                nit = get_field(cli, "nit", "")
-                self.selected_cliente = cli
-                self.cliente_label.setText(f"{nombre} | NIT: {nit}")
-                # Autocompleta los campos fiscales
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -1344,7 +1350,7 @@ class RegisterPurchaseDialog(QDialog):
             "comision_tipo": self.comision_tipo_combo.currentText()
         }
     
-class RegisterCreditoFiscalDialog(QDialog):
+class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
     def __init__(self, productos, clientes, Distribuidores, vendedores_trabajadores, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Registrar Venta a Crédito Fiscal")
@@ -1602,65 +1608,6 @@ class RegisterCreditoFiscalDialog(QDialog):
         if productos:
             self.product_list.setCurrentRow(0)
             self._actualizar_precio_defecto()
-
-    def _mostrar_productos(self, productos):
-        self.product_list.clear()
-        for p in productos:
-            texto = f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | Vence: {p.get('fecha_vencimiento', '')}"
-            self.product_list.addItem(texto)
-        self.productos = productos
-
-    def _filtrar_productos(self, texto):
-        texto = texto.lower()
-        filtrados = [
-            p for p in self._productos_original
-            if texto in p.get("nombre", "").lower()
-            or texto in p.get("codigo", "").lower()
-            or texto in f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | Vence: {p.get('fecha_vencimiento', '')}".lower()
-        ]
-        self._mostrar_productos(filtrados)
-
-    def _actualizar_Distribuidor_por_producto(self):
-        idx = self.product_list.currentRow()
-        if idx < 0 or idx >= len(self.productos):
-            return
-        lote = self.productos[idx]
-        distribuidor_id = lote.get("Distribuidor_id")
-        if isinstance(self.Distribuidores[0], dict):
-            for i, dist in enumerate(self.Distribuidores):
-                if dist.get("id") == distribuidor_id:
-                    self.Distribuidor_combo.setCurrentIndex(i)
-                    break
-
-    def _toggle_iva_radios(self, state):
-        checked = self.iva_checkbox.isChecked()
-        self.iva_agregado_radio.setEnabled(checked)
-        self.iva_desglosado_radio.setEnabled(checked)
-        if not checked:
-            self.iva_agregado_radio.setAutoExclusive(False)
-            self.iva_desglosado_radio.setAutoExclusive(False)
-            self.iva_agregado_radio.setChecked(False)
-            self.iva_desglosado_radio.setChecked(False)
-            self.iva_agregado_radio.setAutoExclusive(True)
-            self.iva_desglosado_radio.setAutoExclusive(True)
-        else:
-            if not self.iva_agregado_radio.isChecked() and not self.iva_desglosado_radio.isChecked():
-                self.iva_agregado_radio.setChecked(True)
-        self._recalcular_totales()
-
-    def _abrir_selector_cliente(self):
-        selector = ClienteSelectorDialog(self.clientes, self)
-        if selector.exec_():
-            cli = selector.get_selected_cliente()
-            if cli:
-                nombre = get_field(cli, "codigo", "") or get_field(cli, "nombre", "")
-                nit = get_field(cli, "nit", "")
-                self.selected_cliente = cli
-                self.cliente_label.setText(f"{nombre} | NIT: {nit}")
-                self.nrc_edit.setText(get_field(cli, "nrc", ""))
-                self.nit_edit.setText(get_field(cli, "nit", ""))
-                self.giro_edit.setText(get_field(cli, "giro", ""))
-                self.email_edit.setText(get_field(cli, "email", ""))
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data

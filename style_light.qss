@@ -1,0 +1,33 @@
+QPushButton {
+    background-color: #0097e6;
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 0px;
+    font-size: 12px;
+    font-weight: bold;
+    margin: 4px 0;
+    min-width: 180px;
+    min-height: 26px;
+    max-width: 220px;
+}
+QPushButton:hover {
+    background-color: #00a8ff;
+}
+QPushButton#btn_delete_product {
+    background-color: #b71c1c;
+    color: #fff;
+}
+QPushButton#btn_delete_product:hover {
+    background-color: #d32f2f;
+}
+QLineEdit {
+    border: 1px solid #dcdde1;
+    border-radius: 6px;
+    padding: 7px;
+    font-size: 14px;
+}
+QTableView {
+    background: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+}

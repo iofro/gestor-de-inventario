@@ -2,10 +2,12 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableView, QLineEdit,
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
     QListWidget, QInputDialog, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
-    QDateEdit, QCheckBox
+    QDateEdit, QCheckBox, QHeaderView
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
+
+STOCK_THRESHOLD = 5
 import os
 import json
 from inventory_manager import InventoryManager
@@ -38,8 +40,39 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
         self.manager = InventoryManager()
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        # Configuración de la aplicación
+        self.config_path = "config.json"
+        self.theme = "light"
+        self._load_config()
         self._setup_ui()
+        self._update_tema_action_text()
         self._apply_styles()
+
+    def _load_config(self):
+        """Carga las preferencias de la aplicación desde config.json"""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.theme = data.get("theme", "light")
+            except Exception:
+                self.theme = "light"
+
+    def _save_config(self):
+        """Guarda las preferencias de la aplicación"""
+        data = {"theme": self.theme}
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _update_tema_action_text(self):
+        if hasattr(self, "toggle_tema_action"):
+            if self.theme == "light":
+                self.toggle_tema_action.setText("Tema oscuro")
+            else:
+                self.toggle_tema_action.setText("Tema claro")
 
     def generar_factura_pdf(self):
         row = self.historial_ventas_table.currentRow()
@@ -390,25 +423,37 @@ class MainWindow(QMainWindow):
         datos_negocio_action = QAction("Datos del negocio", self)
         datos_negocio_action.triggered.connect(self._abrir_datos_negocio)
         configuracion_menu.addAction(datos_negocio_action)
+        # Opción para alternar tema claro/oscuro
+        self.toggle_tema_action = QAction("", self)
+        self.toggle_tema_action.triggered.connect(self._toggle_tema)
+        configuracion_menu.addAction(self.toggle_tema_action)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
         self.btn_add_product.setObjectName("btn_add_product")
+        self.btn_add_product.setToolTip("Agregar un nuevo producto al inventario")
         self.btn_edit_product = QPushButton("Editar Producto")
         self.btn_edit_product.setObjectName("btn_edit_product")
+        self.btn_edit_product.setToolTip("Editar el producto seleccionado")
         self.btn_register_sale = QPushButton("Registrar Venta")
         self.btn_register_sale.setObjectName("btn_register_sale")
+        self.btn_register_sale.setToolTip("Registrar una venta")
         # Botón con salto de línea para que el texto quepa bien
         self.btn_register_credito_fiscal = QPushButton("Registrar Venta\nCrédito Fiscal")
         self.btn_register_credito_fiscal.setObjectName("btn_register_credito_fiscal")
+        self.btn_register_credito_fiscal.setToolTip("Registrar una venta a crédito fiscal")
         self.btn_register_purchase = QPushButton("Registrar Compra")
         self.btn_register_purchase.setObjectName("btn_register_purchase")
+        self.btn_register_purchase.setToolTip("Registrar una compra")
         self.btn_delete_product = QPushButton("Eliminar Producto")
         self.btn_delete_product.setObjectName("btn_delete_product")
+        self.btn_delete_product.setToolTip("Eliminar el producto seleccionado")
         self.btn_guardar_rapido = QPushButton("Guardar\nRápido")
         self.btn_guardar_rapido.setObjectName("btn_guardar_rapido")
+        self.btn_guardar_rapido.setToolTip("Guardar inventario rápidamente")
         self.btn_cargar_inventario = QPushButton("Cargar Inventario")
         self.btn_cargar_inventario.setObjectName("btn_cargar_inventario")
+        self.btn_cargar_inventario.setToolTip("Cargar inventario desde un archivo")
 
         # Botones más pequeños
         for btn in [
@@ -465,6 +510,9 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(filtros_layout)
 
         self.product_table = QTableView()
+        self.product_table.setAlternatingRowColors(True)
+        header = self.product_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.product_table.setModel(self.manager.get_products_model())
         self.product_table.setSelectionBehavior(QTableView.SelectRows)
         self.product_table.setSelectionMode(QTableView.SingleSelection)
@@ -497,6 +545,7 @@ class MainWindow(QMainWindow):
         vend_layout.addWidget(self.vendedores_tree)
         btn_add_vend = QPushButton("Añadir Vendedor")
         btn_add_vend.setObjectName("btn_add_vend")
+        btn_add_vend.setToolTip("Añadir un nuevo vendedor")
         btn_add_vend.setMinimumHeight(24)
         btn_add_vend.setMaximumHeight(28)
         btn_add_vend.clicked.connect(self._agregar_vendedor)
@@ -504,6 +553,7 @@ class MainWindow(QMainWindow):
 
         btn_edit_vend = QPushButton("Editar Vendedor")
         btn_edit_vend.setObjectName("btn_edit_vend")
+        btn_edit_vend.setToolTip("Editar el vendedor seleccionado")
         btn_edit_vend.setMinimumHeight(24)
         btn_edit_vend.setMaximumHeight(28)
         btn_edit_vend.clicked.connect(self._editar_vendedor)
@@ -521,6 +571,7 @@ class MainWindow(QMainWindow):
         btns_h_layout = QHBoxLayout()
         btn_add_dist = QPushButton("Añadir Distribuidor")
         btn_add_dist.setObjectName("btn_add_dist")
+        btn_add_dist.setToolTip("Añadir un nuevo distribuidor")
         btn_add_dist.setMinimumHeight(24)
         btn_add_dist.setMaximumHeight(28)
         btn_add_dist.clicked.connect(self._agregar_Distribuidor)
@@ -528,6 +579,7 @@ class MainWindow(QMainWindow):
 
         btn_info_dist = QPushButton("Info de Distribuidor")
         btn_info_dist.setObjectName("btn_info_dist")
+        btn_info_dist.setToolTip("Mostrar información del distribuidor")
         btn_info_dist.setFixedHeight(24)
         btn_info_dist.setFixedWidth(110)
         btn_info_dist.clicked.connect(self._mostrar_info_Distribuidor)
@@ -537,6 +589,7 @@ class MainWindow(QMainWindow):
 
         btn_edit_dist = QPushButton("Editar Distribuidor")
         btn_edit_dist.setObjectName("btn_edit_dist")
+        btn_edit_dist.setToolTip("Editar el distribuidor seleccionado")
         btn_edit_dist.setMinimumHeight(24)
         btn_edit_dist.setMaximumHeight(28)
         btn_edit_dist.clicked.connect(self._editar_Distribuidor)
@@ -565,8 +618,11 @@ class MainWindow(QMainWindow):
         # Botones
         btns = QHBoxLayout()
         self.btn_add_cliente = QPushButton("Agregar Cliente")
+        self.btn_add_cliente.setToolTip("Agregar un nuevo cliente")
         self.btn_edit_cliente = QPushButton("Editar Cliente")
+        self.btn_edit_cliente.setToolTip("Editar el cliente seleccionado")
         self.btn_delete_cliente = QPushButton("Eliminar Cliente")
+        self.btn_delete_cliente.setToolTip("Eliminar el cliente seleccionado")
         btns.addWidget(self.btn_add_cliente)
         btns.addWidget(self.btn_edit_cliente)
         btns.addWidget(self.btn_delete_cliente)
@@ -607,6 +663,7 @@ class MainWindow(QMainWindow):
 
         # --- AGREGA EL BOTÓN "Ver todo" ---
         self.btn_ver_todo_historial = QPushButton("Ver todo")
+        self.btn_ver_todo_historial.setToolTip("Mostrar todo el historial")
         self.btn_ver_todo_historial.setMinimumWidth(100)
         filtros_historial_layout.addWidget(self.btn_ver_todo_historial)
 
@@ -618,25 +675,33 @@ class MainWindow(QMainWindow):
         # Tabla de historial de ventas
         ventas_layout = QVBoxLayout()
         self.historial_ventas_table = QTableWidget(0, 6)
+        self.historial_ventas_table.setAlternatingRowColors(True)
+        header = self.historial_ventas_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.historial_ventas_table.setHorizontalHeaderLabels([
             "Fecha", "Cliente", "Total", "Productos", "Distribuidor", "ID"
         ])
-        self.historial_ventas_table.setColumnHidden(5, True) 
+        self.historial_ventas_table.setColumnHidden(5, True)
 
         ventas_layout.addWidget(QLabel("Historial de Ventas"))
         ventas_layout.addWidget(self.historial_ventas_table)
         self.total_ingresos_label = QLabel("Total ingresos: $0.00")
         ventas_layout.addWidget(self.total_ingresos_label, alignment=Qt.AlignRight)
         self.btn_generar_factura = QPushButton("Generar factura PDF")
+        self.btn_generar_factura.setToolTip("Generar la factura en formato PDF")
         self.btn_generar_factura.clicked.connect(self.generar_factura_pdf)
         ventas_layout.addWidget(self.btn_generar_factura)
         self.btn_prueba_impresion = QPushButton("🖨️ Prueba de impresión")
+        self.btn_prueba_impresion.setToolTip("Imprimir una prueba de factura")
         self.btn_prueba_impresion.clicked.connect(self.imprimir_factura_prueba)
         ventas_layout.addWidget(self.btn_prueba_impresion)
         tablas_totales_layout.addLayout(ventas_layout)
 
         # Tabla de historial de compras
         self.historial_compras_table = QTableWidget(0, 7)
+        self.historial_compras_table.setAlternatingRowColors(True)
+        header = self.historial_compras_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.historial_compras_table.setHorizontalHeaderLabels([
             "Fecha", "Distribuidor", "Vendedor", "Total", "Comisión", "Productos", "ID"
         ])
@@ -668,6 +733,9 @@ class MainWindow(QMainWindow):
 
         # Tabla de inventario actual (por lote)
         self.inventario_actual_table = QTableWidget(0, 7)
+        self.inventario_actual_table.setAlternatingRowColors(True)
+        header = self.inventario_actual_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.inventario_actual_table.setHorizontalHeaderLabels([
             "Producto", "Código", "Cantidad", "Precio compra", "Fecha compra", "Fecha vencimiento", "Distribuidor"  # <--- Cambia aquí
         ])
@@ -709,8 +777,11 @@ class MainWindow(QMainWindow):
         # Botones
         btns = QHBoxLayout()
         self.btn_add_trabajador = QPushButton("Agregar")
+        self.btn_add_trabajador.setToolTip("Agregar un nuevo trabajador")
         self.btn_edit_trabajador = QPushButton("Editar")
+        self.btn_edit_trabajador.setToolTip("Editar el trabajador seleccionado")
         self.btn_delete_trabajador = QPushButton("Eliminar")
+        self.btn_delete_trabajador.setToolTip("Eliminar el trabajador seleccionado")
         btns.addWidget(self.btn_add_trabajador)
         btns.addWidget(self.btn_edit_trabajador)
         btns.addWidget(self.btn_delete_trabajador)
@@ -750,9 +821,26 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()
 
     def _apply_styles(self):
-        with open("style.qss", "r", encoding="utf-8") as f:
-            styles = f.read()
-        self.setStyleSheet(styles)
+        qss_file = "style_light.qss" if self.theme == "light" else "style_dark.qss"
+        if os.path.exists(qss_file):
+            try:
+                with open(qss_file, "r", encoding="utf-8") as f:
+                    self.setStyleSheet(f.read())
+            except Exception:
+                pass
+        else:
+            self.setStyleSheet("")
+        # Si tienes el objectName para el botón de crédito fiscal, puedes agregarlo así:
+        self.btn_register_credito_fiscal.setStyleSheet(
+            "font-size:11px; min-width:200px; max-width:240px; min-height:26px; padding:6px 0;"
+        )
+
+    def _toggle_tema(self):
+        """Alterna entre tema claro y oscuro"""
+        self.theme = "dark" if self.theme == "light" else "light"
+        self._update_tema_action_text()
+        self._apply_styles()
+        self._save_config()
 
     def filter_products(self):
         search = self.search_bar.text()
@@ -1641,7 +1729,12 @@ class MainWindow(QMainWindow):
         for row, d in enumerate(detalles):
             self.inventario_actual_table.setItem(row, 0, QTableWidgetItem(d["producto"]))
             self.inventario_actual_table.setItem(row, 1, QTableWidgetItem(d["codigo"]))
-            self.inventario_actual_table.setItem(row, 2, QTableWidgetItem(str(d["cantidad"])))
+            item_cantidad = QTableWidgetItem(str(d["cantidad"]))
+            cantidad_val = int(d.get("cantidad", 0))
+            if cantidad_val < STOCK_THRESHOLD:
+                color = QColor("red") if cantidad_val == 0 else QColor("yellow")
+                item_cantidad.setBackground(color)
+            self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["fecha_compra"]))
             # --- FECHA DE VENCIMIENTO CON COLOR ---

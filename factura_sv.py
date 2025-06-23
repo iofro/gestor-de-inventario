@@ -229,12 +229,6 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "IVA retenido:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('iva_retenido', '')}")
-
-    texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "Subtotal:")
     c.setFont("Helvetica", 9)
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('subtotal', '')}")

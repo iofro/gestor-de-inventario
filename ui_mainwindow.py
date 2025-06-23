@@ -128,15 +128,13 @@ class MainWindow(QMainWindow):
         iva = round(sum(d.get("iva", 0) for d in detalles_pdf), 2)
         subtotal = round(sumas + ventas_exentas + ventas_no_sujetas, 2)
 
-        iva_retenido = float(venta.get("iva_retenido", 0) or 0)
-        total = round(sumas + iva + ventas_exentas + ventas_no_sujetas - iva_retenido, 2)
+        total = round(sumas + iva + ventas_exentas + ventas_no_sujetas, 2)
 
         venta["sumas"] = sumas
         venta["ventas_exentas"] = ventas_exentas
         venta["ventas_no_sujetas"] = ventas_no_sujetas
         venta["iva"] = iva
         venta["subtotal"] = subtotal
-        venta["iva_retenido"] = iva_retenido
         venta["total"] = total
         venta["total_operacion"] = total  # Para el PDF
         venta["descuentos_globales"] = 0  # Si tienes descuentos globales, cámbialo aquí
@@ -208,7 +206,6 @@ class MainWindow(QMainWindow):
                 "totales": {
                     "sumas": venta.get("sumas", 0),
                     "subtotal": venta.get("subtotal", 0),
-                    "iva_retenido": venta.get("iva_retenido", 0),
                     "total_operacion": venta.get("total", 0),
                     "total_a_pagar": venta.get("total", 0),
                     "valor_letras": venta.get("total_letras", "")
@@ -296,7 +293,6 @@ class MainWindow(QMainWindow):
             "sumas": 34.00,
             "iva": 4.42,
             "subtotal": 38.42,
-            "iva_retenido": 0.00,
             "ventas_no_sujetas": 0.00,
             "ventas_exentas": 0.00,
             "total": 38.42,
@@ -1058,7 +1054,6 @@ class MainWindow(QMainWindow):
                 sumas = data.get("sumas", 0)
                 iva = data.get("iva", 0)
                 subtotal = data.get("subtotal", 0)
-                iva_retenido = data.get("iva_retenido", 0)
                 venta_total = data.get("total", 0)
                 total_letras = monto_a_texto_sv(venta_total)
                 # ---------------------------------------------------
@@ -1086,9 +1081,8 @@ class MainWindow(QMainWindow):
                     sumas=sumas,
                     iva=iva,
                     subtotal=subtotal,
-                    iva_retenido=iva_retenido,
-                    ventas_exentas=data.get("ventas_exentas", 0),         
-                    ventas_no_sujetas=data.get("ventas_no_sujetas", 0),   
+                    ventas_exentas=data.get("ventas_exentas", 0),
+                    ventas_no_sujetas=data.get("ventas_no_sujetas", 0),
                     total_letras=total_letras
                 )
                 logger.debug("IVA guardado en la venta: %s", iva)

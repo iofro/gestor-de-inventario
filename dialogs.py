@@ -729,7 +729,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self.table.setItem(i, 4, QTableWidgetItem(item.get("tipo_fiscal", "")))
             btn = QPushButton("Eliminar")
             btn.setFixedHeight(22)
-            btn.setStyleSheet("background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;")
+            btn.setStyleSheet(
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;"
+                "min-width:70px; max-width:70px;"
+            )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 5, btn)
 
@@ -1249,7 +1252,10 @@ class RegisterPurchaseDialog(QDialog):
             btn = QPushButton("Eliminar")
             btn.setFixedHeight(22)
             btn.setFixedWidth(70)
-            btn.setStyleSheet("background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;")
+            btn.setStyleSheet(
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;"
+                "min-width:70px; max-width:70px;"
+            )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 8, btn)
 
@@ -1816,7 +1822,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.table.setItem(i, 5, QTableWidgetItem(item.get("tipo_fiscal", "")))
             btn = QPushButton("Eliminar")
             btn.setFixedHeight(22)
-            btn.setStyleSheet("background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;")
+            btn.setStyleSheet(
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;"
+                "min-width:70px; max-width:70px;"
+            )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 6, btn)
 

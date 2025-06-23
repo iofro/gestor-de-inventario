@@ -544,17 +544,16 @@ class RegisterSaleDialog(QDialog):
             self.precio_spin.blockSignals(True)
             self.precio_spin.setValue(precio_unitario)
             self.precio_spin.blockSignals(False)
-            precio = precio_unitario
         else:
-            precio = self.precio_spin.value()
-            precio_total = precio * cantidad
+            precio_unitario = self.precio_spin.value()
+            precio_total = precio_unitario * cantidad
             self.precio_total_spin.blockSignals(True)
             self.precio_total_spin.setValue(precio_total)
             self.precio_total_spin.blockSignals(False)
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
-        subtotal = cantidad * precio
+        subtotal = precio_total
 
         # Cálculo del descuento
         if descuento_tipo == "%":
@@ -647,16 +646,14 @@ class RegisterSaleDialog(QDialog):
         # --- Cálculo de precio unitario según tipo de venta ---
         if self.tipo_mayorista_total.isChecked():
             precio_total = self.precio_total_spin.value()
-            if cantidad > 0:
-                precio = round(precio_total / cantidad, 6)
-            else:
-                precio = 0
+            precio = round(precio_total / cantidad, 6) if cantidad > 0 else 0
         else:
             precio = self.precio_spin.value()
+            precio_total = precio * cantidad
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
-        subtotal = cantidad * precio
+        subtotal = precio_total
 
         if descuento_tipo == "%":
             descuento_monto = subtotal * (descuento_valor / 100)
@@ -670,24 +667,16 @@ class RegisterSaleDialog(QDialog):
         precio_sin_iva = precio  # Por defecto, el precio es el ingresado
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva_unitario = round(precio * 0.13, 2)
-                iva = round(iva_unitario * cantidad, 2)
+                iva = round(subtotal_con_descuento * 0.13, 2)
                 iva_tipo = "agregado"
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                # El precio ingresado incluye IVA, hay que desgloslarlo
-                precio_sin_iva = round(precio / 1.13, 2)
-                iva_unitario = round(precio - precio_sin_iva, 2)
-                subtotal_sin_iva = cantidad * precio_sin_iva
-                # El descuento se calcula sobre el subtotal sin IVA
-                descuento_monto = subtotal_sin_iva * (descuento_valor / 100) if descuento_tipo == "%" else descuento_valor
-                subtotal_con_descuento = max(subtotal_sin_iva - descuento_monto, 0)
-                # --- CORRECCIÓN: Redondea IVA unitario antes de multiplicar ---
-                iva = round(iva_unitario * cantidad, 2)
+                iva = round(subtotal_con_descuento * 13 / 113, 2)
                 iva_tipo = "desglosado"
-                precio = precio_sin_iva  # Guarda el precio sin IVA
-                subtotal = cantidad * precio_sin_iva
-                total = subtotal_con_descuento + iva
+                precio_sin_iva_total = subtotal_con_descuento - iva
+                precio = round(precio_sin_iva_total / cantidad, 6) if cantidad > 0 else 0
+                subtotal = precio_sin_iva_total
+                total = subtotal_con_descuento
             else:
                 total = subtotal_con_descuento
                 iva_tipo = "ninguno"
@@ -1713,17 +1702,16 @@ class RegisterCreditoFiscalDialog(QDialog):
             self.precio_spin.blockSignals(True)
             self.precio_spin.setValue(precio_unitario)
             self.precio_spin.blockSignals(False)
-            precio = precio_unitario
         else:
-            precio = self.precio_spin.value()
-            precio_total = precio * cantidad
+            precio_unitario = self.precio_spin.value()
+            precio_total = precio_unitario * cantidad
             self.precio_total_spin.blockSignals(True)
             self.precio_total_spin.setValue(precio_total)
             self.precio_total_spin.blockSignals(False)
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
-        subtotal = cantidad * precio
+        subtotal = precio_total
 
         # Cálculo del descuento
         if descuento_tipo == "%":
@@ -1738,19 +1726,12 @@ class RegisterCreditoFiscalDialog(QDialog):
         total = subtotal_con_descuento
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva_unitario = round(precio * 0.13, 2)
-                iva = round(iva_unitario * cantidad, 2)
+                iva = subtotal_con_descuento * 0.13
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                precio_sin_iva = round(precio / 1.13, 2)
-                iva_unitario = round(precio - precio_sin_iva, 2)
-                subtotal_sin_iva = cantidad * precio_sin_iva
-                # El descuento se calcula sobre el subtotal sin IVA
-                descuento_monto = subtotal_sin_iva * (descuento_valor / 100) if descuento_tipo == "%" else descuento_valor
-                subtotal_con_descuento = max(subtotal_sin_iva - descuento_monto, 0)
-                iva = round(iva_unitario * cantidad, 2)
-                total = subtotal_con_descuento + iva
-                subtotal = cantidad * precio_sin_iva
+                iva = subtotal_con_descuento * 13 / 113
+                total = subtotal_con_descuento
+                subtotal = subtotal_con_descuento - iva
             else:
                 total = subtotal_con_descuento
         else:
@@ -1784,16 +1765,14 @@ class RegisterCreditoFiscalDialog(QDialog):
         # --- Cálculo de precio unitario según tipo de venta ---
         if self.tipo_mayorista_total.isChecked():
             precio_total = self.precio_total_spin.value()
-            if cantidad > 0:
-                precio = round(precio_total / cantidad, 6)
-            else:
-                precio = 0
+            precio = round(precio_total / cantidad, 6) if cantidad > 0 else 0
         else:
             precio = self.precio_spin.value()
+            precio_total = precio * cantidad
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
-        subtotal = cantidad * precio
+        subtotal = precio_total
 
         if descuento_tipo == "%":
             descuento_monto = subtotal * (descuento_valor / 100)
@@ -1810,24 +1789,20 @@ class RegisterCreditoFiscalDialog(QDialog):
 
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva_unitario = round(precio * 0.13, 2)
-                iva = round(iva_unitario * cantidad, 2)
+                iva = round(subtotal_con_descuento * 0.13, 2)
                 iva_tipo = "agregado"
+                iva_unitario = iva / cantidad if cantidad > 0 else 0
                 precio_con_iva = round(precio + iva_unitario, 2)
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                # --- CAMBIO: Guarda el valor ingresado por el usuario como precio_con_iva ---
-                precio_con_iva = self.precio_spin.value()  # El usuario ingresa el precio con IVA
-                precio_sin_iva = round(precio_con_iva / 1.13, 2)
-                iva_unitario = round(precio_con_iva - precio_sin_iva, 2)
-                precio = precio_sin_iva  # Guarda el precio sin IVA
-                subtotal = cantidad * precio_sin_iva
-                subtotal_sin_iva = cantidad * precio_sin_iva
-                descuento_monto = subtotal_sin_iva * (descuento_valor / 100) if descuento_tipo == "%" else descuento_valor
-                subtotal_con_descuento = max(subtotal_sin_iva - descuento_monto, 0)
-                iva = round(iva_unitario * cantidad, 2)
+                iva = round(subtotal_con_descuento * 13 / 113, 2)
                 iva_tipo = "desglosado"
-                total = subtotal_con_descuento + iva
+                precio_sin_iva_total = subtotal_con_descuento - iva
+                precio = round(precio_sin_iva_total / cantidad, 6) if cantidad > 0 else 0
+                iva_unitario = iva / cantidad if cantidad > 0 else 0
+                precio_con_iva = round(precio + iva_unitario, 2)
+                subtotal = precio_sin_iva_total
+                total = subtotal_con_descuento
             else:
                 total = subtotal_con_descuento
                 iva_tipo = "ninguno"

@@ -6,6 +6,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
+
+STOCK_THRESHOLD = 5
 import os
 import json
 from inventory_manager import InventoryManager
@@ -1679,7 +1681,12 @@ class MainWindow(QMainWindow):
         for row, d in enumerate(detalles):
             self.inventario_actual_table.setItem(row, 0, QTableWidgetItem(d["producto"]))
             self.inventario_actual_table.setItem(row, 1, QTableWidgetItem(d["codigo"]))
-            self.inventario_actual_table.setItem(row, 2, QTableWidgetItem(str(d["cantidad"])))
+            item_cantidad = QTableWidgetItem(str(d["cantidad"]))
+            cantidad_val = int(d.get("cantidad", 0))
+            if cantidad_val < STOCK_THRESHOLD:
+                color = QColor("red") if cantidad_val == 0 else QColor("yellow")
+                item_cantidad.setBackground(color)
+            self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["fecha_compra"]))
             # --- FECHA DE VENCIMIENTO CON COLOR ---

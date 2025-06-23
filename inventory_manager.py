@@ -1,6 +1,8 @@
 from db import DB
 from PyQt5.QtCore import QAbstractTableModel, Qt
 from PyQt5.QtGui import QColor
+
+STOCK_THRESHOLD = 5
 import json
 from datetime import datetime, timedelta
 import os
@@ -364,6 +366,10 @@ class ProductTableModel(QAbstractTableModel):
             # Si agregas comisión:
             # elif col == 4:
             #     return f"{row.get('comision_base', 0)}%"  # O el campo que corresponda
+        elif role == Qt.BackgroundRole and col == 3:
+            cantidad_val = int(row.get("stock", 0))
+            if cantidad_val < STOCK_THRESHOLD:
+                return QColor("red") if cantidad_val == 0 else QColor("yellow")
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
@@ -423,6 +429,10 @@ class LoteTableModel(QAbstractTableModel):
                 )
             elif col == 5:
                 return row.get("fecha_vencimiento", "")
+        elif role == Qt.BackgroundRole and col == 2:
+            cantidad_val = int(row.get("cantidad", 0))
+            if cantidad_val < STOCK_THRESHOLD:
+                return QColor("red") if cantidad_val == 0 else QColor("yellow")
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):

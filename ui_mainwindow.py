@@ -393,14 +393,22 @@ class MainWindow(QMainWindow):
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
+        self.btn_add_product.setToolTip("Agregar un nuevo producto al inventario")
         self.btn_edit_product = QPushButton("Editar Producto")
+        self.btn_edit_product.setToolTip("Editar el producto seleccionado")
         self.btn_register_sale = QPushButton("Registrar Venta")
+        self.btn_register_sale.setToolTip("Registrar una venta")
         # Botón con salto de línea para que el texto quepa bien
         self.btn_register_credito_fiscal = QPushButton("Registrar Venta\nCrédito Fiscal")
+        self.btn_register_credito_fiscal.setToolTip("Registrar una venta a crédito fiscal")
         self.btn_register_purchase = QPushButton("Registrar Compra")
+        self.btn_register_purchase.setToolTip("Registrar una compra")
         self.btn_delete_product = QPushButton("Eliminar Producto")
+        self.btn_delete_product.setToolTip("Eliminar el producto seleccionado")
         self.btn_guardar_rapido = QPushButton("Guardar\nRápido")
+        self.btn_guardar_rapido.setToolTip("Guardar inventario rápidamente")
         self.btn_cargar_inventario = QPushButton("Cargar Inventario")
+        self.btn_cargar_inventario.setToolTip("Cargar inventario desde un archivo")
 
         # Botones más pequeños
         for btn in [
@@ -496,6 +504,7 @@ class MainWindow(QMainWindow):
         self.vendedores_tree.setHeaderHidden(True)
         vend_layout.addWidget(self.vendedores_tree)
         btn_add_vend = QPushButton("Añadir Vendedor")
+        btn_add_vend.setToolTip("Añadir un nuevo vendedor")
         btn_add_vend.setMinimumHeight(24)
         btn_add_vend.setMaximumHeight(28)
         btn_add_vend.setStyleSheet("font-size:11px;")
@@ -503,6 +512,7 @@ class MainWindow(QMainWindow):
         vend_layout.addWidget(btn_add_vend)
 
         btn_edit_vend = QPushButton("Editar Vendedor")
+        btn_edit_vend.setToolTip("Editar el vendedor seleccionado")
         btn_edit_vend.setMinimumHeight(24)
         btn_edit_vend.setMaximumHeight(28)
         btn_edit_vend.setStyleSheet("font-size:11px;")
@@ -520,6 +530,7 @@ class MainWindow(QMainWindow):
 
         btns_h_layout = QHBoxLayout()
         btn_add_dist = QPushButton("Añadir Distribuidor")
+        btn_add_dist.setToolTip("Añadir un nuevo distribuidor")
         btn_add_dist.setMinimumHeight(24)
         btn_add_dist.setMaximumHeight(28)
         btn_add_dist.setStyleSheet("font-size:11px;")
@@ -527,6 +538,7 @@ class MainWindow(QMainWindow):
         btns_h_layout.addWidget(btn_add_dist, alignment=Qt.AlignLeft)
 
         btn_info_dist = QPushButton("Info de Distribuidor")
+        btn_info_dist.setToolTip("Mostrar información del distribuidor")
         btn_info_dist.setFixedHeight(24)
         btn_info_dist.setFixedWidth(110)
         btn_info_dist.setStyleSheet(
@@ -538,6 +550,7 @@ class MainWindow(QMainWindow):
         dist_layout.addLayout(btns_h_layout)
 
         btn_edit_dist = QPushButton("Editar Distribuidor")
+        btn_edit_dist.setToolTip("Editar el distribuidor seleccionado")
         btn_edit_dist.setMinimumHeight(24)
         btn_edit_dist.setMaximumHeight(28)
         btn_edit_dist.setStyleSheet("font-size:11px;")
@@ -567,8 +580,11 @@ class MainWindow(QMainWindow):
         # Botones
         btns = QHBoxLayout()
         self.btn_add_cliente = QPushButton("Agregar Cliente")
+        self.btn_add_cliente.setToolTip("Agregar un nuevo cliente")
         self.btn_edit_cliente = QPushButton("Editar Cliente")
+        self.btn_edit_cliente.setToolTip("Editar el cliente seleccionado")
         self.btn_delete_cliente = QPushButton("Eliminar Cliente")
+        self.btn_delete_cliente.setToolTip("Eliminar el cliente seleccionado")
         btns.addWidget(self.btn_add_cliente)
         btns.addWidget(self.btn_edit_cliente)
         btns.addWidget(self.btn_delete_cliente)
@@ -609,6 +625,7 @@ class MainWindow(QMainWindow):
 
         # --- AGREGA EL BOTÓN "Ver todo" ---
         self.btn_ver_todo_historial = QPushButton("Ver todo")
+        self.btn_ver_todo_historial.setToolTip("Mostrar todo el historial")
         self.btn_ver_todo_historial.setMinimumWidth(100)
         filtros_historial_layout.addWidget(self.btn_ver_todo_historial)
 
@@ -630,9 +647,11 @@ class MainWindow(QMainWindow):
         self.total_ingresos_label = QLabel("Total ingresos: $0.00")
         ventas_layout.addWidget(self.total_ingresos_label, alignment=Qt.AlignRight)
         self.btn_generar_factura = QPushButton("Generar factura PDF")
+        self.btn_generar_factura.setToolTip("Generar la factura en formato PDF")
         self.btn_generar_factura.clicked.connect(self.generar_factura_pdf)
         ventas_layout.addWidget(self.btn_generar_factura)
         self.btn_prueba_impresion = QPushButton("🖨️ Prueba de impresión")
+        self.btn_prueba_impresion.setToolTip("Imprimir una prueba de factura")
         self.btn_prueba_impresion.clicked.connect(self.imprimir_factura_prueba)
         ventas_layout.addWidget(self.btn_prueba_impresion)
         tablas_totales_layout.addLayout(ventas_layout)
@@ -711,8 +730,11 @@ class MainWindow(QMainWindow):
         # Botones
         btns = QHBoxLayout()
         self.btn_add_trabajador = QPushButton("Agregar")
+        self.btn_add_trabajador.setToolTip("Agregar un nuevo trabajador")
         self.btn_edit_trabajador = QPushButton("Editar")
+        self.btn_edit_trabajador.setToolTip("Editar el trabajador seleccionado")
         self.btn_delete_trabajador = QPushButton("Eliminar")
+        self.btn_delete_trabajador.setToolTip("Eliminar el trabajador seleccionado")
         btns.addWidget(self.btn_add_trabajador)
         btns.addWidget(self.btn_edit_trabajador)
         btns.addWidget(self.btn_delete_trabajador)

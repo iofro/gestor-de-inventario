@@ -497,7 +497,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             return
         nombre = self.product_list.currentItem().text()
         prod = None
-        if self.productos_data:
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        elif self.productos_data:
             for p in self.productos_data:
                 nombre_prod = get_field(p, "nombre", "")
                 if nombre.startswith(nombre_prod):
@@ -1624,7 +1626,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             return
         nombre = self.product_list.currentItem().text()
         prod = None
-        if self.productos_data:
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        elif self.productos_data:
             for p in self.productos_data:
                 nombre_prod = get_field(p, "nombre", "")
                 if nombre.startswith(nombre_prod):

@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableView, QLineEdit,
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
     QListWidget, QInputDialog, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
-    QDateEdit, QCheckBox
+    QDateEdit, QCheckBox, QHeaderView
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
@@ -465,6 +465,9 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(filtros_layout)
 
         self.product_table = QTableView()
+        self.product_table.setAlternatingRowColors(True)
+        header = self.product_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.product_table.setModel(self.manager.get_products_model())
         self.product_table.setSelectionBehavior(QTableView.SelectRows)
         self.product_table.setSelectionMode(QTableView.SingleSelection)
@@ -620,10 +623,13 @@ class MainWindow(QMainWindow):
         # Tabla de historial de ventas
         ventas_layout = QVBoxLayout()
         self.historial_ventas_table = QTableWidget(0, 6)
+        self.historial_ventas_table.setAlternatingRowColors(True)
+        header = self.historial_ventas_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.historial_ventas_table.setHorizontalHeaderLabels([
             "Fecha", "Cliente", "Total", "Productos", "Distribuidor", "ID"
         ])
-        self.historial_ventas_table.setColumnHidden(5, True) 
+        self.historial_ventas_table.setColumnHidden(5, True)
 
         ventas_layout.addWidget(QLabel("Historial de Ventas"))
         ventas_layout.addWidget(self.historial_ventas_table)
@@ -639,6 +645,9 @@ class MainWindow(QMainWindow):
 
         # Tabla de historial de compras
         self.historial_compras_table = QTableWidget(0, 7)
+        self.historial_compras_table.setAlternatingRowColors(True)
+        header = self.historial_compras_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.historial_compras_table.setHorizontalHeaderLabels([
             "Fecha", "Distribuidor", "Vendedor", "Total", "Comisión", "Productos", "ID"
         ])
@@ -670,6 +679,9 @@ class MainWindow(QMainWindow):
 
         # Tabla de inventario actual (por lote)
         self.inventario_actual_table = QTableWidget(0, 7)
+        self.inventario_actual_table.setAlternatingRowColors(True)
+        header = self.inventario_actual_table.horizontalHeader()
+        header.setSectionResizeMode(QHeaderView.Stretch)
         self.inventario_actual_table.setHorizontalHeaderLabels([
             "Producto", "Código", "Cantidad", "Precio compra", "Fecha compra", "Fecha vencimiento", "Distribuidor"  # <--- Cambia aquí
         ])

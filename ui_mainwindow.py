@@ -14,6 +14,9 @@ from datetime import datetime
 from num2words import num2words  # Instala con: pip install num2words
 from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
+import logging
+
+logger = logging.getLogger(__name__)
 
 def redondear(valor):
     return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -950,7 +953,7 @@ class MainWindow(QMainWindow):
             if dialog.exec_():
                 
                 data = dialog.get_data()
-                print("DEBUG IVA calculado en get_data:", data.get("iva"))
+                logger.debug("IVA calculado en get_data: %s", data.get("iva"))
                 items = data.get("items", [])
 
                 if not items:
@@ -993,7 +996,7 @@ class MainWindow(QMainWindow):
                     ventas_no_sujetas=data.get("ventas_no_sujetas", 0),   
                     total_letras=total_letras
                 )
-                print("DEBUG IVA guardado en la venta:", iva)
+                logger.debug("IVA guardado en la venta: %s", iva)
 
                 for item in items:
                     prod = next((p for p in self.manager._products if p["id"] == item["producto_id"]), None)
@@ -1450,7 +1453,11 @@ class MainWindow(QMainWindow):
         Distribuidores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_Distribuidores()}
         detalles_venta = {v["id"]: self.manager.db.get_detalles_venta(v["id"]) for v in ventas}
         for row, v in enumerate(ventas):
-            print(f"DEBUG detalles_venta para venta {v['id']}:", detalles_venta.get(v["id"], []))
+            logger.debug(
+                "detalles_venta para venta %s: %s",
+                v['id'],
+                detalles_venta.get(v["id"], [])
+            )
         self.historial_ventas_table.setRowCount(len(ventas))
         total_ingresos = 0
         for row, v in enumerate(ventas):
@@ -1555,7 +1562,10 @@ class MainWindow(QMainWindow):
     def mostrar_detalle_compra(self, item):
         row = item.row()
         compra_id_item = self.historial_compras_table.item(row, 6)
-        print("DEBUG ID:", compra_id_item.text() if compra_id_item else "NO ITEM")
+        logger.debug(
+            "ID de compra seleccionado: %s",
+            compra_id_item.text() if compra_id_item else "NO ITEM"
+        )
         if not compra_id_item:
             QMessageBox.warning(self, "Detalle de compra", "No se encontró el ID de la compra seleccionada.")
             return

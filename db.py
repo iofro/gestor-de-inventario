@@ -572,14 +572,6 @@ class DB:
         self.cursor.execute("SELECT * FROM detalles_compra WHERE compra_id=?", (compra_id,))
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def get_vendedores(self):
-        self.cursor.execute("SELECT * FROM vendedores")
-        return [dict(row) for row in self.cursor.fetchall()]
-
-    def get_Distribuidores(self):
-        self.cursor.execute("SELECT * FROM Distribuidores")
-        return [dict(row) for row in self.cursor.fetchall()]
-
     def delete_venta(self, id):
         try:
             self.cursor.execute("DELETE FROM ventas WHERE id=?", (id,))
@@ -598,10 +590,6 @@ class DB:
             self.conn.commit()
         except Exception as e:
             print("Error al agregar detalle de venta:", e)
-
-    def get_detalles_venta(self, venta_id):
-        self.cursor.execute("SELECT * FROM detalles_venta WHERE venta_id=?", (venta_id,))
-        return [dict(row) for row in self.cursor.fetchall()]
 
     def delete_detalle_venta(self, id):
         try:
@@ -708,10 +696,6 @@ class DB:
             data.get("notas", "")
         ))
         self.conn.commit()
-
-    def get_compras(self):
-        self.cursor.execute("SELECT * FROM compras")
-        return [dict(row) for row in self.cursor.fetchall()]
 
     def add_compra_detallada(self, data):
         self.cursor.execute("""

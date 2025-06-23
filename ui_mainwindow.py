@@ -279,6 +279,99 @@ class MainWindow(QMainWindow):
 
         return factura_raw
 
+    def imprimir_factura_prueba(self):
+        """Imprime una factura de crédito fiscal con datos de prueba."""
+        venta = {
+            "fecha": "23/06/2025",
+            "giro": "Venta de productos farmacéuticos",
+            "fecha_remision": "21/06/2025",
+            "condicion_pago": "Crédito 30 días",
+            "vendedor_nombre": "Luis Ramírez",
+            "nrc": "123456-7",
+            "no_remision": "004587",
+            "nit": "0614-260991-101-0",
+            "orden_no": "000324",
+            "venta_a_cuenta_de": "Distribuidora Centroamericana",
+            "fecha_remision_anterior": "15/06/2025",
+            "sumas": 34.00,
+            "iva": 4.42,
+            "subtotal": 38.42,
+            "iva_retenido": 0.00,
+            "ventas_no_sujetas": 0.00,
+            "ventas_exentas": 0.00,
+            "total": 38.42,
+            "descuentos_globales": 0.00,
+            "total_letras": "Treinta y cuatro dólares con cero centavos",
+        }
+
+        cliente = {
+            "nombre": "Comercial La Nueva Era S.A.",
+            "direccion": "Calle El Progreso #123, San Salvador",
+        }
+
+        detalles = [
+            {
+                "cantidad": 10,
+                "descripcion": "Acetaminofén 500mg caja x100",
+                "precio_unitario": 2.50,
+                "ventas_gravadas": 25.00,
+                "ventas_no_sujetas": 0.00,
+                "ventas_exentas": 0.00,
+            },
+            {
+                "cantidad": 5,
+                "descripcion": "Alcohol gel 500ml",
+                "precio_unitario": 1.80,
+                "ventas_gravadas": 9.00,
+                "ventas_no_sujetas": 0.00,
+                "ventas_exentas": 0.00,
+            },
+        ]
+
+        texto = self._generar_texto_factura_matricial(venta, detalles, cliente, {})
+
+        import win32print
+        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QMessageBox
+
+        class PrinterDialog(QDialog):
+            def __init__(self, parent=None):
+                super().__init__(parent)
+                self.setWindowTitle("Seleccionar impresora")
+                layout = QVBoxLayout()
+                layout.addWidget(QLabel("Seleccione una impresora:"))
+                self.printer_combo = QComboBox()
+                printers = win32print.EnumPrinters(
+                    win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
+                )
+                self.printer_combo.addItems([p[2] for p in printers])
+                layout.addWidget(self.printer_combo)
+                btn_ok = QPushButton("Imprimir")
+                btn_ok.clicked.connect(self.accept)
+                layout.addWidget(btn_ok)
+                self.setLayout(layout)
+
+            def get_selected_printer(self):
+                return self.printer_combo.currentText()
+
+        dlg = PrinterDialog(self)
+        if not dlg.exec_():
+            return
+        printer_name = dlg.get_selected_printer()
+        if not printer_name:
+            return
+        try:
+            SLIP_MODE = b"\x1B\x69"
+            hprinter = win32print.OpenPrinter(printer_name)
+            win32print.StartDocPrinter(hprinter, 1, ("Factura RAW", None, "RAW"))
+            win32print.StartPagePrinter(hprinter)
+            win32print.WritePrinter(hprinter, SLIP_MODE + texto.encode("utf-8"))
+            win32print.EndPagePrinter(hprinter)
+            win32print.EndDocPrinter(hprinter)
+            win32print.ClosePrinter(hprinter)
+            QMessageBox.information(self, "Impresión", "Factura de prueba enviada a la impresora.")
+        except Exception as e:
+            QMessageBox.critical(self, "Error de impresión", str(e))
+
     def _setup_ui(self):
         # --- BARRA SUPERIOR HORIZONTAL ---
         menubar = QMenuBar(self)
@@ -543,6 +636,9 @@ class MainWindow(QMainWindow):
         self.btn_generar_factura = QPushButton("Generar factura PDF")
         self.btn_generar_factura.clicked.connect(self.generar_factura_pdf)
         ventas_layout.addWidget(self.btn_generar_factura)
+        self.btn_prueba_impresion = QPushButton("🖨️ Prueba de impresión")
+        self.btn_prueba_impresion.clicked.connect(self.imprimir_factura_prueba)
+        ventas_layout.addWidget(self.btn_prueba_impresion)
         tablas_totales_layout.addLayout(ventas_layout)
 
         # Tabla de historial de compras

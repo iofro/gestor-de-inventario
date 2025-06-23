@@ -834,58 +834,8 @@ class MainWindow(QMainWindow):
                         printer_name = dlg.get_selected_printer()
                         if printer_name:
                             try:
-                                # --- Aquí arma el texto de la factura con los mismos datos y formato que usas en el PDF ---
-                                # Obtener datos de la venta y detalles antes de imprimir
-                                venta_id = venta_id = self.manager.db.cursor.execute("SELECT MAX(id) as id FROM ventas").fetchone()["id"]
-                                ventas = self.manager.db.get_ventas()
-                                venta = next((v for v in ventas if v.get("id") == venta_id), None)
-                                if not venta:
-                                    QMessageBox.warning(self, "Factura", "No se encontró la venta para imprimir.")
-                                    return
-                                detalles = self.manager.db.get_detalles_venta(venta["id"])
-                                productos_dict = {int(p["id"]): p for p in self.manager.db.get_productos()}
-                                detalles_pdf = []
-                                for d in detalles:
-                                    producto_id = int(d.get("producto_id", 0))
-                                    prod = productos_dict.get(producto_id)
-                                    tipo_fiscal = (d.get("tipo_fiscal") or "gravada").strip().lower()
-                                    precio_unitario = d.get("precio_unitario", 0)
-                                    if d.get("iva_tipo") == "agregado":
-                                        precio_unitario = round(precio_unitario + d.get("iva", 0), 2)
-                                    cantidad = d.get("cantidad", 0)
-                                    ventas_gravadas = cantidad * precio_unitario if tipo_fiscal in ["venta gravada", "gravada"] else 0
-                                    ventas_exentas = cantidad * precio_unitario if tipo_fiscal in ["venta exenta", "exenta"] else 0
-                                    ventas_no_sujetas = cantidad * precio_unitario if tipo_fiscal in ["venta no sujeta", "no sujeta"] else 0
-                                    detalles_pdf.append({
-                                        "descripcion": prod.get("nombre", f"ID {producto_id}") if prod else f"ID {producto_id}",
-                                        "codigo": prod.get("codigo", "") if prod else "",
-                                        "cantidad": cantidad,
-                                        "precio_unitario": precio_unitario,
-                                        "ventas_gravadas": ventas_gravadas,
-                                        "ventas_exentas": ventas_exentas,
-                                        "ventas_no_sujetas": ventas_no_sujetas,
-                                        "tipo_fiscal": tipo_fiscal,
-                                        "iva": d.get("iva", 0), 
-                                        "iva_tipo": d.get("iva_tipo", "")
-                                    })
-                                cliente = next((c for c in self.manager._clientes if c["id"] == venta.get("cliente_id")), {})
-                                distribuidor = next((d for d in self.manager._Distribuidores if d["id"] == venta.get("Distribuidor_id")), {})
-                                texto = self._generar_texto_factura_matricial(venta, detalles_pdf, cliente, distribuidor)
-                                # --- Imprime usando win32ui y win32print ---
-                                hprinter = win32print.OpenPrinter(printer_name)
-                                hdc = win32ui.CreateDC()
-                                hdc.CreatePrinterDC(printer_name)
-                                hdc.StartDoc("Factura Crédito Fiscal")
-                                hdc.StartPage()
-                                # Ajusta las coordenadas y fuente según tu formato
-                                y = 100
-                                for linea in texto.splitlines():
-                                    hdc.TextOut(100, y, linea)
-                                    y += 30  # Ajusta el salto de línea según el tamaño de fuente
-                                hdc.EndPage()
-                                hdc.EndDoc()
-                                hdc.DeleteDC()
-                                win32print.ClosePrinter(hprinter)
+                                import prueba_impresion
+                                prueba_impresion.imprimir_factura_raw(printer_name)
                                 QMessageBox.information(self, "Impresión", "Factura enviada a la impresora.")
                             except Exception as e:
                                 QMessageBox.critical(self, "Error de impresión", str(e))
@@ -1063,63 +1013,8 @@ class MainWindow(QMainWindow):
                         printer_name = dlg.get_selected_printer()
                         if printer_name:
                             try:
-                                # --- Genera los datos de la factura recién registrada ---
-                                ventas = self.manager.db.get_ventas()
-                                venta = next((v for v in ventas if v.get("id") == venta_id), None)
-                                detalles = self.manager.db.get_detalles_venta(venta_id)
-                                productos_dict = {int(p["id"]): p for p in self.manager.db.get_productos()}
-                                detalles_pdf = []
-                                for d in detalles:
-                                    producto_id = int(d.get("producto_id", 0))
-                                    prod = productos_dict.get(producto_id)
-                                    tipo_fiscal = (d.get("tipo_fiscal") or "gravada").strip().lower()
-                                    precio_unitario = d.get("precio_unitario", 0)
-                                    cantidad = d.get("cantidad", 0)
-
-                                    if d.get("iva_tipo") == "desglosado":
-                                        precio_unitario_sin_iva = redondear(precio_unitario / 1.13)
-                                        iva_unitario = redondear(precio_unitario - precio_unitario_sin_iva)
-                                    else:
-                                        precio_unitario_sin_iva = precio_unitario
-                                        iva_unitario = d.get("iva", 0)
-
-                                    ventas_gravadas = redondear(cantidad * precio_unitario_sin_iva) if tipo_fiscal in ["venta gravada", "gravada"] else 0
-                                    ventas_exentas = redondear(cantidad * precio_unitario) if tipo_fiscal in ["venta exenta", "exenta"] else 0
-                                    ventas_no_sujetas = redondear(cantidad * precio_unitario) if tipo_fiscal in ["venta no sujeta", "no sujeta"] else 0
-                                    # --- CORRECCIÓN: IVA TOTAL POR PRODUCTO ---
-                                    iva_total = redondear(iva_unitario * cantidad) if tipo_fiscal in ["venta gravada", "gravada"] else 0
-
-                                    detalles_pdf.append({
-                                        "descripcion": prod.get("nombre", f"ID {producto_id}") if prod else f"ID {producto_id}",
-                                        "codigo": prod.get("codigo", "") if prod else "",
-                                        "cantidad": cantidad,
-                                        "precio_unitario": redondear(precio_unitario),
-                                        "ventas_gravadas": ventas_gravadas,
-                                        "ventas_exentas": ventas_exentas,
-                                        "ventas_no_sujetas": ventas_no_sujetas,
-                                        "tipo_fiscal": tipo_fiscal,
-                                        "iva": iva_total,
-                                        "iva_tipo": d.get("iva_tipo", "")
-                                    })
-
-                                cliente = next((c for c in self.manager._clientes if c["id"] == venta.get("cliente_id")), {})
-                                distribuidor = next((d for d in self.manager._Distribuidores if d["id"] == venta.get("Distribuidor_id")), {})
-                                texto = self._generar_texto_factura_matricial(venta, detalles_pdf, cliente, distribuidor)
-                                # --- Imprime usando win32ui y win32print ---
-                                hprinter = win32print.OpenPrinter(printer_name)
-                                hdc = win32ui.CreateDC()
-                                hdc.CreatePrinterDC(printer_name)
-                                hdc.StartDoc("Factura Crédito Fiscal")
-                                hdc.StartPage()
-                                # Ajusta las coordenadas y fuente según tu formato
-                                y = 100
-                                for linea in texto.splitlines():
-                                    hdc.TextOut(100, y, linea)
-                                    y += 30  # Ajusta el salto de línea según el tamaño de fuente
-                                hdc.EndPage()
-                                hdc.EndDoc()
-                                hdc.DeleteDC()
-                                win32print.ClosePrinter(hprinter)
+                                import prueba_impresion
+                                prueba_impresion.imprimir_factura_raw(printer_name)
                                 QMessageBox.information(self, "Impresión", "Factura enviada a la impresora.")
                             except Exception as e:
                                 QMessageBox.critical(self, "Error de impresión", str(e))

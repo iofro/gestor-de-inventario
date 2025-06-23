@@ -40,8 +40,39 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
         self.manager = InventoryManager()
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        # Configuración de la aplicación
+        self.config_path = "config.json"
+        self.theme = "light"
+        self._load_config()
         self._setup_ui()
+        self._update_tema_action_text()
         self._apply_styles()
+
+    def _load_config(self):
+        """Carga las preferencias de la aplicación desde config.json"""
+        if os.path.exists(self.config_path):
+            try:
+                with open(self.config_path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.theme = data.get("theme", "light")
+            except Exception:
+                self.theme = "light"
+
+    def _save_config(self):
+        """Guarda las preferencias de la aplicación"""
+        data = {"theme": self.theme}
+        try:
+            with open(self.config_path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+
+    def _update_tema_action_text(self):
+        if hasattr(self, "toggle_tema_action"):
+            if self.theme == "light":
+                self.toggle_tema_action.setText("Tema oscuro")
+            else:
+                self.toggle_tema_action.setText("Tema claro")
 
     def generar_factura_pdf(self):
         row = self.historial_ventas_table.currentRow()
@@ -392,6 +423,10 @@ class MainWindow(QMainWindow):
         datos_negocio_action = QAction("Datos del negocio", self)
         datos_negocio_action.triggered.connect(self._abrir_datos_negocio)
         configuracion_menu.addAction(datos_negocio_action)
+        # Opción para alternar tema claro/oscuro
+        self.toggle_tema_action = QAction("", self)
+        self.toggle_tema_action.triggered.connect(self._toggle_tema)
+        configuracion_menu.addAction(self.toggle_tema_action)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
@@ -754,45 +789,26 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()
 
     def _apply_styles(self):
-        self.setStyleSheet("""
-            QPushButton {
-                background-color: #0097e6;
-                color: #fff;
-                border-radius: 8px;
-                padding: 8px 0px;
-                font-size: 12px;
-                font-weight: bold;
-                margin: 4px 0;
-                min-width: 180px;
-                min-height: 26px;
-                max-width: 220px;
-            }
-            QPushButton:hover {
-                background-color: #00a8ff;
-            }
-            QPushButton#btn_delete_product {
-                background-color: #b71c1c;
-                color: #fff;
-            }
-            QPushButton#btn_delete_product:hover {
-                background-color: #d32f2f;
-            }
-            QLineEdit {
-                border: 1px solid #dcdde1;
-                border-radius: 6px;
-                padding: 7px;
-                font-size: 14px;
-            }
-            QTableView {
-                background: #fff;
-                border-radius: 8px;
-                font-size: 13px;
-            }
-        """)
+        qss_file = "style_light.qss" if self.theme == "light" else "style_dark.qss"
+        if os.path.exists(qss_file):
+            try:
+                with open(qss_file, "r", encoding="utf-8") as f:
+                    self.setStyleSheet(f.read())
+            except Exception:
+                pass
+        else:
+            self.setStyleSheet("")
         # Si tienes el objectName para el botón de crédito fiscal, puedes agregarlo así:
         self.btn_register_credito_fiscal.setStyleSheet(
             "font-size:11px; min-width:200px; max-width:240px; min-height:26px; padding:6px 0;"
         )
+
+    def _toggle_tema(self):
+        """Alterna entre tema claro y oscuro"""
+        self.theme = "dark" if self.theme == "light" else "light"
+        self._update_tema_action_text()
+        self._apply_styles()
+        self._save_config()
 
     def filter_products(self):
         search = self.search_bar.text()

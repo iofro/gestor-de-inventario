@@ -1218,6 +1218,7 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setItem(i, 8, QTableWidgetItem(item.get("fecha_vencimiento", "")))
             btn = QPushButton("Eliminar")
             btn.setFixedHeight(22)
+            btn.setFixedWidth(70)
             btn.setStyleSheet("background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;")
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 8, btn)

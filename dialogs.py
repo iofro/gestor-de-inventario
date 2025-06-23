@@ -1,5 +1,8 @@
 from decimal import Decimal, getcontext, ROUND_HALF_UP
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QMessageBox, QCheckBox, QRadioButton, QComboBox,
@@ -2230,8 +2233,8 @@ class CompraDetalleDialog(QDialog):
         self.setWindowTitle("Detalle de Compra")
         layout = QVBoxLayout()
 
-        # Depuración: imprime los detalles que llegan
-        print("DETALLES DE COMPRA:", detalles)
+        # Depuración: registra los detalles que llegan
+        logger.debug("DETALLES DE COMPRA: %s", detalles)
 
         # --- Obtén los nombres de vendedor y Distribuidor ---
         vendedores = []

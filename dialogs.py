@@ -1003,6 +1003,7 @@ class RegisterPurchaseDialog(QDialog):
         # Conexiones para cálculo en tiempo real
         self.cantidad_spin.valueChanged.connect(self._calcular_preview_item)
         self.precio_unitario_spin.valueChanged.connect(self._calcular_preview_item)
+        self.precio_total_spin.valueChanged.connect(self._calcular_preview_item)
         self.comision_pct_spin.valueChanged.connect(self._calcular_preview_item)
         self.iva_checkbox.stateChanged.connect(self._toggle_iva_radios)
         self.iva_desglosado_radio.toggled.connect(self._calcular_preview_item)
@@ -1027,8 +1028,23 @@ class RegisterPurchaseDialog(QDialog):
 
     def _calcular_preview_item(self):
         cantidad = self.cantidad_spin.value()
-        precio = self.precio_unitario_spin.value()
-        subtotal = cantidad * precio
+
+        precio_unit = self.precio_unitario_spin.value()
+        precio_total = self.precio_total_spin.value()
+
+        # Si el total es editable y el usuario lo modificó, ajusta el precio unitario
+        if self.precio_total_spin.isEnabled() and self.precio_total_spin.hasFocus():
+            precio_unit = round(precio_total / cantidad, 6) if cantidad > 0 else 0
+            self.precio_unitario_spin.blockSignals(True)
+            self.precio_unitario_spin.setValue(precio_unit)
+            self.precio_unitario_spin.blockSignals(False)
+        else:
+            precio_total = cantidad * precio_unit
+            self.precio_total_spin.blockSignals(True)
+            self.precio_total_spin.setValue(precio_total)
+            self.precio_total_spin.blockSignals(False)
+
+        subtotal = cantidad * precio_unit
 
         # Descuento
         descuento_valor = self.descuento_spin.value()

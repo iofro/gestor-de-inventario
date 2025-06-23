@@ -1271,6 +1271,17 @@ class RegisterPurchaseDialog(QDialog):
                     Distribuidor_id = d["id"]
                     break
 
+        if vendedor_id is None or Distribuidor_id is None:
+            respuesta = QMessageBox.question(
+                self,
+                "Confirmaci\u00f3n",
+                "esta a punto de agregar una compra sin vendedor, esto puede causar errores en el sistema, esta seguro de continuar?",
+                QMessageBox.Yes | QMessageBox.No,
+                QMessageBox.No,
+            )
+            if respuesta != QMessageBox.Yes:
+                return
+
         comision_total = sum(item.get("comision_monto", 0) for item in self.compra_items)
         compra_id = self.parent().manager.db.add_compra_detallada({
             "fecha": fecha,

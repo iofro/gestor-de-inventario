@@ -1626,7 +1626,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         prod = None
         if self.productos_data:
             for p in self.productos_data:
-                if get_field(p, "nombre", "") == nombre:
+                nombre_prod = get_field(p, "nombre", "")
+                if nombre.startswith(nombre_prod):
                     prod = p
                     break
         precio = 0

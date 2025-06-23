@@ -725,7 +725,7 @@ class RegisterSaleDialog(QDialog):
             self.table.setCellWidget(i, 5, btn)
 
     def _eliminar_fila(self, row, col):
-        if col == 3:
+        if col == 5:
             self._eliminar_item(row)
 
     def _eliminar_item(self, row):

@@ -227,8 +227,57 @@ class MainWindow(QMainWindow):
 
             from factura_sv import generar_factura_electronica_pdf
             generar_factura_electronica_pdf(venta, detalles_pdf, cliente, distribuidor, archivo=ruta)
-            QMessageBox.information(self, "Factura", f"Factura PDF de crédito fiscal generada en:\n{ruta}")            
+            QMessageBox.information(self, "Factura", f"Factura PDF de crédito fiscal generada en:\n{ruta}")
 
+
+    def _generar_texto_factura_matricial(self, venta, detalles, cliente, distribuidor):
+        """Genera el texto plano de la factura para impresoras matriciales."""
+
+        def coordenada_a_texto_raw(x_cm, y_cm, texto, ancho_char_cm=0.25, alto_linea_cm=0.40):
+            espacios = int(x_cm / ancho_char_cm)
+            saltos = int(y_cm / alto_linea_cm)
+            return ("\n" * saltos) + (" " * espacios) + str(texto) + "\n"
+
+        factura_raw = ""
+
+        # Encabezado
+        factura_raw += coordenada_a_texto_raw(4.45, 4.80, cliente.get("nombre", ""))
+        factura_raw += coordenada_a_texto_raw(4.45, 5.40, cliente.get("direccion", ""))
+        factura_raw += coordenada_a_texto_raw(3.81, 6.40, venta.get("fecha_remision", ""))
+        factura_raw += coordenada_a_texto_raw(3.81, 6.90, venta.get("giro", ""))
+        factura_raw += coordenada_a_texto_raw(3.81, 7.50, venta.get("fecha_remision_anterior", ""))
+        factura_raw += coordenada_a_texto_raw(4.45, 8.00, venta.get("condicion_pago", ""))
+        factura_raw += coordenada_a_texto_raw(4.45, 8.50, venta.get("vendedor_nombre", ""))
+        factura_raw += coordenada_a_texto_raw(7.62, 6.40, venta.get("nrc", ""))
+        factura_raw += coordenada_a_texto_raw(7.62, 7.50, venta.get("no_remision", ""))
+        factura_raw += coordenada_a_texto_raw(11.43, 6.40, venta.get("nit", ""))
+        factura_raw += coordenada_a_texto_raw(12.07, 7.50, venta.get("orden_no", ""))
+        factura_raw += coordenada_a_texto_raw(11.43, 8.00, venta.get("venta_a_cuenta_de", ""))
+        factura_raw += coordenada_a_texto_raw(11.75, 8.50, venta.get("fecha", ""))
+
+        # Detalle de productos
+        y_base = 10.10
+        row_height = 0.6
+        for i, d in enumerate(detalles):
+            y = y_base + i * row_height
+            factura_raw += coordenada_a_texto_raw(2.22, y, str(d.get("cantidad", "")))
+            factura_raw += coordenada_a_texto_raw(3.90, y, d.get("descripcion", ""))
+            factura_raw += coordenada_a_texto_raw(9.21, y, f"{d.get('precio_unitario', 0):.2f}")
+            factura_raw += coordenada_a_texto_raw(11.11, y, f"{d.get('ventas_exentas', 0):.2f}")
+            factura_raw += coordenada_a_texto_raw(12.70, y, f"{d.get('ventas_no_sujetas', 0):.2f}")
+            factura_raw += coordenada_a_texto_raw(14.10, y, f"{d.get('ventas_gravadas', 0):.2f}")
+
+        # Totales y resumen fiscal
+        factura_raw += coordenada_a_texto_raw(2.22, 22.23, venta.get("total_letras", ""))
+        factura_raw += coordenada_a_texto_raw(14.10, 21.59, f"{venta.get('sumas', 0):.2f}")
+        factura_raw += coordenada_a_texto_raw(14.10, 22.23, f"{venta.get('iva', 0):.2f}")
+        factura_raw += coordenada_a_texto_raw(14.10, 22.86, f"{venta.get('subtotal', 0):.2f}")
+        factura_raw += coordenada_a_texto_raw(14.10, 23.45, f"{venta.get('descuentos_globales', 0):.2f}")
+        factura_raw += coordenada_a_texto_raw(14.10, 24.00, f"{venta.get('ventas_exentas', 0):.2f}")
+        factura_raw += coordenada_a_texto_raw(14.10, 24.60, f"{venta.get('ventas_no_sujetas', 0):.2f}")
+        factura_raw += coordenada_a_texto_raw(14.10, 25.08, f"{venta.get('total', 0):.2f}")
+
+        return factura_raw
 
     def _setup_ui(self):
         # --- BARRA SUPERIOR HORIZONTAL ---

@@ -10,8 +10,7 @@ class DB:
         self.setup()
 
     def setup(self):
-        # Elimina la tabla Distribuidores si existe (solo si no tienes datos importantes)
-        self.cursor.execute("DROP TABLE IF EXISTS Distribuidores")
+        # Create tables if they don't exist without dropping existing data
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS Distribuidores (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -163,7 +162,7 @@ class DB:
                 es_vendedor INTEGER DEFAULT 0
             )
         """)
-        self.cursor.execute("DROP TABLE IF EXISTS ventas_credito_fiscal")
+        # Ensure the ventas_credito_fiscal table exists
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS ventas_credito_fiscal (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

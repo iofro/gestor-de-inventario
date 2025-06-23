@@ -1212,10 +1212,11 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio']:.2f}"))
             self.table.setItem(i, 3, QTableWidgetItem(f"${item['subtotal']:.2f}"))
             self.table.setItem(i, 4, QTableWidgetItem(f"${item['iva']:.2f}"))
-            self.table.setItem(i, 5, QTableWidgetItem(f"${item['descuento_monto']:.2f} ({item['descuento_pct']}%)"))
-            self.table.setItem(i, 6, QTableWidgetItem(f"{item['comision_pct']}%"))
-            self.table.setItem(i, 7, QTableWidgetItem(f"${item['total']:.2f}"))
-            self.table.setItem(i, 8, QTableWidgetItem(item.get("fecha_vencimiento", "")))
+            # Comisión (monto y porcentaje)
+            comision_text = f"${item.get('comision_monto', 0):.2f} ({item.get('comision_pct', 0)}%)"
+            self.table.setItem(i, 5, QTableWidgetItem(comision_text))
+            self.table.setItem(i, 6, QTableWidgetItem(f"${item['total']:.2f}"))
+            self.table.setItem(i, 7, QTableWidgetItem(item.get("fecha_vencimiento", "")))
             btn = QPushButton("Eliminar")
             btn.setFixedHeight(22)
             btn.setStyleSheet("background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;")
@@ -1223,7 +1224,7 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setCellWidget(i, 8, btn)
 
     def _eliminar_fila(self, row, col):
-        if col == 7:
+        if col == 8:
             self._eliminar_item(row)
 
     def _eliminar_item(self, row):

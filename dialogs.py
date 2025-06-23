@@ -1812,18 +1812,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
             self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio']:.2f}"))
             self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
-            self.table.setItem(i, 4, QTableWidgetItem(item.get("tipo_fiscal", "")))
-            btn = QPushButton("Eliminar")
-            btn.setFixedHeight(22)
-            btn.setStyleSheet("background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:11px;")
-            btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
-            self.table.setCellWidget(i, 5, btn)
-
-        for i, item in enumerate(self.venta_items):
-            self.table.setItem(i, 0, QTableWidgetItem(item["producto"]))
-            self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
-            self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio']:.2f}"))
-            self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
             self.table.setItem(i, 4, QTableWidgetItem(str(item.get("iva", ""))))
             self.table.setItem(i, 5, QTableWidgetItem(item.get("tipo_fiscal", "")))
             btn = QPushButton("Eliminar")

@@ -430,21 +430,29 @@ class MainWindow(QMainWindow):
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
+        self.btn_add_product.setObjectName("btn_add_product")
         self.btn_add_product.setToolTip("Agregar un nuevo producto al inventario")
         self.btn_edit_product = QPushButton("Editar Producto")
+        self.btn_edit_product.setObjectName("btn_edit_product")
         self.btn_edit_product.setToolTip("Editar el producto seleccionado")
         self.btn_register_sale = QPushButton("Registrar Venta")
+        self.btn_register_sale.setObjectName("btn_register_sale")
         self.btn_register_sale.setToolTip("Registrar una venta")
         # Botón con salto de línea para que el texto quepa bien
         self.btn_register_credito_fiscal = QPushButton("Registrar Venta\nCrédito Fiscal")
+        self.btn_register_credito_fiscal.setObjectName("btn_register_credito_fiscal")
         self.btn_register_credito_fiscal.setToolTip("Registrar una venta a crédito fiscal")
         self.btn_register_purchase = QPushButton("Registrar Compra")
+        self.btn_register_purchase.setObjectName("btn_register_purchase")
         self.btn_register_purchase.setToolTip("Registrar una compra")
         self.btn_delete_product = QPushButton("Eliminar Producto")
+        self.btn_delete_product.setObjectName("btn_delete_product")
         self.btn_delete_product.setToolTip("Eliminar el producto seleccionado")
         self.btn_guardar_rapido = QPushButton("Guardar\nRápido")
+        self.btn_guardar_rapido.setObjectName("btn_guardar_rapido")
         self.btn_guardar_rapido.setToolTip("Guardar inventario rápidamente")
         self.btn_cargar_inventario = QPushButton("Cargar Inventario")
+        self.btn_cargar_inventario.setObjectName("btn_cargar_inventario")
         self.btn_cargar_inventario.setToolTip("Cargar inventario desde un archivo")
 
         # Botones más pequeños
@@ -457,16 +465,8 @@ class MainWindow(QMainWindow):
             btn.setMaximumHeight(28)
             btn.setMinimumWidth(140)
             btn.setMaximumWidth(200)
-            btn.setStyleSheet("font-size:11px; padding:4px 0;")
+            # estilos definidos en style.qss
 
-        # Botones verdes más pequeños y debajo de los celestes pero encima del rojo
-        self.btn_guardar_rapido.setStyleSheet(
-            "background-color: #27ae60; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
-        self.btn_cargar_inventario.setStyleSheet(
-            "background-color: #27ae60; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
-
-        self.btn_delete_product.setStyleSheet(
-            "background-color: #b71c1c; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
 
         btn_layout = QVBoxLayout()
         btn_layout.addWidget(self.btn_add_product)
@@ -544,18 +544,18 @@ class MainWindow(QMainWindow):
         self.vendedores_tree.setHeaderHidden(True)
         vend_layout.addWidget(self.vendedores_tree)
         btn_add_vend = QPushButton("Añadir Vendedor")
+        btn_add_vend.setObjectName("btn_add_vend")
         btn_add_vend.setToolTip("Añadir un nuevo vendedor")
         btn_add_vend.setMinimumHeight(24)
         btn_add_vend.setMaximumHeight(28)
-        btn_add_vend.setStyleSheet("font-size:11px;")
         btn_add_vend.clicked.connect(self._agregar_vendedor)
         vend_layout.addWidget(btn_add_vend)
 
         btn_edit_vend = QPushButton("Editar Vendedor")
+        btn_edit_vend.setObjectName("btn_edit_vend")
         btn_edit_vend.setToolTip("Editar el vendedor seleccionado")
         btn_edit_vend.setMinimumHeight(24)
         btn_edit_vend.setMaximumHeight(28)
-        btn_edit_vend.setStyleSheet("font-size:11px;")
         btn_edit_vend.clicked.connect(self._editar_vendedor)
         vend_layout.addWidget(btn_edit_vend)
 
@@ -570,30 +570,28 @@ class MainWindow(QMainWindow):
 
         btns_h_layout = QHBoxLayout()
         btn_add_dist = QPushButton("Añadir Distribuidor")
+        btn_add_dist.setObjectName("btn_add_dist")
         btn_add_dist.setToolTip("Añadir un nuevo distribuidor")
         btn_add_dist.setMinimumHeight(24)
         btn_add_dist.setMaximumHeight(28)
-        btn_add_dist.setStyleSheet("font-size:11px;")
         btn_add_dist.clicked.connect(self._agregar_Distribuidor)
         btns_h_layout.addWidget(btn_add_dist, alignment=Qt.AlignLeft)
 
         btn_info_dist = QPushButton("Info de Distribuidor")
+        btn_info_dist.setObjectName("btn_info_dist")
         btn_info_dist.setToolTip("Mostrar información del distribuidor")
         btn_info_dist.setFixedHeight(24)
         btn_info_dist.setFixedWidth(110)
-        btn_info_dist.setStyleSheet(
-            "background-color: #f1c40f; color: #222; font-size:10px; font-weight:bold; border-radius: 8px;"
-        )
         btn_info_dist.clicked.connect(self._mostrar_info_Distribuidor)
         btns_h_layout.addWidget(btn_info_dist, alignment=Qt.AlignRight)
 
         dist_layout.addLayout(btns_h_layout)
 
         btn_edit_dist = QPushButton("Editar Distribuidor")
+        btn_edit_dist.setObjectName("btn_edit_dist")
         btn_edit_dist.setToolTip("Editar el distribuidor seleccionado")
         btn_edit_dist.setMinimumHeight(24)
         btn_edit_dist.setMaximumHeight(28)
-        btn_edit_dist.setStyleSheet("font-size:11px;")
         btn_edit_dist.clicked.connect(self._editar_Distribuidor)
         dist_layout.addWidget(btn_edit_dist)
 

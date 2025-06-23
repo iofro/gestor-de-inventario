@@ -1,0 +1,100 @@
+QPushButton {
+    background-color: #0097e6;
+    color: #fff;
+    border-radius: 8px;
+    padding: 8px 0px;
+    font-size: 12px;
+    font-weight: bold;
+    margin: 4px 0;
+    min-width: 180px;
+    min-height: 26px;
+    max-width: 220px;
+}
+QPushButton:hover {
+    background-color: #00a8ff;
+}
+QLineEdit {
+    border: 1px solid #dcdde1;
+    border-radius: 6px;
+    padding: 7px;
+    font-size: 14px;
+}
+QTableView {
+    background: #fff;
+    border-radius: 8px;
+    font-size: 13px;
+}
+
+QPushButton#btn_add_product,
+QPushButton#btn_edit_product,
+QPushButton#btn_register_sale,
+QPushButton#btn_register_purchase {
+    font-size: 11px;
+    padding: 4px 0;
+    min-width: 140px;
+    max-width: 200px;
+    min-height: 24px;
+    max-height: 28px;
+}
+
+QPushButton#btn_guardar_rapido,
+QPushButton#btn_cargar_inventario {
+    background-color: #27ae60;
+    color: #fff;
+    font-weight: bold;
+    font-size: 11px;
+    border-radius: 8px;
+    min-width: 140px;
+    max-width: 200px;
+    min-height: 24px;
+    max-height: 28px;
+}
+
+QPushButton#btn_delete_product {
+    background-color: #b71c1c;
+    color: #fff;
+    font-weight: bold;
+    font-size: 11px;
+    border-radius: 8px;
+    min-width: 140px;
+    max-width: 200px;
+    min-height: 24px;
+    max-height: 28px;
+}
+QPushButton#btn_delete_product:hover {
+    background-color: #d32f2f;
+}
+
+QPushButton#btn_register_credito_fiscal {
+    font-size: 11px;
+    min-width: 200px;
+    max-width: 240px;
+    min-height: 26px;
+    padding: 6px 0;
+}
+
+QPushButton#btn_add_vend,
+QPushButton#btn_edit_vend,
+QPushButton#btn_add_dist,
+QPushButton#btn_edit_dist {
+    font-size: 11px;
+}
+
+QPushButton#btn_info_dist {
+    background-color: #f1c40f;
+    color: #222;
+    font-size: 10px;
+    font-weight: bold;
+    border-radius: 8px;
+}
+
+QPushButton#delete_button {
+    background-color: #b71c1c;
+    color: #fff;
+    border-radius: 6px;
+    font-size: 9px;
+    min-width: 70px;
+    max-width: 100px;
+    min-height: 10px;
+    max-height: 15px;
+}

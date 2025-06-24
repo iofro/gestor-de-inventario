@@ -535,7 +535,15 @@ class MainWindow(QMainWindow):
 
         # --- PESTAÑA DE vendEGORÍAS Y DistribuidorES ---
         vend_dist_tab = QWidget()
-        vend_dist_layout = QHBoxLayout()
+        vend_dist_layout = QVBoxLayout()
+
+        # Barra de búsqueda para vendedores y distribuidores
+        self.vend_dist_search = QLineEdit()
+        self.vend_dist_search.setPlaceholderText("Buscar...")
+        self.vend_dist_search.textChanged.connect(self._filtrar_vend_dist)
+        vend_dist_layout.addWidget(self.vend_dist_search)
+
+        vend_dist_content = QHBoxLayout()
 
         # Vendedores
         vend_layout = QVBoxLayout()
@@ -559,7 +567,7 @@ class MainWindow(QMainWindow):
         btn_edit_vend.clicked.connect(self._editar_vendedor)
         vend_layout.addWidget(btn_edit_vend)
 
-        vend_dist_layout.addLayout(vend_layout)
+        vend_dist_content.addLayout(vend_layout)
 
         # Distribuidores -> Distribuidores
         dist_layout = QVBoxLayout()
@@ -595,8 +603,9 @@ class MainWindow(QMainWindow):
         btn_edit_dist.clicked.connect(self._editar_Distribuidor)
         dist_layout.addWidget(btn_edit_dist)
 
-        vend_dist_layout.addLayout(dist_layout)
+        vend_dist_content.addLayout(dist_layout)
 
+        vend_dist_layout.addLayout(vend_dist_content)
         vend_dist_tab.setLayout(vend_dist_layout)
 
         # --- PESTAÑA DE CLIENTES ---
@@ -636,7 +645,7 @@ class MainWindow(QMainWindow):
 
         # Filtros por mes y año
         filtros_historial_layout = QHBoxLayout()
-
+        
         self.ventas_mes_filtro = QDateEdit(QDate.currentDate())
         self.ventas_mes_filtro.setDisplayFormat("MMMM yyyy")
         self.ventas_mes_filtro.setCalendarPopup(True)
@@ -660,6 +669,12 @@ class MainWindow(QMainWindow):
         self.compras_mes_filtro.setMinimumDate(QDate(2000, 1, 1))
         filtros_historial_layout.addWidget(QLabel("Ver compras de:"))
         filtros_historial_layout.addWidget(self.compras_mes_filtro)
+
+        # Barra de búsqueda para historial
+        self.historial_search = QLineEdit()
+        self.historial_search.setPlaceholderText("Buscar en historial...")
+        self.historial_search.textChanged.connect(self._actualizar_historial)
+        filtros_historial_layout.addWidget(self.historial_search)
 
         # --- AGREGA EL BOTÓN "Ver todo" ---
         self.btn_ver_todo_historial = QPushButton("Ver todo")
@@ -763,8 +778,12 @@ class MainWindow(QMainWindow):
         self.trabajadores_filtro_area = QLineEdit()
         self.trabajadores_filtro_area.setPlaceholderText("Filtrar por área/departamento")
         self.trabajadores_filtro_area.textChanged.connect(self._actualizar_tabla_trabajadores)
+        self.trabajadores_search = QLineEdit()
+        self.trabajadores_search.setPlaceholderText("Buscar trabajador...")
+        self.trabajadores_search.textChanged.connect(self._actualizar_tabla_trabajadores)
         filtro_layout.addWidget(self.trabajadores_filtro_vendedor)
         filtro_layout.addWidget(self.trabajadores_filtro_area)
+        filtro_layout.addWidget(self.trabajadores_search)
         trabajadores_layout.addLayout(filtro_layout)
 
         # Tabla
@@ -1323,6 +1342,25 @@ class MainWindow(QMainWindow):
         for dist in self.manager.get_Distribuidor_names():
             self.Distribuidores_list.addItem(dist)
 
+    def _filtrar_vend_dist(self):
+        search = self.vend_dist_search.text().lower()
+        # Filtrar vendedores
+        for i in range(self.vendedores_tree.topLevelItemCount()):
+            item = self.vendedores_tree.topLevelItem(i)
+            visible = search in item.text(0).lower()
+            item.setHidden(not visible)
+        # Filtrar Distribuidores y sus vendedores
+        for i in range(self.Distribuidores_tree.topLevelItemCount()):
+            dist_item = self.Distribuidores_tree.topLevelItem(i)
+            dist_match = search in dist_item.text(0).lower()
+            child_match = False
+            for j in range(dist_item.childCount()):
+                child = dist_item.child(j)
+                match = search in child.text(0).lower()
+                child.setHidden(not match)
+                child_match = child_match or match
+            dist_item.setHidden(not (dist_match or child_match))
+
     def _agregar_vendedor(self):
         from dialogs import VendedorDialog
         dialog = VendedorDialog(self.manager._Distribuidores, self)
@@ -1542,9 +1580,10 @@ class MainWindow(QMainWindow):
                 v['id'],
                 detalles_venta.get(v["id"], [])
             )
-        self.historial_ventas_table.setRowCount(len(ventas))
+        search = self.historial_search.text().lower()
+        ventas_filtradas = []
         total_ingresos = 0
-        for row, v in enumerate(ventas):
+        for v in ventas:
             productos_strs = []
             for d in detalles_venta.get(v["id"], []):
                 producto_nombre = productos_dict.get(d["producto_id"], "Desconocido")
@@ -1565,17 +1604,25 @@ class MainWindow(QMainWindow):
             productos = ", ".join(productos_strs)
             cliente_nombre = clientes.get(v.get("cliente_id"), "")
             total = v.get('total', 0)
+            texto_busqueda = f"{cliente_nombre} {productos} {dist_nombre} {v.get('id','')}".lower()
+            if search and search not in texto_busqueda:
+                continue
             total_ingresos += float(total)
             Distribuidor_id = v.get("Distribuidor_id", None)
             if Distribuidor_id is not None and Distribuidor_id in Distribuidores_dict:
                 Distribuidor_nombre = Distribuidores_dict[Distribuidor_id]
             else:
                 Distribuidor_nombre = "Desconocido"
+            ventas_filtradas.append((v, productos, cliente_nombre, Distribuidor_nombre))
+
+        self.historial_ventas_table.setRowCount(len(ventas_filtradas))
+        for row, (v, productos, cliente_nombre, Distribuidor_nombre) in enumerate(ventas_filtradas):
+            total = v.get('total', 0)
             self.historial_ventas_table.setItem(row, 0, QTableWidgetItem(v.get("fecha", "")))
             self.historial_ventas_table.setItem(row, 1, QTableWidgetItem(cliente_nombre))
             self.historial_ventas_table.setItem(row, 2, QTableWidgetItem(f"${float(total):.2f}"))
             self.historial_ventas_table.setItem(row, 3, QTableWidgetItem(productos))
-            self.historial_ventas_table.setItem(row, 4, QTableWidgetItem(Distribuidor_nombre)) 
+            self.historial_ventas_table.setItem(row, 4, QTableWidgetItem(Distribuidor_nombre))
             self.historial_ventas_table.setItem(row, 5, QTableWidgetItem(str(v["id"])))
         self.total_ingresos_label.setText(f"Total ingresos: ${total_ingresos:.2f}")
 
@@ -1596,10 +1643,11 @@ class MainWindow(QMainWindow):
         productos_dict = {p["id"]: p for p in self.manager.db.get_productos()}
         Distribuidores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_Distribuidores()}
         detalles_compra = {c["id"]: self.manager.db.get_detalles_compra(c["id"]) for c in compras}
-        self.historial_compras_table.setRowCount(len(compras))
+        search_lower = self.historial_search.text().lower()
+        compras_filtradas = []
         total_gastos = 0
         vendedores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_vendedores()}
-        for row, c in enumerate(compras):
+        for c in compras:
             productos = ", ".join(
                 f'{productos_dict.get(d["producto_id"], "Desconocido")} x{d["cantidad"]}'
                 for d in detalles_compra.get(c["id"], [])
@@ -1611,7 +1659,14 @@ class MainWindow(QMainWindow):
             vendedor_nombre = vendedores_dict.get(c.get("vendedor_id"), "")
             total = c.get('total', 0)
             comision_monto = c.get('comision_monto', 0)
+            texto_busqueda = f"{Distribuidor_nombre} {vendedor_nombre} {productos} {c.get('id','')}".lower()
+            if search_lower and search_lower not in texto_busqueda:
+                continue
             total_gastos += float(total)
+            compras_filtradas.append((c, productos, Distribuidor_nombre, vendedor_nombre, total, comision_monto))
+
+        self.historial_compras_table.setRowCount(len(compras_filtradas))
+        for row, (c, productos, Distribuidor_nombre, vendedor_nombre, total, comision_monto) in enumerate(compras_filtradas):
             self.historial_compras_table.setItem(row, 0, QTableWidgetItem(c["fecha"]))  # Fecha
             self.historial_compras_table.setItem(row, 1, QTableWidgetItem(Distribuidor_nombre))  # Distribuidor
             self.historial_compras_table.setItem(row, 2, QTableWidgetItem(vendedor_nombre))  # Vendedor
@@ -1797,7 +1852,10 @@ class MainWindow(QMainWindow):
     def _actualizar_tabla_trabajadores(self):
         solo_vendedores = self.trabajadores_filtro_vendedor.isChecked()
         area = self.trabajadores_filtro_area.text().strip() or None
+        search = self.trabajadores_search.text().lower()
         trabajadores = self.manager.db.get_trabajadores(solo_vendedores=solo_vendedores, area=area)
+        if search:
+            trabajadores = [t for t in trabajadores if search in t.get("nombre", "").lower() or search in t.get("dui", "").lower() or search in t.get("nit", "").lower()]
         self.trabajadores_table.setRowCount(len(trabajadores))
         for row, t in enumerate(trabajadores):
             self.trabajadores_table.setItem(row, 0, QTableWidgetItem(t.get("nombre", "")))

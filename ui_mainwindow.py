@@ -260,146 +260,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Factura", f"Factura PDF de crédito fiscal generada en:\n{ruta}")
 
 
-    def _generar_texto_factura_matricial(self, venta, detalles, cliente, distribuidor):
-        """Genera el texto plano de la factura para impresoras matriciales."""
 
-        def coordenada_a_texto_raw(x_cm, y_cm, texto, ancho_char_cm=0.25, alto_linea_cm=0.40):
-            espacios = int(x_cm / ancho_char_cm)
-            saltos = int(y_cm / alto_linea_cm)
-            return ("\n" * saltos) + (" " * espacios) + str(texto) + "\n"
-
-        factura_raw = ""
-
-        # Encabezado
-        factura_raw += coordenada_a_texto_raw(4.45, 4.80, cliente.get("nombre", ""))
-        factura_raw += coordenada_a_texto_raw(4.45, 5.40, cliente.get("direccion", ""))
-        factura_raw += coordenada_a_texto_raw(3.81, 6.40, venta.get("fecha_remision", ""))
-        factura_raw += coordenada_a_texto_raw(3.81, 6.90, venta.get("giro", ""))
-        factura_raw += coordenada_a_texto_raw(3.81, 7.50, venta.get("fecha_remision_anterior", ""))
-        factura_raw += coordenada_a_texto_raw(4.45, 8.00, venta.get("condicion_pago", ""))
-        factura_raw += coordenada_a_texto_raw(4.45, 8.50, venta.get("vendedor_nombre", ""))
-        factura_raw += coordenada_a_texto_raw(7.62, 6.40, venta.get("nrc", ""))
-        factura_raw += coordenada_a_texto_raw(7.62, 7.50, venta.get("no_remision", ""))
-        factura_raw += coordenada_a_texto_raw(11.43, 6.40, venta.get("nit", ""))
-        factura_raw += coordenada_a_texto_raw(12.07, 7.50, venta.get("orden_no", ""))
-        factura_raw += coordenada_a_texto_raw(11.43, 8.00, venta.get("venta_a_cuenta_de", ""))
-        factura_raw += coordenada_a_texto_raw(11.75, 8.50, venta.get("fecha", ""))
-
-        # Detalle de productos
-        y_base = 10.10
-        row_height = 0.6
-        for i, d in enumerate(detalles):
-            y = y_base + i * row_height
-            factura_raw += coordenada_a_texto_raw(2.22, y, str(d.get("cantidad", "")))
-            factura_raw += coordenada_a_texto_raw(3.90, y, d.get("descripcion", ""))
-            factura_raw += coordenada_a_texto_raw(9.21, y, f"{d.get('precio_unitario', 0):.2f}")
-            factura_raw += coordenada_a_texto_raw(11.11, y, f"{d.get('ventas_exentas', 0):.2f}")
-            factura_raw += coordenada_a_texto_raw(12.70, y, f"{d.get('ventas_no_sujetas', 0):.2f}")
-            factura_raw += coordenada_a_texto_raw(14.10, y, f"{d.get('ventas_gravadas', 0):.2f}")
-
-        # Totales y resumen fiscal
-        factura_raw += coordenada_a_texto_raw(2.22, 22.23, venta.get("total_letras", ""))
-        factura_raw += coordenada_a_texto_raw(14.10, 21.59, f"{venta.get('sumas', 0):.2f}")
-        factura_raw += coordenada_a_texto_raw(14.10, 22.23, f"{venta.get('iva', 0):.2f}")
-        factura_raw += coordenada_a_texto_raw(14.10, 22.86, f"{venta.get('subtotal', 0):.2f}")
-        factura_raw += coordenada_a_texto_raw(14.10, 23.45, f"{venta.get('descuentos_globales', 0):.2f}")
-        factura_raw += coordenada_a_texto_raw(14.10, 24.00, f"{venta.get('ventas_exentas', 0):.2f}")
-        factura_raw += coordenada_a_texto_raw(14.10, 24.60, f"{venta.get('ventas_no_sujetas', 0):.2f}")
-        factura_raw += coordenada_a_texto_raw(14.10, 25.08, f"{venta.get('total', 0):.2f}")
-
-        return factura_raw
-
-    def imprimir_factura_prueba(self):
-        """Imprime una factura de crédito fiscal con datos de prueba."""
-        venta = {
-            "fecha": "23/06/2025",
-            "giro": "Venta de productos farmacéuticos",
-            "fecha_remision": "21/06/2025",
-            "condicion_pago": "Crédito 30 días",
-            "vendedor_nombre": "Luis Ramírez",
-            "nrc": "123456-7",
-            "no_remision": "004587",
-            "nit": "0614-260991-101-0",
-            "orden_no": "000324",
-            "venta_a_cuenta_de": "Distribuidora Centroamericana",
-            "fecha_remision_anterior": "15/06/2025",
-            "sumas": 34.00,
-            "iva": 4.42,
-            "subtotal": 38.42,
-            "ventas_no_sujetas": 0.00,
-            "ventas_exentas": 0.00,
-            "total": 38.42,
-            "descuentos_globales": 0.00,
-            "total_letras": "Treinta y cuatro dólares con cero centavos",
-        }
-
-        cliente = {
-            "nombre": "Comercial La Nueva Era S.A.",
-            "direccion": "Calle El Progreso #123, San Salvador",
-        }
-
-        detalles = [
-            {
-                "cantidad": 10,
-                "descripcion": "Acetaminofén 500mg caja x100",
-                "precio_unitario": 2.50,
-                "ventas_gravadas": 25.00,
-                "ventas_no_sujetas": 0.00,
-                "ventas_exentas": 0.00,
-            },
-            {
-                "cantidad": 5,
-                "descripcion": "Alcohol gel 500ml",
-                "precio_unitario": 1.80,
-                "ventas_gravadas": 9.00,
-                "ventas_no_sujetas": 0.00,
-                "ventas_exentas": 0.00,
-            },
-        ]
-
-        texto = self._generar_texto_factura_matricial(venta, detalles, cliente, {})
-
-        import win32print
-        from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton, QMessageBox
-
-        class PrinterDialog(QDialog):
-            def __init__(self, parent=None):
-                super().__init__(parent)
-                self.setWindowTitle("Seleccionar impresora")
-                layout = QVBoxLayout()
-                layout.addWidget(QLabel("Seleccione una impresora:"))
-                self.printer_combo = QComboBox()
-                printers = win32print.EnumPrinters(
-                    win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS
-                )
-                self.printer_combo.addItems([p[2] for p in printers])
-                layout.addWidget(self.printer_combo)
-                btn_ok = QPushButton("Imprimir")
-                btn_ok.clicked.connect(self.accept)
-                layout.addWidget(btn_ok)
-                self.setLayout(layout)
-
-            def get_selected_printer(self):
-                return self.printer_combo.currentText()
-
-        dlg = PrinterDialog(self)
-        if not dlg.exec_():
-            return
-        printer_name = dlg.get_selected_printer()
-        if not printer_name:
-            return
-        try:
-            SLIP_MODE = b"\x1B\x69"
-            hprinter = win32print.OpenPrinter(printer_name)
-            win32print.StartDocPrinter(hprinter, 1, ("Factura RAW", None, "RAW"))
-            win32print.StartPagePrinter(hprinter)
-            win32print.WritePrinter(hprinter, SLIP_MODE + texto.encode("utf-8"))
-            win32print.EndPagePrinter(hprinter)
-            win32print.EndDocPrinter(hprinter)
-            win32print.ClosePrinter(hprinter)
-            QMessageBox.information(self, "Impresión", "Factura de prueba enviada a la impresora.")
-        except Exception as e:
-            QMessageBox.critical(self, "Error de impresión", str(e))
 
     def _setup_ui(self):
         # --- BARRA SUPERIOR HORIZONTAL ---
@@ -706,10 +567,6 @@ class MainWindow(QMainWindow):
         self.btn_generar_factura.setToolTip("Generar la factura en formato PDF")
         self.btn_generar_factura.clicked.connect(self.generar_factura_pdf)
         ventas_layout.addWidget(self.btn_generar_factura)
-        self.btn_prueba_impresion = QPushButton("🖨️ Prueba de impresión")
-        self.btn_prueba_impresion.setToolTip("Imprimir una prueba de factura")
-        self.btn_prueba_impresion.clicked.connect(self.imprimir_factura_prueba)
-        ventas_layout.addWidget(self.btn_prueba_impresion)
         tablas_totales_layout.addLayout(ventas_layout)
 
         # Tabla de historial de compras
@@ -1008,47 +865,6 @@ class MainWindow(QMainWindow):
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AQUÍ
 
-                # --- PREGUNTA SI DESEA IMPRIMIR LA FACTURA ---
-                respuesta = QMessageBox.question(
-                    self,
-                    "Imprimir factura",
-                    "¿Desea imprimir la factura en impresora matricial?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if respuesta == QMessageBox.Yes:
-                    # Mostrar diálogo para seleccionar impresora
-                    import win32print
-                    import win32ui
-                    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton
-
-                    class PrinterDialog(QDialog):
-                        def __init__(self, parent=None):
-                            super().__init__(parent)
-                            self.setWindowTitle("Seleccionar impresora")
-                            layout = QVBoxLayout()
-                            layout.addWidget(QLabel("Seleccione una impresora:"))
-                            self.printer_combo = QComboBox()
-                            printers = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)
-                            self.printer_combo.addItems([printer[2] for printer in printers])
-                            layout.addWidget(self.printer_combo)
-                            btn_ok = QPushButton("Imprimir")
-                            btn_ok.clicked.connect(self.accept)
-                            layout.addWidget(btn_ok)
-                            self.setLayout(layout)
-
-                        def get_selected_printer(self):
-                            return self.printer_combo.currentText()
-
-                    dlg = PrinterDialog(self)
-                    if dlg.exec_():
-                        printer_name = dlg.get_selected_printer()
-                        if printer_name:
-                            try:
-                                import prueba_impresion
-                                prueba_impresion.imprimir_factura_raw(printer_name)
-                                QMessageBox.information(self, "Impresión", "Factura enviada a la impresora.")
-                            except Exception as e:
-                                QMessageBox.critical(self, "Error de impresión", str(e))
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta", str(e))
             self._actualizar_historial()
@@ -1186,46 +1002,6 @@ class MainWindow(QMainWindow):
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
 
-                # --- PREGUNTA SI DESEA IMPRIMIR LA FACTURA ---
-                respuesta = QMessageBox.question(
-                    self,
-                    "Imprimir factura",
-                    "¿Desea imprimir la factura en impresora matricial?",
-                    QMessageBox.Yes | QMessageBox.No
-                )
-                if respuesta == QMessageBox.Yes:
-                    import win32print
-                    import win32ui
-                    from PyQt5.QtWidgets import QDialog, QVBoxLayout, QLabel, QComboBox, QPushButton
-
-                    class PrinterDialog(QDialog):
-                        def __init__(self, parent=None):
-                            super().__init__(parent)
-                            self.setWindowTitle("Seleccionar impresora")
-                            layout = QVBoxLayout()
-                            layout.addWidget(QLabel("Seleccione una impresora:"))
-                            self.printer_combo = QComboBox()
-                            printers = win32print.EnumPrinters(win32print.PRINTER_ENUM_LOCAL | win32print.PRINTER_ENUM_CONNECTIONS)
-                            self.printer_combo.addItems([printer[2] for printer in printers])
-                            layout.addWidget(self.printer_combo)
-                            btn_ok = QPushButton("Imprimir")
-                            btn_ok.clicked.connect(self.accept)
-                            layout.addWidget(btn_ok)
-                            self.setLayout(layout)
-
-                        def get_selected_printer(self):
-                            return self.printer_combo.currentText()
-
-                    dlg = PrinterDialog(self)
-                    if dlg.exec_():
-                        printer_name = dlg.get_selected_printer()
-                        if printer_name:
-                            try:
-                                import prueba_impresion
-                                prueba_impresion.imprimir_factura_raw(printer_name)
-                                QMessageBox.information(self, "Impresión", "Factura enviada a la impresora.")
-                            except Exception as e:
-                                QMessageBox.critical(self, "Error de impresión", str(e))
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))
 

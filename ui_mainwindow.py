@@ -229,6 +229,9 @@ class MainWindow(QMainWindow):
             generar_factura_electronica_pdf(venta, detalles_pdf, cliente, distribuidor, archivo=ruta)
             QMessageBox.information(self, "Factura", f"Factura PDF de crédito fiscal generada en:\n{ruta}")
 
+    def imprimir_factura_prueba(self):
+        QMessageBox.information(self, "Impresión", "Esta función de prueba está deshabilitada.")
+
 
 
     def _setup_ui(self):

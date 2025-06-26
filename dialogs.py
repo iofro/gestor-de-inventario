@@ -2400,6 +2400,7 @@ class TrabajadorDialog(QDialog):
         self.setWindowTitle("Trabajador")
         layout = QVBoxLayout()
         form = QFormLayout()
+        self.codigo = QLineEdit()
         self.nombre = QLineEdit()
         self.dui = QLineEdit()
         self.nit = QLineEdit()
@@ -2418,6 +2419,7 @@ class TrabajadorDialog(QDialog):
         self.comentarios = QLineEdit()
         self.es_vendedor = QCheckBox("¿Es vendedor?")
 
+        form.addRow("Código:", self.codigo)
         form.addRow("Nombre completo:", self.nombre)
         form.addRow("DUI:", self.dui)
         form.addRow("NIT:", self.nit)
@@ -2445,6 +2447,7 @@ class TrabajadorDialog(QDialog):
         self.btn_cancel.clicked.connect(self.reject)
 
         if trabajador:
+            self.codigo.setText(trabajador.get("codigo", ""))
             self.nombre.setText(trabajador.get("nombre", ""))
             self.dui.setText(trabajador.get("dui", ""))
             self.nit.setText(trabajador.get("nit", ""))
@@ -2466,6 +2469,7 @@ class TrabajadorDialog(QDialog):
 
     def get_data(self):
         return {
+            "codigo": self.codigo.text().strip(),
             "nombre": self.nombre.text().strip(),
             "dui": self.dui.text().strip(),
             "nit": self.nit.text().strip(),

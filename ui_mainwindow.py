@@ -744,6 +744,7 @@ class MainWindow(QMainWindow):
                 self.ultimo_archivo_json = filename
                 with open("ultimo_inventario.json", "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
+                self.compras_tab.refresh_filters()
                 self.filter_products()
                 self.compras_tab.refresh_filters()
                 self.compras_tab.load_purchases()
@@ -775,7 +776,9 @@ class MainWindow(QMainWindow):
             try:
                 self.manager.importar_inventario_json(self.ultimo_archivo_json)
                 self.compras_tab.refresh_filters()
+
                 self.compras_tab.load_purchases()
+
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA
                 QMessageBox.information(self, "Cargar rápido", f"Inventario cargado de:\n{self.ultimo_archivo_json}")
@@ -808,7 +811,9 @@ class MainWindow(QMainWindow):
                 pass
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
+
             self.compras_tab.load_purchases()
+
             self._actualizar_tabla_trabajadores()  # <-- AGREGA ESTA LÍNEA
             self.filter_products()
             self._actualizar_arbol_vendedores()
@@ -857,6 +862,7 @@ class MainWindow(QMainWindow):
                 data["codigo"]
             )
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor agregado correctamente.")
 
@@ -882,6 +888,7 @@ class MainWindow(QMainWindow):
                 data["Distribuidor_id"]
             )
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor editado correctamente.")
 
@@ -891,6 +898,7 @@ class MainWindow(QMainWindow):
             data = dialog.get_data()
             self.manager.db.add_Distribuidor_detallado(data)
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_Distribuidores()
             QMessageBox.information(self, "Distribuidor", "Distribuidor agregado correctamente.")
 
@@ -940,6 +948,7 @@ class MainWindow(QMainWindow):
             ))
             self.manager.db.conn.commit()
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_Distribuidores()
             QMessageBox.information(self, "Distribuidor", "Distribuidor editado correctamente.")
         self.selected_row = None

@@ -1,0 +1,5 @@
+PyQt5
+num2words
+reportlab
+pytest
+pyinstaller

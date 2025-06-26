@@ -41,6 +41,7 @@ class DB:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS vendedores (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT UNIQUE,
                 nombre TEXT NOT NULL,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
@@ -95,8 +96,8 @@ class DB:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS clientes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
-                codigo TEXT,
-                nombre TEXT,  -- <--- AGREGA ESTA LÍNEA
+                codigo TEXT UNIQUE,
+                nombre TEXT,
                 nrc TEXT,
                 nit TEXT,
                 dui TEXT,
@@ -262,6 +263,11 @@ class DB:
         except Exception:
             pass  # Ya existe la columna
         try:
+            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN codigo TEXT")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
+        try:
             self.cursor.execute("ALTER TABLE vendedores ADD COLUMN Distribuidor_id INTEGER")
             self.conn.commit()
         except Exception:
@@ -365,6 +371,14 @@ class DB:
             self.conn.commit()
         except Exception:
             pass  # Ya existe la columna
+        # Índices únicos para códigos de clientes y vendedores
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_codigo ON clientes(codigo)"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_vendedores_codigo ON vendedores(codigo)"
+        )
+        self.conn.commit()
 
     # CRUD Distribuidores
     def add_Distribuidor(self, nombre):
@@ -390,10 +404,12 @@ class DB:
             logger.exception("Error al eliminar Distribuidor: %s", e)
 
     # CRUD VENDEDORES (antes vendedores)
-    def add_vendedor(self, nombre, descripcion="", Distribuidor_id=None):
+    def add_vendedor(self, nombre, descripcion="", Distribuidor_id=None, codigo=None):
+        if codigo is None:
+            codigo = self.get_next_vendedor_codigo()
         self.cursor.execute(
-            "INSERT INTO vendedores (nombre, descripcion, Distribuidor_id) VALUES (?, ?, ?)",
-            (nombre, descripcion, Distribuidor_id)
+            "INSERT INTO vendedores (codigo, nombre, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?)",
+            (codigo, nombre, descripcion, Distribuidor_id),
         )
         self.conn.commit()
 
@@ -401,11 +417,11 @@ class DB:
         self.cursor.execute("SELECT * FROM vendedores")
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def update_vendedor(self, id, nombre, descripcion, Distribuidor_id):
+    def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id):
         try:
             self.cursor.execute(
-                "UPDATE vendedores SET nombre=?, descripcion=?, Distribuidor_id=? WHERE id=?",
-                (nombre, descripcion, Distribuidor_id, id)
+                "UPDATE vendedores SET codigo=?, nombre=?, descripcion=?, Distribuidor_id=? WHERE id=?",
+                (codigo, nombre, descripcion, Distribuidor_id, id),
             )
             self.conn.commit()
         except Exception as e:
@@ -625,24 +641,49 @@ class DB:
         return [row["nombre"] for row in self.cursor.fetchall()]
 
     # CRUD CLIENTES
-    def add_cliente(self, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio):
-        codigo = self.get_next_cliente_codigo()
-        self.cursor.execute("""
+    def add_cliente(self, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio, codigo=None):
+        if codigo is None:
+            codigo = self.get_next_cliente_codigo()
+        self.cursor.execute(
+            """
             INSERT INTO clientes (codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio))
+            """,
+            (codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio),
+        )
         self.conn.commit()
 
     def get_next_cliente_codigo(self):
         self.cursor.execute("SELECT MAX(id) FROM clientes")
         max_id = self.cursor.fetchone()[0]
-        return f"C{(max_id+1) if max_id else 1:05d}"
+        return f"C-{(max_id + 1) if max_id else 1:03d}"
 
-    def update_cliente(self, id, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio):
-        self.cursor.execute("""
-            UPDATE clientes SET nombre=?, nrc=?, nit=?, dui=?, giro=?, telefono=?, email=?, direccion=?, departamento=?, municipio=?
+    def get_next_vendedor_codigo(self):
+        self.cursor.execute("SELECT MAX(id) FROM vendedores")
+        max_id = self.cursor.fetchone()[0]
+        return f"V-{(max_id + 1) if max_id else 1:03d}"
+
+    def update_cliente(self, id, codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio):
+        self.cursor.execute(
+            """
+            UPDATE clientes SET codigo=?, nombre=?, nrc=?, nit=?, dui=?, giro=?, telefono=?, email=?, direccion=?, departamento=?, municipio=?
             WHERE id=?
-        """, (nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio, id))
+            """,
+            (
+                codigo,
+                nombre,
+                nrc,
+                nit,
+                dui,
+                giro,
+                telefono,
+                email,
+                direccion,
+                departamento,
+                municipio,
+                id,
+            ),
+        )
         self.conn.commit()
 
     def delete_cliente(self, id):

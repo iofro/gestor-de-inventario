@@ -1,2 +1,8 @@
 __pycache__/
 *.pyc
+
+# Ignored inventory and log files
+last_inventory.txt
+facturacion.log
+ultimo_inventario.json
+*.db

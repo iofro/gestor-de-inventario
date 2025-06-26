@@ -600,6 +600,27 @@ class DB:
         self.cursor.execute("SELECT * FROM detalles_compra WHERE compra_id=?", (compra_id,))
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_estado_cuenta(self, persona_id, tipo="cliente", fecha_inicio=None, fecha_fin=None):
+        """Obtiene las facturas asociadas a un cliente o vendedor en un rango de fechas."""
+        if tipo not in ("cliente", "vendedor"):
+            raise ValueError("tipo debe ser 'cliente' o 'vendedor'")
+
+        field = "cliente_id" if tipo == "cliente" else "vendedor_id"
+        query = f"SELECT id, fecha, total FROM ventas WHERE {field}=?"
+        params = [persona_id]
+        if fecha_inicio:
+            query += " AND fecha >= ?"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND fecha <= ?"
+            params.append(fecha_fin)
+        query += " ORDER BY fecha"
+        self.cursor.execute(query, params)
+        facturas = [dict(row) for row in self.cursor.fetchall()]
+        for f in facturas:
+            f["saldo"] = f.get("total", 0)
+        return facturas
+
     def delete_venta(self, id):
         try:
             self.cursor.execute("DELETE FROM ventas WHERE id=?", (id,))

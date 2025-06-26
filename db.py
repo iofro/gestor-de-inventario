@@ -619,7 +619,16 @@ class DB:
         return [dict(row) for row in self.cursor.fetchall()]
 
     def get_detalles_venta(self, venta_id):
-        self.cursor.execute("SELECT * FROM detalles_venta WHERE venta_id=?", (venta_id,))
+        """Return sale line items joined with product names."""
+        self.cursor.execute(
+            """
+            SELECT detalles_venta.*, productos.nombre AS descripcion
+            FROM detalles_venta
+            LEFT JOIN productos ON detalles_venta.producto_id = productos.id
+            WHERE detalles_venta.venta_id=?
+        """,
+            (venta_id,),
+        )
         return [dict(row) for row in self.cursor.fetchall()]
 
     def get_venta_credito_fiscal(self, venta_id):
@@ -1041,6 +1050,15 @@ class DB:
             query += " WHERE " + " AND ".join(filtros)
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_trabajador(self, trabajador_id):
+        """Return a single trabajador by id."""
+        self.cursor.execute(
+            "SELECT * FROM trabajadores WHERE id=?",
+            (trabajador_id,),
+        )
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
 
     def update_trabajador(self, id, data):
         self.cursor.execute(

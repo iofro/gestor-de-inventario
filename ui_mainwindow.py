@@ -348,6 +348,7 @@ class MainWindow(QMainWindow):
 
         self.estado_table = QTableWidget(0, 2)
         self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.estado_table.itemSelectionChanged.connect(self._on_estado_row_selected)
         estado_layout.addWidget(self.estado_table)
 
         estado_tab.setLayout(estado_layout)
@@ -1251,12 +1252,20 @@ class MainWindow(QMainWindow):
         for row, p in enumerate(personas):
             self.estado_table.setItem(row, 0, QTableWidgetItem(p.get("codigo", "")))
             self.estado_table.setItem(row, 1, QTableWidgetItem(p.get("nombre", "")))
+        if personas:
+            self.estado_table.selectRow(0)
 
     def _get_selected_estado_persona(self):
         row = self.estado_table.currentRow()
         if row < 0 or row >= len(getattr(self, "estado_personas", [])):
             return None
         return self.estado_personas[row]
+
+    def _on_estado_row_selected(self):
+        """Genera automáticamente el estado de cuenta al seleccionar una persona."""
+        # Solo se debe activar cuando la tabla muestra la lista de personas
+        if self.estado_table.columnCount() == 2 and self.estado_table.currentRow() >= 0:
+            self._generar_estado_cuenta()
 
     def _toggle_estado_fechas(self, checked: bool):
         """Habilita o deshabilita las fechas manuales."""

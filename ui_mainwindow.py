@@ -1268,10 +1268,6 @@ class MainWindow(QMainWindow):
 
     def _generar_estado_cuenta(self):
         persona = self._get_selected_estado_persona()
-        if not persona:
-            QMessageBox.warning(self, "Estado de cuenta", "Seleccione una persona")
-            return
-        persona_id = persona.get("id")
         tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
         if self.estado_anio_actual.isChecked():
             inicio = QDate(QDate.currentDate().year(), 1, 1)
@@ -1279,18 +1275,76 @@ class MainWindow(QMainWindow):
         else:
             inicio = self.estado_fecha_inicio.date()
             fin = self.estado_fecha_fin.date()
+
+        inicio_str = inicio.toString("yyyy-MM-dd")
+        fin_str = fin.toString("yyyy-MM-dd")
+
+        if persona is None:
+            if tipo == "vendedor":
+                resumen = self.manager.db.get_estado_cuenta_vendedores(
+                    fecha_inicio=inicio_str, fecha_fin=fin_str
+                )
+                self.estado_table.setColumnCount(3)
+                self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre", "Total"])
+                self.estado_table.setRowCount(len(resumen))
+                for row, r in enumerate(resumen):
+                    trab = self.manager.db.get_trabajador(r["vendedor_id"])
+                    codigo = trab.get("codigo", "") if trab else ""
+                    nombre = trab.get("nombre", "") if trab else ""
+                    self.estado_table.setItem(row, 0, QTableWidgetItem(codigo))
+                    self.estado_table.setItem(row, 1, QTableWidgetItem(nombre))
+                    self.estado_table.setItem(
+                        row,
+                        2,
+                        QTableWidgetItem(f"${float(r.get('total_ventas', 0)):.2f}"),
+                    )
+            else:
+                resumen = self.manager.db.get_estado_cuenta_clientes(
+                    fecha_inicio=inicio_str, fecha_fin=fin_str
+                )
+                self.estado_table.setColumnCount(3)
+                self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre", "Total"])
+                self.estado_table.setRowCount(len(resumen))
+                for row, r in enumerate(resumen):
+                    cli = self.manager.db.get_cliente(r["cliente_id"])
+                    codigo = cli.get("codigo", "") if cli else ""
+                    nombre = cli.get("nombre", "") if cli else ""
+                    self.estado_table.setItem(row, 0, QTableWidgetItem(codigo))
+                    self.estado_table.setItem(row, 1, QTableWidgetItem(nombre))
+                    self.estado_table.setItem(
+                        row,
+                        2,
+                        QTableWidgetItem(f"${float(r.get('total_compras', 0)):.2f}"),
+                    )
+            return
+
+        persona_id = persona.get("id")
         facturas = self.manager.db.get_estado_cuenta(
             persona_id,
             tipo,
-            inicio.toString("yyyy-MM-dd"),
-            fin.toString("yyyy-MM-dd"),
+            inicio_str,
+            fin_str,
         )
-        self.estado_table.setColumnCount(4)
-        self.estado_table.setHorizontalHeaderLabels(["Fecha", "Factura", "Monto", "Saldo"])
+        self.estado_table.setColumnCount(6)
+        self.estado_table.setHorizontalHeaderLabels(
+            ["Fecha", "Factura", "Cliente", "Vendedor", "Monto", "Saldo"]
+        )
         self.estado_table.setRowCount(len(facturas))
         for row, f in enumerate(facturas):
+            cli_nombre = ""
+            if f.get("cliente_id"):
+                cli = next((c for c in self.manager._clientes if c["id"] == f["cliente_id"]), None)
+                if cli:
+                    cli_nombre = cli.get("nombre", "")
+            vend_nombre = ""
+            if f.get("vendedor_id"):
+                trab = self.manager.db.get_trabajador(f["vendedor_id"])
+                if trab:
+                    vend_nombre = trab.get("nombre", "")
             self.estado_table.setItem(row, 0, QTableWidgetItem(f.get("fecha", "")))
             self.estado_table.setItem(row, 1, QTableWidgetItem(str(f.get("id"))))
-            self.estado_table.setItem(row, 2, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
-            self.estado_table.setItem(row, 3, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
+            self.estado_table.setItem(row, 2, QTableWidgetItem(cli_nombre))
+            self.estado_table.setItem(row, 3, QTableWidgetItem(vend_nombre))
+            self.estado_table.setItem(row, 4, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
+            self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
 

@@ -634,9 +634,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "iva": iva,
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
-            "subtotal": sumas + iva,
+            "subtotal": sumas + ventas_exentas + ventas_no_sujetas,
             "iva_retenido": iva_retenido,
-            "total": total - iva_retenido,  # El total ya incluye IVA por producto
+            "total": sumas + ventas_exentas + ventas_no_sujetas + iva - iva_retenido,
             "iva_retenido_auto": self.iva_retenido_auto.isChecked(),
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
@@ -1907,11 +1907,11 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "fecha_remision": self.fecha_remision.date().toString("yyyy-MM-dd"),
             "sumas": sumas,
             "iva": iva,
-            "subtotal": sumas + iva,
+            "subtotal": sumas + ventas_exentas + ventas_no_sujetas,
             "iva_retenido": iva_retenido,
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
-            "total": sumas + iva + ventas_exentas + ventas_no_sujetas - iva_retenido,
+            "total": sumas + ventas_exentas + ventas_no_sujetas + iva - iva_retenido,
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()

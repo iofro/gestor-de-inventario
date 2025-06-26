@@ -1026,7 +1026,8 @@ class MainWindow(QMainWindow):
     def _actualizar_arbol_vendedores(self):
         self.vendedores_tree.clear()
         for vend in self.manager._vendedores:
-            vend_item = QTreeWidgetItem([vend["nombre"]])
+            text = f"{vend.get('codigo', '')} - {vend['nombre']}"
+            vend_item = QTreeWidgetItem([text])
             self.vendedores_tree.addTopLevelItem(vend_item)
             vend_item.setExpanded(False)
 
@@ -1036,7 +1037,8 @@ class MainWindow(QMainWindow):
             dist_item = QTreeWidgetItem([dist["nombre"]])
             vendedores = [v for v in self.manager._vendedores if v.get("Distribuidor_id") == dist["id"]]
             for vend in vendedores:
-                vend_item = QTreeWidgetItem([vend["nombre"]])
+                text = f"{vend.get('codigo', '')} - {vend['nombre']}"
+                vend_item = QTreeWidgetItem([text])
                 dist_item.addChild(vend_item)
             self.Distribuidores_tree.addTopLevelItem(dist_item)
             dist_item.setExpanded(False)
@@ -1048,13 +1050,15 @@ class MainWindow(QMainWindow):
 
     def _agregar_vendedor(self):
         from dialogs import VendedorDialog
-        dialog = VendedorDialog(self.manager._Distribuidores, self)
+        codigo = self.manager.db.get_next_vendedor_codigo()
+        dialog = VendedorDialog(self.manager._Distribuidores, self, codigo_sugerido=codigo)
         if dialog.exec_():
             data = dialog.get_data()
             self.manager.db.add_vendedor(
                 data["nombre"],
                 data["descripcion"],
-                data["Distribuidor_id"]
+                data["Distribuidor_id"],
+                data["codigo"]
             )
             self.manager.refresh_data()
             self._actualizar_arbol_vendedores()
@@ -1076,6 +1080,7 @@ class MainWindow(QMainWindow):
             data = dialog.get_data()
             self.manager.db.update_vendedor(
                 vendedor["id"],
+                data["codigo"],
                 data["nombre"],
                 data["descripcion"],
                 data["Distribuidor_id"]
@@ -1206,12 +1211,13 @@ class MainWindow(QMainWindow):
         return None
 
     def _agregar_cliente(self):
-        dialog = ClienteDialog(self)
+        codigo = self.manager.db.get_next_cliente_codigo()
+        dialog = ClienteDialog(self, codigo_sugerido=codigo)
         if dialog.exec_():
             data = dialog.get_data()
             self.manager.db.add_cliente(
                 data["nombre"], data["nrc"], data["nit"], data["dui"], data["giro"],
-                data["telefono"], data["email"], data["direccion"], data["departamento"], data["municipio"]
+                data["telefono"], data["email"], data["direccion"], data["departamento"], data["municipio"], data["codigo"]
             )
             self._actualizar_tabla_clientes()
             QMessageBox.information(self, "Cliente", "Cliente agregado correctamente.")
@@ -1225,7 +1231,7 @@ class MainWindow(QMainWindow):
         if dialog.exec_():
             data = dialog.get_data()
             self.manager.db.update_cliente(
-                cli["id"], data["nombre"], data["nrc"], data["nit"], data["dui"], data["giro"],
+                cli["id"], data["codigo"], data["nombre"], data["nrc"], data["nit"], data["dui"], data["giro"],
                 data["telefono"], data["email"], data["direccion"], data["departamento"], data["municipio"]
             )
             self._actualizar_tabla_clientes()

@@ -766,6 +766,8 @@ class ProductDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Producto")
         layout = QVBoxLayout()
+        self.codigo_edit = QLineEdit()
+        self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.codigo_edit = QLineEdit()
         self.precio_compra_spin = QDoubleSpinBox()
@@ -778,6 +780,10 @@ class ProductDialog(QDialog):
         self.precio_venta_mayorista_spin.setMaximum(1000000)
         self.precio_venta_mayorista_spin.setDecimals(2)
 
+        layout.addWidget(QLabel("Código:"))
+        layout.addWidget(self.codigo_edit)
+        layout.addWidget(QLabel("Código:"))
+        layout.addWidget(self.codigo_edit)
         layout.addWidget(QLabel("Nombre:"))
         layout.addWidget(self.nombre_edit)
         layout.addWidget(QLabel("Código:"))
@@ -2030,12 +2036,13 @@ class DistribuidorDialog(QDialog):
         }
 
 class ClienteDialog(QDialog):
-    def __init__(self, parent=None, cliente=None):
+    def __init__(self, parent=None, cliente=None, codigo_sugerido=None):
         super().__init__(parent)
         self.setWindowTitle("Agregar/Editar Cliente")
         self.departamentos_data = cargar_departamentos_municipios()
         layout = QVBoxLayout()
 
+        self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
@@ -2049,6 +2056,7 @@ class ClienteDialog(QDialog):
         self.municipio_combo = QComboBox()
 
         form = [
+            ("Código:", self.codigo_edit),
             ("Nombre completo:", self.nombre_edit),
             ("NRC:", self.nrc_edit),
             ("NIT:", self.nit_edit),
@@ -2078,7 +2086,11 @@ class ClienteDialog(QDialog):
         self.btn_ok.clicked.connect(self._validar_y_accept)
         self.btn_cancel.clicked.connect(self.reject)
 
+        if codigo_sugerido and not cliente:
+            self.codigo_edit.setText(codigo_sugerido)
+
         if cliente:
+            self.codigo_edit.setText(cliente.get("codigo", ""))
             self.nombre_edit.setText(cliente.get("nombre", ""))
             self.nrc_edit.setText(cliente.get("nrc", ""))
             self.nit_edit.setText(cliente.get("nit", ""))
@@ -2110,6 +2122,7 @@ class ClienteDialog(QDialog):
 
     def get_data(self):
         return {
+            "codigo": self.codigo_edit.text().strip(),
             "nombre": self.nombre_edit.text().strip(),
             "nrc": self.nrc_edit.text().strip(),
             "nit": self.nit_edit.text().strip(),
@@ -2123,11 +2136,12 @@ class ClienteDialog(QDialog):
         }
 
 class VendedorDialog(QDialog):
-    def __init__(self, Distribuidores, parent=None, vendedor=None):
+    def __init__(self, Distribuidores, parent=None, vendedor=None, codigo_sugerido=None):
         super().__init__(parent)
         self.setWindowTitle("Agregar/Editar Vendedor")
         layout = QVBoxLayout()
 
+        self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
@@ -2135,6 +2149,8 @@ class VendedorDialog(QDialog):
         self.Distribuidor_combo.addItem("Sin Distribuidor")
         self.Distribuidor_combo.addItems([d["nombre"] for d in self.Distribuidores])
 
+        layout.addWidget(QLabel("Código:"))
+        layout.addWidget(self.codigo_edit)
         layout.addWidget(QLabel("Nombre:"))
         layout.addWidget(self.nombre_edit)
         layout.addWidget(QLabel("Descripción:"))
@@ -2153,7 +2169,11 @@ class VendedorDialog(QDialog):
         self.btn_ok.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
 
+        if codigo_sugerido and not vendedor:
+            self.codigo_edit.setText(codigo_sugerido)
+
         if vendedor:
+            self.codigo_edit.setText(vendedor.get("codigo", ""))
             self.nombre_edit.setText(vendedor.get("nombre", ""))
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
@@ -2169,9 +2189,10 @@ class VendedorDialog(QDialog):
         if idx > 0:
             Distribuidor_id = self.Distribuidores[idx - 1]["id"]
         return {
+            "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
             "descripcion": self.descripcion_edit.text(),
-            "Distribuidor_id": Distribuidor_id
+            "Distribuidor_id": Distribuidor_id,
         }
 class CompraDetalleDialog(QDialog):
     def __init__(self, compra, detalles, parent=None):

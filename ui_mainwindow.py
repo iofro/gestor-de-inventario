@@ -562,7 +562,9 @@ class MainWindow(QMainWindow):
                         item.get("comision_monto", 0),
                         item.get("iva_tipo", ""),
                         item.get("tipo_fiscal", "Gravada"),
-                        None
+                        None,
+                        item.get("precio_con_iva", 0),
+                        vendedor_id
                     )
                     if "lote_id" in item:
                         self.manager.db.disminuir_stock_lote(item["lote_id"], item["cantidad"])
@@ -699,8 +701,9 @@ class MainWindow(QMainWindow):
                         item.get("comision_monto", 0),
                         item.get("iva_tipo", ""),
                         item.get("tipo_fiscal", "Gravada"),
-                        item.get("extra", None), 
-                        item.get("precio_con_iva", 0)  
+                        item.get("extra", None),
+                        item.get("precio_con_iva", 0),
+                        vendedor_id
                     )
                    
                     if "lote_id" in item:

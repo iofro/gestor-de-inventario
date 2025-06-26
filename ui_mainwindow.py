@@ -10,6 +10,7 @@ import os
 import json
 from inventory_manager import InventoryManager
 from dialogs import RegisterSaleDialog, ClienteSelectorDialog, ProductDialog, RegisterPurchaseDialog, DistribuidorDialog, ClienteDialog
+from sales_tab import SalesTab
 from datetime import datetime
 
 from num2words import num2words  # Instala las dependencias con: pip install -r requirements.txt
@@ -432,6 +433,9 @@ class MainWindow(QMainWindow):
 
         clientes_tab.setLayout(clientes_layout)
 
+        # --- PESTAÑA DE VENTAS ---
+        ventas_tab = SalesTab(self.manager, self)
+
         # --- PESTAÑA DE HISTORIAL ---
         historial_tab = QWidget()
         historial_layout = QVBoxLayout()
@@ -533,6 +537,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(tab_widget, "Inventario")
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")  # <-- Esta línea es clave
         self.tabs.addTab(clientes_tab, "Clientes")
+        self.tabs.addTab(ventas_tab, "Ventas")
         self.tabs.addTab(historial_tab, "Historial")
         self.tabs.addTab(inventario_actual_tab, "Inventario actual")
         self.setCentralWidget(self.tabs)

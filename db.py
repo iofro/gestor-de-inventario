@@ -676,7 +676,10 @@ class DB:
             raise ValueError("tipo debe ser 'cliente' o 'vendedor'")
 
         field = "cliente_id" if tipo == "cliente" else "vendedor_id"
-        query = f"SELECT id, fecha, total FROM ventas WHERE {field}=?"
+        query = (
+            f"SELECT id, fecha, total, cliente_id, vendedor_id "
+            f"FROM ventas WHERE {field}=?"
+        )
         params = [persona_id]
         if fecha_inicio:
             query += " AND fecha >= ?"
@@ -717,6 +720,42 @@ class DB:
 
         query = "SELECT id, fecha, total FROM ventas WHERE vendedor_id=?"
         params = [vendedor_id]
+        if fecha_inicio:
+            query += " AND fecha >= ?"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND fecha <= ?"
+            params.append(fecha_fin)
+        query += " ORDER BY fecha"
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_estado_cuenta_clientes(self, cliente_id=None, fecha_inicio=None, fecha_fin=None):
+        """Genera el estado de cuenta de los clientes.
+
+        Si ``cliente_id`` es ``None`` se obtienen las ventas agrupadas por cliente.
+        Cuando se especifica un ``cliente_id`` se devuelven todas las ventas
+        registradas para ese cliente dentro del rango indicado.
+        """
+
+        if cliente_id is None:
+            query = (
+                "SELECT cliente_id, SUM(total) AS total_compras "
+                "FROM ventas WHERE cliente_id IS NOT NULL"
+            )
+            params = []
+            if fecha_inicio:
+                query += " AND fecha >= ?"
+                params.append(fecha_inicio)
+            if fecha_fin:
+                query += " AND fecha <= ?"
+                params.append(fecha_fin)
+            query += " GROUP BY cliente_id ORDER BY cliente_id"
+            self.cursor.execute(query, params)
+            return [dict(row) for row in self.cursor.fetchall()]
+
+        query = "SELECT id, fecha, total FROM ventas WHERE cliente_id=?"
+        params = [cliente_id]
         if fecha_inicio:
             query += " AND fecha >= ?"
             params.append(fecha_inicio)
@@ -839,6 +878,12 @@ class DB:
             params = [f"%{search}%"] * 3
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_cliente(self, cliente_id):
+        """Return a single client by id."""
+        self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
 
     def add_pago(self, cliente_id, monto, fecha):
         """Registra un pago aplicado a un cliente."""

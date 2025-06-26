@@ -983,7 +983,7 @@ class DB:
         )
         self.conn.commit()
 
-    def get_trabajadores(self, solo_vendedores=False, area=None):
+    def get_trabajadores(self, solo_vendedores=False, area=None, search=""):
         query = "SELECT * FROM trabajadores"
         params = []
         filtros = []
@@ -992,6 +992,9 @@ class DB:
         if area:
             filtros.append("area=?")
             params.append(area)
+        if search:
+            filtros.append("(nombre LIKE ? OR codigo LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%"])
         if filtros:
             query += " WHERE " + " AND ".join(filtros)
         self.cursor.execute(query, params)

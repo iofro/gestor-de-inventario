@@ -11,6 +11,7 @@ class SalesTab(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
         self.manager = manager
+        self.current_credito_fiscal = None
         self._setup_ui()
         self.load_sales()
 
@@ -165,6 +166,14 @@ class SalesTab(QWidget):
             cli = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
             if cli:
                 cliente = cli.get("nombre", "")
-        self.info_label.setText(f"Factura {venta_id} - Cliente: {cliente}")
+
+        # Fetch credit-fiscal information for this sale
+        self.current_credito_fiscal = self.manager.db.get_venta_credito_fiscal(venta_id)
+        if self.current_credito_fiscal:
+            self.info_label.setText(
+                f"Factura {venta_id} - Crédito Fiscal - Cliente: {cliente}"
+            )
+        else:
+            self.info_label.setText(f"Factura {venta_id} - Cliente: {cliente}")
         # In a real app we would load the PDF preview here
 

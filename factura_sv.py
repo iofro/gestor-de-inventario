@@ -149,9 +149,14 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     c.setFont("Helvetica", 8)
     fecha = venta.get("fecha", "")
     try:
-        fecha_solo = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").strftime("%d/%m/%Y")
+        dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
+        fecha_solo = f"{dt.day}/{dt.month}/{dt.year}"
     except Exception:
-        fecha_solo = fecha
+        try:
+            dt = datetime.strptime(fecha, "%Y-%m-%d")
+            fecha_solo = f"{dt.day}/{dt.month}/{dt.year}"
+        except Exception:
+            fecha_solo = fecha
     c.drawString(col3_x + 40, row_y - 14, fecha_solo)
 
     # --- Tabla central de productos tipo Excel ---
@@ -214,12 +219,6 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     c.setFont("Helvetica", 9)
     c.drawString(x_linea + 10, texto_y, f"SUMA DE VENTAS:")
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('sumas', 0):.2f}")
-
-    texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "Monto total de operación:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('total_operacion', '')}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)

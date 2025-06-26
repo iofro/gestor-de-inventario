@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QDateEdit, QComboBox
+    QPushButton, QLabel, QDateEdit, QComboBox, QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
@@ -95,6 +95,8 @@ class PurchasesTab(QWidget):
             "Total", "Comisión"
         ])
         self.table.verticalHeader().setDefaultSectionSize(60)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         content_layout.addWidget(self.table)
 
         side_layout = QVBoxLayout()

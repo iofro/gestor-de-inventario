@@ -118,12 +118,12 @@ class PurchasesTab(QWidget):
         btn_detalle = QPushButton("Ver")
         btn_pdf = QPushButton("PDF")
         for btn in (btn_detalle, btn_pdf):
-            btn.setFixedHeight(24)
+            btn.setFixedHeight(36)
         btn_detalle.clicked.connect(lambda: self.show_detail(compra_id))
         layout.addWidget(btn_detalle)
         layout.addWidget(btn_pdf)
         layout.addStretch(1)
-        self.table.setRowHeight(row, 24)
+        self.table.setRowHeight(row, 40)
         self.table.setCellWidget(row, 6, widget)
 
     def load_purchases(self):

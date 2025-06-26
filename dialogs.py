@@ -1870,13 +1870,17 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         for item in self.venta_items:
             tipo_fiscal = item.get("tipo_fiscal", "").lower()
+            base = item["subtotal_con_descuento"]
+            if item.get("iva_tipo") == "desglosado":
+                base = item.get("subtotal", base)
+
             if tipo_fiscal == "venta gravada":
-                sumas += item["subtotal_con_descuento"]
-                iva += item.get("iva", 0)  # <-- Suma el IVA real de cada producto
+                sumas += base
+                iva += item.get("iva", 0)
             elif tipo_fiscal == "venta exenta":
-                ventas_exentas += item["subtotal_con_descuento"]
+                ventas_exentas += base
             elif tipo_fiscal == "venta no sujeta":
-                ventas_no_sujetas += item["subtotal_con_descuento"]
+                ventas_no_sujetas += base
             total += item.get("total", 0)
 
         iva_retenido = float(self.iva_retenido_spin.value())

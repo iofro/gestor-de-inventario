@@ -445,7 +445,6 @@ class MainWindow(QMainWindow):
         self.ventas_mes_filtro.setMaximumWidth(180)
         self.ventas_mes_filtro.setDate(QDate.currentDate())
         self.ventas_mes_filtro.setSpecialValueText("Todas")
-        self.ventas_mes_filtro.setDate(QDate(2000, 1, 1))  # Valor especial para "Todas"
         self.ventas_mes_filtro.setMinimumDate(QDate(2000, 1, 1))
         filtros_historial_layout.addWidget(QLabel("Ver ventas de:"))
         filtros_historial_layout.addWidget(self.ventas_mes_filtro)
@@ -457,7 +456,6 @@ class MainWindow(QMainWindow):
         self.compras_mes_filtro.setMaximumWidth(180)
         self.compras_mes_filtro.setDate(QDate.currentDate())
         self.compras_mes_filtro.setSpecialValueText("Todas")
-        self.compras_mes_filtro.setDate(QDate(2000, 1, 1))  # Valor especial para "Todas"
         self.compras_mes_filtro.setMinimumDate(QDate(2000, 1, 1))
         filtros_historial_layout.addWidget(QLabel("Ver compras de:"))
         filtros_historial_layout.addWidget(self.compras_mes_filtro)
@@ -581,9 +579,9 @@ class MainWindow(QMainWindow):
         self.estado_tipo_combo = QComboBox()
         self.estado_tipo_combo.addItems(["Cliente", "Vendedor"])
         self.estado_persona_combo = QComboBox()
-        self.estado_fecha_inicio = QDateEdit()
+        self.estado_fecha_inicio = QDateEdit(QDate.currentDate())
         self.estado_fecha_inicio.setCalendarPopup(True)
-        self.estado_fecha_fin = QDateEdit()
+        self.estado_fecha_fin = QDateEdit(QDate.currentDate())
         self.estado_fecha_fin.setCalendarPopup(True)
         self.estado_anio_actual = QCheckBox("Año en curso")
         self.btn_generar_estado = QPushButton("Generar")

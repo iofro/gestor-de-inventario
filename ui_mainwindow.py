@@ -34,6 +34,7 @@ class MainWindow(QMainWindow):
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
         self._setup_ui()
         self._apply_styles()
+        self.estado_personas = []
 
     def generar_factura_pdf(self):
         row = self.historial_ventas_table.currentRow()
@@ -578,7 +579,8 @@ class MainWindow(QMainWindow):
         controles = QHBoxLayout()
         self.estado_tipo_combo = QComboBox()
         self.estado_tipo_combo.addItems(["Cliente", "Vendedor"])
-        self.estado_persona_combo = QComboBox()
+        self.estado_search_bar = QLineEdit()
+        self.estado_search_bar.setPlaceholderText("Buscar por código o nombre...")
         self.estado_fecha_inicio = QDateEdit(QDate.currentDate())
         self.estado_fecha_inicio.setCalendarPopup(True)
         self.estado_fecha_fin = QDateEdit(QDate.currentDate())
@@ -586,7 +588,7 @@ class MainWindow(QMainWindow):
         self.estado_anio_actual = QCheckBox("Año en curso")
         self.btn_generar_estado = QPushButton("Generar")
         controles.addWidget(self.estado_tipo_combo)
-        controles.addWidget(self.estado_persona_combo)
+        controles.addWidget(self.estado_search_bar)
         controles.addWidget(QLabel("Desde"))
         controles.addWidget(self.estado_fecha_inicio)
         controles.addWidget(QLabel("Hasta"))
@@ -595,8 +597,8 @@ class MainWindow(QMainWindow):
         controles.addWidget(self.btn_generar_estado)
         estado_layout.addLayout(controles)
 
-        self.estado_table = QTableWidget(0, 4)
-        self.estado_table.setHorizontalHeaderLabels(["Fecha", "Factura", "Monto", "Saldo"])
+        self.estado_table = QTableWidget(0, 2)
+        self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
         estado_layout.addWidget(self.estado_table)
 
         estado_tab.setLayout(estado_layout)
@@ -607,6 +609,7 @@ class MainWindow(QMainWindow):
         self.btn_edit_trabajador.clicked.connect(self._editar_trabajador)
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
         self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
+        self.estado_search_bar.textChanged.connect(self._cargar_personas_estado)
         self.btn_generar_estado.clicked.connect(self._generar_estado_cuenta)
         self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
 
@@ -1615,13 +1618,26 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Trabajador eliminado", f"El trabajador '{t['nombre']}' ha sido eliminado.")
 
     def _cargar_personas_estado(self):
-        self.estado_persona_combo.clear()
+        search = self.estado_search_bar.text()
         if self.estado_tipo_combo.currentText() == "Cliente":
-            personas = self.manager.db.get_clientes()
+            personas = self.manager.db.get_clientes(search)
         else:
-            personas = self.manager.db.get_trabajadores(solo_vendedores=True)
-        for p in personas:
-            self.estado_persona_combo.addItem(p.get("nombre", ""), p.get("id"))
+            personas = self.manager.db.get_trabajadores(
+                solo_vendedores=True, search=search
+            )
+        self.estado_personas = personas
+        self.estado_table.setColumnCount(2)
+        self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.estado_table.setRowCount(len(personas))
+        for row, p in enumerate(personas):
+            self.estado_table.setItem(row, 0, QTableWidgetItem(p.get("codigo", "")))
+            self.estado_table.setItem(row, 1, QTableWidgetItem(p.get("nombre", "")))
+
+    def _get_selected_estado_persona(self):
+        row = self.estado_table.currentRow()
+        if row < 0 or row >= len(getattr(self, "estado_personas", [])):
+            return None
+        return self.estado_personas[row]
 
     def _toggle_estado_fechas(self, checked: bool):
         """Habilita o deshabilita las fechas manuales."""
@@ -1632,10 +1648,11 @@ class MainWindow(QMainWindow):
             self.estado_fecha_fin.setDate(QDate.currentDate())
 
     def _generar_estado_cuenta(self):
-        persona_id = self.estado_persona_combo.currentData()
-        if persona_id is None:
+        persona = self._get_selected_estado_persona()
+        if not persona:
             QMessageBox.warning(self, "Estado de cuenta", "Seleccione una persona")
             return
+        persona_id = persona.get("id")
         tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
         if self.estado_anio_actual.isChecked():
             inicio = QDate(QDate.currentDate().year(), 1, 1)
@@ -1649,6 +1666,8 @@ class MainWindow(QMainWindow):
             inicio.toString("yyyy-MM-dd"),
             fin.toString("yyyy-MM-dd"),
         )
+        self.estado_table.setColumnCount(4)
+        self.estado_table.setHorizontalHeaderLabels(["Fecha", "Factura", "Monto", "Saldo"])
         self.estado_table.setRowCount(len(facturas))
         for row, f in enumerate(facturas):
             self.estado_table.setItem(row, 0, QTableWidgetItem(f.get("fecha", "")))

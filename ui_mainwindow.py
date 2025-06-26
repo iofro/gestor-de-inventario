@@ -11,7 +11,7 @@ import json
 from inventory_manager import InventoryManager
 from dialogs import RegisterSaleDialog, ClienteSelectorDialog, ProductDialog, RegisterPurchaseDialog, DistribuidorDialog, ClienteDialog
 from datetime import datetime
-from num2words import num2words  # Instala con: pip install num2words
+from num2words import num2words  # Instala las dependencias con: pip install -r requirements.txt
 from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
 import logging

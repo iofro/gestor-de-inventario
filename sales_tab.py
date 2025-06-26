@@ -260,7 +260,15 @@ class SalesTab(QWidget):
                 None,
             )
 
-        filename = f"factura_{venta_id}.pdf"
-        generar_factura_electronica_pdf(venta_data, detalles, cliente or {}, distribuidor or {}, archivo=filename)
+        cliente_nombre = cliente.get("nombre", "cliente") if cliente else "cliente"
+        tipo = "credito fiscal" if credito_info else "consumidor final"
+        filename = f"{cliente_nombre} {venta_id} {tipo}.pdf"
+        generar_factura_electronica_pdf(
+            venta_data,
+            detalles,
+            cliente or {},
+            distribuidor or {},
+            archivo=filename,
+        )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
 

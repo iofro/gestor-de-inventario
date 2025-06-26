@@ -601,7 +601,12 @@ class DB:
         return [dict(row) for row in self.cursor.fetchall()]
 
     def get_estado_cuenta(self, persona_id, tipo="cliente", fecha_inicio=None, fecha_fin=None):
-        """Obtiene las facturas asociadas a un cliente o vendedor en un rango de fechas."""
+        """Obtiene las facturas de un cliente o vendedor en un rango de fechas.
+
+        Si ``fecha_inicio`` y ``fecha_fin`` son ``None``, se devuelven todas las
+        facturas. Para filtrar el "año en curso" se puede pasar ``fecha_inicio``
+        como el 1 de enero del año actual y ``fecha_fin`` como la fecha actual.
+        """
         if tipo not in ("cliente", "vendedor"):
             raise ValueError("tipo debe ser 'cliente' o 'vendedor'")
 

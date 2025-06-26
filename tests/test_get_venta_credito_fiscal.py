@@ -18,6 +18,7 @@ def test_get_venta_credito_fiscal_return():
     assert data["nrc"] == "123"
 
 
+
 def test_get_venta_credito_fiscal_none():
     db = create_db()
     assert db.get_venta_credito_fiscal(1) is None

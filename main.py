@@ -27,8 +27,9 @@ if __name__ == "__main__":
         try:
             window.manager.importar_inventario_json(ultimo_archivo)
             window.ultimo_archivo_json = ultimo_archivo
+            window.compras_tab.refresh_filters()
             window.filter_products()
-            window._actualizar_arbol_vendedores()   
+            window._actualizar_arbol_vendedores()
             window._actualizar_arbol_Distribuidores()   
             window._actualizar_tabla_clientes()    
             window._actualizar_tabla_trabajadores() 

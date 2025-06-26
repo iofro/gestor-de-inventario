@@ -1,50 +1,31 @@
 {
   "productos": [
     {
-      "id": 1360,
+      "id": 18,
       "nombre": "amoxicilina",
       "codigo": "9999",
-      "categoria_id": null,
       "vendedor_id": null,
+      "Distribuidor_id": null,
       "precio": null,
-      "stock": 0,
+      "stock": 9988,
       "precio_compra": 3.0,
       "precio_venta_minorista": 5.0,
       "precio_venta_mayorista": 4.0,
-      "precio_total_mayorista": 0.0,
-      "fecha_vencimiento": null,
-      "Distribuidor_id": null
+      "precio_total_mayorista": 0.0
     }
   ],
   "vendedores": [
     {
-      "id": 761,
-      "codigo": null,
+      "id": 18,
       "nombre": "ricardo",
-      "dui": null,
-      "telefono": null,
-      "email": null,
-      "cargo": null,
-      "sucursal": null,
-      "comision_base": null,
-      "fecha_inicio": null,
-      "direccion": null,
-      "departamento": null,
-      "municipio": null,
-      "tipo_contrato": null,
-      "comisiones_especificas": null,
-      "metodo_pago": null,
-      "nit": null,
-      "nrc": null,
-      "cuenta_bancaria": null,
-      "notas": null,
       "descripcion": "vendedor de san nicolas",
-      "Distribuidor_id": 1
+      "Distribuidor_id": 18,
+      "codigo": "V-001"
     }
   ],
   "Distribuidores": [
     {
-      "id": 1,
+      "id": 18,
       "codigo": "9099999",
       "nombre": "farmacia san nicolas",
       "dui": "1233321",
@@ -67,7 +48,7 @@
   ],
   "clientes": [
     {
-      "id": 706,
+      "id": 18,
       "codigo": "C00001",
       "nombre": "jose alejandro martinez perez",
       "nrc": "12333213",
@@ -82,11 +63,99 @@
       "otros": null
     }
   ],
-  "ventas": [],
-  "compras": [],
+  "ventas": [
+    {
+      "id": 3,
+      "fecha": "2025-06-26 13:16:49",
+      "total": 62.3,
+      "cliente_id": 18,
+      "Distribuidor_id": 18,
+      "extra": null,
+      "vendedor_id": null
+    }
+  ],
+  "compras": [
+    {
+      "id": 4,
+      "fecha": "2025-06-26",
+      "producto_id": null,
+      "cantidad": 0,
+      "precio_unitario": 0.0,
+      "total": 30000.0,
+      "Distribuidor_id": 18,
+      "comision_pct": 0.0,
+      "comision_monto": 0.0,
+      "vendedor_id": 18
+    }
+  ],
   "movimientos": [],
-  "detalles_venta": [],
-  "detalles_compra": [],
+  "detalles_venta": [
+    {
+      "id": 5,
+      "venta_id": 3,
+      "producto_id": 18,
+      "cantidad": 4,
+      "precio_unitario": 4.425,
+      "descuento": 0.0,
+      "descuento_tipo": "%",
+      "iva": 2.3,
+      "comision": 0.0,
+      "iva_tipo": "desglosado",
+      "tipo_fiscal": "Venta gravada",
+      "extra": null,
+      "precio_con_iva": 5.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 6,
+      "venta_id": 3,
+      "producto_id": 18,
+      "cantidad": 4,
+      "precio_unitario": 5.0,
+      "descuento": 0.0,
+      "descuento_tipo": "%",
+      "iva": 0.0,
+      "comision": 0.0,
+      "iva_tipo": "ninguno",
+      "tipo_fiscal": "Venta exenta",
+      "extra": null,
+      "precio_con_iva": 5.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 7,
+      "venta_id": 3,
+      "producto_id": 18,
+      "cantidad": 4,
+      "precio_unitario": 5.0,
+      "descuento": 0.0,
+      "descuento_tipo": "%",
+      "iva": 0.0,
+      "comision": 0.0,
+      "iva_tipo": "ninguno",
+      "tipo_fiscal": "Venta no sujeta",
+      "extra": null,
+      "precio_con_iva": 5.0,
+      "vendedor_id": null
+    }
+  ],
+  "detalles_compra": [
+    {
+      "id": 4,
+      "compra_id": 4,
+      "producto_id": 18,
+      "cantidad": 9988,
+      "precio_unitario": 3.0,
+      "fecha_vencimiento": "2025-06-26",
+      "descuento": 0.0,
+      "descuento_tipo": "%",
+      "iva": 0.0,
+      "iva_tipo": "ninguno",
+      "comision_pct": 0.0,
+      "comision_monto": 0.0,
+      "comision_tipo": ""
+    }
+  ],
   "datos_negocio": {
     "nombre_comercial": "FARMACIA SANTA CATALINA",
     "razon_social": "KAROL YAMILETH CRUZ ESCOBAR",
@@ -115,7 +184,7 @@
   },
   "trabajadores": [
     {
-      "id": 426,
+      "id": 18,
       "nombre": "leandro",
       "dui": "321323",
       "nit": "23123132",
@@ -128,8 +197,54 @@
       "direccion": "casa de leandro",
       "salario_base": 7.0,
       "comentarios": "",
-      "es_vendedor": 1
+      "es_vendedor": 1,
+      "codigo": "T-001"
     }
   ],
-  "ventas_credito_fiscal": []
+  "ventas_credito_fiscal": [
+    {
+      "id": 1,
+      "venta_id": 1,
+      "cliente_id": 12,
+      "nrc": "12333213",
+      "nit": "321321323",
+      "giro": "vendedor",
+      "no_remision": "234432",
+      "orden_no": "432",
+      "condicion_pago": "Contado",
+      "venta_a_cuenta_de": "sdf",
+      "fecha_remision_anterior": "2025-06-26",
+      "fecha_remision": "2025-06-26",
+      "sumas": 20.0,
+      "iva": 2.3,
+      "subtotal": 22.3,
+      "iva_retenido": 0.0,
+      "total_letras": "SESENTA Y DOS 30/100 DÓLARES",
+      "extra": null,
+      "ventas_exentas": 20.0,
+      "ventas_no_sujetas": 20.0
+    },
+    {
+      "id": 2,
+      "venta_id": 3,
+      "cliente_id": 18,
+      "nrc": "12333213",
+      "nit": "321321323",
+      "giro": "vendedor",
+      "no_remision": "234432",
+      "orden_no": "432",
+      "condicion_pago": "Contado",
+      "venta_a_cuenta_de": "sdf",
+      "fecha_remision_anterior": "2025-06-26",
+      "fecha_remision": "2025-06-26",
+      "sumas": 20.0,
+      "iva": 2.3,
+      "subtotal": 22.3,
+      "iva_retenido": 0.0,
+      "total_letras": "SESENTA Y DOS 30/100 DÓLARES",
+      "extra": null,
+      "ventas_exentas": 20.0,
+      "ventas_no_sujetas": 20.0
+    }
+  ]
 }

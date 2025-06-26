@@ -77,8 +77,10 @@ class DB:
                 producto_id INTEGER,
                 cantidad INTEGER,
                 precio_unitario REAL,
+                vendedor_id INTEGER,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id),
-                FOREIGN KEY (producto_id) REFERENCES productos(id)
+                FOREIGN KEY (producto_id) REFERENCES productos(id),
+                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
             )
         """)
         self.cursor.execute("""
@@ -391,6 +393,11 @@ class DB:
             self.conn.commit()
         except Exception:
             pass  # Ya existe la columna
+        try:
+            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN vendedor_id INTEGER")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
         # Índices únicos para códigos de clientes y vendedores
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_codigo ON clientes(codigo)"
@@ -684,13 +691,13 @@ class DB:
             logger.exception("Error al eliminar venta: %s", e)
 
     # CRUD DETALLES_VENTA
-    def add_detalle_venta(self, venta_id, producto_id, cantidad, precio_unitario, descuento=0, descuento_tipo="", iva=0, comision=0, iva_tipo="", tipo_fiscal="", extra=None, precio_con_iva=0):
+    def add_detalle_venta(self, venta_id, producto_id, cantidad, precio_unitario, descuento=0, descuento_tipo="", iva=0, comision=0, iva_tipo="", tipo_fiscal="", extra=None, precio_con_iva=0, vendedor_id=None):
         try:
             extra_json = json.dumps(extra) if extra else None
             self.cursor.execute("""
-                INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra_json, precio_con_iva))
+                INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra_json, precio_con_iva, vendedor_id))
             self.conn.commit()
         except Exception as e:
             logger.exception("Error al agregar detalle de venta: %s", e)

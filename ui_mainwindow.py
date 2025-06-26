@@ -436,81 +436,95 @@ class MainWindow(QMainWindow):
         # --- PESTAÑA DE VENTAS ---
         ventas_tab = SalesTab(self.manager, self)
 
-        # --- PESTAÑA DE HISTORIAL ---
-        historial_tab = QWidget()
-        historial_layout = QVBoxLayout()
+        # --- PESTAÑA DE COMPRAS ---
+        compras_tab = QWidget()
+        compras_layout = QVBoxLayout()
 
-        # Filtros por mes y año
-        filtros_historial_layout = QHBoxLayout()
-
-        self.ventas_mes_filtro = QDateEdit(QDate.currentDate())
-        self.ventas_mes_filtro.setDisplayFormat("MMMM yyyy")
-        self.ventas_mes_filtro.setCalendarPopup(True)
-        self.ventas_mes_filtro.setMinimumWidth(140)
-        self.ventas_mes_filtro.setMaximumWidth(180)
-        self.ventas_mes_filtro.setDate(QDate.currentDate())
-        self.ventas_mes_filtro.setSpecialValueText("Todas")
-        self.ventas_mes_filtro.setMinimumDate(QDate(2000, 1, 1))
-        filtros_historial_layout.addWidget(QLabel("Ver ventas de:"))
-        filtros_historial_layout.addWidget(self.ventas_mes_filtro)
-
-        self.compras_mes_filtro = QDateEdit(QDate.currentDate())
-        self.compras_mes_filtro.setDisplayFormat("MMMM yyyy")
-        self.compras_mes_filtro.setCalendarPopup(True)
-        self.compras_mes_filtro.setMinimumWidth(140)
-        self.compras_mes_filtro.setMaximumWidth(180)
-        self.compras_mes_filtro.setDate(QDate.currentDate())
-        self.compras_mes_filtro.setSpecialValueText("Todas")
-        self.compras_mes_filtro.setMinimumDate(QDate(2000, 1, 1))
-        filtros_historial_layout.addWidget(QLabel("Ver compras de:"))
-        filtros_historial_layout.addWidget(self.compras_mes_filtro)
-
-        # --- AGREGA EL BOTÓN "Ver todo" ---
-        self.btn_ver_todo_historial = QPushButton("Ver todo")
-        self.btn_ver_todo_historial.setMinimumWidth(100)
-        filtros_historial_layout.addWidget(self.btn_ver_todo_historial)
-
-        historial_layout.addLayout(filtros_historial_layout)
-
-        # Layout horizontal para tablas y totales
-        tablas_totales_layout = QHBoxLayout()
-
-        # Tabla de historial de ventas
-        ventas_layout = QVBoxLayout()
+        # Las tablas de historial se mantienen solo para compatibilidad con
+        # funciones existentes, aunque no se muestren en la interfaz.
         self.historial_ventas_table = QTableWidget(0, 6)
         self.historial_ventas_table.setHorizontalHeaderLabels([
             "Fecha", "Cliente", "Total", "Productos", "Distribuidor", "ID"
         ])
-        self.historial_ventas_table.setColumnHidden(5, True) 
+        self.historial_ventas_table.setColumnHidden(5, True)
 
-        ventas_layout.addWidget(QLabel("Historial de Ventas"))
-        ventas_layout.addWidget(self.historial_ventas_table)
-        self.total_ingresos_label = QLabel("Total ingresos: $0.00")
-        ventas_layout.addWidget(self.total_ingresos_label, alignment=Qt.AlignRight)
-        self.btn_generar_factura = QPushButton("Generar factura PDF")
-        self.btn_generar_factura.clicked.connect(self.generar_factura_pdf)
-        ventas_layout.addWidget(self.btn_generar_factura)
-        tablas_totales_layout.addLayout(ventas_layout)
-
-        # Tabla de historial de compras
         self.historial_compras_table = QTableWidget(0, 7)
         self.historial_compras_table.setHorizontalHeaderLabels([
             "Fecha", "Distribuidor", "Vendedor", "Total", "Comisión", "Productos", "ID"
         ])
-        self.historial_compras_table.setColumnHidden(6, True)  # Oculta la columna ID
+        self.historial_compras_table.setColumnHidden(6, True)
 
-        compras_layout = QVBoxLayout()
-        compras_layout.addWidget(QLabel("Historial de Compras"))
-        compras_layout.addWidget(self.historial_compras_table)
-        self.total_gastos_label = QLabel("Total gastos: $0.00")
-        compras_layout.addWidget(self.total_gastos_label, alignment=Qt.AlignRight)
-        tablas_totales_layout.addLayout(compras_layout)
+        compras_text = (
+            "🧭 Estructura de la pestaña “Compras” (basado en tu db.py)\n"
+            "🧱 Vista principal: Historial de compras\n"
+            "Una tabla principal con las siguientes columnas clave extraídas de la tabla compras:\n\n"
+            "Fecha\tID Compra\tDistribuidor\tVendedor\tTotal\tComisión\tAcciones\n"
+            "26/06/2025\t105\tDistribuidorX\tVendedor1\t$120.00\t$6.00\t👁️ 📥 💳\n\n"
+            "🔹 La comisión se puede mostrar como % (monto) si quieres ver ambos.\n"
+            "🔹 Las acciones disponibles pueden ser:\n\n"
+            "👁️ Ver detalles completos\n\n"
+            "📥 Descargar PDF o exportar\n\n"
+            "💳 Registrar pago (si implementas compras a crédito)\n\n"
+            "👁️ Modal o panel lateral: Detalle de compra\n"
+            "Al hacer clic en 👁️, se abre un panel que muestra datos de ambas tablas (compras y detalles_compra), agrupados así:\n\n"
+            "📄 Datos generales de la compra (de compras)\n"
+            "Fecha: 26/06/2025\n"
+            "Distribuidor: DistribuidorX\n"
+            "Vendedor: Vendedor1\n"
+            "Total: $120.00\n"
+            "Comisión: 5% = $6.00\n\n"
+            "📦 Detalles por producto (de detalles_compra)\n"
+            "Producto\tCantidad\tPrecio\tSubtotal\tDescuento\tIVA\tComisión\tVence\n"
+            "Cargador Tipo C\t10\t$3.00\t$30.00\t10%\t13%\t$1.00\t26/09/2025\n"
+            "Cable USB\t5\t$2.00\t$10.00\t$1.00\t0%\t$0.20\t—\n\n"
+            "🔸 Las columnas “Descuento”, “IVA” y “Comisión” pueden mostrarse como texto:\n\n"
+            "10%\n\n"
+            "$1.00\n\n"
+            "Incluido / Añadido\n\n"
+            "🔸 Mostrar valores como tooltip también ayuda si hay espacio limitado.\n\n"
+            "📊 Parte superior: Filtros y resumen\n"
+            "Filtros:\n\n"
+            "Fecha (rango)\n\n"
+            "Distribuidor\n\n"
+            "Vendedor\n\n"
+            "Producto (busca dentro de detalles_compra)\n\n"
+            "Buscador por ID de compra\n\n"
+            "Selector de ordenamiento (más reciente, mayor total, etc.)\n\n"
+            "Mini resumen:\n\n"
+            "Total comprado este mes\n\n"
+            "Total comisiones\n\n"
+            "Producto más comprado\n\n"
+            "Distribuidor más frecuente\n\n"
+            "📌 Recomendaciones adicionales (según tu modelo actual)\n"
+            "Aquí tienes algunas sugerencias opcionales pero recomendables para enriquecer tu pestaña de compras y aprovechar al máximo los datos que ya capturas:\n\n"
+            "🔧 1. Añadir columna “método de pago” a compras\n"
+            "Actualmente no lo tienes. Esto te permite:\n\n"
+            "Saber si fue efectivo, transferencia, crédito, etc.\n\n"
+            "Registrar pagos pendientes o vencimientos\n\n"
+            "ALTER TABLE compras ADD COLUMN metodo_pago TEXT\n\n"
+            "📂 2. Permitir adjuntar comprobantes escaneados\n"
+            "Puedes agregar una columna archivo_comprobante TEXT a compras para guardar la ruta del archivo.\n\n"
+            "Desde la interfaz: botón para subir PDF o imagen de la factura del proveedor.\n\n"
+            "📊 3. Agregar tipo de documento (factura, nota, ticket)\n"
+            "Te serviría para clasificar compras y facilitar la contabilidad o auditoría.\n\n"
+            "ALTER TABLE compras ADD COLUMN tipo_documento TEXT\n\n"
+            "📆 4. Alertas de vencimientos\n"
+            "Si estás usando fecha_vencimiento en detalles_compra, puedes mostrar alertas tipo:\n\n"
+            "“⚠️ 5 productos de la compra #105 vencen esta semana.”\n\n"
+            "Esto es útil especialmente en inventarios de farmacias o alimentos.\n\n"
+            "📈 5. Reportes o exportación\n"
+            "Agregar botones para exportar a PDF o Excel:\n\n"
+            "Historial de compras\n\n"
+            "Detalles por proveedor o producto\n\n"
+            "Comisiones por vendedor"
+        )
 
-        # ...dentro de _setup_ui, después de crear la tabla de historial de compras...
-        self.historial_compras_table.itemDoubleClicked.connect(self.mostrar_detalle_compra)
+        self.compras_info = QTextEdit()
+        self.compras_info.setReadOnly(True)
+        self.compras_info.setPlainText(compras_text)
+        compras_layout.addWidget(self.compras_info)
 
-        historial_layout.addLayout(tablas_totales_layout)
-        historial_tab.setLayout(historial_layout)
+        compras_tab.setLayout(compras_layout)
 
         # --- PESTAÑA DE INVENTARIO ACTUAL ---
         inventario_actual_tab = QWidget()
@@ -538,7 +552,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")  # <-- Esta línea es clave
         self.tabs.addTab(clientes_tab, "Clientes")
         self.tabs.addTab(ventas_tab, "Ventas")
-        self.tabs.addTab(historial_tab, "Historial")
+        self.tabs.addTab(compras_tab, "Compras")
         self.tabs.addTab(inventario_actual_tab, "Inventario actual")
         self.setCentralWidget(self.tabs)
 
@@ -634,9 +648,6 @@ class MainWindow(QMainWindow):
         self.btn_edit_cliente.clicked.connect(self._editar_cliente)
         self.btn_delete_cliente.clicked.connect(self._eliminar_cliente)
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
-        self.ventas_mes_filtro.dateChanged.connect(self._actualizar_historial)
-        self.compras_mes_filtro.dateChanged.connect(self._actualizar_historial)
-        self.btn_ver_todo_historial.clicked.connect(self._limpiar_filtros_historial)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
         self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
@@ -1290,105 +1301,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Cliente eliminado", f"El cliente '{cli['nombre']}' ha sido eliminado.")
 
     def _actualizar_historial(self):
-        # Ventas
-        ventas = self.manager.db.get_ventas()
-        # Si el filtro no está en "Todas", filtra por mes/año
-        if self.ventas_mes_filtro.date() != QDate(2000, 1, 1):
-            mes_ventas = self.ventas_mes_filtro.date().month()
-            anio_ventas = self.ventas_mes_filtro.date().year()
-            ventas = [
-                v for v in ventas
-                if v.get("fecha") and
-                   int(v["fecha"][5:7]) == mes_ventas and
-                   int(v["fecha"][:4]) == anio_ventas
-            ]
-        clientes = {c["id"]: c["nombre"] for c in self.manager.db.get_clientes()}
-        productos_dict = {p["id"]: p for p in self.manager.db.get_productos()}
-        Distribuidores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_Distribuidores()}
-        detalles_venta = {v["id"]: self.manager.db.get_detalles_venta(v["id"]) for v in ventas}
-        for row, v in enumerate(ventas):
-            logger.debug(
-                "detalles_venta para venta %s: %s",
-                v['id'],
-                detalles_venta.get(v["id"], [])
-            )
-        self.historial_ventas_table.setRowCount(len(ventas))
-        total_ingresos = 0
-        for row, v in enumerate(ventas):
-            productos_strs = []
-            for d in detalles_venta.get(v["id"], []):
-                producto_nombre = productos_dict.get(d["producto_id"], "Desconocido")
-                cantidad = d["cantidad"]
-                # Busca el detalle de compra más reciente para este producto
-                self.manager.db.cursor.execute(
-                    "SELECT c.Distribuidor_id FROM detalles_compra dc "
-                    "JOIN compras c ON dc.compra_id = c.id "
-                    "WHERE dc.producto_id=? ORDER BY c.fecha DESC, c.id DESC LIMIT 1",
-                    (d["producto_id"],)
-                )
-                row_dist = self.manager.db.cursor.fetchone()
-                if row_dist and row_dist["Distribuidor_id"]:
-                    dist_nombre = Distribuidores_dict.get(row_dist["Distribuidor_id"], "Desconocido")
-                else:
-                    dist_nombre = "Desconocido"
-                productos_strs.append(f"{producto_nombre} x{cantidad} ({dist_nombre})")
-            productos = ", ".join(productos_strs)
-            cliente_nombre = clientes.get(v.get("cliente_id"), "")
-            total = v.get('total', 0)
-            total_ingresos += float(total)
-            Distribuidor_id = v.get("Distribuidor_id", None)
-            if Distribuidor_id is not None and Distribuidor_id in Distribuidores_dict:
-                Distribuidor_nombre = Distribuidores_dict[Distribuidor_id]
-            else:
-                Distribuidor_nombre = "Desconocido"
-            self.historial_ventas_table.setItem(row, 0, QTableWidgetItem(v.get("fecha", "")))
-            self.historial_ventas_table.setItem(row, 1, QTableWidgetItem(cliente_nombre))
-            self.historial_ventas_table.setItem(row, 2, QTableWidgetItem(f"${float(total):.2f}"))
-            self.historial_ventas_table.setItem(row, 3, QTableWidgetItem(productos))
-            self.historial_ventas_table.setItem(row, 4, QTableWidgetItem(Distribuidor_nombre)) 
-            self.historial_ventas_table.setItem(row, 5, QTableWidgetItem(str(v["id"])))
-        self.total_ingresos_label.setText(f"Total ingresos: ${total_ingresos:.2f}")
-
-        # Filtro por mes y año para compras
-        mes_compras = self.compras_mes_filtro.date().month()
-        anio_compras = self.compras_mes_filtro.date().year()
-        compras = self.manager.db.get_compras()
-        # Si el filtro no está en "Todas", filtra por mes/año
-        if self.compras_mes_filtro.date() != QDate(2000, 1, 1):
-            mes_compras = self.compras_mes_filtro.date().month()
-            anio_compras = self.compras_mes_filtro.date().year()
-            compras = [
-                c for c in compras
-                if c.get("fecha") and
-                   int(c["fecha"][5:7]) == mes_compras and
-                   int(c["fecha"][:4]) == anio_compras
-            ]
-        productos_dict = {p["id"]: p for p in self.manager.db.get_productos()}
-        Distribuidores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_Distribuidores()}
-        detalles_compra = {c["id"]: self.manager.db.get_detalles_compra(c["id"]) for c in compras}
-        self.historial_compras_table.setRowCount(len(compras))
-        total_gastos = 0
-        vendedores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_vendedores()}
-        for row, c in enumerate(compras):
-            productos = ", ".join(
-                f'{productos_dict.get(d["producto_id"], "Desconocido")} x{d["cantidad"]}'
-                for d in detalles_compra.get(c["id"], [])
-            )
-            Distribuidor_id = c.get("Distribuidor_id", None)
-            Distribuidor_nombre = ""
-            if Distribuidor_id is not None and Distribuidor_id in Distribuidores_dict:
-                Distribuidor_nombre = Distribuidores_dict[Distribuidor_id]
-            vendedor_nombre = vendedores_dict.get(c.get("vendedor_id"), "")
-            total = c.get('total', 0)
-            comision_monto = c.get('comision_monto', 0)
-            total_gastos += float(total)
-            self.historial_compras_table.setItem(row, 0, QTableWidgetItem(c["fecha"]))  # Fecha
-            self.historial_compras_table.setItem(row, 1, QTableWidgetItem(Distribuidor_nombre))  # Distribuidor
-            self.historial_compras_table.setItem(row, 2, QTableWidgetItem(vendedor_nombre))  # Vendedor
-            self.historial_compras_table.setItem(row, 3, QTableWidgetItem(f"${float(total):.2f}"))  # Total
-            self.historial_compras_table.setItem(row, 4, QTableWidgetItem(f"${float(comision_monto):.2f}"))  # Comisión
-            self.historial_compras_table.setItem(row, 5, QTableWidgetItem(productos))  # Productos
-            self.historial_compras_table.setItem(row, 6, QTableWidgetItem(str(c["id"])))  # ID oculto
+        """Actualización de historial (sin uso en la vista simplificada)."""
+        pass
             
     def _actualizar_historial_compras(self):
         self.historial_compras_table.setRowCount(0)
@@ -1438,17 +1352,10 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"No se pudo mostrar el detalle:\n{e}")
 
     def _limpiar_filtros_historial(self):
-        """Limpia los filtros de mes y año en la pestaña de historial."""
-        self.ventas_mes_filtro.setDate(QDate(2000, 1, 1))
-        self.compras_mes_filtro.setDate(QDate(2000, 1, 1))
-        self._actualizar_historial()
+        """Método mantenido por compatibilidad."""
+        pass
 
     def eventFilter(self, obj, event):
-        if event.type() == event.FocusIn:
-            if obj == self.ventas_mes_filtro and obj.date() == QDate(2000, 1, 1):
-                obj.setDate(QDate.currentDate())
-            if obj == self.compras_mes_filtro and obj.date() == QDate(2000, 1, 1):
-                obj.setDate(QDate.currentDate())
         return super().eventFilter(obj, event)
 
     def _actualizar_inventario_actual(self):

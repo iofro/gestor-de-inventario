@@ -610,6 +610,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
         self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
         self.btn_generar_estado.clicked.connect(self._generar_estado_cuenta)
+        self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
 
         self._actualizar_tabla_trabajadores()
         self._cargar_personas_estado()
@@ -1623,6 +1624,14 @@ class MainWindow(QMainWindow):
             personas = self.manager.db.get_trabajadores(solo_vendedores=True)
         for p in personas:
             self.estado_persona_combo.addItem(p.get("nombre", ""), p.get("id"))
+
+    def _toggle_estado_fechas(self, checked: bool):
+        """Habilita o deshabilita las fechas manuales."""
+        self.estado_fecha_inicio.setEnabled(not checked)
+        self.estado_fecha_fin.setEnabled(not checked)
+        if checked:
+            self.estado_fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
+            self.estado_fecha_fin.setDate(QDate.currentDate())
 
     def _generar_estado_cuenta(self):
         persona_id = self.estado_persona_combo.currentData()

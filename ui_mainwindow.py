@@ -573,12 +573,46 @@ class MainWindow(QMainWindow):
         trabajadores_tab.setLayout(trabajadores_layout)
         self.tabs.addTab(trabajadores_tab, "Trabajadores")
 
+        # --- PESTAÑA DE ESTADOS DE CUENTA ---
+        estado_tab = QWidget()
+        estado_layout = QVBoxLayout()
+
+        controles = QHBoxLayout()
+        self.estado_tipo_combo = QComboBox()
+        self.estado_tipo_combo.addItems(["Cliente", "Vendedor"])
+        self.estado_persona_combo = QComboBox()
+        self.estado_fecha_inicio = QDateEdit()
+        self.estado_fecha_inicio.setCalendarPopup(True)
+        self.estado_fecha_fin = QDateEdit()
+        self.estado_fecha_fin.setCalendarPopup(True)
+        self.estado_anio_actual = QCheckBox("Año en curso")
+        self.btn_generar_estado = QPushButton("Generar")
+        controles.addWidget(self.estado_tipo_combo)
+        controles.addWidget(self.estado_persona_combo)
+        controles.addWidget(QLabel("Desde"))
+        controles.addWidget(self.estado_fecha_inicio)
+        controles.addWidget(QLabel("Hasta"))
+        controles.addWidget(self.estado_fecha_fin)
+        controles.addWidget(self.estado_anio_actual)
+        controles.addWidget(self.btn_generar_estado)
+        estado_layout.addLayout(controles)
+
+        self.estado_table = QTableWidget(0, 4)
+        self.estado_table.setHorizontalHeaderLabels(["Fecha", "Factura", "Monto", "Saldo"])
+        estado_layout.addWidget(self.estado_table)
+
+        estado_tab.setLayout(estado_layout)
+        self.tabs.addTab(estado_tab, "Estados de cuenta")
+
         # Conexiones
         self.btn_add_trabajador.clicked.connect(self._agregar_trabajador)
         self.btn_edit_trabajador.clicked.connect(self._editar_trabajador)
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
+        self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
+        self.btn_generar_estado.clicked.connect(self._generar_estado_cuenta)
 
         self._actualizar_tabla_trabajadores()
+        self._cargar_personas_estado()
 
         # Conexiones
         self.btn_guardar_rapido.clicked.connect(self.guardar_rapido)
@@ -1580,3 +1614,38 @@ class MainWindow(QMainWindow):
             self.manager.db.delete_trabajador(t["id"])
             self._actualizar_tabla_trabajadores()
             QMessageBox.information(self, "Trabajador eliminado", f"El trabajador '{t['nombre']}' ha sido eliminado.")
+
+    def _cargar_personas_estado(self):
+        self.estado_persona_combo.clear()
+        if self.estado_tipo_combo.currentText() == "Cliente":
+            personas = self.manager.db.get_clientes()
+        else:
+            personas = self.manager.db.get_trabajadores(solo_vendedores=True)
+        for p in personas:
+            self.estado_persona_combo.addItem(p.get("nombre", ""), p.get("id"))
+
+    def _generar_estado_cuenta(self):
+        persona_id = self.estado_persona_combo.currentData()
+        if persona_id is None:
+            QMessageBox.warning(self, "Estado de cuenta", "Seleccione una persona")
+            return
+        tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
+        if self.estado_anio_actual.isChecked():
+            inicio = QDate(QDate.currentDate().year(), 1, 1)
+            fin = QDate.currentDate()
+        else:
+            inicio = self.estado_fecha_inicio.date()
+            fin = self.estado_fecha_fin.date()
+        facturas = self.manager.db.get_estado_cuenta(
+            persona_id,
+            tipo,
+            inicio.toString("yyyy-MM-dd"),
+            fin.toString("yyyy-MM-dd"),
+        )
+        self.estado_table.setRowCount(len(facturas))
+        for row, f in enumerate(facturas):
+            self.estado_table.setItem(row, 0, QTableWidgetItem(f.get("fecha", "")))
+            self.estado_table.setItem(row, 1, QTableWidgetItem(str(f.get("id"))))
+            self.estado_table.setItem(row, 2, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
+            self.estado_table.setItem(row, 3, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
+

@@ -1,6 +1,10 @@
 import sqlite3
 from datetime import datetime
 import json
+import logging
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 class DB:
     def __init__(self, db_name="inventario.db"):
@@ -376,14 +380,14 @@ class DB:
             self.cursor.execute("UPDATE Distribuidores SET nombre=? WHERE id=?", (nombre, id))
             self.conn.commit()
         except Exception as e:
-            print("Error al actualizar Distribuidor:", e)
+            logger.exception("Error al actualizar Distribuidor: %s", e)
 
     def delete_Distribuidor(self, id):
         try:
             self.cursor.execute("DELETE FROM Distribuidores WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
-            print("Error al eliminar Distribuidor:", e)
+            logger.exception("Error al eliminar Distribuidor: %s", e)
 
     # CRUD VENDEDORES (antes vendedores)
     def add_vendedor(self, nombre, descripcion="", Distribuidor_id=None):
@@ -405,14 +409,14 @@ class DB:
             )
             self.conn.commit()
         except Exception as e:
-            print("Error al actualizar vendedor:", e)
+            logger.exception("Error al actualizar vendedor: %s", e)
 
     def delete_vendedor(self, id):
         try:
             self.cursor.execute("DELETE FROM vendedores WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
-            print("Error al eliminar vendedor:", e)
+            logger.exception("Error al eliminar vendedor: %s", e)
 
     # CRUD PRODUCTOS
     def add_producto(self, nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
@@ -552,7 +556,7 @@ class DB:
             self.conn.commit()
             return venta_id
         except Exception as e:
-            print("Error al agregar venta a crédito fiscal:", e)
+            logger.exception("Error al agregar venta a crédito fiscal: %s", e)
             return None
 
     def get_ventas(self):
@@ -576,7 +580,7 @@ class DB:
             self.cursor.execute("DELETE FROM ventas WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
-            print("Error al eliminar venta:", e)
+            logger.exception("Error al eliminar venta: %s", e)
 
     # CRUD DETALLES_VENTA
     def add_detalle_venta(self, venta_id, producto_id, cantidad, precio_unitario, descuento=0, descuento_tipo="", iva=0, comision=0, iva_tipo="", tipo_fiscal="", extra=None, precio_con_iva=0):
@@ -588,14 +592,14 @@ class DB:
             """, (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra_json, precio_con_iva))
             self.conn.commit()
         except Exception as e:
-            print("Error al agregar detalle de venta:", e)
+            logger.exception("Error al agregar detalle de venta: %s", e)
 
     def delete_detalle_venta(self, id):
         try:
             self.cursor.execute("DELETE FROM detalles_venta WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
-            print("Error al eliminar detalle de venta:", e)
+            logger.exception("Error al eliminar detalle de venta: %s", e)
 
     def aumentar_stock(self, producto_id, cantidad):
         self.cursor.execute("UPDATE productos SET stock = stock + ? WHERE id = ?", (cantidad, producto_id))

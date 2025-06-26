@@ -92,6 +92,7 @@ class PurchasesTab(QWidget):
             "Fecha", "ID Compra", "Distribuidor", "Vendedor",
             "Total", "Comisión", "Acciones"
         ])
+        self.table.verticalHeader().setDefaultSectionSize(60)
         layout.addWidget(self.table)
 
         # Connections
@@ -124,7 +125,7 @@ class PurchasesTab(QWidget):
         layout.addWidget(btn_detalle)
         layout.addWidget(btn_pdf)
         layout.addStretch(1)
-        self.table.setRowHeight(row, 40)
+        self.table.setRowHeight(row, 60)
         self.table.setCellWidget(row, 6, widget)
 
     def load_purchases(self):

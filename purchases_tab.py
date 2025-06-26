@@ -98,8 +98,11 @@ class PurchasesTab(QWidget):
             fecha = c.get("fecha")
             try:
                 fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
-            except Exception:
-                fdate = None
+            except ValueError:
+                try:
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                except ValueError:
+                    fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
             dist = Distribuidores.get(c.get("Distribuidor_id"), "")
@@ -158,11 +161,14 @@ class PurchasesTab(QWidget):
 
             try:
                 fdate = datetime.strptime(compra.get("fecha", ""), "%Y-%m-%d %H:%M:%S").date()
-                if fdate.year == today.year and fdate.month == today.month:
-                    total_mes += compra.get("total", 0)
-                    total_comision += comision_total
-            except Exception:
-                pass
+            except ValueError:
+                try:
+                    fdate = datetime.strptime(compra.get("fecha", ""), "%Y-%m-%d").date()
+                except ValueError:
+                    fdate = None
+            if fdate and fdate.year == today.year and fdate.month == today.month:
+                total_mes += compra.get("total", 0)
+                total_comision += comision_total
 
         if prod_count:
             prod_id = max(prod_count, key=prod_count.get)

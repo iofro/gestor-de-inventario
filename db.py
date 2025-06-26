@@ -238,6 +238,11 @@ class DB:
         except Exception:
             pass  # Ya existe la columna
         try:
+            self.cursor.execute("ALTER TABLE ventas ADD COLUMN vendedor_id INTEGER")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
+        try:
             self.cursor.execute("ALTER TABLE compras ADD COLUMN Distribuidor_id INTEGER")
             self.conn.commit()
         except Exception:
@@ -625,6 +630,42 @@ class DB:
         for f in facturas:
             f["saldo"] = f.get("total", 0)
         return facturas
+
+    def get_estado_cuenta_vendedores(self, vendedor_id=None, fecha_inicio=None, fecha_fin=None):
+        """Genera el estado de cuenta de los vendedores.
+
+        Si ``vendedor_id`` es ``None`` se obtienen las ventas agrupadas por
+        vendedor.  Cuando se especifica un ``vendedor_id`` se devuelven todas las
+        ventas registradas para ese vendedor dentro del rango indicado.
+        """
+
+        if vendedor_id is None:
+            query = (
+                "SELECT vendedor_id, SUM(total) AS total_ventas "
+                "FROM ventas WHERE vendedor_id IS NOT NULL"
+            )
+            params = []
+            if fecha_inicio:
+                query += " AND fecha >= ?"
+                params.append(fecha_inicio)
+            if fecha_fin:
+                query += " AND fecha <= ?"
+                params.append(fecha_fin)
+            query += " GROUP BY vendedor_id ORDER BY vendedor_id"
+            self.cursor.execute(query, params)
+            return [dict(row) for row in self.cursor.fetchall()]
+
+        query = "SELECT id, fecha, total FROM ventas WHERE vendedor_id=?"
+        params = [vendedor_id]
+        if fecha_inicio:
+            query += " AND fecha >= ?"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND fecha <= ?"
+            params.append(fecha_fin)
+        query += " ORDER BY fecha"
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
 
     def delete_venta(self, id):
         try:

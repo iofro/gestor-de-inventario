@@ -6,7 +6,8 @@ logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QMessageBox, QCheckBox, QRadioButton, QComboBox,
-    QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup
+    QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
+    QAbstractItemView
 )
 from PyQt5.QtCore import Qt, QDate
 
@@ -363,6 +364,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.table.setHorizontalHeaderLabels([
             "Producto", "Cantidad", "Precio U.", "Descuento", "Tipo fiscal", "Eliminar"
         ])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         left_layout.addWidget(self.table)
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
         self.table.cellClicked.connect(self._eliminar_fila)
@@ -973,6 +976,8 @@ class RegisterPurchaseDialog(QDialog):
         self.table.setHorizontalHeaderLabels([
             "Producto", "Cantidad", "Precio U.", "Subtotal", "IVA", "Comisión", "Total", "Vencimiento", "Eliminar"
         ])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         layout.addWidget(self.table)
 
         # Total general de la compra
@@ -1517,6 +1522,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.table.setHorizontalHeaderLabels([
             "Producto", "Cantidad", "Precio U.", "Descuento", "IVA", "Tipo fiscal", "Eliminar"
         ])
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
         self.table.cellClicked.connect(lambda *_: self._actualizar_iva_retenido())
@@ -2233,6 +2240,8 @@ class CompraDetalleDialog(QDialog):
             "Producto", "Cantidad", "Precio U.", "Subtotal", "Descuento",
             "IVA", "Comisión", "Vencimiento"
         ])
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QAbstractItemView.SelectRows)
         for i, d in enumerate(detalles):
             nombre_producto = productos_dict.get(d.get("producto_id"), "Desconocido")
             precio_unitario = d.get("precio_unitario", d.get("precio", 0))

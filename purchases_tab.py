@@ -101,6 +101,15 @@ class PurchasesTab(QWidget):
         self.vendedor_combo.currentIndexChanged.connect(self.load_purchases)
         self.search_bar.textChanged.connect(self.load_purchases)
 
+    def refresh_filters(self):
+        """Reload vendor and distributor filter options from manager data."""
+        self.distribuidor_combo.clear()
+        self.distribuidor_combo.addItem("Todos")
+        self.distribuidor_combo.addItems([d["nombre"] for d in self.manager._Distribuidores])
+        self.vendedor_combo.clear()
+        self.vendedor_combo.addItem("Todos")
+        self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
+
     def _add_action_buttons(self, row, compra_id):
         widget = QWidget()
         layout = QHBoxLayout(widget)
@@ -131,8 +140,11 @@ class PurchasesTab(QWidget):
             fecha = c.get("fecha")
             try:
                 fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
-            except Exception:
-                fdate = None
+            except ValueError:
+                try:
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                except ValueError:
+                    fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
             dist = Distribuidores.get(c.get("Distribuidor_id"), "")
@@ -191,11 +203,14 @@ class PurchasesTab(QWidget):
 
             try:
                 fdate = datetime.strptime(compra.get("fecha", ""), "%Y-%m-%d %H:%M:%S").date()
-                if fdate.year == today.year and fdate.month == today.month:
-                    total_mes += compra.get("total", 0)
-                    total_comision += comision_total
-            except Exception:
-                pass
+            except ValueError:
+                try:
+                    fdate = datetime.strptime(compra.get("fecha", ""), "%Y-%m-%d").date()
+                except ValueError:
+                    fdate = None
+            if fdate and fdate.year == today.year and fdate.month == today.month:
+                total_mes += compra.get("total", 0)
+                total_comision += comision_total
 
         if prod_count:
             prod_id = max(prod_count, key=prod_count.get)

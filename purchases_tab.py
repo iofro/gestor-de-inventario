@@ -86,14 +86,26 @@ class PurchasesTab(QWidget):
             filter_layout.addWidget(w)
         layout.addLayout(filter_layout)
 
-        # Table
-        self.table = QTableWidget(0, 7)
+        # Table and side buttons
+        content_layout = QHBoxLayout()
+
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels([
             "Fecha", "ID Compra", "Distribuidor", "Vendedor",
-            "Total", "Comisión", "Acciones"
+            "Total", "Comisión"
         ])
         self.table.verticalHeader().setDefaultSectionSize(60)
-        layout.addWidget(self.table)
+        content_layout.addWidget(self.table)
+
+        side_layout = QVBoxLayout()
+        self.btn_ver = QPushButton("Ver")
+        self.btn_pdf = QPushButton("PDF")
+        side_layout.addWidget(self.btn_ver)
+        side_layout.addWidget(self.btn_pdf)
+        side_layout.addStretch(1)
+        content_layout.addLayout(side_layout)
+
+        layout.addLayout(content_layout)
 
         # Connections
         self.date_from.dateChanged.connect(self.load_purchases)
@@ -101,6 +113,8 @@ class PurchasesTab(QWidget):
         self.distribuidor_combo.currentIndexChanged.connect(self.load_purchases)
         self.vendedor_combo.currentIndexChanged.connect(self.load_purchases)
         self.search_bar.textChanged.connect(self.load_purchases)
+        self.btn_ver.clicked.connect(self.show_selected_detail)
+        self.btn_pdf.clicked.connect(self.save_selected_pdf)
 
     def refresh_filters(self):
         """Reload vendor and distributor filter options from manager data."""
@@ -111,22 +125,25 @@ class PurchasesTab(QWidget):
         self.vendedor_combo.addItem("Todos")
         self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
 
-    def _add_action_buttons(self, row, compra_id):
-        widget = QWidget()
-        layout = QHBoxLayout(widget)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(2)
-        btn_detalle = QPushButton("Ver")
-        btn_pdf = QPushButton("PDF")
-        for btn in (btn_detalle, btn_pdf):
-            btn.setFixedSize(25, 12)
-            btn.setStyleSheet("font-size:8px;")
-        btn_detalle.clicked.connect(lambda: self.show_detail(compra_id))
-        layout.addWidget(btn_detalle)
-        layout.addWidget(btn_pdf)
-        layout.addStretch(1)
-        self.table.setRowHeight(row, 60)
-        self.table.setCellWidget(row, 6, widget)
+    def _selected_compra_id(self):
+        if self.table.currentRow() < 0:
+            return None
+        item = self.table.item(self.table.currentRow(), 1)
+        if not item:
+            return None
+        try:
+            return int(item.text())
+        except ValueError:
+            return None
+
+    def show_selected_detail(self):
+        compra_id = self._selected_compra_id()
+        if compra_id is not None:
+            self.show_detail(compra_id)
+
+    def save_selected_pdf(self):
+        # Placeholder for PDF generation functionality
+        pass
 
     def load_purchases(self):
         compras = self.manager.db.get_compras()
@@ -186,7 +203,7 @@ class PurchasesTab(QWidget):
             self.table.setItem(row, 3, QTableWidgetItem(vend))
             self.table.setItem(row, 4, QTableWidgetItem(f"${compra.get('total', 0):.2f}"))
             self.table.setItem(row, 5, QTableWidgetItem(f"${comision_total:.2f}"))
-            self._add_action_buttons(row, compra["id"])
+            self.table.setRowHeight(row, 60)
 
             expired = False
             for d in detalles:

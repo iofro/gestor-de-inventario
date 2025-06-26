@@ -6,6 +6,7 @@ def create_db():
     return DB(":memory:")
 
 
+
 def test_get_venta_credito_fiscal_basic():
     db = create_db()
     db.add_cliente("Juan", "123", "nit1", "", "giro", "", "", "", "", "")
@@ -26,3 +27,4 @@ def test_get_venta_credito_fiscal_basic():
     assert record["cliente_id"] == cliente_id
     assert record["nrc"] == "123"
 
+   

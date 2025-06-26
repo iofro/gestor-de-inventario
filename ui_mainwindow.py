@@ -250,7 +250,7 @@ class MainWindow(QMainWindow):
         clientes_tab.setLayout(clientes_layout)
 
         # --- PESTAÑA DE VENTAS ---
-        ventas_tab = SalesTab(self.manager, self)
+        self.sales_tab = SalesTab(self.manager, self)
 
         # --- PESTAÑA DE COMPRAS ---
         from purchases_tab import PurchasesTab
@@ -281,7 +281,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(tab_widget, "Inventario")
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")  # <-- Esta línea es clave
         self.tabs.addTab(clientes_tab, "Clientes")
-        self.tabs.addTab(ventas_tab, "Ventas")
+        self.tabs.addTab(self.sales_tab, "Ventas")
         self.tabs.addTab(compras_tab, "Compras")
         self.tabs.addTab(inventario_actual_tab, "Inventario actual")
         self.setCentralWidget(self.tabs)
@@ -571,6 +571,7 @@ class MainWindow(QMainWindow):
                         self.manager.db.actualizar_stock_producto(item["producto_id"])
                 self.manager.refresh_data()
                 self.filter_products()
+                self.sales_tab.load_sales()
                 QMessageBox.information(self, "Venta", f"Venta registrada correctamente.\nTotal: ${total:.2f}")
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AQUÍ
@@ -711,6 +712,7 @@ class MainWindow(QMainWindow):
                         self.manager.db.actualizar_stock_producto(item["producto_id"])
                 self.manager.refresh_data()
                 self.filter_products()
+                self.sales_tab.load_sales()
                 QMessageBox.information(self, "Venta a Crédito Fiscal", f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}")
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()

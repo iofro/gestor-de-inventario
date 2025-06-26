@@ -11,9 +11,12 @@ import json
 from inventory_manager import InventoryManager
 from dialogs import RegisterSaleDialog, ClienteSelectorDialog, ProductDialog, RegisterPurchaseDialog, DistribuidorDialog, ClienteDialog
 from datetime import datetime
+
 from num2words import num2words  # Instala las dependencias con: pip install -r requirements.txt
+
 from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
+from utils.monto import monto_a_texto_sv
 import logging
 
 logger = logging.getLogger(__name__)
@@ -21,15 +24,6 @@ logger = logging.getLogger(__name__)
 def redondear(valor):
     return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
-def monto_a_texto_sv(monto):
-    """
-    Convierte un monto a texto en formato fiscal salvadoreño:
-    174.50 -> "CIENTO SETENTA Y CUATRO 50/100 DÓLARES"
-    """
-    entero = int(monto)
-    centavos = int(round((monto - entero) * 100))
-    palabras = num2words(entero, lang='es').upper()
-    return f"{palabras} {centavos:02d}/100 DÓLARES"
 
 class MainWindow(QMainWindow):
     def __init__(self):

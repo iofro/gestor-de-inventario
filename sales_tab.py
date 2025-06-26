@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QDateEdit,
     QTextEdit,
     QMessageBox,
+    QAbstractItemView,
 )
 from PyQt5.QtCore import Qt, QDate
 from datetime import datetime
@@ -56,6 +57,8 @@ class SalesTab(QWidget):
         self.sales_table.setHorizontalHeaderLabels([
             "Nº Factura", "Cliente", "Fecha", "Total", "Estado"
         ])
+        self.sales_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.sales_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.sales_table.itemSelectionChanged.connect(self.show_sale)
         left_layout.addWidget(self.sales_table)
 

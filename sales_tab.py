@@ -221,6 +221,35 @@ class SalesTab(QWidget):
 
         detalles = self.manager.db.get_detalles_venta(venta_id)
 
+        # Merge venta info with credit-fiscal extra data
+        venta_data = dict(venta)
+        if credito_info:
+            venta_data.update(credito_info)
+
+        # Attach vendedor nombre if available
+        if venta_data.get("vendedor_id"):
+            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
+            if trabajador:
+                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
+        # Calculate totals per line if not provided
+        total = 0
+        for d in detalles:
+            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            if d.get("descuento_tipo") == "%":
+                base -= base * d.get("descuento", 0) / 100
+            else:
+                base -= d.get("descuento", 0)
+            if d.get("tipo_fiscal", "").lower() == "venta exenta":
+                d["ventas_exentas"] = base
+            elif d.get("tipo_fiscal", "").lower() == "venta no sujeta":
+                d["ventas_no_sujetas"] = base
+            else:
+                d["ventas_gravadas"] = base
+            total += base
+
+        venta_data["total"] = total
+
         cliente = None
         if venta.get("cliente_id"):
             cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
@@ -232,6 +261,6 @@ class SalesTab(QWidget):
             )
 
         filename = f"factura_{venta_id}.pdf"
-        generar_factura_electronica_pdf(credito_info or venta, detalles, cliente or {}, distribuidor or {}, archivo=filename)
+        generar_factura_electronica_pdf(venta_data, detalles, cliente or {}, distribuidor or {}, archivo=filename)
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
 

@@ -605,6 +605,15 @@ class DB:
             logger.exception("Error al agregar venta a crédito fiscal: %s", e)
             return None
 
+    def get_venta_credito_fiscal(self, venta_id):
+        """Retrieve a single record from ventas_credito_fiscal by venta_id."""
+        self.cursor.execute(
+            "SELECT * FROM ventas_credito_fiscal WHERE venta_id=?",
+            (venta_id,),
+        )
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+
     def get_ventas(self):
         self.cursor.execute("SELECT * FROM ventas")
         return [dict(row) for row in self.cursor.fetchall()]

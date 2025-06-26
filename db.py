@@ -111,6 +111,15 @@ class DB:
             )
         """)
         self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS pagos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                cliente_id INTEGER,
+                fecha TEXT,
+                monto REAL,
+                FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+            )
+        """)
+        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS compras (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha TEXT,
@@ -779,6 +788,45 @@ class DB:
             params = [f"%{search}%"] * 3
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def add_pago(self, cliente_id, monto, fecha):
+        """Registra un pago aplicado a un cliente."""
+        self.cursor.execute(
+            "INSERT INTO pagos (cliente_id, monto, fecha) VALUES (?, ?, ?)",
+            (cliente_id, monto, fecha),
+        )
+        self.conn.commit()
+
+    def get_pagos_cliente(self, cliente_id, fecha_inicio=None, fecha_fin=None):
+        """Obtiene los pagos de un cliente en un rango de fechas."""
+        query = "SELECT fecha, monto FROM pagos WHERE cliente_id=?"
+        params = [cliente_id]
+        if fecha_inicio:
+            query += " AND fecha >= ?"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND fecha <= ?"
+            params.append(fecha_fin)
+        query += " ORDER BY fecha"
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_estado_cuenta_cliente(self, cliente_id, fecha_inicio=None, fecha_fin=None):
+        """Genera un estado de cuenta detallado para un cliente."""
+        compras = self.get_estado_cuenta(
+            cliente_id, "cliente", fecha_inicio, fecha_fin
+        )
+        total_acumulado = sum(c.get("total", 0) for c in compras)
+        pagos = self.get_pagos_cliente(cliente_id, fecha_inicio, fecha_fin)
+        total_pagos = sum(p.get("monto", 0) for p in pagos)
+        saldo = total_acumulado - total_pagos
+        return {
+            "cliente_id": cliente_id,
+            "total_acumulado": total_acumulado,
+            "historial_compras": compras,
+            "pagos_aplicados": pagos,
+            "saldo": saldo,
+        }
 
     def limpiar_productos(self):
         self.cursor.execute("DELETE FROM productos")

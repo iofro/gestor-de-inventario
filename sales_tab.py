@@ -120,8 +120,11 @@ class SalesTab(QWidget):
             fecha = v.get("fecha")
             try:
                 fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
-            except Exception:
-                fdate = None
+            except ValueError:
+                try:
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                except ValueError:
+                    fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
             cliente = ""

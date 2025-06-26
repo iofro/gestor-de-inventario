@@ -118,7 +118,8 @@ class PurchasesTab(QWidget):
         btn_detalle = QPushButton("Ver")
         btn_pdf = QPushButton("PDF")
         for btn in (btn_detalle, btn_pdf):
-            btn.setFixedHeight(36)
+            btn.setFixedSize(50, 24)
+            btn.setStyleSheet("font-size:10px;")
         btn_detalle.clicked.connect(lambda: self.show_detail(compra_id))
         layout.addWidget(btn_detalle)
         layout.addWidget(btn_pdf)

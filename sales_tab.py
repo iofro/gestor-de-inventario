@@ -233,22 +233,39 @@ class SalesTab(QWidget):
                 venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
 
         # Calculate totals per line if not provided
-        total = 0
+        sumas = 0
+        ventas_exentas = 0
+        ventas_no_sujetas = 0
+        iva = 0
         for d in detalles:
             base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
             if d.get("descuento_tipo") == "%":
                 base -= base * d.get("descuento", 0) / 100
             else:
                 base -= d.get("descuento", 0)
-            if d.get("tipo_fiscal", "").lower() == "venta exenta":
+            iva_item = d.get("iva", 0)
+            tipo = d.get("tipo_fiscal", "").lower()
+            if tipo == "venta exenta":
                 d["ventas_exentas"] = base
-            elif d.get("tipo_fiscal", "").lower() == "venta no sujeta":
+                ventas_exentas += base
+            elif tipo == "venta no sujeta":
                 d["ventas_no_sujetas"] = base
+                ventas_no_sujetas += base
             else:
                 d["ventas_gravadas"] = base
-            total += base
+                sumas += base
+                iva += iva_item
 
-        venta_data["total"] = total
+        subtotal = sumas + ventas_exentas + ventas_no_sujetas
+        total = subtotal + iva - venta_data.get("iva_retenido", 0)
+        venta_data.update({
+            "sumas": sumas,
+            "iva": iva,
+            "ventas_exentas": ventas_exentas,
+            "ventas_no_sujetas": ventas_no_sujetas,
+            "subtotal": subtotal,
+            "total": total,
+        })
 
         cliente = None
         if venta.get("cliente_id"):

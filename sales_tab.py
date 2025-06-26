@@ -1,9 +1,20 @@
 from PyQt5.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QSplitter, QDateEdit, QTextEdit
+    QWidget,
+    QVBoxLayout,
+    QHBoxLayout,
+    QLineEdit,
+    QTableWidget,
+    QTableWidgetItem,
+    QPushButton,
+    QLabel,
+    QSplitter,
+    QDateEdit,
+    QTextEdit,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt, QDate
 from datetime import datetime
+from factura_sv import generar_factura_electronica_pdf
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -75,6 +86,7 @@ class SalesTab(QWidget):
         btn_layout.addWidget(self.btn_enviar)
         btn_layout.addWidget(self.btn_imprimir)
         btn_layout.addWidget(self.btn_editar)
+        self.btn_guardar.clicked.connect(self.save_pdf)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -177,4 +189,49 @@ class SalesTab(QWidget):
         else:
             self.info_label.setText(f"Factura {venta_id} - Cliente: {cliente}")
         # In a real app we would load the PDF preview here
+
+    def save_pdf(self):
+        """Generate a PDF for the selected sale after user confirmation."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Guardar PDF", "Seleccione una factura primero.")
+            return
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Guardar PDF", "No se encontró la venta seleccionada.")
+            return
+
+        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
+        mensaje = (
+            "Esta venta está registrada como crédito fiscal, ¿desea continuar?"
+            if credito_info
+            else "Esta venta está registrada como consumidor final, ¿desea continuar?"
+        )
+        reply = QMessageBox.question(self, "Guardar PDF", mensaje, QMessageBox.Yes | QMessageBox.No)
+        if reply != QMessageBox.Yes:
+            QMessageBox.information(
+                self,
+                "Guardar PDF",
+                "Si desea modificar esta factura presione generar nueva factura manual",
+            )
+            return
+
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        distribuidor = None
+        if venta.get("Distribuidor_id"):
+            distribuidor = next(
+                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
+                None,
+            )
+
+        filename = f"factura_{venta_id}.pdf"
+        generar_factura_electronica_pdf(credito_info or venta, detalles, cliente or {}, distribuidor or {}, archivo=filename)
+        QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
 

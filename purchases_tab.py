@@ -18,6 +18,39 @@ class PurchasesTab(QWidget):
         self._setup_ui()
         self.load_purchases()
 
+    def refresh_filters(self):
+        """Refresh distributor and vendor filter combos with current data."""
+        self.distribuidor_combo.blockSignals(True)
+        self.vendedor_combo.blockSignals(True)
+
+        current_dist = self.distribuidor_combo.currentText()
+        current_vend = self.vendedor_combo.currentText()
+
+        self.distribuidor_combo.clear()
+        self.distribuidor_combo.addItem("Todos")
+        self.distribuidor_combo.addItems([d["nombre"] for d in self.manager._Distribuidores])
+
+        self.vendedor_combo.clear()
+        self.vendedor_combo.addItem("Todos")
+        self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
+
+        if current_dist in [d["nombre"] for d in self.manager._Distribuidores]:
+            idx = self.distribuidor_combo.findText(current_dist)
+            if idx >= 0:
+                self.distribuidor_combo.setCurrentIndex(idx)
+        else:
+            self.distribuidor_combo.setCurrentIndex(0)
+
+        if current_vend in [v["nombre"] for v in self.manager._vendedores]:
+            idx = self.vendedor_combo.findText(current_vend)
+            if idx >= 0:
+                self.vendedor_combo.setCurrentIndex(idx)
+        else:
+            self.vendedor_combo.setCurrentIndex(0)
+
+        self.distribuidor_combo.blockSignals(False)
+        self.vendedor_combo.blockSignals(False)
+
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 

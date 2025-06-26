@@ -593,6 +593,9 @@ class MainWindow(QMainWindow):
             result = dialog.exec_()
             if result == QDialog.Accepted:
                 QMessageBox.information(self, "Compra", "Compra registrada correctamente.")
+                self.manager.refresh_data()
+                self.compras_tab.refresh_filters()
+                self.compras_tab.load_purchases()
                 self.filter_products()
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
@@ -743,11 +746,13 @@ class MainWindow(QMainWindow):
                     json.dump({"ultimo": filename}, f)
                 self.compras_tab.refresh_filters()
                 self.filter_products()
+                self.compras_tab.refresh_filters()
+                self.compras_tab.load_purchases()
                 self._actualizar_tabla_clientes()
-                self._actualizar_arbol_vendedores()     
-                self._actualizar_arbol_Distribuidores()  
+                self._actualizar_arbol_vendedores()
+                self._actualizar_arbol_Distribuidores()
                 self._actualizar_tabla_trabajadores()
-                self._actualizar_inventario_actual() 
+                self._actualizar_inventario_actual()
                 self._actualizar_historial() 
                 QMessageBox.information(self, "Cargar inventario", "Inventario cargado correctamente.")
             except Exception as e:
@@ -771,6 +776,9 @@ class MainWindow(QMainWindow):
             try:
                 self.manager.importar_inventario_json(self.ultimo_archivo_json)
                 self.compras_tab.refresh_filters()
+
+                self.compras_tab.load_purchases()
+
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA
                 QMessageBox.information(self, "Cargar rápido", f"Inventario cargado de:\n{self.ultimo_archivo_json}")
@@ -803,6 +811,9 @@ class MainWindow(QMainWindow):
                 pass
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
+
+            self.compras_tab.load_purchases()
+
             self._actualizar_tabla_trabajadores()  # <-- AGREGA ESTA LÍNEA
             self.filter_products()
             self._actualizar_arbol_vendedores()

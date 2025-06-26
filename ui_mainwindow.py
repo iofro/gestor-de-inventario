@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableView, QLineEdit,
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
     QListWidget, QInputDialog, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
-    QDateEdit, QCheckBox
+    QDateEdit, QCheckBox, QTextEdit
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor

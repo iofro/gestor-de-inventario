@@ -152,6 +152,7 @@ class DB:
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS trabajadores (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
+                codigo TEXT UNIQUE,
                 nombre TEXT NOT NULL,
                 dui TEXT,
                 nit TEXT,
@@ -273,6 +274,11 @@ class DB:
         except Exception:
             pass  # Ya existe la columna
         try:
+            self.cursor.execute("ALTER TABLE trabajadores ADD COLUMN codigo TEXT")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
+        try:
             self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN descuento REAL DEFAULT 0")
             self.conn.commit()
         except Exception:
@@ -377,6 +383,9 @@ class DB:
         )
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_vendedores_codigo ON vendedores(codigo)"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_trabajadores_codigo ON trabajadores(codigo)"
         )
         self.conn.commit()
 
@@ -663,6 +672,11 @@ class DB:
         max_id = self.cursor.fetchone()[0]
         return f"V-{(max_id + 1) if max_id else 1:03d}"
 
+    def get_next_trabajador_codigo(self):
+        self.cursor.execute("SELECT MAX(id) FROM trabajadores")
+        max_id = self.cursor.fetchone()[0]
+        return f"T-{(max_id + 1) if max_id else 1:03d}"
+
     def update_cliente(self, id, codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio):
         self.cursor.execute(
             """
@@ -828,25 +842,30 @@ class DB:
         self.conn.commit()
 
     def add_trabajador(self, data):
-        self.cursor.execute("""
-            INSERT INTO trabajadores (nombre, dui, nit, fecha_nacimiento, cargo, area, fecha_contratacion,
+        codigo = data.get("codigo") or self.get_next_trabajador_codigo()
+        self.cursor.execute(
+            """
+            INSERT INTO trabajadores (codigo, nombre, dui, nit, fecha_nacimiento, cargo, area, fecha_contratacion,
                 telefono, email, direccion, salario_base, comentarios, es_vendedor)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """, (
-            data.get("nombre", ""),
-            data.get("dui", ""),
-            data.get("nit", ""),
-            data.get("fecha_nacimiento", ""),
-            data.get("cargo", ""),
-            data.get("area", ""),
-            data.get("fecha_contratacion", ""),
-            data.get("telefono", ""),
-            data.get("email", ""),
-            data.get("direccion", ""),
-            data.get("salario_base", None),
-            data.get("comentarios", ""),
-            1 if data.get("es_vendedor") else 0
-        ))
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+            (
+                codigo,
+                data.get("nombre", ""),
+                data.get("dui", ""),
+                data.get("nit", ""),
+                data.get("fecha_nacimiento", ""),
+                data.get("cargo", ""),
+                data.get("area", ""),
+                data.get("fecha_contratacion", ""),
+                data.get("telefono", ""),
+                data.get("email", ""),
+                data.get("direccion", ""),
+                data.get("salario_base", None),
+                data.get("comentarios", ""),
+                1 if data.get("es_vendedor") else 0,
+            ),
+        )
         self.conn.commit()
 
     def get_trabajadores(self, solo_vendedores=False, area=None):
@@ -864,27 +883,31 @@ class DB:
         return [dict(row) for row in self.cursor.fetchall()]
 
     def update_trabajador(self, id, data):
-        self.cursor.execute("""
+        self.cursor.execute(
+            """
             UPDATE trabajadores SET
-                nombre=?, dui=?, nit=?, fecha_nacimiento=?, cargo=?, area=?, fecha_contratacion=?,
+                codigo=?, nombre=?, dui=?, nit=?, fecha_nacimiento=?, cargo=?, area=?, fecha_contratacion=?,
                 telefono=?, email=?, direccion=?, salario_base=?, comentarios=?, es_vendedor=?
             WHERE id=?
-        """, (
-            data.get("nombre", ""),
-            data.get("dui", ""),
-            data.get("nit", ""),
-            data.get("fecha_nacimiento", ""),
-            data.get("cargo", ""),
-            data.get("area", ""),
-            data.get("fecha_contratacion", ""),
-            data.get("telefono", ""),
-            data.get("email", ""),
-            data.get("direccion", ""),
-            data.get("salario_base", None),
-            data.get("comentarios", ""),
-            1 if data.get("es_vendedor") else 0,
-            id
-        ))
+        """,
+            (
+                data.get("codigo", ""),
+                data.get("nombre", ""),
+                data.get("dui", ""),
+                data.get("nit", ""),
+                data.get("fecha_nacimiento", ""),
+                data.get("cargo", ""),
+                data.get("area", ""),
+                data.get("fecha_contratacion", ""),
+                data.get("telefono", ""),
+                data.get("email", ""),
+                data.get("direccion", ""),
+                data.get("salario_base", None),
+                data.get("comentarios", ""),
+                1 if data.get("es_vendedor") else 0,
+                id,
+            ),
+        )
         self.conn.commit()
 
     def delete_trabajador(self, id):

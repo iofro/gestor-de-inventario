@@ -554,9 +554,9 @@ class MainWindow(QMainWindow):
         trabajadores_layout.addLayout(filtro_layout)
 
         # Tabla
-        self.trabajadores_table = QTableWidget(0, 9)
+        self.trabajadores_table = QTableWidget(0, 10)
         self.trabajadores_table.setHorizontalHeaderLabels([
-            "Nombre", "DUI", "NIT", "Nacimiento", "Cargo", "Área", "Teléfono", "Email", "¿Vendedor?"
+            "Código", "Nombre", "DUI", "NIT", "Nacimiento", "Cargo", "Área", "Teléfono", "Email", "¿Vendedor?"
         ])
         trabajadores_layout.addWidget(self.trabajadores_table)
 
@@ -1524,30 +1524,33 @@ class MainWindow(QMainWindow):
         trabajadores = self.manager.db.get_trabajadores(solo_vendedores=solo_vendedores, area=area)
         self.trabajadores_table.setRowCount(len(trabajadores))
         for row, t in enumerate(trabajadores):
-            self.trabajadores_table.setItem(row, 0, QTableWidgetItem(t.get("nombre", "")))
-            self.trabajadores_table.setItem(row, 1, QTableWidgetItem(t.get("dui", "")))
-            self.trabajadores_table.setItem(row, 2, QTableWidgetItem(t.get("nit", "")))
-            self.trabajadores_table.setItem(row, 3, QTableWidgetItem(t.get("fecha_nacimiento", "")))
-            self.trabajadores_table.setItem(row, 4, QTableWidgetItem(t.get("cargo", "")))
-            self.trabajadores_table.setItem(row, 5, QTableWidgetItem(t.get("area", "")))
-            self.trabajadores_table.setItem(row, 6, QTableWidgetItem(t.get("telefono", "")))
-            self.trabajadores_table.setItem(row, 7, QTableWidgetItem(t.get("email", "")))
-            self.trabajadores_table.setItem(row, 8, QTableWidgetItem("Sí" if t.get("es_vendedor") else "No"))
+            self.trabajadores_table.setItem(row, 0, QTableWidgetItem(t.get("codigo", "")))
+            self.trabajadores_table.setItem(row, 1, QTableWidgetItem(t.get("nombre", "")))
+            self.trabajadores_table.setItem(row, 2, QTableWidgetItem(t.get("dui", "")))
+            self.trabajadores_table.setItem(row, 3, QTableWidgetItem(t.get("nit", "")))
+            self.trabajadores_table.setItem(row, 4, QTableWidgetItem(t.get("fecha_nacimiento", "")))
+            self.trabajadores_table.setItem(row, 5, QTableWidgetItem(t.get("cargo", "")))
+            self.trabajadores_table.setItem(row, 6, QTableWidgetItem(t.get("area", "")))
+            self.trabajadores_table.setItem(row, 7, QTableWidgetItem(t.get("telefono", "")))
+            self.trabajadores_table.setItem(row, 8, QTableWidgetItem(t.get("email", "")))
+            self.trabajadores_table.setItem(row, 9, QTableWidgetItem("Sí" if t.get("es_vendedor") else "No"))
 
     def _get_selected_trabajador(self):
         row = self.trabajadores_table.currentRow()
         if row < 0:
             return None
-        nombre = self.trabajadores_table.item(row, 0).text()
+        codigo = self.trabajadores_table.item(row, 0).text()
         trabajadores = self.manager.db.get_trabajadores()
         for t in trabajadores:
-            if t.get("nombre", "") == nombre:
+            if t.get("codigo", "") == codigo:
                 return t
         return None
 
     def _agregar_trabajador(self):
         from dialogs import TrabajadorDialog
+        codigo = self.manager.db.get_next_trabajador_codigo()
         dialog = TrabajadorDialog(parent=self)
+        dialog.codigo.setText(codigo)
         if dialog.exec_():
             data = dialog.get_data()
             self.manager.db.add_trabajador(data)

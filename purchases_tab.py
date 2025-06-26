@@ -68,6 +68,15 @@ class PurchasesTab(QWidget):
         self.vendedor_combo.currentIndexChanged.connect(self.load_purchases)
         self.search_bar.textChanged.connect(self.load_purchases)
 
+    def refresh_filters(self):
+        """Reload vendor and distributor filter options from manager data."""
+        self.distribuidor_combo.clear()
+        self.distribuidor_combo.addItem("Todos")
+        self.distribuidor_combo.addItems([d["nombre"] for d in self.manager._Distribuidores])
+        self.vendedor_combo.clear()
+        self.vendedor_combo.addItem("Todos")
+        self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
+
     def _add_action_buttons(self, row, compra_id):
         widget = QWidget()
         layout = QHBoxLayout(widget)

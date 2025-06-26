@@ -254,7 +254,7 @@ class MainWindow(QMainWindow):
 
         # --- PESTAÑA DE COMPRAS ---
         from purchases_tab import PurchasesTab
-        compras_tab = PurchasesTab(self.manager, self)
+        self.compras_tab = PurchasesTab(self.manager, self)
 
         # --- PESTAÑA DE INVENTARIO ACTUAL ---
         inventario_actual_tab = QWidget()
@@ -282,7 +282,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")  # <-- Esta línea es clave
         self.tabs.addTab(clientes_tab, "Clientes")
         self.tabs.addTab(self.sales_tab, "Ventas")
-        self.tabs.addTab(compras_tab, "Compras")
+        self.tabs.addTab(self.compras_tab, "Compras")
         self.tabs.addTab(inventario_actual_tab, "Inventario actual")
         self.setCentralWidget(self.tabs)
 
@@ -741,6 +741,7 @@ class MainWindow(QMainWindow):
                 self.ultimo_archivo_json = filename
                 with open("ultimo_inventario.json", "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
+                self.compras_tab.refresh_filters()
                 self.filter_products()
                 self._actualizar_tabla_clientes()
                 self._actualizar_arbol_vendedores()     
@@ -769,6 +770,7 @@ class MainWindow(QMainWindow):
         if self.ultimo_archivo_json and os.path.exists(self.ultimo_archivo_json):
             try:
                 self.manager.importar_inventario_json(self.ultimo_archivo_json)
+                self.compras_tab.refresh_filters()
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA
                 QMessageBox.information(self, "Cargar rápido", f"Inventario cargado de:\n{self.ultimo_archivo_json}")
@@ -800,6 +802,7 @@ class MainWindow(QMainWindow):
             except Exception:
                 pass
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_tabla_trabajadores()  # <-- AGREGA ESTA LÍNEA
             self.filter_products()
             self._actualizar_arbol_vendedores()
@@ -848,6 +851,7 @@ class MainWindow(QMainWindow):
                 data["codigo"]
             )
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor agregado correctamente.")
 
@@ -873,6 +877,7 @@ class MainWindow(QMainWindow):
                 data["Distribuidor_id"]
             )
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor editado correctamente.")
 
@@ -882,6 +887,7 @@ class MainWindow(QMainWindow):
             data = dialog.get_data()
             self.manager.db.add_Distribuidor_detallado(data)
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_Distribuidores()
             QMessageBox.information(self, "Distribuidor", "Distribuidor agregado correctamente.")
 
@@ -931,6 +937,7 @@ class MainWindow(QMainWindow):
             ))
             self.manager.db.conn.commit()
             self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
             self._actualizar_arbol_Distribuidores()
             QMessageBox.information(self, "Distribuidor", "Distribuidor editado correctamente.")
         self.selected_row = None

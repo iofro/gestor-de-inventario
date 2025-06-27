@@ -369,7 +369,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
         self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
         self.estado_search_bar.textChanged.connect(self._cargar_personas_estado)
-        self.btn_generar_estado.clicked.connect(self._generar_estado_cuenta)
+        self.btn_generar_estado.clicked.connect(self._mostrar_historial_general)
         self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
 
         self._actualizar_tabla_trabajadores()
@@ -1247,22 +1247,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Trabajador eliminado", f"El trabajador '{t['nombre']}' ha sido eliminado.")
 
     def _cargar_personas_estado(self):
-        search = self.estado_search_bar.text()
-        if self.estado_tipo_combo.currentText() == "Cliente":
-            personas = self.manager.db.get_clientes(search)
-        else:
-            personas = self.manager.db.get_trabajadores(
-                solo_vendedores=True, search=search
-            )
-        self.estado_personas = personas
-        self.estado_table.setColumnCount(2)
-        self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
-        self.estado_table.setRowCount(len(personas))
-        for row, p in enumerate(personas):
-            self.estado_table.setItem(row, 0, QTableWidgetItem(p.get("codigo", "")))
-            self.estado_table.setItem(row, 1, QTableWidgetItem(p.get("nombre", "")))
-        if personas:
-            self.estado_table.selectRow(0)
+        """Carga automáticamente el historial según el filtro seleccionado."""
+        self._mostrar_historial_general()
 
     def _get_selected_estado_persona(self):
         row = self.estado_table.currentRow()
@@ -1365,4 +1351,71 @@ class MainWindow(QMainWindow):
             self.estado_table.setItem(row, 3, QTableWidgetItem(vend_nombre))
             self.estado_table.setItem(row, 4, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
             self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
+
+    def _mostrar_historial_general(self):
+        """Muestra el historial completo filtrando por cliente o vendedor."""
+        tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
+
+        if self.estado_anio_actual.isChecked():
+            inicio = QDate(QDate.currentDate().year(), 1, 1).toPyDate()
+            fin = QDate.currentDate().toPyDate()
+        else:
+            inicio = self.estado_fecha_inicio.date().toPyDate()
+            fin = self.estado_fecha_fin.date().toPyDate()
+
+        filtro = self.estado_search_bar.text().lower()
+        ventas = self.manager.db.get_ventas()
+        rows = []
+        for v in ventas:
+            fecha_str = v.get("fecha", "")
+            try:
+                fdate = datetime.strptime(fecha_str, "%Y-%m-%d %H:%M:%S").date()
+            except ValueError:
+                try:
+                    fdate = datetime.strptime(fecha_str, "%Y-%m-%d").date()
+                except ValueError:
+                    fdate = None
+            if fdate and (fdate < inicio or fdate > fin):
+                continue
+
+            if tipo == "cliente" and not v.get("cliente_id"):
+                continue
+            if tipo == "vendedor" and not v.get("vendedor_id"):
+                continue
+
+            cli_nombre = ""
+            vend_nombre = ""
+            codigo = ""
+            if v.get("cliente_id"):
+                cli = self.manager.db.get_cliente(v["cliente_id"])
+                if cli:
+                    cli_nombre = cli.get("nombre", "")
+                    codigo = cli.get("codigo", "")
+            if v.get("vendedor_id"):
+                trab = self.manager.db.get_trabajador(v["vendedor_id"])
+                if trab:
+                    vend_nombre = trab.get("nombre", "")
+                    if tipo == "vendedor":
+                        codigo = trab.get("codigo", "")
+
+            if filtro and filtro not in cli_nombre.lower() and filtro not in vend_nombre.lower() and filtro not in codigo.lower():
+                continue
+
+            rows.append((fecha_str, v.get("id"), cli_nombre, vend_nombre, v.get("total", 0)))
+
+        self.estado_table.setColumnCount(5)
+        self.estado_table.setHorizontalHeaderLabels([
+            "Fecha",
+            "Factura",
+            "Cliente",
+            "Vendedor",
+            "Monto",
+        ])
+        self.estado_table.setRowCount(len(rows))
+        for row, (fecha, fid, cli, vend, monto) in enumerate(rows):
+            self.estado_table.setItem(row, 0, QTableWidgetItem(fecha))
+            self.estado_table.setItem(row, 1, QTableWidgetItem(str(fid)))
+            self.estado_table.setItem(row, 2, QTableWidgetItem(cli))
+            self.estado_table.setItem(row, 3, QTableWidgetItem(vend))
+            self.estado_table.setItem(row, 4, QTableWidgetItem(f"${float(monto):.2f}"))
 

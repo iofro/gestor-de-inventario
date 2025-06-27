@@ -12,10 +12,15 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QAbstractItemView,
+    QInputDialog,
 )
 from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtPrintSupport import QPrinterInfo
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+import tempfile
+import subprocess
+import os
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -90,6 +95,7 @@ class SalesTab(QWidget):
         btn_layout.addWidget(self.btn_imprimir)
         btn_layout.addWidget(self.btn_editar)
         self.btn_guardar.clicked.connect(self.save_pdf)
+        self.btn_imprimir.clicked.connect(self.print_pdf)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -291,4 +297,110 @@ class SalesTab(QWidget):
             archivo=filename,
         )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
+
+    def print_pdf(self):
+        """Generate the invoice PDF and send it to a selected printer."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Imprimir", "Seleccione una factura primero.")
+            return
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Imprimir", "No se encontró la venta seleccionada.")
+            return
+
+        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+
+        venta_data = dict(venta)
+        if credito_info:
+            venta_data.update(credito_info)
+
+        if venta_data.get("vendedor_id"):
+            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
+            if trabajador:
+                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
+        sumas = 0
+        ventas_exentas = 0
+        ventas_no_sujetas = 0
+        iva = 0
+        for d in detalles:
+            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            if d.get("descuento_tipo") == "%":
+                base -= base * d.get("descuento", 0) / 100
+            else:
+                base -= d.get("descuento", 0)
+            iva_item = d.get("iva", 0)
+            tipo = d.get("tipo_fiscal", "").lower()
+            if tipo == "venta exenta":
+                d["ventas_exentas"] = base
+                ventas_exentas += base
+            elif tipo == "venta no sujeta":
+                d["ventas_no_sujetas"] = base
+                ventas_no_sujetas += base
+            else:
+                d["ventas_gravadas"] = base
+                sumas += base
+                iva += iva_item
+
+        subtotal = sumas + ventas_exentas + ventas_no_sujetas
+        total = subtotal + iva - venta_data.get("iva_retenido", 0)
+        venta_data.update({
+            "sumas": sumas,
+            "iva": iva,
+            "ventas_exentas": ventas_exentas,
+            "ventas_no_sujetas": ventas_no_sujetas,
+            "subtotal": subtotal,
+            "total": total,
+        })
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        distribuidor = None
+        if venta.get("Distribuidor_id"):
+            distribuidor = next(
+                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
+                None,
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+            generar_factura_electronica_pdf(
+                venta_data,
+                detalles,
+                cliente or {},
+                distribuidor or {},
+                archivo=tmp.name,
+            )
+            pdf_path = tmp.name
+
+        printers = [p.printerName() for p in QPrinterInfo.availablePrinters()]
+        if not printers:
+            QMessageBox.warning(self, "Imprimir", "No hay impresoras disponibles.")
+            os.remove(pdf_path)
+            return
+
+        printer_name, ok = QInputDialog.getItem(
+            self,
+            "Imprimir factura",
+            "Seleccione la impresora:",
+            printers,
+            0,
+            False,
+        )
+        if not ok:
+            os.remove(pdf_path)
+            return
+
+        try:
+            subprocess.run(["lpr", "-P", printer_name, pdf_path], check=True)
+            QMessageBox.information(self, "Imprimir", "Factura enviada a la impresora.")
+        except Exception as e:
+            QMessageBox.critical(self, "Imprimir", f"No se pudo imprimir: {e}")
+        finally:
+            os.remove(pdf_path)
 

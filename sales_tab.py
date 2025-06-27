@@ -12,21 +12,10 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QAbstractItemView,
-
-    QInputDialog,
-
 )
-from PyQt5.QtCore import Qt, QDate, QUrl
-from PyQt5.QtGui import QDesktopServices
-import tempfile
-import os
-
+from PyQt5.QtCore import Qt, QDate
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
-import tempfile
-import subprocess
-import os
-
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -75,7 +64,6 @@ class SalesTab(QWidget):
 
         self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
         left_layout.addWidget(self.new_invoice_btn)
-        self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
 
         left_widget = QWidget()
         left_widget.setLayout(left_layout)
@@ -93,19 +81,15 @@ class SalesTab(QWidget):
         preview_layout.addWidget(self.info_label)
 
         btn_layout = QHBoxLayout()
-        self.btn_preview = QPushButton("Previsualizar")
         self.btn_guardar = QPushButton("Guardar PDF")
         self.btn_enviar = QPushButton("Enviar por correo")
         self.btn_imprimir = QPushButton("Imprimir PDF")
         self.btn_editar = QPushButton("Editar factura")
-        btn_layout.addWidget(self.btn_preview)
         btn_layout.addWidget(self.btn_guardar)
         btn_layout.addWidget(self.btn_enviar)
         btn_layout.addWidget(self.btn_imprimir)
         btn_layout.addWidget(self.btn_editar)
-        self.btn_preview.clicked.connect(self.preview_pdf)
         self.btn_guardar.clicked.connect(self.save_pdf)
-        self.btn_imprimir.clicked.connect(self.print_pdf)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -307,92 +291,4 @@ class SalesTab(QWidget):
             archivo=filename,
         )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
-
-    def preview_pdf(self):
-        """Generate a temporary PDF and open it with the default viewer."""
-        if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(self, "Previsualizar", "Seleccione una factura primero.")
-
-            return
-
-        row = self.sales_table.currentRow()
-        venta_id = int(self.sales_table.item(row, 0).text())
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        if not venta:
-            QMessageBox.warning(self, "Previsualizar", "No se encontró la venta seleccionada.")
-
-            return
-
-        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
-        detalles = self.manager.db.get_detalles_venta(venta_id)
-
-        venta_data = dict(venta)
-        if credito_info:
-            venta_data.update(credito_info)
-
-        if venta_data.get("vendedor_id"):
-            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
-            if trabajador:
-                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
-
-
-        sumas = 0
-        ventas_exentas = 0
-        ventas_no_sujetas = 0
-        iva = 0
-        for d in detalles:
-            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
-            if d.get("descuento_tipo") == "%":
-                base -= base * d.get("descuento", 0) / 100
-            else:
-                base -= d.get("descuento", 0)
-            iva_item = d.get("iva", 0)
-            tipo = d.get("tipo_fiscal", "").lower()
-            if tipo == "venta exenta":
-                d["ventas_exentas"] = base
-                ventas_exentas += base
-            elif tipo == "venta no sujeta":
-                d["ventas_no_sujetas"] = base
-                ventas_no_sujetas += base
-            else:
-                d["ventas_gravadas"] = base
-                sumas += base
-                iva += iva_item
-
-        subtotal = sumas + ventas_exentas + ventas_no_sujetas
-        total = subtotal + iva - venta_data.get("iva_retenido", 0)
-        venta_data.update(
-            {
-                "sumas": sumas,
-                "iva": iva,
-                "ventas_exentas": ventas_exentas,
-                "ventas_no_sujetas": ventas_no_sujetas,
-                "subtotal": subtotal,
-                "total": total,
-            }
-        )
-
-
-        cliente = None
-        if venta.get("cliente_id"):
-            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
-        distribuidor = None
-        if venta.get("Distribuidor_id"):
-            distribuidor = next(
-                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
-                None,
-            )
-
-        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-
-            temp_file = tmp.name
-        generar_factura_electronica_pdf(
-            venta_data,
-            detalles,
-            cliente or {},
-            distribuidor or {},
-            archivo=temp_file,
-        )
-        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
-
 

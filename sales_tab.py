@@ -407,6 +407,13 @@ class SalesTab(QWidget):
 
     def generate_manual_invoice(self):
         """Open dialog to create an invoice manually and preview the PDF."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(
+                self,
+                "Factura manual",
+                "No has seleccionado ninguna venta",
+            )
+            return
         dialog = ManualInvoiceDialog(self)
         if dialog.exec_() == QDialog.Accepted:
             data = dialog.get_data()

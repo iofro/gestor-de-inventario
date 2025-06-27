@@ -9,8 +9,9 @@ from PyQt5.QtWidgets import (
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget
 )
-from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt, QDate, QUrl
+from PyQt5.QtGui import QColor, QDesktopServices
+import os
 
 getcontext().prec = 4
 
@@ -161,6 +162,132 @@ class ClienteSelectorDialog(QDialog):
 
     def get_selected_cliente(self):
         return self.selected_cliente
+
+
+class EstadoCuentaDialog(QDialog):
+    """Ventana para configurar la generación de estados de cuenta."""
+
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Generar estado de cuenta")
+
+        layout = QVBoxLayout()
+
+        # Modo de generación
+        self.modo_combo = QComboBox()
+        self.modo_combo.addItems(["Por cliente", "Por vendedor", "Todos los vendedores"])
+        layout.addWidget(self.modo_combo)
+
+        # --- Widgets dinámicos ---
+        self.stack = QStackedLayout()
+
+        # Por cliente
+        cli_widget = QWidget()
+        cli_layout = QVBoxLayout(cli_widget)
+        self.cliente_combo = QComboBox()
+        self.clientes = self.db.get_clientes()
+        self.cliente_combo.addItems([c.get("nombre", "") for c in self.clientes])
+        cli_layout.addWidget(self.cliente_combo)
+        self.solo_saldo_cliente = QCheckBox("Incluir solo saldos pendientes")
+        cli_layout.addWidget(self.solo_saldo_cliente)
+        self.stack.addWidget(cli_widget)
+
+        # Por vendedor
+        vend_widget = QWidget()
+        vend_layout = QVBoxLayout(vend_widget)
+        self.vendedor_combo = QComboBox()
+        vendedores = self.db.get_vendedores()
+        self.vendedor_combo.addItems([v.get("nombre", "") for v in vendedores])
+        vend_layout.addWidget(self.vendedor_combo)
+        self.solo_saldo_vend = QCheckBox("Incluir solo clientes con saldo")
+        vend_layout.addWidget(self.solo_saldo_vend)
+        self.stack.addWidget(vend_widget)
+
+        # Todos los vendedores (vacío)
+        self.stack.addWidget(QWidget())
+
+        layout.addLayout(self.stack)
+
+        # Filtros comunes
+        filtros = QHBoxLayout()
+        self.anio_actual = QCheckBox("Año en curso")
+        filtros.addWidget(self.anio_actual)
+        filtros.addWidget(QLabel("Desde"))
+        self.fecha_inicio = QDateEdit(QDate.currentDate())
+        self.fecha_inicio.setCalendarPopup(True)
+        filtros.addWidget(self.fecha_inicio)
+        filtros.addWidget(QLabel("Hasta"))
+        self.fecha_fin = QDateEdit(QDate.currentDate())
+        self.fecha_fin.setCalendarPopup(True)
+        filtros.addWidget(self.fecha_fin)
+        layout.addLayout(filtros)
+
+        self.incluir_pagos = QCheckBox("Incluir abonos/pagos realizados")
+        self.agrupar_factura = QCheckBox("Agrupar por factura")
+        self.incluir_detalles = QCheckBox("Incluir detalles de productos")
+        layout.addWidget(self.incluir_pagos)
+        layout.addWidget(self.agrupar_factura)
+        layout.addWidget(self.incluir_detalles)
+
+        # Botones
+        btns = QHBoxLayout()
+        self.btn_generar = QPushButton("Generar PDF")
+        self.btn_imprimir = QPushButton("Generar e imprimir PDF")
+        btns.addWidget(self.btn_generar)
+        btns.addWidget(self.btn_imprimir)
+        layout.addLayout(btns)
+
+        self.setLayout(layout)
+
+        self.modo_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
+        self.anio_actual.toggled.connect(self._toggle_fechas)
+
+        self.btn_generar.clicked.connect(self._generar_pdf)
+        self.btn_imprimir.clicked.connect(self._generar_e_imprimir_pdf)
+
+    def _toggle_fechas(self, checked):
+        self.fecha_inicio.setEnabled(not checked)
+        self.fecha_fin.setEnabled(not checked)
+        if checked:
+            self.fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
+            self.fecha_fin.setDate(QDate.currentDate())
+
+    # ---- Generación de PDF -----
+    def _collect_params(self):
+        modo_idx = self.modo_combo.currentIndex()
+        modo = "cliente" if modo_idx == 0 else "vendedor" if modo_idx == 1 else "todos"
+        params = {
+            "modo": modo,
+            "fecha_inicio": self.fecha_inicio.date().toString("yyyy-MM-dd"),
+            "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd"),
+            "incluir_pagos": self.incluir_pagos.isChecked(),
+            "agrupar_factura": self.agrupar_factura.isChecked(),
+            "incluir_detalles": self.incluir_detalles.isChecked(),
+        }
+        if modo == "cliente" and self.clientes:
+            params["cliente_id"] = self.clientes[self.cliente_combo.currentIndex()].get("id")
+        if modo == "vendedor" and self.db.get_vendedores():
+            vends = self.db.get_vendedores()
+            params["vendedor_id"] = vends[self.vendedor_combo.currentIndex()].get("id")
+        return params
+
+    def _generar_pdf(self):
+        params = self._collect_params()
+        filename = "estado_cuenta.pdf"
+        from estado_cuenta_pdf import generar_estado_cuenta_pdf
+        try:
+            generar_estado_cuenta_pdf(self.db, archivo=filename, **params)
+            QMessageBox.information(self, "Estado de cuenta", f"Archivo generado en {filename}")
+        except Exception as e:
+            QMessageBox.warning(self, "Estado de cuenta", f"Error: {e}")
+
+    def _generar_e_imprimir_pdf(self):
+        self._generar_pdf()
+        # Intentar abrir el PDF para imprimir/visualizar
+        filename = "estado_cuenta.pdf"
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(filename)))
+
 
 class ProductDialogBase:
     """Mixin with shared helper methods for product selection dialogs."""

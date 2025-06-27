@@ -14,6 +14,7 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
 
     QInputDialog,
+    QDialog,
 
 )
 from PyQt5.QtCore import Qt, QDate, QUrl

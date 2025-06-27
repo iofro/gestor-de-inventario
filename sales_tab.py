@@ -12,7 +12,9 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QAbstractItemView,
+
     QInputDialog,
+
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtPrintSupport import QPrinterInfo
@@ -21,6 +23,7 @@ from factura_sv import generar_factura_electronica_pdf
 import tempfile
 import subprocess
 import os
+
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -69,6 +72,7 @@ class SalesTab(QWidget):
 
         self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
         left_layout.addWidget(self.new_invoice_btn)
+        self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
 
         left_widget = QWidget()
         left_widget.setLayout(left_layout)
@@ -324,6 +328,7 @@ class SalesTab(QWidget):
             if trabajador:
                 venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
 
+
         sumas = 0
         ventas_exentas = 0
         ventas_no_sujetas = 0
@@ -350,6 +355,7 @@ class SalesTab(QWidget):
         subtotal = sumas + ventas_exentas + ventas_no_sujetas
         total = subtotal + iva - venta_data.get("iva_retenido", 0)
         venta_data.update({
+
             "sumas": sumas,
             "iva": iva,
             "ventas_exentas": ventas_exentas,
@@ -403,4 +409,5 @@ class SalesTab(QWidget):
             QMessageBox.critical(self, "Imprimir", f"No se pudo imprimir: {e}")
         finally:
             os.remove(pdf_path)
+
 

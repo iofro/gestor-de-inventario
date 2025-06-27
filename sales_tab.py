@@ -12,10 +12,19 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QAbstractItemView,
+
+    QInputDialog,
+    QDialog,
+
 )
 from PyQt5.QtCore import Qt, QDate
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+from dialogs import ManualInvoiceDialog
+import tempfile
+import subprocess
+import os
+
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -291,4 +300,113 @@ class SalesTab(QWidget):
             archivo=filename,
         )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
+
+    def preview_pdf(self):
+        """Generate a temporary PDF and open it with the default viewer."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Previsualizar", "Seleccione una factura primero.")
+
+            return
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Previsualizar", "No se encontró la venta seleccionada.")
+
+            return
+
+        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+
+        venta_data = dict(venta)
+        if credito_info:
+            venta_data.update(credito_info)
+
+        if venta_data.get("vendedor_id"):
+            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
+            if trabajador:
+                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
+
+        sumas = 0
+        ventas_exentas = 0
+        ventas_no_sujetas = 0
+        iva = 0
+        for d in detalles:
+            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            if d.get("descuento_tipo") == "%":
+                base -= base * d.get("descuento", 0) / 100
+            else:
+                base -= d.get("descuento", 0)
+            iva_item = d.get("iva", 0)
+            tipo = d.get("tipo_fiscal", "").lower()
+            if tipo == "venta exenta":
+                d["ventas_exentas"] = base
+                ventas_exentas += base
+            elif tipo == "venta no sujeta":
+                d["ventas_no_sujetas"] = base
+                ventas_no_sujetas += base
+            else:
+                d["ventas_gravadas"] = base
+                sumas += base
+                iva += iva_item
+
+        subtotal = sumas + ventas_exentas + ventas_no_sujetas
+        total = subtotal + iva - venta_data.get("iva_retenido", 0)
+        venta_data.update(
+            {
+                "sumas": sumas,
+                "iva": iva,
+                "ventas_exentas": ventas_exentas,
+                "ventas_no_sujetas": ventas_no_sujetas,
+                "subtotal": subtotal,
+                "total": total,
+            }
+        )
+
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        distribuidor = None
+        if venta.get("Distribuidor_id"):
+            distribuidor = next(
+                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
+                None,
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+
+            temp_file = tmp.name
+        generar_factura_electronica_pdf(
+            venta_data,
+            detalles,
+            cliente or {},
+            distribuidor or {},
+            archivo=temp_file,
+        )
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
+
+    def print_pdf(self):
+        """Print the selected sale by first generating a temporary PDF."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Imprimir", "Seleccione una factura primero.")
+            return
+        # Reuse preview_pdf to generate the file
+        self.preview_pdf()
+
+    def generate_manual_invoice(self):
+        """Open dialog to create an invoice manually and preview the PDF."""
+        dialog = ManualInvoiceDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            venta = {k: v for k, v in data.items() if k not in {"cliente", "detalles", "tipo"}}
+            detalles = data.get("detalles", [])
+            cliente = data.get("cliente", {})
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                temp_file = tmp.name
+            generar_factura_electronica_pdf(venta, detalles, cliente, {}, archivo=temp_file)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
+
 

@@ -1131,6 +1131,8 @@ class MainWindow(QMainWindow):
                 item_cantidad.setBackground(QColor("orange"))
             elif stock < 25:
                 item_cantidad.setBackground(QColor("yellow"))
+            else:
+                item_cantidad.setBackground(QColor("green"))
             self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["fecha_compra"]))

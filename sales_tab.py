@@ -23,6 +23,7 @@ import os
 
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+from dialogs import ManualInvoiceDialog
 import tempfile
 import subprocess
 import os
@@ -394,5 +395,26 @@ class SalesTab(QWidget):
             archivo=temp_file,
         )
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
+
+    def print_pdf(self):
+        """Print the selected sale by first generating a temporary PDF."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Imprimir", "Seleccione una factura primero.")
+            return
+        # Reuse preview_pdf to generate the file
+        self.preview_pdf()
+
+    def generate_manual_invoice(self):
+        """Open dialog to create an invoice manually and preview the PDF."""
+        dialog = ManualInvoiceDialog(self)
+        if dialog.exec_() == QDialog.Accepted:
+            data = dialog.get_data()
+            venta = {k: v for k, v in data.items() if k not in {"cliente", "detalles", "tipo"}}
+            detalles = data.get("detalles", [])
+            cliente = data.get("cliente", {})
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+                temp_file = tmp.name
+            generar_factura_electronica_pdf(venta, detalles, cliente, {}, archivo=temp_file)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
 
 

@@ -12,10 +12,13 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QAbstractItemView,
+    QFileDialog,
 )
 from PyQt5.QtCore import Qt, QDate
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+from dialogs import RegisterCreditoFiscalDialog
+from utils.monto import monto_a_texto_sv
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -64,6 +67,7 @@ class SalesTab(QWidget):
 
         self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
         left_layout.addWidget(self.new_invoice_btn)
+        self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
 
         left_widget = QWidget()
         left_widget.setLayout(left_layout)
@@ -291,4 +295,84 @@ class SalesTab(QWidget):
             archivo=filename,
         )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
+
+    def generate_manual_invoice(self):
+        """Open a dialog to create a manual invoice and save it as PDF."""
+        productos = [dict(p) for p in self.manager._products]
+        clientes = [dict(c) for c in self.manager._clientes]
+        Distribuidores = [d["nombre"] for d in self.manager._Distribuidores]
+        vendedores = self.manager.db.get_trabajadores(solo_vendedores=True)
+
+        dialog = RegisterCreditoFiscalDialog(productos, clientes, Distribuidores, vendedores, self)
+        if not dialog.exec_():
+            return
+
+        data = dialog.get_data()
+
+        detalles = []
+        sumas = 0
+        ventas_exentas = 0
+        ventas_no_sujetas = 0
+        iva = 0
+        for item in data.get("items", []):
+            base = item.get("subtotal_con_descuento", 0)
+            iva_item = item.get("iva", 0)
+            tipo = item.get("tipo_fiscal", "").lower()
+            det = {
+                "cantidad": item.get("cantidad", 0),
+                "descripcion": item.get("producto", ""),
+                "precio_unitario": item.get("precio", 0),
+            }
+            if tipo == "venta exenta":
+                det["ventas_exentas"] = base
+                ventas_exentas += base
+            elif tipo == "venta no sujeta":
+                det["ventas_no_sujetas"] = base
+                ventas_no_sujetas += base
+            else:
+                det["ventas_gravadas"] = base
+                sumas += base
+                iva += iva_item
+            detalles.append(det)
+
+        subtotal = sumas + ventas_exentas + ventas_no_sujetas
+        total = subtotal + iva - data.get("iva_retenido", 0)
+
+        venta = {
+            "fecha": data.get("fecha"),
+            "condicion_pago": data.get("condicion_pago"),
+            "no_remision": data.get("no_remision"),
+            "orden_no": data.get("orden_no"),
+            "venta_a_cuenta_de": data.get("venta_a_cuenta_de"),
+            "sumas": sumas,
+            "iva": iva,
+            "ventas_exentas": ventas_exentas,
+            "ventas_no_sujetas": ventas_no_sujetas,
+            "subtotal": subtotal,
+            "iva_retenido": data.get("iva_retenido", 0),
+            "total": total,
+            "total_letras": monto_a_texto_sv(total),
+        }
+
+        cliente = data.get("cliente", {}).copy()
+        cliente.update({
+            "nrc": data.get("nrc", ""),
+            "nit": data.get("nit", ""),
+            "giro": data.get("giro", ""),
+            "email": data.get("email", ""),
+        })
+
+        distribuidor = {}
+        if data.get("Distribuidor_id") is not None:
+            distribuidor = next(
+                (d for d in self.manager._Distribuidores if d["id"] == data.get("Distribuidor_id")),
+                {},
+            )
+
+        filename, _ = QFileDialog.getSaveFileName(self, "Guardar PDF", "factura_manual.pdf", "Archivos PDF (*.pdf)")
+        if not filename:
+            return
+
+        generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, archivo=filename)
+        QMessageBox.information(self, "Factura", f"Factura guardada en {filename}")
 

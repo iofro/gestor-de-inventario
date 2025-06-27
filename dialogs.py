@@ -2497,3 +2497,130 @@ class TrabajadorDialog(QDialog):
             "comentarios": self.comentarios.text().strip(),
             "es_vendedor": self.es_vendedor.isChecked()
         }
+
+
+class ManualInvoiceDialog(QDialog):
+    """Dialogo para generar manualmente una factura en PDF."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Generar factura manual")
+
+        main_layout = QVBoxLayout(self)
+
+        type_layout = QHBoxLayout()
+        type_layout.addWidget(QLabel("Tipo de factura:"))
+        self.type_combo = QComboBox()
+        self.type_combo.addItems(["Consumidor final", "Crédito fiscal"])
+        type_layout.addWidget(self.type_combo)
+        main_layout.addLayout(type_layout)
+
+        self.stack = QStackedLayout()
+
+        # --- Consumidor final ---
+        cf_widget = QWidget()
+        cf_form = QFormLayout(cf_widget)
+        self.cf_nombre = QLineEdit()
+        self.cf_direccion = QLineEdit()
+        self.cf_fecha = QDateEdit(QDate.currentDate())
+        self.cf_fecha.setCalendarPopup(True)
+        self.cf_observaciones = QTextEdit()
+        cf_form.addRow("Nombre:", self.cf_nombre)
+        cf_form.addRow("Dirección:", self.cf_direccion)
+        cf_form.addRow("Fecha:", self.cf_fecha)
+        cf_form.addRow("Observaciones:", self.cf_observaciones)
+        self.stack.addWidget(cf_widget)
+
+        # --- Crédito fiscal ---
+        cr_widget = QWidget()
+        cr_form = QFormLayout(cr_widget)
+        self.cr_codigo_generacion = QLineEdit()
+        self.cr_numero_control = QLineEdit()
+        self.cr_sello = QLineEdit()
+        self.cr_condicion_pago = QLineEdit()
+        self.cr_no_remision = QLineEdit()
+        self.cr_orden_no = QLineEdit()
+        self.cr_vendedor = QLineEdit()
+        self.cr_venta_cuenta = QLineEdit()
+        self.cr_fecha = QDateEdit(QDate.currentDate())
+        self.cr_fecha.setCalendarPopup(True)
+        self.cr_cliente_nombre = QLineEdit()
+        self.cr_cliente_direccion = QLineEdit()
+        self.cr_cliente_nit = QLineEdit()
+        self.cr_cliente_nrc = QLineEdit()
+        self.cr_cliente_giro = QLineEdit()
+        self.cr_total_letras = QLineEdit()
+        self.cr_observaciones = QTextEdit()
+
+        credit_fields = [
+            ("Código generación:", self.cr_codigo_generacion),
+            ("Número control:", self.cr_numero_control),
+            ("Sello recepción:", self.cr_sello),
+            ("Condición de pago:", self.cr_condicion_pago),
+            ("No remisión:", self.cr_no_remision),
+            ("Orden No:", self.cr_orden_no),
+            ("Vendedor:", self.cr_vendedor),
+            ("Venta a cuenta de:", self.cr_venta_cuenta),
+            ("Fecha:", self.cr_fecha),
+            ("Cliente:", self.cr_cliente_nombre),
+            ("Dirección:", self.cr_cliente_direccion),
+            ("NIT:", self.cr_cliente_nit),
+            ("NRC:", self.cr_cliente_nrc),
+            ("Giro:", self.cr_cliente_giro),
+            ("Total en letras:", self.cr_total_letras),
+            ("Observaciones:", self.cr_observaciones),
+        ]
+
+        for lbl, w in credit_fields:
+            cr_form.addRow(lbl, w)
+
+        self.stack.addWidget(cr_widget)
+
+        main_layout.addLayout(self.stack)
+
+        btns = QHBoxLayout()
+        self.btn_ok = QPushButton("Generar PDF")
+        self.btn_cancel = QPushButton("Cancelar")
+        btns.addWidget(self.btn_ok)
+        btns.addWidget(self.btn_cancel)
+        main_layout.addLayout(btns)
+
+        self.type_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
+        self.btn_ok.clicked.connect(self.accept)
+        self.btn_cancel.clicked.connect(self.reject)
+
+    def get_data(self):
+        if self.type_combo.currentIndex() == 0:
+            return {
+                "tipo": "consumidor",
+                "fecha": self.cf_fecha.date().toString("yyyy-MM-dd"),
+                "cliente": {
+                    "nombre": self.cf_nombre.text(),
+                    "direccion": self.cf_direccion.text(),
+                },
+                "observaciones": self.cf_observaciones.toPlainText(),
+                "detalles": [],
+            }
+        else:
+            return {
+                "tipo": "credito",
+                "codigo_generacion": self.cr_codigo_generacion.text(),
+                "numero_control": self.cr_numero_control.text(),
+                "sello_recepcion": self.cr_sello.text(),
+                "condicion_pago": self.cr_condicion_pago.text(),
+                "no_remision": self.cr_no_remision.text(),
+                "orden_no": self.cr_orden_no.text(),
+                "vendedor_nombre": self.cr_vendedor.text(),
+                "venta_a_cuenta_de": self.cr_venta_cuenta.text(),
+                "fecha": self.cr_fecha.date().toString("yyyy-MM-dd"),
+                "total_letras": self.cr_total_letras.text(),
+                "observaciones": self.cr_observaciones.toPlainText(),
+                "cliente": {
+                    "nombre": self.cr_cliente_nombre.text(),
+                    "direccion": self.cr_cliente_direccion.text(),
+                    "nit": self.cr_cliente_nit.text(),
+                    "nrc": self.cr_cliente_nrc.text(),
+                    "giro": self.cr_cliente_giro.text(),
+                },
+                "detalles": [],
+            }

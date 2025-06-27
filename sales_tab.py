@@ -17,7 +17,8 @@ from PyQt5.QtWidgets import (
     QDialog,
 
 )
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, QUrl
+from PyQt5.QtGui import QDesktopServices
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
 from dialogs import ManualInvoiceDialog
@@ -72,6 +73,7 @@ class SalesTab(QWidget):
         left_layout.addWidget(self.sales_table)
 
         self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
+        self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
         left_layout.addWidget(self.new_invoice_btn)
 
         left_widget = QWidget()

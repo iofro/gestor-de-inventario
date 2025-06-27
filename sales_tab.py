@@ -12,13 +12,21 @@ from PyQt5.QtWidgets import (
     QTextEdit,
     QMessageBox,
     QAbstractItemView,
+
+    QInputDialog,
+
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QDesktopServices
 import tempfile
 import os
+
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+import tempfile
+import subprocess
+import os
+
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -67,6 +75,7 @@ class SalesTab(QWidget):
 
         self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
         left_layout.addWidget(self.new_invoice_btn)
+        self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
 
         left_widget = QWidget()
         left_widget.setLayout(left_layout)
@@ -96,6 +105,7 @@ class SalesTab(QWidget):
         btn_layout.addWidget(self.btn_editar)
         self.btn_preview.clicked.connect(self.preview_pdf)
         self.btn_guardar.clicked.connect(self.save_pdf)
+        self.btn_imprimir.clicked.connect(self.print_pdf)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -302,6 +312,7 @@ class SalesTab(QWidget):
         """Generate a temporary PDF and open it with the default viewer."""
         if self.sales_table.currentRow() < 0:
             QMessageBox.warning(self, "Previsualizar", "Seleccione una factura primero.")
+
             return
 
         row = self.sales_table.currentRow()
@@ -309,6 +320,7 @@ class SalesTab(QWidget):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
             QMessageBox.warning(self, "Previsualizar", "No se encontró la venta seleccionada.")
+
             return
 
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
@@ -322,6 +334,7 @@ class SalesTab(QWidget):
             trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
             if trabajador:
                 venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
 
         sumas = 0
         ventas_exentas = 0
@@ -359,6 +372,7 @@ class SalesTab(QWidget):
             }
         )
 
+
         cliente = None
         if venta.get("cliente_id"):
             cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
@@ -370,6 +384,7 @@ class SalesTab(QWidget):
             )
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+
             temp_file = tmp.name
         generar_factura_electronica_pdf(
             venta_data,
@@ -379,4 +394,5 @@ class SalesTab(QWidget):
             archivo=temp_file,
         )
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
+
 

@@ -1123,7 +1123,15 @@ class MainWindow(QMainWindow):
         for row, d in enumerate(detalles):
             self.inventario_actual_table.setItem(row, 0, QTableWidgetItem(d["producto"]))
             self.inventario_actual_table.setItem(row, 1, QTableWidgetItem(d["codigo"]))
-            self.inventario_actual_table.setItem(row, 2, QTableWidgetItem(str(d["cantidad"])))
+            item_cantidad = QTableWidgetItem(str(d["cantidad"]))
+            stock = d.get("cantidad", 0)
+            if stock < 5:
+                item_cantidad.setBackground(QColor("red"))
+            elif stock < 10:
+                item_cantidad.setBackground(QColor("orange"))
+            elif stock < 25:
+                item_cantidad.setBackground(QColor("yellow"))
+            self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["fecha_compra"]))
             # --- FECHA DE VENCIMIENTO CON COLOR ---

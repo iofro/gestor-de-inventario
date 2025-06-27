@@ -343,6 +343,7 @@ class MainWindow(QMainWindow):
         self.estado_fecha_fin.setCalendarPopup(True)
         self.estado_anio_actual = QCheckBox("Año en curso")
         self.btn_generar_estado = QPushButton("Generar")
+        self.btn_imprimir_estado = QPushButton("Imprimir")
         controles.addWidget(self.estado_tipo_combo)
         controles.addWidget(self.estado_search_bar)
         controles.addWidget(QLabel("Desde"))
@@ -351,6 +352,7 @@ class MainWindow(QMainWindow):
         controles.addWidget(self.estado_fecha_fin)
         controles.addWidget(self.estado_anio_actual)
         controles.addWidget(self.btn_generar_estado)
+        controles.addWidget(self.btn_imprimir_estado)
         estado_layout.addLayout(controles)
 
         self.estado_table = QTableWidget(0, 2)
@@ -372,6 +374,7 @@ class MainWindow(QMainWindow):
         self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
         self.estado_search_bar.textChanged.connect(self._cargar_personas_estado)
         self.btn_generar_estado.clicked.connect(self._mostrar_historial_general)
+        self.btn_imprimir_estado.clicked.connect(self._imprimir_estado_cuenta)
         self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
 
         self._actualizar_tabla_trabajadores()
@@ -1287,6 +1290,31 @@ class MainWindow(QMainWindow):
         if checked:
             self.estado_fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
             self.estado_fecha_fin.setDate(QDate.currentDate())
+
+    def _imprimir_estado_cuenta(self):
+        persona = self._get_selected_estado_persona()
+        if persona is None or self.estado_table.columnCount() == 2:
+            QMessageBox.warning(self, "Imprimir", "Seleccione un vendedor primero")
+            return
+        if self.estado_tipo_combo.currentText() != "Vendedor":
+            QMessageBox.information(self, "Imprimir", "Solo disponible para vendedores")
+            return
+        if self.estado_anio_actual.isChecked():
+            inicio = QDate(QDate.currentDate().year(), 1, 1)
+            fin = QDate.currentDate()
+        else:
+            inicio = self.estado_fecha_inicio.date()
+            fin = self.estado_fecha_fin.date()
+        inicio_str = inicio.toString("yyyy-MM-dd")
+        fin_str = fin.toString("yyyy-MM-dd")
+        codigo = persona.get("codigo", persona.get("id"))
+        filename = f"reporte_vendedor_{codigo}.pdf"
+        try:
+            from estado_cuenta_pdf import generar_reporte_vendedor_pdf
+            generar_reporte_vendedor_pdf(self.manager.db, persona["id"], inicio_str, fin_str, archivo=filename)
+            QMessageBox.information(self, "Imprimir", f"Reporte guardado en {filename}")
+        except Exception as e:
+            QMessageBox.warning(self, "Imprimir", f"Error al generar PDF: {e}")
 
     def _generar_estado_cuenta(self):
         persona = self._get_selected_estado_persona()

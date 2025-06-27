@@ -368,6 +368,14 @@ class ProductTableModel(QAbstractTableModel):
             # Si agregas comisión:
             # elif col == 4:
             #     return f"{row.get('comision_base', 0)}%"  # O el campo que corresponda
+        elif role == Qt.BackgroundRole and col == 3:
+            stock = row.get("stock", 0)
+            if stock < 5:
+                return QColor("red")
+            elif stock < 10:
+                return QColor("orange")
+            elif stock < 25:
+                return QColor("yellow")
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):

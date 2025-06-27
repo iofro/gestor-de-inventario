@@ -407,7 +407,21 @@ class SalesTab(QWidget):
                 "No has seleccionado ninguna venta",
             )
             return
+        tipo, ok = QInputDialog.getItem(
+            self,
+            "Tipo de factura",
+            "¿Qué tipo de factura desea generar?",
+            ["Consumidor final", "Crédito fiscal"],
+            0,
+            False,
+        )
+        if not ok:
+            return
         dialog = ManualInvoiceDialog(self)
+        if tipo == "Crédito fiscal":
+            dialog.type_combo.setCurrentIndex(1)
+        else:
+            dialog.type_combo.setCurrentIndex(0)
         if dialog.exec_() == QDialog.Accepted:
             data = dialog.get_data()
             venta = {k: v for k, v in data.items() if k not in {"cliente", "detalles", "tipo"}}

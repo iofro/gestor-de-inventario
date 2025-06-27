@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
-    QAbstractItemView
+    QAbstractItemView, QTextEdit, QStackedLayout, QWidget
 )
 from PyQt5.QtCore import Qt, QDate
 

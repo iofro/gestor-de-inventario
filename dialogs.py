@@ -5,11 +5,12 @@ import logging
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
-    QDoubleSpinBox, QPushButton, QListWidget, QMessageBox, QCheckBox, QRadioButton, QComboBox,
+    QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget
 )
 from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtGui import QColor
 
 getcontext().prec = 4
 
@@ -171,7 +172,15 @@ class ProductDialogBase:
                 f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | "
                 f"Vence: {p.get('fecha_vencimiento', '')}"
             )
-            self.product_list.addItem(texto)
+            item = QListWidgetItem(texto)
+            stock = p.get("stock", 0)
+            if stock < 5:
+                item.setBackground(QColor("red"))
+            elif stock < 10:
+                item.setBackground(QColor("orange"))
+            elif stock < 25:
+                item.setBackground(QColor("yellow"))
+            self.product_list.addItem(item)
         self.productos = productos
 
     def _filtrar_productos(self, texto):

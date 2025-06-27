@@ -9,7 +9,15 @@ from PyQt5.QtGui import QColor
 import os
 import json
 from inventory_manager import InventoryManager
-from dialogs import RegisterSaleDialog, ClienteSelectorDialog, ProductDialog, RegisterPurchaseDialog, DistribuidorDialog, ClienteDialog
+from dialogs import (
+    RegisterSaleDialog,
+    ClienteSelectorDialog,
+    ProductDialog,
+    RegisterPurchaseDialog,
+    DistribuidorDialog,
+    ClienteDialog,
+    EstadoCuentaDialog,
+)
 from sales_tab import SalesTab
 from datetime import datetime
 
@@ -343,7 +351,6 @@ class MainWindow(QMainWindow):
         self.estado_fecha_fin.setCalendarPopup(True)
         self.estado_anio_actual = QCheckBox("Año en curso")
         self.btn_generar_estado = QPushButton("Generar")
-        self.btn_imprimir_estado = QPushButton("Imprimir")
         controles.addWidget(self.estado_tipo_combo)
         controles.addWidget(self.estado_search_bar)
         controles.addWidget(QLabel("Desde"))
@@ -352,7 +359,6 @@ class MainWindow(QMainWindow):
         controles.addWidget(self.estado_fecha_fin)
         controles.addWidget(self.estado_anio_actual)
         controles.addWidget(self.btn_generar_estado)
-        controles.addWidget(self.btn_imprimir_estado)
         estado_layout.addLayout(controles)
 
         self.estado_table = QTableWidget(0, 2)
@@ -373,8 +379,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
         self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
         self.estado_search_bar.textChanged.connect(self._cargar_personas_estado)
-        self.btn_generar_estado.clicked.connect(self._mostrar_historial_general)
-        self.btn_imprimir_estado.clicked.connect(self._imprimir_estado_cuenta)
+        self.btn_generar_estado.clicked.connect(self._abrir_generar_estado_dialog)
         self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
 
         self._actualizar_tabla_trabajadores()
@@ -1290,6 +1295,27 @@ class MainWindow(QMainWindow):
         if checked:
             self.estado_fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
             self.estado_fecha_fin.setDate(QDate.currentDate())
+
+    def _abrir_generar_estado_dialog(self):
+        """Abre la ventana de generación de estados de cuenta."""
+        dialog = EstadoCuentaDialog(self.manager.db, self)
+        tipo_idx = 0 if self.estado_tipo_combo.currentText() == "Cliente" else 1
+        dialog.modo_combo.setCurrentIndex(tipo_idx)
+        dialog.stack.setCurrentIndex(tipo_idx)
+        persona = self._get_selected_estado_persona()
+        if persona:
+            if tipo_idx == 0:
+                for i, c in enumerate(dialog.clientes):
+                    if c.get("id") == persona.get("id"):
+                        dialog.cliente_combo.setCurrentIndex(i)
+                        break
+            else:
+                vends = dialog.db.get_vendedores()
+                for i, v in enumerate(vends):
+                    if v.get("id") == persona.get("id"):
+                        dialog.vendedor_combo.setCurrentIndex(i)
+                        break
+        dialog.exec_()
 
     def _imprimir_estado_cuenta(self):
         persona = self._get_selected_estado_persona()

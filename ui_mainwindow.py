@@ -355,6 +355,8 @@ class MainWindow(QMainWindow):
 
         self.estado_table = QTableWidget(0, 2)
         self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.estado_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.estado_table.setSelectionBehavior(QAbstractItemView.SelectRows)
 
         self.estado_table.itemSelectionChanged.connect(self._on_estado_row_selected)
 
@@ -1064,8 +1066,14 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Cliente eliminado", f"El cliente '{cli['nombre']}' ha sido eliminado.")
 
     def _actualizar_historial(self):
-        """Actualización de historial (sin uso en la vista simplificada)."""
-        pass
+        """Recarga la tabla de historial o estado de cuenta."""
+        # Si la tabla muestra el historial general (5 columnas),
+        # actualizamos esa vista.  De lo contrario se regenera el
+        # estado de cuenta de la persona seleccionada o el resumen.
+        if self.estado_table.columnCount() == 5:
+            self._mostrar_historial_general()
+        else:
+            self._generar_estado_cuenta()
             
 
     def _limpiar_filtros_historial(self):
@@ -1329,9 +1337,9 @@ class MainWindow(QMainWindow):
             inicio_str,
             fin_str,
         )
-        self.estado_table.setColumnCount(6)
+        self.estado_table.setColumnCount(7)
         self.estado_table.setHorizontalHeaderLabels(
-            ["Fecha", "Factura", "Cliente", "Vendedor", "Monto", "Saldo"]
+            ["Fecha", "Factura", "Tipo", "Cliente", "Vendedor", "Monto", "Saldo"]
         )
         self.estado_table.setRowCount(len(facturas))
         for row, f in enumerate(facturas):
@@ -1345,12 +1353,14 @@ class MainWindow(QMainWindow):
                 trab = self.manager.db.get_trabajador(f["vendedor_id"])
                 if trab:
                     vend_nombre = trab.get("nombre", "")
+            tipo_factura = "Crédito fiscal" if self.manager.db.get_venta_credito_fiscal(f.get("id")) else "Consumidor final"
             self.estado_table.setItem(row, 0, QTableWidgetItem(f.get("fecha", "")))
             self.estado_table.setItem(row, 1, QTableWidgetItem(str(f.get("id"))))
-            self.estado_table.setItem(row, 2, QTableWidgetItem(cli_nombre))
-            self.estado_table.setItem(row, 3, QTableWidgetItem(vend_nombre))
-            self.estado_table.setItem(row, 4, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
-            self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
+            self.estado_table.setItem(row, 2, QTableWidgetItem(tipo_factura))
+            self.estado_table.setItem(row, 3, QTableWidgetItem(cli_nombre))
+            self.estado_table.setItem(row, 4, QTableWidgetItem(vend_nombre))
+            self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
+            self.estado_table.setItem(row, 6, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
 
     def _mostrar_historial_general(self):
         """Muestra el historial completo filtrando por cliente o vendedor."""
@@ -1401,21 +1411,24 @@ class MainWindow(QMainWindow):
             if filtro and filtro not in cli_nombre.lower() and filtro not in vend_nombre.lower() and filtro not in codigo.lower():
                 continue
 
-            rows.append((fecha_str, v.get("id"), cli_nombre, vend_nombre, v.get("total", 0)))
+            tipo_factura = "Crédito fiscal" if self.manager.db.get_venta_credito_fiscal(v.get("id")) else "Consumidor final"
+            rows.append((fecha_str, v.get("id"), tipo_factura, cli_nombre, vend_nombre, v.get("total", 0)))
 
-        self.estado_table.setColumnCount(5)
+        self.estado_table.setColumnCount(6)
         self.estado_table.setHorizontalHeaderLabels([
             "Fecha",
             "Factura",
+            "Tipo",
             "Cliente",
             "Vendedor",
             "Monto",
         ])
         self.estado_table.setRowCount(len(rows))
-        for row, (fecha, fid, cli, vend, monto) in enumerate(rows):
+        for row, (fecha, fid, tipo, cli, vend, monto) in enumerate(rows):
             self.estado_table.setItem(row, 0, QTableWidgetItem(fecha))
             self.estado_table.setItem(row, 1, QTableWidgetItem(str(fid)))
-            self.estado_table.setItem(row, 2, QTableWidgetItem(cli))
-            self.estado_table.setItem(row, 3, QTableWidgetItem(vend))
-            self.estado_table.setItem(row, 4, QTableWidgetItem(f"${float(monto):.2f}"))
+            self.estado_table.setItem(row, 2, QTableWidgetItem(tipo))
+            self.estado_table.setItem(row, 3, QTableWidgetItem(cli))
+            self.estado_table.setItem(row, 4, QTableWidgetItem(vend))
+            self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(monto):.2f}"))
 

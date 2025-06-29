@@ -506,35 +506,71 @@ class DB:
     def add_venta(self, fecha, total, cliente_id=None, Distribuidor_id=None, vendedor_id=None, extra=None):
         extra_json = json.dumps(extra) if extra else None
         if cliente_id is not None and Distribuidor_id is not None and vendedor_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?, ?)",
-                (fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra)
-            )
+            if extra_json is not None:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?, ?)",
+                    (fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra_json)
+                )
+            else:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, vendedor_id) VALUES (?, ?, ?, ?, ?)",
+                    (fecha, total, cliente_id, Distribuidor_id, vendedor_id)
+                )
         elif cliente_id is not None and Distribuidor_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                (fecha, total, cliente_id, Distribuidor_id)
-            )
+            if extra_json is not None:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, extra) VALUES (?, ?, ?, ?, ?)",
+                    (fecha, total, cliente_id, Distribuidor_id, extra_json)
+                )
+            else:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
+                    (fecha, total, cliente_id, Distribuidor_id)
+                )
         elif cliente_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, cliente_id, vendedor_id) VALUES (?, ?, ?, ?)",
-                (fecha, total, cliente_id, vendedor_id)
-            )
+            if extra_json is not None:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, cliente_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?)",
+                    (fecha, total, cliente_id, vendedor_id, extra_json)
+                )
+            else:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, cliente_id, vendedor_id) VALUES (?, ?, ?, ?)",
+                    (fecha, total, cliente_id, vendedor_id)
+                )
         elif Distribuidor_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, Distribuidor_id, vendedor_id) VALUES (?, ?, ?, ?)",
-                (fecha, total, Distribuidor_id, vendedor_id)
-            )
+            if extra_json is not None:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, Distribuidor_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?)",
+                    (fecha, total, Distribuidor_id, vendedor_id, extra_json)
+                )
+            else:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, Distribuidor_id, vendedor_id) VALUES (?, ?, ?, ?)",
+                    (fecha, total, Distribuidor_id, vendedor_id)
+                )
         elif vendedor_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, vendedor_id) VALUES (?, ?, ?)",
-                (fecha, total, vendedor_id)
-            )
+            if extra_json is not None:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, vendedor_id, extra) VALUES (?, ?, ?, ?)",
+                    (fecha, total, vendedor_id, extra_json)
+                )
+            else:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, vendedor_id) VALUES (?, ?, ?)",
+                    (fecha, total, vendedor_id)
+                )
         else:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total) VALUES (?, ?)",
-                (fecha, total)
-            )
+            if extra_json is not None:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total, extra) VALUES (?, ?, ?)",
+                    (fecha, total, extra_json)
+                )
+            else:
+                self.cursor.execute(
+                    "INSERT INTO ventas (fecha, total) VALUES (?, ?)",
+                    (fecha, total)
+                )
         self.conn.commit()
         return self.cursor.lastrowid
 

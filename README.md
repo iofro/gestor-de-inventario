@@ -11,6 +11,8 @@ Esta aplicación permite gestionar inventarios y ventas utilizando una interfaz 
 pip install -r requirements.txt
 ```
 
+Esto instalará también **PyMuPDF**, utilizado para generar las previsualizaciones de las facturas en PDF.
+
 ## Ejecutar la aplicación
 
 Ejecuta el archivo `main.py` para iniciar la interfaz gráfica:

@@ -190,11 +190,14 @@ class EstadoCuentaDialog(QDialog):
             "Buscar cliente por código o nombre..."
         )
         cli_layout.addWidget(self.cliente_search)
-        self.cliente_combo = QComboBox()
+        self.cliente_table = QTableWidget(0, 2)
+        self.cliente_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.cliente_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.cliente_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.clientes = self.db.get_clientes()
         self.clientes_mostrados = list(self.clientes)
-        self.cliente_combo.addItems([c.get("nombre", "") for c in self.clientes])
-        cli_layout.addWidget(self.cliente_combo)
+        self._mostrar_clientes(self.clientes)
+        cli_layout.addWidget(self.cliente_table)
         self.solo_saldo_cliente = QCheckBox("Incluir solo saldos pendientes")
         cli_layout.addWidget(self.solo_saldo_cliente)
         self.stack.addWidget(cli_widget)
@@ -207,11 +210,14 @@ class EstadoCuentaDialog(QDialog):
             "Buscar vendedor por código o nombre..."
         )
         vend_layout.addWidget(self.vendedor_search)
-        self.vendedor_combo = QComboBox()
+        self.vendedor_table = QTableWidget(0, 2)
+        self.vendedor_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.vendedor_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.vendedor_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.vendedores = self.db.get_vendedores()
         self.vendedores_mostrados = list(self.vendedores)
-        self.vendedor_combo.addItems([v.get("nombre", "") for v in self.vendedores])
-        vend_layout.addWidget(self.vendedor_combo)
+        self._mostrar_vendedores(self.vendedores)
+        vend_layout.addWidget(self.vendedor_table)
         self.solo_saldo_vend = QCheckBox("Incluir solo clientes con saldo")
         vend_layout.addWidget(self.solo_saldo_vend)
         self.stack.addWidget(vend_widget)
@@ -254,8 +260,10 @@ class EstadoCuentaDialog(QDialog):
 
         self.modo_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
         self.anio_actual.toggled.connect(self._toggle_fechas)
-        self.cliente_search.textChanged.connect(self._filtrar_clientes_combo)
-        self.vendedor_search.textChanged.connect(self._filtrar_vendedores_combo)
+        self.cliente_search.textChanged.connect(self._filtrar_clientes)
+        self.vendedor_search.textChanged.connect(self._filtrar_vendedores)
+        self.cliente_table.itemSelectionChanged.connect(self._seleccionar_cliente)
+        self.vendedor_table.itemSelectionChanged.connect(self._seleccionar_vendedor)
 
         self.btn_generar.clicked.connect(self._generar_pdf)
         self.btn_imprimir.clicked.connect(self._generar_e_imprimir_pdf)
@@ -267,7 +275,14 @@ class EstadoCuentaDialog(QDialog):
             self.fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
             self.fecha_fin.setDate(QDate.currentDate())
 
-    def _filtrar_clientes_combo(self, texto: str):
+    def _mostrar_clientes(self, clientes):
+        self.cliente_table.setRowCount(len(clientes))
+        for row, c in enumerate(clientes):
+            self.cliente_table.setItem(row, 0, QTableWidgetItem(c.get("codigo", "")))
+            self.cliente_table.setItem(row, 1, QTableWidgetItem(c.get("nombre", "")))
+        self.clientes_mostrados = list(clientes)
+
+    def _filtrar_clientes(self, texto: str):
         texto = texto.lower()
         filtrados = [
             c
@@ -275,11 +290,21 @@ class EstadoCuentaDialog(QDialog):
             if texto in (c.get("codigo", "") or "").lower()
             or texto in (c.get("nombre", "") or "").lower()
         ]
-        self.clientes_mostrados = filtrados
-        self.cliente_combo.clear()
-        self.cliente_combo.addItems([c.get("nombre", "") for c in filtrados])
+        self._mostrar_clientes(filtrados)
 
-    def _filtrar_vendedores_combo(self, texto: str):
+    def _seleccionar_cliente(self):
+        idx = self.cliente_table.currentRow()
+        if 0 <= idx < len(self.clientes_mostrados):
+            self.selected_cliente = self.clientes_mostrados[idx]
+
+    def _mostrar_vendedores(self, vendedores):
+        self.vendedor_table.setRowCount(len(vendedores))
+        for row, v in enumerate(vendedores):
+            self.vendedor_table.setItem(row, 0, QTableWidgetItem(v.get("codigo", "")))
+            self.vendedor_table.setItem(row, 1, QTableWidgetItem(v.get("nombre", "")))
+        self.vendedores_mostrados = list(vendedores)
+
+    def _filtrar_vendedores(self, texto: str):
         texto = texto.lower()
         filtrados = [
             v
@@ -287,9 +312,12 @@ class EstadoCuentaDialog(QDialog):
             if texto in (v.get("codigo", "") or "").lower()
             or texto in (v.get("nombre", "") or "").lower()
         ]
-        self.vendedores_mostrados = filtrados
-        self.vendedor_combo.clear()
-        self.vendedor_combo.addItems([v.get("nombre", "") for v in filtrados])
+        self._mostrar_vendedores(filtrados)
+
+    def _seleccionar_vendedor(self):
+        idx = self.vendedor_table.currentRow()
+        if 0 <= idx < len(self.vendedores_mostrados):
+            self.selected_vendedor = self.vendedores_mostrados[idx]
 
     # ---- Generación de PDF -----
     def _collect_params(self):
@@ -304,11 +332,11 @@ class EstadoCuentaDialog(QDialog):
             "incluir_detalles": self.incluir_detalles.isChecked(),
         }
         if modo == "cliente" and self.clientes_mostrados:
-            idx = self.cliente_combo.currentIndex()
+            idx = self.cliente_table.currentRow()
             if 0 <= idx < len(self.clientes_mostrados):
                 params["cliente_id"] = self.clientes_mostrados[idx].get("id")
         if modo == "vendedor" and self.vendedores_mostrados:
-            idx = self.vendedor_combo.currentIndex()
+            idx = self.vendedor_table.currentRow()
             if 0 <= idx < len(self.vendedores_mostrados):
                 params["vendedor_id"] = self.vendedores_mostrados[idx].get("id")
         return params

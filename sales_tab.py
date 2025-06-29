@@ -18,7 +18,7 @@ from PyQt5.QtWidgets import (
 
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
 from dialogs import ManualInvoiceDialog
@@ -34,6 +34,8 @@ class SalesTab(QWidget):
         super().__init__(parent)
         self.manager = manager
         self.current_credito_fiscal = None
+        self.preview_pdf_file = None
+        self.preview_image_file = None
         self._setup_ui()
         self.load_sales()
 
@@ -86,6 +88,7 @@ class SalesTab(QWidget):
         self.preview_label = QLabel("Previsualización del PDF")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
+        self.preview_label.setScaledContents(True)
         preview_layout.addWidget(self.preview_label)
 
         self.info_label = QLabel()
@@ -183,6 +186,7 @@ class SalesTab(QWidget):
             self.sent_label.setText("Último envío: ")
             self.email_label.setText("Correo destinatario: ")
             self.log_text.clear()
+            self._clear_preview_files()
             return
 
         row = self.sales_table.currentRow()
@@ -202,7 +206,116 @@ class SalesTab(QWidget):
             )
         else:
             self.info_label.setText(f"Factura {venta_id} - Cliente: {cliente}")
-        # In a real app we would load the PDF preview here
+        # Generate and display preview image for the selected invoice
+        self._update_preview(venta_id)
+
+    def _clear_preview_files(self):
+        """Remove temporary files used for PDF preview."""
+        for path in [self.preview_pdf_file, self.preview_image_file]:
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
+        self.preview_pdf_file = None
+        self.preview_image_file = None
+
+    def _update_preview(self, venta_id):
+        """Generate PDF preview image for the given sale ID and display it."""
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            self.preview_label.setText("Previsualización del PDF")
+            return
+
+        self._clear_preview_files()
+
+        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+
+        venta_data = dict(venta)
+        if credito_info:
+            venta_data.update(credito_info)
+
+        if venta_data.get("vendedor_id"):
+            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
+            if trabajador:
+                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
+        sumas = ventas_exentas = ventas_no_sujetas = iva = 0
+        for d in detalles:
+            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            if d.get("descuento_tipo") == "%":
+                base -= base * d.get("descuento", 0) / 100
+            else:
+                base -= d.get("descuento", 0)
+            iva_item = d.get("iva", 0)
+            tipo = d.get("tipo_fiscal", "").lower()
+            if tipo == "venta exenta":
+                d["ventas_exentas"] = base
+                ventas_exentas += base
+            elif tipo == "venta no sujeta":
+                d["ventas_no_sujetas"] = base
+                ventas_no_sujetas += base
+            else:
+                d["ventas_gravadas"] = base
+                sumas += base
+                iva += iva_item
+
+        subtotal = sumas + ventas_exentas + ventas_no_sujetas
+        total = subtotal + iva
+        venta_data.update(
+            {
+                "sumas": sumas,
+                "iva": iva,
+                "ventas_exentas": ventas_exentas,
+                "ventas_no_sujetas": ventas_no_sujetas,
+                "subtotal": subtotal,
+                "total": total,
+            }
+        )
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        distribuidor = None
+        if venta.get("Distribuidor_id"):
+            distribuidor = next(
+                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
+                None,
+            )
+
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
+            pdf_path = tmp_pdf.name
+
+        generar_factura_electronica_pdf(
+            venta_data,
+            detalles,
+            cliente or {},
+            distribuidor or {},
+            archivo=pdf_path,
+        )
+
+        prefix = tempfile.mktemp()
+        try:
+            subprocess.run(["pdftoppm", "-png", "-singlefile", pdf_path, prefix], check=True)
+            png_path = prefix + ".png"
+            self.preview_pdf_file = pdf_path
+            self.preview_image_file = png_path
+            pixmap = QPixmap(png_path)
+            if pixmap.isNull():
+                raise RuntimeError("failed to load image")
+            self.preview_label.setPixmap(
+                pixmap.scaled(
+                    self.preview_label.width(),
+                    self.preview_label.height(),
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+            )
+            self.preview_label.setText("")
+        except Exception:
+            self.preview_label.setText("No se pudo generar previsualización")
+            self._clear_preview_files()
 
     def save_pdf(self):
         """Generate a PDF for the selected sale after user confirmation."""

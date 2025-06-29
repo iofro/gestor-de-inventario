@@ -220,6 +220,9 @@ class InventoryManager:
         for d in data.get("detalles_venta", []):
             venta_id = venta_id_map.get(d.get("venta_id"))
             producto_id = producto_id_map.get(d.get("producto_id"))
+            vendedor_id = None
+            if d.get("vendedor_id") is not None:
+                vendedor_id = vendedor_id_map.get(d.get("vendedor_id"))
             if venta_id and producto_id:
                 self.db.cursor.execute(
                     "INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -236,7 +239,7 @@ class InventoryManager:
                         d.get("tipo_fiscal", "Gravada"),
                         d.get("extra", None),
                         d.get("precio_con_iva", 0),
-                        d.get("vendedor_id", None)
+                        vendedor_id
                     )
                 )
 

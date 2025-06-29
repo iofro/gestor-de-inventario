@@ -282,33 +282,38 @@ class InventoryManager:
 
         # --- AGREGA DESPUÉS DE IMPORTAR VENTAS ---
         for vcf in data.get("ventas_credito_fiscal", []):
-            self.db.cursor.execute("""
+            extra = vcf.get("extra")
+            extra_json = json.dumps(extra) if extra is not None else None
+            self.db.cursor.execute(
+                """
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro, no_remision, orden_no, condicion_pago,
                     venta_a_cuenta_de, fecha_remision_anterior, fecha_remision,
                     sumas, iva, subtotal, total_letras,
                     ventas_exentas, ventas_no_sujetas, extra
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (
-                venta_id_map.get(vcf.get("venta_id")),      # <-- Usa el nuevo ID de la venta
-                cliente_id_map.get(vcf.get("cliente_id")),  # <-- Usa el nuevo ID del cliente
-                vcf.get("nrc"),
-                vcf.get("nit"),
-                vcf.get("giro"),
-                vcf.get("no_remision"),
-                vcf.get("orden_no"),
-                vcf.get("condicion_pago"),
-                vcf.get("venta_a_cuenta_de"),
-                vcf.get("fecha_remision_anterior"),
-                vcf.get("fecha_remision"),
-                vcf.get("sumas", 0),
-                vcf.get("iva", 0),
-                vcf.get("subtotal", 0),
-                vcf.get("total_letras", ""),
-                vcf.get("ventas_exentas", 0),
-                vcf.get("ventas_no_sujetas", 0),
-                vcf.get("extra", None)
-            ))
+                """,
+                (
+                    venta_id_map.get(vcf.get("venta_id")),
+                    cliente_id_map.get(vcf.get("cliente_id")),
+                    vcf.get("nrc"),
+                    vcf.get("nit"),
+                    vcf.get("giro"),
+                    vcf.get("no_remision"),
+                    vcf.get("orden_no"),
+                    vcf.get("condicion_pago"),
+                    vcf.get("venta_a_cuenta_de"),
+                    vcf.get("fecha_remision_anterior"),
+                    vcf.get("fecha_remision"),
+                    vcf.get("sumas", 0),
+                    vcf.get("iva", 0),
+                    vcf.get("subtotal", 0),
+                    vcf.get("total_letras", ""),
+                    vcf.get("ventas_exentas", 0),
+                    vcf.get("ventas_no_sujetas", 0),
+                    extra_json,
+                ),
+            )
         self.db.conn.commit()
 
     def add_Distribuidor(self, nombre):

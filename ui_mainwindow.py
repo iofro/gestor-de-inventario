@@ -1307,13 +1307,14 @@ class MainWindow(QMainWindow):
             if tipo_idx == 0:
                 for i, c in enumerate(dialog.clientes):
                     if c.get("id") == persona.get("id"):
-                        dialog.cliente_combo.setCurrentIndex(i)
+                        dialog.cliente_table.selectRow(i)
+                        dialog.selected_cliente = c
                         break
             else:
-                vends = dialog.db.get_vendedores()
-                for i, v in enumerate(vends):
+                for i, v in enumerate(dialog.vendedores):
                     if v.get("id") == persona.get("id"):
-                        dialog.vendedor_combo.setCurrentIndex(i)
+                        dialog.vendedor_table.selectRow(i)
+                        dialog.selected_vendedor = v
                         break
         dialog.exec_()
 

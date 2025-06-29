@@ -175,22 +175,15 @@ class InventoryManager:
         for v in data.get("ventas", []):
             cliente_id = cliente_id_map.get(v.get("cliente_id"))
             Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
-            if cliente_id is not None and Distribuidor_id is not None:
-                self.db.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                    (v.get("fecha", ""), v.get("total", 0), cliente_id, Distribuidor_id)
-                )
-            elif cliente_id is not None:
-                self.db.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id) VALUES (?, ?, ?)",
-                    (v.get("fecha", ""), v.get("total", 0), cliente_id)
-                )
-            else:
-                self.db.cursor.execute(
-                    "INSERT INTO ventas (fecha, total) VALUES (?, ?)",
-                    (v.get("fecha", ""), v.get("total", 0))
-                )
-            new_id = self.db.cursor.lastrowid
+            vendedor_id = vendedor_id_map.get(v.get("vendedor_id")) if v.get("vendedor_id") is not None else None
+
+            new_id = self.db.add_venta(
+                v.get("fecha", ""),
+                v.get("total", 0),
+                cliente_id=cliente_id,
+                Distribuidor_id=Distribuidor_id,
+                vendedor_id=vendedor_id,
+            )
             venta_id_map[v["id"]] = new_id
 
         # Compras

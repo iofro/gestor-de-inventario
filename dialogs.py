@@ -222,8 +222,16 @@ class EstadoCuentaDialog(QDialog):
         vend_layout.addWidget(self.solo_saldo_vend)
         self.stack.addWidget(vend_widget)
 
-        # Todos los vendedores (vacío)
-        self.stack.addWidget(QWidget())
+        # Todos los vendedores (tabla sin búsqueda)
+        todos_widget = QWidget()
+        todos_layout = QVBoxLayout(todos_widget)
+        self.vendedor_table_all = QTableWidget(0, 2)
+        self.vendedor_table_all.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.vendedor_table_all.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.vendedor_table_all.setSelectionBehavior(QTableWidget.SelectRows)
+        self._mostrar_vendedores_all(self.vendedores)
+        todos_layout.addWidget(self.vendedor_table_all)
+        self.stack.addWidget(todos_widget)
 
         layout.addLayout(self.stack)
 
@@ -303,6 +311,12 @@ class EstadoCuentaDialog(QDialog):
             self.vendedor_table.setItem(row, 0, QTableWidgetItem(v.get("codigo", "")))
             self.vendedor_table.setItem(row, 1, QTableWidgetItem(v.get("nombre", "")))
         self.vendedores_mostrados = list(vendedores)
+
+    def _mostrar_vendedores_all(self, vendedores):
+        self.vendedor_table_all.setRowCount(len(vendedores))
+        for row, v in enumerate(vendedores):
+            self.vendedor_table_all.setItem(row, 0, QTableWidgetItem(v.get("codigo", "")))
+            self.vendedor_table_all.setItem(row, 1, QTableWidgetItem(v.get("nombre", "")))
 
     def _filtrar_vendedores(self, texto: str):
         texto = texto.lower()

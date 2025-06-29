@@ -185,8 +185,14 @@ class EstadoCuentaDialog(QDialog):
         # Por cliente
         cli_widget = QWidget()
         cli_layout = QVBoxLayout(cli_widget)
+        self.cliente_search = QLineEdit()
+        self.cliente_search.setPlaceholderText(
+            "Buscar cliente por código o nombre..."
+        )
+        cli_layout.addWidget(self.cliente_search)
         self.cliente_combo = QComboBox()
         self.clientes = self.db.get_clientes()
+        self.clientes_mostrados = list(self.clientes)
         self.cliente_combo.addItems([c.get("nombre", "") for c in self.clientes])
         cli_layout.addWidget(self.cliente_combo)
         self.solo_saldo_cliente = QCheckBox("Incluir solo saldos pendientes")
@@ -196,9 +202,15 @@ class EstadoCuentaDialog(QDialog):
         # Por vendedor
         vend_widget = QWidget()
         vend_layout = QVBoxLayout(vend_widget)
+        self.vendedor_search = QLineEdit()
+        self.vendedor_search.setPlaceholderText(
+            "Buscar vendedor por código o nombre..."
+        )
+        vend_layout.addWidget(self.vendedor_search)
         self.vendedor_combo = QComboBox()
-        vendedores = self.db.get_vendedores()
-        self.vendedor_combo.addItems([v.get("nombre", "") for v in vendedores])
+        self.vendedores = self.db.get_vendedores()
+        self.vendedores_mostrados = list(self.vendedores)
+        self.vendedor_combo.addItems([v.get("nombre", "") for v in self.vendedores])
         vend_layout.addWidget(self.vendedor_combo)
         self.solo_saldo_vend = QCheckBox("Incluir solo clientes con saldo")
         vend_layout.addWidget(self.solo_saldo_vend)
@@ -242,6 +254,8 @@ class EstadoCuentaDialog(QDialog):
 
         self.modo_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
         self.anio_actual.toggled.connect(self._toggle_fechas)
+        self.cliente_search.textChanged.connect(self._filtrar_clientes_combo)
+        self.vendedor_search.textChanged.connect(self._filtrar_vendedores_combo)
 
         self.btn_generar.clicked.connect(self._generar_pdf)
         self.btn_imprimir.clicked.connect(self._generar_e_imprimir_pdf)
@@ -252,6 +266,30 @@ class EstadoCuentaDialog(QDialog):
         if checked:
             self.fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
             self.fecha_fin.setDate(QDate.currentDate())
+
+    def _filtrar_clientes_combo(self, texto: str):
+        texto = texto.lower()
+        filtrados = [
+            c
+            for c in self.clientes
+            if texto in (c.get("codigo", "") or "").lower()
+            or texto in (c.get("nombre", "") or "").lower()
+        ]
+        self.clientes_mostrados = filtrados
+        self.cliente_combo.clear()
+        self.cliente_combo.addItems([c.get("nombre", "") for c in filtrados])
+
+    def _filtrar_vendedores_combo(self, texto: str):
+        texto = texto.lower()
+        filtrados = [
+            v
+            for v in self.vendedores
+            if texto in (v.get("codigo", "") or "").lower()
+            or texto in (v.get("nombre", "") or "").lower()
+        ]
+        self.vendedores_mostrados = filtrados
+        self.vendedor_combo.clear()
+        self.vendedor_combo.addItems([v.get("nombre", "") for v in filtrados])
 
     # ---- Generación de PDF -----
     def _collect_params(self):
@@ -265,11 +303,14 @@ class EstadoCuentaDialog(QDialog):
             "agrupar_factura": self.agrupar_factura.isChecked(),
             "incluir_detalles": self.incluir_detalles.isChecked(),
         }
-        if modo == "cliente" and self.clientes:
-            params["cliente_id"] = self.clientes[self.cliente_combo.currentIndex()].get("id")
-        if modo == "vendedor" and self.db.get_vendedores():
-            vends = self.db.get_vendedores()
-            params["vendedor_id"] = vends[self.vendedor_combo.currentIndex()].get("id")
+        if modo == "cliente" and self.clientes_mostrados:
+            idx = self.cliente_combo.currentIndex()
+            if 0 <= idx < len(self.clientes_mostrados):
+                params["cliente_id"] = self.clientes_mostrados[idx].get("id")
+        if modo == "vendedor" and self.vendedores_mostrados:
+            idx = self.vendedor_combo.currentIndex()
+            if 0 <= idx < len(self.vendedores_mostrados):
+                params["vendedor_id"] = self.vendedores_mostrados[idx].get("id")
         return params
 
     def _generar_pdf(self):

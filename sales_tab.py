@@ -271,7 +271,7 @@ class SalesTab(QWidget):
                 iva += iva_item
 
         subtotal = sumas + ventas_exentas + ventas_no_sujetas
-        total = subtotal + iva - venta_data.get("iva_retenido", 0)
+        total = subtotal + iva
         venta_data.update({
             "sumas": sumas,
             "iva": iva,
@@ -355,7 +355,7 @@ class SalesTab(QWidget):
                 iva += iva_item
 
         subtotal = sumas + ventas_exentas + ventas_no_sujetas
-        total = subtotal + iva - venta_data.get("iva_retenido", 0)
+        total = subtotal + iva
         venta_data.update(
             {
                 "sumas": sumas,

@@ -363,7 +363,6 @@ class DB:
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN sumas REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN iva REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0")
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN iva_retenido REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT")
             self.cursor.execute("ALTER TABLE ventas ADD COLUMN extra TEXT")
             self.conn.commit()
@@ -542,8 +541,8 @@ class DB:
     def add_venta_credito_fiscal(self, cliente_id, fecha, total, nrc, nit, giro, Distribuidor_id=None, vendedor_id=None,
                                  no_remision="", orden_no="", condicion_pago="", venta_a_cuenta_de="",
                                  fecha_remision_anterior="", fecha_remision="",
-                                 sumas=0, iva=0, subtotal=0, iva_retenido=0,
-                                 ventas_exentas=0, ventas_no_sujetas=0,   # <-- AGREGA ESTOS
+                                 sumas=0, iva=0, subtotal=0,
+                                 ventas_exentas=0, ventas_no_sujetas=0,
                                  total_letras="", extra=None):
         try:
             if Distribuidor_id is not None and vendedor_id is not None:
@@ -591,13 +590,13 @@ class DB:
                     venta_id, cliente_id, nrc, nit, giro,
                     no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
                     fecha_remision_anterior, fecha_remision,
-                    sumas, iva, subtotal, iva_retenido, ventas_exentas, ventas_no_sujetas, total_letras, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id, cliente_id, nrc, nit, giro,
                 no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
                 fecha_remision_anterior, fecha_remision,
-                sumas, iva, subtotal, iva_retenido, ventas_exentas, ventas_no_sujetas, total_letras, extra_json
+                sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra_json
             ))
             self.conn.commit()
             return venta_id

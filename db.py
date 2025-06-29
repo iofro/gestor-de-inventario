@@ -591,7 +591,7 @@ class DB:
                     no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
                     fecha_remision_anterior, fecha_remision,
                     sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id, cliente_id, nrc, nit, giro,
                 no_remision, orden_no, condicion_pago, venta_a_cuenta_de,

@@ -24,6 +24,7 @@ from factura_sv import generar_factura_electronica_pdf
 from dialogs import ManualInvoiceDialog
 import tempfile
 import subprocess
+import shutil
 import os
 
 
@@ -297,8 +298,23 @@ class SalesTab(QWidget):
 
         prefix = tempfile.mktemp()
         try:
-            subprocess.run(["pdftoppm", "-png", "-singlefile", pdf_path, prefix], check=True)
             png_path = prefix + ".png"
+            if shutil.which("pdftoppm"):
+                subprocess.run([
+                    "pdftoppm",
+                    "-png",
+                    "-singlefile",
+                    pdf_path,
+                    prefix,
+                ], check=True)
+            else:
+                import fitz
+
+                doc = fitz.open(pdf_path)
+                page = doc.load_page(0)
+                pix = page.get_pixmap()
+                pix.save(png_path)
+
             self.preview_pdf_file = pdf_path
             self.preview_image_file = png_path
             pixmap = QPixmap(png_path)

@@ -514,19 +514,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         iva_layout.addWidget(self.iva_desglosado_radio)
         left_layout.addLayout(iva_layout)
 
-        # --- NUEVO: IVA retenido: campo editable y checkbox ---
-        iva_retenido_layout = QHBoxLayout()
-        iva_retenido_layout.addWidget(QLabel("IVA retenido:"))
-        self.iva_retenido_spin = QDoubleSpinBox()
-        self.iva_retenido_spin.setDecimals(2)
-        self.iva_retenido_spin.setMinimum(0)
-        self.iva_retenido_spin.setMaximum(999999)
-        self.iva_retenido_spin.setValue(0.00)
-        iva_retenido_layout.addWidget(self.iva_retenido_spin)
-        self.iva_retenido_auto = QCheckBox("Calcular 1% automático")
-        iva_retenido_layout.addWidget(self.iva_retenido_auto)
-        left_layout.addLayout(iva_retenido_layout)
-        self.iva_retenido_auto.stateChanged.connect(self._actualizar_iva_retenido)
 
         # --- Clasificación fiscal individual por producto ---
         fiscal_layout = QHBoxLayout()
@@ -583,12 +570,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.sumas_label = QLabel("Sumas: $0.00")
         self.iva_label = QLabel("IVA: $0.00")
         self.subtotal_label = QLabel("Subtotal: $0.00")
-        self.iva_retenido_label = QLabel("IVA retenido: $0.00")
         self.total_label = QLabel("Venta total: $0.00")
         right_layout.addWidget(self.sumas_label)
         right_layout.addWidget(self.iva_label)
         right_layout.addWidget(self.subtotal_label)
-        right_layout.addWidget(self.iva_retenido_label)
         right_layout.addWidget(self.total_label)
 
         # Botón para registrar la venta
@@ -715,17 +700,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self.precio_total_spin.setEnabled(True)
         self._recalcular_totales()
 
-    def _actualizar_iva_retenido(self):
-        if self.iva_retenido_auto.isChecked():
-            sumas_gravadas = sum(
-                item["subtotal_con_descuento"]
-                for item in self.venta_items
-                if item.get("tipo_fiscal", "").lower() == "venta gravada"
-            )
-            self.iva_retenido_spin.setValue(round(sumas_gravadas * 0.01, 2))
-            self.iva_retenido_spin.setReadOnly(True)
-        else:
-            self.iva_retenido_spin.setReadOnly(False)
 
     def _recalcular_totales(self):
         cantidad = self.cantidad_spin.value()
@@ -772,8 +746,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
         self.iva_label.setText(f"IVA: ${iva:.2f}")
-        iva_retenido = self.iva_retenido_spin.value()
-        self.total_label.setText(f"TOTAL: ${(total - iva_retenido):.2f}")
+        self.total_label.setText(f"TOTAL: ${total:.2f}")
 
 
     def get_data(self):
@@ -799,8 +772,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 ventas_no_sujetas += item["subtotal_con_descuento"]
             total += item.get("total", 0) 
 
-        iva_retenido = float(self.iva_retenido_spin.value())
-
         return {
         "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
@@ -817,9 +788,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
             "subtotal": sumas + ventas_exentas + ventas_no_sujetas,
-            "iva_retenido": iva_retenido,
-            "total": sumas + ventas_exentas + ventas_no_sujetas + iva - iva_retenido,
-            "iva_retenido_auto": self.iva_retenido_auto.isChecked(),
+            "total": sumas + ventas_exentas + ventas_no_sujetas + iva,
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()
@@ -900,7 +869,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "fecha_vencimiento": lote.get("fecha_vencimiento", "")
         })
         self._actualizar_tabla()
-        self._actualizar_iva_retenido()
         self._recalcular_totales()
 
     def _actualizar_tabla(self):
@@ -928,7 +896,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         if 0 <= row < len(self.venta_items):
             del self.venta_items[row]
             self._actualizar_tabla()
-            self._actualizar_iva_retenido()
             self._recalcular_totales()
 
     def _validar_y_accept(self):
@@ -1606,13 +1573,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.cantidad_spin.setMaximum(100000)
         left_layout.addWidget(self.cantidad_spin)
 
-        # Selector de tipo fiscal
-        tipo_fiscal_layout = QHBoxLayout()
-        tipo_fiscal_layout.addWidget(QLabel("Tipo fiscal:"))
-        self.tipo_fiscal_combo = QComboBox()
-        self.tipo_fiscal_combo.addItems(["Venta gravada", "Venta exenta", "Venta no sujeta"])
-        tipo_fiscal_layout.addWidget(self.tipo_fiscal_combo)
-        left_layout.addLayout(tipo_fiscal_layout)
 
         # Precio unitario y total
         precio_layout = QHBoxLayout()
@@ -1670,22 +1630,20 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.iva_agregado_radio.toggled.connect(self._recalcular_totales)
         self.iva_desglosado_radio.toggled.connect(self._recalcular_totales)
 
+        # Selector de tipo fiscal
+        tipo_fiscal_layout = QHBoxLayout()
+        tipo_fiscal_layout.addWidget(QLabel("Tipo fiscal:"))
+        self.tipo_fiscal_combo = QComboBox()
+        self.tipo_fiscal_combo.addItems(["Venta gravada", "Venta exenta", "Venta no sujeta"])
+        tipo_fiscal_layout.addWidget(self.tipo_fiscal_combo)
+        left_layout.addLayout(tipo_fiscal_layout)
+
         self.subtotal_label = QLabel("Subtotal: $0.00")
         self.iva_label = QLabel("IVA: $0.00")
         left_layout.addWidget(self.subtotal_label)
         left_layout.addWidget(self.iva_label)
 
-        iva_retenido_layout = QHBoxLayout()
-        iva_retenido_layout.addWidget(QLabel("IVA retenido:"))
-        self.iva_retenido_spin = QDoubleSpinBox()
-        self.iva_retenido_spin.setDecimals(2)
-        self.iva_retenido_spin.setMinimum(0)
-        self.iva_retenido_spin.setMaximum(999999)
-        self.iva_retenido_spin.setValue(0.00)
-        iva_retenido_layout.addWidget(self.iva_retenido_spin)
-        self.iva_retenido_auto = QCheckBox("Calcular 1% automático")
-        iva_retenido_layout.addWidget(self.iva_retenido_auto)
-        left_layout.addLayout(iva_retenido_layout)
+
 
         self.total_label = QLabel("TOTAL: $0.00")
         left_layout.addWidget(self.total_label)
@@ -1694,7 +1652,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.btn_agregar = QPushButton("Agregar a venta")
         left_layout.addWidget(self.btn_agregar)
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
-        self.btn_agregar.clicked.connect(self._actualizar_iva_retenido)
 
         # Tabla de productos agregados
         self.table = QTableWidget(0, 7)
@@ -1705,7 +1662,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
-        self.table.cellClicked.connect(lambda *_: self._actualizar_iva_retenido())
 
         # Botón para registrar la venta
         self.btn_ok = QPushButton("Registrar")
@@ -1804,7 +1760,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.tipo_mayorista_unit.toggled.connect(self._toggle_precio_edicion)
         self.tipo_mayorista_total.toggled.connect(self._toggle_precio_edicion)
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
-        self.iva_retenido_auto.stateChanged.connect(self._actualizar_iva_retenido)
 
         if productos:
             self.product_list.setCurrentRow(0)
@@ -1906,20 +1861,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
         self.iva_label.setText(f"IVA: ${iva:.2f}")
-        iva_retenido = self.iva_retenido_spin.value()
-        self.total_label.setText(f"TOTAL: ${(total - iva_retenido):.2f}")
-
-    def _actualizar_iva_retenido(self):
-        if self.iva_retenido_auto.isChecked():
-            sumas_gravadas = sum(
-                item["subtotal_con_descuento"]
-                for item in self.venta_items
-                if item.get("tipo_fiscal", "").lower() == "venta gravada"
-            )
-            self.iva_retenido_spin.setValue(round(sumas_gravadas * 0.01, 2))
-            self.iva_retenido_spin.setReadOnly(True)
-        else:
-            self.iva_retenido_spin.setReadOnly(False)
+        self.total_label.setText(f"TOTAL: ${total:.2f}")
 
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
@@ -2002,7 +1944,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         })
 
         self._actualizar_tabla()
-        self._actualizar_iva_retenido()
         self._recalcular_totales()
 
 
@@ -2031,7 +1972,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if 0 <= row < len(self.venta_items):
             del self.venta_items[row]
             self._actualizar_tabla()
-            self._actualizar_iva_retenido()
+            self._recalcular_totales()
 
     def _validar_y_accept(self):
         if not self.selected_cliente or "id" not in self.selected_cliente:
@@ -2069,8 +2010,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 ventas_no_sujetas += base
             total += item.get("total", 0)
 
-        iva_retenido = float(self.iva_retenido_spin.value())
-
         return {
             "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
@@ -2094,17 +2033,15 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "sumas": sumas,
             "iva": iva,
             "subtotal": sumas + ventas_exentas + ventas_no_sujetas,
-            "iva_retenido": iva_retenido,
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
-            "total": sumas + ventas_exentas + ventas_no_sujetas + iva - iva_retenido,
+            "total": sumas + ventas_exentas + ventas_no_sujetas + iva,
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()
                 if self.Distribuidor_combo.currentIndex() >= 0 else None
             ),
-            "vendedor_id": vendedor_id,
-            "iva_retenido_auto": self.iva_retenido_auto.isChecked()
+            "vendedor_id": vendedor_id
         }
 
 class DistribuidorDialog(QDialog):

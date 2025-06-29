@@ -604,14 +604,6 @@ class DB:
             logger.exception("Error al agregar venta a crédito fiscal: %s", e)
             return None
 
-    def get_venta_credito_fiscal(self, venta_id):
-        """Retrieve a single record from ventas_credito_fiscal by venta_id."""
-        self.cursor.execute(
-            "SELECT * FROM ventas_credito_fiscal WHERE venta_id=?",
-            (venta_id,),
-        )
-        row = self.cursor.fetchone()
-        return dict(row) if row else None
 
     def get_ventas(self):
         self.cursor.execute("SELECT * FROM ventas")
@@ -655,14 +647,6 @@ class DB:
         self.cursor.execute("SELECT * FROM detalles_compra WHERE compra_id=?", (compra_id,))
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def get_venta_credito_fiscal(self, venta_id):
-        """Retrieve a venta_credito_fiscal row by the associated venta_id."""
-        self.cursor.execute(
-            "SELECT * FROM ventas_credito_fiscal WHERE venta_id=?",
-            (venta_id,)
-        )
-        row = self.cursor.fetchone()
-        return dict(row) if row else None
 
     def get_estado_cuenta(self, persona_id, tipo="cliente", fecha_inicio=None, fecha_fin=None):
         """Obtiene las facturas de un cliente o vendedor en un rango de fechas.

@@ -288,7 +288,7 @@ class InventoryManager:
                     venta_a_cuenta_de, fecha_remision_anterior, fecha_remision,
                     sumas, iva, subtotal, total_letras,
                     ventas_exentas, ventas_no_sujetas, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id_map.get(vcf.get("venta_id")),      # <-- Usa el nuevo ID de la venta
                 cliente_id_map.get(vcf.get("cliente_id")),  # <-- Usa el nuevo ID del cliente

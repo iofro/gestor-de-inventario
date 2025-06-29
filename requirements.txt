@@ -4,3 +4,4 @@ reportlab
 pytest
 pyinstaller
 dbfread
+PyMuPDF

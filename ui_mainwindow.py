@@ -554,7 +554,7 @@ class MainWindow(QMainWindow):
                 items = data.get("items", [])
                 if not items:
                     raise ValueError("Debe agregar al menos un producto a la venta.")
-                total = data.get("total", 0)  # <-- Usa el total calculado por el diálogo (ya descuenta IVA retenido)
+                total = data.get("total", 0)  # <-- Usa el total calculado por el diálogo
                 fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 cliente_id = data["cliente"]["id"] if data.get("cliente") and "id" in data["cliente"] else None
                 Distribuidor_nombre = dialog.Distribuidor_combo.currentText()
@@ -673,7 +673,6 @@ class MainWindow(QMainWindow):
                 sumas = data.get("sumas", 0)
                 iva = data.get("iva", 0)
                 subtotal = data.get("subtotal", 0)
-                iva_retenido = data.get("iva_retenido", 0)
                 venta_total = data.get("total", 0)
                 total_letras = monto_a_texto_sv(venta_total)
                 # ---------------------------------------------------
@@ -701,8 +700,7 @@ class MainWindow(QMainWindow):
                     sumas=sumas,
                     iva=iva,
                     subtotal=subtotal,
-                    iva_retenido=iva_retenido,
-                    ventas_exentas=data.get("ventas_exentas", 0),         
+                    ventas_exentas=data.get("ventas_exentas", 0),
                     ventas_no_sujetas=data.get("ventas_no_sujetas", 0),   
                     total_letras=total_letras
                 )

@@ -2286,7 +2286,21 @@ class ClienteDialog(QDialog):
         if not self.nombre_edit.text().strip():
             QMessageBox.warning(self, "Validación", "El nombre es obligatorio.")
             return
-        # Elimina toda validación de NIT y correo
+        email = self.email_edit.text().strip()
+        if not email:
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "El correo electrónico es obligatorio."
+            )
+            return
+        if not validar_email(email):
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "Ingrese un correo electrónico válido."
+            )
+            return
         self.accept()
 
     def get_data(self):

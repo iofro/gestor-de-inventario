@@ -343,6 +343,8 @@ class MainWindow(QMainWindow):
         controles = QHBoxLayout()
         self.estado_tipo_combo = QComboBox()
         self.estado_tipo_combo.addItems(["Cliente", "Vendedor"])
+        # Mostrar por defecto los vendedores al abrir la pestaña
+        self.estado_tipo_combo.setCurrentIndex(1)
         self.estado_search_bar = QLineEdit()
         self.estado_search_bar.setPlaceholderText("Buscar por código o nombre...")
         self.estado_fecha_inicio = QDateEdit(QDate.currentDate())
@@ -1073,10 +1075,10 @@ class MainWindow(QMainWindow):
 
     def _actualizar_historial(self):
         """Recarga la tabla de historial o estado de cuenta."""
-        # Si la tabla muestra el historial general (5 columnas),
-        # actualizamos esa vista.  De lo contrario se regenera el
-        # estado de cuenta de la persona seleccionada o el resumen.
-        if self.estado_table.columnCount() == 5:
+        # Si la tabla muestra el historial general (6 columnas),
+        # actualizamos esa vista. De lo contrario se regenera el
+        # estado de cuenta de la persona seleccionada.
+        if self.estado_table.columnCount() == 6:
             self._mostrar_historial_general()
         else:
             self._generar_estado_cuenta()
@@ -1355,42 +1357,9 @@ class MainWindow(QMainWindow):
         fin_str = fin.toString("yyyy-MM-dd")
 
         if persona is None:
-            if tipo == "vendedor":
-                resumen = self.manager.db.get_estado_cuenta_vendedores(
-                    fecha_inicio=inicio_str, fecha_fin=fin_str
-                )
-                self.estado_table.setColumnCount(3)
-                self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre", "Total"])
-                self.estado_table.setRowCount(len(resumen))
-                for row, r in enumerate(resumen):
-                    trab = self.manager.db.get_trabajador(r["vendedor_id"])
-                    codigo = trab.get("codigo", "") if trab else ""
-                    nombre = trab.get("nombre", "") if trab else ""
-                    self.estado_table.setItem(row, 0, QTableWidgetItem(codigo))
-                    self.estado_table.setItem(row, 1, QTableWidgetItem(nombre))
-                    self.estado_table.setItem(
-                        row,
-                        2,
-                        QTableWidgetItem(f"${float(r.get('total_ventas', 0)):.2f}"),
-                    )
-            else:
-                resumen = self.manager.db.get_estado_cuenta_clientes(
-                    fecha_inicio=inicio_str, fecha_fin=fin_str
-                )
-                self.estado_table.setColumnCount(3)
-                self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre", "Total"])
-                self.estado_table.setRowCount(len(resumen))
-                for row, r in enumerate(resumen):
-                    cli = self.manager.db.get_cliente(r["cliente_id"])
-                    codigo = cli.get("codigo", "") if cli else ""
-                    nombre = cli.get("nombre", "") if cli else ""
-                    self.estado_table.setItem(row, 0, QTableWidgetItem(codigo))
-                    self.estado_table.setItem(row, 1, QTableWidgetItem(nombre))
-                    self.estado_table.setItem(
-                        row,
-                        2,
-                        QTableWidgetItem(f"${float(r.get('total_compras', 0)):.2f}"),
-                    )
+            # Si no hay una persona seleccionada, mostramos el historial general
+            # según el tipo elegido (cliente o vendedor).
+            self._mostrar_historial_general()
             return
 
         persona_id = persona.get("id")

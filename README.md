@@ -31,3 +31,10 @@ Las pruebas unitarias se ejecutan con **pytest**. Para lanzarlas usa:
 pytest
 ```
 
+### Datos del negocio y correo
+
+La configuración general se almacena en `datos_negocio.json`. Para que el envío
+de facturas por correo funcione, completa los campos SMTP de este archivo. El
+campo `email_contrasena` guarda la contraseña de la cuenta utilizada para
+enviar correos.
+

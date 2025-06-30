@@ -18,6 +18,9 @@ from dialogs import (
     ClienteDialog,
     EstadoCuentaDialog,
 )
+
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab
 from datetime import datetime
 
@@ -749,7 +752,7 @@ class MainWindow(QMainWindow):
             try:
                 self.manager.exportar_inventario_json(filename)
                 self.ultimo_archivo_json = filename
-                with open("ultimo_inventario.json", "w", encoding="utf-8") as f:
+                with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
                 QMessageBox.information(self, "Guardar como", "Inventario guardado correctamente.")
             except Exception as e:
@@ -762,7 +765,7 @@ class MainWindow(QMainWindow):
             try:
                 self.manager.importar_inventario_json(filename)
                 self.ultimo_archivo_json = filename
-                with open("ultimo_inventario.json", "w", encoding="utf-8") as f:
+                with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
                 self.compras_tab.refresh_filters()
                 self.filter_products()
@@ -1212,7 +1215,7 @@ class MainWindow(QMainWindow):
     def _abrir_datos_negocio(self):
         # Puedes guardar/cargar los datos en un archivo JSON local, por ejemplo:
         import os, json
-        datos_path = "datos_negocio.json"
+        datos_path = DATOS_NEGOCIO_PATH
         datos = {}
         if os.path.exists(datos_path):
             try:

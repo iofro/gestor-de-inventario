@@ -320,6 +320,76 @@ class InventoryManager:
         self.db.add_vendedor(nombre, Distribuidor_id=Distribuidor_id, codigo=codigo)
         self.refresh_data()
 
+    def add_cliente(
+        self,
+        nombre,
+        nrc,
+        nit,
+        dui,
+        giro,
+        telefono,
+        email,
+        direccion,
+        departamento,
+        municipio,
+        codigo=None,
+    ):
+        """Add a new client and refresh the cached lists."""
+
+        self.db.add_cliente(
+            nombre,
+            nrc,
+            nit,
+            dui,
+            giro,
+            telefono,
+            email,
+            direccion,
+            departamento,
+            municipio,
+            codigo=codigo,
+        )
+        self.refresh_data()
+
+    def update_cliente(
+        self,
+        cliente_id,
+        codigo,
+        nombre,
+        nrc,
+        nit,
+        dui,
+        giro,
+        telefono,
+        email,
+        direccion,
+        departamento,
+        municipio,
+    ):
+        """Update an existing client and refresh the cached lists."""
+
+        self.db.update_cliente(
+            cliente_id,
+            codigo,
+            nombre,
+            nrc,
+            nit,
+            dui,
+            giro,
+            telefono,
+            email,
+            direccion,
+            departamento,
+            municipio,
+        )
+        self.refresh_data()
+
+    def delete_cliente(self, cliente_id):
+        """Delete a client and refresh the cached lists."""
+
+        self.db.delete_cliente(cliente_id)
+        self.refresh_data()
+
     def limpiar_inventario(self):
         self.db.limpiar_productos()
         self.db.limpiar_vendedores()

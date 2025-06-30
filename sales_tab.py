@@ -381,7 +381,7 @@ class SalesTab(QWidget):
             QMessageBox.warning(
                 self,
                 "Configuración de correo",
-                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
+                "Credenciales de correo electrónico incompletas. Configúralas en Configuración -> Datos del negocio.",
             )
             return
         try:
@@ -391,7 +391,7 @@ class SalesTab(QWidget):
             QMessageBox.warning(
                 self,
                 "Configuración de correo",
-                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
+                "Credenciales de correo electrónico incompletas. Configúralas en Configuración -> Datos del negocio.",
             )
             return
 
@@ -412,7 +412,7 @@ class SalesTab(QWidget):
             QMessageBox.warning(
                 self,
                 "Configuración de correo",
-                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
+                "Credenciales de correo electrónico incompletas. Configúralas en Configuración -> Datos del negocio.",
             )
 
     def _update_preview(self, venta_id):
@@ -765,7 +765,11 @@ class SalesTab(QWidget):
         user = creds.get("email_usuario")
         password = creds.get("email_contrasena") or creds.get("email_contraseña")
         if not all([server, port, user, password]):
-            QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
+            QMessageBox.warning(
+                self,
+                "Enviar por correo",
+                "Credenciales de correo electrónico incompletas. Configúralas en Configuración -> Datos del negocio.",
+            )
             return
 
         self.status_label.setText("Estado actual: Enviando...")

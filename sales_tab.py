@@ -37,6 +37,8 @@ class SalesTab(QWidget):
         self.current_credito_fiscal = None
         self.preview_pdf_file = None
         self.preview_image_file = None
+        self.email_subject = ""
+        self.email_body = ""
         self._setup_ui()
         self.load_sales()
 
@@ -116,14 +118,17 @@ class SalesTab(QWidget):
         self.gen_label = QLabel("Generado: ")
         self.sent_label = QLabel("Último envío: ")
         self.email_label = QLabel("Correo destinatario: ")
-        self.log_text = QTextEdit()
-        self.log_text.setReadOnly(True)
+        self.email_preview = QTextEdit()
+        self.email_preview.setReadOnly(True)
+        self.edit_email_btn = QPushButton("Editar correo")
+        self.edit_email_btn.clicked.connect(self.edit_email)
         self.retry_btn = QPushButton("Reintentar envío")
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.gen_label)
         status_layout.addWidget(self.sent_label)
         status_layout.addWidget(self.email_label)
-        status_layout.addWidget(self.log_text)
+        status_layout.addWidget(self.email_preview)
+        status_layout.addWidget(self.edit_email_btn)
         status_layout.addWidget(self.retry_btn)
         status_widget = QWidget()
         status_widget.setLayout(status_layout)
@@ -187,7 +192,7 @@ class SalesTab(QWidget):
             self.gen_label.setText("Generado: ")
             self.sent_label.setText("Último envío: ")
             self.email_label.setText("Correo destinatario: ")
-            self.log_text.clear()
+            self.email_preview.clear()
             self._clear_preview_files()
             return
 
@@ -195,10 +200,12 @@ class SalesTab(QWidget):
         venta_id = int(self.sales_table.item(row, 0).text())
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         cliente = ""
+        cliente_email = ""
         if venta and venta.get("cliente_id"):
             cli = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
             if cli:
                 cliente = cli.get("nombre", "")
+                cliente_email = cli.get("email", "")
 
         # Fetch credit-fiscal information for this sale
         self.current_credito_fiscal = self.manager.db.get_venta_credito_fiscal(venta_id)
@@ -209,7 +216,9 @@ class SalesTab(QWidget):
         else:
             self.info_label.setText(f"Factura {venta_id} - Cliente: {cliente}")
         # Generate and display preview image for the selected invoice
+        self.email_label.setText(f"Correo destinatario: {cliente_email}")
         self._update_preview(venta_id)
+        self._update_email_preview()
 
     def _clear_preview_files(self):
         """Remove temporary files used for PDF preview."""
@@ -221,6 +230,34 @@ class SalesTab(QWidget):
                     pass
         self.preview_pdf_file = None
         self.preview_image_file = None
+
+    def _update_email_preview(self):
+        text = f"Asunto: {self.email_subject}\n\n{self.email_body}"
+        self.email_preview.setPlainText(text)
+
+    def edit_email(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Editar correo")
+        layout = QVBoxLayout(dialog)
+        subject_edit = QLineEdit(self.email_subject)
+        body_edit = QTextEdit()
+        body_edit.setPlainText(self.email_body)
+        layout.addWidget(QLabel("Asunto:"))
+        layout.addWidget(subject_edit)
+        layout.addWidget(QLabel("Cuerpo:"))
+        layout.addWidget(body_edit)
+        btn_box = QHBoxLayout()
+        ok_btn = QPushButton("Aceptar")
+        cancel_btn = QPushButton("Cancelar")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_box.addWidget(ok_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addLayout(btn_box)
+        if dialog.exec_() == QDialog.Accepted:
+            self.email_subject = subject_edit.text()
+            self.email_body = body_edit.toPlainText()
+            self._update_email_preview()
 
     def _update_preview(self, venta_id):
         """Generate PDF preview image for the given sale ID and display it."""

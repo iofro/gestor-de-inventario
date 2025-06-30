@@ -27,7 +27,7 @@
   "smtp_server": "",
   "smtp_port": 587,
   "email_usuario": "",
-  "email_contraseña": "",
+  "email_contrasena": "",
   "default_email_subject": "",
   "default_email_body": ""
 }

@@ -5,6 +5,8 @@ import json
 from datetime import datetime, timedelta
 import os
 
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
 class InventoryManager:
     def __init__(self):
         self.db = DB()
@@ -70,8 +72,8 @@ class InventoryManager:
 
     def exportar_inventario_json(self, filename):
         datos_negocio = {}
-        if os.path.exists("datos_negocio.json"):
-            with open("datos_negocio.json", "r", encoding="utf-8") as f:
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
                 datos_negocio = json.load(f)
         ventas_credito_fiscal = [dict(row) for row in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")]
         data = {
@@ -268,7 +270,7 @@ class InventoryManager:
         self.refresh_data()
         # --- BLOQUE MODIFICADO PARA DATOS DEL NEGOCIO ---
         datos_negocio = data.get("datos_negocio", None)
-        datos_path = "datos_negocio.json"
+        datos_path = DATOS_NEGOCIO_PATH
         if datos_negocio:
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos_negocio, f, ensure_ascii=False, indent=2)

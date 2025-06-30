@@ -1040,9 +1040,18 @@ class MainWindow(QMainWindow):
         dialog = ClienteDialog(self, codigo_sugerido=codigo)
         if dialog.exec_():
             data = dialog.get_data()
-            self.manager.db.add_cliente(
-                data["nombre"], data["nrc"], data["nit"], data["dui"], data["giro"],
-                data["telefono"], data["email"], data["direccion"], data["departamento"], data["municipio"], data["codigo"]
+            self.manager.add_cliente(
+                data["nombre"],
+                data["nrc"],
+                data["nit"],
+                data["dui"],
+                data["giro"],
+                data["telefono"],
+                data["email"],
+                data["direccion"],
+                data["departamento"],
+                data["municipio"],
+                data["codigo"],
             )
             self._actualizar_tabla_clientes()
             QMessageBox.information(self, "Cliente", "Cliente agregado correctamente.")
@@ -1055,9 +1064,19 @@ class MainWindow(QMainWindow):
         dialog = ClienteDialog(self, cliente=cli)
         if dialog.exec_():
             data = dialog.get_data()
-            self.manager.db.update_cliente(
-                cli["id"], data["codigo"], data["nombre"], data["nrc"], data["nit"], data["dui"], data["giro"],
-                data["telefono"], data["email"], data["direccion"], data["departamento"], data["municipio"]
+            self.manager.update_cliente(
+                cli["id"],
+                data["codigo"],
+                data["nombre"],
+                data["nrc"],
+                data["nit"],
+                data["dui"],
+                data["giro"],
+                data["telefono"],
+                data["email"],
+                data["direccion"],
+                data["departamento"],
+                data["municipio"],
             )
             self._actualizar_tabla_clientes()
             QMessageBox.information(self, "Cliente", "Cliente editado correctamente.")
@@ -1069,7 +1088,7 @@ class MainWindow(QMainWindow):
             return
         confirm = QMessageBox.question(self, "Eliminar", f"¿Eliminar cliente '{cli['nombre']}'?", QMessageBox.Yes | QMessageBox.No)
         if confirm == QMessageBox.Yes:
-            self.manager.db.delete_cliente(cli["id"])
+            self.manager.delete_cliente(cli["id"])
             self._actualizar_tabla_clientes()
             QMessageBox.information(self, "Cliente eliminado", f"El cliente '{cli['nombre']}' ha sido eliminado.")
 

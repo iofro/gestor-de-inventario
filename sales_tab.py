@@ -88,6 +88,7 @@ class SalesTab(QWidget):
         self.email_body = ""
         self.email_thread = None
         self._setup_ui()
+        self._load_email_config()
         self.load_sales()
 
     def _setup_ui(self):
@@ -170,9 +171,11 @@ class SalesTab(QWidget):
         self.email_subject_edit = QLineEdit()
         self.email_body_edit = QTextEdit()
         self.retry_btn = QPushButton("Reintentar envío")
+        self.config_email_btn = QPushButton("Configurar correo")
         self.email_subject_edit.textChanged.connect(lambda t: setattr(self, "email_subject", t))
         self.email_body_edit.textChanged.connect(lambda: setattr(self, "email_body", self.email_body_edit.toPlainText()))
         self.retry_btn.clicked.connect(self.send_email)
+        self.config_email_btn.clicked.connect(self.configure_email)
         self.retry_btn.setEnabled(False)
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.gen_label)
@@ -182,7 +185,10 @@ class SalesTab(QWidget):
         status_layout.addWidget(self.email_subject_edit)
         status_layout.addWidget(QLabel("Mensaje:"))
         status_layout.addWidget(self.email_body_edit)
-        status_layout.addWidget(self.retry_btn)
+        btns_layout = QHBoxLayout()
+        btns_layout.addWidget(self.retry_btn)
+        btns_layout.addWidget(self.config_email_btn)
+        status_layout.addLayout(btns_layout)
         status_widget = QWidget()
         status_widget.setLayout(status_layout)
 
@@ -312,6 +318,60 @@ class SalesTab(QWidget):
             self.email_subject = subject_edit.text()
             self.email_body = body_edit.toPlainText()
             self._update_email_preview()
+
+    def configure_email(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Configurar correo")
+        layout = QVBoxLayout(dialog)
+        subject_edit = QLineEdit(self.email_subject)
+        body_edit = QTextEdit()
+        body_edit.setPlainText(self.email_body)
+        layout.addWidget(QLabel("Asunto por defecto:"))
+        layout.addWidget(subject_edit)
+        layout.addWidget(QLabel("Mensaje por defecto:"))
+        layout.addWidget(body_edit)
+        btn_box = QHBoxLayout()
+        ok_btn = QPushButton("Guardar")
+        cancel_btn = QPushButton("Cancelar")
+        ok_btn.clicked.connect(dialog.accept)
+        cancel_btn.clicked.connect(dialog.reject)
+        btn_box.addWidget(ok_btn)
+        btn_box.addWidget(cancel_btn)
+        layout.addLayout(btn_box)
+        if dialog.exec_() == QDialog.Accepted:
+            self.email_subject = subject_edit.text()
+            self.email_body = body_edit.toPlainText()
+            self._save_email_config()
+            self._update_email_preview()
+
+    def _load_email_config(self):
+        path = "datos_negocio.json"
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                self.email_subject = data.get("default_email_subject", "")
+                self.email_body = data.get("default_email_body", "")
+            except Exception:
+                pass
+        self._update_email_preview()
+
+    def _save_email_config(self):
+        path = "datos_negocio.json"
+        data = {}
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+            except Exception:
+                data = {}
+        data["default_email_subject"] = self.email_subject
+        data["default_email_body"] = self.email_body
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                json.dump(data, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
     def _update_preview(self, venta_id):
         """Generate PDF preview image for the given sale ID and display it."""

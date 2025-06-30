@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QDialog,
 
 )
-from PyQt5.QtCore import Qt, QDate, QUrl
+from PyQt5.QtCore import Qt, QDate, QUrl, QThread, pyqtSignal
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
@@ -26,6 +26,53 @@ import tempfile
 import subprocess
 import shutil
 import os
+import json
+import smtplib
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+from email.mime.base import MIMEBase
+from email import encoders
+
+
+class EmailSender(QThread):
+    finished = pyqtSignal(bool, str)
+
+    def __init__(self, server, port, user, password, to_addr, subject, body, attachment):
+        super().__init__()
+        self.server = server
+        self.port = port
+        self.user = user
+        self.password = password
+        self.to_addr = to_addr
+        self.subject = subject
+        self.body = body
+        self.attachment = attachment
+
+    def run(self):
+        try:
+            msg = MIMEMultipart()
+            msg["From"] = self.user
+            msg["To"] = self.to_addr
+            msg["Subject"] = self.subject
+            msg.attach(MIMEText(self.body or "", "plain"))
+
+            with open(self.attachment, "rb") as f:
+                part = MIMEBase("application", "octet-stream")
+                part.set_payload(f.read())
+            encoders.encode_base64(part)
+            part.add_header(
+                "Content-Disposition", f'attachment; filename="{os.path.basename(self.attachment)}"'
+            )
+            msg.attach(part)
+
+            smtp = smtplib.SMTP(self.server, int(self.port))
+            smtp.starttls()
+            smtp.login(self.user, self.password)
+            smtp.send_message(msg)
+            smtp.quit()
+            self.finished.emit(True, "Correo enviado correctamente")
+        except Exception as e:
+            self.finished.emit(False, str(e))
 
 
 class SalesTab(QWidget):
@@ -39,6 +86,7 @@ class SalesTab(QWidget):
         self.preview_image_file = None
         self.email_subject = ""
         self.email_body = ""
+        self.email_thread = None
         self._setup_ui()
         self.load_sales()
 
@@ -108,6 +156,7 @@ class SalesTab(QWidget):
         btn_layout.addWidget(self.btn_imprimir)
         btn_layout.addWidget(self.btn_editar)
         self.btn_guardar.clicked.connect(self.save_pdf)
+        self.btn_enviar.clicked.connect(self.send_email)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -118,17 +167,21 @@ class SalesTab(QWidget):
         self.gen_label = QLabel("Generado: ")
         self.sent_label = QLabel("Último envío: ")
         self.email_label = QLabel("Correo destinatario: ")
-        self.email_preview = QTextEdit()
-        self.email_preview.setReadOnly(True)
-        self.edit_email_btn = QPushButton("Editar correo")
-        self.edit_email_btn.clicked.connect(self.edit_email)
+        self.email_subject_edit = QLineEdit()
+        self.email_body_edit = QTextEdit()
         self.retry_btn = QPushButton("Reintentar envío")
+        self.email_subject_edit.textChanged.connect(lambda t: setattr(self, "email_subject", t))
+        self.email_body_edit.textChanged.connect(lambda: setattr(self, "email_body", self.email_body_edit.toPlainText()))
+        self.retry_btn.clicked.connect(self.send_email)
+        self.retry_btn.setEnabled(False)
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.gen_label)
         status_layout.addWidget(self.sent_label)
         status_layout.addWidget(self.email_label)
-        status_layout.addWidget(self.email_preview)
-        status_layout.addWidget(self.edit_email_btn)
+        status_layout.addWidget(QLabel("Asunto:"))
+        status_layout.addWidget(self.email_subject_edit)
+        status_layout.addWidget(QLabel("Mensaje:"))
+        status_layout.addWidget(self.email_body_edit)
         status_layout.addWidget(self.retry_btn)
         status_widget = QWidget()
         status_widget.setLayout(status_layout)
@@ -192,7 +245,8 @@ class SalesTab(QWidget):
             self.gen_label.setText("Generado: ")
             self.sent_label.setText("Último envío: ")
             self.email_label.setText("Correo destinatario: ")
-            self.email_preview.clear()
+            self.email_subject_edit.clear()
+            self.email_body_edit.clear()
             self._clear_preview_files()
             return
 
@@ -232,8 +286,8 @@ class SalesTab(QWidget):
         self.preview_image_file = None
 
     def _update_email_preview(self):
-        text = f"Asunto: {self.email_subject}\n\n{self.email_body}"
-        self.email_preview.setPlainText(text)
+        self.email_subject_edit.setText(self.email_subject)
+        self.email_body_edit.setPlainText(self.email_body)
 
     def edit_email(self):
         dialog = QDialog(self)
@@ -564,6 +618,74 @@ class SalesTab(QWidget):
             return
         # Reuse preview_pdf to generate the file
         self.preview_pdf()
+
+    def send_email(self):
+        """Send the selected invoice via email in a background thread."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Enviar por correo", "No has seleccionado ninguna venta.")
+            return
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Enviar por correo", "No se encontró la venta seleccionada.")
+            return
+
+        cliente_email = ""
+        if venta.get("cliente_id"):
+            cli = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+            if cli:
+                cliente_email = cli.get("email", "")
+        if not cliente_email:
+            QMessageBox.warning(self, "Enviar por correo", "El cliente no tiene correo registrado.")
+            return
+
+        subject = self.email_subject_edit.text().strip()
+        body = self.email_body_edit.toPlainText()
+
+        if not self.preview_pdf_file or not os.path.exists(self.preview_pdf_file):
+            self._update_preview(venta_id)
+        pdf_path = self.preview_pdf_file
+        if not pdf_path or not os.path.exists(pdf_path):
+            QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el PDF.")
+            return
+
+        creds = {}
+        if os.path.exists("datos_negocio.json"):
+            try:
+                with open("datos_negocio.json", "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                creds = {}
+        server = creds.get("smtp_server")
+        port = creds.get("smtp_port")
+        user = creds.get("email_usuario")
+        password = creds.get("email_contraseña")
+        if not all([server, port, user, password]):
+            QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
+            return
+
+        self.status_label.setText("Estado actual: Enviando...")
+        self.retry_btn.setEnabled(False)
+        self.btn_enviar.setEnabled(False)
+
+        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread.finished.connect(self._on_email_sent)
+        self.email_thread.start()
+
+    def _on_email_sent(self, success, message):
+        self.btn_enviar.setEnabled(True)
+        if success:
+            self.status_label.setText("Estado actual: Enviado")
+            self.sent_label.setText("Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M"))
+            QMessageBox.information(self, "Enviar por correo", message)
+            self.retry_btn.setEnabled(False)
+        else:
+            self.status_label.setText("Estado actual: Error")
+            QMessageBox.critical(self, "Enviar por correo", message)
+            self.retry_btn.setEnabled(True)
+        self.email_thread = None
 
     def generate_manual_invoice(self):
         """Open dialog to create an invoice manually and preview the PDF."""

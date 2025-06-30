@@ -89,7 +89,8 @@ class SalesTab(QWidget):
         self.preview_label = QLabel("Previsualización del PDF")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
-        self.preview_label.setScaledContents(True)
+        # Avoid stretching the image so the aspect ratio of the PDF is preserved
+        self.preview_label.setScaledContents(False)
         preview_layout.addWidget(self.preview_label)
 
         self.info_label = QLabel()
@@ -320,14 +321,14 @@ class SalesTab(QWidget):
             pixmap = QPixmap(png_path)
             if pixmap.isNull():
                 raise RuntimeError("failed to load image")
-            self.preview_label.setPixmap(
-                pixmap.scaled(
-                    self.preview_label.width(),
-                    self.preview_label.height(),
-                    Qt.KeepAspectRatio,
-                    Qt.SmoothTransformation,
-                )
+            # Scale down a bit but keep the PDF aspect ratio intact
+            scaled = pixmap.scaled(
+                int(self.preview_label.width() * 0.9),
+                int(self.preview_label.height() * 0.9),
+                Qt.KeepAspectRatio,
+                Qt.SmoothTransformation,
             )
+            self.preview_label.setPixmap(scaled)
             self.preview_label.setText("")
         except Exception:
             self.preview_label.setText("No se pudo generar previsualización")

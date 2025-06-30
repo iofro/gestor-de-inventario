@@ -89,6 +89,7 @@ class SalesTab(QWidget):
         self.email_thread = None
         self._setup_ui()
         self._load_email_config()
+        self._check_smtp_credentials()
         self.load_sales()
 
     def _setup_ui(self):
@@ -372,6 +373,47 @@ class SalesTab(QWidget):
                 json.dump(data, f, ensure_ascii=False, indent=2)
         except Exception:
             pass
+
+    def _check_smtp_credentials(self):
+        """Warn user if SMTP settings are incomplete when the tab is opened."""
+        path = "datos_negocio.json"
+        if not os.path.exists(path):
+            QMessageBox.warning(
+                self,
+                "Configuración de correo",
+                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
+            )
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            QMessageBox.warning(
+                self,
+                "Configuración de correo",
+                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
+            )
+            return
+
+        server = data.get("smtp_server")
+        port = data.get("smtp_port")
+        user = data.get("email_usuario") or data.get("email")
+        password = data.get("email_contraseña")
+
+        if not data.get("email_usuario") and user:
+            data["email_usuario"] = user
+            try:
+                with open(path, "w", encoding="utf-8") as f:
+                    json.dump(data, f, ensure_ascii=False, indent=2)
+            except Exception:
+                pass
+
+        if not all([server, port, user, password]):
+            QMessageBox.warning(
+                self,
+                "Configuración de correo",
+                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
+            )
 
     def _update_preview(self, venta_id):
         """Generate PDF preview image for the given sale ID and display it."""

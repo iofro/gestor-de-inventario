@@ -23,6 +23,7 @@
   "ciiu": "",
   "contador_nombre": "",
   "contador_nit": "",
+  "email_provider": "Gmail",
   "smtp_server": "",
   "smtp_port": 587,
   "email_usuario": "",

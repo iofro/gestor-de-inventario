@@ -2510,16 +2510,36 @@ class DatosNegocioDialog(QDialog):
         # --- Grupo 4: Configuración de correo ---
         grupo4 = QGroupBox("\ud83d\udce7 Configuraci\u00f3n de correo")
         form4 = QFormLayout()
+
+        # Proveedor de correo y configuraci\u00f3n SMTP predefinida
+        self.combo_email_provider = QComboBox()
+        self.combo_email_provider.addItems([
+            "Gmail",
+            "Outlook",
+            "Yahoo",
+            "Zoho",
+            "iCloud",
+        ])
+
         self.smtp_server = QLineEdit()
         self.smtp_port = QLineEdit()
         self.email_usuario = QLineEdit()
         self.email_contrasena = QLineEdit()
         self.email_contrasena.setEchoMode(QLineEdit.Password)
+
+        form4.addRow("Proveedor:", self.combo_email_provider)
         form4.addRow("Servidor SMTP:", self.smtp_server)
         form4.addRow("Puerto SMTP:", self.smtp_port)
         form4.addRow("Usuario:", self.email_usuario)
         form4.addRow("Contrase\u00f1a:", self.email_contrasena)
         grupo4.setLayout(form4)
+
+        self.combo_email_provider.currentTextChanged.connect(
+            self._update_smtp_fields
+        )
+        self.email.textChanged.connect(self._update_user_field)
+        self._update_smtp_fields()
+
         main_layout.addLayout(h_layout)
         main_layout.addWidget(grupo4)
 
@@ -2565,6 +2585,7 @@ class DatosNegocioDialog(QDialog):
             "ciiu": self.ciiu.text(),
             "contador_nombre": self.contador_nombre.text(),
             "contador_nit": self.contador_nit.text(),
+            "email_provider": self.combo_email_provider.currentText(),
             "smtp_server": self.smtp_server.text(),
             "smtp_port": self.smtp_port.text(),
             "email_usuario": self.email_usuario.text(),
@@ -2596,11 +2617,39 @@ class DatosNegocioDialog(QDialog):
         self.ciiu.setText(datos.get("ciiu", ""))
         self.contador_nombre.setText(datos.get("contador_nombre", ""))
         self.contador_nit.setText(datos.get("contador_nit", ""))
+        provider = datos.get("email_provider", "Gmail")
+        idx = self.combo_email_provider.findText(provider)
+        if idx >= 0:
+            self.combo_email_provider.setCurrentIndex(idx)
+        else:
+            self.combo_email_provider.setCurrentIndex(0)
         self.smtp_server.setText(datos.get("smtp_server", ""))
         self.smtp_port.setText(str(datos.get("smtp_port", "")))
-        self.email_usuario.setText(datos.get("email_usuario", ""))
+        self.email_usuario.setText(datos.get("email_usuario", self.email.text()))
         self.email_contrasena.setText(datos.get("email_contrasena", ""))
+        self._update_smtp_fields()
 
+    def _update_user_field(self):
+        """Autocompletar el usuario con el correo oficial."""
+        self.email_usuario.setText(self.email.text())
+
+    def _update_smtp_fields(self):
+        """Actualizar datos SMTP al cambiar de proveedor."""
+        provider = self.combo_email_provider.currentText()
+        defaults = {
+            "Gmail": ("smtp.gmail.com", 587),
+            "Outlook": ("smtp.office365.com", 587),
+            "Yahoo": ("smtp.mail.yahoo.com", 587),
+            "Zoho": ("smtp.zoho.com", 587),
+            "iCloud": ("smtp.mail.me.com", 587),
+        }
+        server, port = defaults.get(provider, ("", ""))
+        self.smtp_server.setText(server)
+        self.smtp_port.setText(str(port))
+        self.smtp_server.setReadOnly(True)
+        self.smtp_port.setReadOnly(True)
+        self.email_usuario.setText(self.email.text())
+        self.email_usuario.setReadOnly(True)
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):
         super().__init__(parent)

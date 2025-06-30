@@ -2,12 +2,13 @@ import sqlite3
 from datetime import datetime
 import json
 import logging
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DB:
-    def __init__(self, db_name="inventario.db"):
+    def __init__(self, db_name=os.path.join(os.path.dirname(__file__), "inventario.db")):
         self.conn = sqlite3.connect(db_name)
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()

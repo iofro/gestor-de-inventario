@@ -33,6 +33,8 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
 
 class EmailSender(QThread):
     finished = pyqtSignal(bool, str)
@@ -346,7 +348,7 @@ class SalesTab(QWidget):
             self._update_email_preview()
 
     def _load_email_config(self):
-        path = "datos_negocio.json"
+        path = DATOS_NEGOCIO_PATH
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -358,7 +360,7 @@ class SalesTab(QWidget):
         self._update_email_preview()
 
     def _save_email_config(self):
-        path = "datos_negocio.json"
+        path = DATOS_NEGOCIO_PATH
         data = {}
         if os.path.exists(path):
             try:
@@ -376,7 +378,7 @@ class SalesTab(QWidget):
 
     def _check_smtp_credentials(self):
         """Warn user if SMTP settings are incomplete when the tab is opened."""
-        path = "datos_negocio.json"
+        path = DATOS_NEGOCIO_PATH
         if not os.path.exists(path):
             QMessageBox.warning(
                 self,
@@ -754,9 +756,9 @@ class SalesTab(QWidget):
             return
 
         creds = {}
-        if os.path.exists("datos_negocio.json"):
+        if os.path.exists(DATOS_NEGOCIO_PATH):
             try:
-                with open("datos_negocio.json", "r", encoding="utf-8") as f:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
                     creds = json.load(f)
             except Exception:
                 creds = {}

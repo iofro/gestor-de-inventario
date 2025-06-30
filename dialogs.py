@@ -2507,7 +2507,21 @@ class DatosNegocioDialog(QDialog):
         grupo3.setLayout(form3)
         h_layout.addWidget(grupo3)
 
+        # --- Grupo 4: Configuración de correo ---
+        grupo4 = QGroupBox("\ud83d\udce7 Configuraci\u00f3n de correo")
+        form4 = QFormLayout()
+        self.smtp_server = QLineEdit()
+        self.smtp_port = QLineEdit()
+        self.email_usuario = QLineEdit()
+        self.email_contrasena = QLineEdit()
+        self.email_contrasena.setEchoMode(QLineEdit.Password)
+        form4.addRow("Servidor SMTP:", self.smtp_server)
+        form4.addRow("Puerto SMTP:", self.smtp_port)
+        form4.addRow("Usuario:", self.email_usuario)
+        form4.addRow("Contrase\u00f1a:", self.email_contrasena)
+        grupo4.setLayout(form4)
         main_layout.addLayout(h_layout)
+        main_layout.addWidget(grupo4)
 
         # --- Botones ---
         btns = QHBoxLayout()
@@ -2551,6 +2565,10 @@ class DatosNegocioDialog(QDialog):
             "ciiu": self.ciiu.text(),
             "contador_nombre": self.contador_nombre.text(),
             "contador_nit": self.contador_nit.text(),
+            "smtp_server": self.smtp_server.text(),
+            "smtp_port": self.smtp_port.text(),
+            "email_usuario": self.email_usuario.text(),
+            "email_contrasena": self.email_contrasena.text(),
         }
 
     def set_data(self, datos):
@@ -2578,6 +2596,10 @@ class DatosNegocioDialog(QDialog):
         self.ciiu.setText(datos.get("ciiu", ""))
         self.contador_nombre.setText(datos.get("contador_nombre", ""))
         self.contador_nit.setText(datos.get("contador_nit", ""))
+        self.smtp_server.setText(datos.get("smtp_server", ""))
+        self.smtp_port.setText(str(datos.get("smtp_port", "")))
+        self.email_usuario.setText(datos.get("email_usuario", ""))
+        self.email_contrasena.setText(datos.get("email_contrasena", ""))
 
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):

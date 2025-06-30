@@ -23,11 +23,8 @@
   "ciiu": "",
   "contador_nombre": "",
   "contador_nit": "",
-  "email_provider": "Gmail",
-  "smtp_server": "",
-  "smtp_port": 587,
-  "email_usuario": "",
-  "email_contrasena": "",
-  "default_email_subject": "",
-  "default_email_body": ""
+  "smtp_server": "smtp.gmail.com",
+  "smtp_port": "587",
+  "email_usuario": "arieliosefrosales@gmail.com",
+  "email_contrasena": "AmoMi1conejita"
 }

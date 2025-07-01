@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableView, QLineEdit,
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
     QListWidget, QInputDialog, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
-    QDateEdit, QCheckBox, QTextEdit, QAbstractItemView
+    QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
@@ -153,6 +153,7 @@ class MainWindow(QMainWindow):
         self.product_table.setSelectionBehavior(QTableView.SelectRows)
         self.product_table.setSelectionMode(QTableView.SingleSelection)
         self.product_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.product_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.product_table.clicked.connect(self._on_table_clicked)
         self.selected_row = None
         main_layout.addWidget(self.product_table)
@@ -249,6 +250,7 @@ class MainWindow(QMainWindow):
         ])
         self.clientes_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.clientes_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.clientes_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         clientes_layout.addWidget(self.clientes_table)
 
         # Botones
@@ -288,6 +290,7 @@ class MainWindow(QMainWindow):
         ])
         self.inventario_actual_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.inventario_actual_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.inventario_actual_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         inventario_actual_layout.addWidget(self.inventario_actual_table)
 
         inventario_actual_tab.setLayout(inventario_actual_layout)
@@ -324,6 +327,7 @@ class MainWindow(QMainWindow):
         ])
         self.trabajadores_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.trabajadores_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.trabajadores_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         trabajadores_layout.addWidget(self.trabajadores_table)
 
         # Botones
@@ -370,6 +374,7 @@ class MainWindow(QMainWindow):
         self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
         self.estado_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.estado_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.estado_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
         self.estado_table.itemSelectionChanged.connect(self._on_estado_row_selected)
 

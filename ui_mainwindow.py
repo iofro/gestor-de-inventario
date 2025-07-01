@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView
 )
 from PyQt5.QtCore import Qt, QDate
-from PyQt5.QtGui import QColor
+from PyQt5.QtGui import QColor, QIcon
 import os
 import json
 from inventory_manager import InventoryManager
@@ -42,6 +42,9 @@ class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Inventario Farmacia")
+        icon_path = os.path.join(os.path.dirname(__file__), "logoinventario.jpg")
+        if os.path.exists(icon_path):
+            self.setWindowIcon(QIcon(icon_path))
         self.resize(1200, 700)
         self.manager = InventoryManager()
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado

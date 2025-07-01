@@ -15,6 +15,7 @@ from PyQt5.QtWidgets import (
 
     QInputDialog,
     QDialog,
+    QHeaderView,
 
 )
 from PyQt5.QtCore import Qt, QDate, QUrl, QThread, pyqtSignal
@@ -126,6 +127,7 @@ class SalesTab(QWidget):
         ])
         self.sales_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.sales_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.sales_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sales_table.itemSelectionChanged.connect(self.show_sale)
         left_layout.addWidget(self.sales_table)
 

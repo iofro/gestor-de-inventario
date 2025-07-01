@@ -21,6 +21,7 @@ from dialogs import (
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
+TAB_ORDER_PATH = os.path.join(os.path.dirname(__file__), "tab_order.json")
 from sales_tab import SalesTab
 from datetime import datetime
 
@@ -44,6 +45,7 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
         self.manager = InventoryManager()
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        self.tab_widgets = {}
         self._setup_ui()
         self._apply_styles()
         self.estado_personas = []
@@ -294,13 +296,21 @@ class MainWindow(QMainWindow):
 
         # --- AGREGA LAS CUATRO PESTAÑAS AL QTabWidget ---
         self.tabs = QTabWidget()
+        self.tabs.setMovable(True)
         self.tabs.addTab(tab_widget, "Inventario")
+        self.tab_widgets["Inventario"] = tab_widget
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")  # <-- Esta línea es clave
+        self.tab_widgets["Vendedores y Distribuidores"] = vend_dist_tab
         self.tabs.addTab(clientes_tab, "Clientes")
+        self.tab_widgets["Clientes"] = clientes_tab
         self.tabs.addTab(self.sales_tab, "Ventas")
+        self.tab_widgets["Ventas"] = self.sales_tab
         self.tabs.addTab(self.compras_tab, "Compras")
+        self.tab_widgets["Compras"] = self.compras_tab
         self.tabs.addTab(inventario_actual_tab, "Inventario actual")
+        self.tab_widgets["Inventario actual"] = inventario_actual_tab
         self.setCentralWidget(self.tabs)
+        self.tabs.tabBar().tabMoved.connect(lambda _f, _t: self.save_tab_order())
 
         # --- PESTAÑA DE TRABAJADORES ---
         trabajadores_tab = QWidget()
@@ -338,6 +348,7 @@ class MainWindow(QMainWindow):
 
         trabajadores_tab.setLayout(trabajadores_layout)
         self.tabs.addTab(trabajadores_tab, "Trabajadores")
+        self.tab_widgets["Trabajadores"] = trabajadores_tab
 
         # --- PESTAÑA DE ESTADOS DE CUENTA ---
         estado_tab = QWidget()
@@ -377,6 +388,7 @@ class MainWindow(QMainWindow):
 
         estado_tab.setLayout(estado_layout)
         self.tabs.addTab(estado_tab, "Estados de cuenta")
+        self.tab_widgets["Estados de cuenta"] = estado_tab
 
         # Conexiones
         self.btn_add_trabajador.clicked.connect(self._agregar_trabajador)
@@ -409,6 +421,7 @@ class MainWindow(QMainWindow):
 
         self.selected_row = None
         self._actualizar_inventario_actual()
+        self.load_tab_order()
 
     def _apply_styles(self):
         self.setStyleSheet("""
@@ -1485,4 +1498,31 @@ class MainWindow(QMainWindow):
             self.estado_table.setItem(row, 3, QTableWidgetItem(cli))
             self.estado_table.setItem(row, 4, QTableWidgetItem(vend))
             self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(monto):.2f}"))
+
+    def save_tab_order(self):
+        """Guarda el orden actual de las pestañas."""
+        order = [self.tabs.tabText(i) for i in range(self.tabs.count())]
+        try:
+            with open(TAB_ORDER_PATH, "w", encoding="utf-8") as f:
+                json.dump({"order": order}, f)
+        except Exception as e:
+            logger.error(f"Error saving tab order: {e}")
+
+    def load_tab_order(self):
+        """Carga el orden de pestañas previamente guardado."""
+        if not os.path.exists(TAB_ORDER_PATH):
+            return
+        try:
+            with open(TAB_ORDER_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            order = data.get("order", [])
+            for pos, name in enumerate(order):
+                widget = self.tab_widgets.get(name)
+                if widget is None:
+                    continue
+                current_index = self.tabs.indexOf(widget)
+                if current_index != pos and current_index != -1:
+                    self.tabs.tabBar().moveTab(current_index, pos)
+        except Exception as e:
+            logger.error(f"Error loading tab order: {e}")
 

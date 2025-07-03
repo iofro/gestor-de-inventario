@@ -2,6 +2,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from datetime import datetime
 
+from utils.negocio import get_nombre_comercial
+
 
 def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archivo="reporte_vendedor.pdf"):
     """Genera un PDF con el detalle de ventas por vendedor."""
@@ -28,8 +30,9 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
     width, height = letter
     y = height - 40
 
+    nombre_comercial = get_nombre_comercial()
     c.setFont("Courier-Bold", 12)
-    c.drawCentredString(width / 2, y, "FARMACIA SANTA CATALINA")
+    c.drawCentredString(width / 2, y, nombre_comercial)
     y -= 14
     c.setFont("Courier", 10)
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"

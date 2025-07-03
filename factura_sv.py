@@ -6,6 +6,8 @@ from reportlab.graphics.barcode import qr
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 
+from utils.negocio import get_nombre_comercial
+
 def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, archivo="factura_electronica.pdf"):
     from datetime import datetime
 
@@ -17,8 +19,9 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     # --- ENCABEZADO SUPERIOR IZQUIERDA: DATOS FIJOS ---
     encabezado_y = height - y_margin
     encabezado_x = x_margin
+    nombre_comercial = get_nombre_comercial()
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(encabezado_x, encabezado_y, "FARMACIA SANTA CATALINA")
+    c.drawString(encabezado_x, encabezado_y, nombre_comercial)
     c.setFont("Helvetica-Bold", 10)
     c.drawString(encabezado_x, encabezado_y - 16, "KAROL YAMILETH CRUZ ESCOBAR")
     c.setFont("Helvetica-Bold", 9)

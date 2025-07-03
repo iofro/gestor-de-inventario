@@ -2,6 +2,8 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from datetime import datetime
 
+from utils.negocio import get_nombre_comercial
+
 
 def generar_reporte_vendedor_pdf(
     db,
@@ -55,22 +57,12 @@ def generar_reporte_vendedor_pdf(
     page = 1
     y = height - 40
 
-    def print_header():
-        nonlocal y
-        c.setFont("Courier-Bold", 12)
-        c.drawCentredString(width / 2, y, "FARMACIA SANTA CATALINA")
-        y -= 14
-        c.setFont("Courier", 10)
-        c.drawCentredString(width / 2, y, titulo)
-        y -= 14
-        c.setFont("Courier-Bold", 10)
-        c.drawCentredString(width / 2, y, nombre)
-        y -= 20
 
-    def print_footer():
-        c.setFont("Courier", 8)
-        c.drawString(40, 30, datetime.now().strftime("%d/%m/%Y"))
-        c.drawRightString(width - 40, 30, f"Página {page}")
+    nombre_comercial = get_nombre_comercial()
+    c.setFont("Courier-Bold", 12)
+    c.drawCentredString(width / 2, y, nombre_comercial)
+    y -= 14
+    c.setFont("Courier", 10)
 
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
     nombre = "{}{}{}".format(

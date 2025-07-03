@@ -258,6 +258,45 @@ class InventoryManager:
                     d.get("comision_tipo", "")
             )
 
+        # Si no hay lotes pero el producto tiene stock, crea un lote inicial
+        productos_con_lote = set()
+        for d in data.get("detalles_compra", []):
+            pid = d.get("producto_id")
+            if pid is not None:
+                productos_con_lote.add(pid)
+
+        for p in data.get("productos", []):
+            if p.get("stock", 0) and p.get("id") not in productos_con_lote:
+                new_pid = producto_id_map.get(p.get("id"))
+                if not new_pid:
+                    continue
+
+                vendedor_old = p.get("vendedor_id")
+                dist_old = p.get("Distribuidor_id")
+                vendedor_id = vendedor_id_map.get(vendedor_old) if vendedor_old is not None else None
+                dist_id = Distribuidor_id_map.get(dist_old) if dist_old is not None else None
+
+                compra_id = None
+                if vendedor_id is not None or dist_id is not None:
+                    compra_id = self.db.add_compra_detallada({
+                        "fecha": "",
+                        "producto_id": None,
+                        "cantidad": 0,
+                        "precio_unitario": 0,
+                        "total": p.get("precio_compra", 0) * p.get("stock", 0),
+                        "Distribuidor_id": dist_id,
+                        "comision_pct": 0,
+                        "comision_monto": 0,
+                        "vendedor_id": vendedor_id,
+                    })
+
+                self.db.add_detalle_compra(
+                    compra_id,
+                    new_pid,
+                    p.get("stock", 0),
+                    p.get("precio_compra", 0)
+                )
+
         # Movimientos (opcional, si tienes movimientos)
         for m in data.get("movimientos", []):
             producto_id = producto_id_map.get(m.get("producto_id"))

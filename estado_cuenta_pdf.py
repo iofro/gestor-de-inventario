@@ -89,7 +89,21 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
 
 
 def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", **kwargs):
-    """Genera un PDF básico para distintos modos de estado de cuenta."""
+    """Genera un PDF para estados de cuenta.
+
+    Cuando ``modo`` es ``"vendedor"`` y se solicita ``incluir_detalles`` se
+    delega a :func:`generar_reporte_vendedor_pdf` para producir el formato
+    detallado por cliente y producto.
+    """
+
+    # -- Atajo para el reporte detallado de vendedor -----------------------
+    if modo == "vendedor" and kwargs.get("incluir_detalles"):
+        vid = kwargs.get("vendedor_id")
+        fecha_inicio = kwargs.get("fecha_inicio")
+        fecha_fin = kwargs.get("fecha_fin")
+        generar_reporte_vendedor_pdf(db, vid, fecha_inicio, fecha_fin, archivo)
+        return
+
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
     y = height - 40

@@ -22,6 +22,7 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
             d["fecha"] = venta.get("fecha")
             d["venta_id"] = venta["id"]
             d["cliente_id"] = cid
+            d["valor_fact"] = venta.get("total", 0)
             grouped.setdefault(cid, []).append(d)
 
     c = canvas.Canvas(archivo, pagesize=letter)
@@ -62,17 +63,20 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
         c.setFont("Courier", 8)
         total_cliente = 0
         total_com = 0
+        seen_sales = set()
         for it in items:
             if y < 60:
                 c.showPage()
                 y = height - 40
             total = it.get("cantidad",0) * it.get("precio_unitario",0)
             com = it.get("comision",0)
-            total_cliente += total
+            if it["venta_id"] not in seen_sales:
+                total_cliente += it.get("valor_fact", 0)
+                seen_sales.add(it["venta_id"])
             total_com += com
             values = [
                 f"FA-{it['venta_id']:06d}",
-                f"{total:.2f}",
+                f"{it.get('valor_fact',0):.2f}",
                 it.get("fecha","")[:10],
                 it.get("descripcion","")[:25],
                 f"{it.get('cantidad',0):.2f}",

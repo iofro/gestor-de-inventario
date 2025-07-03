@@ -116,6 +116,8 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
     if modo == "cliente":
         cid = kwargs.get("cliente_id")
         cliente = db.get_cliente(cid) if cid else {}
+        if cliente is None:
+            cliente = {}
         c.setFont("Courier", 10)
         c.drawString(40, y, f"Cliente: {cliente.get('nombre','')}")
         y -= 14
@@ -130,6 +132,8 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
     elif modo == "vendedor":
         vid = kwargs.get("vendedor_id")
         vendedor = db.get_trabajador(vid) if vid else {}
+        if vendedor is None:
+            vendedor = {}
         c.setFont("Courier", 10)
         c.drawString(40, y, f"Vendedor: {vendedor.get('nombre','')}")
         y -= 14

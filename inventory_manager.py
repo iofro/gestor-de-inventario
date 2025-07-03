@@ -135,6 +135,12 @@ class InventoryManager:
             self.db.cursor.execute("SELECT id FROM vendedores WHERE nombre=? ORDER BY id DESC LIMIT 1", (vend["nombre"],))
             new_id = self.db.cursor.fetchone()["id"]
             vendedor_id_map[vend["id"]] = new_id
+            if self.db.get_trabajador(new_id) is None:
+                self.db.cursor.execute(
+                    "INSERT INTO trabajadores (id, codigo, nombre, es_vendedor) VALUES (?, ?, ?, 1)",
+                    (new_id, vend.get("codigo"), vend.get("nombre")),
+                )
+                self.db.conn.commit()
 
         for t in data.get("trabajadores", []):
             self.db.add_trabajador(t)

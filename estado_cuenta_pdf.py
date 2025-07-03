@@ -52,23 +52,34 @@ def generar_reporte_vendedor_pdf(
 
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
+    page = 1
     y = height - 40
 
-    c.setFont("Courier-Bold", 12)
-    c.drawCentredString(width / 2, y, "FARMACIA SANTA CATALINA")
-    y -= 14
-    c.setFont("Courier", 10)
+    def print_header():
+        nonlocal y
+        c.setFont("Courier-Bold", 12)
+        c.drawCentredString(width / 2, y, "FARMACIA SANTA CATALINA")
+        y -= 14
+        c.setFont("Courier", 10)
+        c.drawCentredString(width / 2, y, titulo)
+        y -= 14
+        c.setFont("Courier-Bold", 10)
+        c.drawCentredString(width / 2, y, nombre)
+        y -= 20
+
+    def print_footer():
+        c.setFont("Courier", 8)
+        c.drawString(40, 30, datetime.now().strftime("%d/%m/%Y"))
+        c.drawRightString(width - 40, 30, f"Página {page}")
+
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
-    c.drawCentredString(width / 2, y, titulo)
-    y -= 14
     nombre = "{}{}{}".format(
         vendedor.get('nombre', ''),
         " — " if vendedor.get('nombre') and vendedor.get('codigo') else "",
         vendedor.get('codigo', '')
     )
-    c.setFont("Courier-Bold", 10)
-    c.drawCentredString(width / 2, y, nombre)
-    y -= 20
+
+    print_header()
 
     for cid, items in grouped.items():
         cliente = db.get_cliente(cid) if cid else {}
@@ -90,40 +101,35 @@ def generar_reporte_vendedor_pdf(
         total_com = 0
         for it in items:
             if y < 60:
+                print_footer()
                 c.showPage()
+                page += 1
                 y = height - 40
-            if agrupar_factura:
-                total = it.get("total", 0)
-                com = it.get("comision", 0)
-                total_cliente += total
-                total_com += com
-                values = [
-                    f"FA-{it['venta_id']:06d}",
-                    f"{total:.2f}",
-                    it.get("fecha", "")[:10],
-                    "",
-                    "",
-                    "",
-                    f"{total:.2f}",
-                    "",
-                    f"{com:.2f}",
-                ]
-            else:
-                total = it.get("cantidad", 0) * it.get("precio_unitario", 0)
-                com = it.get("comision", 0)
-                total_cliente += total
-                total_com += com
-                values = [
-                    f"FA-{it['venta_id']:06d}",
-                    f"{total:.2f}",
-                    it.get("fecha", "")[:10],
-                    it.get("descripcion", "")[:25],
-                    f"{it.get('cantidad', 0):.2f}",
-                    f"{it.get('precio_unitario', 0):.6f}",
-                    f"{total:.2f}",
-                    f"{(com/total*100 if total else 0):.2f}%",
-                    f"{com:.2f}",
-                ]
+                print_header()
+                c.setFont("Courier-Bold", 9)
+                c.drawString(40, y, "CLIENTE: " + cli_line)
+                y -= 12
+                c.setFont("Courier-Bold", 8)
+                for hx, text in zip(col_x, headers):
+                    c.drawString(hx, y, text)
+                y -= 10
+                c.setFont("Courier", 8)
+            total = it.get("cantidad",0) * it.get("precio_unitario",0)
+            com = it.get("comision",0)
+            total_cliente += total
+            total_com += com
+            values = [
+                f"FA-{it['venta_id']:06d}",
+                f"{total:.2f}",
+                it.get("fecha","")[:10],
+                it.get("descripcion","")[:25],
+                f"{it.get('cantidad',0):.2f}",
+                f"{it.get('precio_unitario',0):.6f}",
+                f"{total:.2f}",
+                f"{(com/total*100 if total else 0):.2f}%",
+                f"{com:.2f}"
+            ]
+
             for hx, text in zip(col_x, values):
                 c.drawString(hx, y, str(text))
             y -= 10
@@ -131,9 +137,7 @@ def generar_reporte_vendedor_pdf(
         c.drawRightString(width - 40, y, f"Total: {total_cliente:.2f}  Comisión: {total_com:.2f}")
         y -= 20
 
-    c.setFont("Courier", 8)
-    c.drawString(40, 30, datetime.now().strftime("%d/%m/%Y"))
-    c.drawRightString(width - 40, 30, "Página 1")
+    print_footer()
     c.save()
 
 

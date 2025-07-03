@@ -7,6 +7,8 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
     """Genera un PDF con el detalle de ventas por vendedor."""
     vendedor = db.get_trabajador(vendedor_id)
     if not vendedor:
+        vendedor = db.get_vendedor(vendedor_id)
+    if not vendedor:
         raise ValueError("Vendedor no encontrado")
 
     ventas = db.get_estado_cuenta(vendedor_id, "vendedor", fecha_inicio, fecha_fin)
@@ -33,7 +35,11 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
     c.drawCentredString(width / 2, y, titulo)
     y -= 14
-    nombre = f"{vendedor.get('nombre','')} — {vendedor.get('codigo','')}"
+    nombre = "{}{}{}".format(
+        vendedor.get('nombre', ''),
+        " — " if vendedor.get('nombre') and vendedor.get('codigo') else "",
+        vendedor.get('codigo', '')
+    )
     c.setFont("Courier-Bold", 10)
     c.drawCentredString(width / 2, y, nombre)
     y -= 20
@@ -131,7 +137,9 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
             y -= 14
     elif modo == "vendedor":
         vid = kwargs.get("vendedor_id")
-        vendedor = db.get_trabajador(vid) if vid else {}
+        vendedor = db.get_trabajador(vid) if vid else None
+        if vendedor is None and vid is not None:
+            vendedor = db.get_vendedor(vid)
         if vendedor is None:
             vendedor = {}
         c.setFont("Courier", 10)
@@ -151,6 +159,8 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
         y -= 14
         for r in resumen:
             vend = db.get_trabajador(r.get("vendedor_id"))
+            if vend is None:
+                vend = db.get_vendedor(r.get("vendedor_id"))
             nombre = vend.get("nombre", "") if vend else str(r.get("vendedor_id"))
             c.drawString(40, y, nombre)
             c.drawRightString(width - 40, y, f"{r.get('total_ventas',0):.2f}")

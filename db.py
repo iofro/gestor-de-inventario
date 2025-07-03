@@ -447,6 +447,15 @@ class DB:
         self.cursor.execute("SELECT * FROM vendedores")
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_vendedor(self, vendedor_id):
+        """Return a single vendor by id."""
+        self.cursor.execute(
+            "SELECT * FROM vendedores WHERE id=?",
+            (vendedor_id,),
+        )
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+
     def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id):
         try:
             self.cursor.execute(

@@ -60,10 +60,19 @@ def generar_reporte_vendedor_pdf(
 
 
     nombre_comercial = get_nombre_comercial()
-    c.setFont("Courier-Bold", 12)
-    c.drawCentredString(width / 2, y, nombre_comercial)
-    y -= 14
-    c.setFont("Courier", 10)
+
+    def print_header():
+        c.setFont("Courier-Bold", 12)
+        c.drawCentredString(width / 2, height - 40, nombre_comercial)
+        c.setFont("Courier", 10)
+        c.drawCentredString(width / 2, height - 54, titulo)
+        c.setFont("Courier-Bold", 10)
+        c.drawCentredString(width / 2, height - 68, nombre.upper())
+
+    def print_footer():
+        c.setFont("Courier", 8)
+        c.drawString(40, 30, datetime.now().strftime("%d/%m/%Y"))
+        c.drawRightString(width - 40, 30, f"Pág. {page}")
 
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
     nombre = "{}{}{}".format(
@@ -72,8 +81,7 @@ def generar_reporte_vendedor_pdf(
         vendedor.get('codigo', '')
     )
 
-    c.setFont("Courier-Bold", 10)
-    c.drawCentredString(width / 2, y, nombre.upper())
+    print_header()
     y -= 20
 
 
@@ -197,37 +205,38 @@ def generar_estado_cuenta_pdf(
         c.drawString(40, y, f"Cliente: {cliente.get('nombre','').upper()}")
         y -= 14
         facturas = db.get_estado_cuenta(cid, "cliente", fecha_inicio, fecha_fin)
+        pagos = (
+            db.get_pagos_cliente(cid, fecha_inicio, fecha_fin)
+            if incluir_pagos
+            else []
+        )
+        movimientos = [
+            {
+                "fecha": f.get("fecha", ""),
+                "id": f.get("id"),
+                "monto": f.get("total", 0),
+                "tipo": "factura",
+            }
+            for f in facturas
+        ]
+        movimientos += [
+            {
+                "fecha": p.get("fecha", ""),
+                "id": "PAGO",
+                "monto": -p.get("monto", 0),
+                "tipo": "pago",
+            }
+            for p in pagos
+        ]
+        movimientos.sort(key=lambda m: m["fecha"])
+
         c.drawString(40, y, "Fecha       Factura    Total")
         y -= 14
-        for f in facturas:
-            c.drawString(40, y, f.get("fecha", "")[:10])
-            c.drawString(120, y, str(f.get("id")))
-            c.drawRightString(width - 40, y, f"{f.get('total',0):.2f}")
-
+        for mov in movimientos:
+            c.drawString(40, y, mov["fecha"][:10])
+            c.drawString(120, y, str(mov["id"]))
+            c.drawRightString(width - 40, y, f"{mov['monto']:.2f}")
             y -= 14
-            for r in resumen:
-                cli = db.get_cliente(r.get("cliente_id"))
-                nombre = cli.get("nombre", "") if cli else str(r.get("cliente_id"))
-                c.drawString(40, y, nombre)
-                c.drawRightString(width - 40, y, f"{r.get('total_compras',0):.2f}")
-                y -= 14
-        else:
-            cliente = db.get_cliente(cid) or {}
-            if not cliente:
-                raise ValueError("Cliente no encontrado")
-            c.setFont("Courier", 10)
-            c.drawString(40, y, f"Cliente: {cliente.get('nombre','')}")
-            y -= 14
-            facturas = db.get_estado_cuenta(cid, "cliente", fecha_inicio, fecha_fin)
-            c.drawString(40, y, "Fecha       Factura    Total")
-            y -= 14
-
-
-            for f in facturas:
-                c.drawString(40, y, f.get("fecha", "")[:10])
-                c.drawString(120, y, str(f.get("id")))
-                c.drawRightString(width - 40, y, f"{f.get('total',0):.2f}")
-                y -= 14
     elif modo == "vendedor":
         vid = kwargs.get("vendedor_id")
 

@@ -19,6 +19,9 @@ def test_estado_cuenta_pdf_incluir_pagos(tmp_path):
         incluir_pagos=True,
     )
     assert pdf_path.exists()
+    import fitz
+    text = "".join(page.get_text() for page in fitz.open(str(pdf_path)))
+    assert "PAGO" in text
 
 
 def test_reporte_vendedor_agrupar_factura(tmp_path):

@@ -7,6 +7,7 @@ from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 
 from utils.negocio import get_nombre_comercial
+from utils.fonts import FONT_NORMAL, FONT_BOLD
 
 def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, archivo="factura_electronica.pdf"):
     from datetime import datetime
@@ -20,25 +21,25 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     encabezado_y = height - y_margin
     encabezado_x = x_margin
     nombre_comercial = get_nombre_comercial()
-    c.setFont("Helvetica-Bold", 14)
+    c.setFont(FONT_BOLD, 14)
     c.drawString(encabezado_x, encabezado_y, nombre_comercial)
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(FONT_BOLD, 10)
     c.drawString(encabezado_x, encabezado_y - 16, "KAROL YAMILETH CRUZ ESCOBAR")
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(FONT_BOLD, 9)
     c.drawString(encabezado_x, encabezado_y - 30, "VENTA DE PRODUCTOS FARMACÉUTICOS Y MEDICINALES")
     c.drawString(encabezado_x, encabezado_y - 42, "SERVICIOS MÉDICOS")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(encabezado_x, encabezado_y - 56, "LOCAL. 3. #4-6 B, PASEO CONCEPCIÓN, SANTA TECLA,")
     c.drawString(encabezado_x, encabezado_y - 66, "LA LIBERTAD, EL SALVADOR, C.A.")
 
     # --- ENCABEZADO SUPERIOR DERECHA: TIPO DE DOCUMENTO ---
     doc_x = width - x_margin - 260
     doc_y = height - y_margin
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(FONT_BOLD, 11)
     c.drawString(doc_x, doc_y, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(FONT_BOLD, 9)
     c.drawString(doc_x, doc_y - 18, "COMPROBANTE DE CRÉDITO FISCAL")
-    c.setFont("Helvetica", 7)
+    c.setFont(FONT_NORMAL, 7)
     c.drawRightString(width - x_margin, doc_y, f"Ver. {venta.get('version', '3')}")
 
     # --- Cuadro superior derecho: Datos fiscales + QR + Fecha y hora de generación ---
@@ -54,7 +55,7 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
 
     c.setLineWidth(0.7)
     c.roundRect(cuadro_x, cuadro_y, cuadro_w, cuadro_h, 6, stroke=1, fill=0)
-    c.setFont("Helvetica", 9)
+    c.setFont(FONT_NORMAL, 9)
     c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 18, f"Código de Generación: {venta.get('codigo_generacion', '')}")
     c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 36, f"N° Control: {venta.get('numero_control', '')}")
     c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 54, f"Sello de Recepción: {venta.get('sello_recepcion', '')}")
@@ -75,9 +76,9 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
 
     # --- Datos del EMISOR (izquierda) --- (OCULTOS, NO SE DIBUJAN, SOLO SE DEJAN EN EL CÓDIGO)
     # emisor_y = cuadro_y - 40
-    # c.setFont("Helvetica-Bold", 9)
+    # c.setFont(FONT_BOLD, 9)
     # c.drawString(x_margin, emisor_y, "EMISOR:")
-    # c.setFont("Helvetica", 9)
+    # c.setFont(FONT_NORMAL, 9)
     # c.drawString(x_margin, emisor_y - 18, f"Nombre/Razón social: {distribuidor.get('nombre', '')}")
     # c.drawString(x_margin, emisor_y - 36, f"NIT: {distribuidor.get('nit', '')}  NRC: {distribuidor.get('nrc', '')}")
     # c.drawString(x_margin, emisor_y - 54, f"Actividad económica: {distribuidor.get('giro', '')}")
@@ -103,53 +104,53 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     row_y = cuadro_info_y - 16
 
     # --- Columna izquierda ---
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col1_x, row_y, "Cliente:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col1_x + 50, row_y, cliente.get("nombre", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col1_x, row_y - 14, "Dirección:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col1_x + 50, row_y - 14, cliente.get("direccion", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col1_x, row_y - 28, "NIT:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col1_x + 50, row_y - 28, cliente.get("nit", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col1_x, row_y - 42, "NRC:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col1_x + 50, row_y - 42, cliente.get("nrc", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col1_x, row_y - 56, "Giro:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col1_x + 30, row_y - 56, cliente.get("giro", ""))
 
     # --- Columna central ---
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col2_x, row_y, "Cond. de pago:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col2_x + 70, row_y, venta.get("condicion_pago", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col2_x, row_y - 14, "No Rem:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col2_x + 50, row_y - 14, venta.get("no_remision", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col2_x, row_y - 28, "Orden No:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col2_x + 60, row_y - 28, venta.get("orden_no", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col2_x, row_y - 42, "Vendedor:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col2_x + 50, row_y - 42, venta.get("vendedor_nombre", ""))
 
     # --- Columna derecha ---
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col3_x, row_y, "Vta a Cta de:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawString(col3_x + 60, row_y, venta.get("venta_a_cuenta_de", ""))
-    c.setFont("Helvetica-Bold", 8)
+    c.setFont(FONT_BOLD, 8)
     c.drawString(col3_x, row_y - 14, "Fecha:")
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     fecha = venta.get("fecha", "")
     try:
         dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
@@ -197,7 +198,7 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
 
     # --- Suma de ventas (justo debajo de la tabla, antes de los totales) ---
     suma_y = tabla_y - row_h * (len(tabla_data)) - 10
-    # c.setFont("Helvetica-Bold", 9)
+    # c.setFont(FONT_BOLD, 9)
     # c.drawRightString(tabla_x + 434, suma_y, f"SUMA DE VENTAS: {venta.get('sumas', 0):.2f}")
 
     # --- Bloque de totales y valor en letras, alineado y con formato solicitado ---
@@ -219,42 +220,42 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     texto_y = bloque_totales_y + bloque_totales_h - 18
     salto = 18
 
-    c.setFont("Helvetica", 9)
+    c.setFont(FONT_NORMAL, 9)
     c.drawString(x_linea + 10, texto_y, f"SUMA DE VENTAS:")
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('sumas', 0):.2f}")
 
     texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(FONT_BOLD, 9)
     c.drawString(x_linea + 10, texto_y, "Descuentos y rebajas globales:")
-    c.setFont("Helvetica", 9)
+    c.setFont(FONT_NORMAL, 9)
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('descuentos_globales', '')}")
 
     texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(FONT_BOLD, 9)
     c.drawString(x_linea + 10, texto_y, "Subtotal:")
-    c.setFont("Helvetica", 9)
+    c.setFont(FONT_NORMAL, 9)
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('subtotal', '')}")
 
     texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
+    c.setFont(FONT_BOLD, 9)
     c.drawString(x_linea + 10, texto_y, "IVA 13%:")
-    c.setFont("Helvetica", 9)
+    c.setFont(FONT_NORMAL, 9)
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('iva', '')}")
 
     texto_y -= salto + 10  # Más espacio antes de "Total a pagar"
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(FONT_BOLD, 10)
     c.drawString(x_linea + 10, texto_y, "Total a pagar:")
-    c.setFont("Helvetica-Bold", 10)
+    c.setFont(FONT_BOLD, 10)
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('total', '')}")
 
     # --- Valor en letras (columna izquierda del cuadro, texto más grande y solo el label en negrita) ---
-    c.setFont("Helvetica-Bold", 11)
+    c.setFont(FONT_BOLD, 11)
     c.drawString(bloque_totales_x + 10, bloque_totales_y + bloque_totales_h - 18, "Valor en letras:")
-    c.setFont("Helvetica", 11)
+    c.setFont(FONT_NORMAL, 11)
     c.drawString(bloque_totales_x + 120, bloque_totales_y + bloque_totales_h - 18, f"{venta.get('total_letras', '')}")
 
     # --- Pie de página ---
-    c.setFont("Helvetica", 8)
+    c.setFont(FONT_NORMAL, 8)
     c.drawCentredString(width/2, 20, f"Página 1 de 1")
 
     c.save()

@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QDateEdit, QComboBox, QAbstractItemView
+    QPushButton, QLabel, QDateEdit, QComboBox, QAbstractItemView, QHeaderView, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
@@ -97,6 +97,8 @@ class PurchasesTab(QWidget):
         self.table.verticalHeader().setDefaultSectionSize(60)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         content_layout.addWidget(self.table)
 
         side_layout = QVBoxLayout()

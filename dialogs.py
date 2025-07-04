@@ -7,7 +7,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
-    QAbstractItemView, QTextEdit, QStackedLayout, QWidget
+    QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -194,6 +194,8 @@ class EstadoCuentaDialog(QDialog):
         self.cliente_table.setHorizontalHeaderLabels(["Código", "Nombre"])
         self.cliente_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.cliente_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.cliente_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.cliente_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.clientes = self.db.get_clientes()
         self.clientes_mostrados = list(self.clientes)
         self._mostrar_clientes(self.clientes)
@@ -214,6 +216,8 @@ class EstadoCuentaDialog(QDialog):
         self.vendedor_table.setHorizontalHeaderLabels(["Código", "Nombre"])
         self.vendedor_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.vendedor_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.vendedor_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.vendedor_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.vendedores = self.db.get_vendedores()
         self.vendedores_mostrados = list(self.vendedores)
         self._mostrar_vendedores(self.vendedores)
@@ -229,6 +233,8 @@ class EstadoCuentaDialog(QDialog):
         self.vendedor_table_all.setHorizontalHeaderLabels(["Código", "Nombre"])
         self.vendedor_table_all.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.vendedor_table_all.setSelectionBehavior(QTableWidget.SelectRows)
+        self.vendedor_table_all.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.vendedor_table_all.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._mostrar_vendedores_all(self.vendedores)
         todos_layout.addWidget(self.vendedor_table_all)
         self.stack.addWidget(todos_widget)
@@ -574,6 +580,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.table)
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
         self.table.cellClicked.connect(self._eliminar_fila)
@@ -1166,6 +1174,8 @@ class RegisterPurchaseDialog(QDialog):
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.table)
 
         # Total general de la compra
@@ -1702,6 +1712,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
 
@@ -2413,7 +2425,9 @@ class CompraDetalleDialog(QDialog):
             "IVA", "Comisión", "Vencimiento"
         ])
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         for i, d in enumerate(detalles):
             nombre_producto = productos_dict.get(d.get("producto_id"), "Desconocido")
             precio_unitario = d.get("precio_unitario", d.get("precio", 0))

@@ -815,6 +815,7 @@ class MainWindow(QMainWindow):
                 self.manager.db.cursor.execute("DELETE FROM detalles_venta")
                 self.manager.db.cursor.execute("DELETE FROM compras")
                 self.manager.db.cursor.execute("DELETE FROM detalles_compra")
+                self.manager.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
                 self.manager.db.cursor.execute("DELETE FROM movimientos")
                 self.manager.db.conn.commit()
             except Exception:

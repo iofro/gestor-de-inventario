@@ -294,8 +294,16 @@ class MainWindow(QMainWindow):
 
         # --- AGREGA LAS CUATRO PESTAÑAS AL QTabWidget ---
         self.tabs = QTabWidget()
+        self.tabs.setMovable(True)
+        tab_widget.setObjectName("Inventario")
+        vend_dist_tab.setObjectName("Vendedores y Distribuidores")
+        clientes_tab.setObjectName("Clientes")
+        self.sales_tab.setObjectName("Ventas")
+        self.compras_tab.setObjectName("Compras")
+        inventario_actual_tab.setObjectName("Inventario actual")
+
         self.tabs.addTab(tab_widget, "Inventario")
-        self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")  # <-- Esta línea es clave
+        self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")
         self.tabs.addTab(clientes_tab, "Clientes")
         self.tabs.addTab(self.sales_tab, "Ventas")
         self.tabs.addTab(self.compras_tab, "Compras")
@@ -304,6 +312,7 @@ class MainWindow(QMainWindow):
 
         # --- PESTAÑA DE TRABAJADORES ---
         trabajadores_tab = QWidget()
+        trabajadores_tab.setObjectName("Trabajadores")
         trabajadores_layout = QVBoxLayout()
 
         # Filtros
@@ -341,6 +350,7 @@ class MainWindow(QMainWindow):
 
         # --- PESTAÑA DE ESTADOS DE CUENTA ---
         estado_tab = QWidget()
+        estado_tab.setObjectName("Estados de cuenta")
         estado_layout = QVBoxLayout()
 
         controles = QHBoxLayout()
@@ -750,7 +760,9 @@ class MainWindow(QMainWindow):
         filename, _ = QFileDialog.getSaveFileName(self, "Guardar inventario como", "", "Archivos JSON (*.json);;Todos los archivos (*)")
         if filename:
             try:
-                self.manager.exportar_inventario_json(filename)
+                self.manager.exportar_inventario_json(
+                    filename, tab_order=self.get_tab_order()
+                )
                 self.ultimo_archivo_json = filename
                 with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
@@ -763,7 +775,9 @@ class MainWindow(QMainWindow):
         filename, _ = QFileDialog.getOpenFileName(self, "Cargar inventario", "", "Archivos JSON (*.json);;Todos los archivos (*)")
         if filename:
             try:
-                self.manager.importar_inventario_json(filename)
+                data = self.manager.importar_inventario_json(filename)
+                if isinstance(data, dict) and data.get("tab_order"):
+                    self.set_tab_order(data["tab_order"])
                 self.ultimo_archivo_json = filename
                 with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
@@ -785,7 +799,9 @@ class MainWindow(QMainWindow):
     def guardar_rapido(self):
         if self.ultimo_archivo_json:
             try:
-                self.manager.exportar_inventario_json(self.ultimo_archivo_json)
+                self.manager.exportar_inventario_json(
+                    self.ultimo_archivo_json, tab_order=self.get_tab_order()
+                )
                 QMessageBox.information(self, "Guardar rápido", f"Inventario guardado en:\n{self.ultimo_archivo_json}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}")
@@ -797,7 +813,9 @@ class MainWindow(QMainWindow):
         import os
         if self.ultimo_archivo_json and os.path.exists(self.ultimo_archivo_json):
             try:
-                self.manager.importar_inventario_json(self.ultimo_archivo_json)
+                data = self.manager.importar_inventario_json(self.ultimo_archivo_json)
+                if isinstance(data, dict) and data.get("tab_order"):
+                    self.set_tab_order(data["tab_order"])
                 self.compras_tab.refresh_filters()
 
                 self.compras_tab.load_purchases()
@@ -1485,4 +1503,19 @@ class MainWindow(QMainWindow):
             self.estado_table.setItem(row, 3, QTableWidgetItem(cli))
             self.estado_table.setItem(row, 4, QTableWidgetItem(vend))
             self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(monto):.2f}"))
+
+    def get_tab_order(self):
+        return [self.tabs.tabText(i) for i in range(self.tabs.count())]
+
+    def set_tab_order(self, order):
+        for desired_index, title in enumerate(order):
+            index = self._find_tab_index(title)
+            if index != -1 and index != desired_index:
+                self.tabs.tabBar().moveTab(index, desired_index)
+
+    def _find_tab_index(self, title):
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == title:
+                return i
+        return -1
 

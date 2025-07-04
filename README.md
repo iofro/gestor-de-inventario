@@ -21,6 +21,10 @@ Ejecuta el archivo `main.py` para iniciar la interfaz gráfica:
 python main.py
 ```
 
+La ventana principal mostrará el icono incluido en `logoinventario.jpg`. Puedes
+reemplazar este archivo con tu propia imagen para personalizar el logo de la
+aplicación.
+
 Se cargará el último inventario si está disponible y podrás comenzar a registrar compras y ventas.
 
 ## Pruebas

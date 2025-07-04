@@ -2,6 +2,7 @@ import sys
 import os
 import json
 from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
 
 LAST_FILE_PATH = "ultimo_inventario.json"
@@ -18,7 +19,13 @@ def cargar_ultimo_archivo():
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    icon_path = os.path.join(os.path.dirname(__file__), "logoinventario.jpg")
+    if os.path.exists(icon_path):
+        app.setWindowIcon(QIcon(icon_path))
+
     window = MainWindow()
+    if os.path.exists(icon_path):
+        window.setWindowIcon(QIcon(icon_path))
     window.show()
 
     # Cargar automáticamente el último inventario usado

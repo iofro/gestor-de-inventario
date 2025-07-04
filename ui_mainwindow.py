@@ -881,6 +881,7 @@ class MainWindow(QMainWindow):
         for vend in self.manager._vendedores:
             text = f"{vend.get('codigo', '')} - {vend['nombre']}"
             vend_item = QTreeWidgetItem([text])
+            vend_item.setData(0, Qt.UserRole, vend.get("id"))
             self.vendedores_tree.addTopLevelItem(vend_item)
             vend_item.setExpanded(False)
 
@@ -888,10 +889,12 @@ class MainWindow(QMainWindow):
         self.Distribuidores_tree.clear()
         for dist in self.manager._Distribuidores:
             dist_item = QTreeWidgetItem([dist["nombre"]])
+            dist_item.setData(0, Qt.UserRole, dist.get("id"))
             vendedores = [v for v in self.manager._vendedores if v.get("Distribuidor_id") == dist["id"]]
             for vend in vendedores:
                 text = f"{vend.get('codigo', '')} - {vend['nombre']}"
                 vend_item = QTreeWidgetItem([text])
+                vend_item.setData(0, Qt.UserRole, vend.get("id"))
                 dist_item.addChild(vend_item)
             self.Distribuidores_tree.addTopLevelItem(dist_item)
             dist_item.setExpanded(False)
@@ -924,8 +927,9 @@ class MainWindow(QMainWindow):
         if not selected_items:
             QMessageBox.warning(self, "Editar vendedor", "Seleccione una vendedor para editar.")
             return
-        nombre_actual = selected_items[0].text(0)
-        vendedor = next((c for c in self.manager._vendedores if c["nombre"] == nombre_actual), None)
+        item = selected_items[0]
+        vendedor_id = item.data(0, Qt.UserRole)
+        vendedor = next((c for c in self.manager._vendedores if c["id"] == vendedor_id), None)
         if not vendedor:
             QMessageBox.warning(self, "Editar vendedor", "No se encontró la vendedor seleccionada.")
             return
@@ -959,9 +963,14 @@ class MainWindow(QMainWindow):
         if not selected_items:
             QMessageBox.warning(self, "Editar Distribuidor", "Seleccione un Distribuidor para editar.")
             return
-        nombre_actual = selected_items[0].text(0)
+        item = selected_items[0]
+        # Asegurarse de que sea un Distribuidor (no un vendedor hijo)
+        if item.parent() is not None:
+            QMessageBox.warning(self, "Editar Distribuidor", "Seleccione un Distribuidor para editar.")
+            return
+        dist_id = item.data(0, Qt.UserRole)
         # Busca el Distribuidor en la base de datos
-        Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == nombre_actual), None)
+        Distribuidor = next((v for v in self.manager._Distribuidores if v["id"] == dist_id), None)
         if not Distribuidor:
             QMessageBox.warning(self, "Editar Distribuidor", "No se encontró el Distribuidor seleccionado.")
             return
@@ -1010,8 +1019,12 @@ class MainWindow(QMainWindow):
         if not selected_items:
             QMessageBox.information(self, "Información de Distribuidor", "Seleccione un Distribuidor para ver su información.")
             return
-        nombre_actual = selected_items[0].text()
-        Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == nombre_actual), None)
+        item = selected_items[0]
+        if item.parent() is not None:
+            QMessageBox.information(self, "Información de Distribuidor", "Seleccione un Distribuidor para ver su información.")
+            return
+        dist_id = item.data(0, Qt.UserRole)
+        Distribuidor = next((v for v in self.manager._Distribuidores if v["id"] == dist_id), None)
         if not Distribuidor:
             QMessageBox.warning(self, "Información de Distribuidor", "No se encontró el Distribuidor seleccionado.")
             return

@@ -956,6 +956,10 @@ class DB:
         self.cursor.execute("DELETE FROM Distribuidores")
         self.conn.commit()
 
+    def limpiar_ventas_credito_fiscal(self):
+        self.cursor.execute("DELETE FROM ventas_credito_fiscal")
+        self.conn.commit()
+
     def add_Distribuidor_detallado(self, data):
         self.cursor.execute("""
             INSERT INTO Distribuidores (

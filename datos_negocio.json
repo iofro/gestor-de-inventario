@@ -26,5 +26,4 @@
   "smtp_server": "smtp.gmail.com",
   "smtp_port": "587",
   "email_usuario": "arieliosefrosales@gmail.com",
-  "email_contrasena": "<PASSWORD_FROM_ENV>"
 }

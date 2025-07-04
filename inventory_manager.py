@@ -100,6 +100,7 @@ class InventoryManager:
         self.db.limpiar_productos()
         self.db.limpiar_vendedores()
         self.db.limpiar_Distribuidores()
+        self.db.limpiar_ventas_credito_fiscal()
         try:
             self.db.cursor.execute("DELETE FROM clientes")
             self.db.cursor.execute("DELETE FROM ventas")

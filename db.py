@@ -198,6 +198,10 @@ class DB:
                 FOREIGN KEY (cliente_id) REFERENCES clientes(id)
             )
         """)
+        # Create a unique index to ensure one record per venta
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_vcf_venta_id ON ventas_credito_fiscal(venta_id)"
+        )
         self.conn.commit()
 
 

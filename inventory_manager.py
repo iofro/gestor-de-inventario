@@ -70,7 +70,7 @@ class InventoryManager:
         self.db.aumentar_stock(producto_id, cantidad)
         self.refresh_data()
 
-    def exportar_inventario_json(self, filename):
+    def exportar_inventario_json(self, filename, tab_order=None):
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
             with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
@@ -89,6 +89,7 @@ class InventoryManager:
             "datos_negocio": datos_negocio,
             "trabajadores": [dict(t) for t in self.db.get_trabajadores()],
             "ventas_credito_fiscal": ventas_credito_fiscal,
+            "tab_order": tab_order,
         }
         with open(filename, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -313,6 +314,8 @@ class InventoryManager:
                 ),
             )
         self.db.conn.commit()
+        self.refresh_data()
+        return data
 
     def add_Distribuidor(self, nombre):
         self.db.add_Distribuidor(nombre)

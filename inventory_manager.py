@@ -107,6 +107,7 @@ class InventoryManager:
             self.db.cursor.execute("DELETE FROM detalles_compra")
             self.db.cursor.execute("DELETE FROM movimientos")
             self.db.cursor.execute("DELETE FROM trabajadores")
+            self.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
             self.db.conn.commit()
         except Exception:
             pass

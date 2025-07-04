@@ -59,8 +59,8 @@ def generar_reporte_vendedor_pdf(
     page = 1
     y = height - 40
 
-
     nombre_comercial = get_nombre_comercial()
+
 
     c.setFont(FONT_BOLD, 12)
     c.drawCentredString(width / 2, y, nombre_comercial)
@@ -82,6 +82,7 @@ def generar_reporte_vendedor_pdf(
         c.drawRightString(width - 40, 30, f"Pág. {page}")
 
 
+
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
     nombre = "{}{}{}".format(
         vendedor.get('nombre', ''),
@@ -89,12 +90,32 @@ def generar_reporte_vendedor_pdf(
         vendedor.get('codigo', '')
     )
 
+
+    def print_header():
+        nonlocal y
+        c.setFont("Courier-Bold", 12)
+        c.drawCentredString(width / 2, height - 40, nombre_comercial)
+        c.setFont("Courier", 10)
+        c.drawCentredString(width / 2, height - 54, titulo)
+        c.setFont("Courier-Bold", 10)
+        c.drawCentredString(width / 2, height - 68, nombre.upper())
+        y = height - 88
+        c.setFont("Courier", 8)
+
+    def print_footer():
+        c.setFont("Courier", 8)
+        c.drawString(40, 30, datetime.now().strftime("%d/%m/%Y"))
+        c.drawRightString(width - 40, 30, f"Página {page}")
+
+    print_header()
+
     c.setFont(FONT_BOLD, 10)
     c.drawCentredString(width / 2, y, nombre.upper())
 
     print_header()
 
     y -= 20
+
 
 
     for cid, items in grouped.items():
@@ -121,7 +142,6 @@ def generar_reporte_vendedor_pdf(
                 print_footer()
                 c.showPage()
                 page += 1
-                y = height - 40
                 print_header()
                 c.setFont(FONT_BOLD, 9)
                 c.drawString(40, y, "CLIENTE: " + cli_line)

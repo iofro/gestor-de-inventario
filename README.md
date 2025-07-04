@@ -34,7 +34,7 @@ pytest
 ### Datos del negocio y correo
 
 La configuración general se almacena en `datos_negocio.json`. Para que el envío
-de facturas por correo funcione, completa los campos SMTP de este archivo. El
-campo `email_contrasena` guarda la contraseña de la cuenta utilizada para
-enviar correos.
+de facturas por correo funcione, completa los campos SMTP de este archivo. La
+contraseña de la cuenta se toma de la variable de entorno `EMAIL_PASSWORD` y el
+campo `email_contrasena` puede dejarse como un marcador de posición.
 

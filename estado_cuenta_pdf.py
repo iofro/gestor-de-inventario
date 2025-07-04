@@ -3,6 +3,7 @@ from reportlab.pdfgen import canvas
 from datetime import datetime
 
 from utils.negocio import get_nombre_comercial
+from utils.fonts import FONT_NORMAL, FONT_BOLD
 
 
 def generar_reporte_vendedor_pdf(
@@ -60,10 +61,10 @@ def generar_reporte_vendedor_pdf(
 
 
     nombre_comercial = get_nombre_comercial()
-    c.setFont("Courier-Bold", 12)
+    c.setFont(FONT_BOLD, 12)
     c.drawCentredString(width / 2, y, nombre_comercial)
     y -= 14
-    c.setFont("Courier", 10)
+    c.setFont(FONT_NORMAL, 10)
 
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
     nombre = "{}{}{}".format(
@@ -72,7 +73,7 @@ def generar_reporte_vendedor_pdf(
         vendedor.get('codigo', '')
     )
 
-    c.setFont("Courier-Bold", 10)
+    c.setFont(FONT_BOLD, 10)
     c.drawCentredString(width / 2, y, nombre.upper())
     y -= 20
 
@@ -80,7 +81,7 @@ def generar_reporte_vendedor_pdf(
     for cid, items in grouped.items():
         cliente = db.get_cliente(cid) if cid else {}
         cli_line = f"{cliente.get('nombre','')} - {cliente.get('dui') or cliente.get('nit','')}".upper()
-        c.setFont("Courier-Bold", 9)
+        c.setFont(FONT_BOLD, 9)
         c.drawString(40, y, "CLIENTE: " + cli_line)
         y -= 12
         headers = [
@@ -88,11 +89,11 @@ def generar_reporte_vendedor_pdf(
             "P. Unitario", "Total", "% Comisión", "Comisión"
         ]
         col_x = [40, 100, 150, 210, 370, 430, 480, 530, 580]
-        c.setFont("Courier-Bold", 8)
+        c.setFont(FONT_BOLD, 8)
         for hx, text in zip(col_x, headers):
             c.drawString(hx, y, text)
         y -= 10
-        c.setFont("Courier", 8)
+        c.setFont(FONT_NORMAL, 8)
         total_cliente = 0
         total_com = 0
         seen_sales = set()
@@ -103,14 +104,14 @@ def generar_reporte_vendedor_pdf(
                 page += 1
                 y = height - 40
                 print_header()
-                c.setFont("Courier-Bold", 9)
+                c.setFont(FONT_BOLD, 9)
                 c.drawString(40, y, "CLIENTE: " + cli_line)
                 y -= 12
-                c.setFont("Courier-Bold", 8)
+                c.setFont(FONT_BOLD, 8)
                 for hx, text in zip(col_x, headers):
                     c.drawString(hx, y, text)
                 y -= 10
-                c.setFont("Courier", 8)
+                c.setFont(FONT_NORMAL, 8)
             total = it.get("cantidad",0) * it.get("precio_unitario",0)
             com = it.get("comision",0)
             if it["venta_id"] not in seen_sales:
@@ -132,7 +133,7 @@ def generar_reporte_vendedor_pdf(
             for hx, text in zip(col_x, values):
                 c.drawString(hx, y, str(text))
             y -= 10
-        c.setFont("Courier-Bold", 8)
+        c.setFont(FONT_BOLD, 8)
         c.drawRightString(width - 40, y, f"Total: {total_cliente:.2f}  Comisión: {total_com:.2f}")
         y -= 20
 
@@ -180,20 +181,21 @@ def generar_estado_cuenta_pdf(
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
     y = height - 40
-    c.setFont("Courier-Bold", 12)
+    c.setFont(FONT_BOLD, 12)
     c.drawCentredString(width / 2, y, "ESTADO DE CUENTA")
     y -= 20
 
     fecha_inicio = kwargs.get("fecha_inicio")
     fecha_fin = kwargs.get("fecha_fin")
     incluir_pagos = kwargs.get("incluir_pagos", False)
+    resumen = []  # default summary list
     if modo == "cliente":
         cid = kwargs.get("cliente_id")
 
         cliente = db.get_cliente(cid) if cid else {}
         if cliente is None:
             cliente = {}
-        c.setFont("Courier", 10)
+        c.setFont(FONT_NORMAL, 10)
         c.drawString(40, y, f"Cliente: {cliente.get('nombre','').upper()}")
         y -= 14
         facturas = db.get_estado_cuenta(cid, "cliente", fecha_inicio, fecha_fin)
@@ -215,7 +217,7 @@ def generar_estado_cuenta_pdf(
             cliente = db.get_cliente(cid) or {}
             if not cliente:
                 raise ValueError("Cliente no encontrado")
-            c.setFont("Courier", 10)
+            c.setFont(FONT_NORMAL, 10)
             c.drawString(40, y, f"Cliente: {cliente.get('nombre','')}")
             y -= 14
             facturas = db.get_estado_cuenta(cid, "cliente", fecha_inicio, fecha_fin)
@@ -236,7 +238,7 @@ def generar_estado_cuenta_pdf(
             vendedor = db.get_vendedor(vid)
         if vendedor is None:
             vendedor = {}
-        c.setFont("Courier", 10)
+        c.setFont(FONT_NORMAL, 10)
         c.drawString(40, y, f"Vendedor: {vendedor.get('nombre','').upper()}")
         y -= 14
         ventas = db.get_estado_cuenta(vid, "vendedor", fecha_inicio, fecha_fin)

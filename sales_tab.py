@@ -405,11 +405,7 @@ class SalesTab(QWidget):
         server = data.get("smtp_server")
         port = data.get("smtp_port")
         user = data.get("email_usuario") or data.get("email")
-        password = (
-            os.getenv("INVENTARIO_EMAIL_PASSWORD")
-            or data.get("email_contrasena")
-            or data.get("email_contraseña")
-        )
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
 
         if not data.get("email_usuario") and user:
             data["email_usuario"] = user
@@ -774,11 +770,7 @@ class SalesTab(QWidget):
         server = creds.get("smtp_server")
         port = creds.get("smtp_port")
         user = creds.get("email_usuario")
-        password = (
-            os.getenv("INVENTARIO_EMAIL_PASSWORD")
-            or creds.get("email_contrasena")
-            or creds.get("email_contraseña")
-        )
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
         if not all([server, port, user, password]):
             QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
             return

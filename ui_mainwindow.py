@@ -849,6 +849,7 @@ class MainWindow(QMainWindow):
             self.manager.db.limpiar_productos()
             self.manager.db.limpiar_vendedores()
             self.manager.db.limpiar_Distribuidores()
+            self.manager.db.limpiar_ventas_credito_fiscal()
             try:
                 self.manager.db.cursor.execute("DELETE FROM trabajadores")
                 self.manager.db.cursor.execute("DELETE FROM clientes")

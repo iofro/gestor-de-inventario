@@ -25,7 +25,9 @@ if __name__ == "__main__":
     ultimo_archivo = cargar_ultimo_archivo()
     if ultimo_archivo and os.path.exists(ultimo_archivo):
         try:
-            window.manager.importar_inventario_json(ultimo_archivo)
+            data = window.manager.importar_inventario_json(ultimo_archivo)
+            if isinstance(data, dict) and data.get("tab_order"):
+                window.set_tab_order(data["tab_order"])
             window.ultimo_archivo_json = ultimo_archivo
             window.compras_tab.refresh_filters()
             window.filter_products()

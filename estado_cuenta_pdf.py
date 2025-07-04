@@ -193,6 +193,9 @@ def generar_estado_cuenta_pdf(
         cliente = db.get_cliente(cid) if cid else {}
         if cliente is None:
             cliente = {}
+        if not cliente and cid is not None:
+            raise ValueError("Cliente no encontrado")
+
         c.setFont("Courier", 10)
         c.drawString(40, y, f"Cliente: {cliente.get('nombre','').upper()}")
         y -= 14
@@ -203,31 +206,7 @@ def generar_estado_cuenta_pdf(
             c.drawString(40, y, f.get("fecha", "")[:10])
             c.drawString(120, y, str(f.get("id")))
             c.drawRightString(width - 40, y, f"{f.get('total',0):.2f}")
-
             y -= 14
-            for r in resumen:
-                cli = db.get_cliente(r.get("cliente_id"))
-                nombre = cli.get("nombre", "") if cli else str(r.get("cliente_id"))
-                c.drawString(40, y, nombre)
-                c.drawRightString(width - 40, y, f"{r.get('total_compras',0):.2f}")
-                y -= 14
-        else:
-            cliente = db.get_cliente(cid) or {}
-            if not cliente:
-                raise ValueError("Cliente no encontrado")
-            c.setFont("Courier", 10)
-            c.drawString(40, y, f"Cliente: {cliente.get('nombre','')}")
-            y -= 14
-            facturas = db.get_estado_cuenta(cid, "cliente", fecha_inicio, fecha_fin)
-            c.drawString(40, y, "Fecha       Factura    Total")
-            y -= 14
-
-
-            for f in facturas:
-                c.drawString(40, y, f.get("fecha", "")[:10])
-                c.drawString(120, y, str(f.get("id")))
-                c.drawRightString(width - 40, y, f"{f.get('total',0):.2f}")
-                y -= 14
     elif modo == "vendedor":
         vid = kwargs.get("vendedor_id")
 
@@ -246,13 +225,7 @@ def generar_estado_cuenta_pdf(
             c.drawString(40, y, v.get("fecha", "")[:10])
             c.drawString(120, y, str(v.get("id")))
             c.drawRightString(width - 40, y, f"{v.get('total',0):.2f}")
-
             y -= 14
-            for v in ventas:
-                c.drawString(40, y, v.get("fecha", "")[:10])
-                c.drawString(120, y, str(v.get("id")))
-                c.drawRightString(width - 40, y, f"{v.get('total',0):.2f}")
-                y -= 14
     else:
         resumen = db.get_estado_cuenta_vendedores(fecha_inicio=fecha_inicio, fecha_fin=fecha_fin)
         c.drawString(40, y, "Vendedor            Total Ventas")

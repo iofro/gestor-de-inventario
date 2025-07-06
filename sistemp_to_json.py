@@ -66,19 +66,23 @@ except Exception:
 # Ventas
 ventas = []
 venta_num_to_id = {}
+venta_info = {}
 try:
     for row in load_dbf('ventas_temp.DBF'):
         vid = row.get('ID_MOV')
+        vendedor_id = row.get('ID_VENDEDO')
+        pct = row.get('COMISION', 0) or 0
         ventas.append({
             'id': vid,
             'fecha': date_to_str(row.get('F_MOV')),
             'total': row.get('TOTAL_MOV', 0) or 0,
             'cliente_id': cliente_code_to_id.get(row.get('COD_FICHA')),
-            'vendedor_id': None,
+            'vendedor_id': vendedor_id,
             'Distribuidor_id': None,
             'extra': None,
         })
         venta_num_to_id[row.get('COMPRO_NO')] = vid
+        venta_info[row.get('COMPRO_NO')] = (vendedor_id, pct)
 except Exception:
     pass
 
@@ -89,23 +93,29 @@ except Exception:
 detalles_venta = []
 try:
     for row in load_dbf('detaVentasTemp.DBF'):
-        venta_id = venta_num_to_id.get(row.get('COMPRO_NO'))
+        venta_no = row.get('COMPRO_NO')
+        venta_id = venta_num_to_id.get(venta_no)
         producto_id = codigo_to_id.get(row.get('COD_ITEM'))
+        vendedor_id, pct = venta_info.get(venta_no, (None, 0))
+        cantidad = row.get('CANTIDAD', 0) or 0
+        precio_unit = row.get('P_UNITNETO', 0) or 0
+        total = cantidad * precio_unit
+        comision = total * (pct / 100)
         detalles_venta.append({
             'id': None,
             'venta_id': venta_id,
             'producto_id': producto_id,
-            'cantidad': row.get('CANTIDAD', 0) or 0,
-            'precio_unitario': row.get('P_UNITNETO', 0) or 0,
+            'cantidad': cantidad,
+            'precio_unitario': precio_unit,
             'descuento': 0,
             'descuento_tipo': '',
             'iva': 0,
-            'comision': 0,
+            'comision': comision,
             'iva_tipo': '',
             'tipo_fiscal': '',
             'extra': None,
             'precio_con_iva': row.get('TOTAL', 0) or 0,
-            'vendedor_id': None,
+            'vendedor_id': vendedor_id,
         })
 except Exception:
     pass

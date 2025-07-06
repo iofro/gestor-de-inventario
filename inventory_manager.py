@@ -143,11 +143,13 @@ class InventoryManager:
 
         # Productos
         for p in data.get("productos", []):
+            vend = vendedor_id_map.get(p.get("vendedor_id"))
+            dist = Distribuidor_id_map.get(p.get("Distribuidor_id"))
             self.db.add_producto(
                 p.get("nombre", ""),
                 p.get("codigo", ""),
-                None,  # vendedor_id
-                None,  # Distribuidor_id
+                vend,
+                dist,
                 p.get("precio_compra", 0),
                 p.get("precio_venta_minorista", 0),
                 p.get("precio_venta_mayorista", 0),

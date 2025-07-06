@@ -181,12 +181,19 @@ class InventoryManager:
             Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
             vendedor_id = vendedor_id_map.get(v.get("vendedor_id")) if v.get("vendedor_id") is not None else None
 
+            extra = v.get("extra")
+            if isinstance(extra, str):
+                try:
+                    extra = json.loads(extra)
+                except Exception:
+                    pass
             new_id = self.db.add_venta(
                 v.get("fecha", ""),
                 v.get("total", 0),
                 cliente_id=cliente_id,
                 Distribuidor_id=Distribuidor_id,
                 vendedor_id=vendedor_id,
+                extra=extra,
             )
             venta_id_map[v["id"]] = new_id
 

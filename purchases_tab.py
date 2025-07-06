@@ -120,15 +120,6 @@ class PurchasesTab(QWidget):
         self.btn_ver.clicked.connect(self.show_selected_detail)
         self.btn_pdf.clicked.connect(self.save_selected_pdf)
 
-    def refresh_filters(self):
-        """Reload vendor and distributor filter options from manager data."""
-        self.distribuidor_combo.clear()
-        self.distribuidor_combo.addItem("Todos")
-        self.distribuidor_combo.addItems([d["nombre"] for d in self.manager._Distribuidores])
-        self.vendedor_combo.clear()
-        self.vendedor_combo.addItem("Todos")
-        self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
-
     def _selected_compra_id(self):
         if self.table.currentRow() < 0:
             return None

@@ -866,8 +866,7 @@ class DB:
     def update_cliente(self, id, codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio):
         self.cursor.execute(
             """
-            UPDATE clientes SET codigo=?, nombre=?, nrc=?, nit=?, dui=?, giro=?, telefono=?, email=?, direccion=?, departamento=?, municipio=?
-            WHERE id=?
+            UPDATE clientes SET codigo=?, nombre=?, nrc=?, nit=?, dui=?, giro=?, telefono=?, email=?, direccion=?, departamento=?, municipio=? WHERE id=?
             """,
             (
                 codigo,

@@ -1,4 +1,5 @@
 import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import json
 import pytest
 
@@ -45,3 +46,24 @@ def test_sales_table_populated_after_import(qt_app, tmp_path, monkeypatch):
     assert window.sales_tab.sales_table.rowCount() == 0
     window.cargar_inventario()
     assert window.sales_tab.sales_table.rowCount() == 1
+
+
+def test_estado_table_keeps_columns_on_type_change(qt_app, tmp_path, monkeypatch):
+    monkeypatch.setattr(im, "DB", MemoryDB)
+    inv = make_inv(tmp_path)
+    monkeypatch.setattr(ui_mainwindow, "LAST_INVENTORY_PATH", tmp_path / "last.json")
+    monkeypatch.setattr(ui_mainwindow.QFileDialog, "getOpenFileName", lambda *a, **k: (inv, ""))
+    monkeypatch.setattr(ui_mainwindow.QMessageBox, "information", lambda *a, **k: None)
+
+    window = ui_mainwindow.MainWindow()
+    estado_index = window._find_tab_index("Estados de cuenta")
+    window.tabs.setCurrentIndex(estado_index)
+
+    window.cargar_inventario()
+
+    assert window.estado_table.columnCount() == 6
+    # change to Cliente then Vendedor
+    window.estado_tipo_combo.setCurrentIndex(0)
+    assert window.estado_table.columnCount() == 6
+    window.estado_tipo_combo.setCurrentIndex(1)
+    assert window.estado_table.columnCount() == 6

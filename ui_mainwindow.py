@@ -564,6 +564,7 @@ class MainWindow(QMainWindow):
                         "codigo": prod.get("codigo", ""),
                         "stock": d.get("cantidad", 0),
                         "precio_unitario": d.get("precio_unitario", 0),
+                        "vendedor_id": prod.get("vendedor_id"),
                         "Distribuidor_id": compra.get("Distribuidor_id"),
                         "fecha_vencimiento": d.get("fecha_vencimiento", ""),
                         "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
@@ -609,7 +610,7 @@ class MainWindow(QMainWindow):
                         item.get("tipo_fiscal", "Gravada"),
                         None,
                         item.get("precio_con_iva", 0),
-                        vendedor_id
+                        item.get("vendedor_id", vendedor_id)
                     )
                     if "lote_id" in item:
                         self.manager.db.disminuir_stock_lote(item["lote_id"], item["cantidad"])
@@ -750,7 +751,7 @@ class MainWindow(QMainWindow):
                         item.get("tipo_fiscal", "Gravada"),
                         item.get("extra", None),
                         item.get("precio_con_iva", 0),
-                        vendedor_id
+                        item.get("vendedor_id", vendedor_id)
                     )
                    
                     if "lote_id" in item:

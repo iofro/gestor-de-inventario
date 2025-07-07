@@ -1000,6 +1000,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "comision_monto": comision_monto,
             "total": total_final,
             "tipo_fiscal": tipo_fiscal,
+            "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", "")
         })
@@ -2132,6 +2133,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "comision_monto": comision_monto,
             "total": total_final,
             "tipo_fiscal": tipo_fiscal,
+            "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", "")
         })

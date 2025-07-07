@@ -46,7 +46,6 @@ class MainWindow(QMainWindow):
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
         self._setup_ui()
         self._apply_styles()
-        self.estado_personas = []
 
     def generar_factura_pdf(self):
         """Función de generación de facturas no disponible."""
@@ -384,14 +383,20 @@ class MainWindow(QMainWindow):
         controles.addWidget(self.btn_generar_estado)
         estado_layout.addLayout(controles)
 
-        self.estado_table = QTableWidget(0, 2)
-        self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.estado_table = QTableWidget(0, 6)
+        self.estado_table.setHorizontalHeaderLabels([
+            "Fecha",
+            "Factura",
+            "Tipo",
+            "Cliente",
+            "Vendedor",
+            "Monto",
+        ])
         self.estado_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.estado_table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.estado_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.estado_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        self.estado_table.itemSelectionChanged.connect(self._on_estado_row_selected)
 
         estado_layout.addWidget(self.estado_table)
 
@@ -402,13 +407,13 @@ class MainWindow(QMainWindow):
         self.btn_add_trabajador.clicked.connect(self._agregar_trabajador)
         self.btn_edit_trabajador.clicked.connect(self._editar_trabajador)
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
-        self.estado_tipo_combo.currentIndexChanged.connect(self._cargar_personas_estado)
-        self.estado_search_bar.textChanged.connect(self._cargar_personas_estado)
+        self.estado_tipo_combo.currentIndexChanged.connect(self._mostrar_historial_general)
+        self.estado_search_bar.textChanged.connect(self._mostrar_historial_general)
         self.btn_generar_estado.clicked.connect(self._abrir_generar_estado_dialog)
         self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
 
         self._actualizar_tabla_trabajadores()
-        self._cargar_personas_estado()
+        self._mostrar_historial_general()
 
         # Conexiones
         self.btn_guardar_rapido.clicked.connect(self.guardar_rapido)
@@ -799,7 +804,7 @@ class MainWindow(QMainWindow):
                 self.compras_tab.load_purchases()
                 self.sales_tab.load_sales()
                 self._actualizar_tabla_clientes()
-                self._cargar_personas_estado()
+                self._mostrar_historial_general()
                 self._actualizar_arbol_vendedores()
                 self._actualizar_arbol_Distribuidores()
                 self._actualizar_tabla_trabajadores()
@@ -837,7 +842,7 @@ class MainWindow(QMainWindow):
 
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA
-                self._cargar_personas_estado()
+                self._mostrar_historial_general()
                 QMessageBox.information(self, "Cargar rápido", f"Inventario cargado de:\n{self.ultimo_archivo_json}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
@@ -886,7 +891,7 @@ class MainWindow(QMainWindow):
             self._actualizar_arbol_vendedores()
             self._actualizar_arbol_Distribuidores()
             self._actualizar_tabla_clientes()
-            self._cargar_personas_estado()
+            self._mostrar_historial_general()
             self._actualizar_historial()
             if hasattr(self, "vendedor_combo_filtro"):
                 self.vendedor_combo_filtro.setCurrentIndex(0)
@@ -1154,14 +1159,8 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Cliente eliminado", f"El cliente '{cli['nombre']}' ha sido eliminado.")
 
     def _actualizar_historial(self):
-        """Recarga la tabla de historial o estado de cuenta."""
-        # Si la tabla muestra el historial general (6 columnas),
-        # actualizamos esa vista. De lo contrario se regenera el
-        # estado de cuenta de la persona seleccionada.
-        if self.estado_table.columnCount() == 6:
-            self._mostrar_historial_general()
-        else:
-            self._generar_estado_cuenta()
+        """Recarga la tabla de historial."""
+        self._mostrar_historial_general()
             
 
     def _limpiar_filtros_historial(self):
@@ -1352,36 +1351,6 @@ class MainWindow(QMainWindow):
             self._actualizar_tabla_trabajadores()
             QMessageBox.information(self, "Trabajador eliminado", f"El trabajador '{t['nombre']}' ha sido eliminado.")
 
-    def _cargar_personas_estado(self):
-        """Carga la lista de clientes o vendedores para los estados de cuenta."""
-        tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
-        search = self.estado_search_bar.text()
-
-        if tipo == "cliente":
-            personas = self.manager.db.get_clientes(search)
-        else:
-            personas = self.manager.db.get_trabajadores(solo_vendedores=True, search=search)
-
-        self.estado_personas = personas
-        self.estado_table.setColumnCount(2)
-        self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
-        self.estado_table.setRowCount(len(personas))
-
-        for row, p in enumerate(personas):
-            self.estado_table.setItem(row, 0, QTableWidgetItem(p.get("codigo", "")))
-            self.estado_table.setItem(row, 1, QTableWidgetItem(p.get("nombre", "")))
-
-    def _get_selected_estado_persona(self):
-        row = self.estado_table.currentRow()
-        if row < 0 or row >= len(getattr(self, "estado_personas", [])):
-            return None
-        return self.estado_personas[row]
-
-    def _on_estado_row_selected(self):
-        """Genera automáticamente el estado de cuenta al seleccionar una persona."""
-        # Solo se debe activar cuando la tabla muestra la lista de personas
-        if self.estado_table.columnCount() == 2 and self.estado_table.currentRow() >= 0:
-            self._generar_estado_cuenta()
 
     def _toggle_estado_fechas(self, checked: bool):
         """Habilita o deshabilita las fechas manuales."""
@@ -1397,107 +1366,24 @@ class MainWindow(QMainWindow):
         tipo_idx = 0 if self.estado_tipo_combo.currentText() == "Cliente" else 1
         dialog.modo_combo.setCurrentIndex(tipo_idx)
         dialog.stack.setCurrentIndex(tipo_idx)
-        persona = self._get_selected_estado_persona()
-        if persona:
-            if tipo_idx == 0:
-                for i, c in enumerate(dialog.clientes):
-                    if c.get("id") == persona.get("id"):
-                        dialog.cliente_table.selectRow(i)
-                        dialog.selected_cliente = c
-                        break
-            else:
-                for i, v in enumerate(dialog.vendedores):
-                    if v.get("id") == persona.get("id"):
-                        dialog.vendedor_table.selectRow(i)
-                        dialog.selected_vendedor = v
-                        break
+        if self.estado_anio_actual.isChecked():
+            dialog.anio_actual.setChecked(True)
+        else:
+            dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
+            dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         dialog.exec_()
 
     def _imprimir_estado_cuenta(self):
-        persona = self._get_selected_estado_persona()
-        if persona is None or self.estado_table.columnCount() == 2:
-            QMessageBox.warning(self, "Imprimir", "Seleccione un vendedor primero")
-            return
-        if self.estado_tipo_combo.currentText() != "Vendedor":
-            QMessageBox.information(self, "Imprimir", "Solo disponible para vendedores")
-            return
+        dialog = EstadoCuentaDialog(self.manager.db, self)
+        dialog.modo_combo.setCurrentIndex(1)
+        dialog.stack.setCurrentIndex(1)
         if self.estado_anio_actual.isChecked():
-            inicio = QDate(QDate.currentDate().year(), 1, 1)
-            fin = QDate.currentDate()
+            dialog.anio_actual.setChecked(True)
         else:
-            inicio = self.estado_fecha_inicio.date()
-            fin = self.estado_fecha_fin.date()
-        inicio_str = inicio.toString("yyyy-MM-dd")
-        fin_str = fin.toString("yyyy-MM-dd")
-        codigo = persona.get("codigo", persona.get("id"))
-        suggested = f"reporte_vendedor_{codigo}.pdf"
-        filename, _ = QFileDialog.getSaveFileName(
-            self,
-            "Guardar PDF",
-            suggested,
-            "PDF Files (*.pdf)"
-        )
-        if not filename:
-            return
-        try:
-            from estado_cuenta_pdf import generar_reporte_vendedor_pdf
-            generar_reporte_vendedor_pdf(
-                self.manager.db, persona["id"], inicio_str, fin_str, archivo=filename
-            )
-            QMessageBox.information(self, "Imprimir", f"Reporte guardado en {filename}")
-        except Exception as e:
-            QMessageBox.warning(self, "Imprimir", f"Error al generar PDF: {e}")
+            dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
+            dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
+        dialog.exec_()
 
-    def _generar_estado_cuenta(self):
-        persona = self._get_selected_estado_persona()
-        tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
-        if self.estado_anio_actual.isChecked():
-            inicio = QDate(QDate.currentDate().year(), 1, 1)
-            fin = QDate.currentDate()
-        else:
-            inicio = self.estado_fecha_inicio.date()
-            fin = self.estado_fecha_fin.date()
-
-        inicio_str = inicio.toString("yyyy-MM-dd")
-        fin_str = fin.toString("yyyy-MM-dd")
-
-        if persona is None:
-            # Si no hay una persona seleccionada, mostramos el historial general
-            # según el tipo elegido (cliente o vendedor).
-            self._mostrar_historial_general()
-            return
-
-        persona_id = persona.get("id")
-        facturas = self.manager.db.get_estado_cuenta(
-            persona_id,
-            tipo,
-            inicio_str,
-            fin_str,
-        )
-        self.estado_table.setColumnCount(7)
-        self.estado_table.setHorizontalHeaderLabels(
-            ["Fecha", "Factura", "Tipo", "Cliente", "Vendedor", "Monto", "Saldo"]
-        )
-        self.estado_table.setRowCount(len(facturas))
-        for row, f in enumerate(facturas):
-            cli_nombre = ""
-            if f.get("cliente_id"):
-                cli = next((c for c in self.manager._clientes if c["id"] == f["cliente_id"]), None)
-                if cli:
-                    cli_nombre = cli.get("nombre", "")
-            vend_nombre = ""
-            if f.get("vendedor_id"):
-                trab = self.manager.db.get_trabajador(f["vendedor_id"])
-                if trab:
-                    vend_nombre = trab.get("nombre", "")
-            tipo_factura = "Crédito fiscal" if self.manager.db.get_venta_credito_fiscal(f.get("id")) else "Consumidor final"
-            self.estado_table.setItem(row, 0, QTableWidgetItem(f.get("fecha", "")))
-            self.estado_table.setItem(row, 1, QTableWidgetItem(str(f.get("id"))))
-            self.estado_table.setItem(row, 2, QTableWidgetItem(tipo_factura))
-            self.estado_table.setItem(row, 3, QTableWidgetItem(cli_nombre))
-            self.estado_table.setItem(row, 4, QTableWidgetItem(vend_nombre))
-            self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(f.get('total', 0)):.2f}"))
-            self.estado_table.setItem(row, 6, QTableWidgetItem(f"${float(f.get('saldo', 0)):.2f}"))
 
     def _mostrar_historial_general(self):
         """Muestra el historial completo filtrando por cliente o vendedor."""

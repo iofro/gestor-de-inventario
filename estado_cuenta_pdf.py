@@ -168,7 +168,7 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
 
     if modo == "vendedor":
         vid = kwargs.get("vendedor_id")
-        vendedor = db.get_trabajador(vid) if vid else {}
+        vendedor = (db.get_trabajador(vid) or {}) if vid else {}
         elements.append(
             Paragraph(
                 f"{vendedor.get('nombre','')} — {vendedor.get('codigo','')}",
@@ -180,7 +180,7 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
         grupos = {}
         for v in ventas:
             cid = v.get("cliente_id")
-            cli = db.get_cliente(cid) if cid else {}
+            cli = (db.get_cliente(cid) or {}) if cid else {}
             key = cid or 0
             data = grupos.setdefault(
                 key,
@@ -289,7 +289,7 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
 
     elif modo == "cliente":
         cid = kwargs.get("cliente_id")
-        cliente = db.get_cliente(cid) if cid else {}
+        cliente = (db.get_cliente(cid) or {}) if cid else {}
         elements.append(
             Paragraph(
                 f"{cliente.get('nombre','')} — {cliente.get('codigo','')}",
@@ -301,7 +301,7 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
         grupos = {}
         for v in ventas:
             vid = v.get("vendedor_id")
-            vend = db.get_trabajador(vid) if vid else {}
+            vend = (db.get_trabajador(vid) or {}) if vid else {}
             key = vid or 0
             data = grupos.setdefault(
                 key,

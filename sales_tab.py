@@ -94,7 +94,6 @@ class SalesTab(QWidget):
         self.email_thread = None
         self._setup_ui()
         self._load_email_config()
-        self._check_smtp_credentials()
         self.load_sales()
 
     def _setup_ui(self):

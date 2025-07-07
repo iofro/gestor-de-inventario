@@ -702,10 +702,10 @@ class DB:
         )
         params = [persona_id]
         if fecha_inicio:
-            query += " AND fecha >= ?"
+            query += " AND date(fecha) >= date(?)"
             params.append(fecha_inicio)
         if fecha_fin:
-            query += " AND fecha <= ?"
+            query += " AND date(fecha) <= date(?)"
             params.append(fecha_fin)
         query += " ORDER BY fecha"
         self.cursor.execute(query, params)
@@ -729,10 +729,10 @@ class DB:
             )
             params = []
             if fecha_inicio:
-                query += " AND fecha >= ?"
+                query += " AND date(fecha) >= date(?)"
                 params.append(fecha_inicio)
             if fecha_fin:
-                query += " AND fecha <= ?"
+                query += " AND date(fecha) <= date(?)"
                 params.append(fecha_fin)
             query += " GROUP BY vendedor_id ORDER BY vendedor_id"
             self.cursor.execute(query, params)
@@ -741,10 +741,10 @@ class DB:
         query = "SELECT id, fecha, total FROM ventas WHERE vendedor_id=?"
         params = [vendedor_id]
         if fecha_inicio:
-            query += " AND fecha >= ?"
+            query += " AND date(fecha) >= date(?)"
             params.append(fecha_inicio)
         if fecha_fin:
-            query += " AND fecha <= ?"
+            query += " AND date(fecha) <= date(?)"
             params.append(fecha_fin)
         query += " ORDER BY fecha"
         self.cursor.execute(query, params)
@@ -765,10 +765,10 @@ class DB:
             )
             params = []
             if fecha_inicio:
-                query += " AND fecha >= ?"
+                query += " AND date(fecha) >= date(?)"
                 params.append(fecha_inicio)
             if fecha_fin:
-                query += " AND fecha <= ?"
+                query += " AND date(fecha) <= date(?)"
                 params.append(fecha_fin)
             query += " GROUP BY cliente_id ORDER BY cliente_id"
             self.cursor.execute(query, params)
@@ -777,10 +777,10 @@ class DB:
         query = "SELECT id, fecha, total FROM ventas WHERE cliente_id=?"
         params = [cliente_id]
         if fecha_inicio:
-            query += " AND fecha >= ?"
+            query += " AND date(fecha) >= date(?)"
             params.append(fecha_inicio)
         if fecha_fin:
-            query += " AND fecha <= ?"
+            query += " AND date(fecha) <= date(?)"
             params.append(fecha_fin)
         query += " ORDER BY fecha"
         self.cursor.execute(query, params)
@@ -917,10 +917,10 @@ class DB:
         query = "SELECT fecha, monto FROM pagos WHERE cliente_id=?"
         params = [cliente_id]
         if fecha_inicio:
-            query += " AND fecha >= ?"
+            query += " AND date(fecha) >= date(?)"
             params.append(fecha_inicio)
         if fecha_fin:
-            query += " AND fecha <= ?"
+            query += " AND date(fecha) <= date(?)"
             params.append(fecha_fin)
         query += " ORDER BY fecha"
         self.cursor.execute(query, params)

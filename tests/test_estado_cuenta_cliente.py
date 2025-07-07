@@ -25,3 +25,20 @@ def test_estado_cuenta_cliente_exclusive():
     assert estado["saldo"] == 170
     assert len(estado["historial_compras"]) == 2
     assert len(estado["pagos_aplicados"]) == 1
+
+
+def test_estado_cuenta_cliente_timestamp_filter():
+    db = create_db()
+    db.add_cliente("Pedro", "", "", "", "", "", "", "", "", "")
+    cid = db.cursor.lastrowid
+
+    db.add_venta("2025-07-06 10:00:00", 75, cliente_id=cid)
+    db.add_pago(cid, 25, "2025-07-06 18:30:00")
+
+    estado = db.get_estado_cuenta_cliente(
+        cid, fecha_inicio="2025-07-06", fecha_fin="2025-07-06"
+    )
+    assert len(estado["historial_compras"]) == 1
+    assert estado["historial_compras"][0]["total"] == 75
+    assert len(estado["pagos_aplicados"]) == 1
+    assert estado["pagos_aplicados"][0]["monto"] == 25

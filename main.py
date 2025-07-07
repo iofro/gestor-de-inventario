@@ -50,8 +50,8 @@ if __name__ == "__main__":
             window._actualizar_arbol_Distribuidores()
             window._actualizar_tabla_clientes()
             window._actualizar_tabla_trabajadores()
-            window._cargar_personas_estado()
             window._actualizar_historial()
+            window._cargar_personas_estado()
             QMessageBox.information(window, "Inventario", "Inventario cargado exitosamente.")
         except Exception as e:
             QMessageBox.critical(window, "Error", f"No se pudo cargar el inventario:\n{e}")

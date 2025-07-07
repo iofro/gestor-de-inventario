@@ -805,6 +805,8 @@ class MainWindow(QMainWindow):
                 self._actualizar_tabla_trabajadores()
                 self._actualizar_inventario_actual()
                 self._actualizar_historial()
+                self._cargar_personas_estado()
+
                 QMessageBox.information(self, "Cargar inventario", "Inventario cargado correctamente.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
@@ -888,6 +890,7 @@ class MainWindow(QMainWindow):
             self._actualizar_tabla_clientes()
             self._cargar_personas_estado()
             self._actualizar_historial()
+            self._cargar_personas_estado()
             if hasattr(self, "vendedor_combo_filtro"):
                 self.vendedor_combo_filtro.setCurrentIndex(0)
             QMessageBox.information(self, "Nuevo inventario", "Inventario limpio y listo para usar.")

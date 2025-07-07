@@ -874,6 +874,8 @@ class MainWindow(QMainWindow):
 
             self.compras_tab.load_purchases()
 
+            self.sales_tab.load_sales()  # <-- AGREGA ESTA LÍNEA
+
             self._actualizar_tabla_trabajadores()  # <-- AGREGA ESTA LÍNEA
             self.filter_products()
             self._actualizar_arbol_vendedores()

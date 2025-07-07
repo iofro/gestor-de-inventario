@@ -235,6 +235,7 @@ class EstadoCuentaDialog(QDialog):
         self.vendedor_table_all.setHorizontalHeaderLabels(["Código", "Nombre"])
         self.vendedor_table_all.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.vendedor_table_all.setSelectionBehavior(QTableWidget.SelectRows)
+        self.vendedor_table_all.setSelectionMode(QAbstractItemView.NoSelection)
         self.vendedor_table_all.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.vendedor_table_all.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._mostrar_vendedores_all(self.vendedores)
@@ -353,18 +354,24 @@ class EstadoCuentaDialog(QDialog):
             "agrupar_factura": self.agrupar_factura.isChecked(),
             "incluir_detalles": self.incluir_detalles.isChecked(),
         }
-        if modo == "cliente" and self.clientes_mostrados:
+        if modo == "cliente":
             idx = self.cliente_table.currentRow()
-            if 0 <= idx < len(self.clientes_mostrados):
-                params["cliente_id"] = self.clientes_mostrados[idx].get("id")
-        if modo == "vendedor" and self.vendedores_mostrados:
+            if idx < 0 or idx >= len(self.clientes_mostrados):
+                QMessageBox.warning(self, "Validación", "No se ha seleccionado ningún cliente.")
+                return None
+            params["cliente_id"] = self.clientes_mostrados[idx].get("id")
+        if modo == "vendedor":
             idx = self.vendedor_table.currentRow()
-            if 0 <= idx < len(self.vendedores_mostrados):
-                params["vendedor_id"] = self.vendedores_mostrados[idx].get("id")
+            if idx < 0 or idx >= len(self.vendedores_mostrados):
+                QMessageBox.warning(self, "Validación", "No se ha seleccionado ningún vendedor.")
+                return None
+            params["vendedor_id"] = self.vendedores_mostrados[idx].get("id")
         return params
 
     def _generar_pdf(self):
         params = self._collect_params()
+        if params is None:
+            return
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Guardar PDF",
@@ -382,6 +389,8 @@ class EstadoCuentaDialog(QDialog):
 
     def _generar_e_imprimir_pdf(self):
         params = self._collect_params()
+        if params is None:
+            return
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Guardar PDF",

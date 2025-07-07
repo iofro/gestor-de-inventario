@@ -119,6 +119,7 @@ class InventoryManager:
         cliente_id_map = {}
         venta_id_map = {}
         compra_id_map = {}
+        trabajador_id_map = {}
 
         # --- Distribuidores primero ---
         for v in data.get("Distribuidores", []):
@@ -140,6 +141,7 @@ class InventoryManager:
 
         for t in data.get("trabajadores", []):
             self.db.add_trabajador(t)
+            trabajador_id_map[t.get("id")] = self.db.cursor.lastrowid
 
         # Productos
         for p in data.get("productos", []):
@@ -181,7 +183,9 @@ class InventoryManager:
         for v in data.get("ventas", []):
             cliente_id = cliente_id_map.get(v.get("cliente_id"))
             Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
-            vendedor_id = vendedor_id_map.get(v.get("vendedor_id")) if v.get("vendedor_id") is not None else None
+            vendedor_id = trabajador_id_map.get(v.get("vendedor_id")) if v.get("vendedor_id") is not None else None
+            if vendedor_id is None and v.get("vendedor_id") is not None:
+                vendedor_id = vendedor_id_map.get(v.get("vendedor_id"))
 
             extra = v.get("extra")
             if isinstance(extra, str):
@@ -228,7 +232,9 @@ class InventoryManager:
             producto_id = producto_id_map.get(d.get("producto_id"))
             vendedor_id = None
             if d.get("vendedor_id") is not None:
-                vendedor_id = vendedor_id_map.get(d.get("vendedor_id"))
+                vendedor_id = trabajador_id_map.get(d.get("vendedor_id"))
+                if vendedor_id is None:
+                    vendedor_id = vendedor_id_map.get(d.get("vendedor_id"))
             if venta_id and producto_id:
                 self.db.cursor.execute(
                     "INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",

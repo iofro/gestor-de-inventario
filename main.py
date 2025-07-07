@@ -47,9 +47,10 @@ if __name__ == "__main__":
             window.compras_tab.refresh_filters()
             window.filter_products()
             window._actualizar_arbol_vendedores()
-            window._actualizar_arbol_Distribuidores()   
-            window._actualizar_tabla_clientes()    
-            window._actualizar_tabla_trabajadores() 
+            window._actualizar_arbol_Distribuidores()
+            window._actualizar_tabla_clientes()
+            window._actualizar_tabla_trabajadores()
+            window._cargar_personas_estado()
             window._actualizar_historial()
             QMessageBox.information(window, "Inventario", "Inventario cargado exitosamente.")
         except Exception as e:

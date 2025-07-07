@@ -6,15 +6,23 @@ from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
 
 LAST_FILE_PATH = "ultimo_inventario.json"
+DEFAULT_INVENTORY = "inventario.json"
 
 def cargar_ultimo_archivo():
+    """Devuelve la ruta del inventario a cargar al iniciar la aplicación."""
     if os.path.exists(LAST_FILE_PATH):
         try:
             with open(LAST_FILE_PATH, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            return data.get("ultimo", "")
+            path = data.get("ultimo", "")
+            if path and os.path.exists(path):
+                return path
         except Exception:
-            return ""
+            pass
+
+    default_path = os.path.join(os.path.dirname(__file__), DEFAULT_INVENTORY)
+    if os.path.exists(default_path):
+        return default_path
     return ""
 
 if __name__ == "__main__":

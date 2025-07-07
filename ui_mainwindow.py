@@ -1337,8 +1337,23 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Trabajador eliminado", f"El trabajador '{t['nombre']}' ha sido eliminado.")
 
     def _cargar_personas_estado(self):
-        """Carga automáticamente el historial según el filtro seleccionado."""
-        self._mostrar_historial_general()
+        """Carga la lista de clientes o vendedores para los estados de cuenta."""
+        tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
+        search = self.estado_search_bar.text()
+
+        if tipo == "cliente":
+            personas = self.manager.db.get_clientes(search)
+        else:
+            personas = self.manager.db.get_trabajadores(solo_vendedores=True, search=search)
+
+        self.estado_personas = personas
+        self.estado_table.setColumnCount(2)
+        self.estado_table.setHorizontalHeaderLabels(["Código", "Nombre"])
+        self.estado_table.setRowCount(len(personas))
+
+        for row, p in enumerate(personas):
+            self.estado_table.setItem(row, 0, QTableWidgetItem(p.get("codigo", "")))
+            self.estado_table.setItem(row, 1, QTableWidgetItem(p.get("nombre", "")))
 
     def _get_selected_estado_persona(self):
         row = self.estado_table.currentRow()

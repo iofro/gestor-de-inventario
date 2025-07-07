@@ -246,7 +246,9 @@ class EstadoCuentaDialog(QDialog):
 
         # Filtros comunes
         filtros = QHBoxLayout()
+        self.filtrar_fechas_chk = QCheckBox("Filtrar por fechas")
         self.anio_actual = QCheckBox("Año en curso")
+        filtros.addWidget(self.filtrar_fechas_chk)
         filtros.addWidget(self.anio_actual)
         filtros.addWidget(QLabel("Desde"))
         self.fecha_inicio = QDateEdit(QDate.currentDate())
@@ -277,6 +279,7 @@ class EstadoCuentaDialog(QDialog):
 
         self.modo_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
         self.anio_actual.toggled.connect(self._toggle_fechas)
+        self.filtrar_fechas_chk.toggled.connect(self._toggle_filtro_fechas)
         self.cliente_search.textChanged.connect(self._filtrar_clientes)
         self.vendedor_search.textChanged.connect(self._filtrar_vendedores)
         self.cliente_table.itemSelectionChanged.connect(self._seleccionar_cliente)
@@ -285,12 +288,19 @@ class EstadoCuentaDialog(QDialog):
         self.btn_generar.clicked.connect(self._generar_pdf)
         self.btn_imprimir.clicked.connect(self._generar_e_imprimir_pdf)
 
+        self._toggle_filtro_fechas(False)
+
     def _toggle_fechas(self, checked):
-        self.fecha_inicio.setEnabled(not checked)
-        self.fecha_fin.setEnabled(not checked)
         if checked:
             self.fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
             self.fecha_fin.setDate(QDate.currentDate())
+        self._toggle_filtro_fechas(self.filtrar_fechas_chk.isChecked())
+
+    def _toggle_filtro_fechas(self, checked):
+        self.anio_actual.setEnabled(checked)
+        manual = checked and not self.anio_actual.isChecked()
+        self.fecha_inicio.setEnabled(manual)
+        self.fecha_fin.setEnabled(manual)
 
     def _mostrar_clientes(self, clientes):
         self.cliente_table.setRowCount(len(clientes))
@@ -348,8 +358,12 @@ class EstadoCuentaDialog(QDialog):
         modo = "cliente" if modo_idx == 0 else "vendedor" if modo_idx == 1 else "todos"
         params = {
             "modo": modo,
-            "fecha_inicio": self.fecha_inicio.date().toString("yyyy-MM-dd"),
-            "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd"),
+            "fecha_inicio": self.fecha_inicio.date().toString("yyyy-MM-dd")
+            if self.filtrar_fechas_chk.isChecked()
+            else "",
+            "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd")
+            if self.filtrar_fechas_chk.isChecked()
+            else "",
             "incluir_pagos": self.incluir_pagos.isChecked(),
             "agrupar_factura": self.agrupar_factura.isChecked(),
             "incluir_detalles": self.incluir_detalles.isChecked(),

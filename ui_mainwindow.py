@@ -799,11 +799,12 @@ class MainWindow(QMainWindow):
                 self.compras_tab.load_purchases()
                 self.sales_tab.load_sales()
                 self._actualizar_tabla_clientes()
+                self._cargar_personas_estado()
                 self._actualizar_arbol_vendedores()
                 self._actualizar_arbol_Distribuidores()
                 self._actualizar_tabla_trabajadores()
                 self._actualizar_inventario_actual()
-                self._actualizar_historial() 
+                self._actualizar_historial()
                 QMessageBox.information(self, "Cargar inventario", "Inventario cargado correctamente.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
@@ -836,6 +837,7 @@ class MainWindow(QMainWindow):
 
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA
+                self._cargar_personas_estado()
                 QMessageBox.information(self, "Cargar rápido", f"Inventario cargado de:\n{self.ultimo_archivo_json}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
@@ -884,6 +886,7 @@ class MainWindow(QMainWindow):
             self._actualizar_arbol_vendedores()
             self._actualizar_arbol_Distribuidores()
             self._actualizar_tabla_clientes()
+            self._cargar_personas_estado()
             self._actualizar_historial()
             if hasattr(self, "vendedor_combo_filtro"):
                 self.vendedor_combo_filtro.setCurrentIndex(0)

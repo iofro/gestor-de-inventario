@@ -450,6 +450,15 @@ class ProductDialogBase:
         if hasattr(self, "_recalcular_totales"):
             self._recalcular_totales()
 
+    def _toggle_comision_inputs(self, state):
+        enabled = self.comision_chk.isChecked()
+        self.comision_pct_spin.setEnabled(enabled)
+        self.comision_tipo_combo.setEnabled(enabled)
+        if not enabled:
+            self.comision_pct_spin.setValue(0)
+        if hasattr(self, "_recalcular_totales"):
+            self._recalcular_totales()
+
     def _actualizar_Distribuidor_por_producto(self):
         idx = self.product_list.currentRow()
         if idx < 0 or idx >= len(self.productos):
@@ -614,6 +623,27 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         for v in vendedores_trabajadores:
             self.vendedor_combo.addItem(v["nombre"])
         right_layout.addWidget(self.vendedor_combo)
+
+        # Comisión para el vendedor
+        self.comision_chk = QCheckBox("Aplicar comisión")
+        right_layout.addWidget(self.comision_chk)
+        com_layout = QHBoxLayout()
+        com_layout.addWidget(QLabel("%:"))
+        self.comision_pct_spin = QDoubleSpinBox()
+        self.comision_pct_spin.setRange(0, 100)
+        self.comision_pct_spin.setDecimals(2)
+        self.comision_pct_spin.setEnabled(False)
+        com_layout.addWidget(self.comision_pct_spin)
+        self.comision_tipo_combo = QComboBox()
+        self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
+        self.comision_tipo_combo.setEnabled(False)
+        com_layout.addWidget(self.comision_tipo_combo)
+        right_layout.addLayout(com_layout)
+        self.comision_label = QLabel("Comisión: $0.00")
+        right_layout.addWidget(self.comision_label)
+        self.comision_chk.stateChanged.connect(self._toggle_comision_inputs)
+        self.comision_pct_spin.valueChanged.connect(self._recalcular_totales)
+        self.comision_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
 
         # Cliente selector
         right_layout.addWidget(QLabel("Cliente:"))
@@ -799,23 +829,44 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         subtotal_con_descuento = max(subtotal - descuento_monto, 0)
 
+        # Comisión de vendedor
+        comision_pct = self.comision_pct_spin.value() if self.comision_chk.isChecked() else 0
+        comision_tipo = self.comision_tipo_combo.currentText()
+        if comision_tipo == "Añadida al total":
+            comision_monto = subtotal_con_descuento * (comision_pct / 100)
+        elif comision_tipo == "Desglosada (incluida en el precio)":
+            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+        else:
+            comision_monto = 0
+
+        base_iva = subtotal_con_descuento
+        if comision_tipo == "Desglosada (incluida en el precio)":
+            base_iva = subtotal_con_descuento - comision_monto
+
         # IVA (si aplica)
         iva = 0
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva = subtotal_con_descuento * 0.13
+                iva = base_iva * 0.13
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                iva = subtotal_con_descuento * 13 / 113
+                iva = base_iva * 13 / 113
                 total = subtotal_con_descuento
+                subtotal = base_iva - iva
             else:
                 total = subtotal_con_descuento
         else:
             total = subtotal_con_descuento
 
+        if comision_tipo == "Añadida al total":
+            total_final = total + comision_monto
+        else:
+            total_final = total
+
         self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
         self.iva_label.setText(f"IVA: ${iva:.2f}")
-        self.total_label.setText(f"TOTAL: ${total:.2f}")
+        self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
+        self.total_label.setText(f"TOTAL: ${total_final:.2f}")
 
 
     def get_data(self):
@@ -893,29 +944,44 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         subtotal_con_descuento = max(subtotal - descuento_monto, 0)
 
+        # Comisión
+        comision_pct = self.comision_pct_spin.value() if self.comision_chk.isChecked() else 0
+        comision_tipo = self.comision_tipo_combo.currentText()
+        if comision_tipo == "Añadida al total":
+            comision_monto = subtotal_con_descuento * (comision_pct / 100)
+        elif comision_tipo == "Desglosada (incluida en el precio)":
+            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+        else:
+            comision_monto = 0
+
+        base_iva = subtotal_con_descuento
+        if comision_tipo == "Desglosada (incluida en el precio)":
+            base_iva = subtotal_con_descuento - comision_monto
+
         iva = 0
         iva_tipo = "ninguno"
-        precio_sin_iva = precio  # Por defecto, el precio es el ingresado
+        precio_sin_iva = precio
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva = round(subtotal_con_descuento * 0.13, 2)
+                iva = round(base_iva * 0.13, 2)
                 iva_tipo = "agregado"
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                iva = round(subtotal_con_descuento * 13 / 113, 2)
+                iva = round(base_iva * 13 / 113, 2)
                 iva_tipo = "desglosado"
-                precio_sin_iva_total = subtotal_con_descuento - iva
+                precio_sin_iva_total = base_iva - iva
                 precio = round(precio_sin_iva_total / cantidad, 6) if cantidad > 0 else 0
                 subtotal = precio_sin_iva_total
                 total = subtotal_con_descuento
             else:
                 total = subtotal_con_descuento
-                iva_tipo = "ninguno"
         else:
             total = subtotal_con_descuento
-            iva_tipo = "ninguno"
 
-        comision_monto = 0
+        if comision_tipo == "Añadida al total":
+            total_final = total + comision_monto
+        else:
+            total_final = total
         tipo_fiscal = self.tipo_fiscal_combo.currentText()
 
         self.venta_items.append({
@@ -932,7 +998,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "iva": iva,
             "iva_tipo": iva_tipo,
             "comision_monto": comision_monto,
-            "total": total,
+            "total": total_final,
             "tipo_fiscal": tipo_fiscal,
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", "")
@@ -1752,6 +1818,26 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.vendedores_trabajadores = vendedores_trabajadores
         right_layout.addWidget(self.vendedor_combo)
 
+        self.comision_chk = QCheckBox("Aplicar comisión")
+        right_layout.addWidget(self.comision_chk)
+        com_layout = QHBoxLayout()
+        com_layout.addWidget(QLabel("%:"))
+        self.comision_pct_spin = QDoubleSpinBox()
+        self.comision_pct_spin.setRange(0, 100)
+        self.comision_pct_spin.setDecimals(2)
+        self.comision_pct_spin.setEnabled(False)
+        com_layout.addWidget(self.comision_pct_spin)
+        self.comision_tipo_combo = QComboBox()
+        self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
+        self.comision_tipo_combo.setEnabled(False)
+        com_layout.addWidget(self.comision_tipo_combo)
+        right_layout.addLayout(com_layout)
+        self.comision_label = QLabel("Comisión: $0.00")
+        right_layout.addWidget(self.comision_label)
+        self.comision_chk.stateChanged.connect(self._toggle_comision_inputs)
+        self.comision_pct_spin.valueChanged.connect(self._recalcular_totales)
+        self.comision_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
+
         right_layout.addWidget(QLabel("Cliente:"))
         self.cliente_btn = QPushButton("Seleccionar Cliente")
         self.cliente_label = QLabel("(Ningún cliente seleccionado)")
@@ -1916,25 +2002,43 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         subtotal_con_descuento = max(subtotal - descuento_monto, 0)
 
-        # IVA (si aplica)
+        comision_pct = self.comision_pct_spin.value() if self.comision_chk.isChecked() else 0
+        comision_tipo = self.comision_tipo_combo.currentText()
+        if comision_tipo == "Añadida al total":
+            comision_monto = subtotal_con_descuento * (comision_pct / 100)
+        elif comision_tipo == "Desglosada (incluida en el precio)":
+            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+        else:
+            comision_monto = 0
+
+        base_iva = subtotal_con_descuento
+        if comision_tipo == "Desglosada (incluida en el precio)":
+            base_iva = subtotal_con_descuento - comision_monto
+
         iva = 0
         total = subtotal_con_descuento
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva = subtotal_con_descuento * 0.13
+                iva = base_iva * 0.13
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                iva = subtotal_con_descuento * 13 / 113
+                iva = base_iva * 13 / 113
                 total = subtotal_con_descuento
-                subtotal = subtotal_con_descuento - iva
+                subtotal = base_iva - iva
             else:
                 total = subtotal_con_descuento
         else:
             total = subtotal_con_descuento
 
+        if comision_tipo == "Añadida al total":
+            total_final = total + comision_monto
+        else:
+            total_final = total
+
         self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
         self.iva_label.setText(f"IVA: ${iva:.2f}")
-        self.total_label.setText(f"TOTAL: ${total:.2f}")
+        self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
+        self.total_label.setText(f"TOTAL: ${total_final:.2f}")
 
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
@@ -1964,22 +2068,35 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         subtotal_con_descuento = max(subtotal - descuento_monto, 0)
 
 
+        comision_pct = self.comision_pct_spin.value() if self.comision_chk.isChecked() else 0
+        comision_tipo = self.comision_tipo_combo.currentText()
+        if comision_tipo == "Añadida al total":
+            comision_monto = subtotal_con_descuento * (comision_pct / 100)
+        elif comision_tipo == "Desglosada (incluida en el precio)":
+            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+        else:
+            comision_monto = 0
+
+        base_iva = subtotal_con_descuento
+        if comision_tipo == "Desglosada (incluida en el precio)":
+            base_iva = subtotal_con_descuento - comision_monto
+
         iva = 0
         iva_tipo = "ninguno"
-        precio_sin_iva = precio  # Por defecto, el precio es el ingresado
-        precio_con_iva = precio  # Por defecto, igual
+        precio_sin_iva = precio
+        precio_con_iva = precio
 
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
-                iva = round(subtotal_con_descuento * 0.13, 2)
+                iva = round(base_iva * 0.13, 2)
                 iva_tipo = "agregado"
                 iva_unitario = iva / cantidad if cantidad > 0 else 0
                 precio_con_iva = round(precio + iva_unitario, 2)
                 total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                iva = round(subtotal_con_descuento * 13 / 113, 2)
+                iva = round(base_iva * 13 / 113, 2)
                 iva_tipo = "desglosado"
-                precio_sin_iva_total = subtotal_con_descuento - iva
+                precio_sin_iva_total = base_iva - iva
                 precio = round(precio_sin_iva_total / cantidad, 6) if cantidad > 0 else 0
                 iva_unitario = iva / cantidad if cantidad > 0 else 0
                 precio_con_iva = round(precio + iva_unitario, 2)
@@ -1991,8 +2108,11 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         else:
             total = subtotal_con_descuento
             iva_tipo = "ninguno"
-            
-        comision_monto = 0
+
+        if comision_tipo == "Añadida al total":
+            total_final = total + comision_monto
+        else:
+            total_final = total
         tipo_fiscal = self.tipo_fiscal_combo.currentText()
 
         self.venta_items.append({
@@ -2010,7 +2130,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "iva": iva,
             "iva_tipo": iva_tipo,
             "comision_monto": comision_monto,
-            "total": total,
+            "total": total_final,
             "tipo_fiscal": tipo_fiscal,
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", "")

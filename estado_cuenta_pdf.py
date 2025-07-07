@@ -209,6 +209,28 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
                     }
                 )
 
+        if not grupos:
+            data = [headers, ["" for _ in headers]]
+            table = Table(data, colWidths=col_widths, repeatRows=1)
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#222")),
+                        ("ALIGN", (0, 0), (3, -1), "LEFT"),
+                        ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 9),
+                        ("FONTSIZE", (0, 1), (-1, -1), 8),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                        ("TOPPADDING", (0, 0), (-1, 0), 3),
+                        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
+            elements.append(table)
+
         for g in grupos.values():
             elements.append(
                 Paragraph(
@@ -330,6 +352,28 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
                     }
                 )
 
+        if not grupos:
+            data = [headers, ["" for _ in headers]]
+            table = Table(data, colWidths=col_widths, repeatRows=1)
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#f5f5f5")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#222")),
+                        ("ALIGN", (0, 0), (3, -1), "LEFT"),
+                        ("ALIGN", (4, 1), (-1, -1), "RIGHT"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                        ("FONTSIZE", (0, 0), (-1, 0), 9),
+                        ("FONTSIZE", (0, 1), (-1, -1), 8),
+                        ("BOTTOMPADDING", (0, 0), (-1, 0), 5),
+                        ("TOPPADDING", (0, 0), (-1, 0), 3),
+                        ("GRID", (0, 0), (-1, -1), 0.4, colors.grey),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                    ]
+                )
+            )
+            elements.append(table)
+
         for g in grupos.values():
             elements.append(
                 Paragraph(
@@ -417,6 +461,8 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
             vend = db.get_trabajador(r.get("vendedor_id"))
             nombre = vend.get("nombre", "") if vend else str(r.get("vendedor_id"))
             data.append([nombre, f"{r.get('total_ventas',0):.2f}"])
+        if len(data) == 1:
+            data.append(["", ""])
         table = Table(data, colWidths=[200, 80])
         table.setStyle(
             TableStyle(

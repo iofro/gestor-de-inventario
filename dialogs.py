@@ -7,7 +7,8 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
-    QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy
+    QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
+    QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -363,7 +364,14 @@ class EstadoCuentaDialog(QDialog):
 
     def _generar_pdf(self):
         params = self._collect_params()
-        filename = "estado_cuenta.pdf"
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar PDF",
+            "estado_cuenta.pdf",
+            "PDF Files (*.pdf)"
+        )
+        if not filename:
+            return
         from estado_cuenta_pdf import generar_estado_cuenta_pdf
         try:
             generar_estado_cuenta_pdf(self.db, archivo=filename, **params)
@@ -372,10 +380,21 @@ class EstadoCuentaDialog(QDialog):
             QMessageBox.warning(self, "Estado de cuenta", f"Error: {e}")
 
     def _generar_e_imprimir_pdf(self):
-        self._generar_pdf()
-        # Intentar abrir el PDF para imprimir/visualizar
-        filename = "estado_cuenta.pdf"
-        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(filename)))
+        params = self._collect_params()
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar PDF",
+            "estado_cuenta.pdf",
+            "PDF Files (*.pdf)"
+        )
+        if not filename:
+            return
+        from estado_cuenta_pdf import generar_estado_cuenta_pdf
+        try:
+            generar_estado_cuenta_pdf(self.db, archivo=filename, **params)
+            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(filename)))
+        except Exception as e:
+            QMessageBox.warning(self, "Estado de cuenta", f"Error: {e}")
 
 
 class ProductDialogBase:

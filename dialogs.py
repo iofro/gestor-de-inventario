@@ -219,7 +219,8 @@ class EstadoCuentaDialog(QDialog):
         self.vendedor_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.vendedor_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.vendedor_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.vendedores = self.db.get_vendedores()
+        # Use trabajadores marked as vendedores when listing available sellers
+        self.vendedores = self.db.get_trabajadores(solo_vendedores=True)
         self.vendedores_mostrados = list(self.vendedores)
         self._mostrar_vendedores(self.vendedores)
         vend_layout.addWidget(self.vendedor_table)

@@ -1399,10 +1399,20 @@ class MainWindow(QMainWindow):
         inicio_str = inicio.toString("yyyy-MM-dd")
         fin_str = fin.toString("yyyy-MM-dd")
         codigo = persona.get("codigo", persona.get("id"))
-        filename = f"reporte_vendedor_{codigo}.pdf"
+        suggested = f"reporte_vendedor_{codigo}.pdf"
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar PDF",
+            suggested,
+            "PDF Files (*.pdf)"
+        )
+        if not filename:
+            return
         try:
             from estado_cuenta_pdf import generar_reporte_vendedor_pdf
-            generar_reporte_vendedor_pdf(self.manager.db, persona["id"], inicio_str, fin_str, archivo=filename)
+            generar_reporte_vendedor_pdf(
+                self.manager.db, persona["id"], inicio_str, fin_str, archivo=filename
+            )
             QMessageBox.information(self, "Imprimir", f"Reporte guardado en {filename}")
         except Exception as e:
             QMessageBox.warning(self, "Imprimir", f"Error al generar PDF: {e}")

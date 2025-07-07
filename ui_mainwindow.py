@@ -367,6 +367,7 @@ class MainWindow(QMainWindow):
         self.estado_tipo_combo.setCurrentIndex(1)
         self.estado_search_bar = QLineEdit()
         self.estado_search_bar.setPlaceholderText("Buscar por código o nombre...")
+        self.estado_filtrar_fechas = QCheckBox("Filtrar por fechas")
         self.estado_fecha_inicio = QDateEdit(QDate.currentDate())
         self.estado_fecha_inicio.setCalendarPopup(True)
         self.estado_fecha_fin = QDateEdit(QDate.currentDate())
@@ -375,6 +376,7 @@ class MainWindow(QMainWindow):
         self.btn_generar_estado = QPushButton("Generar")
         controles.addWidget(self.estado_tipo_combo)
         controles.addWidget(self.estado_search_bar)
+        controles.addWidget(self.estado_filtrar_fechas)
         controles.addWidget(QLabel("Desde"))
         controles.addWidget(self.estado_fecha_inicio)
         controles.addWidget(QLabel("Hasta"))
@@ -411,8 +413,11 @@ class MainWindow(QMainWindow):
         self.estado_search_bar.textChanged.connect(self._mostrar_historial_general)
         self.btn_generar_estado.clicked.connect(self._abrir_generar_estado_dialog)
         self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
+        self.estado_filtrar_fechas.toggled.connect(self._toggle_estado_filtro_fechas)
+        self.estado_filtrar_fechas.toggled.connect(self._mostrar_historial_general)
 
         self._actualizar_tabla_trabajadores()
+        self._toggle_estado_filtro_fechas(False)
         self._mostrar_historial_general()
 
         # Conexiones
@@ -1357,11 +1362,16 @@ class MainWindow(QMainWindow):
 
     def _toggle_estado_fechas(self, checked: bool):
         """Habilita o deshabilita las fechas manuales."""
-        self.estado_fecha_inicio.setEnabled(not checked)
-        self.estado_fecha_fin.setEnabled(not checked)
         if checked:
             self.estado_fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
             self.estado_fecha_fin.setDate(QDate.currentDate())
+        self._toggle_estado_filtro_fechas(self.estado_filtrar_fechas.isChecked())
+
+    def _toggle_estado_filtro_fechas(self, checked: bool):
+        self.estado_anio_actual.setEnabled(checked)
+        manual = checked and not self.estado_anio_actual.isChecked()
+        self.estado_fecha_inicio.setEnabled(manual)
+        self.estado_fecha_fin.setEnabled(manual)
 
     def _abrir_generar_estado_dialog(self):
         """Abre la ventana de generación de estados de cuenta."""
@@ -1369,22 +1379,30 @@ class MainWindow(QMainWindow):
         tipo_idx = 0 if self.estado_tipo_combo.currentText() == "Cliente" else 1
         dialog.modo_combo.setCurrentIndex(tipo_idx)
         dialog.stack.setCurrentIndex(tipo_idx)
-        if self.estado_anio_actual.isChecked():
-            dialog.anio_actual.setChecked(True)
+        if self.estado_filtrar_fechas.isChecked():
+            dialog.filtrar_fechas_chk.setChecked(True)
+            if self.estado_anio_actual.isChecked():
+                dialog.anio_actual.setChecked(True)
+            else:
+                dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
+                dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         else:
-            dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
-            dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
+            dialog.filtrar_fechas_chk.setChecked(False)
         dialog.exec_()
 
     def _imprimir_estado_cuenta(self):
         dialog = EstadoCuentaDialog(self.manager.db, self)
         dialog.modo_combo.setCurrentIndex(1)
         dialog.stack.setCurrentIndex(1)
-        if self.estado_anio_actual.isChecked():
-            dialog.anio_actual.setChecked(True)
+        if self.estado_filtrar_fechas.isChecked():
+            dialog.filtrar_fechas_chk.setChecked(True)
+            if self.estado_anio_actual.isChecked():
+                dialog.anio_actual.setChecked(True)
+            else:
+                dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
+                dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         else:
-            dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
-            dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
+            dialog.filtrar_fechas_chk.setChecked(False)
         dialog.exec_()
 
 
@@ -1392,12 +1410,16 @@ class MainWindow(QMainWindow):
         """Muestra el historial completo filtrando por cliente o vendedor."""
         tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
 
-        if self.estado_anio_actual.isChecked():
-            inicio = QDate(QDate.currentDate().year(), 1, 1).toPyDate()
-            fin = QDate.currentDate().toPyDate()
+        if self.estado_filtrar_fechas.isChecked():
+            if self.estado_anio_actual.isChecked():
+                inicio = QDate(QDate.currentDate().year(), 1, 1).toPyDate()
+                fin = QDate.currentDate().toPyDate()
+            else:
+                inicio = self.estado_fecha_inicio.date().toPyDate()
+                fin = self.estado_fecha_fin.date().toPyDate()
         else:
-            inicio = self.estado_fecha_inicio.date().toPyDate()
-            fin = self.estado_fecha_fin.date().toPyDate()
+            inicio = None
+            fin = None
 
         filtro = self.estado_search_bar.text().lower()
         ventas = self.manager.db.get_ventas()
@@ -1411,7 +1433,9 @@ class MainWindow(QMainWindow):
                     fdate = datetime.strptime(fecha_str, "%Y-%m-%d").date()
                 except ValueError:
                     fdate = None
-            if fdate and (fdate < inicio or fdate > fin):
+            if inicio and fdate and fdate < inicio:
+                continue
+            if fin and fdate and fdate > fin:
                 continue
 
             if tipo == "cliente" and not v.get("cliente_id"):

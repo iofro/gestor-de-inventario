@@ -107,7 +107,7 @@ class SalesTab(QWidget):
         left_layout.addWidget(self.search_bar)
 
         filter_layout = QHBoxLayout()
-        self.date_from = QDateEdit(QDate.currentDate().addMonths(-1))
+        self.date_from = QDateEdit(QDate.currentDate().addYears(-2))
         self.date_from.setCalendarPopup(True)
         self.date_to = QDateEdit(QDate.currentDate())
         self.date_to.setCalendarPopup(True)

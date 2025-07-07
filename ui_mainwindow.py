@@ -1458,6 +1458,13 @@ class MainWindow(QMainWindow):
             self.estado_table.setItem(row, 4, QTableWidgetItem(vend))
             self.estado_table.setItem(row, 5, QTableWidgetItem(f"${float(monto):.2f}"))
 
+    def _cargar_personas_estado(self):
+        """Carga datos para la pestaña de estados de cuenta."""
+        self._clientes_estado = self.manager.db.get_clientes()
+        self._vendedores_estado = self.manager.db.get_trabajadores(solo_vendedores=True)
+        self.estado_search_bar.clear()
+        self._mostrar_historial_general()
+
     def get_tab_order(self):
         return [self.tabs.tabText(i) for i in range(self.tabs.count())]
 

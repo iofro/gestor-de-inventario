@@ -642,6 +642,7 @@ class MainWindow(QMainWindow):
                 self.manager.refresh_data()
                 self.compras_tab.refresh_filters()
                 self.compras_tab.load_purchases()
+                self.sales_tab.load_sales()
                 self.filter_products()
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
@@ -796,6 +797,7 @@ class MainWindow(QMainWindow):
                 self.filter_products()
                 self.compras_tab.refresh_filters()
                 self.compras_tab.load_purchases()
+                self.sales_tab.load_sales()
                 self._actualizar_tabla_clientes()
                 self._actualizar_arbol_vendedores()
                 self._actualizar_arbol_Distribuidores()
@@ -830,6 +832,7 @@ class MainWindow(QMainWindow):
                 self.compras_tab.refresh_filters()
 
                 self.compras_tab.load_purchases()
+                self.sales_tab.load_sales()
 
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA

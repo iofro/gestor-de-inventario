@@ -861,6 +861,13 @@ class MainWindow(QMainWindow):
                 self.manager.db.conn.commit()
             except Exception:
                 pass
+            # Reset last loaded inventory so old data is not reimported
+            self.ultimo_archivo_json = None
+            try:
+                if os.path.exists(LAST_INVENTORY_PATH):
+                    os.remove(LAST_INVENTORY_PATH)
+            except OSError:
+                pass
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
 

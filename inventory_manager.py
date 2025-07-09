@@ -138,6 +138,7 @@ class InventoryManager:
                 new_dist_id,
                 vend.get("codigo"),
                 vend.get("dui"),
+
             )
             self.db.cursor.execute("SELECT id FROM vendedores WHERE nombre=? ORDER BY id DESC LIMIT 1", (vend["nombre"],))
             new_id = self.db.cursor.fetchone()["id"]
@@ -356,6 +357,7 @@ class InventoryManager:
 
     def add_vendedor(self, nombre, Distribuidor_id=None, codigo=None, dui=None):
         self.db.add_vendedor(nombre, descripcion="", Distribuidor_id=Distribuidor_id, codigo=codigo, dui=dui)
+
         self.refresh_data()
 
     def add_cliente(

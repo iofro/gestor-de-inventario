@@ -46,6 +46,7 @@ class DB:
                 dui TEXT,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
+                dui TEXT,
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id)
             )
         """)
@@ -296,6 +297,11 @@ class DB:
         except Exception:
             pass  # Ya existe la columna
         try:
+            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN dui TEXT")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
+        try:
             self.cursor.execute("ALTER TABLE trabajadores ADD COLUMN codigo TEXT")
             self.conn.commit()
         except Exception:
@@ -445,6 +451,7 @@ class DB:
         self.cursor.execute(
             "INSERT INTO vendedores (codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?)",
             (codigo, nombre, dui, descripcion, Distribuidor_id),
+
         )
         self.conn.commit()
 
@@ -457,6 +464,7 @@ class DB:
             self.cursor.execute(
                 "UPDATE vendedores SET codigo=?, nombre=?, dui=?, descripcion=?, Distribuidor_id=? WHERE id=?",
                 (codigo, nombre, dui, descripcion, Distribuidor_id, id),
+
             )
             self.conn.commit()
         except Exception as e:
@@ -972,6 +980,7 @@ class DB:
                 tipo_contrato, comisiones_especificas, metodo_pago, nit, nrc,
                 cuenta_bancaria, notas
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
         """, (
             data.get("codigo", ""),
             data.get("nombre", ""),

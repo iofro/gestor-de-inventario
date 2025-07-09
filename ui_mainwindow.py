@@ -945,6 +945,7 @@ class MainWindow(QMainWindow):
                 Distribuidor_id=data["Distribuidor_id"],
                 codigo=data["codigo"],
                 dui=data["dui"],
+
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -973,6 +974,7 @@ class MainWindow(QMainWindow):
                 data["descripcion"],
                 data["Distribuidor_id"],
                 dui=data["dui"],
+
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()

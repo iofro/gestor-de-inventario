@@ -49,3 +49,23 @@ def test_manual_invoice_requires_selection(qt_app, monkeypatch):
     warnings.clear()
     tab.new_invoice_btn.click()
     assert opened.get('called') is True
+
+
+def test_manual_invoice_consumidor_final_fields(qt_app):
+    dialog = ManualInvoiceDialog()
+    dialog.type_combo.setCurrentIndex(0)
+
+    required = [
+        'cf_codigo_generacion',
+        'cf_numero_control',
+        'cf_sello',
+        'cf_condicion_pago',
+        'cf_no_remision',
+        'cf_orden_no',
+        'cf_vendedor',
+        'cf_venta_cuenta',
+        'cf_total_letras',
+    ]
+
+    for name in required:
+        assert hasattr(dialog, name), f"Dialog missing field {name}"

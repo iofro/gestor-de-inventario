@@ -941,9 +941,10 @@ class MainWindow(QMainWindow):
             data = dialog.get_data()
             self.manager.db.add_vendedor(
                 data["nombre"],
-                data["descripcion"],
-                data["Distribuidor_id"],
-                data["codigo"]
+                descripcion=data["descripcion"],
+                Distribuidor_id=data["Distribuidor_id"],
+                codigo=data["codigo"],
+                dui=data["dui"],
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -970,7 +971,8 @@ class MainWindow(QMainWindow):
                 data["codigo"],
                 data["nombre"],
                 data["descripcion"],
-                data["Distribuidor_id"]
+                data["Distribuidor_id"],
+                dui=data["dui"],
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -1009,7 +1011,7 @@ class MainWindow(QMainWindow):
             # Actualiza el Distribuidor en la base de datos
             self.manager.db.cursor.execute("""
                 UPDATE Distribuidores SET
-                    codigo=?, nombre=?, dui=?, telefono=?, email=?, cargo=?, sucursal=?,
+                    codigo=?, nombre=?, telefono=?, email=?, cargo=?, sucursal=?,
                     comision_base=?, fecha_inicio=?, direccion=?, departamento=?, municipio=?,
                     tipo_contrato=?, comisiones_especificas=?, metodo_pago=?, nit=?, nrc=?,
                     cuenta_bancaria=?, notas=?
@@ -1017,7 +1019,6 @@ class MainWindow(QMainWindow):
             """, (
                 data.get("codigo", ""),
                 data.get("nombre", ""),
-                data.get("dui", ""),
                 data.get("telefono", ""),
                 data.get("email", ""),
                 data.get("cargo", ""),
@@ -1062,7 +1063,6 @@ class MainWindow(QMainWindow):
         info = (
             f"<b>Código:</b> {Distribuidor['codigo'] if 'codigo' in Distribuidor.keys() else ''}<br>"
             f"<b>Nombre:</b> {Distribuidor['nombre'] if 'nombre' in Distribuidor.keys() else ''}<br>"
-            f"<b>DUI:</b> {Distribuidor['dui'] if 'dui' in Distribuidor.keys() else ''}<br>"
             f"<b>Teléfono:</b> {Distribuidor['telefono'] if 'telefono' in Distribuidor.keys() else ''}<br>"
             f"<b>Email:</b> {Distribuidor['email'] if 'email' in Distribuidor.keys() else ''}<br>"
             f"<b>Cargo:</b> {Distribuidor['cargo'] if 'cargo' in Distribuidor.keys() else ''}<br>"

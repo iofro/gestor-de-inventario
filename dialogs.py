@@ -2275,7 +2275,6 @@ class DistribuidorDialog(QDialog):
         form1 = QFormLayout()
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
-        self.dui_edit = QLineEdit()
         self.telefono_edit = QLineEdit()
         self.email_edit = QLineEdit()
         self.cargo_edit = QLineEdit()
@@ -2285,7 +2284,6 @@ class DistribuidorDialog(QDialog):
 
         form1.addRow("Código:", self.codigo_edit)
         form1.addRow("Nombre completo:", self.nombre_edit)
-        form1.addRow("DUI:", self.dui_edit)
         form1.addRow("Teléfono:", self.telefono_edit)
         form1.addRow("Email:", self.email_edit)
         form1.addRow("Cargo:", self.cargo_edit)
@@ -2341,7 +2339,6 @@ class DistribuidorDialog(QDialog):
         if Distribuidor:
             self.codigo_edit.setText(Distribuidor["codigo"] if "codigo" in Distribuidor.keys() else "")
             self.nombre_edit.setText(Distribuidor["nombre"] if "nombre" in Distribuidor.keys() else "")
-            self.dui_edit.setText(Distribuidor["dui"] if "dui" in Distribuidor.keys() else "")
             self.telefono_edit.setText(Distribuidor["telefono"] if "telefono" in Distribuidor.keys() else "")
             self.email_edit.setText(Distribuidor["email"] if "email" in Distribuidor.keys() else "")
             self.cargo_edit.setText(Distribuidor["cargo"] if "cargo" in Distribuidor.keys() else "")
@@ -2363,7 +2360,6 @@ class DistribuidorDialog(QDialog):
         return {
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
-            "dui": self.dui_edit.text(),
             "telefono": self.telefono_edit.text(),
             "email": self.email_edit.text(),
             "cargo": self.cargo_edit.text(),
@@ -2503,6 +2499,7 @@ class VendedorDialog(QDialog):
 
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
+        self.dui_edit = QLineEdit()
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
@@ -2513,6 +2510,8 @@ class VendedorDialog(QDialog):
         layout.addWidget(self.codigo_edit)
         layout.addWidget(QLabel("Nombre:"))
         layout.addWidget(self.nombre_edit)
+        layout.addWidget(QLabel("DUI:"))
+        layout.addWidget(self.dui_edit)
         layout.addWidget(QLabel("Descripción:"))
         layout.addWidget(self.descripcion_edit)
         layout.addWidget(QLabel("Distribuidor:"))
@@ -2535,6 +2534,7 @@ class VendedorDialog(QDialog):
         if vendedor:
             self.codigo_edit.setText(vendedor.get("codigo", ""))
             self.nombre_edit.setText(vendedor.get("nombre", ""))
+            self.dui_edit.setText(vendedor.get("dui", ""))
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
             if Distribuidor_id:
@@ -2551,6 +2551,7 @@ class VendedorDialog(QDialog):
         return {
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
+            "dui": self.dui_edit.text(),
             "descripcion": self.descripcion_edit.text(),
             "Distribuidor_id": Distribuidor_id,
         }

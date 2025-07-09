@@ -18,7 +18,7 @@ def generar_factura_electronica_pdf(
     distribuidor,
     tipo_documento="Crédito Fiscal",
     archivo="factura_electronica.pdf",
-
+    datos_negocio=None,
 ):
     from datetime import datetime
 
@@ -97,13 +97,6 @@ def generar_factura_electronica_pdf(
         renderPDF.draw(d, c, cuadro_x + cuadro_w + 10, cuadro_y + 10)
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
-    datos_negocio = {}
-    if os.path.exists(DATOS_NEGOCIO_PATH):
-        try:
-            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
-                datos_negocio = json.load(f)
-        except Exception:
-            datos_negocio = {}
 
     box_w = (width - 2 * x_margin - 10) // 2
     box_h = 80

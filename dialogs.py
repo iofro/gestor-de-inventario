@@ -2504,6 +2504,7 @@ class VendedorDialog(QDialog):
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.descripcion_edit = QLineEdit()
+        self.dui_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
         self.Distribuidor_combo.addItem("Sin Distribuidor")
@@ -2515,6 +2516,8 @@ class VendedorDialog(QDialog):
         layout.addWidget(self.nombre_edit)
         layout.addWidget(QLabel("Descripción:"))
         layout.addWidget(self.descripcion_edit)
+        layout.addWidget(QLabel("DUI:"))
+        layout.addWidget(self.dui_edit)
         layout.addWidget(QLabel("Distribuidor:"))
         layout.addWidget(self.Distribuidor_combo)
 
@@ -2536,6 +2539,7 @@ class VendedorDialog(QDialog):
             self.codigo_edit.setText(vendedor.get("codigo", ""))
             self.nombre_edit.setText(vendedor.get("nombre", ""))
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
+            self.dui_edit.setText(vendedor.get("dui", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
             if Distribuidor_id:
                 for i, d in enumerate(self.Distribuidores):
@@ -2552,6 +2556,7 @@ class VendedorDialog(QDialog):
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
             "descripcion": self.descripcion_edit.text(),
+            "dui": self.dui_edit.text(),
             "Distribuidor_id": Distribuidor_id,
         }
 class CompraDetalleDialog(QDialog):

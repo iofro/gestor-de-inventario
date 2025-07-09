@@ -943,7 +943,8 @@ class MainWindow(QMainWindow):
                 data["nombre"],
                 data["descripcion"],
                 data["Distribuidor_id"],
-                data["codigo"]
+                data["codigo"],
+                data.get("dui")
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -970,7 +971,8 @@ class MainWindow(QMainWindow):
                 data["codigo"],
                 data["nombre"],
                 data["descripcion"],
-                data["Distribuidor_id"]
+                data["Distribuidor_id"],
+                data.get("dui")
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -1009,7 +1011,7 @@ class MainWindow(QMainWindow):
             # Actualiza el Distribuidor en la base de datos
             self.manager.db.cursor.execute("""
                 UPDATE Distribuidores SET
-                    codigo=?, nombre=?, dui=?, telefono=?, email=?, cargo=?, sucursal=?,
+                    codigo=?, nombre=?, telefono=?, email=?, cargo=?, sucursal=?,
                     comision_base=?, fecha_inicio=?, direccion=?, departamento=?, municipio=?,
                     tipo_contrato=?, comisiones_especificas=?, metodo_pago=?, nit=?, nrc=?,
                     cuenta_bancaria=?, notas=?
@@ -1017,7 +1019,6 @@ class MainWindow(QMainWindow):
             """, (
                 data.get("codigo", ""),
                 data.get("nombre", ""),
-                data.get("dui", ""),
                 data.get("telefono", ""),
                 data.get("email", ""),
                 data.get("cargo", ""),

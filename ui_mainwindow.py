@@ -941,10 +941,11 @@ class MainWindow(QMainWindow):
             data = dialog.get_data()
             self.manager.db.add_vendedor(
                 data["nombre"],
-                data["descripcion"],
-                data["Distribuidor_id"],
-                data["codigo"],
-                data.get("dui")
+                descripcion=data["descripcion"],
+                Distribuidor_id=data["Distribuidor_id"],
+                codigo=data["codigo"],
+                dui=data["dui"],
+
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -972,7 +973,8 @@ class MainWindow(QMainWindow):
                 data["nombre"],
                 data["descripcion"],
                 data["Distribuidor_id"],
-                data.get("dui")
+                dui=data["dui"],
+
             )
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -1063,7 +1065,6 @@ class MainWindow(QMainWindow):
         info = (
             f"<b>Código:</b> {Distribuidor['codigo'] if 'codigo' in Distribuidor.keys() else ''}<br>"
             f"<b>Nombre:</b> {Distribuidor['nombre'] if 'nombre' in Distribuidor.keys() else ''}<br>"
-            f"<b>DUI:</b> {Distribuidor['dui'] if 'dui' in Distribuidor.keys() else ''}<br>"
             f"<b>Teléfono:</b> {Distribuidor['telefono'] if 'telefono' in Distribuidor.keys() else ''}<br>"
             f"<b>Email:</b> {Distribuidor['email'] if 'email' in Distribuidor.keys() else ''}<br>"
             f"<b>Cargo:</b> {Distribuidor['cargo'] if 'cargo' in Distribuidor.keys() else ''}<br>"

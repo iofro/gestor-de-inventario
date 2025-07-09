@@ -112,27 +112,29 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica-Bold", 8)
     c.drawString(emisor_x + 5, text_y, "EMISOR:")
     c.setFont("Helvetica", 8)
-    c.drawString(emisor_x + 60, text_y, datos_negocio.get("razon_social", ""))
+    text_y -= 12
+    c.drawString(emisor_x + 5, text_y, f"Nombre: {datos_negocio.get('razon_social', '')}")
     text_y -= 12
     c.drawString(emisor_x + 5, text_y, f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}")
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, datos_negocio.get("giro", ""))
+    c.drawString(emisor_x + 5, text_y, f"Giro: {datos_negocio.get('giro', '')}")
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, datos_negocio.get("direccion", ""))
+    c.drawString(emisor_x + 5, text_y, f"Dirección: {datos_negocio.get('direccion', '')}")
 
     text_y = box_y + box_h - 14
     c.setFont("Helvetica-Bold", 8)
     c.drawString(receptor_x + 5, text_y, "RECEPTOR:")
     c.setFont("Helvetica", 8)
-    c.drawString(receptor_x + 60, text_y, cliente.get("nombre", ""))
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, f"Nombre: {cliente.get('nombre', '')}")
     text_y -= 12
     c.drawString(receptor_x + 5, text_y, f"DUI: {cliente.get('dui', '')}")
     text_y -= 12
     c.drawString(receptor_x + 5, text_y, f"NIT: {cliente.get('nit', '')}  NRC: {cliente.get('nrc', '')}")
     text_y -= 12
-    c.drawString(receptor_x + 5, text_y, cliente.get("giro", ""))
+    c.drawString(receptor_x + 5, text_y, f"Giro: {cliente.get('giro', '')}")
     text_y -= 12
-    c.drawString(receptor_x + 5, text_y, cliente.get("direccion", ""))
+    c.drawString(receptor_x + 5, text_y, f"Dirección: {cliente.get('direccion', '')}")
 
     # Ajusta la posición del cuadro de información general para dejar espacio
     cuadro_info_y = box_y - 20

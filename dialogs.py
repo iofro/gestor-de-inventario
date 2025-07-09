@@ -2942,15 +2942,41 @@ class ManualInvoiceDialog(QDialog):
         # --- Consumidor final ---
         cf_widget = QWidget()
         cf_form = QFormLayout(cf_widget)
-        self.cf_nombre = QLineEdit()
-        self.cf_direccion = QLineEdit()
+
+        self.cf_codigo_generacion = QLineEdit()
+        self.cf_numero_control = QLineEdit()
+        self.cf_sello = QLineEdit()
+        self.cf_condicion_pago = QLineEdit()
+        self.cf_no_remision = QLineEdit()
+        self.cf_orden_no = QLineEdit()
+        self.cf_vendedor = QLineEdit()
+        self.cf_venta_cuenta = QLineEdit()
         self.cf_fecha = QDateEdit(QDate.currentDate())
         self.cf_fecha.setCalendarPopup(True)
+        self.cf_nombre = QLineEdit()
+        self.cf_direccion = QLineEdit()
+        self.cf_total_letras = QLineEdit()
         self.cf_observaciones = QTextEdit()
-        cf_form.addRow("Nombre:", self.cf_nombre)
-        cf_form.addRow("Dirección:", self.cf_direccion)
-        cf_form.addRow("Fecha:", self.cf_fecha)
-        cf_form.addRow("Observaciones:", self.cf_observaciones)
+
+        cf_fields = [
+            ("Código generación:", self.cf_codigo_generacion),
+            ("Número control:", self.cf_numero_control),
+            ("Sello recepción:", self.cf_sello),
+            ("Condición de pago:", self.cf_condicion_pago),
+            ("No remisión:", self.cf_no_remision),
+            ("Orden No:", self.cf_orden_no),
+            ("Vendedor:", self.cf_vendedor),
+            ("Venta a cuenta de:", self.cf_venta_cuenta),
+            ("Fecha:", self.cf_fecha),
+            ("Nombre:", self.cf_nombre),
+            ("Dirección:", self.cf_direccion),
+            ("Total en letras:", self.cf_total_letras),
+            ("Observaciones:", self.cf_observaciones),
+        ]
+
+        for lbl, w in cf_fields:
+            cf_form.addRow(lbl, w)
+
         self.stack.addWidget(cf_widget)
 
         # --- Crédito fiscal ---
@@ -3015,12 +3041,21 @@ class ManualInvoiceDialog(QDialog):
         if self.type_combo.currentIndex() == 0:
             return {
                 "tipo": "consumidor",
+                "codigo_generacion": self.cf_codigo_generacion.text(),
+                "numero_control": self.cf_numero_control.text(),
+                "sello_recepcion": self.cf_sello.text(),
+                "condicion_pago": self.cf_condicion_pago.text(),
+                "no_remision": self.cf_no_remision.text(),
+                "orden_no": self.cf_orden_no.text(),
+                "vendedor_nombre": self.cf_vendedor.text(),
+                "venta_a_cuenta_de": self.cf_venta_cuenta.text(),
                 "fecha": self.cf_fecha.date().toString("yyyy-MM-dd"),
+                "total_letras": self.cf_total_letras.text(),
+                "observaciones": self.cf_observaciones.toPlainText(),
                 "cliente": {
                     "nombre": self.cf_nombre.text(),
                     "direccion": self.cf_direccion.text(),
                 },
-                "observaciones": self.cf_observaciones.toPlainText(),
                 "detalles": [],
             }
         else:

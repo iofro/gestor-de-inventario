@@ -15,6 +15,7 @@ from dialogs import (
     ProductDialog,
     RegisterPurchaseDialog,
     DistribuidorDialog,
+    DistribuidorInfoDialog,
     ClienteDialog,
     EstadoCuentaDialog,
 )
@@ -1061,28 +1062,8 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Información de Distribuidor", "No se encontró el Distribuidor seleccionado.")
             return
 
-        # Construye el texto con toda la información relevante
-        info = (
-            f"<b>Código:</b> {Distribuidor['codigo'] if 'codigo' in Distribuidor.keys() else ''}<br>"
-            f"<b>Nombre:</b> {Distribuidor['nombre'] if 'nombre' in Distribuidor.keys() else ''}<br>"
-            f"<b>Teléfono:</b> {Distribuidor['telefono'] if 'telefono' in Distribuidor.keys() else ''}<br>"
-            f"<b>Email:</b> {Distribuidor['email'] if 'email' in Distribuidor.keys() else ''}<br>"
-            f"<b>Cargo:</b> {Distribuidor['cargo'] if 'cargo' in Distribuidor.keys() else ''}<br>"
-            f"<b>Sucursal/Laboratorio:</b> {Distribuidor['sucursal'] if 'sucursal' in Distribuidor.keys() else ''}<br>"
-            f"<b>Comisión base:</b> {Distribuidor['comision_base'] if 'comision_base' in Distribuidor.keys() else ''}<br>"
-            f"<b>Fecha de inicio:</b> {Distribuidor['fecha_inicio'] if 'fecha_inicio' in Distribuidor.keys() else ''}<br>"
-            f"<b>Dirección:</b> {Distribuidor['direccion'] if 'direccion' in Distribuidor.keys() else ''}<br>"
-            f"<b>Departamento:</b> {Distribuidor['departamento'] if 'departamento' in Distribuidor.keys() else ''}<br>"
-            f"<b>Municipio:</b> {Distribuidor['municipio'] if 'municipio' in Distribuidor.keys() else ''}<br>"
-            f"<b>Tipo de contrato:</b> {Distribuidor['tipo_contrato'] if 'tipo_contrato' in Distribuidor.keys() else ''}<br>"
-            f"<b>Comisiones específicas:</b> {Distribuidor['comisiones_especificas'] if 'comisiones_especificas' in Distribuidor.keys() else ''}<br>"
-            f"<b>Método/periodicidad pago:</b> {Distribuidor['metodo_pago'] if 'metodo_pago' in Distribuidor.keys() else ''}<br>"
-            f"<b>NIT:</b> {Distribuidor['nit'] if 'nit' in Distribuidor.keys() else ''}<br>"
-            f"<b>NRC:</b> {Distribuidor['nrc'] if 'nrc' in Distribuidor.keys() else ''}<br>"
-            f"<b>Cuenta bancaria:</b> {Distribuidor['cuenta_bancaria'] if 'cuenta_bancaria' in Distribuidor.keys() else ''}<br>"
-            f"<b>Notas:</b> {Distribuidor['notas'] if 'notas' in Distribuidor.keys() else ''}"
-        )
-        QMessageBox.information(self, "Información de Distribuidor", info)
+        dialog = DistribuidorInfoDialog(Distribuidor, self)
+        dialog.exec_()
 
     def _actualizar_tabla_clientes(self):
         search = self.cliente_search.text()

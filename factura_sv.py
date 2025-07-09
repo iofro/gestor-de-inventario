@@ -6,7 +6,14 @@ from reportlab.graphics.barcode import qr
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 
-def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, archivo="factura_electronica.pdf"):
+def generar_factura_electronica_pdf(
+    venta,
+    detalles,
+    cliente,
+    distribuidor,
+    tipo_documento="Crédito Fiscal",
+    archivo="factura_electronica.pdf",
+):
     from datetime import datetime
 
     c = canvas.Canvas(archivo, pagesize=letter)
@@ -34,7 +41,7 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     c.setFont("Helvetica-Bold", 11)
     c.drawString(doc_x, doc_y, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(doc_x, doc_y - 18, "COMPROBANTE DE CRÉDITO FISCAL")
+    c.drawString(doc_x, doc_y - 18, str(tipo_documento))
     c.setFont("Helvetica", 7)
     c.drawRightString(width - x_margin, doc_y, f"Ver. {venta.get('version', '3')}")
 

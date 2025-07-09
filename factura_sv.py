@@ -10,8 +10,23 @@ import os
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
-def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, archivo="factura_electronica.pdf"):
+
+def generar_factura_electronica_pdf(
+    venta,
+    detalles,
+    cliente,
+    distribuidor,
+    tipo_documento="Crédito Fiscal",
+    archivo="factura_electronica.pdf",
+
+):
     from datetime import datetime
+
+    if datos_negocio is None:
+        datos_negocio = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                datos_negocio = json.load(f)
 
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
@@ -22,15 +37,20 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     encabezado_y = height - y_margin
     encabezado_x = x_margin
     c.setFont("Helvetica-Bold", 14)
-    c.drawString(encabezado_x, encabezado_y, "FARMACIA SANTA CATALINA")
+    c.drawString(encabezado_x, encabezado_y, datos_negocio.get("nombre_comercial", ""))
     c.setFont("Helvetica-Bold", 10)
-    c.drawString(encabezado_x, encabezado_y - 16, "KAROL YAMILETH CRUZ ESCOBAR")
+    c.drawString(encabezado_x, encabezado_y - 16, datos_negocio.get("razon_social", ""))
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(encabezado_x, encabezado_y - 30, "VENTA DE PRODUCTOS FARMACÉUTICOS Y MEDICINALES")
-    c.drawString(encabezado_x, encabezado_y - 42, "SERVICIOS MÉDICOS")
+    c.drawString(encabezado_x, encabezado_y - 30, datos_negocio.get("giro", ""))
+    c.drawString(encabezado_x, encabezado_y - 42, datos_negocio.get("slogan", ""))
     c.setFont("Helvetica", 8)
-    c.drawString(encabezado_x, encabezado_y - 56, "LOCAL. 3. #4-6 B, PASEO CONCEPCIÓN, SANTA TECLA,")
-    c.drawString(encabezado_x, encabezado_y - 66, "LA LIBERTAD, EL SALVADOR, C.A.")
+    c.drawString(encabezado_x, encabezado_y - 56, datos_negocio.get("direccion", ""))
+    c.drawString(
+        encabezado_x,
+        encabezado_y - 66,
+        f"{datos_negocio.get('municipio', '')} {datos_negocio.get('departamento', '')}{datos_negocio.get('pais', '')}"
+        .strip()
+    )
 
     # --- ENCABEZADO SUPERIOR DERECHA: TIPO DE DOCUMENTO ---
     doc_x = width - x_margin - 260
@@ -38,7 +58,7 @@ def generar_factura_electronica_pdf(venta, detalles, cliente, distribuidor, arch
     c.setFont("Helvetica-Bold", 11)
     c.drawString(doc_x, doc_y, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(doc_x, doc_y - 18, "COMPROBANTE DE CRÉDITO FISCAL")
+    c.drawString(doc_x, doc_y - 18, str(tipo_documento))
     c.setFont("Helvetica", 7)
     c.drawRightString(width - x_margin, doc_y, f"Ver. {venta.get('version', '3')}")
 

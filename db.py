@@ -46,7 +46,6 @@ class DB:
                 dui TEXT,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
-                dui TEXT,
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id)
             )
         """)
@@ -278,11 +277,6 @@ class DB:
         # Asegura que la columna descripcion exista en vendedores
         try:
             self.cursor.execute("ALTER TABLE vendedores ADD COLUMN descripcion TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN dui TEXT")
             self.conn.commit()
         except Exception:
             pass  # Ya existe la columna

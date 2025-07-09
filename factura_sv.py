@@ -65,9 +65,9 @@ def generar_factura_electronica_pdf(
     # --- Cuadro superior derecho: Datos fiscales + QR + Fecha y hora de generación ---
     # --- Parámetros para alineación perfecta del cuadro derecho ---
     cuadro_w = 220
-    cuadro_h = 90
+    cuadro_h = 126
     invisible_col_sep = 0   # Mueve el cuadro un poco más a la derecha
-    cuadro_y_offset = 48     # Mueve el cuadro más arriba
+    cuadro_y_offset = 12     # Mueve el cuadro más arriba (ajustado por altura)
 
     doc_x = width - x_margin - 260  # Donde empieza "DOCUMENTO TRIBUTARIO ELECTRÓNICO"
     cuadro_x = doc_x + invisible_col_sep
@@ -79,7 +79,9 @@ def generar_factura_electronica_pdf(
     c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 18, f"Código de Generación: {venta.get('codigo_generacion', '')}")
     c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 36, f"N° Control: {venta.get('numero_control', '')}")
     c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 54, f"Sello de Recepción: {venta.get('sello_recepcion', '')}")
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 72, f"Fecha y hora de generación: {venta.get('fecha', '')}")
+    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 72, f"Modelo de Facturación: {venta.get('modelo_facturacion', '')}")
+    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 90, f"Tipo de Transmisión: {venta.get('tipo_transmision', '')}")
+    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 108, f"Fecha y hora de generación: {venta.get('fecha', '')}")
 
     # QR a la derecha del cuadro (ajusta la posición si es necesario)
     qr_data = venta.get('qr', '')

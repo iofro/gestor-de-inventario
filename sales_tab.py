@@ -488,11 +488,13 @@ class SalesTab(QWidget):
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp_pdf:
             pdf_path = tmp_pdf.name
 
+        tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
         generar_factura_electronica_pdf(
             venta_data,
             detalles,
             cliente or {},
             distribuidor or {},
+            tipo_doc,
             archivo=pdf_path,
         )
 
@@ -621,13 +623,14 @@ class SalesTab(QWidget):
             )
 
         cliente_nombre = cliente.get("nombre", "cliente") if cliente else "cliente"
-        tipo = "credito fiscal" if credito_info else "consumidor final"
-        filename = f"{cliente_nombre} {venta_id} {tipo}.pdf"
+        tipo = "Crédito Fiscal" if credito_info else "Consumidor Final"
+        filename = f"{cliente_nombre} {venta_id} {tipo.lower()}.pdf"
         generar_factura_electronica_pdf(
             venta_data,
             detalles,
             cliente or {},
             distribuidor or {},
+            tipo,
             archivo=filename,
         )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
@@ -708,13 +711,15 @@ class SalesTab(QWidget):
             )
 
         with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-
             temp_file = tmp.name
+
+        tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
         generar_factura_electronica_pdf(
             venta_data,
             detalles,
             cliente or {},
             distribuidor or {},
+            tipo_doc,
             archivo=temp_file,
         )
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
@@ -826,7 +831,14 @@ class SalesTab(QWidget):
             cliente = data.get("cliente", {})
             with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
                 temp_file = tmp.name
-            generar_factura_electronica_pdf(venta, detalles, cliente, {}, archivo=temp_file)
+            generar_factura_electronica_pdf(
+                venta,
+                detalles,
+                cliente,
+                {},
+                tipo.title(),
+                archivo=temp_file,
+            )
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
 
 

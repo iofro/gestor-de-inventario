@@ -193,15 +193,28 @@ class InventoryManager:
                     extra = json.loads(extra)
                 except Exception:
                     pass
-            new_id = self.db.add_venta(
-                v.get("fecha", ""),
-                v.get("total", 0),
-                cliente_id=cliente_id,
-                Distribuidor_id=Distribuidor_id,
-                vendedor_id=vendedor_id,
-                extra=extra,
+            extra_json = json.dumps(extra) if extra is not None else None
+
+            self.db.cursor.execute(
+                "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (
+                    v.get("id"),
+                    v.get("fecha", ""),
+                    v.get("total", 0),
+                    cliente_id,
+                    Distribuidor_id,
+                    vendedor_id,
+                    extra_json,
+                ),
             )
-            venta_id_map[v["id"]] = new_id
+            venta_id_map[v["id"]] = v.get("id")
+
+        # ensure AUTOINCREMENT counters are updated
+        max_venta_id = self.db.cursor.execute("SELECT MAX(id) FROM ventas").fetchone()[0] or 0
+        self.db.cursor.execute(
+            "UPDATE sqlite_sequence SET seq=? WHERE name='ventas'", (max_venta_id,)
+        )
 
         # Compras
         for c in data.get("compras", []):

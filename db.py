@@ -21,7 +21,6 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo TEXT,
                 nombre TEXT NOT NULL,
-                dui TEXT,
                 telefono TEXT,
                 email TEXT,
                 cargo TEXT,
@@ -46,6 +45,7 @@ class DB:
                 nombre TEXT NOT NULL,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
+                dui TEXT,
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id)
             )
         """)
@@ -291,6 +291,11 @@ class DB:
         except Exception:
             pass  # Ya existe la columna
         try:
+            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN dui TEXT")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
+        try:
             self.cursor.execute("ALTER TABLE trabajadores ADD COLUMN codigo TEXT")
             self.conn.commit()
         except Exception:
@@ -434,12 +439,12 @@ class DB:
             logger.exception("Error al eliminar Distribuidor: %s", e)
 
     # CRUD VENDEDORES (antes vendedores)
-    def add_vendedor(self, nombre, descripcion="", Distribuidor_id=None, codigo=None):
+    def add_vendedor(self, nombre, descripcion="", Distribuidor_id=None, codigo=None, dui=None):
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
         self.cursor.execute(
-            "INSERT INTO vendedores (codigo, nombre, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?)",
-            (codigo, nombre, descripcion, Distribuidor_id),
+            "INSERT INTO vendedores (codigo, nombre, descripcion, Distribuidor_id, dui) VALUES (?, ?, ?, ?, ?)",
+            (codigo, nombre, descripcion, Distribuidor_id, dui),
         )
         self.conn.commit()
 
@@ -447,11 +452,11 @@ class DB:
         self.cursor.execute("SELECT * FROM vendedores")
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id):
+    def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id, dui=None):
         try:
             self.cursor.execute(
-                "UPDATE vendedores SET codigo=?, nombre=?, descripcion=?, Distribuidor_id=? WHERE id=?",
-                (codigo, nombre, descripcion, Distribuidor_id, id),
+                "UPDATE vendedores SET codigo=?, nombre=?, descripcion=?, Distribuidor_id=?, dui=? WHERE id=?",
+                (codigo, nombre, descripcion, Distribuidor_id, dui, id),
             )
             self.conn.commit()
         except Exception as e:
@@ -962,15 +967,14 @@ class DB:
     def add_Distribuidor_detallado(self, data):
         self.cursor.execute("""
             INSERT INTO Distribuidores (
-                codigo, nombre, dui, telefono, email, cargo, sucursal,
+                codigo, nombre, telefono, email, cargo, sucursal,
                 fecha_inicio, direccion, departamento, municipio,
                 tipo_contrato, comisiones_especificas, metodo_pago, nit, nrc,
                 cuenta_bancaria, notas
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data.get("codigo", ""),
             data.get("nombre", ""),
-            data.get("dui", ""),
             data.get("telefono", ""),
             data.get("email", ""),
             data.get("cargo", ""),

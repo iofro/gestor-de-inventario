@@ -126,6 +126,8 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica", 8)
     c.drawString(receptor_x + 60, text_y, cliente.get("nombre", ""))
     text_y -= 12
+    c.drawString(receptor_x + 5, text_y, f"DUI: {cliente.get('dui', '')}")
+    text_y -= 12
     c.drawString(receptor_x + 5, text_y, f"NIT: {cliente.get('nit', '')}  NRC: {cliente.get('nrc', '')}")
     text_y -= 12
     c.drawString(receptor_x + 5, text_y, cliente.get("giro", ""))
@@ -159,17 +161,21 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica", 8)
     c.drawString(col1_x + 50, row_y - 14, cliente.get("direccion", ""))
     c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 28, "NIT:")
+    c.drawString(col1_x, row_y - 28, "DUI:")
     c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y - 28, cliente.get("nit", ""))
+    c.drawString(col1_x + 50, row_y - 28, cliente.get("dui", ""))
     c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 42, "NRC:")
+    c.drawString(col1_x, row_y - 42, "NIT:")
     c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y - 42, cliente.get("nrc", ""))
+    c.drawString(col1_x + 50, row_y - 42, cliente.get("nit", ""))
     c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 56, "Giro:")
+    c.drawString(col1_x, row_y - 56, "NRC:")
     c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 30, row_y - 56, cliente.get("giro", ""))
+    c.drawString(col1_x + 50, row_y - 56, cliente.get("nrc", ""))
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(col1_x, row_y - 70, "Giro:")
+    c.setFont("Helvetica", 8)
+    c.drawString(col1_x + 30, row_y - 70, cliente.get("giro", ""))
 
     # --- Columna central ---
     c.setFont("Helvetica-Bold", 8)

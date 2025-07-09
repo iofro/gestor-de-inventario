@@ -5,8 +5,11 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
-import os
 import json
+import os
+
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
 
 def generar_factura_electronica_pdf(
     venta,
@@ -91,23 +94,54 @@ def generar_factura_electronica_pdf(
         d.scale(qr_size / width_qr, qr_size / height_qr)
         renderPDF.draw(d, c, cuadro_x + cuadro_w + 10, cuadro_y + 10)
 
-    # --- Datos del EMISOR (izquierda) --- (OCULTOS, NO SE DIBUJAN, SOLO SE DEJAN EN EL CÓDIGO)
-    # emisor_y = cuadro_y - 40
-    # c.setFont("Helvetica-Bold", 9)
-    # c.drawString(x_margin, emisor_y, "EMISOR:")
-    # c.setFont("Helvetica", 9)
-    # c.drawString(x_margin, emisor_y - 18, f"Nombre/Razón social: {distribuidor.get('nombre', '')}")
-    # c.drawString(x_margin, emisor_y - 36, f"NIT: {distribuidor.get('nit', '')}  NRC: {distribuidor.get('nrc', '')}")
-    # c.drawString(x_margin, emisor_y - 54, f"Actividad económica: {distribuidor.get('giro', '')}")
-    # c.drawString(x_margin, emisor_y - 72, f"Dirección: {distribuidor.get('direccion', '')}")
-    # c.drawString(x_margin, emisor_y - 90, f"Teléfono: {distribuidor.get('telefono', '')}")
-    # c.drawString(x_margin, emisor_y - 108, f"Correo electrónico: {distribuidor.get('email', '')}")
-    # c.drawString(x_margin, emisor_y - 126, f"Nombre comercial: {distribuidor.get('nombre_comercial', '')}")
-    # c.drawString(x_margin, emisor_y - 144, f"Tipo de establecimiento: {distribuidor.get('tipo_establecimiento', '')}")
+    # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
+    datos_negocio = {}
+    if os.path.exists(DATOS_NEGOCIO_PATH):
+        try:
+            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                datos_negocio = json.load(f)
+        except Exception:
+            datos_negocio = {}
+
+    box_w = (width - 2 * x_margin - 10) // 2
+    box_h = 80
+    box_y = cuadro_y - box_h - 10
+    emisor_x = x_margin
+    receptor_x = emisor_x + box_w + 10
+
+    c.setLineWidth(0.7)
+    c.roundRect(emisor_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.roundRect(receptor_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
+
+    text_y = box_y + box_h - 14
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(emisor_x + 5, text_y, "EMISOR:")
+    c.setFont("Helvetica", 8)
+    c.drawString(emisor_x + 60, text_y, datos_negocio.get("razon_social", ""))
+    text_y -= 12
+    c.drawString(emisor_x + 5, text_y, f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}")
+    text_y -= 12
+    c.drawString(emisor_x + 5, text_y, datos_negocio.get("giro", ""))
+    text_y -= 12
+    c.drawString(emisor_x + 5, text_y, datos_negocio.get("direccion", ""))
+
+    text_y = box_y + box_h - 14
+    c.setFont("Helvetica-Bold", 8)
+    c.drawString(receptor_x + 5, text_y, "RECEPTOR:")
+    c.setFont("Helvetica", 8)
+    c.drawString(receptor_x + 60, text_y, cliente.get("nombre", ""))
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, f"NIT: {cliente.get('nit', '')}  NRC: {cliente.get('nrc', '')}")
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, cliente.get("giro", ""))
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, cliente.get("direccion", ""))
+
+    # Ajusta la posición del cuadro de información general para dejar espacio
+    cuadro_info_y = box_y - 20
 
     # --- CUADRO DE INFORMACIÓN ANTES DE LA TABLA DE PRODUCTOS ---
     cuadro_info_x = x_margin
-    cuadro_info_y = cuadro_y - 25  # Ajusta según tu diseño
     cuadro_info_w = width - 2 * x_margin
     cuadro_info_h = 90
 

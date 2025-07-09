@@ -2377,6 +2377,45 @@ class DistribuidorDialog(QDialog):
             "notas": self.notas_edit.text()
         }
 
+class DistribuidorInfoDialog(QDialog):
+    def __init__(self, distribuidor, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Información de Distribuidor")
+        layout = QVBoxLayout()
+        form = QFormLayout()
+
+        fields = [
+            ("Código:", distribuidor.get("codigo", "")),
+            ("Nombre:", distribuidor.get("nombre", "")),
+            ("Teléfono:", distribuidor.get("telefono", "")),
+            ("Email:", distribuidor.get("email", "")),
+            ("Cargo:", distribuidor.get("cargo", "")),
+            ("Sucursal/Laboratorio:", distribuidor.get("sucursal", "")),
+            ("Comisión base:", str(distribuidor.get("comision_base", ""))),
+            ("Fecha de inicio:", distribuidor.get("fecha_inicio", "")),
+            ("Dirección:", distribuidor.get("direccion", "")),
+            ("Departamento:", distribuidor.get("departamento", "")),
+            ("Municipio:", distribuidor.get("municipio", "")),
+            ("Tipo de contrato:", distribuidor.get("tipo_contrato", "")),
+            ("Comisiones específicas:", distribuidor.get("comisiones_especificas", "")),
+            ("Método/periodicidad pago:", distribuidor.get("metodo_pago", "")),
+            ("NIT:", distribuidor.get("nit", "")),
+            ("NRC:", distribuidor.get("nrc", "")),
+            ("Cuenta bancaria:", distribuidor.get("cuenta_bancaria", "")),
+            ("Notas:", distribuidor.get("notas", "")),
+        ]
+
+        for label, value in fields:
+            line = QLineEdit(value)
+            line.setReadOnly(True)
+            form.addRow(label, line)
+
+        layout.addLayout(form)
+        close_btn = QPushButton("Cerrar")
+        close_btn.clicked.connect(self.accept)
+        layout.addWidget(close_btn, alignment=Qt.AlignRight)
+        self.setLayout(layout)
+
 class ClienteDialog(QDialog):
     def __init__(self, parent=None, cliente=None, codigo_sugerido=None):
         super().__init__(parent)

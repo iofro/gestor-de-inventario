@@ -43,6 +43,7 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo TEXT UNIQUE,
                 nombre TEXT NOT NULL,
+                dui TEXT,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
                 dui TEXT,
@@ -281,6 +282,11 @@ class DB:
         except Exception:
             pass  # Ya existe la columna
         try:
+            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN dui TEXT")
+            self.conn.commit()
+        except Exception:
+            pass  # Ya existe la columna
+        try:
             self.cursor.execute("ALTER TABLE vendedores ADD COLUMN codigo TEXT")
             self.conn.commit()
         except Exception:
@@ -443,8 +449,9 @@ class DB:
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
         self.cursor.execute(
-            "INSERT INTO vendedores (codigo, nombre, descripcion, Distribuidor_id, dui) VALUES (?, ?, ?, ?, ?)",
-            (codigo, nombre, descripcion, Distribuidor_id, dui),
+            "INSERT INTO vendedores (codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?)",
+            (codigo, nombre, dui, descripcion, Distribuidor_id),
+
         )
         self.conn.commit()
 
@@ -455,8 +462,9 @@ class DB:
     def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id, dui=None):
         try:
             self.cursor.execute(
-                "UPDATE vendedores SET codigo=?, nombre=?, descripcion=?, Distribuidor_id=?, dui=? WHERE id=?",
-                (codigo, nombre, descripcion, Distribuidor_id, dui, id),
+                "UPDATE vendedores SET codigo=?, nombre=?, dui=?, descripcion=?, Distribuidor_id=? WHERE id=?",
+                (codigo, nombre, dui, descripcion, Distribuidor_id, id),
+
             )
             self.conn.commit()
         except Exception as e:
@@ -971,7 +979,8 @@ class DB:
                 fecha_inicio, direccion, departamento, municipio,
                 tipo_contrato, comisiones_especificas, metodo_pago, nit, nrc,
                 cuenta_bancaria, notas
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+
         """, (
             data.get("codigo", ""),
             data.get("nombre", ""),

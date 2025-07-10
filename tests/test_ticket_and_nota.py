@@ -1,6 +1,6 @@
 from db import DB
-from ticket_pdf import generar_ticket_pdf, generar_ticket_formato_nicolas
-import os
+from ticket_pdf import generar_ticket_pdf
+import fitz
 
 
 def test_add_nota_and_retrieve(tmp_path):
@@ -23,10 +23,14 @@ def test_generar_ticket_pdf(tmp_path):
     assert archivo.stat().st_size > 0
 
 
-def test_generar_ticket_formato_nicolas(tmp_path):
+
+def test_generar_ticket_pdf_header(tmp_path):
     venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
     detalles = [{"descripcion": "Prod", "cantidad": 1, "precio_unitario": 10}]
-    archivo = tmp_path / "ticket_nicolas.pdf"
-    generar_ticket_formato_nicolas(venta, detalles, str(archivo))
+    datos = {"nombre_comercial": "MI NEGOCIO"}
+    archivo = tmp_path / "ticket.pdf"
+    generar_ticket_pdf(venta, detalles, str(archivo), datos_negocio=datos)
     assert archivo.exists()
-    assert archivo.stat().st_size > 0
+    with fitz.open(archivo) as doc:
+        text = "".join(p.get_text() for p in doc)
+    assert "MI NEGOCIO" in text

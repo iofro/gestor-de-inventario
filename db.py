@@ -131,6 +131,7 @@ class DB:
                 monto REAL,
                 motivo TEXT,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id)
+
             )
         """)
         self.cursor.execute("""
@@ -1212,5 +1213,52 @@ class DB:
         self.cursor.execute(
             "UPDATE productos SET stock=? WHERE id=?",
             (total, producto_id)
+        )        self.conn.commit()
+
+    # --- NOTAS DE CRÉDITO Y DÉBITO ---
+    def agregar_nota(self, tipo, venta_id, fecha, monto, motivo, detalles=None):
+        """Registra una nota de crédito o débito asociada a una venta."""
+        if tipo not in ("credito", "debito"):
+            raise ValueError("tipo debe ser 'credito' o 'debito'")
+
+        self.cursor.execute("SELECT id FROM ventas WHERE id=?", (venta_id,))
+        if self.cursor.fetchone() is None:
+            raise ValueError("La venta indicada no existe")
+
+        detalles_json = json.dumps(detalles) if detalles is not None else None
+        self.cursor.execute(
+            """
+            INSERT INTO notas (tipo, venta_id, fecha, monto, motivo, detalles)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (tipo, venta_id, fecha, monto, motivo, detalles_json),
         )
         self.conn.commit()
+        return self.cursor.lastrowid
+
+    def obtener_notas_por_venta(self, venta_id):
+        """Devuelve todas las notas registradas para una venta."""
+        self.cursor.execute(
+            "SELECT * FROM notas WHERE venta_id=? ORDER BY fecha",
+            (venta_id,),
+        )
+        rows = [dict(row) for row in self.cursor.fetchall()]
+        for r in rows:
+            if r.get("detalles"):
+                try:
+                    r["detalles"] = json.loads(r["detalles"])
+                except Exception:
+                    pass
+        return rows
+
+    def obtener_notas(self):
+        """Devuelve todas las notas registradas en el sistema."""
+        self.cursor.execute("SELECT * FROM notas ORDER BY fecha")
+        rows = [dict(row) for row in self.cursor.fetchall()]
+        for r in rows:
+            if r.get("detalles"):
+                try:
+                    r["detalles"] = json.loads(r["detalles"])
+                except Exception:
+                    pass
+        return rows

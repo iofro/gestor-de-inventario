@@ -51,14 +51,14 @@ def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None
     c.save()
 
 
-def generar_ticket_formato_nicolas(
+def generar_ticket_personalizado(
     venta,
     detalles,
     archivo="ticket_nicolas.pdf",
     datos_negocio=None,
     logo_path=None,
 ):
-    """Genera un ticket con el formato especial de la Farmacia Nicolás."""
+    """Genera un ticket con un formato personalizado."""
 
     if datos_negocio is None:
         datos_negocio = {}

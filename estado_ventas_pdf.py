@@ -3,13 +3,17 @@ from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 from datetime import datetime
+import json
+import os
+
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 
-def _draw_header(c, width, height, vendedor, fecha_inicio, fecha_fin):
+def _draw_header(c, width, height, vendedor, fecha_inicio, fecha_fin, datos_negocio):
     """Dibuja el encabezado principal y retorna la coordenada y inicial."""
     y = height - 40
     c.setFont("Helvetica-Bold", 14)
-    c.drawCentredString(width / 2, y, "FARMACIA SANTA CATALINA")
+    c.drawCentredString(width / 2, y, datos_negocio.get("nombre_comercial", ""))
     y -= 16
     c.setFont("Helvetica-Bold", 10)
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
@@ -30,13 +34,29 @@ def _draw_footer(c, width, page_number):
     c.drawRightString(width - 40, 30, f"Página {page_number}")
 
 
-def generar_estado_ventas_pdf(vendedor, fecha_inicio, fecha_fin, ventas_por_cliente, archivo):
+def generar_estado_ventas_pdf(
+    vendedor,
+    fecha_inicio,
+    fecha_fin,
+    ventas_por_cliente,
+    archivo,
+    datos_negocio=None,
+):
     """Genera un reporte de ventas por vendedor en formato PDF."""
+    if datos_negocio is None:
+        datos_negocio = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                datos_negocio = {}
+
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
 
     page = 1
-    y = _draw_header(c, width, height, vendedor, fecha_inicio, fecha_fin)
+    y = _draw_header(c, width, height, vendedor, fecha_inicio, fecha_fin, datos_negocio)
 
     margin_bottom = 50
     row_height = 14
@@ -53,7 +73,15 @@ def generar_estado_ventas_pdf(vendedor, fecha_inicio, fecha_fin, ventas_por_clie
             _draw_footer(c, width, page)
             c.showPage()
             page += 1
-            y = _draw_header(c, width, height, vendedor, fecha_inicio, fecha_fin)
+            y = _draw_header(
+                c,
+                width,
+                height,
+                vendedor,
+                fecha_inicio,
+                fecha_fin,
+                datos_negocio,
+            )
 
         c.setFont("Helvetica-Bold", 9)
         c.drawString(40, y, f"CLIENTE: {nombre_cli} - {dui_cli}")

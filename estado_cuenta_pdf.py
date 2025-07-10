@@ -11,9 +11,20 @@ from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from datetime import datetime
+import json
+import os
+
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 
-def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archivo="reporte_vendedor.pdf"):
+def generar_reporte_vendedor_pdf(
+    db,
+    vendedor_id,
+    fecha_inicio,
+    fecha_fin,
+    archivo="reporte_vendedor.pdf",
+    datos_negocio=None,
+):
     """Genera un PDF con el detalle de ventas por vendedor."""
     vendedor = db.get_trabajador(vendedor_id)
     if not vendedor:
@@ -32,12 +43,21 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
             d["cliente_id"] = cid
             grouped.setdefault(cid, []).append(d)
 
+    if datos_negocio is None:
+        datos_negocio = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                datos_negocio = {}
+
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
     y = height - 40
 
     c.setFont("Courier-Bold", 12)
-    c.drawCentredString(width / 2, y, "FARMACIA SANTA CATALINA")
+    c.drawCentredString(width / 2, y, datos_negocio.get("nombre_comercial", ""))
     y -= 14
     c.setFont("Courier", 10)
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
@@ -98,10 +118,25 @@ def generar_reporte_vendedor_pdf(db, vendedor_id, fecha_inicio, fecha_fin, archi
     c.save()
 
 
-def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", **kwargs):
+def generar_estado_cuenta_pdf(
+    db,
+    modo="cliente",
+    archivo="estado_cuenta.pdf",
+    datos_negocio=None,
+    **kwargs,
+):
     """Genera un PDF de estado de cuenta similar al ejemplo de ventas."""
     fecha_inicio = kwargs.get("fecha_inicio", "")
     fecha_fin = kwargs.get("fecha_fin", "")
+
+    if datos_negocio is None:
+        datos_negocio = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                datos_negocio = {}
 
     doc = SimpleDocTemplate(
         archivo,
@@ -146,7 +181,7 @@ def generar_estado_cuenta_pdf(db, modo="cliente", archivo="estado_cuenta.pdf", *
     )
 
     elements = [
-        Paragraph("FARMACIA SANTA CATALINA", style_title),
+        Paragraph(datos_negocio.get("nombre_comercial", ""), style_title),
         Paragraph(
             f"Estado de cuenta desde: {fecha_inicio} al {fecha_fin}", style_subtitle
         ),

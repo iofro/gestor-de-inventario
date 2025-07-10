@@ -11,6 +11,7 @@ from PyQt5.QtWidgets import (
     QDateEdit,
     QTextEdit,
     QMessageBox,
+    QFileDialog,
     QAbstractItemView,
 
     QHeaderView,
@@ -24,6 +25,7 @@ from PyQt5.QtCore import Qt, QDate, QUrl, QThread, pyqtSignal
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+from ticket_pdf import generar_ticket_pdf
 from dialogs import ManualInvoiceDialog
 import tempfile
 import subprocess
@@ -159,12 +161,15 @@ class SalesTab(QWidget):
         self.btn_enviar = QPushButton("Enviar por correo")
         self.btn_imprimir = QPushButton("Imprimir PDF")
         self.btn_editar = QPushButton("Editar factura")
+        self.btn_ticket = QPushButton("Ticket")
         btn_layout.addWidget(self.btn_guardar)
         btn_layout.addWidget(self.btn_enviar)
         btn_layout.addWidget(self.btn_imprimir)
         btn_layout.addWidget(self.btn_editar)
+        btn_layout.addWidget(self.btn_ticket)
         self.btn_guardar.clicked.connect(self.save_pdf)
         self.btn_enviar.clicked.connect(self.send_email)
+        self.btn_ticket.clicked.connect(self.save_ticket)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -634,6 +639,27 @@ class SalesTab(QWidget):
             archivo=filename,
         )
         QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
+
+    def save_ticket(self):
+        """Generate a simple ticket PDF for the selected sale."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Ticket", "Seleccione una factura primero.")
+            return
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Ticket", "No se encontró la venta seleccionada.")
+            return
+
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+        filename, _ = QFileDialog.getSaveFileName(self, "Guardar ticket", "ticket.pdf", "PDF (*.pdf)")
+        if not filename:
+            return
+
+        generar_ticket_pdf(venta, detalles, filename)
+        QMessageBox.information(self, "Ticket", f"Ticket guardado en {filename}")
 
     def preview_pdf(self):
         """Generate a temporary PDF and open it with the default viewer."""

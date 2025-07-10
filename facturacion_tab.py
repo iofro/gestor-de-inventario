@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QDate
 
 from ticket_pdf import generar_ticket_personalizado
+import json
 
 
 class FacturacionTab(QWidget):
@@ -73,10 +74,17 @@ class FacturacionTab(QWidget):
             return
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         detalles = self.manager.db.get_detalles_venta(venta_id)
+        extra = {}
+        raw_extra = venta.get("extra") if venta else None
+        if raw_extra:
+            try:
+                extra = json.loads(raw_extra)
+            except Exception:
+                extra = {}
         fname, _ = QFileDialog.getSaveFileName(self, "Guardar ticket", "ticket.pdf", "PDF (*.pdf)")
         if not fname:
             return
-        generar_ticket_personalizado(venta, detalles, fname)
+        generar_ticket_personalizado(venta, detalles, fname, dte_data=extra)
         QMessageBox.information(self, "Ticket", "Ticket generado correctamente")
 
     def create_nota(self, tipo):

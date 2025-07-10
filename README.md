@@ -43,3 +43,14 @@ contraseña de la cuenta utilizada para enviar correos ya **no** se guarda en el
 archivo. En su lugar, define la variable de entorno `INVENTARIO_EMAIL_PASSWORD`
 con la contraseña correspondiente antes de ejecutar la aplicación.
 
+### Generar ticket en formato Farmacia Nicolás
+
+En las pestañas **Ventas** y **Facturación** hay un botón `Ticket`.
+Al pulsarlo se abre un cuadro de diálogo para elegir dónde guardar el PDF.
+El ticket usa el formato de Farmacia Nicolás y lee los datos de `datos_negocio.json`.
+Modifica ese archivo para personalizar nombre, dirección y otros datos.
+
+Si quieres mostrar tu logo, reemplaza `logoinventario.jpg` por tu imagen.
+
+Como referencia puedes revisar `ticket farmacia nicolas formato.pdf` que se
+incluye en este repositorio.

@@ -25,7 +25,7 @@ from PyQt5.QtCore import Qt, QDate, QUrl, QThread, pyqtSignal
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
-from ticket_pdf import generar_ticket_formato_nicolas
+from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
 import tempfile
 import subprocess
@@ -669,7 +669,7 @@ class SalesTab(QWidget):
         if not filename:
             return
 
-        generar_ticket_formato_nicolas(venta, detalles, filename)
+        generar_ticket_personalizado(venta, detalles, filename)
         QMessageBox.information(self, "Ticket", f"Ticket guardado en {filename}")
 
     def preview_pdf(self):

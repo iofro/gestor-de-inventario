@@ -4,6 +4,9 @@ from PyQt5.QtGui import QColor
 import json
 from datetime import datetime, timedelta
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -73,8 +76,11 @@ class InventoryManager:
     def exportar_inventario_json(self, filename, tab_order=None):
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
-            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
-                datos_negocio = json.load(f)
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                logger.exception("Failed to parse %s", DATOS_NEGOCIO_PATH)
         ventas_credito_fiscal = [dict(row) for row in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")]
         data = {
             "productos": self._products,

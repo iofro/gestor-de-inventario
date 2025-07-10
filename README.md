@@ -35,6 +35,19 @@ Las pruebas unitarias se ejecutan con **pytest**. Para lanzarlas usa:
 pytest
 ```
 
+### Generar DTE
+
+El método `generar_dte_json(venta_id)` crea un diccionario con el formato que
+Hacienda requiere para un DTE. Este resultado puede enviarse a la plataforma
+de facturación electrónica o almacenarse junto a la venta.
+
+```python
+from db import DB
+
+db = DB()
+dte = db.generar_dte_json(venta_id=1)
+```
+
 ### Datos del negocio y correo
 
 La configuración general se almacena en `datos_negocio.json`. Para que el envío

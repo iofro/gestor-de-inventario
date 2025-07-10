@@ -25,8 +25,11 @@ def generar_factura_electronica_pdf(
     if datos_negocio is None:
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
-            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
-                datos_negocio = json.load(f)
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                datos_negocio = {}
 
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter

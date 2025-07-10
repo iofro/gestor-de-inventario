@@ -123,6 +123,17 @@ class DB:
             )
         """)
         self.cursor.execute("""
+            CREATE TABLE IF NOT EXISTS notas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER,
+                tipo TEXT,
+                fecha TEXT,
+                monto REAL,
+                motivo TEXT,
+                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+            )
+        """)
+        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS compras (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha TEXT,
@@ -931,6 +942,23 @@ class DB:
             params.append(fecha_fin)
         query += " ORDER BY fecha"
         self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def add_nota(self, venta_id, tipo, fecha, monto, motivo):
+        """Registra una nota de crédito o débito."""
+        self.cursor.execute(
+            "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, ?, ?, ?, ?)",
+            (venta_id, tipo, fecha, monto, motivo),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_notas_by_venta(self, venta_id):
+        """Devuelve las notas asociadas a una venta."""
+        self.cursor.execute(
+            "SELECT * FROM notas WHERE venta_id=? ORDER BY fecha",
+            (venta_id,),
+        )
         return [dict(row) for row in self.cursor.fetchall()]
 
     def get_estado_cuenta_cliente(self, cliente_id, fecha_inicio=None, fecha_fin=None):

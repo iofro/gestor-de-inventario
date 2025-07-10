@@ -103,9 +103,7 @@ class PurchasesTab(QWidget):
 
         side_layout = QVBoxLayout()
         self.btn_ver = QPushButton("Ver")
-        self.btn_pdf = QPushButton("PDF")
         side_layout.addWidget(self.btn_ver)
-        side_layout.addWidget(self.btn_pdf)
         side_layout.addStretch(1)
         content_layout.addLayout(side_layout)
 
@@ -118,7 +116,6 @@ class PurchasesTab(QWidget):
         self.vendedor_combo.currentIndexChanged.connect(self.load_purchases)
         self.search_bar.textChanged.connect(self.load_purchases)
         self.btn_ver.clicked.connect(self.show_selected_detail)
-        self.btn_pdf.clicked.connect(self.save_selected_pdf)
 
     def _selected_compra_id(self):
         if self.table.currentRow() < 0:
@@ -135,11 +132,6 @@ class PurchasesTab(QWidget):
         compra_id = self._selected_compra_id()
         if compra_id is not None:
             self.show_detail(compra_id)
-
-    def save_selected_pdf(self):
-        # Placeholder for PDF generation functionality
-        pass
-
     def load_purchases(self):
         compras = self.manager.db.get_compras()
         detalles_cache = {}

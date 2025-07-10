@@ -8,6 +8,10 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
+import json
+import os
+
+DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 # Puedes registrar Arial si tienes el archivo, si no, Helvetica es suficiente
 # pdfmetrics.registerFont(TTFont('Arial', 'arial.ttf'))
@@ -22,12 +26,21 @@ def calcular_comision(total, porc):
         porc_val = 0
     return round(total * (porc_val / 100), 2)
 
-def generar_estado_ventas_pdf(filename):
+def generar_estado_ventas_pdf(filename, datos_negocio=None):
     # Datos de ejemplo (exactamente como en la foto, con cálculos corregidos)
     fecha_reporte = "20/06/2025"
     fecha_inicio = "01/01/2025"
     fecha_fin = "31/12/2025"
     vendedor = {"nombre": "JAVIER PORTILLO", "codigo": "005"}
+
+    if datos_negocio is None:
+        datos_negocio = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                datos_negocio = {}
 
     clientes = [
         {
@@ -226,7 +239,7 @@ def generar_estado_ventas_pdf(filename):
     style_normal = ParagraphStyle('normal', parent=styles['Normal'], fontSize=8, fontName='Helvetica')
 
     # Encabezado
-    elements.append(Paragraph("FARMACIA SANTA CATALINA", style_title))
+    elements.append(Paragraph(datos_negocio.get("nombre_comercial", ""), style_title))
     elements.append(Paragraph(f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}", style_subtitle))
     elements.append(Spacer(1, 2))
     elements.append(Paragraph(f"{vendedor['nombre']} — {vendedor['codigo']}", style_vendedor))

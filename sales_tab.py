@@ -40,6 +40,10 @@ from email import encoders
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
+FACTURAS_DIR = os.path.join(os.path.dirname(__file__), "facturas")
+CF_DIR = os.path.join(FACTURAS_DIR, "consumidor_final")
+CREDITO_DIR = os.path.join(FACTURAS_DIR, "credito_fiscal")
+
 
 class EmailSender(QThread):
     finished = pyqtSignal(bool, str)
@@ -540,6 +544,83 @@ class SalesTab(QWidget):
             self.preview_label.setText("No se pudo generar previsualización")
             self._clear_preview_files()
 
+    def _generate_invoice_pdf(self, venta_id):
+        """Generate and store the invoice PDF for the given sale."""
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            return None
+
+        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+
+        venta_data = dict(venta)
+        if credito_info:
+            venta_data.update(credito_info)
+
+        if venta_data.get("vendedor_id"):
+            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
+            if trabajador:
+                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
+        sumas = ventas_exentas = ventas_no_sujetas = iva = 0
+        for d in detalles:
+            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            if d.get("descuento_tipo") == "%":
+                base -= base * d.get("descuento", 0) / 100
+            else:
+                base -= d.get("descuento", 0)
+            iva_item = d.get("iva", 0)
+            tipo = d.get("tipo_fiscal", "").lower()
+            if tipo == "venta exenta":
+                d["ventas_exentas"] = base
+                ventas_exentas += base
+            elif tipo == "venta no sujeta":
+                d["ventas_no_sujetas"] = base
+                ventas_no_sujetas += base
+            else:
+                d["ventas_gravadas"] = base
+                sumas += base
+                iva += iva_item
+
+        subtotal = sumas + ventas_exentas + ventas_no_sujetas
+        total = subtotal + iva
+        venta_data.update(
+            {
+                "sumas": sumas,
+                "iva": iva,
+                "ventas_exentas": ventas_exentas,
+                "ventas_no_sujetas": ventas_no_sujetas,
+                "subtotal": subtotal,
+                "total": total,
+            }
+        )
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        distribuidor = None
+        if venta.get("Distribuidor_id"):
+            distribuidor = next(
+                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
+                None,
+            )
+
+        tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
+        dest_dir = CREDITO_DIR if credito_info else CF_DIR
+        os.makedirs(dest_dir, exist_ok=True)
+        file_path = os.path.join(dest_dir, f"factura_{venta_id}.pdf")
+
+        generar_factura_electronica_pdf(
+            venta_data,
+            detalles,
+            cliente or {},
+            distribuidor or {},
+            tipo_doc,
+            archivo=file_path,
+        )
+        self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
+        return file_path
+
     def save_pdf(self):
         """Generate a PDF for the selected sale after user confirmation."""
         if self.sales_table.currentRow() < 0:
@@ -568,77 +649,9 @@ class SalesTab(QWidget):
                 "Si desea modificar esta factura presione generar nueva factura manual",
             )
             return
-
-        detalles = self.manager.db.get_detalles_venta(venta_id)
-
-        # Merge venta info with credit-fiscal extra data
-        venta_data = dict(venta)
-        if credito_info:
-            venta_data.update(credito_info)
-
-        # Attach vendedor nombre if available
-        if venta_data.get("vendedor_id"):
-            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
-            if trabajador:
-                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
-
-        # Calculate totals per line if not provided
-        sumas = 0
-        ventas_exentas = 0
-        ventas_no_sujetas = 0
-        iva = 0
-        for d in detalles:
-            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
-            if d.get("descuento_tipo") == "%":
-                base -= base * d.get("descuento", 0) / 100
-            else:
-                base -= d.get("descuento", 0)
-            iva_item = d.get("iva", 0)
-            tipo = d.get("tipo_fiscal", "").lower()
-            if tipo == "venta exenta":
-                d["ventas_exentas"] = base
-                ventas_exentas += base
-            elif tipo == "venta no sujeta":
-                d["ventas_no_sujetas"] = base
-                ventas_no_sujetas += base
-            else:
-                d["ventas_gravadas"] = base
-                sumas += base
-                iva += iva_item
-
-        subtotal = sumas + ventas_exentas + ventas_no_sujetas
-        total = subtotal + iva
-        venta_data.update({
-            "sumas": sumas,
-            "iva": iva,
-            "ventas_exentas": ventas_exentas,
-            "ventas_no_sujetas": ventas_no_sujetas,
-            "subtotal": subtotal,
-            "total": total,
-        })
-
-        cliente = None
-        if venta.get("cliente_id"):
-            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
-        distribuidor = None
-        if venta.get("Distribuidor_id"):
-            distribuidor = next(
-                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
-                None,
-            )
-
-        cliente_nombre = cliente.get("nombre", "cliente") if cliente else "cliente"
-        tipo = "Crédito Fiscal" if credito_info else "Consumidor Final"
-        filename = f"{cliente_nombre} {venta_id} {tipo.lower()}.pdf"
-        generar_factura_electronica_pdf(
-            venta_data,
-            detalles,
-            cliente or {},
-            distribuidor or {},
-            tipo,
-            archivo=filename,
-        )
-        QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {filename}")
+        file_path = self._generate_invoice_pdf(venta_id)
+        if file_path:
+            QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {file_path}")
 
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""
@@ -783,9 +796,7 @@ class SalesTab(QWidget):
         subject = self.email_subject_edit.text().strip()
         body = self.email_body_edit.toPlainText()
 
-        if not self.preview_pdf_file or not os.path.exists(self.preview_pdf_file):
-            self._update_preview(venta_id)
-        pdf_path = self.preview_pdf_file
+        pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el PDF.")
             return

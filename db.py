@@ -211,6 +211,18 @@ class DB:
                 FOREIGN KEY (cliente_id) REFERENCES clientes(id)
             )
         """)
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS facturas_pdf (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER,
+                tipo TEXT,
+                ruta TEXT,
+                fecha_creacion TEXT,
+                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+            )
+        """
+        )
         self.conn.commit()
 
 
@@ -954,6 +966,16 @@ class DB:
         self.conn.commit()
         return self.cursor.lastrowid
 
+    def add_factura_pdf(self, venta_id, tipo, ruta):
+        """Guarda la ruta de un PDF generado para una venta."""
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cursor.execute(
+            "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, ?)",
+            (venta_id, tipo, ruta, fecha),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
     def get_notas_by_venta(self, venta_id):
         """Devuelve las notas asociadas a una venta."""
         self.cursor.execute(
@@ -1213,7 +1235,8 @@ class DB:
         self.cursor.execute(
             "UPDATE productos SET stock=? WHERE id=?",
             (total, producto_id)
-        )        self.conn.commit()
+        )
+        self.conn.commit()
 
     # --- NOTAS DE CRÉDITO Y DÉBITO ---
     def agregar_nota(self, tipo, venta_id, fecha, monto, motivo, detalles=None):

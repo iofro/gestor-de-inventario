@@ -665,11 +665,18 @@ class SalesTab(QWidget):
             return
 
         detalles = self.manager.db.get_detalles_venta(venta_id)
+        extra = {}
+        raw_extra = venta.get("extra") if venta else None
+        if raw_extra:
+            try:
+                extra = json.loads(raw_extra)
+            except Exception:
+                extra = {}
         filename, _ = QFileDialog.getSaveFileName(self, "Guardar ticket", "ticket.pdf", "PDF (*.pdf)")
         if not filename:
             return
 
-        generar_ticket_personalizado(venta, detalles, filename)
+        generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
         QMessageBox.information(self, "Ticket", f"Ticket guardado en {filename}")
 
     def preview_pdf(self):

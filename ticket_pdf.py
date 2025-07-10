@@ -57,8 +57,26 @@ def generar_ticket_personalizado(
     archivo="ticket_nicolas.pdf",
     datos_negocio=None,
     logo_path=None,
+    dte_data=None,
 ):
-    """Genera un ticket con un formato personalizado."""
+    """Genera un ticket con un formato personalizado.
+
+    Parameters
+    ----------
+    venta : dict
+        Datos de la venta.
+    detalles : list[dict]
+        Lineas de la venta.
+    archivo : str, optional
+        Ruta del PDF de salida.
+    datos_negocio : dict, optional
+        Datos de encabezado del negocio.
+    logo_path : str, optional
+        Ruta opcional a un logo para mostrar en la cabecera.
+    dte_data : dict, optional
+        Diccionario con información del DTE. Puede contener las claves
+        ``selloRecibido``, ``firmaElectronica`` y ``dteJson``.
+    """
 
     if datos_negocio is None:
         datos_negocio = {}
@@ -72,7 +90,28 @@ def generar_ticket_personalizado(
     width = 80 * mm
     line_height = 4 * mm
     base_height = 60 * mm
-    height = base_height + len(detalles) * 6 * mm + 40 * mm
+
+    if dte_data is None:
+        dte_data = {}
+
+    sello = dte_data.get("selloRecibido", "vacío")
+    firma = dte_data.get("firmaElectronica", "vacío")
+
+    def _flatten(data, prefix=""):
+        lines = []
+        if isinstance(data, dict):
+            for k, v in data.items():
+                key = f"{prefix}{k}"
+                if isinstance(v, dict):
+                    lines.extend(_flatten(v, key + "."))
+                else:
+                    lines.append(f"{key}: {v}")
+        return lines
+
+    dte_lines = _flatten(dte_data.get("dteJson", {}))
+    extra_count = 2 + len(dte_lines)
+
+    height = base_height + len(detalles) * 6 * mm + extra_count * line_height + 40 * mm
     page_size = (width, height)
 
     c = canvas.Canvas(archivo, pagesize=page_size)
@@ -129,6 +168,16 @@ def generar_ticket_personalizado(
     y -= 5 * mm
     c.setFont("Helvetica-Bold", 9)
     c.drawRightString(width - 5 * mm, y, f"Total: {venta.get('total', 0):.2f}")
+
+    y -= 6 * mm
+    c.setFont("Helvetica", 6)
+    c.drawString(5 * mm, y, f"Sello recibido: {sello}")
+    y -= line_height
+    c.drawString(5 * mm, y, f"Firma electr\xf3nica: {firma}")
+    y -= line_height
+    for line in dte_lines:
+        c.drawString(5 * mm, y, line)
+        y -= line_height
 
     c.showPage()
     c.save()

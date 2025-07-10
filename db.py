@@ -1213,7 +1213,8 @@ class DB:
         self.cursor.execute(
             "UPDATE productos SET stock=? WHERE id=?",
             (total, producto_id)
-        )        self.conn.commit()
+        )
+        self.conn.commit()
 
     # --- NOTAS DE CRÉDITO Y DÉBITO ---
     def agregar_nota(self, tipo, venta_id, fecha, monto, motivo, detalles=None):

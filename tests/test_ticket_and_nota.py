@@ -23,6 +23,7 @@ def test_generar_ticket_pdf(tmp_path):
     assert archivo.stat().st_size > 0
 
 
+
 def test_generar_ticket_pdf_header(tmp_path):
     venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
     detalles = [{"descripcion": "Prod", "cantidad": 1, "precio_unitario": 10}]

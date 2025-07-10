@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QDate
 
-from ticket_pdf import generar_ticket_pdf
+from ticket_pdf import generar_ticket_formato_nicolas
 
 
 class FacturacionTab(QWidget):
@@ -76,7 +76,7 @@ class FacturacionTab(QWidget):
         fname, _ = QFileDialog.getSaveFileName(self, "Guardar ticket", "ticket.pdf", "PDF (*.pdf)")
         if not fname:
             return
-        generar_ticket_pdf(venta, detalles, fname)
+        generar_ticket_formato_nicolas(venta, detalles, fname)
         QMessageBox.information(self, "Ticket", "Ticket generado correctamente")
 
     def create_nota(self, tipo):

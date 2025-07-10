@@ -211,6 +211,18 @@ class DB:
                 FOREIGN KEY (cliente_id) REFERENCES clientes(id)
             )
         """)
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS facturas_pdf (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER,
+                tipo TEXT,
+                ruta TEXT,
+                fecha_creacion TEXT,
+                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+            )
+        """
+        )
         self.conn.commit()
 
 
@@ -950,6 +962,16 @@ class DB:
         self.cursor.execute(
             "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, ?, ?, ?, ?)",
             (venta_id, tipo, fecha, monto, motivo),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def add_factura_pdf(self, venta_id, tipo, ruta):
+        """Guarda la ruta de un PDF generado para una venta."""
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cursor.execute(
+            "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, ?)",
+            (venta_id, tipo, ruta, fecha),
         )
         self.conn.commit()
         return self.cursor.lastrowid

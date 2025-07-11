@@ -781,6 +781,25 @@ class DB:
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_comision_vendedores(self, fecha_inicio=None, fecha_fin=None):
+        """Return total commission per vendor within an optional date range."""
+        query = (
+            "SELECT dv.vendedor_id, SUM(dv.comision) AS total_comision "
+            "FROM detalles_venta dv "
+            "JOIN ventas v ON v.id = dv.venta_id "
+            "WHERE dv.vendedor_id IS NOT NULL"
+        )
+        params = []
+        if fecha_inicio:
+            query += " AND date(v.fecha) >= date(?)"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND date(v.fecha) <= date(?)"
+            params.append(fecha_fin)
+        query += " GROUP BY dv.vendedor_id ORDER BY dv.vendedor_id"
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
     def get_estado_cuenta_clientes(self, cliente_id=None, fecha_inicio=None, fecha_fin=None):
         """Genera el estado de cuenta de los clientes.
 

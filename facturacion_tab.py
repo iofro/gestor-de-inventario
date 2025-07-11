@@ -26,23 +26,26 @@ class FacturacionTab(QWidget):
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["ID", "Fecha", "Cliente", "Total"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["ID", "Fecha", "Cliente", "Total", "Estado"])
         layout.addWidget(self.table)
 
         btns = QHBoxLayout()
         self.btn_ticket = QPushButton("Generar ticket virtual")
         self.btn_credito = QPushButton("Nota de crédito")
         self.btn_debito = QPushButton("Nota de débito")
+        self.btn_estado = QPushButton("Estado")
         btns.addWidget(self.btn_ticket)
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)
+        btns.addWidget(self.btn_estado)
         btns.addStretch(1)
         layout.addLayout(btns)
 
         self.btn_ticket.clicked.connect(self.create_ticket)
         self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
+        self.btn_estado.clicked.connect(self.change_estado)
 
     def load_invoices(self):
         ventas = self.manager.db.get_ventas()
@@ -53,6 +56,7 @@ class FacturacionTab(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(clientes.get(v.get("cliente_id"), "")))
             self.table.setItem(row, 3, QTableWidgetItem(f"${v.get('total', 0):.2f}"))
+            self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
         if ventas:
             self.table.selectRow(0)
 
@@ -102,3 +106,19 @@ class FacturacionTab(QWidget):
         self.manager.db.add_nota(venta_id, tipo, fecha, monto, motivo)
         QMessageBox.information(self, "Nota", "Nota registrada")
         self.load_invoices()
+
+    def change_estado(self):
+        venta_id = self._selected_venta()
+        if venta_id is None:
+            QMessageBox.warning(self, "Estado", "Seleccione una venta")
+            return
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Estado", "No se encontró la venta seleccionada")
+            return
+        from dialogs import EstadoVentaDialog
+        dialog = EstadoVentaDialog(venta.get("estado", "Pagada o Completada"), self)
+        if dialog.exec_():
+            estado = dialog.get_estado()
+            self.manager.db.update_venta_estado(venta_id, estado)
+            self.load_invoices()

@@ -53,8 +53,8 @@ class FacturacionVaciaTab(QWidget):
         main_layout.addLayout(info_layout)
 
         # --- Tabla de facturas ---
-        self.table = QTableWidget(0, 4)
-        self.table.setHorizontalHeaderLabels(["ID", "Fecha", "Cliente", "Total"])
+        self.table = QTableWidget(0, 5)
+        self.table.setHorizontalHeaderLabels(["ID", "Fecha", "Cliente", "Total", "Estado"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -66,9 +66,42 @@ class FacturacionVaciaTab(QWidget):
         self.btn_ticket = QPushButton("Generar ticket")
         self.btn_debito = QPushButton("Generar nota de débito")
         self.btn_credito = QPushButton("Generar nota de crédito")
+        self.btn_estado = QPushButton("Estado")
         btn_layout.addWidget(self.btn_ticket)
         btn_layout.addWidget(self.btn_debito)
         btn_layout.addWidget(self.btn_credito)
+        btn_layout.addWidget(self.btn_estado)
         btn_layout.addStretch(1)
         main_layout.addLayout(btn_layout)
+
+        self.btn_estado.clicked.connect(self.change_estado)
+
+    def _selected_venta(self):
+        if self.table.currentRow() < 0:
+            return None
+        item = self.table.item(self.table.currentRow(), 0)
+        if item:
+            try:
+                return int(item.text())
+            except ValueError:
+                return None
+        return None
+
+    def change_estado(self):
+        venta_id = self._selected_venta()
+        if venta_id is None:
+            return
+        parent = self.parent()
+        manager = getattr(parent, "manager", None) if parent else None
+        if not manager:
+            return
+        venta = next((v for v in manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            return
+        from dialogs import EstadoVentaDialog
+        dialog = EstadoVentaDialog(venta.get("estado", "Pagada o Completada"), self)
+        if dialog.exec_():
+            estado = dialog.get_estado()
+            manager.db.update_venta_estado(venta_id, estado)
+
 

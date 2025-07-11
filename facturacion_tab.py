@@ -8,11 +8,16 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QMessageBox,
+    QLineEdit,
+    QDateEdit,
+    QAbstractItemView,
+    QHeaderView,
 )
 from PyQt5.QtCore import QDate
 
 from ticket_pdf import generar_ticket_personalizado
 import json
+from datetime import datetime
 
 
 class FacturacionTab(QWidget):
@@ -25,10 +30,29 @@ class FacturacionTab(QWidget):
         self.load_invoices()
 
     def _setup_ui(self):
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+
+        filter_layout = QHBoxLayout()
+        self.search_bar = QLineEdit()
+        self.search_bar.setPlaceholderText("Buscar número o cliente")
+        filter_layout.addWidget(self.search_bar)
+        self.date_from = QDateEdit(QDate.currentDate().addYears(-2))
+        self.date_from.setCalendarPopup(True)
+        self.date_to = QDateEdit(QDate.currentDate())
+        self.date_to.setCalendarPopup(True)
+        filter_layout.addWidget(self.date_from)
+        filter_layout.addWidget(self.date_to)
+        self.update_btn = QPushButton("Actualizar")
+        filter_layout.addWidget(self.update_btn)
+        filter_layout.addStretch(1)
+        main_layout.addLayout(filter_layout)
+
         self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels(["ID", "Fecha", "Cliente", "Total", "Estado"])
-        layout.addWidget(self.table)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        main_layout.addWidget(self.table)
 
         btns = QHBoxLayout()
         self.btn_ticket = QPushButton("Generar ticket virtual")
@@ -40,8 +64,14 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
         btns.addStretch(1)
-        layout.addLayout(btns)
+        main_layout.addLayout(btns)
 
+        # Connect signals
+        self.update_btn.clicked.connect(self.load_invoices)
+        self.search_bar.textChanged.connect(self.load_invoices)
+        self.date_from.dateChanged.connect(self.load_invoices)
+        self.date_to.dateChanged.connect(self.load_invoices)
+        
         self.btn_ticket.clicked.connect(self.create_ticket)
         self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
@@ -50,14 +80,34 @@ class FacturacionTab(QWidget):
     def load_invoices(self):
         ventas = self.manager.db.get_ventas()
         clientes = {c["id"]: c["nombre"] for c in self.manager._clientes}
-        self.table.setRowCount(len(ventas))
-        for row, v in enumerate(ventas):
+        search = self.search_bar.text().lower() if hasattr(self, "search_bar") else ""
+        d_from = self.date_from.date().toPyDate() if hasattr(self, "date_from") else None
+        d_to = self.date_to.date().toPyDate() if hasattr(self, "date_to") else None
+
+        rows = []
+        for v in ventas:
+            fecha = v.get("fecha", "")
+            try:
+                fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date()
+            except Exception:
+                fdate = None
+            if d_from and fdate and fdate < d_from:
+                continue
+            if d_to and fdate and fdate > d_to:
+                continue
+            cliente = clientes.get(v.get("cliente_id"), "")
+            if search and search not in str(v.get("id", "")).lower() and search not in cliente.lower():
+                continue
+            rows.append(v)
+
+        self.table.setRowCount(len(rows))
+        for row, v in enumerate(rows):
             self.table.setItem(row, 0, QTableWidgetItem(str(v.get("id"))))
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(clientes.get(v.get("cliente_id"), "")))
             self.table.setItem(row, 3, QTableWidgetItem(f"${v.get('total', 0):.2f}"))
             self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
-        if ventas:
+        if rows:
             self.table.selectRow(0)
 
     def _selected_venta(self):

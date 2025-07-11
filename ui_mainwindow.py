@@ -23,7 +23,7 @@ from dialogs import (
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab
-from facturacion_vacia_tab import FacturacionVaciaTab
+from facturacion_tab import FacturacionTab
 from datetime import datetime
 
 from num2words import num2words  # Instala las dependencias con: pip install -r requirements.txt
@@ -308,8 +308,8 @@ class MainWindow(QMainWindow):
         self.sales_tab.setObjectName("Ventas")
         self.compras_tab.setObjectName("Compras")
         inventario_actual_tab.setObjectName("Inventario actual")
-        self.facturacion_vacia_tab = FacturacionVaciaTab(self)
-        self.facturacion_vacia_tab.setObjectName("Facturacion")
+        self.facturacion_tab = FacturacionTab(self.manager, self)
+        self.facturacion_tab.setObjectName("Facturacion")
 
         self.tabs.addTab(tab_widget, "Inventario")
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")
@@ -317,7 +317,7 @@ class MainWindow(QMainWindow):
         self.tabs.addTab(self.sales_tab, "Ventas")
         self.tabs.addTab(self.compras_tab, "Compras")
         self.tabs.addTab(inventario_actual_tab, "Inventario actual")
-        self.tabs.addTab(self.facturacion_vacia_tab, "Facturacion")
+        self.tabs.addTab(self.facturacion_tab, "Facturacion")
         self.setCentralWidget(self.tabs)
 
         # --- PESTAÑA DE TRABAJADORES ---

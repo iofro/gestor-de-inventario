@@ -1,6 +1,7 @@
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
+from datetime import datetime
 import json
 import os
 
@@ -134,18 +135,44 @@ def generar_ticket_personalizado(
         )
         y -= 22 * mm
 
-    c.setFont("Helvetica-Bold", 9)
-    c.drawCentredString(width / 2, y, _with_falta(datos_negocio.get("nombre_comercial")))
+    # Encabezado con datos de DTE
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(width / 2, y, "DOCUMENTO TRIBUTARIO ELECTR\xc3\x93NICO")
+    y -= 4 * mm
+    c.drawCentredString(width / 2, y, "FACTURA")
     y -= 5 * mm
-    c.setFont("Helvetica", 8)
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(width / 2, y, "------------------- DATOS DEL EMISOR ------------------")
+    y -= 4 * mm
+    c.setFont("Helvetica-Bold", 8)
+    c.drawCentredString(width / 2, y, _with_falta(datos_negocio.get("nombre_comercial")))
+    y -= 4 * mm
+    nit = datos_negocio.get("nit")
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(width / 2, y, f"NIT: {_with_falta(nit)}")
+    y -= 4 * mm
+    nrc = datos_negocio.get("nrc")
+    c.drawCentredString(width / 2, y, f"NRC: {_with_falta(nrc)}")
+    y -= 4 * mm
     giro = datos_negocio.get("giro")
-    c.drawCentredString(width / 2, y, _with_falta(giro))
+    c.drawCentredString(width / 2, y, f"Actividad Econ\xc3\xb3mica: {_with_falta(giro)}")
     y -= 4 * mm
     direccion = datos_negocio.get("direccion")
-    c.drawCentredString(width / 2, y, _with_falta(direccion))
+    c.drawCentredString(width / 2, y, f"Direcci\xc3\xb3n: {_with_falta(direccion)}")
+    y -= 5 * mm
+    c.setFont("Helvetica-Bold", 7)
+    c.drawCentredString(width / 2, y, "DATOS DE FACTURA")
     y -= 4 * mm
-
-    c.drawCentredString(width / 2, y, f"Fecha: {_with_falta(venta.get('fecha'))}")
+    c.setFont("Helvetica", 7)
+    c.drawCentredString(width / 2, y, "C\xc3\xb3digo de Generaci\xc3\xb3n:")
+    y -= 3 * mm
+    c.drawCentredString(width / 2, y, "N\xc3\xbamero de control:")
+    y -= 4 * mm
+    c.drawCentredString(width / 2, y, "M\xc3\xb3delo de Facturaci\xc3\xb3n: Modelo Facturaci\xc3\xb3n Previo")
+    y -= 3 * mm
+    c.drawCentredString(width / 2, y, "Tipo de Transmisi\xc3\xb3n: Transmisi\xc3\xb3n Normal")
+    y -= 3 * mm
+    c.drawCentredString(width / 2, y, f"Fecha y hora de Generaci\xc3\xb3n: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     y -= 5 * mm
     c.line(5 * mm, y, width - 5 * mm, y)
     y -= 4 * mm

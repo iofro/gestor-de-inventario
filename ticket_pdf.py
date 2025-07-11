@@ -8,8 +8,8 @@ DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json
 
 
 def _with_falta(value):
-    """Return ``"falta"`` when *value* is falsy."""
-    return "falta" if not value else str(value)
+    """Return ``"vacio"`` when *value* is falsy."""
+    return "vacio" if not value else str(value)
 
 
 def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None):
@@ -99,8 +99,8 @@ def generar_ticket_personalizado(
     if dte_data is None:
         dte_data = {}
 
-    sello = dte_data.get("selloRecibido", "falta")
-    firma = dte_data.get("firmaElectronica", "falta")
+    sello = dte_data.get("selloRecibido", "vacio")
+    firma = dte_data.get("firmaElectronica", "vacio")
 
     def _flatten(data, prefix=""):
         lines = []
@@ -114,7 +114,16 @@ def generar_ticket_personalizado(
         return lines
 
     dte_lines = _flatten(dte_data.get("dteJson", {}))
-    extra_count = 2 + len(dte_lines)
+    extra_lines = [
+        "nit",
+        "nrc",
+        "sucursal",
+        "total_letras",
+        "forma_pago",
+        "codigo_vendedor",
+        "codigo_cajero",
+    ]
+    extra_count = 2 + len(dte_lines) + len(extra_lines)
 
     height = base_height + len(detalles) * 6 * mm + extra_count * line_height + 40 * mm
     page_size = (width, height)
@@ -143,6 +152,12 @@ def generar_ticket_personalizado(
     y -= 4 * mm
     direccion = datos_negocio.get("direccion")
     c.drawCentredString(width / 2, y, _with_falta(direccion))
+    y -= 4 * mm
+    c.drawCentredString(width / 2, y, f"NIT: {_with_falta(datos_negocio.get('nit'))}")
+    y -= 4 * mm
+    c.drawCentredString(width / 2, y, f"NRC: {_with_falta(datos_negocio.get('nrc'))}")
+    y -= 4 * mm
+    c.drawCentredString(width / 2, y, f"Sucursal: {_with_falta(datos_negocio.get('sucursal'))}")
     y -= 4 * mm
 
     c.drawCentredString(width / 2, y, f"Fecha: {_with_falta(venta.get('fecha'))}")
@@ -174,6 +189,14 @@ def generar_ticket_personalizado(
 
     y -= 6 * mm
     c.setFont("Helvetica", 6)
+    c.drawString(5 * mm, y, f"TOTAL EN LETRAS: {_with_falta(venta.get('total_letras'))}")
+    y -= line_height
+    c.drawString(5 * mm, y, f"Forma pago: {_with_falta(venta.get('forma_pago'))}")
+    y -= line_height
+    c.drawString(5 * mm, y, f"Codigo vendedor: {_with_falta(venta.get('codigo_vendedor'))}")
+    y -= line_height
+    c.drawString(5 * mm, y, f"Codigo cajero: {_with_falta(venta.get('codigo_cajero'))}")
+    y -= line_height
     c.drawString(5 * mm, y, f"Sello recibido: {_with_falta(sello)}")
     y -= line_height
     c.drawString(5 * mm, y, f"Firma electr\xf3nica: {_with_falta(firma)}")

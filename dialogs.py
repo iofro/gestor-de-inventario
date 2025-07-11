@@ -2420,7 +2420,6 @@ class ClienteDialog(QDialog):
     def __init__(self, parent=None, cliente=None, codigo_sugerido=None):
         super().__init__(parent)
         self.setWindowTitle("Agregar/Editar Cliente")
-        self.departamentos_data = cargar_departamentos_municipios()
         layout = QVBoxLayout()
 
         self.codigo_edit = QLineEdit()
@@ -2432,9 +2431,8 @@ class ClienteDialog(QDialog):
         self.telefono_edit = QLineEdit()
         self.email_edit = QLineEdit()
         self.direccion_edit = QLineEdit()
-        self.departamento_combo = QComboBox()
-        self.departamento_combo.addItems([""] + list(self.departamentos_data.keys()))
-        self.municipio_combo = QComboBox()
+        self.departamento_edit = QLineEdit()
+        self.municipio_edit = QLineEdit()
 
         form = [
             ("Código:", self.codigo_edit),
@@ -2446,8 +2444,8 @@ class ClienteDialog(QDialog):
             ("Teléfono:", self.telefono_edit),
             ("Correo electrónico:", self.email_edit),
             ("Dirección:", self.direccion_edit),
-            ("Departamento:", self.departamento_combo),
-            ("Municipio:", self.municipio_combo),
+            ("Departamento:", self.departamento_edit),
+            ("Municipio:", self.municipio_edit),
         ]
         for label, widget in form:
             row = QHBoxLayout()
@@ -2463,7 +2461,6 @@ class ClienteDialog(QDialog):
         layout.addLayout(btns)
         self.setLayout(layout)
 
-        self.departamento_combo.currentTextChanged.connect(self._actualizar_municipios)
         self.btn_ok.clicked.connect(self._validar_y_accept)
         self.btn_cancel.clicked.connect(self.reject)
 
@@ -2480,19 +2477,9 @@ class ClienteDialog(QDialog):
             self.telefono_edit.setText(cliente.get("telefono", ""))
             self.email_edit.setText(cliente.get("email", ""))
             self.direccion_edit.setText(cliente.get("direccion", ""))
-            idx_depto = self.departamento_combo.findText(cliente.get("departamento", ""), Qt.MatchFixedString)
-            if idx_depto >= 0:
-                self.departamento_combo.setCurrentIndex(idx_depto)
-            self._actualizar_municipios()
-            idx_muni = self.municipio_combo.findText(cliente.get("municipio", ""), Qt.MatchFixedString)
-            if idx_muni >= 0:
-                self.municipio_combo.setCurrentIndex(idx_muni)
+            self.departamento_edit.setText(cliente.get("departamento", ""))
+            self.municipio_edit.setText(cliente.get("municipio", ""))
 
-    def _actualizar_municipios(self):
-        depto = self.departamento_combo.currentText()
-        self.municipio_combo.clear()
-        if depto and depto in self.departamentos_data:
-            self.municipio_combo.addItems(self.departamentos_data[depto])
 
     def _validar_y_accept(self):
         if not self.nombre_edit.text().strip():
@@ -2526,8 +2513,8 @@ class ClienteDialog(QDialog):
             "telefono": self.telefono_edit.text().strip(),
             "email": self.email_edit.text().strip(),
             "direccion": self.direccion_edit.text().strip(),
-            "departamento": self.departamento_combo.currentText(),
-            "municipio": self.municipio_combo.currentText(),
+            "departamento": self.departamento_edit.text().strip(),
+            "municipio": self.municipio_edit.text().strip(),
         }
 
 class VendedorDialog(QDialog):
@@ -2540,7 +2527,6 @@ class VendedorDialog(QDialog):
         self.nombre_edit = QLineEdit()
         self.dui_edit = QLineEdit()
         self.descripcion_edit = QLineEdit()
-        self.dui_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
         self.Distribuidor_combo.addItem("Sin Distribuidor")
@@ -2554,8 +2540,6 @@ class VendedorDialog(QDialog):
         layout.addWidget(self.dui_edit)
         layout.addWidget(QLabel("Descripción:"))
         layout.addWidget(self.descripcion_edit)
-        layout.addWidget(QLabel("DUI:"))
-        layout.addWidget(self.dui_edit)
         layout.addWidget(QLabel("Distribuidor:"))
         layout.addWidget(self.Distribuidor_combo)
 
@@ -2578,7 +2562,6 @@ class VendedorDialog(QDialog):
             self.nombre_edit.setText(vendedor.get("nombre", ""))
             self.dui_edit.setText(vendedor.get("dui", ""))
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
-            self.dui_edit.setText(vendedor.get("dui", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
             if Distribuidor_id:
                 for i, d in enumerate(self.Distribuidores):
@@ -2596,7 +2579,6 @@ class VendedorDialog(QDialog):
             "nombre": self.nombre_edit.text(),
             "dui": self.dui_edit.text(),
             "descripcion": self.descripcion_edit.text(),
-            "dui": self.dui_edit.text(),
             "Distribuidor_id": Distribuidor_id,
         }
 class CompraDetalleDialog(QDialog):

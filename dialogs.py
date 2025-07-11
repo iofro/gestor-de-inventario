@@ -699,6 +699,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         right_layout.addWidget(self.subtotal_label)
         right_layout.addWidget(self.total_label)
 
+        right_layout.addWidget(QLabel("Estado:"))
+        self.estado_combo = QComboBox()
+        self.estado_combo.addItems(["Pagada o Completada", "Pendiente"])
+        right_layout.addWidget(self.estado_combo)
+
         # Botón para registrar la venta
         self.btn_ok = QPushButton("Registrar")
         right_layout.addWidget(self.btn_ok)
@@ -938,7 +943,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 self.Distribuidor_combo.currentIndex()
                 if self.Distribuidor_combo.currentIndex() >= 0 else None
             ),
-            "vendedor_id": vendedor_id
+            "vendedor_id": vendedor_id,
+            "estado": self.estado_combo.currentText(),
         }
     
     def _agregar_a_venta(self):
@@ -3108,3 +3114,38 @@ class ManualInvoiceDialog(QDialog):
                 },
                 "detalles": [],
             }
+
+class EstadoVentaDialog(QDialog):
+    """Dialogo simple para seleccionar el estado de una venta."""
+
+    def __init__(self, estado_actual="Pagada o Completada", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Estado de la venta")
+        layout = QVBoxLayout(self)
+        layout.addWidget(QLabel("Seleccione el estado de la venta:"))
+        self.estado_combo = QComboBox()
+        self.estado_combo.addItems([
+            "Pagada o Completada",
+            "Pendiente",
+            "Anulada o Cancelada",
+            "Borrador o Preliminar",
+            "Enviada",
+            "En Contingencia",
+        ])
+        idx = self.estado_combo.findText(estado_actual)
+        if idx >= 0:
+            self.estado_combo.setCurrentIndex(idx)
+        layout.addWidget(self.estado_combo)
+        btns = QHBoxLayout()
+        ok_btn = QPushButton("Aceptar")
+        cancel_btn = QPushButton("Cancelar")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(ok_btn)
+        btns.addWidget(cancel_btn)
+        layout.addLayout(btns)
+
+    def get_estado(self):
+        return self.estado_combo.currentText()
+
+

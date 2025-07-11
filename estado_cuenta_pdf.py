@@ -491,14 +491,20 @@ def generar_estado_cuenta_pdf(
         resumen = db.get_estado_cuenta_vendedores(
             fecha_inicio=fecha_inicio, fecha_fin=fecha_fin
         )
-        data = [["Vendedor", "Total Ventas"]]
+        comisiones = db.get_comision_vendedores(
+            fecha_inicio=fecha_inicio, fecha_fin=fecha_fin
+        )
+        com_map = {c["vendedor_id"]: c["total_comision"] for c in comisiones}
+        data = [["Vendedor", "Total Ventas", "Comisión"]]
         for r in resumen:
-            vend = db.get_trabajador(r.get("vendedor_id"))
-            nombre = vend.get("nombre", "") if vend else str(r.get("vendedor_id"))
-            data.append([nombre, f"{r.get('total_ventas',0):.2f}"])
+            vid = r.get("vendedor_id")
+            vend = db.get_trabajador(vid)
+            nombre = vend.get("nombre", "") if vend else str(vid)
+            comision = com_map.get(vid, 0)
+            data.append([nombre, f"{r.get('total_ventas',0):.2f}", f"{comision:.2f}"])
         if len(data) == 1:
-            data.append(["", ""])
-        table = Table(data, colWidths=[200, 80])
+            data.append(["", "", ""])
+        table = Table(data, colWidths=[200, 80, 80])
         table.setStyle(
             TableStyle(
                 [

@@ -701,7 +701,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         right_layout.addWidget(QLabel("Estado:"))
         self.estado_combo = QComboBox()
-        self.estado_combo.addItems(["Pagada o Completada", "Pendiente"])
+        self.estado_combo.addItems(["Pagada", "Pendiente"])
         right_layout.addWidget(self.estado_combo)
 
         # Botón para registrar la venta
@@ -3118,14 +3118,14 @@ class ManualInvoiceDialog(QDialog):
 class EstadoVentaDialog(QDialog):
     """Dialogo simple para seleccionar el estado de una venta."""
 
-    def __init__(self, estado_actual="Pagada o Completada", parent=None):
+    def __init__(self, estado_actual="Pagada", parent=None):
         super().__init__(parent)
         self.setWindowTitle("Estado de la venta")
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel("Seleccione el estado de la venta:"))
         self.estado_combo = QComboBox()
         self.estado_combo.addItems([
-            "Pagada o Completada",
+            "Pagada",
             "Pendiente",
             "Anulada o Cancelada",
             "Borrador o Preliminar",

@@ -68,7 +68,8 @@ class DB:
             CREATE TABLE IF NOT EXISTS ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha TEXT,
-                total REAL
+                total REAL,
+                estado TEXT DEFAULT 'Pagada o Completada'
             )
         """)
         self.cursor.execute("""
@@ -395,6 +396,7 @@ class DB:
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT")
             self.cursor.execute("ALTER TABLE ventas ADD COLUMN extra TEXT")
+            self.cursor.execute("ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada o Completada'")
             self.conn.commit()
         except Exception:
             pass  # Ya existen
@@ -535,104 +537,74 @@ class DB:
         self.conn.commit()
 
     # CRUD VENTAS
-    def add_venta(self, fecha, total, cliente_id=None, Distribuidor_id=None, vendedor_id=None, extra=None):
-        extra_json = json.dumps(extra) if extra else None
-        if cliente_id is not None and Distribuidor_id is not None and vendedor_id is not None:
-            if extra_json is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?, ?)",
-                    (fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra_json)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, vendedor_id) VALUES (?, ?, ?, ?, ?)",
-                    (fecha, total, cliente_id, Distribuidor_id, vendedor_id)
-                )
-        elif cliente_id is not None and Distribuidor_id is not None:
-            if extra_json is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, extra) VALUES (?, ?, ?, ?, ?)",
-                    (fecha, total, cliente_id, Distribuidor_id, extra_json)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                    (fecha, total, cliente_id, Distribuidor_id)
-                )
-        elif cliente_id is not None:
-            if extra_json is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?)",
-                    (fecha, total, cliente_id, vendedor_id, extra_json)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, vendedor_id) VALUES (?, ?, ?, ?)",
-                    (fecha, total, cliente_id, vendedor_id)
-                )
-        elif Distribuidor_id is not None:
-            if extra_json is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, Distribuidor_id, vendedor_id, extra) VALUES (?, ?, ?, ?, ?)",
-                    (fecha, total, Distribuidor_id, vendedor_id, extra_json)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, Distribuidor_id, vendedor_id) VALUES (?, ?, ?, ?)",
-                    (fecha, total, Distribuidor_id, vendedor_id)
-                )
-        elif vendedor_id is not None:
-            if extra_json is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, vendedor_id, extra) VALUES (?, ?, ?, ?)",
-                    (fecha, total, vendedor_id, extra_json)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, vendedor_id) VALUES (?, ?, ?)",
-                    (fecha, total, vendedor_id)
-                )
-        else:
-            if extra_json is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, extra) VALUES (?, ?, ?)",
-                    (fecha, total, extra_json)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total) VALUES (?, ?)",
-                    (fecha, total)
-                )
+    def add_venta(
+        self,
+        fecha,
+        total,
+        cliente_id=None,
+        Distribuidor_id=None,
+        vendedor_id=None,
+        extra=None,
+        estado="Pagada o Completada",
+    ):
+        extra_json = json.dumps(extra) if extra is not None else None
+        columns = ["fecha", "total", "estado"]
+        values = [fecha, total, estado]
+        if cliente_id is not None:
+            columns.append("cliente_id")
+            values.append(cliente_id)
+        if Distribuidor_id is not None:
+            columns.append("Distribuidor_id")
+            values.append(Distribuidor_id)
+        if vendedor_id is not None:
+            columns.append("vendedor_id")
+            values.append(vendedor_id)
+        if extra_json is not None:
+            columns.append("extra")
+            values.append(extra_json)
+        placeholders = ", ".join(["?"] * len(values))
+        query = f"INSERT INTO ventas ({', '.join(columns)}) VALUES ({placeholders})"
+        self.cursor.execute(query, values)
         self.conn.commit()
         return self.cursor.lastrowid
 
-    def add_venta_credito_fiscal(self, cliente_id, fecha, total, nrc, nit, giro, Distribuidor_id=None, vendedor_id=None,
-                                 no_remision="", orden_no="", condicion_pago="", venta_a_cuenta_de="",
-                                 fecha_remision_anterior="", fecha_remision="",
-                                 sumas=0, iva=0, subtotal=0,
-                                 ventas_exentas=0, ventas_no_sujetas=0,
-                                 total_letras="", extra=None):
+    def add_venta_credito_fiscal(
+        self,
+        cliente_id,
+        fecha,
+        total,
+        nrc,
+        nit,
+        giro,
+        Distribuidor_id=None,
+        vendedor_id=None,
+        no_remision="",
+        orden_no="",
+        condicion_pago="",
+        venta_a_cuenta_de="",
+        fecha_remision_anterior="",
+        fecha_remision="",
+        sumas=0,
+        iva=0,
+        subtotal=0,
+        ventas_exentas=0,
+        ventas_no_sujetas=0,
+        total_letras="",
+        extra=None,
+        estado="Pagada o Completada",
+    ):
         try:
-            if Distribuidor_id is not None and vendedor_id is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id, vendedor_id) VALUES (?, ?, ?, ?, ?)",
-                    (fecha, total, cliente_id, Distribuidor_id, vendedor_id)
-                )
-            elif Distribuidor_id is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                    (fecha, total, cliente_id, Distribuidor_id)
-                )
-            elif vendedor_id is not None:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id, vendedor_id) VALUES (?, ?, ?, ?)",
-                    (fecha, total, cliente_id, vendedor_id)
-                )
-            else:
-                self.cursor.execute(
-                    "INSERT INTO ventas (fecha, total, cliente_id) VALUES (?, ?, ?)",
-                    (fecha, total, cliente_id)
-                )
+            cols = ["fecha", "total", "cliente_id", "estado"]
+            vals = [fecha, total, cliente_id, estado]
+            if Distribuidor_id is not None:
+                cols.append("Distribuidor_id")
+                vals.append(Distribuidor_id)
+            if vendedor_id is not None:
+                cols.append("vendedor_id")
+                vals.append(vendedor_id)
+            placeholders = ", ".join(["?"] * len(vals))
+            q = f"INSERT INTO ventas ({', '.join(cols)}) VALUES ({placeholders})"
+            self.cursor.execute(q, vals)
             venta_id = self.cursor.lastrowid
             self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ventas_credito_fiscal (
@@ -676,6 +648,14 @@ class DB:
     def get_ventas(self):
         self.cursor.execute("SELECT * FROM ventas")
         return [dict(row) for row in self.cursor.fetchall()]
+
+    def update_venta_estado(self, venta_id, estado):
+        """Actualiza el estado de una venta."""
+        self.cursor.execute(
+            "UPDATE ventas SET estado=? WHERE id=?",
+            (estado, venta_id),
+        )
+        self.conn.commit()
 
     def get_detalles_venta(self, venta_id):
         """Return sale line items joined with product names."""
@@ -778,6 +758,25 @@ class DB:
             query += " AND date(fecha) <= date(?)"
             params.append(fecha_fin)
         query += " ORDER BY fecha"
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_comision_vendedores(self, fecha_inicio=None, fecha_fin=None):
+        """Return total commission per vendor within an optional date range."""
+        query = (
+            "SELECT dv.vendedor_id, SUM(dv.comision) AS total_comision "
+            "FROM detalles_venta dv "
+            "JOIN ventas v ON v.id = dv.venta_id "
+            "WHERE dv.vendedor_id IS NOT NULL"
+        )
+        params = []
+        if fecha_inicio:
+            query += " AND date(v.fecha) >= date(?)"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND date(v.fecha) <= date(?)"
+            params.append(fecha_fin)
+        query += " GROUP BY dv.vendedor_id ORDER BY dv.vendedor_id"
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 
@@ -1095,28 +1094,20 @@ class DB:
         # Inserta la venta principal
         fecha = data.get("fecha", "")
         total = data.get("total", 0)
-        cliente_id = data.get("cliente_id", None)
-        Distribuidor_id = data.get("Distribuidor_id", None)
-        if cliente_id is not None and Distribuidor_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                (fecha, total, cliente_id, Distribuidor_id)
-            )
-        elif cliente_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                (fecha, total, cliente_id, None)
-            )
-        elif Distribuidor_id is not None:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total, cliente_id, Distribuidor_id) VALUES (?, ?, ?, ?)",
-                (fecha, total, None, Distribuidor_id)
-            )
-        else:
-            self.cursor.execute(
-                "INSERT INTO ventas (fecha, total) VALUES (?, ?)",
-                (fecha, total)
-            )
+        cliente_id = data.get("cliente_id")
+        Distribuidor_id = data.get("Distribuidor_id")
+        estado = data.get("estado", "Pagada o Completada")
+        cols = ["fecha", "total", "estado"]
+        vals = [fecha, total, estado]
+        if cliente_id is not None:
+            cols.append("cliente_id")
+            vals.append(cliente_id)
+        if Distribuidor_id is not None:
+            cols.append("Distribuidor_id")
+            vals.append(Distribuidor_id)
+        placeholders = ", ".join(["?"] * len(vals))
+        query = f"INSERT INTO ventas ({', '.join(cols)}) VALUES ({placeholders})"
+        self.cursor.execute(query, vals)
         venta_id = self.cursor.lastrowid
 
         # Si hay detalles de venta en el dict, agrégalos

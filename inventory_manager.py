@@ -206,7 +206,7 @@ class InventoryManager:
                     pass
             extra_json = json.dumps(extra) if extra is not None else None
 
-            estado = v.get("estado", "Pagada o Completada")
+            estado = v.get("estado", "Pagada")
             self.db.cursor.execute(
                 "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",

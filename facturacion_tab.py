@@ -117,7 +117,7 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Estado", "No se encontró la venta seleccionada")
             return
         from dialogs import EstadoVentaDialog
-        dialog = EstadoVentaDialog(venta.get("estado", "Pagada o Completada"), self)
+        dialog = EstadoVentaDialog(venta.get("estado", "Pagada"), self)
         if dialog.exec_():
             estado = dialog.get_estado()
             self.manager.db.update_venta_estado(venta_id, estado)

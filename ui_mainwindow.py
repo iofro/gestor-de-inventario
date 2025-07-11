@@ -602,7 +602,7 @@ class MainWindow(QMainWindow):
                 Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == Distribuidor_nombre), None)
                 Distribuidor_id = Distribuidor["id"] if Distribuidor else None
                 vendedor_id = data.get("vendedor_id")
-                estado = data.get("estado", "Pagada o Completada")
+                estado = data.get("estado", "Pagada")
                 venta_id = self.manager.db.add_venta(
                     fecha,
                     total,

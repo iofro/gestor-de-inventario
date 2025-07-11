@@ -69,7 +69,7 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha TEXT,
                 total REAL,
-                estado TEXT DEFAULT 'Pagada o Completada'
+                estado TEXT DEFAULT 'Pagada'
             )
         """)
         self.cursor.execute("""
@@ -396,7 +396,7 @@ class DB:
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT")
             self.cursor.execute("ALTER TABLE ventas ADD COLUMN extra TEXT")
-            self.cursor.execute("ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada o Completada'")
+            self.cursor.execute("ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada'")
             self.conn.commit()
         except Exception:
             pass  # Ya existen
@@ -545,7 +545,7 @@ class DB:
         Distribuidor_id=None,
         vendedor_id=None,
         extra=None,
-        estado="Pagada o Completada",
+        estado="Pagada",
     ):
         extra_json = json.dumps(extra) if extra is not None else None
         columns = ["fecha", "total", "estado"]
@@ -591,7 +591,7 @@ class DB:
         ventas_no_sujetas=0,
         total_letras="",
         extra=None,
-        estado="Pagada o Completada",
+        estado="Pagada",
     ):
         try:
             cols = ["fecha", "total", "cliente_id", "estado"]
@@ -1096,7 +1096,7 @@ class DB:
         total = data.get("total", 0)
         cliente_id = data.get("cliente_id")
         Distribuidor_id = data.get("Distribuidor_id")
-        estado = data.get("estado", "Pagada o Completada")
+        estado = data.get("estado", "Pagada")
         cols = ["fecha", "total", "estado"]
         vals = [fecha, total, estado]
         if cliente_id is not None:

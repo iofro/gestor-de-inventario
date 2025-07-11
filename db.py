@@ -14,6 +14,31 @@ class DB:
         self.cursor = self.conn.cursor()
         self.setup()
 
+    def ensure_column(self, table: str, column: str, definition: str) -> bool:
+        """Ensure that a specific column exists in ``table``.
+
+        If the column is missing the user is asked whether it should be created.
+        Returns ``True`` if the column exists or was created successfully.
+        """
+        self.cursor.execute(f"PRAGMA table_info({table})")
+        cols = [row[1] for row in self.cursor.fetchall()]
+        if column not in cols:
+            resp = input(
+                f"La tabla '{table}' no tiene la columna '{column}'. ¿Crear columna? (s/n): "
+            )
+            if resp.strip().lower().startswith("s"):
+                self.cursor.execute(
+                    f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
+                )
+                self.conn.commit()
+                print(f"Columna '{column}' creada en '{table}'.")
+                return True
+            print(
+                f"No se agregó la columna '{column}'. Algunas funciones podrían fallar."
+            )
+            return False
+        return True
+
     def setup(self):
         # Create tables if they don't exist without dropping existing data
         self.cursor.execute("""
@@ -441,6 +466,9 @@ class DB:
         )
         self.conn.commit()
 
+        # Verifica que la columna estado exista en ventas
+        self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
+
     # CRUD Distribuidores
     def add_Distribuidor(self, nombre):
         self.cursor.execute("INSERT INTO Distribuidores (nombre) VALUES (?)", (nombre,))
@@ -547,6 +575,8 @@ class DB:
         extra=None,
         estado="Pagada",
     ):
+        # Asegura que la columna estado exista antes de insertar
+        self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
         extra_json = json.dumps(extra) if extra is not None else None
         columns = ["fecha", "total", "estado"]
         values = [fecha, total, estado]
@@ -593,6 +623,8 @@ class DB:
         extra=None,
         estado="Pagada",
     ):
+        # Asegura que la columna estado exista antes de insertar
+        self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
         try:
             cols = ["fecha", "total", "cliente_id", "estado"]
             vals = [fecha, total, cliente_id, estado]
@@ -1092,6 +1124,7 @@ class DB:
     def add_venta_detallada(self, data):
         # data es un dict con los campos de la tabla ventas
         # Inserta la venta principal
+        self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
         fecha = data.get("fecha", "")
         total = data.get("total", 0)
         cliente_id = data.get("cliente_id")

@@ -251,7 +251,8 @@ class SalesTab(QWidget):
             self.sales_table.setItem(row, 1, QTableWidgetItem(cli))
             self.sales_table.setItem(row, 2, QTableWidgetItem(venta.get("fecha", "")))
             self.sales_table.setItem(row, 3, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
-            self.sales_table.setItem(row, 4, QTableWidgetItem("Pendiente"))
+            estado = venta.get("estado", "Pendiente")
+            self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
         if rows:
             self.sales_table.selectRow(0)
         else:

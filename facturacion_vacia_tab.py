@@ -99,7 +99,7 @@ class FacturacionVaciaTab(QWidget):
         if not venta:
             return
         from dialogs import EstadoVentaDialog
-        dialog = EstadoVentaDialog(venta.get("estado", "Pagada o Completada"), self)
+        dialog = EstadoVentaDialog(venta.get("estado", "Pagada"), self)
         if dialog.exec_():
             estado = dialog.get_estado()
             manager.db.update_venta_estado(venta_id, estado)

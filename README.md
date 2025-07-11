@@ -35,6 +35,14 @@ Las pruebas unitarias se ejecutan con **pytest**. Para lanzarlas usa:
 pytest
 ```
 
+Las pruebas que verifican la generación y lectura de PDF utilizan
+**PyMuPDF**, por lo que debes instalar las dependencias antes de
+ejecutarlas. Puedes hacerlo ejecutando:
+
+```bash
+pip install -r requirements.txt
+```
+
 ### Generar DTE
 
 El método `generar_dte_json(venta_id)` crea un diccionario con el formato que

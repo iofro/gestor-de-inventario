@@ -75,3 +75,21 @@ Si quieres mostrar tu logo, reemplaza `logoinventario.jpg` por tu imagen.
 
 Como referencia puedes revisar `ticket_example.pdf` que se
 incluye en este repositorio.
+
+Para reproducir ese ejemplo ejecuta lo siguiente:
+
+```python
+import json
+from ticket_pdf import generar_ticket_personalizado
+
+with open("tests/data/sample_ticket.json", encoding="utf-8") as f:
+    data = json.load(f)
+
+generar_ticket_personalizado(
+    data["venta"],
+    data["detalles"],
+    "mi_ticket.pdf",
+    datos_negocio=data["datos_negocio"],
+    dte_data=data["dte_data"],
+)
+```

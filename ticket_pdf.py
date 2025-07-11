@@ -7,6 +7,11 @@ import os
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 
+def _with_falta(value):
+    """Return ``"falta"`` when *value* is falsy."""
+    return "falta" if not value else str(value)
+
+
 def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None):
     """Genera un PDF sencillo tipo ticket para una venta."""
     if datos_negocio is None:
@@ -94,8 +99,8 @@ def generar_ticket_personalizado(
     if dte_data is None:
         dte_data = {}
 
-    sello = dte_data.get("selloRecibido", "vacío")
-    firma = dte_data.get("firmaElectronica", "vacío")
+    sello = dte_data.get("selloRecibido", "falta")
+    firma = dte_data.get("firmaElectronica", "falta")
 
     def _flatten(data, prefix=""):
         lines = []
@@ -130,19 +135,17 @@ def generar_ticket_personalizado(
         y -= 22 * mm
 
     c.setFont("Helvetica-Bold", 9)
-    c.drawCentredString(width / 2, y, datos_negocio.get("nombre_comercial", ""))
+    c.drawCentredString(width / 2, y, _with_falta(datos_negocio.get("nombre_comercial")))
     y -= 5 * mm
     c.setFont("Helvetica", 8)
     giro = datos_negocio.get("giro")
-    if giro:
-        c.drawCentredString(width / 2, y, giro)
-        y -= 4 * mm
+    c.drawCentredString(width / 2, y, _with_falta(giro))
+    y -= 4 * mm
     direccion = datos_negocio.get("direccion")
-    if direccion:
-        c.drawCentredString(width / 2, y, direccion)
-        y -= 4 * mm
+    c.drawCentredString(width / 2, y, _with_falta(direccion))
+    y -= 4 * mm
 
-    c.drawCentredString(width / 2, y, f"Fecha: {venta.get('fecha', '')}")
+    c.drawCentredString(width / 2, y, f"Fecha: {_with_falta(venta.get('fecha'))}")
     y -= 5 * mm
     c.line(5 * mm, y, width - 5 * mm, y)
     y -= 4 * mm
@@ -156,7 +159,7 @@ def generar_ticket_personalizado(
 
     c.setFont("Helvetica", 7)
     for d in detalles:
-        desc = d.get("descripcion", "")
+        desc = _with_falta(d.get("descripcion"))
         qty = d.get("cantidad", 0)
         pu = d.get("precio_unitario", 0)
         total = qty * pu
@@ -171,12 +174,12 @@ def generar_ticket_personalizado(
 
     y -= 6 * mm
     c.setFont("Helvetica", 6)
-    c.drawString(5 * mm, y, f"Sello recibido: {sello}")
+    c.drawString(5 * mm, y, f"Sello recibido: {_with_falta(sello)}")
     y -= line_height
-    c.drawString(5 * mm, y, f"Firma electr\xf3nica: {firma}")
+    c.drawString(5 * mm, y, f"Firma electr\xf3nica: {_with_falta(firma)}")
     y -= line_height
     for line in dte_lines:
-        c.drawString(5 * mm, y, line)
+        c.drawString(5 * mm, y, _with_falta(line))
         y -= line_height
 
     c.showPage()

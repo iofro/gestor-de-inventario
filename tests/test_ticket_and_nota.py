@@ -1,5 +1,5 @@
 from db import DB
-from ticket_pdf import generar_ticket_pdf
+from ticket_pdf import generar_ticket_pdf, generar_ticket_personalizado
 import fitz
 
 
@@ -34,3 +34,14 @@ def test_generar_ticket_pdf_header(tmp_path):
     with fitz.open(archivo) as doc:
         text = "".join(p.get_text() for p in doc)
     assert "MI NEGOCIO" in text
+
+
+def test_generar_ticket_personalizado_missing(tmp_path):
+    venta = {"id": 1, "total": 10}
+    detalles = []
+    archivo = tmp_path / "ticket_pers.pdf"
+    generar_ticket_personalizado(venta, detalles, str(archivo), datos_negocio={}, dte_data={})
+    assert archivo.exists()
+    with fitz.open(archivo) as doc:
+        text = "".join(p.get_text() for p in doc)
+    assert "falta" in text

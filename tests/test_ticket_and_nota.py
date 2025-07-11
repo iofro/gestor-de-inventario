@@ -44,4 +44,4 @@ def test_generar_ticket_personalizado_missing(tmp_path):
     assert archivo.exists()
     with fitz.open(archivo) as doc:
         text = "".join(p.get_text() for p in doc)
-    assert "falta" in text
+    assert "vacio" in text

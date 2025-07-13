@@ -495,7 +495,7 @@ class ProductTableModel(QAbstractTableModel):
             elif stock < 25:
                 return QColor("yellow")
             else:
-                return QColor("green")
+                return QColor("lightgreen")
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):

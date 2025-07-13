@@ -14,8 +14,12 @@ from PyQt5.QtWidgets import (
     QHeaderView,
 )
 from PyQt5.QtCore import QDate
+import os
 
 from ticket_pdf import generar_ticket_personalizado
+
+# Directory where debit notes will be stored
+NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
 import json
 from datetime import datetime
 
@@ -153,7 +157,16 @@ class FacturacionTab(QWidget):
         if not ok2:
             return
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
-        self.manager.db.add_nota(venta_id, tipo, fecha, monto, motivo)
+        nota_id = self.manager.db.add_nota(venta_id, tipo, fecha, monto, motivo)
+
+        if tipo == "debito":
+            os.makedirs(NOTAS_DEBITO_DIR, exist_ok=True)
+            fname = os.path.join(NOTAS_DEBITO_DIR, f"nota_{nota_id}.txt")
+            with open(fname, "w", encoding="utf-8") as f:
+                f.write(
+                    f"Venta ID: {venta_id}\nFecha: {fecha}\nMonto: {monto}\nMotivo: {motivo}"
+                )
+
         QMessageBox.information(self, "Nota", "Nota registrada")
         self.load_invoices()
 

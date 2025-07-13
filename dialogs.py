@@ -440,7 +440,7 @@ class ProductDialogBase:
             elif stock < 25:
                 item.setBackground(QColor("yellow"))
             else:
-                item.setBackground(QColor("green"))
+                item.setBackground(QColor("lightgreen"))
             self.product_list.addItem(item)
         self.productos = productos
 

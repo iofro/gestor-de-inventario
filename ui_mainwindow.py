@@ -1228,7 +1228,7 @@ class MainWindow(QMainWindow):
             elif stock < 25:
                 item_cantidad.setBackground(QColor("yellow"))
             else:
-                item_cantidad.setBackground(QColor("green"))
+                item_cantidad.setBackground(QColor("lightgreen"))
             self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["fecha_compra"]))
@@ -1251,7 +1251,7 @@ class MainWindow(QMainWindow):
                         item_venc.setBackground(QColor("orange"))
                         item_venc.setForeground(QColor("black"))
                     elif meses > 6:
-                        item_venc.setBackground(QColor("green"))
+                        item_venc.setBackground(QColor("lightgreen"))
                         item_venc.setForeground(QColor("black"))
                 except Exception:
                     pass

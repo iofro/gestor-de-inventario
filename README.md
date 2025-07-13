@@ -68,6 +68,8 @@ Las facturas generadas desde la pestaña **Ventas** se guardan automáticamente 
 `facturas/consumidor_final` o `facturas/credito_fiscal` dependiendo del tipo de
 documento. Los tickets se almacenan en la carpeta `tickets`. Al imprimir,
 previsualizar o enviar por correo se reutilizan estos PDFs si están disponibles.
+Las notas de débito creadas desde la pestaña **Facturación** se guardan como
+archivos de texto en la carpeta `notas_debito`.
 
 ### Generar ticket en formato personalizado
 

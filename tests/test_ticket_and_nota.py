@@ -3,6 +3,15 @@ from ticket_pdf import generar_ticket_pdf, generar_ticket_personalizado
 import fitz
 
 
+def test_ticket_path_storage(tmp_path):
+    db = DB(":memory:")
+    venta_id = db.add_venta("2024-01-01", 50)
+    path = tmp_path / "ticket.pdf"
+    path.write_text("data")
+    db.add_ticket_pdf(venta_id, str(path))
+    assert db.get_ticket_pdf(venta_id) == str(path)
+
+
 def test_add_nota_and_retrieve(tmp_path):
     db = DB(":memory:")
     venta_id = db.add_venta("2024-01-01", 100)

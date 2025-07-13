@@ -249,6 +249,17 @@ class DB:
             )
         """
         )
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS tickets_pdf (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER,
+                ruta TEXT,
+                fecha_creacion TEXT,
+                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+            )
+        """
+        )
         self.conn.commit()
 
 
@@ -1006,6 +1017,34 @@ class DB:
         )
         self.conn.commit()
         return self.cursor.lastrowid
+
+    def add_ticket_pdf(self, venta_id, ruta):
+        """Almacena la ruta de un ticket generado para una venta."""
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cursor.execute(
+            "INSERT INTO tickets_pdf (venta_id, ruta, fecha_creacion) VALUES (?, ?, ?)",
+            (venta_id, ruta, fecha),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_ticket_pdf(self, venta_id):
+        """Devuelve la ruta del ticket más reciente asociado a una venta."""
+        self.cursor.execute(
+            "SELECT ruta FROM tickets_pdf WHERE venta_id=? ORDER BY fecha_creacion DESC LIMIT 1",
+            (venta_id,),
+        )
+        row = self.cursor.fetchone()
+        return row["ruta"] if row else None
+
+    def get_factura_pdf(self, venta_id):
+        """Devuelve la ruta de la factura PDF más reciente de una venta."""
+        self.cursor.execute(
+            "SELECT ruta FROM facturas_pdf WHERE venta_id=? ORDER BY fecha_creacion DESC LIMIT 1",
+            (venta_id,),
+        )
+        row = self.cursor.fetchone()
+        return row["ruta"] if row else None
 
     def get_notas_by_venta(self, venta_id):
         """Devuelve las notas asociadas a una venta."""

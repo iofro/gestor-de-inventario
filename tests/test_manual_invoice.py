@@ -1,6 +1,7 @@
 import os
 import pytest
 from PyQt5.QtWidgets import QApplication, QDialog, QTableWidgetItem, QMessageBox
+from PyQt5.QtGui import QDesktopServices
 
 from sales_tab import SalesTab
 from dialogs import ManualInvoiceDialog
@@ -69,3 +70,27 @@ def test_manual_invoice_consumidor_final_fields(qt_app):
 
     for name in required:
         assert hasattr(dialog, name), f"Dialog missing field {name}"
+
+
+def test_preview_uses_stored_pdf(qt_app, tmp_path, monkeypatch):
+    db = DB(":memory:")
+    venta_id = db.add_venta("2024-01-01", 5)
+    man = Manager(db)
+    tab = SalesTab(man)
+    tab.sales_table.setRowCount(1)
+    tab.sales_table.setItem(0, 0, QTableWidgetItem(str(venta_id)))
+    tab.sales_table.selectRow(0)
+
+    pdf = tmp_path / "fact.pdf"
+    pdf.write_text("x")
+    db.add_factura_pdf(venta_id, "CF", str(pdf))
+
+    called = {"gen": False}
+    def fake_generate(vid):
+        called["gen"] = True
+        return str(pdf)
+    monkeypatch.setattr(tab, "_generate_invoice_pdf", fake_generate)
+    monkeypatch.setattr(QDesktopServices, "openUrl", lambda *a, **k: None)
+
+    tab.preview_pdf()
+    assert called["gen"] is False

@@ -64,12 +64,18 @@ contraseña de la cuenta utilizada para enviar correos ya **no** se guarda en el
 archivo. En su lugar, define la variable de entorno `INVENTARIO_EMAIL_PASSWORD`
 con la contraseña correspondiente antes de ejecutar la aplicación.
 
+Las facturas generadas desde la pestaña **Ventas** se guardan automáticamente en
+`facturas/consumidor_final` o `facturas/credito_fiscal` dependiendo del tipo de
+documento. Los tickets se almacenan en la carpeta `tickets`. Al imprimir,
+previsualizar o enviar por correo se reutilizan estos PDFs si están disponibles.
+
 ### Generar ticket en formato personalizado
 
 En las pestañas **Ventas** y **Facturación** hay un botón `Ticket`.
-Al pulsarlo se abre un cuadro de diálogo para elegir dónde guardar el PDF.
-El ticket utiliza un formato básico y lee los datos de `datos_negocio.json`.
-Modifica ese archivo para personalizar nombre, dirección y otros datos.
+Al pulsarlo se genera automáticamente un archivo `ticket_{id}.pdf` dentro de la
+carpeta `tickets`. El ticket utiliza un formato básico y lee los datos de
+`datos_negocio.json`. Modifica ese archivo para personalizar nombre, dirección y
+otros datos.
 
 Si quieres mostrar tu logo, reemplaza `logoinventario.jpg` por tu imagen.
 

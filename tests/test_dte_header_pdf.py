@@ -1,0 +1,40 @@
+import fitz
+from dte_header_pdf import generar_cabecera_dte
+
+
+def test_generar_cabecera_consumidor_final(tmp_path):
+    archivo = tmp_path / "cf.pdf"
+    generar_cabecera_dte(
+        codigo_generacion="1234567890ABCDEF",
+        numero_control="DTE-123",
+        sello_recepcion="SELLOXYZ",
+        modelo_facturacion="1 - Facturación previo",
+        tipo_transmision="1 - Transmisión normal",
+        fecha_generacion="01/07/2025, 11:15 AM",
+        tipo_documento="CONSUMIDOR FINAL",
+        archivo=str(archivo),
+    )
+    assert archivo.exists()
+    with fitz.open(archivo) as doc:
+        text = "".join(p.get_text() for p in doc)
+    assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in text
+    assert "CONSUMIDOR FINAL" in text
+    assert "DTE-123" in text
+
+
+def test_generar_cabecera_credito_fiscal(tmp_path):
+    archivo = tmp_path / "cfis.pdf"
+    generar_cabecera_dte(
+        codigo_generacion="1234567890ABCDEF",
+        numero_control="DTE-987",
+        sello_recepcion="SELLO123",
+        modelo_facturacion="1 - Facturación previo",
+        tipo_transmision="1 - Transmisión normal",
+        fecha_generacion="01/07/2025, 11:15 AM",
+        tipo_documento="CREDITO FISCAL",
+        archivo=str(archivo),
+    )
+    with fitz.open(archivo) as doc:
+        text = "".join(p.get_text() for p in doc)
+    assert "CREDITO FISCAL" in text
+    assert "DTE-987" in text

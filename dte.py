@@ -17,6 +17,31 @@ def _load_datos_negocio():
     return {}
 
 
+def generar_numero_control(prefijo: str = "DTE-01-S001P001") -> str:
+    """Crea un número de control único siguiendo el formato de Hacienda."""
+    secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
+    return f"{prefijo}-{secuencia}"
+
+
+def generar_cabecera_dte_data(modelo_facturacion: str, tipo_transmision: str) -> dict:
+    """Genera los datos para la cabecera de un DTE.
+
+    Los campos de código de generación y número de control se crean antes de
+    enviar la factura. Los valores que envía Hacienda posteriormente (código de
+    generación y sello recibido) se dejan en ``None``.
+    """
+    codigo_generacion = uuid.uuid4().hex.upper()
+    numero_control = generar_numero_control()
+    fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
+    return {
+        "codigo_generacion": codigo_generacion,
+        "numero_control": numero_control,
+        "sello_recepcion": None,
+        "modelo_facturacion": modelo_facturacion,
+        "tipo_transmision": tipo_transmision,
+        "fecha_generacion": fecha_generacion,
+    }
+
 def generar_dte_json(db: DB, venta_id: int) -> dict:
     """Genera un diccionario DTE básico para una venta."""
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
@@ -34,7 +59,7 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
     datos = _load_datos_negocio()
 
     codigo_generacion = uuid.uuid4().hex.upper()
-    numero_control = f"{codigo_generacion[:8]}-{codigo_generacion[8:]}"
+    numero_control = generar_numero_control()
 
     fecha = venta.get("fecha") or datetime.now().strftime("%Y-%m-%d")
     hora = datetime.now().strftime("%H:%M:%S")

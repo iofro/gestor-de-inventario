@@ -394,6 +394,8 @@ class FacturacionTab(QWidget):
         numero_control = venta_data.get("numero_control") or dte_json.get("numeroControl", "")
         sello_recepcion = venta_data.get("sello_recepcion") or extra.get("selloRecibido", "")
         modelo_facturacion = venta_data.get("modelo_facturacion") or ident.get("modeloFacturacion", "")
+        if not modelo_facturacion:
+            modelo_facturacion = "1 - Facturación previo"
         tipo_transmision = venta_data.get("tipo_transmision") or ident.get("tipoTransmision", "")
         fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
 

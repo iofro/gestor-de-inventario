@@ -1,8 +1,5 @@
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from reportlab.graphics.shapes import Drawing
-from reportlab.graphics import renderPDF
-from reportlab.graphics.barcode import qr
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
 import json
@@ -20,7 +17,6 @@ def generar_factura_electronica_pdf(
     archivo="factura_electronica.pdf",
     datos_negocio=None,
 ):
-    from datetime import datetime
 
     if datos_negocio is None:
         datos_negocio = {}
@@ -36,74 +32,14 @@ def generar_factura_electronica_pdf(
     x_margin = 30
     y_margin = 30
 
-    # --- ENCABEZADO SUPERIOR IZQUIERDA: DATOS FIJOS ---
+    # Posiciones base para los cuadros de emisor y receptor
     encabezado_y = height - y_margin
-    encabezado_x = x_margin
-    c.setFont("Helvetica-Bold", 14)
-    c.drawString(encabezado_x, encabezado_y, datos_negocio.get("nombre_comercial", ""))
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(encabezado_x, encabezado_y - 16, datos_negocio.get("razon_social", ""))
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(encabezado_x, encabezado_y - 30, datos_negocio.get("giro", ""))
-    c.drawString(encabezado_x, encabezado_y - 42, datos_negocio.get("slogan", ""))
-    c.setFont("Helvetica", 8)
-    c.drawString(encabezado_x, encabezado_y - 56, datos_negocio.get("direccion", ""))
-    c.drawString(
-        encabezado_x,
-        encabezado_y - 66,
-        f"{datos_negocio.get('municipio', '')} {datos_negocio.get('departamento', '')}{datos_negocio.get('pais', '')}"
-        .strip()
-    )
-
-    # --- ENCABEZADO SUPERIOR DERECHA: TIPO DE DOCUMENTO ---
-    doc_x = width - x_margin - 260
-    doc_y = height - y_margin
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(doc_x, doc_y, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(doc_x, doc_y - 18, str(tipo_documento))
-    c.setFont("Helvetica", 7)
-    c.drawRightString(width - x_margin, doc_y, f"Ver. {venta.get('version', '3')}")
-
-    # --- Cuadro superior derecho: Datos fiscales + QR + Fecha y hora de generación ---
-    # --- Parámetros para alineación perfecta del cuadro derecho ---
-    cuadro_w = 220
-    cuadro_h = 126
-    invisible_col_sep = 0   # Mueve el cuadro un poco más a la derecha
-    cuadro_y_offset = 12     # Mueve el cuadro más arriba (ajustado por altura)
-
-    doc_x = width - x_margin - 260  # Donde empieza "DOCUMENTO TRIBUTARIO ELECTRÓNICO"
-    cuadro_x = doc_x + invisible_col_sep
-    cuadro_y = encabezado_y - 170 + cuadro_y_offset
-
-    c.setLineWidth(0.7)
-    c.roundRect(cuadro_x, cuadro_y, cuadro_w, cuadro_h, 6, stroke=1, fill=0)
-    c.setFont("Helvetica", 9)
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 18, f"Código de Generación: {venta.get('codigo_generacion', '')}")
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 36, f"N° Control: {venta.get('numero_control', '')}")
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 54, f"Sello de Recepción: {venta.get('sello_recepcion', '')}")
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 72, f"Modelo de Facturación: {venta.get('modelo_facturacion', '')}")
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 90, f"Tipo de Transmisión: {venta.get('tipo_transmision', '')}")
-    c.drawString(cuadro_x + 8, cuadro_y + cuadro_h - 108, f"Fecha y hora de generación: {venta.get('fecha', '')}")
-
-    # QR a la derecha del cuadro (ajusta la posición si es necesario)
-    qr_data = venta.get('qr', '')
-    if qr_data:
-        qr_code = qr.QrCodeWidget(qr_data)
-        bounds = qr_code.getBounds()
-        qr_size = 50
-        width_qr = bounds[2] - bounds[0]
-        height_qr = bounds[3] - bounds[1]
-        d = Drawing(qr_size, qr_size)
-        d.add(qr_code)
-        d.scale(qr_size / width_qr, qr_size / height_qr)
-        renderPDF.draw(d, c, cuadro_x + cuadro_w + 10, cuadro_y + 10)
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 
     box_w = (width - 2 * x_margin - 10) // 2
-    box_h = 80
-    box_y = cuadro_y - box_h - 10
+    box_h = 100
+    box_y = encabezado_y - box_h
     emisor_x = x_margin
     receptor_x = emisor_x + box_w + 10
 
@@ -123,6 +59,12 @@ def generar_factura_electronica_pdf(
     c.drawString(emisor_x + 5, text_y, f"Giro: {datos_negocio.get('giro', '')}")
     text_y -= 12
     c.drawString(emisor_x + 5, text_y, f"Dirección: {datos_negocio.get('direccion', '')}")
+    text_y -= 12
+    telefono = datos_negocio.get('telefono_fijo') or datos_negocio.get('telefono_movil', '')
+    c.drawString(emisor_x + 5, text_y, f"Número Teléfono: {telefono}")
+    text_y -= 12
+    correo_emisor = datos_negocio.get('email') or datos_negocio.get('email_usuario', '')
+    c.drawString(emisor_x + 5, text_y, f"Correo Electrónico: {correo_emisor}")
 
     text_y = box_y + box_h - 14
     c.setFont("Helvetica-Bold", 8)

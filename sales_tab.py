@@ -25,6 +25,7 @@ from PyQt5.QtCore import Qt, QDate, QUrl, QThread, pyqtSignal
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
+from utils.monto import monto_a_texto_sv
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
 import tempfile
@@ -533,6 +534,11 @@ class SalesTab(QWidget):
                 "total": total,
             }
         )
+        if not venta_data.get("total_letras"):
+            try:
+                venta_data["total_letras"] = monto_a_texto_sv(total)
+            except Exception:
+                venta_data["total_letras"] = ""
 
         cliente = None
         if venta.get("cliente_id"):

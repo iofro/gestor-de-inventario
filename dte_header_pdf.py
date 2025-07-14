@@ -53,7 +53,10 @@ def generar_cabecera_dte(
     qr_value = codigo_generacion
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
-    size = 40 * mm
+    # Reduce the QR code so it matches the height of the three informational
+    # lines (Código Generación, Número Control y Sello Recepción). Using 15 mm
+    # keeps it roughly the same height as those lines combined.
+    size = 15 * mm
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])

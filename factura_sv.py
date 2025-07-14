@@ -23,7 +23,7 @@ def generar_factura_electronica_pdf(
     codigo_generacion="",
     numero_control="",
     sello_recepcion="",
-    modelo_facturacion="",
+    modelo_facturacion="1 - Facturación previo",
     tipo_transmision="",
     fecha_generacion="",
 ):

@@ -550,6 +550,21 @@ class SalesTab(QWidget):
                 None,
             )
 
+        extra = venta_data.get("extra") or {}
+        if isinstance(extra, str):
+            try:
+                extra = json.loads(extra)
+            except Exception:
+                extra = {}
+        dte_json = extra.get("dteJson") or extra.get("dte_json") or {}
+        ident = dte_json.get("identificacion", {})
+        codigo_generacion = venta_data.get("codigo_generacion") or ident.get("codigoGeneracion", "")
+        numero_control = venta_data.get("numero_control") or dte_json.get("numeroControl", "")
+        sello_recepcion = venta_data.get("sello_recepcion") or extra.get("selloRecibido", "")
+        modelo_facturacion = venta_data.get("modelo_facturacion") or ident.get("modeloFacturacion", "")
+        tipo_transmision = venta_data.get("tipo_transmision") or ident.get("tipoTransmision", "")
+        fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
+
         tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
         dest_dir = CREDITO_DIR if credito_info else CF_DIR
         os.makedirs(dest_dir, exist_ok=True)
@@ -562,6 +577,12 @@ class SalesTab(QWidget):
             distribuidor or {},
             tipo_doc,
             archivo=file_path,
+            codigo_generacion=codigo_generacion,
+            numero_control=numero_control,
+            sello_recepcion=sello_recepcion,
+            modelo_facturacion=modelo_facturacion,
+            tipo_transmision=tipo_transmision,
+            fecha_generacion=fecha_generacion,
         )
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
@@ -762,6 +783,9 @@ class SalesTab(QWidget):
                 {},
                 tipo.title(),
                 archivo=temp_file,
+                codigo_generacion=venta.get("codigo_generacion", ""),
+                numero_control=venta.get("numero_control", ""),
+                sello_recepcion=venta.get("sello_recepcion", ""),
             )
             QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
 

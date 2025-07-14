@@ -62,7 +62,17 @@ def generar_factura_electronica_pdf(
 
     row_y = top - 40
     c.setFont("Helvetica", 10)
-    left_x = 40
+
+    qr_col_w = 30 * mm  # ancho reservado para el QR (~3cm)
+    col_margin = 15     # espacio entre columnas (~5mm)
+    available_w = width - 2 * x_margin - qr_col_w - 2 * col_margin
+    left_col_w = available_w / 2
+    right_col_w = available_w / 2
+
+    left_x = x_margin
+    right_x = x_margin + left_col_w + qr_col_w + 2 * col_margin + right_col_w
+
+    # --- Bloque de texto izquierdo ---
     y = row_y
     c.drawString(left_x, y, f"Código Generación: {codigo_generacion}")
     y -= 14
@@ -70,7 +80,7 @@ def generar_factura_electronica_pdf(
     y -= 14
     c.drawString(left_x, y, f"Sello Recepción: {sello_recepcion}")
 
-    right_x = width - 40
+    # --- Bloque de texto derecho ---
     y = row_y
     c.drawRightString(right_x, y, f"Modelo Facturación: {modelo_facturacion}")
     y -= 14
@@ -78,18 +88,18 @@ def generar_factura_electronica_pdf(
     y -= 14
     c.drawRightString(right_x, y, f"Fecha Generación: {fecha_generacion}")
 
+    # --- Código QR (columna central) ---
     qr_value = f"{numero_control}|{codigo_generacion}"
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
-    # The QR code should match the height occupied by the three text lines
-    # ("Código Generación", "Número Control" and "Sello Recepción"). Each line
-    # is spaced 14 points apart, so 15 mm (~42 pt) approximates that height.
-    size = 15 * mm
+    size = 30 * mm  # tamaño del QR (~3cm)
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
-    renderPDF.draw(d, c, (width - size) / 2, row_y - size + 10)
+    qr_x = x_margin + left_col_w + col_margin + (qr_col_w - size) / 2
+    qr_y = row_y - 14 - size / 2
+    renderPDF.draw(d, c, qr_x, qr_y)
 
 
     # Posiciones base para los cuadros de emisor y receptor

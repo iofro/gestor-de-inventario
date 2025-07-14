@@ -73,7 +73,10 @@ def generar_factura_electronica_pdf(
     qr_value = codigo_generacion
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
-    size = 40 * mm
+    # The QR code should match the height occupied by the three text lines
+    # ("Código Generación", "Número Control" and "Sello Recepción"). Each line
+    # is spaced 14 points apart, so 15 mm (~42 pt) approximates that height.
+    size = 15 * mm
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])

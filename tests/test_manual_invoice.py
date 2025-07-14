@@ -6,6 +6,7 @@ from PyQt5.QtGui import QDesktopServices
 from sales_tab import SalesTab
 from dialogs import ManualInvoiceDialog
 from db import DB
+import fitz
 
 class Manager:
     def __init__(self, db):
@@ -94,3 +95,28 @@ def test_preview_uses_stored_pdf(qt_app, tmp_path, monkeypatch):
 
     tab.preview_pdf()
     assert called["gen"] is False
+
+
+def test_factura_pdf_contains_header(tmp_path):
+    pdf_path = tmp_path / "fact.pdf"
+    from factura_sv import generar_factura_electronica_pdf
+
+    generar_factura_electronica_pdf(
+        {},
+        [],
+        {},
+        {},
+        "CONSUMIDOR FINAL",
+        archivo=str(pdf_path),
+        codigo_generacion="ABC123",
+        numero_control="NC-42",
+        sello_recepcion="SELLO1",
+        modelo_facturacion="1 - Facturaci\u00f3n previo",
+        tipo_transmision="1 - Transmisi\u00f3n normal",
+        fecha_generacion="01/07/2025",
+    )
+
+    with fitz.open(pdf_path) as doc:
+        text = "".join(p.get_text() for p in doc)
+    assert "DOCUMENTO TRIBUTARIO ELECTR\u00d3NICO" in text
+    assert "NC-42" in text

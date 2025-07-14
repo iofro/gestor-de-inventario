@@ -2,6 +2,10 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
 from reportlab.lib import colors
+from reportlab.graphics import renderPDF
+from reportlab.graphics.barcode import qr
+from reportlab.graphics.shapes import Drawing
+from reportlab.lib.units import mm
 import json
 import os
 
@@ -16,6 +20,12 @@ def generar_factura_electronica_pdf(
     tipo_documento="Crédito Fiscal",
     archivo="factura_electronica.pdf",
     datos_negocio=None,
+    codigo_generacion="",
+    numero_control="",
+    sello_recepcion="",
+    modelo_facturacion="",
+    tipo_transmision="",
+    fecha_generacion="",
 ):
 
     if datos_negocio is None:
@@ -32,8 +42,45 @@ def generar_factura_electronica_pdf(
     x_margin = 30
     y_margin = 30
 
+    # --- Cabecera Documento Tributario Electrónico ---
+    top = height - 50
+    c.setFont("Helvetica-Bold", 16)
+    c.drawCentredString(width / 2, top, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
+
+    top -= 20
+    c.setFont("Helvetica-Bold", 12)
+    c.drawCentredString(width / 2, top, tipo_documento.upper())
+
+    row_y = top - 40
+    c.setFont("Helvetica", 10)
+    left_x = 40
+    y = row_y
+    c.drawString(left_x, y, f"Código Generación: {codigo_generacion}")
+    y -= 14
+    c.drawString(left_x, y, f"Número Control: {numero_control}")
+    y -= 14
+    c.drawString(left_x, y, f"Sello Recepción: {sello_recepcion}")
+
+    right_x = width - 40
+    y = row_y
+    c.drawRightString(right_x, y, f"Modelo Facturación: {modelo_facturacion}")
+    y -= 14
+    c.drawRightString(right_x, y, f"Tipo Transmisión: {tipo_transmision}")
+    y -= 14
+    c.drawRightString(right_x, y, f"Fecha Generación: {fecha_generacion}")
+
+    qr_value = codigo_generacion
+    qr_code = qr.QrCodeWidget(qr_value)
+    bounds = qr_code.getBounds()
+    size = 40 * mm
+    w = bounds[2] - bounds[0]
+    h = bounds[3] - bounds[1]
+    d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
+    d.add(qr_code)
+    renderPDF.draw(d, c, (width - size) / 2, row_y - size + 10)
+
     # Posiciones base para los cuadros de emisor y receptor
-    encabezado_y = height - y_margin
+    encabezado_y = row_y - size - 20
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 

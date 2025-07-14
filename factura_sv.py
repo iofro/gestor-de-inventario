@@ -6,6 +6,7 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
+from dte import generar_cabecera_dte_data
 import json
 import os
 
@@ -36,6 +37,13 @@ def generar_factura_electronica_pdf(
                     datos_negocio = json.load(f)
             except Exception:
                 datos_negocio = {}
+
+    if not codigo_generacion or not numero_control or not fecha_generacion:
+        cab = generar_cabecera_dte_data(modelo_facturacion, tipo_transmision)
+        codigo_generacion = codigo_generacion or cab["codigo_generacion"]
+        numero_control = numero_control or cab["numero_control"]
+        fecha_generacion = fecha_generacion or cab["fecha_generacion"]
+        sello_recepcion = sello_recepcion or cab["sello_recepcion"]
 
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
@@ -70,7 +78,7 @@ def generar_factura_electronica_pdf(
     y -= 14
     c.drawRightString(right_x, y, f"Fecha Generación: {fecha_generacion}")
 
-    qr_value = codigo_generacion
+    qr_value = f"{numero_control}|{codigo_generacion}"
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
     # The QR code should match the height occupied by the three text lines

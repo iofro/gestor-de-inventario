@@ -42,7 +42,7 @@ def generar_factura_electronica_pdf(
     x_margin = 30
     y_margin = 30
 
-    # --- Cabecera Documento Tributario Electrónico ---
+
     top = height - 50
     c.setFont("Helvetica-Bold", 16)
     c.drawCentredString(width / 2, top, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
@@ -50,6 +50,7 @@ def generar_factura_electronica_pdf(
     top -= 20
     c.setFont("Helvetica-Bold", 12)
     c.drawCentredString(width / 2, top, tipo_documento.upper())
+
 
     row_y = top - 40
     c.setFont("Helvetica", 10)
@@ -78,6 +79,7 @@ def generar_factura_electronica_pdf(
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
     renderPDF.draw(d, c, (width - size) / 2, row_y - size + 10)
+
 
     # Posiciones base para los cuadros de emisor y receptor
     encabezado_y = row_y - size - 20

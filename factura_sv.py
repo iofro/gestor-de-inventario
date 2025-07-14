@@ -139,90 +139,9 @@ def generar_factura_electronica_pdf(
     text_y -= 12
     c.drawString(receptor_x + 5, text_y, f"Dirección: {cliente.get('direccion', '')}")
 
-    # Ajusta la posición del cuadro de información general para dejar espacio
-    cuadro_info_y = box_y - 20
-
-    # --- CUADRO DE INFORMACIÓN ANTES DE LA TABLA DE PRODUCTOS ---
-    cuadro_info_x = x_margin
-    cuadro_info_w = width - 2 * x_margin
-    cuadro_info_h = 90
-
-    c.setLineWidth(0.7)
-    c.roundRect(cuadro_info_x, cuadro_info_y - cuadro_info_h, cuadro_info_w, cuadro_info_h, 6, stroke=1, fill=0)
-
-    # Columnas
-    col1_x = cuadro_info_x + 10
-    col2_x = cuadro_info_x + cuadro_info_w // 3 + 10
-    col3_x = cuadro_info_x + 2 * (cuadro_info_w // 3) + 10
-    row_y = cuadro_info_y - 16
-
-    # --- Columna izquierda ---
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y, "Cliente:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y, cliente.get("nombre", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 14, "Dirección:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y - 14, cliente.get("direccion", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 28, "DUI:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y - 28, cliente.get("dui", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 42, "NIT:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y - 42, cliente.get("nit", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 56, "NRC:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 50, row_y - 56, cliente.get("nrc", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col1_x, row_y - 70, "Giro:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col1_x + 30, row_y - 70, cliente.get("giro", ""))
-
-    # --- Columna central ---
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col2_x, row_y, "Cond. de pago:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col2_x + 70, row_y, venta.get("condicion_pago", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col2_x, row_y - 14, "No Rem:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col2_x + 50, row_y - 14, venta.get("no_remision", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col2_x, row_y - 28, "Orden No:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col2_x + 60, row_y - 28, venta.get("orden_no", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col2_x, row_y - 42, "Vendedor:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col2_x + 50, row_y - 42, venta.get("vendedor_nombre", ""))
-
-    # --- Columna derecha ---
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col3_x, row_y, "Vta a Cta de:")
-    c.setFont("Helvetica", 8)
-    c.drawString(col3_x + 60, row_y, venta.get("venta_a_cuenta_de", ""))
-    c.setFont("Helvetica-Bold", 8)
-    c.drawString(col3_x, row_y - 14, "Fecha:")
-    c.setFont("Helvetica", 8)
-    fecha = venta.get("fecha", "")
-    try:
-        dt = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
-        fecha_solo = f"{dt.day}/{dt.month}/{dt.year}"
-    except Exception:
-        try:
-            dt = datetime.strptime(fecha, "%Y-%m-%d")
-            fecha_solo = f"{dt.day}/{dt.month}/{dt.year}"
-        except Exception:
-            fecha_solo = fecha
-    c.drawString(col3_x + 40, row_y - 14, fecha_solo)
-
-    # --- Tabla central de productos tipo Excel ---
+    # Posición inicial para la tabla de productos
     tabla_x = x_margin
-    tabla_y = cuadro_info_y - cuadro_info_h - 30
+    tabla_y = box_y - 40
     row_h = 18
     tabla_columnas = ["Cantidad", "Descripción", "Precio Unitario", "No sujetas", "Exentas", "Gravadas"]
     tabla_data = [tabla_columnas]

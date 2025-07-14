@@ -3,7 +3,14 @@ from dbfread import DBF
 from datetime import date
 from pathlib import Path
 
-BASE = Path('sistemp/Integrasistemp/temporal')
+# Use a path relative to this script so it can be executed from
+# any working directory.
+BASE = (
+    Path(__file__).resolve().parent
+    / "sistemp"
+    / "Integrasistemp"
+    / "temporal"
+)
 
 # Helpers
 def load_dbf(name):

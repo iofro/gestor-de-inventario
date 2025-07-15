@@ -98,7 +98,11 @@ def generar_factura_electronica_pdf(
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
     qr_x = x_margin + left_col_w + col_margin + 5
-    qr_y = row_y - size - 50
+    # Align QR vertically with the header lines (Código Generación,
+    # Número Control y Sello Recepción) so it sits next to them
+    # instead of below them.
+    # Position the QR so its top aligns with the header lines
+    qr_y = row_y - size - 23
     # ensure background so text does not bleed into the QR image
     c.setFillColor(colors.white)
     c.rect(qr_x - 2, qr_y - 2, size + 4, size + 4, fill=1, stroke=0)
@@ -107,7 +111,8 @@ def generar_factura_electronica_pdf(
 
 
     # Posiciones base para los cuadros de emisor y receptor
-    encabezado_y = row_y - size - 10
+    # Keep roughly the same gap between the QR code and the info boxes
+    encabezado_y = qr_y - 40
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 

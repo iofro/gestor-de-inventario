@@ -149,8 +149,8 @@ def generar_factura_electronica_pdf(
     )
 
     # Posiciones base para los cuadros de emisor y receptor
-    # Mantenemos un espacio de 40 puntos debajo del código QR
-    encabezado_y = qr_y - 40
+    # Mantenemos un espacio de 20 puntos debajo del código QR para acercarlos al encabezado
+    encabezado_y = qr_y - 20
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 

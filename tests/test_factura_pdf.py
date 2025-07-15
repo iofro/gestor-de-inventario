@@ -51,3 +51,34 @@ def test_factura_header_contains_doc_type(tmp_path, tipo):
     assert 'DOCUMENTO TRIBUTARIO ELECTRÓNICO' in text
     assert tipo.upper() in text
 
+
+def test_qr_position_and_boxes_spacing(tmp_path):
+    out = _generate(tmp_path, 'Crédito Fiscal')
+    with fitz.open(out) as doc:
+        page = doc[0]
+        numero = page.search_for('Número Control')[0]
+        emisor = page.search_for('EMISOR:')[0]
+
+    # QR position computed using same constants as in factura_sv
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.units import mm
+
+    width, height = letter
+    x_margin = 30
+    qr_col_w = 30 * mm
+    col_margin = 15
+    available_w = width - 2 * x_margin - qr_col_w - 2 * col_margin
+    left_col_w = available_w / 2
+    size = 30 * mm
+    qr_x = x_margin + left_col_w + col_margin + 5
+    qr_y = (height - 50 - 40) - size - 50
+    qr_top = height - (qr_y + size)
+    qr_bottom = height - qr_y
+
+    # QR should be below the header lines
+    assert qr_top >= numero.y1
+
+    # Boxes should sit close to the QR code
+    gap = qr_bottom - emisor.y0
+    assert gap < 45
+

@@ -4,6 +4,7 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
+from reportlab.lib import colors
 
 from utils.pdf_utils import draw_wrapped_text
 
@@ -43,7 +44,9 @@ def generar_cabecera_dte(
 
     # --- Caja izquierda ---
     c.setLineWidth(0.7)
+    c.setStrokeColor(colors.white)
     c.roundRect(40, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.setStrokeColor(colors.black)
     text_y = box_y + box_h - 10
     max_w = box_w - 10
     text_y = draw_wrapped_text(
@@ -84,7 +87,9 @@ def generar_cabecera_dte(
 
     # --- Caja derecha ---
     right_x = 40 + box_w + col_margin + qr_size + col_margin
+    c.setStrokeColor(colors.white)
     c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.setStrokeColor(colors.black)
     text_y = box_y + box_h - 10
     max_w = box_w - 10
     text_y = draw_wrapped_text(

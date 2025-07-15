@@ -63,51 +63,49 @@ def generar_factura_electronica_pdf(
     row_y = top - 40
     c.setFont("Helvetica", 10)
 
-    qr_col_w = 30 * mm  # ancho reservado para el QR (~3cm)
-    col_margin = 15     # espacio entre columnas (~5mm)
-    available_w = width - 2 * x_margin - qr_col_w - 2 * col_margin
-    left_col_w = available_w / 2
-    right_col_w = available_w / 2
-
-    left_x = x_margin
-    right_x = x_margin + left_col_w + qr_col_w + 2 * col_margin + right_col_w
-
-    # --- Bloque de texto izquierdo ---
+    spacing = 10
     y = row_y
-    c.drawString(left_x, y, f"Código Generación: {codigo_generacion}")
-    y -= 14
-    c.drawString(left_x, y, f"Número Control: {numero_control}")
-    y -= 14
-    c.drawString(left_x, y, f"Sello Recepción: {sello_recepcion}")
+    font = "Helvetica"
+    size_font = 10
+    c.setFont(font, size_font)
 
-    # --- Bloque de texto derecho ---
-    y = row_y
-    c.drawRightString(right_x, y, f"Modelo Facturación: {modelo_facturacion}")
-    y -= 14
-    c.drawRightString(right_x, y, f"Tipo Transmisión: {tipo_transmision}")
-    y -= 14
-    c.drawRightString(right_x, y, f"Fecha Generación: {fecha_generacion}")
+    x = x_margin
+    text = f"Código Generación: {codigo_generacion}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, font, size_font) + spacing
 
-    # --- Código QR (columna central) ---
+    text = f"Número Control: {numero_control}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, font, size_font) + spacing
+
+    text = f"Sello Recepción: {sello_recepcion}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, font, size_font) + spacing
+
+    # --- Código QR ---
     qr_value = f"{numero_control}|{codigo_generacion}"
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
-    size = 30 * mm  # tamaño del QR (~3cm)
+    size = 30 * mm
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
-    qr_x = x_margin + left_col_w + col_margin + 5
-    # Align QR vertically with the header lines (Código Generación,
-    # Número Control y Sello Recepción) so it sits next to them
-    # instead of below them.
-    # Position the QR so its top aligns with the header lines
-    qr_y = row_y - size - 23
-    # ensure background so text does not bleed into the QR image
-    c.setFillColor(colors.white)
-    c.rect(qr_x - 2, qr_y - 2, size + 4, size + 4, fill=1, stroke=0)
-    c.setFillColor(colors.black)
+    qr_x = x
+    qr_y = y - size + 5
     renderPDF.draw(d, c, qr_x, qr_y)
+    x += size + spacing
+
+    text = f"Modelo Facturación: {modelo_facturacion}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, font, size_font) + spacing
+
+    text = f"Tipo Transmisión: {tipo_transmision}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, font, size_font) + spacing
+
+    text = f"Fecha Generación: {fecha_generacion}"
+    c.drawString(x, y, text)
 
 
     # Posiciones base para los cuadros de emisor y receptor

@@ -78,7 +78,9 @@ def generar_factura_electronica_pdf(
 
     # --- Caja izquierda con datos de generación ---
     c.setLineWidth(0.7)
+    c.setStrokeColor(colors.white)
     c.roundRect(x_margin, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.setStrokeColor(colors.black)
     text_y = box_y + box_h - 12
     max_w = box_w - 10
     text_y = draw_wrapped_text(
@@ -120,7 +122,9 @@ def generar_factura_electronica_pdf(
 
     # --- Caja derecha con modelo de facturación ---
     right_x = x_margin + box_w + col_margin + qr_size + col_margin
+    c.setStrokeColor(colors.white)
     c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.setStrokeColor(colors.black)
     text_y = box_y + box_h - 12
     max_w = box_w - 10
     text_y = draw_wrapped_text(

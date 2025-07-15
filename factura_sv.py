@@ -161,10 +161,8 @@ def generar_factura_electronica_pdf(
     receptor_x = emisor_x + box_w + 10
 
     c.setLineWidth(0.7)
-    c.setStrokeColor(colors.white)
     c.roundRect(emisor_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
     c.roundRect(receptor_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
-    c.setStrokeColor(colors.black)
 
     text_y = box_y + box_h - 14
     c.setFont("Helvetica-Bold", 8)

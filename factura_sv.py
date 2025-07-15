@@ -97,13 +97,17 @@ def generar_factura_electronica_pdf(
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
-    qr_x = x_margin + left_col_w + col_margin + (qr_col_w - size) / 2
-    qr_y = row_y - 14 - size / 2
+    qr_x = x_margin + left_col_w + col_margin + 5
+    qr_y = row_y - size - 50
+    # ensure background so text does not bleed into the QR image
+    c.setFillColor(colors.white)
+    c.rect(qr_x - 2, qr_y - 2, size + 4, size + 4, fill=1, stroke=0)
+    c.setFillColor(colors.black)
     renderPDF.draw(d, c, qr_x, qr_y)
 
 
     # Posiciones base para los cuadros de emisor y receptor
-    encabezado_y = row_y - size - 20
+    encabezado_y = row_y - size - 10
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 

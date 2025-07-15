@@ -30,40 +30,46 @@ def generar_cabecera_dte(
 
     row_y = top - 40
 
-    # Información izquierda
+    spacing = 10
     c.setFont("Helvetica", 10)
-    left_x = 40
     y = row_y
-    c.drawString(left_x, y, f"Código Generación: {codigo_generacion}")
-    y -= 14
-    c.drawString(left_x, y, f"Número Control: {numero_control}")
-    y -= 14
-    c.drawString(left_x, y, f"Sello Recepción: {sello_recepcion}")
+    x = 40
 
-    # Información derecha
-    right_x = width - 40
-    y = row_y
-    c.drawRightString(right_x, y, f"Modelo Facturación: {modelo_facturacion}")
-    y -= 14
-    c.drawRightString(right_x, y, f"Tipo Transmisión: {tipo_transmision}")
-    y -= 14
-    c.drawRightString(right_x, y, f"Fecha Generación: {fecha_generacion}")
+    text = f"Código Generación: {codigo_generacion}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, "Helvetica", 10) + spacing
 
-    # Código QR en el centro
+    text = f"Número Control: {numero_control}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, "Helvetica", 10) + spacing
+
+    text = f"Sello Recepción: {sello_recepcion}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, "Helvetica", 10) + spacing
+
     qr_value = codigo_generacion
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
-    # Reduce the QR code so it matches the height of the three informational
-    # lines (Código Generación, Número Control y Sello Recepción). Using 15 mm
-    # keeps it roughly the same height as those lines combined.
     size = 15 * mm
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
-    # Align QR vertically with the header information
-    qr_y = row_y - size - 23
-    renderPDF.draw(d, c, (width - size) / 2, qr_y)
+    qr_x = x
+    qr_y = y - size + 3
+    renderPDF.draw(d, c, qr_x, qr_y)
+    x += size + spacing
+
+    text = f"Modelo Facturación: {modelo_facturacion}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, "Helvetica", 10) + spacing
+
+    text = f"Tipo Transmisión: {tipo_transmision}"
+    c.drawString(x, y, text)
+    x += c.stringWidth(text, "Helvetica", 10) + spacing
+
+    text = f"Fecha Generación: {fecha_generacion}"
+    c.drawString(x, y, text)
 
     c.save()
 

@@ -61,7 +61,9 @@ def generar_cabecera_dte(
     h = bounds[3] - bounds[1]
     d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
     d.add(qr_code)
-    renderPDF.draw(d, c, (width - size) / 2, row_y - size + 10)
+    # Align QR vertically with the header information
+    qr_y = row_y - size - 23
+    renderPDF.draw(d, c, (width - size) / 2, qr_y)
 
     c.save()
 

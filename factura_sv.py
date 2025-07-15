@@ -6,6 +6,8 @@ from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
+
+from utils.pdf_utils import draw_wrapped_text
 from dte import generar_cabecera_dte_data
 import json
 import os
@@ -78,11 +80,31 @@ def generar_factura_electronica_pdf(
     c.setLineWidth(0.7)
     c.roundRect(x_margin, box_y, box_w, box_h, 6, stroke=1, fill=0)
     text_y = box_y + box_h - 12
-    c.drawString(x_margin + 5, text_y, f"Código Generación: {codigo_generacion}")
-    text_y -= 12
-    c.drawString(x_margin + 5, text_y, f"Número Control: {numero_control}")
-    text_y -= 12
-    c.drawString(x_margin + 5, text_y, f"Sello Recepción: {sello_recepcion}")
+    max_w = box_w - 10
+    text_y = draw_wrapped_text(
+        c,
+        f"Código Generación: {codigo_generacion}",
+        x_margin + 5,
+        text_y,
+        max_w,
+        12,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Número Control: {numero_control}",
+        x_margin + 5,
+        text_y,
+        max_w,
+        12,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Sello Recepción: {sello_recepcion}",
+        x_margin + 5,
+        text_y,
+        max_w,
+        12,
+    )
 
     # --- Código QR ---
     qr_x = x_margin + box_w + col_margin + 5
@@ -100,11 +122,31 @@ def generar_factura_electronica_pdf(
     right_x = x_margin + box_w + col_margin + qr_size + col_margin
     c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
     text_y = box_y + box_h - 12
-    c.drawString(right_x + 5, text_y, f"Modelo Facturación: {modelo_facturacion}")
-    text_y -= 12
-    c.drawString(right_x + 5, text_y, f"Tipo Transmisión: {tipo_transmision}")
-    text_y -= 12
-    c.drawString(right_x + 5, text_y, f"Fecha Generación: {fecha_generacion}")
+    max_w = box_w - 10
+    text_y = draw_wrapped_text(
+        c,
+        f"Modelo Facturación: {modelo_facturacion}",
+        right_x + 5,
+        text_y,
+        max_w,
+        12,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Tipo Transmisión: {tipo_transmision}",
+        right_x + 5,
+        text_y,
+        max_w,
+        12,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Fecha Generación: {fecha_generacion}",
+        right_x + 5,
+        text_y,
+        max_w,
+        12,
+    )
 
     # Posiciones base para los cuadros de emisor y receptor
     # Mantenemos un espacio de 40 puntos debajo del código QR

@@ -71,12 +71,12 @@ def test_qr_position_and_boxes_spacing(tmp_path):
     left_col_w = available_w / 2
     size = 30 * mm
     qr_x = x_margin + left_col_w + col_margin + 5
-    qr_y = (height - 50 - 40) - size - 50
+    qr_y = (height - 50 - 40) - size - 23
     qr_top = height - (qr_y + size)
     qr_bottom = height - qr_y
 
-    # QR should be below the header lines
-    assert qr_top >= numero.y1
+    # QR should align vertically with the header lines
+    assert abs(qr_top - numero.y0) < 5
 
     # Boxes should sit close to the QR code
     gap = qr_bottom - emisor.y0

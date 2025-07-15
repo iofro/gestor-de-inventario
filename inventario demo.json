@@ -1,9 +1,32 @@
 {
-  "productos": [],
-  "vendedores": [],
+  "productos": [
+    {
+      "id": 3571,
+      "nombre": "jugo del valle naranja",
+      "codigo": "23432434",
+      "vendedor_id": null,
+      "Distribuidor_id": null,
+      "precio": null,
+      "stock": 199,
+      "precio_compra": 1.0,
+      "precio_venta_minorista": 5.0,
+      "precio_venta_mayorista": 4.0,
+      "precio_total_mayorista": 0.0
+    }
+  ],
+  "vendedores": [
+    {
+      "id": 63,
+      "codigo": "V-001",
+      "nombre": "ricardo martinez",
+      "descripcion": "",
+      "Distribuidor_id": 65,
+      "dui": "342434"
+    }
+  ],
   "Distribuidores": [
     {
-      "id": 55,
+      "id": 65,
       "codigo": "DIST-001",
       "nombre": "Almacenes Globales S.A. de C.V.",
       "dui": null,
@@ -24,12 +47,57 @@
       "notas": "Distribuidor autorizado en zona central. Cuenta con 3 sucursales activas."
     }
   ],
-  "clientes": [],
+  "clientes": [
+    {
+      "id": 4505,
+      "codigo": "C-001",
+      "nombre": "jose perez",
+      "nrc": "432423",
+      "nit": "4324324234",
+      "dui": "234234234",
+      "giro": "vendedor",
+      "telefono": "4324234",
+      "email": "jose@gmail.com",
+      "direccion": "9a calle poniente san salvador",
+      "departamento": "Chalatenango",
+      "municipio": "Agua Caliente",
+      "otros": null
+    }
+  ],
   "ventas": [],
-  "compras": [],
+  "compras": [
+    {
+      "id": 67,
+      "fecha": "2025-07-10",
+      "producto_id": null,
+      "cantidad": 0,
+      "precio_unitario": 0.0,
+      "total": 199.0,
+      "Distribuidor_id": 65,
+      "comision_pct": 0.0,
+      "comision_monto": 0.0,
+      "vendedor_id": 63
+    }
+  ],
   "movimientos": [],
   "detalles_venta": [],
-  "detalles_compra": [],
+  "detalles_compra": [
+    {
+      "id": 67,
+      "compra_id": 67,
+      "producto_id": 3571,
+      "cantidad": 199,
+      "precio_unitario": 1.0,
+      "fecha_vencimiento": "2025-07-10",
+      "descuento": 0.0,
+      "descuento_tipo": "%",
+      "iva": 0.0,
+      "iva_tipo": "ninguno",
+      "comision_pct": 0.0,
+      "comision_monto": 0.0,
+      "comision_tipo": ""
+    }
+  ],
   "datos_negocio": {
     "nombre_comercial": "Tienda Demo",
     "razon_social": "Tienda Demo S.A. de C.V.",
@@ -61,7 +129,25 @@
     "email_usuario": "contacto@tiendademo.com",
     "email_contrasena": ""
   },
-  "trabajadores": [],
+  "trabajadores": [
+    {
+      "id": 55,
+      "codigo": "T-001",
+      "nombre": "diego jose",
+      "dui": "43243",
+      "nit": "432434",
+      "fecha_nacimiento": "2025-07-10",
+      "cargo": "vendedor",
+      "area": "ventas",
+      "fecha_contratacion": "2025-07-10",
+      "telefono": "4324342",
+      "email": "vende@hotmail.com",
+      "direccion": "plaza merliot",
+      "salario_base": 400.0,
+      "comentarios": "",
+      "es_vendedor": 1
+    }
+  ],
   "ventas_credito_fiscal": [],
   "tab_order": [
     "Inventario",
@@ -71,6 +157,7 @@
     "Compras",
     "Inventario actual",
     "Trabajadores",
-    "Estados de cuenta"
+    "Estados de cuenta",
+    "Facturacion"
   ]
 }

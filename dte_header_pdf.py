@@ -29,47 +29,46 @@ def generar_cabecera_dte(
     c.drawCentredString(width / 2, top, tipo_documento.upper())
 
     row_y = top - 40
-
-    spacing = 10
     c.setFont("Helvetica", 10)
-    y = row_y
-    x = 40
 
-    text = f"Código Generación: {codigo_generacion}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, "Helvetica", 10) + spacing
+    col_margin = 15
+    qr_size = 15 * mm
+    available_w = width - 2 * 40 - qr_size - 2 * col_margin
+    box_w = available_w / 2
+    box_h = 30
 
-    text = f"Número Control: {numero_control}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, "Helvetica", 10) + spacing
+    box_y = row_y - box_h
 
-    text = f"Sello Recepción: {sello_recepcion}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, "Helvetica", 10) + spacing
+    # --- Caja izquierda ---
+    c.setLineWidth(0.7)
+    c.roundRect(40, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    text_y = box_y + box_h - 10
+    c.drawString(45, text_y, f"Código Generación: {codigo_generacion}")
+    text_y -= 10
+    c.drawString(45, text_y, f"Número Control: {numero_control}")
+    text_y -= 10
+    c.drawString(45, text_y, f"Sello Recepción: {sello_recepcion}")
 
-    qr_value = codigo_generacion
-    qr_code = qr.QrCodeWidget(qr_value)
+    # QR en el centro
+    qr_x = 40 + box_w + col_margin + 3
+    qr_y = box_y + (box_h - qr_size) / 2
+    qr_code = qr.QrCodeWidget(codigo_generacion)
     bounds = qr_code.getBounds()
-    size = 15 * mm
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
-    d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
+    d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
     d.add(qr_code)
-    qr_x = x
-    qr_y = y - size + 3
     renderPDF.draw(d, c, qr_x, qr_y)
-    x += size + spacing
 
-    text = f"Modelo Facturación: {modelo_facturacion}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, "Helvetica", 10) + spacing
-
-    text = f"Tipo Transmisión: {tipo_transmision}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, "Helvetica", 10) + spacing
-
-    text = f"Fecha Generación: {fecha_generacion}"
-    c.drawString(x, y, text)
+    # --- Caja derecha ---
+    right_x = 40 + box_w + col_margin + qr_size + col_margin
+    c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    text_y = box_y + box_h - 10
+    c.drawString(right_x + 5, text_y, f"Modelo Facturación: {modelo_facturacion}")
+    text_y -= 10
+    c.drawString(right_x + 5, text_y, f"Tipo Transmisión: {tipo_transmision}")
+    text_y -= 10
+    c.drawString(right_x + 5, text_y, f"Fecha Generación: {fecha_generacion}")
 
     c.save()
 

@@ -63,53 +63,51 @@ def generar_factura_electronica_pdf(
     row_y = top - 40
     c.setFont("Helvetica", 10)
 
+    # --- Configuración de columnas para las cajas y el QR ---
     spacing = 10
-    y = row_y
-    font = "Helvetica"
-    size_font = 10
-    c.setFont(font, size_font)
+    col_margin = 15
+    qr_size = 30 * mm
+    available_w = width - 2 * x_margin - qr_size - 2 * col_margin
+    box_w = available_w / 2
+    box_h = 40
 
-    x = x_margin
-    text = f"Código Generación: {codigo_generacion}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, font, size_font) + spacing
+    # Posición inferior de las cajas de cabecera
+    box_y = row_y - box_h
 
-    text = f"Número Control: {numero_control}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, font, size_font) + spacing
-
-    text = f"Sello Recepción: {sello_recepcion}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, font, size_font) + spacing
+    # --- Caja izquierda con datos de generación ---
+    c.setLineWidth(0.7)
+    c.roundRect(x_margin, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    text_y = box_y + box_h - 12
+    c.drawString(x_margin + 5, text_y, f"Código Generación: {codigo_generacion}")
+    text_y -= 12
+    c.drawString(x_margin + 5, text_y, f"Número Control: {numero_control}")
+    text_y -= 12
+    c.drawString(x_margin + 5, text_y, f"Sello Recepción: {sello_recepcion}")
 
     # --- Código QR ---
+    qr_x = x_margin + box_w + col_margin + 5
+    qr_y = box_y + (box_h - qr_size) / 2
     qr_value = f"{numero_control}|{codigo_generacion}"
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
-    size = 30 * mm
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
-    d = Drawing(size, size, transform=[size / w, 0, 0, size / h, 0, 0])
+    d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
     d.add(qr_code)
-    qr_x = x
-    qr_y = y - size + 5
     renderPDF.draw(d, c, qr_x, qr_y)
-    x += size + spacing
 
-    text = f"Modelo Facturación: {modelo_facturacion}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, font, size_font) + spacing
-
-    text = f"Tipo Transmisión: {tipo_transmision}"
-    c.drawString(x, y, text)
-    x += c.stringWidth(text, font, size_font) + spacing
-
-    text = f"Fecha Generación: {fecha_generacion}"
-    c.drawString(x, y, text)
-
+    # --- Caja derecha con modelo de facturación ---
+    right_x = x_margin + box_w + col_margin + qr_size + col_margin
+    c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    text_y = box_y + box_h - 12
+    c.drawString(right_x + 5, text_y, f"Modelo Facturación: {modelo_facturacion}")
+    text_y -= 12
+    c.drawString(right_x + 5, text_y, f"Tipo Transmisión: {tipo_transmision}")
+    text_y -= 12
+    c.drawString(right_x + 5, text_y, f"Fecha Generación: {fecha_generacion}")
 
     # Posiciones base para los cuadros de emisor y receptor
-    # Keep roughly the same gap between the QR code and the info boxes
+    # Mantenemos un espacio de 40 puntos debajo del código QR
     encabezado_y = qr_y - 40
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---

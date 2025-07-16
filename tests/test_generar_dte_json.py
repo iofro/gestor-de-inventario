@@ -14,7 +14,7 @@ def test_generar_dte_json_basic():
     prod_id = db.cursor.lastrowid
     db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "nit1", "giro")
+    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "nit1", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
     data = generar_dte_json(db, venta_id)

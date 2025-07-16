@@ -27,9 +27,12 @@ def test_generar_dte_json_basic():
         "resumen",
         "firmaElectronica",
         "selloRecibido",
+        "condicionPago",
     ]
     for key in required:
         assert key in data
     assert data["firmaElectronica"] is None
     assert data["selloRecibido"] is None
     assert data["identificacion"].get("codigoGeneracion")
+    assert data["receptor"].get("noRemision") is None
+    assert data["receptor"].get("ordenNo") is None

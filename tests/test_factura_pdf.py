@@ -6,7 +6,7 @@ from factura_sv import generar_factura_electronica_pdf
 def _sample_data(tipo):
     venta = {
         'sumas': 10,
-        'descuentos_globales': 0,
+        'descuentos': 0,
         'subtotal': 10,
         'iva': 1.3,
         'total': 11.3,

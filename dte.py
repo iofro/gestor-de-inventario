@@ -110,11 +110,16 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         })
 
     total = sum(d.get("cantidad", 0) * d.get("precio_unitario", 0) for d in detalles)
+    sumas_val = fiscal.get("sumas", total) if fiscal else total
+    descuentos_val = fiscal.get("descuentos", 0) if fiscal else 0
+    iva_val = fiscal.get("iva") if fiscal else 0
     resumen = {
         "totalNoSuj": fiscal.get("ventas_no_sujetas") if fiscal else 0,
         "totalExenta": fiscal.get("ventas_exentas") if fiscal else 0,
-        "subTotalVentas": fiscal.get("sumas", total) if fiscal else total,
-        "iva": fiscal.get("iva") if fiscal else 0,
+        "sumas": sumas_val,
+        "descuentos": descuentos_val,
+        "iva": iva_val,
+        "subTotal": (sumas_val - descuentos_val) + iva_val,
         "totalPagar": venta.get("total", total),
     }
 

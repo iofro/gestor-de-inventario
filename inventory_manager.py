@@ -330,9 +330,8 @@ class InventoryManager:
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro, no_remision, orden_no, condicion_pago,
                     venta_a_cuenta_de, documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
-                    sumas, iva, subtotal, total_letras,
-                    ventas_exentas, ventas_no_sujetas, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sumas, iva, subtotal, total_letras, descuentos, extra, ventas_exentas, ventas_no_sujetas
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     venta_id_map.get(vcf.get("venta_id")),
@@ -351,9 +350,10 @@ class InventoryManager:
                     vcf.get("iva", 0),
                     vcf.get("subtotal", 0),
                     vcf.get("total_letras", ""),
+                    vcf.get("descuentos", 0),
+                    extra_json,
                     vcf.get("ventas_exentas", 0),
                     vcf.get("ventas_no_sujetas", 0),
-                    extra_json,
                 ),
             )
         self.db.conn.commit()

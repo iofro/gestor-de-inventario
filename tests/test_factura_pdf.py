@@ -66,3 +66,13 @@ def test_header_boxes_and_qr(tmp_path):
     assert 'Tipo Transmisión:' in text
     assert 'Fecha Generación:' in text
 
+
+def test_values_are_rounded(tmp_path):
+    out = _generate(tmp_path, 'Crédito Fiscal')
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+    # IVA should be shown with two decimal places
+    assert '1.30' in text
+    # Precio unitario is shown with four decimals
+    assert '10.0000' in text
+

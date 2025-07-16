@@ -329,10 +329,10 @@ class InventoryManager:
                 """
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro, no_remision, orden_no, condicion_pago,
-                    venta_a_cuenta_de, fecha_remision_anterior, fecha_remision,
+                    venta_a_cuenta_de, documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
                     sumas, iva, subtotal, total_letras,
                     ventas_exentas, ventas_no_sujetas, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     venta_id_map.get(vcf.get("venta_id")),
@@ -344,6 +344,7 @@ class InventoryManager:
                     vcf.get("orden_no"),
                     vcf.get("condicion_pago"),
                     vcf.get("venta_a_cuenta_de"),
+                    vcf.get("documento_venta_a_cuenta"),
                     vcf.get("fecha_remision_anterior"),
                     vcf.get("fecha_remision"),
                     vcf.get("sumas", 0),

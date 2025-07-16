@@ -234,6 +234,14 @@ class DB:
                 documento_venta_a_cuenta TEXT,
                 fecha_remision_anterior TEXT,
                 fecha_remision TEXT,
+                sumas REAL DEFAULT 0,
+                descuentos REAL DEFAULT 0,
+                iva REAL DEFAULT 0,
+                subtotal REAL DEFAULT 0,
+                ventas_exentas REAL DEFAULT 0,
+                ventas_no_sujetas REAL DEFAULT 0,
+                total_letras TEXT,
+                extra TEXT,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id),
                 FOREIGN KEY (cliente_id) REFERENCES clientes(id)
             )
@@ -670,6 +678,14 @@ class DB:
                     documento_venta_a_cuenta TEXT,
                     fecha_remision_anterior TEXT,
                     fecha_remision TEXT,
+                    sumas REAL DEFAULT 0,
+                    descuentos REAL DEFAULT 0,
+                    iva REAL DEFAULT 0,
+                    subtotal REAL DEFAULT 0,
+                    ventas_exentas REAL DEFAULT 0,
+                    ventas_no_sujetas REAL DEFAULT 0,
+                    total_letras TEXT,
+                    extra TEXT,
                     FOREIGN KEY (venta_id) REFERENCES ventas(id),
                     FOREIGN KEY (cliente_id) REFERENCES clientes(id)
                 )

@@ -203,18 +203,23 @@ def generar_factura_electronica_pdf(
 
     text_y -= line_h
     c.drawString(left_x, text_y, f"DUI: {cliente.get('dui', '')}")
-    c.drawString(right_x, text_y, f"NRC: {cliente.get('nrc', '')}")
+    if tipo_documento == "Crédito Fiscal":
+        c.drawString(right_x, text_y, f"NRC: {cliente.get('nrc', '')}")
 
     text_y -= line_h
     c.drawString(left_x, text_y, f"NIT: {cliente.get('nit', '')}")
-    c.drawString(right_x, text_y, f"No. Remisión: {venta.get('no_remision', '')}")
+    if tipo_documento == "Crédito Fiscal":
+        c.drawString(right_x, text_y, f"No. Remisión: {venta.get('no_remision', '')}")
 
-    text_y -= line_h
-    c.drawString(left_x, text_y, f"Giro: {cliente.get('giro', '')}")
-    c.drawString(right_x, text_y, f"Orden No.: {venta.get('orden_no', '')}")
+    if tipo_documento == "Crédito Fiscal":
+        text_y -= line_h
+        c.drawString(left_x, text_y, f"Giro: {cliente.get('giro', '')}")
+        c.drawString(right_x, text_y, f"Orden No.: {venta.get('orden_no', '')}")
 
-    text_y -= line_h
-    c.drawString(left_x, text_y, f"Condición pago: {venta.get('condicion_pago', '')}")
+        text_y -= line_h
+        c.drawString(left_x, text_y, f"Condición pago: {venta.get('condicion_pago', '')}")
+    else:
+        text_y -= line_h
 
     text_y -= line_h
     c.drawString(left_x, text_y, f"Dirección: {cliente.get('direccion', '')}")

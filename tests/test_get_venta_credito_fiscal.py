@@ -20,6 +20,7 @@ def test_get_venta_credito_fiscal_basic():
         "123",
         "nit1",
         "giro",
+        descuentos=0,
     )
 
     record = db.get_venta_credito_fiscal(venta_id)
@@ -42,6 +43,7 @@ def test_extra_is_json_string():
         "456",
         "nit2",
         "giro2",
+        descuentos=0,
         extra=extra,
     )
 

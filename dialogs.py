@@ -680,8 +680,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         # Campo "Venta a cuenta de"
         right_layout.addWidget(QLabel("Venta a cuenta de:"))
         self.venta_a_cuenta_de_edit = QLineEdit()
-        self.venta_a_cuenta_de_edit.setPlaceholderText("Venta a cuenta de")
+        self.venta_a_cuenta_de_edit.setPlaceholderText("Nombre")
         right_layout.addWidget(self.venta_a_cuenta_de_edit)
+        right_layout.addWidget(QLabel("DUI/NIT:"))
+        self.venta_documento_edit = QLineEdit()
+        self.venta_documento_edit.setPlaceholderText("Documento")
+        right_layout.addWidget(self.venta_documento_edit)
 
         # Distribuidor
         right_layout.addWidget(QLabel("Distribuidor:"))
@@ -932,6 +936,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "precio_total_manual": float(self.precio_total_spin.value()),
             "iva_agregado": self.iva_agregado_radio.isChecked(),
             "venta_a_cuenta_de": self.venta_a_cuenta_de_edit.text(),
+            "documento_venta_a_cuenta": self.venta_documento_edit.text(),
             "sumas": sumas,
             "iva": iva,
             "ventas_exentas": ventas_exentas,
@@ -2253,6 +2258,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "orden_no": self.orden_no_edit.text(),
             "condicion_pago": self.condicion_pago_combo.currentText(),
             "venta_a_cuenta_de": self.venta_a_cuenta_de_edit.text(),
+            "documento_venta_a_cuenta": self.venta_documento_edit.text(),
             "fecha_remision_anterior": self.fecha_remision_anterior.date().toString("yyyy-MM-dd"),
             "fecha_remision": self.fecha_remision.date().toString("yyyy-MM-dd"),
             "sumas": sumas,
@@ -2984,6 +2990,7 @@ class ManualInvoiceDialog(QDialog):
         self.cf_orden_no = QLineEdit()
         self.cf_vendedor = QLineEdit()
         self.cf_venta_cuenta = QLineEdit()
+        self.cf_documento_cuenta = QLineEdit()
         self.cf_fecha = QDateEdit(QDate.currentDate())
         self.cf_fecha.setCalendarPopup(True)
         self.cf_nombre = QLineEdit()
@@ -3000,6 +3007,7 @@ class ManualInvoiceDialog(QDialog):
             ("Orden No:", self.cf_orden_no),
             ("Vendedor:", self.cf_vendedor),
             ("Venta a cuenta de:", self.cf_venta_cuenta),
+            ("DUI/NIT:", self.cf_documento_cuenta),
             ("Fecha:", self.cf_fecha),
             ("Nombre:", self.cf_nombre),
             ("Dirección:", self.cf_direccion),
@@ -3023,6 +3031,7 @@ class ManualInvoiceDialog(QDialog):
         self.cr_orden_no = QLineEdit()
         self.cr_vendedor = QLineEdit()
         self.cr_venta_cuenta = QLineEdit()
+        self.cr_documento_cuenta = QLineEdit()
         self.cr_fecha = QDateEdit(QDate.currentDate())
         self.cr_fecha.setCalendarPopup(True)
         self.cr_cliente_nombre = QLineEdit()
@@ -3042,6 +3051,7 @@ class ManualInvoiceDialog(QDialog):
             ("Orden No:", self.cr_orden_no),
             ("Vendedor:", self.cr_vendedor),
             ("Venta a cuenta de:", self.cr_venta_cuenta),
+            ("DUI/NIT:", self.cr_documento_cuenta),
             ("Fecha:", self.cr_fecha),
             ("Cliente:", self.cr_cliente_nombre),
             ("Dirección:", self.cr_cliente_direccion),
@@ -3082,6 +3092,7 @@ class ManualInvoiceDialog(QDialog):
                 "orden_no": self.cf_orden_no.text(),
                 "vendedor_nombre": self.cf_vendedor.text(),
                 "venta_a_cuenta_de": self.cf_venta_cuenta.text(),
+                "documento_venta_a_cuenta": self.cf_documento_cuenta.text(),
                 "fecha": self.cf_fecha.date().toString("yyyy-MM-dd"),
                 "total_letras": self.cf_total_letras.text(),
                 "observaciones": self.cf_observaciones.toPlainText(),
@@ -3102,6 +3113,7 @@ class ManualInvoiceDialog(QDialog):
                 "orden_no": self.cr_orden_no.text(),
                 "vendedor_nombre": self.cr_vendedor.text(),
                 "venta_a_cuenta_de": self.cr_venta_cuenta.text(),
+                "documento_venta_a_cuenta": self.cr_documento_cuenta.text(),
                 "fecha": self.cr_fecha.date().toString("yyyy-MM-dd"),
                 "total_letras": self.cr_total_letras.text(),
                 "observaciones": self.cr_observaciones.toPlainText(),

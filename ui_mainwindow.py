@@ -603,12 +603,18 @@ class MainWindow(QMainWindow):
                 Distribuidor_id = Distribuidor["id"] if Distribuidor else None
                 vendedor_id = data.get("vendedor_id")
                 estado = data.get("estado", "Pagada")
+                extra = {}
+                if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
+                    extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
+                    extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
+
                 venta_id = self.manager.db.add_venta(
                     fecha,
                     total,
                     cliente_id=cliente_id,
                     Distribuidor_id=Distribuidor_id,
                     vendedor_id=vendedor_id,
+                    extra=extra or None,
                     estado=estado,
                 )
                 # Agrega todos los productos de la venta

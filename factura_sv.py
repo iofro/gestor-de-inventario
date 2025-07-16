@@ -261,7 +261,7 @@ def generar_factura_electronica_pdf(
 
     # Posición inicial para la tabla de productos
     tabla_x = x_margin
-    tabla_y = box_y - 40
+    tabla_y = box_y - 20
     row_h = 18
     tabla_columnas = ["Cantidad", "Descripción", "Precio Unitario", "No sujetas", "Exentas", "Gravadas"]
     tabla_data = [tabla_columnas]

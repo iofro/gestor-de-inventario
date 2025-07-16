@@ -209,7 +209,7 @@ def generar_factura_electronica_pdf(
     doc = venta.get('documento_venta_a_cuenta')
     if doc:
         text_y -= 12
-        c.drawString(receptor_x + 5, text_y, f"DUI: {doc}")
+        c.drawString(receptor_x + 5, text_y, f"DUI/NIT: {doc}")
 
     # Posición inicial para la tabla de productos
     tabla_x = x_margin

@@ -743,6 +743,7 @@ class MainWindow(QMainWindow):
                     orden_no=data.get("orden_no", ""),
                     condicion_pago=data.get("condicion_pago", ""),
                     venta_a_cuenta_de=data.get("venta_a_cuenta_de", ""),
+                    documento_venta_a_cuenta=data.get("documento_venta_a_cuenta", ""),
                     fecha_remision_anterior=data.get("fecha_remision_anterior", ""),
                     fecha_remision=data.get("fecha_remision", ""),
                     sumas=sumas,

@@ -114,7 +114,7 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "totalPagar": venta.get("total", total),
     }
 
-    return {
+    result = {
         "identificacion": identificacion,
         "emisor": emisor,
         "receptor": receptor,
@@ -123,3 +123,11 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "firmaElectronica": None,
         "selloRecibido": None,
     }
+
+    if fiscal:
+        if fiscal.get("venta_a_cuenta_de"):
+            result["ventaACuentaDe"] = fiscal.get("venta_a_cuenta_de")
+        if fiscal.get("documento_venta_a_cuenta"):
+            result["documentoVentaACuenta"] = fiscal.get("documento_venta_a_cuenta")
+
+    return result

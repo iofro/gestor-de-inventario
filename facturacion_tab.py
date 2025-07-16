@@ -391,6 +391,10 @@ class FacturacionTab(QWidget):
                 extra = json.loads(extra)
             except Exception:
                 extra = {}
+        if not venta_data.get("venta_a_cuenta_de"):
+            venta_data["venta_a_cuenta_de"] = extra.get("venta_a_cuenta_de", "")
+        if not venta_data.get("documento_venta_a_cuenta"):
+            venta_data["documento_venta_a_cuenta"] = extra.get("documento_venta_a_cuenta", "")
         dte_json = extra.get("dteJson") or extra.get("dte_json") or {}
         ident = dte_json.get("identificacion", {})
         codigo_generacion = venta_data.get("codigo_generacion") or ident.get("codigoGeneracion", "")

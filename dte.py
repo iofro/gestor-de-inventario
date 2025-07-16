@@ -51,6 +51,13 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
 
     detalles = db.get_detalles_venta(venta_id)
     fiscal = db.get_venta_credito_fiscal(venta_id)
+    extra = {}
+    raw_extra = venta.get("extra")
+    if raw_extra:
+        try:
+            extra = json.loads(raw_extra)
+        except Exception:
+            extra = {}
 
     cliente = None
     if venta.get("cliente_id"):
@@ -138,5 +145,10 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
             result["ventaACuentaDe"] = fiscal.get("venta_a_cuenta_de")
         if fiscal.get("documento_venta_a_cuenta"):
             result["documentoVentaACuenta"] = fiscal.get("documento_venta_a_cuenta")
+    else:
+        if extra.get("venta_a_cuenta_de"):
+            result["ventaACuentaDe"] = extra.get("venta_a_cuenta_de")
+        if extra.get("documento_venta_a_cuenta"):
+            result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
 
     return result

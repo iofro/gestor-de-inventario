@@ -231,6 +231,7 @@ class DB:
                 orden_no TEXT,
                 condicion_pago TEXT,
                 venta_a_cuenta_de TEXT,
+                documento_venta_a_cuenta TEXT,
                 fecha_remision_anterior TEXT,
                 fecha_remision TEXT,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id),
@@ -249,6 +250,7 @@ class DB:
             )
         """
         )
+        self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         self.cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS tickets_pdf (
@@ -623,6 +625,7 @@ class DB:
         orden_no="",
         condicion_pago="",
         venta_a_cuenta_de="",
+        documento_venta_a_cuenta="",
         fecha_remision_anterior="",
         fecha_remision="",
         sumas=0,
@@ -636,6 +639,7 @@ class DB:
     ):
         # Asegura que la columna estado exista antes de insertar
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
+        self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         try:
             cols = ["fecha", "total", "cliente_id", "estado"]
             vals = [fecha, total, cliente_id, estado]
@@ -661,6 +665,7 @@ class DB:
                     orden_no TEXT,
                     condicion_pago TEXT,
                     venta_a_cuenta_de TEXT,
+                    documento_venta_a_cuenta TEXT,
                     fecha_remision_anterior TEXT,
                     fecha_remision TEXT,
                     FOREIGN KEY (venta_id) REFERENCES ventas(id),
@@ -672,13 +677,13 @@ class DB:
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro,
                     no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
-                    fecha_remision_anterior, fecha_remision,
+                    documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
                     sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id, cliente_id, nrc, nit, giro,
                 no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
-                fecha_remision_anterior, fecha_remision,
+                documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
                 sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra_json
             ))
             self.conn.commit()

@@ -201,6 +201,13 @@ def generar_factura_electronica_pdf(
     c.drawString(receptor_x + 5, text_y, f"Giro: {cliente.get('giro', '')}")
     text_y -= 12
     c.drawString(receptor_x + 5, text_y, f"Dirección: {cliente.get('direccion', '')}")
+    if venta.get('venta_a_cuenta_de'):
+        text_y -= 12
+        c.drawString(receptor_x + 5, text_y, f"Venta a cuenta de: {venta.get('venta_a_cuenta_de')}")
+    doc = venta.get('documento_venta_a_cuenta')
+    if doc:
+        text_y -= 12
+        c.drawString(receptor_x + 5, text_y, f"DUI: {doc}")
 
     # Posición inicial para la tabla de productos
     tabla_x = x_margin

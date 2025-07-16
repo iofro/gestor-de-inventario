@@ -239,7 +239,7 @@ def generar_factura_electronica_pdf(
         tabla_data.append([
             str(d.get("cantidad", "")),
             d.get("descripcion", ""),
-            f"{d.get('precio_unitario', 0):.2f}",
+            f"{d.get('precio_unitario', 0):.4f}",
             f"{d.get('ventas_no_sujetas', 0):.2f}",
             f"{d.get('ventas_exentas', 0):.2f}",
             f"{d.get('ventas_gravadas', 0):.2f}",
@@ -300,7 +300,7 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "IVA 13%:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('iva', '')}")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('iva', 0):.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
@@ -324,7 +324,7 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica-Bold", 10)
     c.drawString(x_linea + 10, texto_y, "Total a pagar:")
     c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('total', '')}")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('total', 0):.2f}")
 
     # --- Valor en letras (columna izquierda del cuadro, texto más grande y solo el label en negrita) ---
     c.setFont("Helvetica-Bold", 11)

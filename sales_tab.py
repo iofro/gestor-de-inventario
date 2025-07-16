@@ -26,6 +26,7 @@ from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
 from utils.monto import monto_a_texto_sv
+from utils.docs import get_document_paths, build_invoice_json
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
 import tempfile
@@ -41,9 +42,8 @@ from email import encoders
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
-FACTURAS_DIR = os.path.join(os.path.dirname(__file__), "facturas")
-CF_DIR = os.path.join(FACTURAS_DIR, "consumidor_final")
-CREDITO_DIR = os.path.join(FACTURAS_DIR, "credito_fiscal")
+CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
+CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
 TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
 
 
@@ -575,9 +575,11 @@ class SalesTab(QWidget):
         fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
 
         tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
-        dest_dir = CREDITO_DIR if credito_info else CF_DIR
-        os.makedirs(dest_dir, exist_ok=True)
-        file_path = os.path.join(dest_dir, f"factura_{venta_id}.pdf")
+        doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
+        cliente_nombre = cliente.get("nombre") if cliente else ""
+        file_path, json_path = get_document_paths(
+            venta_data.get("fecha"), cliente_nombre, numero_control or venta_id, doc_key
+        )
 
         generar_factura_electronica_pdf(
             venta_data,
@@ -593,6 +595,9 @@ class SalesTab(QWidget):
             tipo_transmision=tipo_transmision,
             fecha_generacion=fecha_generacion,
         )
+        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
+        with open(json_path, 'w', encoding='utf-8') as fh:
+            json.dump(json_data, fh, ensure_ascii=False, indent=2)
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
 
@@ -649,9 +654,16 @@ class SalesTab(QWidget):
                 extra = json.loads(raw_extra)
             except Exception:
                 extra = {}
-        os.makedirs(TICKETS_DIR, exist_ok=True)
-        filename = os.path.join(TICKETS_DIR, f"ticket_{venta_id}.pdf")
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        cliente_nombre = cliente.get("nombre") if cliente else ""
+        filename, json_path = get_document_paths(
+            venta.get("fecha"), cliente_nombre, venta_id, "Ticket"
+        )
         generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
         self.manager.db.add_ticket_pdf(venta_id, filename)
         QMessageBox.information(self, "Ticket", f"Ticket guardado en {filename}")
 

@@ -1922,6 +1922,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.venta_a_cuenta_de_edit = QLineEdit()
         self.venta_a_cuenta_de_edit.setPlaceholderText("Venta a cuenta de")
         right_layout.addWidget(self.venta_a_cuenta_de_edit)
+        right_layout.addWidget(QLabel("DUI/NIT:"))
+        self.venta_documento_edit = QLineEdit()
+        self.venta_documento_edit.setPlaceholderText("Documento")
+        right_layout.addWidget(self.venta_documento_edit)
 
         right_layout.addWidget(QLabel("Fecha nota de remisión anterior:"))
         self.fecha_remision_anterior = QDateEdit(QDate.currentDate())

@@ -692,7 +692,8 @@ class DB:
             return venta_id
         except Exception as e:
             logger.exception("Error al agregar venta a crédito fiscal: %s", e)
-            return None
+            self.conn.rollback()
+            raise
 
 
     def get_ventas(self):

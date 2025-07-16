@@ -95,6 +95,10 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
             "nrc": fiscal.get("nrc") or receptor.get("nrc"),
             "giro": fiscal.get("giro") or receptor.get("giro"),
         })
+        if fiscal.get("no_remision"):
+            receptor["noRemision"] = fiscal.get("no_remision")
+        if fiscal.get("orden_no"):
+            receptor["ordenNo"] = fiscal.get("orden_no")
 
     cuerpo = []
     for idx, d in enumerate(detalles, 1):
@@ -122,6 +126,7 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "resumen": resumen,
         "firmaElectronica": None,
         "selloRecibido": None,
+        "condicionPago": fiscal.get("condicion_pago") if fiscal else None,
     }
 
     if fiscal:

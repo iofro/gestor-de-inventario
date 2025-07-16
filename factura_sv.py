@@ -203,6 +203,12 @@ def generar_factura_electronica_pdf(
     c.drawString(receptor_x + 5, text_y, f"Giro: {cliente.get('giro', '')}")
     text_y -= 12
     c.drawString(receptor_x + 5, text_y, f"Dirección: {cliente.get('direccion', '')}")
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, f"No. Remisión: {venta.get('no_remision', '')}")
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, f"Orden No.: {venta.get('orden_no', '')}")
+    text_y -= 12
+    c.drawString(receptor_x + 5, text_y, f"Condición pago: {venta.get('condicion_pago', '')}")
     if venta.get('venta_a_cuenta_de'):
         text_y -= 12
         c.drawString(receptor_x + 5, text_y, f"Venta a cuenta de: {venta.get('venta_a_cuenta_de')}")

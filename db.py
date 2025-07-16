@@ -436,17 +436,21 @@ class DB:
             self.conn.commit()
         except Exception:
             pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN sumas REAL DEFAULT 0")
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN iva REAL DEFAULT 0")
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0")
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT")
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN descuentos REAL DEFAULT 0")
-            self.cursor.execute("ALTER TABLE ventas ADD COLUMN extra TEXT")
-            self.cursor.execute("ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada'")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existen
+        # Asegura columnas adicionales en ventas_credito_fiscal y ventas
+        for stmt in [
+            "ALTER TABLE ventas_credito_fiscal ADD COLUMN sumas REAL DEFAULT 0",
+            "ALTER TABLE ventas_credito_fiscal ADD COLUMN iva REAL DEFAULT 0",
+            "ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0",
+            "ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT",
+            "ALTER TABLE ventas_credito_fiscal ADD COLUMN descuentos REAL DEFAULT 0",
+            "ALTER TABLE ventas ADD COLUMN extra TEXT",
+            "ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada'",
+        ]:
+            try:
+                self.cursor.execute(stmt)
+                self.conn.commit()
+            except Exception:
+                pass  # La columna ya existe o no se pudo crear
         try:
             self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN extra TEXT")
             self.conn.commit()

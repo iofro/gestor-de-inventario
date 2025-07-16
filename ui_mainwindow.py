@@ -752,9 +752,13 @@ class MainWindow(QMainWindow):
                     iva=iva,
                     subtotal=subtotal,
                     ventas_exentas=data.get("ventas_exentas", 0),
-                    ventas_no_sujetas=data.get("ventas_no_sujetas", 0),   
+                    ventas_no_sujetas=data.get("ventas_no_sujetas", 0),
                     total_letras=total_letras
                 )
+                if not venta_id:
+                    raise ValueError(
+                        "No se pudo registrar la venta a cr\xE9dito fiscal."
+                    )
                 logger.debug("IVA guardado en la venta: %s", iva)
 
                 for item in items:

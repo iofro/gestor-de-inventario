@@ -65,11 +65,11 @@ archivo. En su lugar, define la variable de entorno `INVENTARIO_EMAIL_PASSWORD`
 con la contraseña correspondiente antes de ejecutar la aplicación.
 
 Las facturas generadas desde la pestaña **Ventas** se guardan automáticamente en
-`facturas/consumidor_final` o `facturas/credito_fiscal` dependiendo del tipo de
+`facturas_consumidor_final` o `facturas_credito_fiscal` dependiendo del tipo de
 documento. Los tickets se almacenan en la carpeta `tickets`. Al imprimir,
 previsualizar o enviar por correo se reutilizan estos PDFs si están disponibles.
-Las notas de débito creadas desde la pestaña **Facturación** se guardan como
-archivos de texto en la carpeta `notas_debito`.
+Las notas de débito creadas desde la pestaña **Facturación** se guardan en la
+carpeta `notas_debito`.
 
 ### Generar ticket en formato personalizado
 

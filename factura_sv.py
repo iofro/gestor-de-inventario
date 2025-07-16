@@ -193,29 +193,38 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica-Bold", 8)
     c.drawString(receptor_x + 5, text_y, "RECEPTOR:")
     c.setFont("Helvetica", 8)
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"Nombre: {cliente.get('nombre', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"DUI: {cliente.get('dui', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"NIT: {cliente.get('nit', '')}  NRC: {cliente.get('nrc', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"Giro: {cliente.get('giro', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"Dirección: {cliente.get('direccion', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"No. Remisión: {venta.get('no_remision', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"Orden No.: {venta.get('orden_no', '')}")
-    text_y -= 12
-    c.drawString(receptor_x + 5, text_y, f"Condición pago: {venta.get('condicion_pago', '')}")
-    if venta.get('venta_a_cuenta_de'):
-        text_y -= 12
-        c.drawString(receptor_x + 5, text_y, f"Venta a cuenta de: {venta.get('venta_a_cuenta_de')}")
-    doc = venta.get('documento_venta_a_cuenta')
-    if doc:
-        text_y -= 12
-        c.drawString(receptor_x + 5, text_y, f"DUI/NIT: {doc}")
+
+    line_h = 12
+    left_x = receptor_x + 5
+    right_x = receptor_x + box_w / 2 + 5
+
+    text_y -= line_h
+    c.drawString(left_x, text_y, f"Nombre: {cliente.get('nombre', '')}")
+
+    text_y -= line_h
+    c.drawString(left_x, text_y, f"DUI: {cliente.get('dui', '')}")
+    c.drawString(right_x, text_y, f"NRC: {cliente.get('nrc', '')}")
+
+    text_y -= line_h
+    c.drawString(left_x, text_y, f"NIT: {cliente.get('nit', '')}")
+    c.drawString(right_x, text_y, f"No. Remisión: {venta.get('no_remision', '')}")
+
+    text_y -= line_h
+    c.drawString(left_x, text_y, f"Giro: {cliente.get('giro', '')}")
+    c.drawString(right_x, text_y, f"Orden No.: {venta.get('orden_no', '')}")
+
+    text_y -= line_h
+    c.drawString(left_x, text_y, f"Condición pago: {venta.get('condicion_pago', '')}")
+
+    text_y -= line_h
+    c.drawString(left_x, text_y, f"Dirección: {cliente.get('direccion', '')}")
+
+    if venta.get('venta_a_cuenta_de') or venta.get('documento_venta_a_cuenta'):
+        text_y -= line_h
+        if venta.get('venta_a_cuenta_de'):
+            c.drawString(left_x, text_y, f"Venta a cta de: {venta.get('venta_a_cuenta_de')}")
+        if venta.get('documento_venta_a_cuenta'):
+            c.drawString(right_x, text_y, f"DUI/NIT: {venta.get('documento_venta_a_cuenta')}")
 
     # Posición inicial para la tabla de productos
     tabla_x = x_margin

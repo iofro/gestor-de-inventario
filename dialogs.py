@@ -909,6 +909,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             vendedor_id = self.vendedores_trabajadores[vendedor_idx - 1]["id"]
 
         sumas = 0
+        descuentos = 0
         ventas_exentas = 0
         ventas_no_sujetas = 0
         total = 0
@@ -917,7 +918,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         for item in self.venta_items:
             tipo_fiscal = item.get("tipo_fiscal", "").lower()
             if tipo_fiscal == "venta gravada":
-                sumas += item["subtotal_con_descuento"]
+                sumas += item["subtotal"]
+                descuentos += item.get("descuento_monto", 0)
                 iva += item.get("iva", 0)  # <-- Suma el IVA real de cada producto gravado
             elif tipo_fiscal == "venta exenta":
                 ventas_exentas += item["subtotal_con_descuento"]
@@ -938,11 +940,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "venta_a_cuenta_de": self.venta_a_cuenta_de_edit.text(),
             "documento_venta_a_cuenta": self.venta_documento_edit.text(),
             "sumas": sumas,
+            "descuentos": descuentos,
             "iva": iva,
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
-            "subtotal": sumas + ventas_exentas + ventas_no_sujetas,
-            "total": sumas + ventas_exentas + ventas_no_sujetas + iva,
+            "subtotal": (sumas - descuentos) + iva,
+            "total": (sumas - descuentos) + iva + ventas_exentas + ventas_no_sujetas,
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()
@@ -2224,6 +2227,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             vendedor_id = self.vendedores_trabajadores[vendedor_idx - 1]["id"]
 
         sumas = 0
+        descuentos = 0
         ventas_exentas = 0
         ventas_no_sujetas = 0
         total = 0
@@ -2236,7 +2240,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 base = item.get("subtotal", base)
 
             if tipo_fiscal == "venta gravada":
-                sumas += base
+                sumas += item["subtotal"]
+                descuentos += item.get("descuento_monto", 0)
                 iva += item.get("iva", 0)
             elif tipo_fiscal == "venta exenta":
                 ventas_exentas += base
@@ -2266,11 +2271,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "fecha_remision_anterior": self.fecha_remision_anterior.date().toString("yyyy-MM-dd"),
             "fecha_remision": self.fecha_remision.date().toString("yyyy-MM-dd"),
             "sumas": sumas,
+            "descuentos": descuentos,
             "iva": iva,
-            "subtotal": sumas + ventas_exentas + ventas_no_sujetas,
+            "subtotal": (sumas - descuentos) + iva,
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
-            "total": sumas + ventas_exentas + ventas_no_sujetas + iva,
+            "total": (sumas - descuentos) + iva + ventas_exentas + ventas_no_sujetas,
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()

@@ -159,7 +159,37 @@ def generar_factura_electronica_pdf(
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 
     box_w = (width - 2 * x_margin - 10) // 2
-    box_h = 100
+    line_h = 12
+
+    telefono = datos_negocio.get('telefono_fijo') or datos_negocio.get('telefono_movil', '')
+    correo_emisor = datos_negocio.get('email') or datos_negocio.get('email_usuario', '')
+
+    emisor_lines = [
+        f"Nombre: {datos_negocio.get('razon_social', '')}",
+        f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}",
+        f"Giro: {datos_negocio.get('giro', '')}",
+        f"Dirección: {datos_negocio.get('direccion', '')}",
+    ]
+    if telefono:
+        emisor_lines.append(f"Número Teléfono: {telefono}")
+    if correo_emisor:
+        emisor_lines.append(f"Correo Electrónico: {correo_emisor}")
+
+    emisor_line_count = 1 + len(emisor_lines)  # incluye encabezado
+
+    receptor_line_count = 4  # encabezado + nombre + DUI + NIT
+    receptor_extra = 1  # línea "Giro/Orden" o espaciado
+    if tipo_documento == "Crédito Fiscal":
+        receptor_extra += 1  # línea "Condición pago"
+    receptor_line_count += receptor_extra
+    receptor_line_count += 1  # Dirección
+    if venta.get('venta_a_cuenta_de') or venta.get('documento_venta_a_cuenta'):
+        receptor_line_count += 1
+
+    box_h_emisor = 14 + line_h * emisor_line_count
+    box_h_receptor = 14 + line_h * receptor_line_count
+    box_h = max(box_h_emisor, box_h_receptor)
+
     box_y = encabezado_y - box_h
     emisor_x = x_margin
     receptor_x = emisor_x + box_w + 10
@@ -181,18 +211,18 @@ def generar_factura_electronica_pdf(
     text_y -= 12
     c.drawString(emisor_x + 5, text_y, f"Dirección: {datos_negocio.get('direccion', '')}")
     text_y -= 12
-    telefono = datos_negocio.get('telefono_fijo') or datos_negocio.get('telefono_movil', '')
-    c.drawString(emisor_x + 5, text_y, f"Número Teléfono: {telefono}")
-    text_y -= 12
-    correo_emisor = datos_negocio.get('email') or datos_negocio.get('email_usuario', '')
-    c.drawString(emisor_x + 5, text_y, f"Correo Electrónico: {correo_emisor}")
+    if telefono:
+        c.drawString(emisor_x + 5, text_y, f"Número Teléfono: {telefono}")
+        text_y -= 12
+    if correo_emisor:
+        c.drawString(emisor_x + 5, text_y, f"Correo Electrónico: {correo_emisor}")
+        text_y -= 12
 
     text_y = box_y + box_h - 14
     c.setFont("Helvetica-Bold", 8)
     c.drawString(receptor_x + 5, text_y, "RECEPTOR:")
     c.setFont("Helvetica", 8)
 
-    line_h = 12
     left_x = receptor_x + 5
     right_x = receptor_x + box_w / 2 + 5
 

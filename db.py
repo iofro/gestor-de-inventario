@@ -433,6 +433,7 @@ class DB:
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN iva REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT")
+            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN descuentos REAL DEFAULT 0")
             self.cursor.execute("ALTER TABLE ventas ADD COLUMN extra TEXT")
             self.cursor.execute("ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada'")
             self.conn.commit()
@@ -629,6 +630,7 @@ class DB:
         fecha_remision_anterior="",
         fecha_remision="",
         sumas=0,
+        descuentos=0,
         iva=0,
         subtotal=0,
         ventas_exentas=0,
@@ -678,13 +680,13 @@ class DB:
                     venta_id, cliente_id, nrc, nit, giro,
                     no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
                     documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
-                    sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    sumas, descuentos, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, (
                 venta_id, cliente_id, nrc, nit, giro,
                 no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
                 documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
-                sumas, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra_json
+                sumas, descuentos, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra_json
             ))
             self.conn.commit()
             return venta_id

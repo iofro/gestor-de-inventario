@@ -280,21 +280,33 @@ def generar_factura_electronica_pdf(
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "Descuentos y rebajas globales:")
+    c.drawString(x_linea + 10, texto_y, "Descuentos y rebajas:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('descuentos_globales', '')}")
-
-    texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "Subtotal:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('subtotal', '')}")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('descuentos', 0):.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "IVA 13%:")
     c.setFont("Helvetica", 9)
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('iva', '')}")
+
+    texto_y -= salto
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(x_linea + 10, texto_y, "Subtotal:")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('subtotal', 0):.2f}")
+
+    texto_y -= salto
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(x_linea + 10, texto_y, "Exentas:")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('ventas_exentas', 0):.2f}")
+
+    texto_y -= salto
+    c.setFont("Helvetica-Bold", 9)
+    c.drawString(x_linea + 10, texto_y, "No sujetas:")
+    c.setFont("Helvetica", 9)
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('ventas_no_sujetas', 0):.2f}")
 
     texto_y -= salto + 10  # Más espacio antes de "Total a pagar"
     c.setFont("Helvetica-Bold", 10)

@@ -719,6 +719,7 @@ class MainWindow(QMainWindow):
                 
                 # --- CÁLCULOS FISCALES ---
                 sumas = data.get("sumas", 0)
+                descuentos = data.get("descuentos", 0)
                 iva = data.get("iva", 0)
                 subtotal = data.get("subtotal", 0)
                 venta_total = data.get("total", 0)
@@ -747,6 +748,7 @@ class MainWindow(QMainWindow):
                     fecha_remision_anterior=data.get("fecha_remision_anterior", ""),
                     fecha_remision=data.get("fecha_remision", ""),
                     sumas=sumas,
+                    descuentos=descuentos,
                     iva=iva,
                     subtotal=subtotal,
                     ventas_exentas=data.get("ventas_exentas", 0),

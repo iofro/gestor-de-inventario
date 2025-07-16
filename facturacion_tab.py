@@ -334,13 +334,14 @@ class FacturacionTab(QWidget):
             if trabajador:
                 venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
 
-        sumas = ventas_exentas = ventas_no_sujetas = iva = 0
+        sumas = descuentos = 0
+        ventas_exentas = ventas_no_sujetas = iva = 0
         for d in detalles:
-            base = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            base_total = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+            desc = d.get("descuento", 0)
             if d.get("descuento_tipo") == "%":
-                base -= base * d.get("descuento", 0) / 100
-            else:
-                base -= d.get("descuento", 0)
+                desc = base_total * d.get("descuento", 0) / 100
+            base = base_total - desc
             iva_item = d.get("iva", 0)
             tipo = d.get("tipo_fiscal", "").lower()
             if tipo == "venta exenta":
@@ -351,14 +352,16 @@ class FacturacionTab(QWidget):
                 ventas_no_sujetas += base
             else:
                 d["ventas_gravadas"] = base
-                sumas += base
+                sumas += base_total
+                descuentos += desc
                 iva += iva_item
 
-        subtotal = sumas + ventas_exentas + ventas_no_sujetas
-        total = subtotal + iva
+        subtotal = (sumas - descuentos) + iva
+        total = subtotal + ventas_exentas + ventas_no_sujetas
         venta_data.update(
             {
                 "sumas": sumas,
+                "descuentos": descuentos,
                 "iva": iva,
                 "ventas_exentas": ventas_exentas,
                 "ventas_no_sujetas": ventas_no_sujetas,

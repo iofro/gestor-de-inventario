@@ -86,14 +86,12 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "nombre": rec.get("nombre"),
         "direccion": rec.get("direccion"),
         "nit": rec.get("nit"),
-        "nrc": rec.get("nrc"),
-        "giro": rec.get("giro"),
     }
     if fiscal:
         receptor.update({
-            "nit": fiscal.get("nit") or receptor.get("nit"),
-            "nrc": fiscal.get("nrc") or receptor.get("nrc"),
-            "giro": fiscal.get("giro") or receptor.get("giro"),
+            "nrc": fiscal.get("nrc") or rec.get("nrc"),
+            "giro": fiscal.get("giro") or rec.get("giro"),
+            "nit": fiscal.get("nit") or rec.get("nit"),
         })
         if fiscal.get("no_remision"):
             receptor["noRemision"] = fiscal.get("no_remision")
@@ -131,8 +129,9 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "resumen": resumen,
         "firmaElectronica": None,
         "selloRecibido": None,
-        "condicionPago": fiscal.get("condicion_pago") if fiscal else None,
     }
+    if fiscal:
+        result["condicionPago"] = fiscal.get("condicion_pago")
 
     if fiscal:
         if fiscal.get("venta_a_cuenta_de"):

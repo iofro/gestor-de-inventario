@@ -299,13 +299,12 @@ class SalesTab(QWidget):
         self._update_email_preview()
 
     def _clear_preview_files(self):
-        """Remove temporary files used for PDF preview."""
-        for path in [self.preview_pdf_file, self.preview_image_file]:
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+        """Remove temporary preview image without deleting stored PDFs."""
+        if self.preview_image_file and os.path.exists(self.preview_image_file):
+            try:
+                os.remove(self.preview_image_file)
+            except OSError:
+                pass
         self.preview_pdf_file = None
         self.preview_image_file = None
 

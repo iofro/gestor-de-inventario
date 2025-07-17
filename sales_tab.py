@@ -165,14 +165,15 @@ class SalesTab(QWidget):
         btn_layout = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar factura")
         self.btn_enviar = QPushButton("Enviar por correo")
-        self.btn_imprimir = QPushButton("Imprimir PDF")
+        self.btn_enviar_ticket = QPushButton("Enviar ticket")
         self.btn_ticket = QPushButton("Ticket")
         btn_layout.addWidget(self.btn_guardar)
         btn_layout.addWidget(self.btn_enviar)
-        btn_layout.addWidget(self.btn_imprimir)
+        btn_layout.addWidget(self.btn_enviar_ticket)
         btn_layout.addWidget(self.btn_ticket)
         self.btn_guardar.clicked.connect(self.save_pdf)
         self.btn_enviar.clicked.connect(self.send_email)
+        self.btn_enviar_ticket.clicked.connect(self.send_ticket_email)
         self.btn_ticket.clicked.connect(self.save_ticket)
         preview_layout.addLayout(btn_layout)
 
@@ -603,6 +604,38 @@ class SalesTab(QWidget):
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
 
+    def _generate_ticket_pdf(self, venta_id):
+        """Generate and store the ticket PDF for the given sale."""
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            return None
+
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+        extra = {}
+        raw_extra = venta.get("extra") if venta else None
+        if raw_extra:
+            try:
+                extra = json.loads(raw_extra)
+            except Exception:
+                extra = {}
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        cliente_nombre = cliente.get("nombre") if cliente else ""
+
+        filename, json_path = get_document_paths(
+            venta.get("fecha"), cliente_nombre, venta_id, "Ticket"
+        )
+
+        generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
+        if not os.path.exists(json_path):
+            raise IOError(f"No se pudo guardar JSON en {json_path}")
+        self.manager.db.add_ticket_pdf(venta_id, filename)
+        return filename
+
     def save_pdf(self):
         """Generate a PDF for the selected sale after user confirmation."""
         if self.sales_table.currentRow() < 0:
@@ -767,6 +800,74 @@ class SalesTab(QWidget):
         else:
             self.status_label.setText("Estado actual: Error")
             QMessageBox.critical(self, "Enviar por correo", message)
+            self.retry_btn.setEnabled(True)
+        self.email_thread = None
+
+    def send_ticket_email(self):
+        """Send the selected ticket via email in a background thread."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Enviar ticket", "No has seleccionado ninguna venta.")
+            return
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Enviar ticket", "No se encontró la venta seleccionada.")
+            return
+
+        cliente_email = ""
+        if venta.get("cliente_id"):
+            cli = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+            if cli:
+                cliente_email = cli.get("email", "")
+        if not cliente_email:
+            QMessageBox.warning(self, "Enviar ticket", "El cliente no tiene correo registrado.")
+            return
+
+        subject = self.email_subject_edit.text().strip()
+        body = self.email_body_edit.toPlainText()
+
+        pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            pdf_path = self._generate_ticket_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            QMessageBox.warning(self, "Enviar ticket", "No se pudo generar el ticket.")
+            return
+
+        creds = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                creds = {}
+        server = creds.get("smtp_server")
+        port = creds.get("smtp_port")
+        user = creds.get("email_usuario")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
+        if not all([server, port, user, password]):
+            QMessageBox.warning(self, "Enviar ticket", "Credenciales SMTP incompletas.")
+            return
+
+        self.status_label.setText("Estado actual: Enviando...")
+        self.retry_btn.setEnabled(False)
+        self.btn_enviar_ticket.setEnabled(False)
+
+        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread.finished.connect(self._on_ticket_sent)
+        self.email_thread.start()
+
+    def _on_ticket_sent(self, success, message):
+        self.btn_enviar_ticket.setEnabled(True)
+        if success:
+            self.status_label.setText("Estado actual: Enviado")
+            self.sent_label.setText("Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M"))
+            QMessageBox.information(self, "Enviar ticket", message)
+            self.retry_btn.setEnabled(False)
+        else:
+            self.status_label.setText("Estado actual: Error")
+            QMessageBox.critical(self, "Enviar ticket", message)
             self.retry_btn.setEnabled(True)
         self.email_thread = None
 

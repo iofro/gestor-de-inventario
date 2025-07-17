@@ -70,6 +70,10 @@ documento. Los tickets se almacenan en la carpeta `tickets`. Al imprimir,
 previsualizar o enviar por correo se reutilizan estos PDFs si están disponibles.
 Las notas de débito creadas desde la pestaña **Facturación** se guardan en la
 carpeta `notas_debito`.
+Además, la pestaña **Facturación** buscará archivos también en las rutas
+`facturas/consumidor_final` y `facturas/credito_fiscal` si existen, de modo que
+las facturas almacenadas manualmente en esas carpetas se muestren incluso si no
+están vinculadas a una venta.
 
 ### Generar ticket en formato personalizado
 

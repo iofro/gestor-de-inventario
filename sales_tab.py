@@ -163,7 +163,7 @@ class SalesTab(QWidget):
         preview_layout.addWidget(self.info_label)
 
         btn_layout = QHBoxLayout()
-        self.btn_guardar = QPushButton("Guardar PDF")
+        self.btn_guardar = QPushButton("Guardar factura")
         self.btn_enviar = QPushButton("Enviar por correo")
         self.btn_imprimir = QPushButton("Imprimir PDF")
         self.btn_ticket = QPushButton("Ticket")
@@ -598,13 +598,15 @@ class SalesTab(QWidget):
         json_data = build_invoice_json(venta_data, cliente or {}, detalles)
         with open(json_path, 'w', encoding='utf-8') as fh:
             json.dump(json_data, fh, ensure_ascii=False, indent=2)
+        if not os.path.exists(json_path):
+            raise IOError(f"No se pudo guardar JSON en {json_path}")
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
 
     def save_pdf(self):
         """Generate a PDF for the selected sale after user confirmation."""
         if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(self, "Guardar PDF", "Seleccione una factura primero.")
+            QMessageBox.warning(self, "Guardar factura", "Seleccione una factura primero.")
             return
 
         row = self.sales_table.currentRow()
@@ -612,7 +614,7 @@ class SalesTab(QWidget):
 
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
-            QMessageBox.warning(self, "Guardar PDF", "No se encontró la venta seleccionada.")
+            QMessageBox.warning(self, "Guardar factura", "No se encontró la venta seleccionada.")
             return
 
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
@@ -621,17 +623,17 @@ class SalesTab(QWidget):
             if credito_info
             else "Esta venta está registrada como consumidor final, ¿desea continuar?"
         )
-        reply = QMessageBox.question(self, "Guardar PDF", mensaje, QMessageBox.Yes | QMessageBox.No)
+        reply = QMessageBox.question(self, "Guardar factura", mensaje, QMessageBox.Yes | QMessageBox.No)
         if reply != QMessageBox.Yes:
             QMessageBox.information(
                 self,
-                "Guardar PDF",
+                "Guardar factura",
                 "Si desea modificar esta factura presione generar nueva factura manual",
             )
             return
         file_path = self._generate_invoice_pdf(venta_id)
         if file_path:
-            QMessageBox.information(self, "Guardar PDF", f"Factura guardada en {file_path}")
+            QMessageBox.information(self, "Guardar factura", f"Factura guardada en {file_path}")
 
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""
@@ -664,6 +666,8 @@ class SalesTab(QWidget):
         generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
         with open(json_path, "w", encoding="utf-8") as fh:
             json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
+        if not os.path.exists(json_path):
+            raise IOError(f"No se pudo guardar JSON en {json_path}")
         self.manager.db.add_ticket_pdf(venta_id, filename)
         QMessageBox.information(self, "Ticket", f"Ticket guardado en {filename}")
 

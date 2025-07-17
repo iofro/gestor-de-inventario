@@ -3080,7 +3080,7 @@ class ManualInvoiceDialog(QDialog):
         main_layout.addLayout(self.stack)
 
         btns = QHBoxLayout()
-        self.btn_ok = QPushButton("Generar PDF")
+        self.btn_ok = QPushButton("Guardar factura")
         self.btn_cancel = QPushButton("Cancelar")
         btns.addWidget(self.btn_ok)
         btns.addWidget(self.btn_cancel)

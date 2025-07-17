@@ -95,7 +95,9 @@ class FacturacionTab(QWidget):
         self.btn_debito = QPushButton("Nota de débito")
         self.btn_estado = QPushButton("Estado")
         self.btn_eliminar = QPushButton("Eliminar")
-        self.btn_eliminar.setStyleSheet("background:white")
+        self.btn_eliminar.setStyleSheet(
+            "background-color: #b71c1c; color: #fff; border-radius: 6px;"
+        )
         btns.addWidget(self.btn_ticket)
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)

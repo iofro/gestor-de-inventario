@@ -94,10 +94,12 @@ class FacturacionTab(QWidget):
         self.btn_credito = QPushButton("Nota de crédito")
         self.btn_debito = QPushButton("Nota de débito")
         self.btn_estado = QPushButton("Estado")
+        self.btn_eliminar = QPushButton("Eliminar archivos")
         btns.addWidget(self.btn_ticket)
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
+        btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
 
@@ -124,6 +126,7 @@ class FacturacionTab(QWidget):
         self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)
+        self.btn_eliminar.clicked.connect(self.delete_files)
 
     def load_invoices(self):
         ventas = self.manager.db.get_ventas()
@@ -251,6 +254,44 @@ class FacturacionTab(QWidget):
             estado = dialog.get_estado()
             self.manager.db.update_venta_estado(venta_id, estado)
             self.load_invoices()
+
+    def delete_files(self):
+        """Elimina PDF y JSON asociados a la venta seleccionada."""
+        venta_id = self._selected_venta()
+        if venta_id is None:
+            QMessageBox.warning(self, "Eliminar", "Seleccione una venta")
+            return
+        paths = []
+        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        if pdf_path:
+            paths.append(pdf_path)
+            paths.append(os.path.splitext(pdf_path)[0] + ".json")
+        ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+        if ticket_path:
+            paths.append(ticket_path)
+            paths.append(os.path.splitext(ticket_path)[0] + ".json")
+        paths = [p for p in paths if os.path.exists(p)]
+        if not paths:
+            QMessageBox.information(self, "Eliminar", "No se encontraron archivos")
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar",
+            "¿Eliminar archivos de factura/ticket?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        for p in paths:
+            try:
+                os.remove(p)
+            except OSError:
+                pass
+        if pdf_path:
+            self.manager.db.delete_factura_pdf(venta_id)
+        if ticket_path:
+            self.manager.db.delete_ticket_pdf(venta_id)
+        QMessageBox.information(self, "Eliminar", "Archivos eliminados")
 
     # ------------------------------------------------------------------
     # Previsualización de facturas

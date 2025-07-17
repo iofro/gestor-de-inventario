@@ -1074,6 +1074,16 @@ class DB:
         row = self.cursor.fetchone()
         return row["ruta"] if row else None
 
+    def delete_factura_pdf(self, venta_id):
+        """Elimina registros de factura PDF asociados a una venta."""
+        self.cursor.execute("DELETE FROM facturas_pdf WHERE venta_id=?", (venta_id,))
+        self.conn.commit()
+
+    def delete_ticket_pdf(self, venta_id):
+        """Elimina registros de tickets PDF asociados a una venta."""
+        self.cursor.execute("DELETE FROM tickets_pdf WHERE venta_id=?", (venta_id,))
+        self.conn.commit()
+
     def get_notas_by_venta(self, venta_id):
         """Devuelve las notas asociadas a una venta."""
         self.cursor.execute(

@@ -264,12 +264,13 @@ class FacturacionTab(QWidget):
         self._update_preview(venta_id)
 
     def _clear_preview_files(self):
-        for path in getattr(self, "preview_pdf_file", None), getattr(self, "preview_image_file", None):
-            if path and os.path.exists(path):
-                try:
-                    os.remove(path)
-                except OSError:
-                    pass
+        """Remove temporary preview image without deleting stored PDFs."""
+        img = getattr(self, "preview_image_file", None)
+        if img and os.path.exists(img):
+            try:
+                os.remove(img)
+            except OSError:
+                pass
         self.preview_pdf_file = None
         self.preview_image_file = None
 

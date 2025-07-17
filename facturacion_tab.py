@@ -94,7 +94,8 @@ class FacturacionTab(QWidget):
         self.btn_credito = QPushButton("Nota de crédito")
         self.btn_debito = QPushButton("Nota de débito")
         self.btn_estado = QPushButton("Estado")
-        self.btn_eliminar = QPushButton("Eliminar archivos")
+        self.btn_eliminar = QPushButton("Eliminar")
+        self.btn_eliminar.setStyleSheet("background:white")
         btns.addWidget(self.btn_ticket)
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)
@@ -167,7 +168,10 @@ class FacturacionTab(QWidget):
             # Keep parsed date for later sorting
             v_copy = dict(v)
             v_copy["_parsed_fecha"] = fdate
+            v_copy["row_type"] = "venta"
             rows.append(v_copy)
+
+        rows.extend(self._find_orphan_documents())
 
         # Sort invoices by date descending; fall back to original order if
         # the date is missing
@@ -175,23 +179,76 @@ class FacturacionTab(QWidget):
 
         self.table.setRowCount(len(rows))
         for row, v in enumerate(rows):
-            self.table.setItem(row, 0, QTableWidgetItem(str(v.get("id"))))
-            self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
-            self.table.setItem(row, 2, QTableWidgetItem(clientes.get(v.get("cliente_id"), "")))
-            self.table.setItem(row, 3, QTableWidgetItem(f"${v.get('total', 0):.2f}"))
-            self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
+            if v.get("row_type") == "venta":
+                self.table.setItem(row, 0, QTableWidgetItem(str(v.get("id"))))
+                self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
+                self.table.setItem(row, 2, QTableWidgetItem(clientes.get(v.get("cliente_id"), "")))
+                self.table.setItem(row, 3, QTableWidgetItem(f"${v.get('total', 0):.2f}"))
+                self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
+            else:
+                self.table.setItem(row, 0, QTableWidgetItem(v.get("name", "")))
+                self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
+                self.table.setItem(row, 2, QTableWidgetItem(""))
+                self.table.setItem(row, 3, QTableWidgetItem(""))
+                self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
+            for col in range(5):
+                item = self.table.item(row, col)
+                if item:
+                    item.setData(Qt.UserRole, v)
         if rows:
             self.table.selectRow(0)
 
-    def _selected_venta(self):
+    def _find_orphan_documents(self):
+        db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
+        result = []
+        for folder in (CF_DIR, CREDITO_DIR):
+            if not os.path.isdir(folder):
+                continue
+            files = {}
+            for fname in os.listdir(folder):
+                base, ext = os.path.splitext(fname)
+                files.setdefault(base, {})[ext.lower()] = os.path.join(folder, fname)
+            for base, paths in files.items():
+                pdf = paths.get('.pdf')
+                js = paths.get('.json')
+                if pdf and pdf in db_pdfs:
+                    continue
+                mtime = None
+                if pdf and os.path.exists(pdf):
+                    mtime = os.path.getmtime(pdf)
+                elif js and os.path.exists(js):
+                    mtime = os.path.getmtime(js)
+                fecha = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d') if mtime else ''
+                estado = 'Sin venta'
+                if pdf and js:
+                    try:
+                        with open(js, 'r', encoding='utf-8') as fh:
+                            json.load(fh)
+                    except Exception:
+                        estado = 'Corrupta'
+                else:
+                    estado = 'Incompleta'
+                result.append({
+                    'row_type': 'orphan',
+                    'name': base,
+                    'pdf': pdf,
+                    'json': js,
+                    'fecha': fecha,
+                    '_parsed_fecha': datetime.fromtimestamp(mtime).date() if mtime else None,
+                    'estado': estado,
+                })
+        return result
+
+    def _selected_entry(self):
         if self.table.currentRow() < 0:
             return None
         item = self.table.item(self.table.currentRow(), 0)
-        if item:
-            try:
-                return int(item.text())
-            except ValueError:
-                return None
+        return item.data(Qt.UserRole) if item else None
+
+    def _selected_venta(self):
+        data = self._selected_entry()
+        if data and data.get("row_type") == "venta":
+            return data.get("id")
         return None
 
     def create_ticket(self):
@@ -257,19 +314,27 @@ class FacturacionTab(QWidget):
 
     def delete_files(self):
         """Elimina PDF y JSON asociados a la venta seleccionada."""
-        venta_id = self._selected_venta()
-        if venta_id is None:
+        data = self._selected_entry()
+        if not data:
             QMessageBox.warning(self, "Eliminar", "Seleccione una venta")
             return
         paths = []
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
-        if pdf_path:
-            paths.append(pdf_path)
-            paths.append(os.path.splitext(pdf_path)[0] + ".json")
-        ticket_path = self.manager.db.get_ticket_pdf(venta_id)
-        if ticket_path:
-            paths.append(ticket_path)
-            paths.append(os.path.splitext(ticket_path)[0] + ".json")
+        pdf_path = None
+        ticket_path = None
+        if data.get("row_type") == "venta":
+            venta_id = data.get("id")
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if pdf_path:
+                paths.append(pdf_path)
+                paths.append(os.path.splitext(pdf_path)[0] + ".json")
+            ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+            if ticket_path:
+                paths.append(ticket_path)
+                paths.append(os.path.splitext(ticket_path)[0] + ".json")
+        else:
+            for p in [data.get("pdf"), data.get("json")]:
+                if p:
+                    paths.append(p)
         paths = [p for p in paths if os.path.exists(p)]
         if not paths:
             QMessageBox.information(self, "Eliminar", "No se encontraron archivos")
@@ -277,7 +342,7 @@ class FacturacionTab(QWidget):
         confirm = QMessageBox.question(
             self,
             "Eliminar",
-            "¿Eliminar archivos de factura/ticket?",
+            "¿Eliminar archivos?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
@@ -287,11 +352,13 @@ class FacturacionTab(QWidget):
                 os.remove(p)
             except OSError:
                 pass
-        if pdf_path:
-            self.manager.db.delete_factura_pdf(venta_id)
-        if ticket_path:
-            self.manager.db.delete_ticket_pdf(venta_id)
+        if data.get("row_type") == "venta":
+            if pdf_path:
+                self.manager.db.delete_factura_pdf(venta_id)
+            if ticket_path:
+                self.manager.db.delete_ticket_pdf(venta_id)
         QMessageBox.information(self, "Eliminar", "Archivos eliminados")
+        self.load_invoices()
 
     # ------------------------------------------------------------------
     # Previsualización de facturas
@@ -301,8 +368,20 @@ class FacturacionTab(QWidget):
             self.preview_label.setText("Previsualización del PDF")
             self._clear_preview_files()
             return
-        venta_id = int(self.table.item(self.table.currentRow(), 0).text())
-        self._update_preview(venta_id)
+        data = self._selected_entry()
+        if not data:
+            self.preview_label.setText("Previsualización del PDF")
+            self._clear_preview_files()
+            return
+        if data.get("row_type") == "venta":
+            self._update_preview(data.get("id"))
+        else:
+            pdf = data.get("pdf")
+            if pdf and os.path.exists(pdf):
+                self._show_pdf_preview(pdf)
+            else:
+                self.preview_label.setText("No hay PDF")
+                self._clear_preview_files()
 
     def _clear_preview_files(self):
         """Remove temporary preview image without deleting stored PDFs."""
@@ -315,21 +394,8 @@ class FacturacionTab(QWidget):
         self.preview_pdf_file = None
         self.preview_image_file = None
 
-    def _update_preview(self, venta_id):
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        if not venta:
-            self.preview_label.setText("Previsualización del PDF")
-            return
-
+    def _show_pdf_preview(self, pdf_path):
         self._clear_preview_files()
-
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
-        if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = self._generate_invoice_pdf(venta_id)
-            if not pdf_path:
-                self.preview_label.setText("No se pudo generar previsualización")
-                return
-
         prefix = tempfile.mktemp()
         try:
             png_path = prefix + ".png"
@@ -365,6 +431,23 @@ class FacturacionTab(QWidget):
         except Exception:
             self.preview_label.setText("No se pudo generar previsualización")
             self._clear_preview_files()
+
+    def _update_preview(self, venta_id):
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            self.preview_label.setText("Previsualización del PDF")
+            return
+
+        self._clear_preview_files()
+
+        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            pdf_path = self._generate_invoice_pdf(venta_id)
+            if not pdf_path:
+                self.preview_label.setText("No se pudo generar previsualización")
+                return
+
+        self._show_pdf_preview(pdf_path)
 
     def _generate_invoice_pdf(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

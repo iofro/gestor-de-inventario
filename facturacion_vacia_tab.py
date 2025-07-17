@@ -123,6 +123,7 @@ class FacturacionVaciaTab(QWidget):
                     "total": v.get("total", 0),
                     "estado": v.get("estado", ""),
                     "source": ("venta", v),
+                    "_parsed_fecha": fdate,
                 }
             )
 
@@ -152,8 +153,11 @@ class FacturacionVaciaTab(QWidget):
                     "total": n.get("monto", 0),
                     "estado": "Registrada",
                     "source": ("nota", n),
+                    "_parsed_fecha": fdate,
                 }
             )
+
+        rows.sort(key=lambda r: r.get("_parsed_fecha"), reverse=True)
 
         self.table.setRowCount(len(rows))
         for row, doc in enumerate(rows):

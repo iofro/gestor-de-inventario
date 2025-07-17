@@ -161,7 +161,14 @@ class FacturacionTab(QWidget):
                 continue
             if tipo == "Ticket" and not has_ticket:
                 continue
-            rows.append(v)
+            # Keep parsed date for later sorting
+            v_copy = dict(v)
+            v_copy["_parsed_fecha"] = fdate
+            rows.append(v_copy)
+
+        # Sort invoices by date descending; fall back to original order if
+        # the date is missing
+        rows.sort(key=lambda r: r.get("_parsed_fecha"), reverse=True)
 
         self.table.setRowCount(len(rows))
         for row, v in enumerate(rows):

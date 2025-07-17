@@ -34,6 +34,11 @@ from datetime import datetime
 
 CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
 CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
+# Additional locations where invoices may be stored
+ADDITIONAL_DIRS = [
+    os.path.join(os.path.dirname(__file__), "facturas", "consumidor_final"),
+    os.path.join(os.path.dirname(__file__), "facturas", "credito_fiscal"),
+]
 
 
 class FacturacionTab(QWidget):
@@ -203,7 +208,8 @@ class FacturacionTab(QWidget):
     def _find_orphan_documents(self):
         db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
         result = []
-        for folder in (CF_DIR, CREDITO_DIR):
+        folders = [CF_DIR, CREDITO_DIR] + ADDITIONAL_DIRS
+        for folder in folders:
             if not os.path.isdir(folder):
                 continue
             files = {}

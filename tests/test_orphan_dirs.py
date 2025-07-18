@@ -14,8 +14,10 @@ def qt_app():
 def test_find_orphan_in_additional_dirs(qt_app, tmp_path, monkeypatch):
     cf_alt = tmp_path / "facturas" / "consumidor_final"
     cf_alt.mkdir(parents=True)
-    json_path = cf_alt / "orphan.json"
+    json_path = cf_alt / "20240101_Test_1_ConsumidorFinal.json"
     json_path.write_text("{}")
+    pdf_path = cf_alt / "20240101_Test_1_ConsumidorFinal.pdf"
+    pdf_path.write_text("pdf")
 
     db = DB(":memory:")
     man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])

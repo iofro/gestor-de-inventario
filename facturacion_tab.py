@@ -137,7 +137,6 @@ class FacturacionTab(QWidget):
         self.btn_eliminar.clicked.connect(self.delete_files)
 
     def load_invoices(self):
-        ventas = self.manager.db.get_ventas()
         clientes = {c["id"]: c["nombre"] for c in self.manager._clientes}
         search = self.search_bar.text().lower() if hasattr(self, "search_bar") else ""
         d_from = self.date_from.date().toPyDate() if hasattr(self, "date_from") else None
@@ -146,37 +145,24 @@ class FacturacionTab(QWidget):
         vend_id = self.vendedor_filter.currentData()
         tipo = self.tipo_filter.currentText()
 
-        rows = []
-        for v in ventas:
-            fecha = v.get("fecha", "")
-            try:
-                fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date()
-            except Exception:
-                fdate = None
+        rows = self._get_invoices_from_db()
+        for r in list(rows):
+            fdate = r.get("_parsed_fecha")
             if d_from and fdate and fdate < d_from:
+                rows.remove(r)
                 continue
             if d_to and fdate and fdate > d_to:
+                rows.remove(r)
                 continue
-            if cli_id and v.get("cliente_id") != cli_id:
+            if cli_id and r.get("cliente_id") != cli_id:
+                rows.remove(r)
                 continue
-            if vend_id and v.get("vendedor_id") != vend_id:
+            if vend_id and r.get("vendedor_id") != vend_id:
+                rows.remove(r)
                 continue
-            cliente = clientes.get(v.get("cliente_id"), "")
-            if search and search not in str(v.get("id", "")).lower() and search not in cliente.lower():
-                continue
-            credito = self.manager.db.get_venta_credito_fiscal(v["id"])
-            has_ticket = bool(self.manager.db.get_ticket_pdf(v["id"]))
-            if tipo == "Crédito fiscal" and not credito:
-                continue
-            if tipo == "Consumidor final" and credito:
-                continue
-            if tipo == "Ticket" and not has_ticket:
-                continue
-            # Keep parsed date for later sorting
-            v_copy = dict(v)
-            v_copy["_parsed_fecha"] = fdate
-            v_copy["row_type"] = "venta"
-            rows.append(v_copy)
+            cliente = clientes.get(r.get("cliente_id"), "")
+            if search and search not in str(r.get("id", "")).lower() and search not in cliente.lower():
+                rows.remove(r)
 
         rows.extend(self._find_orphan_documents())
 
@@ -213,9 +199,13 @@ class FacturacionTab(QWidget):
             if not os.path.isdir(folder):
                 continue
             files = {}
-            for fname in os.listdir(folder):
-                base, ext = os.path.splitext(fname)
-                files.setdefault(base, {})[ext.lower()] = os.path.join(folder, fname)
+            for root, _dirs, fnames in os.walk(folder):
+                for fname in fnames:
+                    base, ext = os.path.splitext(fname)
+                    if ext.lower() not in ('.pdf', '.json'):
+                        continue
+                    key = os.path.join(root, base)
+                    files.setdefault(key, {})[ext.lower()] = os.path.join(root, fname)
             for base, paths in files.items():
                 pdf = paths.get('.pdf')
                 js = paths.get('.json')
@@ -228,23 +218,59 @@ class FacturacionTab(QWidget):
                     mtime = os.path.getmtime(js)
                 fecha = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d') if mtime else ''
                 estado = 'Sin venta'
-                if pdf and js:
+                if not pdf or not js:
+                    estado = 'Incompleta'
+                else:
                     try:
                         with open(js, 'r', encoding='utf-8') as fh:
                             json.load(fh)
                     except Exception:
-                        estado = 'Corrupta'
-                else:
-                    estado = 'Incompleta'
+                        estado = 'Incompleta'
                 result.append({
                     'row_type': 'orphan',
-                    'name': base,
+                    'name': os.path.basename(base),
                     'pdf': pdf,
                     'json': js,
                     'fecha': fecha,
                     '_parsed_fecha': datetime.fromtimestamp(mtime).date() if mtime else None,
                     'estado': estado,
                 })
+        return result
+
+    def _get_invoices_from_db(self):
+        ventas = {v["id"]: v for v in self.manager.db.get_ventas()}
+        clientes = {c["id"]: c.get("nombre", "") for c in self.manager._clientes}
+        result = []
+        for row in self.manager.db.cursor.execute("SELECT venta_id, ruta FROM facturas_pdf"):
+            venta = ventas.get(row["venta_id"])
+            pdf = row["ruta"]
+            js = os.path.splitext(pdf)[0] + ".json"
+            estado = venta.get("estado", "") if venta else "Sin venta"
+            if not os.path.exists(pdf) or not os.path.exists(js):
+                estado = "Incompleta"
+            else:
+                try:
+                    with open(js, 'r', encoding='utf-8') as fh:
+                        json.load(fh)
+                except Exception:
+                    estado = "Incompleta"
+            fecha = venta.get("fecha", "") if venta else ''
+            try:
+                fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date() if fecha else None
+            except Exception:
+                fdate = None
+            result.append({
+                'row_type': 'venta',
+                'id': row['venta_id'],
+                'pdf': pdf,
+                'json': js if os.path.exists(js) else None,
+                'fecha': fecha,
+                '_parsed_fecha': fdate,
+                'cliente_id': venta.get('cliente_id') if venta else None,
+                'vendedor_id': venta.get('vendedor_id') if venta else None,
+                'total': venta.get('total') if venta else None,
+                'estado': estado,
+            })
         return result
 
     def _selected_entry(self):

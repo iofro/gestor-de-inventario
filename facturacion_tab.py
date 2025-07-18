@@ -294,9 +294,16 @@ class FacturacionTab(QWidget):
         clientes = {c["id"]: c.get("nombre", "") for c in self.manager._clientes}
         result = []
         for row in self.manager.db.cursor.execute("SELECT venta_id, ruta FROM facturas_pdf"):
-            venta = ventas.get(row["venta_id"])
+            venta_id = row["venta_id"]
+            venta = ventas.get(venta_id)
             pdf = row["ruta"]
             js = os.path.splitext(pdf)[0] + ".json"
+
+            # Remove stale DB records if both files are missing
+            if not os.path.exists(pdf) and not os.path.exists(js):
+                self.manager.db.delete_factura_pdf(venta_id)
+                continue
+
             estado = venta.get("estado", "") if venta else "Sin venta"
             if not os.path.exists(pdf) or not os.path.exists(js):
                 estado = "Incompleta"

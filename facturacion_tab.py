@@ -423,7 +423,24 @@ class FacturacionTab(QWidget):
                     paths.append(p)
         paths = [p for p in paths if os.path.exists(p)]
         if not paths:
-            QMessageBox.information(self, "Eliminar", "No se encontraron archivos")
+            if data.get("row_type") == "venta":
+                confirm = QMessageBox.question(
+                    self,
+                    "Eliminar",
+                    "No se encontraron archivos. ¿Eliminar registros?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                if confirm == QMessageBox.Yes:
+                    if pdf_path:
+                        self.manager.db.delete_factura_pdf(venta_id)
+                    if ticket_path:
+                        self.manager.db.delete_ticket_pdf(venta_id)
+                    QMessageBox.information(self, "Eliminar", "Registros eliminados")
+                    self.load_invoices()
+                else:
+                    QMessageBox.information(self, "Eliminar", "No se eliminaron registros")
+            else:
+                QMessageBox.information(self, "Eliminar", "No se encontraron archivos")
             return
         confirm = QMessageBox.question(
             self,

@@ -927,6 +927,7 @@ class MainWindow(QMainWindow):
             self._cargar_personas_estado()
             if hasattr(self, "vendedor_combo_filtro"):
                 self.vendedor_combo_filtro.setCurrentIndex(0)
+            self._actualizar_inventario_actual()
             QMessageBox.information(self, "Nuevo inventario", "Inventario limpio y listo para usar.")
 
     def _actualizar_arbol_vendedores(self):

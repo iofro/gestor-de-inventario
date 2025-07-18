@@ -181,7 +181,8 @@ class FacturacionTab(QWidget):
                 self.table.setItem(row, 0, QTableWidgetItem(str(v.get("id"))))
                 self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
                 self.table.setItem(row, 2, QTableWidgetItem(clientes.get(v.get("cliente_id"), "")))
-                self.table.setItem(row, 3, QTableWidgetItem(f"${v.get('total', 0):.2f}"))
+                total = v.get('total') or 0
+                self.table.setItem(row, 3, QTableWidgetItem(f"${total:.2f}"))
                 self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
             else:
                 self.table.setItem(row, 0, QTableWidgetItem(v.get("name", "")))

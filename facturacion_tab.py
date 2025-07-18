@@ -166,9 +166,14 @@ class FacturacionTab(QWidget):
 
         rows.extend(self._find_orphan_documents())
 
-        # Sort invoices by date descending; fall back to original order if
-        # the date is missing
-        rows.sort(key=lambda r: r.get("_parsed_fecha"), reverse=True)
+        # Sort invoices by date descending, leaving entries without a date in
+        # their original relative order
+        rows.sort(
+            key=lambda r: (
+                r.get("_parsed_fecha") is None,
+                -(r.get("_parsed_fecha").toordinal() if r.get("_parsed_fecha") else 0),
+            )
+        )
 
         self.table.setRowCount(len(rows))
         for row, v in enumerate(rows):

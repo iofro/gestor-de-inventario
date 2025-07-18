@@ -121,7 +121,7 @@ class FacturacionTab(QWidget):
         main_layout.addLayout(preview_layout, 2)
 
         # Connect signals
-        self.update_btn.clicked.connect(self.load_invoices)
+        self.update_btn.clicked.connect(self.refresh_and_reload)
         self.search_bar.textChanged.connect(self.load_invoices)
         self.client_filter.currentIndexChanged.connect(self.load_invoices)
         self.vendedor_filter.currentIndexChanged.connect(self.load_invoices)
@@ -135,6 +135,46 @@ class FacturacionTab(QWidget):
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)
         self.btn_eliminar.clicked.connect(self.delete_files)
+
+    def refresh_filters(self):
+        """Update client and vendor filter combos with latest data."""
+        self.client_filter.blockSignals(True)
+        self.vendedor_filter.blockSignals(True)
+
+        current_client = self.client_filter.currentData()
+        current_vend = self.vendedor_filter.currentData()
+
+        self.client_filter.clear()
+        self.client_filter.addItem("Todos", None)
+        for c in self.manager._clientes:
+            self.client_filter.addItem(c.get("nombre", ""), c.get("id"))
+
+        self.vendedor_filter.clear()
+        self.vendedor_filter.addItem("Todos", None)
+        for v in self.manager.db.get_trabajadores(solo_vendedores=True):
+            self.vendedor_filter.addItem(v.get("nombre", ""), v.get("id"))
+
+        def _restore(combo, value):
+            if value is None:
+                combo.setCurrentIndex(0)
+                return
+            for i in range(combo.count()):
+                if combo.itemData(i) == value:
+                    combo.setCurrentIndex(i)
+                    return
+            combo.setCurrentIndex(0)
+
+        _restore(self.client_filter, current_client)
+        _restore(self.vendedor_filter, current_vend)
+
+        self.client_filter.blockSignals(False)
+        self.vendedor_filter.blockSignals(False)
+
+    def refresh_and_reload(self):
+        """Refresh manager data and reload invoices."""
+        self.manager.refresh_data()
+        self.refresh_filters()
+        self.load_invoices()
 
     def load_invoices(self):
         clientes = {c["id"]: c["nombre"] for c in self.manager._clientes}

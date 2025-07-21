@@ -243,6 +243,7 @@ class FacturacionTab(QWidget):
 
     def _find_orphan_documents(self):
         db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
+        db_bases = {os.path.splitext(os.path.basename(p))[0] for p in db_pdfs}
         result = []
         folders = [CF_DIR, CREDITO_DIR] + ADDITIONAL_DIRS
         files = {}
@@ -264,6 +265,8 @@ class FacturacionTab(QWidget):
             pdf = paths.get('.pdf')
             js = paths.get('.json')
             if pdf and pdf in db_pdfs:
+                continue
+            if base in db_bases:
                 continue
             mtime = None
             if pdf and os.path.exists(pdf):

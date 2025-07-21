@@ -245,10 +245,10 @@ class FacturacionTab(QWidget):
         db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
         result = []
         folders = [CF_DIR, CREDITO_DIR] + ADDITIONAL_DIRS
+        files = {}
         for folder in folders:
             if not os.path.isdir(folder):
                 continue
-            files = {}
             for root, _dirs, fnames in os.walk(folder):
                 for fname in fnames:
                     base, ext = os.path.splitext(fname)
@@ -256,37 +256,39 @@ class FacturacionTab(QWidget):
                         continue
                     if not DOC_PATTERN.match(base):
                         continue
-                    key = os.path.join(root, base)
-                    files.setdefault(key, {})[ext.lower()] = os.path.join(root, fname)
-            for base, paths in files.items():
-                pdf = paths.get('.pdf')
-                js = paths.get('.json')
-                if pdf and pdf in db_pdfs:
-                    continue
-                mtime = None
-                if pdf and os.path.exists(pdf):
-                    mtime = os.path.getmtime(pdf)
-                elif js and os.path.exists(js):
-                    mtime = os.path.getmtime(js)
-                fecha = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d') if mtime else ''
-                estado = 'Sin venta'
-                if not pdf or not js:
+                    entry = files.setdefault(base, {})
+                    # prefer existing paths to keep deterministic order
+                    entry.setdefault(ext.lower(), os.path.join(root, fname))
+
+        for base, paths in files.items():
+            pdf = paths.get('.pdf')
+            js = paths.get('.json')
+            if pdf and pdf in db_pdfs:
+                continue
+            mtime = None
+            if pdf and os.path.exists(pdf):
+                mtime = os.path.getmtime(pdf)
+            elif js and os.path.exists(js):
+                mtime = os.path.getmtime(js)
+            fecha = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d') if mtime else ''
+            estado = 'Sin venta'
+            if not pdf or not js:
+                estado = 'Incompleta'
+            else:
+                try:
+                    with open(js, 'r', encoding='utf-8') as fh:
+                        json.load(fh)
+                except Exception:
                     estado = 'Incompleta'
-                else:
-                    try:
-                        with open(js, 'r', encoding='utf-8') as fh:
-                            json.load(fh)
-                    except Exception:
-                        estado = 'Incompleta'
-                result.append({
-                    'row_type': 'orphan',
-                    'name': os.path.basename(base),
-                    'pdf': pdf,
-                    'json': js,
-                    'fecha': fecha,
-                    '_parsed_fecha': datetime.fromtimestamp(mtime).date() if mtime else None,
-                    'estado': estado,
-                })
+            result.append({
+                'row_type': 'orphan',
+                'name': base,
+                'pdf': pdf,
+                'json': js,
+                'fecha': fecha,
+                '_parsed_fecha': datetime.fromtimestamp(mtime).date() if mtime else None,
+                'estado': estado,
+            })
         return result
 
     def _get_invoices_from_db(self):

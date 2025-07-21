@@ -55,3 +55,30 @@ def test_pair_across_directories(qt_app, tmp_path, monkeypatch):
     assert match
     assert match.get("pdf") == str(pdf_path)
     assert match.get("json") == str(json_path)
+
+
+def test_orphans_skip_duplicates_by_name(qt_app, tmp_path, monkeypatch):
+    inv_dir = tmp_path / "facturas_consumidor_final"
+    inv_dir.mkdir()
+    pdf_path = inv_dir / "20240103_Test_3_ConsumidorFinal.pdf"
+    pdf_path.write_text("pdf")
+    json_path = inv_dir / "20240103_Test_3_ConsumidorFinal.json"
+    json_path.write_text("{}")
+
+    db = DB(":memory:")
+    venta_id = db.add_venta("2024-01-03", 5)
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    other_pdf = other_dir / "20240103_Test_3_ConsumidorFinal.pdf"
+    other_pdf.write_text("pdf")
+    db.add_factura_pdf(venta_id, "CF", str(other_pdf))
+
+    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(inv_dir))
+    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "facturas_credito_fiscal"))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+
+    tab = facturacion_tab.FacturacionTab(man)
+    orphans = tab._find_orphan_documents()
+    assert not any(o.get("name") == "20240103_Test_3_ConsumidorFinal" for o in orphans)

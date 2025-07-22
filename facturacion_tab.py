@@ -425,14 +425,14 @@ class FacturacionTab(QWidget):
 
     def _update_send_btn(self):
         entry = self._selected_entry()
-        enabled = bool(entry and entry.get("row_type") == "venta")
+        enabled = bool(entry and entry.get("row_type") in ("venta", "ticket"))
         self.btn_enviar.setEnabled(enabled)
 
     def send_selected_invoice(self):
         venta_id = self._selected_venta()
         entry = self._selected_entry()
-        if not entry or entry.get("row_type") != "venta":
-            QMessageBox.warning(self, "Enviar", "Seleccione una factura")
+        if not entry:
+            QMessageBox.warning(self, "Enviar", "Seleccione un documento")
             return
 
         dialog = SendOptionsDialog(self)
@@ -441,7 +441,10 @@ class FacturacionTab(QWidget):
             return
 
         if dialog.email_cb.isChecked():
-            self._send_invoice_email(venta_id)
+            if entry.get("row_type") == "venta":
+                self._send_invoice_email(venta_id)
+            elif entry.get("row_type") == "ticket":
+                self._send_ticket_email(venta_id)
         if dialog.hacienda_cb.isChecked():
             QMessageBox.information(
                 self, "Enviar a Hacienda", "Funcionalidad no implementada"
@@ -841,4 +844,79 @@ class FacturacionTab(QWidget):
             json.dump(json_data, fh, ensure_ascii=False, indent=2)
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
+
+    def _generate_ticket_pdf(self, venta_id):
+        """Generate and store the ticket PDF for the given sale."""
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            return None
+
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+        extra = {}
+        raw_extra = venta.get("extra") if venta else None
+        if raw_extra:
+            try:
+                extra = json.loads(raw_extra)
+            except Exception:
+                extra = {}
+
+        cliente = None
+        if venta.get("cliente_id"):
+            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+        cliente_nombre = cliente.get("nombre") if cliente else ""
+
+        filename, json_path = get_document_paths(
+            venta.get("fecha"), cliente_nombre, venta_id, "Ticket"
+        )
+
+        generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
+        self.manager.db.add_ticket_pdf(venta_id, filename)
+        return filename
+
+    def _send_ticket_email(self, venta_id):
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Enviar ticket", "No se encontró la venta seleccionada.")
+            return
+
+        cliente_email = ""
+        if venta.get("cliente_id"):
+            cli = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+            if cli:
+                cliente_email = cli.get("email", "")
+        if not cliente_email:
+            QMessageBox.warning(self, "Enviar ticket", "El cliente no tiene correo registrado.")
+            return
+
+        pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            pdf_path = self._generate_ticket_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            QMessageBox.warning(self, "Enviar ticket", "No se pudo generar el ticket.")
+            return
+
+        creds = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                creds = {}
+        server = creds.get("smtp_server")
+        port = creds.get("smtp_port")
+        user = creds.get("email_usuario")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
+        if not all([server, port, user, password]):
+            QMessageBox.warning(self, "Enviar ticket", "Credenciales SMTP incompletas.")
+            return
+
+        subject = "Ticket"
+        body = "Adjunto se envía el ticket"
+
+        self.btn_enviar.setEnabled(False)
+        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread.finished.connect(self._on_email_sent)
+        self.email_thread.start()
 

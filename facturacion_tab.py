@@ -14,6 +14,9 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QLabel,
     QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QCheckBox,
 )
 from PyQt5.QtCore import QDate, Qt
 from PyQt5.QtGui import QPixmap
@@ -24,6 +27,7 @@ from ticket_pdf import generar_ticket_personalizado
 from factura_sv import generar_factura_electronica_pdf
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
+from sales_tab import EmailSender, DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
 import shutil
@@ -46,12 +50,31 @@ ADDITIONAL_DIRS = [
 DOC_PATTERN = re.compile(r"^\d{8}_.+_(ConsumidorFinal|CreditoFiscal|Ticket|NotaDebito)$")
 
 
+class SendOptionsDialog(QDialog):
+    """Simple dialog to choose where to send the invoice."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Enviar factura")
+        layout = QVBoxLayout(self)
+        self.email_cb = QCheckBox("Enviar por correo")
+        self.hacienda_cb = QCheckBox("Enviar a Hacienda")
+        layout.addWidget(self.email_cb)
+        layout.addWidget(self.hacienda_cb)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+
+
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
         self.manager = manager
+        self.email_thread = None
         self._setup_ui()
         self.load_invoices()
 
@@ -104,6 +127,8 @@ class FacturacionTab(QWidget):
         self.btn_credito = QPushButton("Nota de crédito")
         self.btn_debito = QPushButton("Nota de débito")
         self.btn_estado = QPushButton("Estado")
+        self.btn_enviar = QPushButton("Enviar")
+        self.btn_enviar.setEnabled(False)
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;"
@@ -112,6 +137,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
+        btns.addWidget(self.btn_enviar)
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
@@ -134,11 +160,13 @@ class FacturacionTab(QWidget):
         self.date_from.dateChanged.connect(self.load_invoices)
         self.date_to.dateChanged.connect(self.load_invoices)
         self.table.itemSelectionChanged.connect(self.show_invoice)
+        self.table.itemSelectionChanged.connect(self._update_send_btn)
         
         self.btn_ticket.clicked.connect(self.create_ticket)
         self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)
+        self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_eliminar.clicked.connect(self.delete_files)
 
     def refresh_filters(self):
@@ -242,6 +270,7 @@ class FacturacionTab(QWidget):
                     item.setData(Qt.UserRole, v)
         if rows:
             self.table.selectRow(0)
+        self._update_send_btn()
 
     def _find_orphan_documents(self):
         db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
@@ -393,6 +422,83 @@ class FacturacionTab(QWidget):
         if data and data.get("row_type") in ("venta", "ticket"):
             return data.get("id")
         return None
+
+    def _update_send_btn(self):
+        entry = self._selected_entry()
+        enabled = bool(entry and entry.get("row_type") == "venta")
+        self.btn_enviar.setEnabled(enabled)
+
+    def send_selected_invoice(self):
+        venta_id = self._selected_venta()
+        entry = self._selected_entry()
+        if not entry or entry.get("row_type") != "venta":
+            QMessageBox.warning(self, "Enviar", "Seleccione una factura")
+            return
+
+        dialog = SendOptionsDialog(self)
+        dialog.email_cb.setChecked(True)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        if dialog.email_cb.isChecked():
+            self._send_invoice_email(venta_id)
+        if dialog.hacienda_cb.isChecked():
+            QMessageBox.information(
+                self, "Enviar a Hacienda", "Funcionalidad no implementada"
+            )
+
+    def _send_invoice_email(self, venta_id):
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Enviar por correo", "No se encontró la venta seleccionada.")
+            return
+
+        cliente_email = ""
+        if venta.get("cliente_id"):
+            cli = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+            if cli:
+                cliente_email = cli.get("email", "")
+        if not cliente_email:
+            QMessageBox.warning(self, "Enviar por correo", "El cliente no tiene correo registrado.")
+            return
+
+        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            pdf_path = self._generate_invoice_pdf(venta_id)
+        if not pdf_path or not os.path.exists(pdf_path):
+            QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el PDF.")
+            return
+
+        creds = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                creds = {}
+        server = creds.get("smtp_server")
+        port = creds.get("smtp_port")
+        user = creds.get("email_usuario")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
+        if not all([server, port, user, password]):
+            QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
+            return
+
+        subject = "Factura"
+        body = "Adjunto se envía la factura"
+
+        self.btn_enviar.setEnabled(False)
+        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread.finished.connect(self._on_email_sent)
+        self.email_thread.start()
+
+    def _on_email_sent(self, success, message):
+        self.btn_enviar.setEnabled(True)
+        if success:
+            QMessageBox.information(self, "Enviar por correo", message)
+        else:
+            QMessageBox.critical(self, "Enviar por correo", message)
+        self.email_thread = None
 
     def create_ticket(self):
         venta_id = self._selected_venta()

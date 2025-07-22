@@ -35,6 +35,7 @@ from datetime import datetime
 
 CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
 CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
+TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
 # Additional locations where invoices may be stored
 ADDITIONAL_DIRS = [
     os.path.join(os.path.dirname(__file__), "facturas", "consumidor_final"),
@@ -190,6 +191,7 @@ class FacturacionTab(QWidget):
         tipo = self.tipo_filter.currentText()
 
         rows = self._get_invoices_from_db()
+        rows.extend(self._get_tickets_from_db())
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if d_from and fdate and fdate < d_from:
@@ -243,9 +245,10 @@ class FacturacionTab(QWidget):
 
     def _find_orphan_documents(self):
         db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
+        db_pdfs.update(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM tickets_pdf"))
         db_bases = {os.path.splitext(os.path.basename(p))[0] for p in db_pdfs}
         result = []
-        folders = [CF_DIR, CREDITO_DIR] + ADDITIONAL_DIRS
+        folders = [CF_DIR, CREDITO_DIR, TICKETS_DIR] + ADDITIONAL_DIRS
         files = {}
         for folder in folders:
             if not os.path.isdir(folder):
@@ -337,6 +340,48 @@ class FacturacionTab(QWidget):
             })
         return result
 
+    def _get_tickets_from_db(self):
+        ventas = {v["id"]: v for v in self.manager.db.get_ventas()}
+        clientes = {c["id"]: c.get("nombre", "") for c in self.manager._clientes}
+        result = []
+        for row in self.manager.db.cursor.execute("SELECT venta_id, ruta FROM tickets_pdf"):
+            venta_id = row["venta_id"]
+            venta = ventas.get(venta_id)
+            pdf = row["ruta"]
+            js = os.path.splitext(pdf)[0] + ".json"
+
+            if not os.path.exists(pdf) and not os.path.exists(js):
+                self.manager.db.delete_ticket_pdf(venta_id)
+                continue
+
+            estado = venta.get("estado", "") if venta else "Sin venta"
+            if not os.path.exists(pdf) or not os.path.exists(js):
+                estado = "Incompleta"
+            else:
+                try:
+                    with open(js, "r", encoding="utf-8") as fh:
+                        json.load(fh)
+                except Exception:
+                    estado = "Incompleta"
+            fecha = venta.get("fecha", "") if venta else ""
+            try:
+                fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date() if fecha else None
+            except Exception:
+                fdate = None
+            result.append({
+                "row_type": "ticket",
+                "id": row["venta_id"],
+                "pdf": pdf,
+                "json": js if os.path.exists(js) else None,
+                "fecha": fecha,
+                "_parsed_fecha": fdate,
+                "cliente_id": venta.get("cliente_id") if venta else None,
+                "vendedor_id": venta.get("vendedor_id") if venta else None,
+                "total": venta.get("total") if venta else None,
+                "estado": estado,
+            })
+        return result
+
     def _selected_entry(self):
         if self.table.currentRow() < 0:
             return None
@@ -345,7 +390,7 @@ class FacturacionTab(QWidget):
 
     def _selected_venta(self):
         data = self._selected_entry()
-        if data and data.get("row_type") == "venta":
+        if data and data.get("row_type") in ("venta", "ticket"):
             return data.get("id")
         return None
 
@@ -419,23 +464,31 @@ class FacturacionTab(QWidget):
         paths = []
         pdf_path = None
         ticket_path = None
-        if data.get("row_type") == "venta":
+        row_type = data.get("row_type")
+        if row_type in ("venta", "ticket"):
             venta_id = data.get("id")
-            pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            if pdf_path:
-                paths.append(pdf_path)
-                paths.append(os.path.splitext(pdf_path)[0] + ".json")
-            ticket_path = self.manager.db.get_ticket_pdf(venta_id)
-            if ticket_path:
-                paths.append(ticket_path)
-                paths.append(os.path.splitext(ticket_path)[0] + ".json")
+            if row_type == "venta":
+                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                if pdf_path:
+                    paths.append(pdf_path)
+                    paths.append(os.path.splitext(pdf_path)[0] + ".json")
+                ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+                if ticket_path:
+                    paths.append(ticket_path)
+                    paths.append(os.path.splitext(ticket_path)[0] + ".json")
+            else:
+                ticket_path = data.get("pdf")
+                if ticket_path:
+                    paths.append(ticket_path)
+                    json_path = data.get("json") or os.path.splitext(ticket_path)[0] + ".json"
+                    paths.append(json_path)
         else:
             for p in [data.get("pdf"), data.get("json")]:
                 if p:
                     paths.append(p)
         paths = [p for p in paths if os.path.exists(p)]
         if not paths:
-            if data.get("row_type") == "venta":
+            if row_type in ("venta", "ticket"):
                 confirm = QMessageBox.question(
                     self,
                     "Eliminar",
@@ -443,7 +496,7 @@ class FacturacionTab(QWidget):
                     QMessageBox.Yes | QMessageBox.No,
                 )
                 if confirm == QMessageBox.Yes:
-                    if pdf_path:
+                    if row_type == "venta" and pdf_path:
                         self.manager.db.delete_factura_pdf(venta_id)
                     if ticket_path:
                         self.manager.db.delete_ticket_pdf(venta_id)
@@ -467,9 +520,12 @@ class FacturacionTab(QWidget):
                 os.remove(p)
             except OSError:
                 pass
-        if data.get("row_type") == "venta":
+        if row_type == "venta":
             if pdf_path:
                 self.manager.db.delete_factura_pdf(venta_id)
+            if ticket_path:
+                self.manager.db.delete_ticket_pdf(venta_id)
+        elif row_type == "ticket":
             if ticket_path:
                 self.manager.db.delete_ticket_pdf(venta_id)
         QMessageBox.information(self, "Eliminar", "Archivos eliminados")

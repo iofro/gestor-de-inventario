@@ -1038,6 +1038,15 @@ class DB:
 
     def add_factura_pdf(self, venta_id, tipo, ruta):
         """Guarda la ruta de un PDF generado para una venta."""
+        # Check if a record with the same file path already exists
+        self.cursor.execute(
+            "SELECT id FROM facturas_pdf WHERE ruta=?",
+            (ruta,),
+        )
+        row = self.cursor.fetchone()
+        if row:
+            return row["id"]
+
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.cursor.execute(
             "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, ?)",

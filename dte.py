@@ -42,7 +42,12 @@ def generar_cabecera_dte_data(modelo_facturacion: str, tipo_transmision: str) ->
         "fecha_generacion": fecha_generacion,
     }
 
-def generar_dte_json(db: DB, venta_id: int) -> dict:
+def generar_dte_json(
+    db: DB,
+    venta_id: int,
+    modelo_facturacion: str = "1 - Facturación previo",
+    tipo_transmision: str = "1 - Transmisión normal",
+) -> dict:
     """Genera un diccionario DTE básico para una venta."""
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if not row:
@@ -78,6 +83,8 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "numeroControl": numero_control,
         "fecEmi": fecha,
         "horEmi": hora,
+        "modeloFacturacion": modelo_facturacion,
+        "tipoTransmision": tipo_transmision,
     }
 
     emisor = {

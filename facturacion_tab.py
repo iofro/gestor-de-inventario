@@ -27,6 +27,7 @@ from ticket_pdf import generar_ticket_personalizado
 from factura_sv import generar_factura_electronica_pdf
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
+import uuid
 from sales_tab import EmailSender, DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
@@ -816,8 +817,15 @@ class FacturacionTab(QWidget):
         if not modelo_facturacion:
             modelo_facturacion = "1 - Facturación previo"
         tipo_transmision = venta_data.get("tipo_transmision") or ident.get("tipoTransmision", "")
+        if not tipo_transmision:
+            tipo_transmision = "1 - Transmisión normal"
         fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
 
+        if tipo_transmision.startswith("1") and not sello_recepcion:
+            sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"
+            venta_data["sello_recepcion"] = sello_recepcion
+        venta_data["tipo_transmision"] = tipo_transmision
+        
         tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
         doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
         cliente_nombre = cliente.get("nombre") if cliente else ""
@@ -842,6 +850,8 @@ class FacturacionTab(QWidget):
         json_data = build_invoice_json(venta_data, cliente or {}, detalles)
         with open(json_path, 'w', encoding='utf-8') as fh:
             json.dump(json_data, fh, ensure_ascii=False, indent=2)
+        if tipo_transmision.startswith("2"):
+            self.manager.db.add_dte_pendiente(venta_id, json_data, tipo_transmision)
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
 

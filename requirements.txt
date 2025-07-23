@@ -6,3 +6,4 @@ pyinstaller
 dbfread
 PyMuPDF
 requests
+

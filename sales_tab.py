@@ -50,7 +50,7 @@ TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
 class EmailSender(QThread):
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, server, port, user, password, to_addr, subject, body, attachment):
+    def __init__(self, server, port, user, password, to_addr, subject, body, attachments):
         super().__init__()
         self.server = server
         self.port = port
@@ -59,7 +59,10 @@ class EmailSender(QThread):
         self.to_addr = to_addr
         self.subject = subject
         self.body = body
-        self.attachment = attachment
+        if isinstance(attachments, str):
+            self.attachments = [attachments]
+        else:
+            self.attachments = attachments or []
 
     def run(self):
         try:
@@ -69,14 +72,16 @@ class EmailSender(QThread):
             msg["Subject"] = self.subject
             msg.attach(MIMEText(self.body or "", "plain"))
 
-            with open(self.attachment, "rb") as f:
-                part = MIMEBase("application", "octet-stream")
-                part.set_payload(f.read())
-            encoders.encode_base64(part)
-            part.add_header(
-                "Content-Disposition", f'attachment; filename="{os.path.basename(self.attachment)}"'
-            )
-            msg.attach(part)
+            for path in self.attachments:
+                with open(path, "rb") as f:
+                    part = MIMEBase("application", "octet-stream")
+                    part.set_payload(f.read())
+                encoders.encode_base64(part)
+                part.add_header(
+                    "Content-Disposition",
+                    f'attachment; filename="{os.path.basename(path)}"',
+                )
+                msg.attach(part)
 
             smtp = smtplib.SMTP(self.server, int(self.port))
             smtp.starttls()
@@ -765,6 +770,14 @@ class SalesTab(QWidget):
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el PDF.")
             return
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        if not os.path.exists(json_path):
+            # regenerate files to ensure JSON exists
+            pdf_path = self._generate_invoice_pdf(venta_id)
+            json_path = os.path.splitext(pdf_path)[0] + ".json"
+            if not os.path.exists(json_path):
+                QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON firmado.")
+                return
 
         creds = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -781,11 +794,23 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
             return
 
+        body += (
+            "\n\nSe adjuntan la representaci\u00f3n gr\u00e1fica en PDF y el documento firmado en formato JSON."
+        )
         self.status_label.setText("Estado actual: Enviando...")
         self.retry_btn.setEnabled(False)
         self.btn_enviar.setEnabled(False)
 
-        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread = EmailSender(
+            server,
+            port,
+            user,
+            password,
+            cliente_email,
+            subject,
+            body,
+            [pdf_path, json_path],
+        )
         self.email_thread.finished.connect(self._on_email_sent)
         self.email_thread.start()
 
@@ -833,6 +858,13 @@ class SalesTab(QWidget):
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar ticket", "No se pudo generar el ticket.")
             return
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        if not os.path.exists(json_path):
+            pdf_path = self._generate_ticket_pdf(venta_id)
+            json_path = os.path.splitext(pdf_path)[0] + ".json"
+            if not os.path.exists(json_path):
+                QMessageBox.warning(self, "Enviar ticket", "No se encontró el JSON firmado.")
+                return
 
         creds = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -849,11 +881,23 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Enviar ticket", "Credenciales SMTP incompletas.")
             return
 
+        body += (
+            "\n\nSe adjuntan la representaci\u00f3n gr\u00e1fica en PDF y el documento firmado en formato JSON."
+        )
         self.status_label.setText("Estado actual: Enviando...")
         self.retry_btn.setEnabled(False)
         self.btn_enviar_ticket.setEnabled(False)
 
-        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread = EmailSender(
+            server,
+            port,
+            user,
+            password,
+            cliente_email,
+            subject,
+            body,
+            [pdf_path, json_path],
+        )
         self.email_thread.finished.connect(self._on_ticket_sent)
         self.email_thread.start()
 

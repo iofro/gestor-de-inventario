@@ -11,7 +11,8 @@ Esta aplicación permite gestionar inventarios y ventas utilizando una interfaz 
 pip install -r requirements.txt
 ```
 
-Esto instalará también **PyMuPDF**, utilizado para generar las previsualizaciones de las facturas en PDF.
+Esto instalará también **PyMuPDF** para las previsualizaciones de facturas,
+así como **PyJWT** y **cryptography**, necesarias para firmar los DTE.
 
 ## Ejecutar la aplicación
 
@@ -36,7 +37,8 @@ pytest
 ```
 
 Las pruebas que verifican la generación y lectura de PDF utilizan
-**PyMuPDF**, por lo que debes instalar las dependencias antes de
+**PyMuPDF**, por lo que debes instalar las dependencias (incluyendo
+**PyJWT** y **cryptography**) antes de
 ejecutarlas. Puedes hacerlo ejecutando:
 
 ```bash

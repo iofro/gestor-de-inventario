@@ -56,6 +56,22 @@ db = DB()
 dte = db.generar_dte_json(venta_id=1)
 ```
 
+Para transmitir los DTE hacia la API de Hacienda añade en `datos_negocio.json` un
+bloque de configuración similar al siguiente:
+
+```json
+{
+  "dte_api": {
+    "url": "https://api.hacienda.test/dtes",
+    "ambiente": "produccion" | "pruebas",
+    "token": "TOKEN_O_CREDENCIAL"
+  }
+}
+```
+La función `transmitir_dte(db, venta_id)` utilizará estos datos para enviar el
+DTE inmediatamente después de firmarlo en modo normal, o registrará un evento
+pendiente en modo de contingencia.
+
 ### Datos del negocio y correo
 
 La configuración general se almacena en `datos_negocio.json`. Para que el envío

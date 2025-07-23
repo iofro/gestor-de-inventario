@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 from db import DB
+import requests
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -198,40 +199,46 @@ def generar_dte_json(
     return result
 
 
-def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
-    """Genera un DTE de Nota de Crédito para la nota indicada."""
-    nota_row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not nota_row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(nota_row)
-    if nota.get("tipo") != "credito":
-        raise ValueError("La nota indicada no es de cr\u00e9dito")
+def _load_dte_api_config():
+    datos = _load_datos_negocio()
+    return datos.get("dte_api", {})
 
-    venta_id = nota["venta_id"]
-    base = generar_dte_json(db, venta_id)
 
-    original = base.get("identificacion", {}).copy()
-    cab = generar_cabecera_dte_data("1 - Facturaci\u00f3n previo", base["identificacion"].get("tipoTransmision", ""))
-    base["identificacion"].update({
-        "tipoDte": "05",
-        "codigoGeneracion": cab["codigo_generacion"],
-        "numeroControl": cab["numero_control"],
-        "fecEmi": nota.get("fecha"),
-    })
+def _post_dte(url: str, token: str, data: dict) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    resp = requests.post(url, json=data, headers=headers, timeout=20)
+    resp.raise_for_status()
+    try:
+        return resp.json()
+    except Exception:
+        return {"estado": "Transmitido", "sello": ""}
 
-    base["documentoRelacionado"] = [{
-        "tipoDte": original.get("tipoDte"),
-        "numeroControl": original.get("numeroControl"),
-        "codigoGeneracion": original.get("codigoGeneracion"),
-    }]
 
-    for item in base.get("cuerpoDocumento", []):
-        if "precioUnitario" in item and isinstance(item["precioUnitario"], (int, float)):
-            item["precioUnitario"] = -abs(item["precioUnitario"])
+def transmitir_dte(db: DB, venta_id: int, modo: str = "normal") -> dict:
+    """Envía un DTE a la API configurada y registra su estado."""
+    config = _load_dte_api_config()
+    if modo == "contingencia":
+        db.registrar_envio_dte(venta_id, modo, "Pendiente", "")
+        return {"estado": "Pendiente"}
 
-    resumen = base.get("resumen", {})
-    for k, v in resumen.items():
-        if isinstance(v, (int, float)):
-            resumen[k] = -abs(v)
+    dte_data = generar_dte_json(db, venta_id)
+    url = config.get("url")
+    token = config.get("token")
+    if not url:
+        raise ValueError("URL de API no configurada")
 
-    return base
+    try:
+        respuesta = _post_dte(url, token, dte_data)
+        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+        estado = respuesta.get("estado") or "Transmitido"
+    except Exception:
+        db.registrar_envio_dte(venta_id, modo, "Rechazado", "")
+        raise
+
+    db.registrar_envio_dte(venta_id, modo, estado, sello)
+    if sello:
+        db.update_venta_extra(venta_id, {"selloRecibido": sello})
+    return {"estado": estado, "sello": sello}
+

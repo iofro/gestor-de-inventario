@@ -5,4 +5,5 @@ pytest
 pyinstaller
 dbfread
 PyMuPDF
-PyJWT[crypto]
+requests
+

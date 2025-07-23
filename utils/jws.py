@@ -7,7 +7,12 @@ from cryptography.hazmat.primitives.serialization import (
     PrivateFormat,
     NoEncryption,
 )
-import jwt
+try:
+    import jwt
+except ModuleNotFoundError as exc:  # pragma: no cover - helpful runtime message
+    raise ModuleNotFoundError(
+        "PyJWT is required to sign DTE payloads. Install it with `pip install pyjwt`."
+    ) from exc
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "datos_negocio.json")
 

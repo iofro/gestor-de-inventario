@@ -152,3 +152,42 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
             result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
 
     return result
+
+
+def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
+    """Genera un DTE de Nota de Crédito para la nota indicada."""
+    nota_row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
+    if not nota_row:
+        raise ValueError("Nota no encontrada")
+    nota = dict(nota_row)
+    if nota.get("tipo") != "credito":
+        raise ValueError("La nota indicada no es de cr\u00e9dito")
+
+    venta_id = nota["venta_id"]
+    base = generar_dte_json(db, venta_id)
+
+    original = base.get("identificacion", {}).copy()
+    cab = generar_cabecera_dte_data("1 - Facturaci\u00f3n previo", base["identificacion"].get("tipoTransmision", ""))
+    base["identificacion"].update({
+        "tipoDte": "05",
+        "codigoGeneracion": cab["codigo_generacion"],
+        "numeroControl": cab["numero_control"],
+        "fecEmi": nota.get("fecha"),
+    })
+
+    base["documentoRelacionado"] = [{
+        "tipoDte": original.get("tipoDte"),
+        "numeroControl": original.get("numeroControl"),
+        "codigoGeneracion": original.get("codigoGeneracion"),
+    }]
+
+    for item in base.get("cuerpoDocumento", []):
+        if "precioUnitario" in item and isinstance(item["precioUnitario"], (int, float)):
+            item["precioUnitario"] = -abs(item["precioUnitario"])
+
+    resumen = base.get("resumen", {})
+    for k, v in resumen.items():
+        if isinstance(v, (int, float)):
+            resumen[k] = -abs(v)
+
+    return base

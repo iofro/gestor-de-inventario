@@ -28,6 +28,7 @@
   "smtp_port": "587",
   "email_usuario": "contacto@tiendademo.com",
   "email_contrasena": "",
-  "certificado_digital_path": "",
-  "certificado_digital_password": ""
-}
+  "dte_api": {
+    "url": "https://api.hacienda.test/dtes",
+    "ambiente": "pruebas",
+    "token": ""

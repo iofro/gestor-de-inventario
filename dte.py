@@ -2,10 +2,19 @@ import json
 import os
 import uuid
 from datetime import datetime
+from decimal import Decimal, ROUND_HALF_UP
 from db import DB
 import requests
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
+
+def _round(value, digits):
+    """Round ``value`` to ``digits`` decimal places using HALF_UP."""
+    if value is None:
+        value = 0
+    fmt = "0." + "0" * digits
+    return float(Decimal(str(value)).quantize(Decimal(fmt), rounding=ROUND_HALF_UP))
 
 
 def _load_datos_negocio():
@@ -43,7 +52,12 @@ def generar_cabecera_dte_data(modelo_facturacion: str, tipo_transmision: str) ->
         "fecha_generacion": fecha_generacion,
     }
 
-def generar_dte_json(db: DB, venta_id: int) -> dict:
+def generar_dte_json(
+    db: DB,
+    venta_id: int,
+    modelo_facturacion: str = "1 - Facturación previo",
+    tipo_transmision: str = "1 - Transmisión normal",
+) -> dict:
     """Genera un diccionario DTE básico para una venta."""
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if not row:
@@ -79,6 +93,8 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "numeroControl": numero_control,
         "fecEmi": fecha,
         "horEmi": hora,
+        "modeloFacturacion": modelo_facturacion,
+        "tipoTransmision": tipo_transmision,
     }
 
     emisor = {
@@ -107,18 +123,25 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
             receptor["ordenNo"] = fiscal.get("orden_no")
 
     cuerpo = []
+    items_total = Decimal("0")
     for idx, d in enumerate(detalles, 1):
+        cant = Decimal(str(d.get("cantidad", 0)))
+        price = Decimal(str(d.get("precio_unitario", 0)))
+        cant_r = cant.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
+        price_r = price.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
+        items_total += cant_r * price_r
         cuerpo.append({
             "numItem": idx,
             "descripcion": d.get("descripcion"),
-            "cantidad": d.get("cantidad"),
-            "precioUnitario": d.get("precio_unitario"),
+            "cantidad": float(cant_r),
+            "precioUnitario": float(price_r),
         })
 
-    total = sum(d.get("cantidad", 0) * d.get("precio_unitario", 0) for d in detalles)
+    total = float(items_total)
     sumas_val = fiscal.get("sumas", total) if fiscal else total
     descuentos_val = fiscal.get("descuentos", 0) if fiscal else 0
     iva_val = fiscal.get("iva") if fiscal else 0
+
     resumen = {
         "totalNoSuj": fiscal.get("ventas_no_sujetas") if fiscal else 0,
         "totalExenta": fiscal.get("ventas_exentas") if fiscal else 0,
@@ -128,6 +151,27 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
         "subTotal": (sumas_val - descuentos_val) + iva_val,
         "totalPagar": venta.get("total", total),
     }
+
+    # Round resumen values to two decimals
+    for k, v in resumen.items():
+        resumen[k] = _round(v, 2)
+
+    # Validate totals within tolerance
+    items_total_2 = _round(items_total, 2)
+    if abs(items_total_2 - resumen["sumas"]) > 0.01:
+        print(
+            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen['sumas']:.2f}"
+        )
+
+    calc_sub = _round(resumen["sumas"] - resumen["descuentos"] + resumen["iva"], 2)
+    if abs(calc_sub - resumen["subTotal"]) > 0.01:
+        print(
+            f"Advertencia: el subtotal calculado {calc_sub:.2f} difiere del resumen {resumen['subTotal']:.2f}"
+        )
+    if abs(calc_sub - resumen["totalPagar"]) > 0.01:
+        print(
+            f"Advertencia: el total a pagar {resumen['totalPagar']:.2f} difiere del subtotal calculado {calc_sub:.2f}"
+        )
 
     result = {
         "identificacion": identificacion,
@@ -197,3 +241,4 @@ def transmitir_dte(db: DB, venta_id: int, modo: str = "normal") -> dict:
     if sello:
         db.update_venta_extra(venta_id, {"selloRecibido": sello})
     return {"estado": estado, "sello": sello}
+

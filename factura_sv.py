@@ -27,7 +27,7 @@ def generar_factura_electronica_pdf(
     numero_control="",
     sello_recepcion="",
     modelo_facturacion="1 - Facturación previo",
-    tipo_transmision="",
+    tipo_transmision="1 - Transmisión normal",
     fecha_generacion="",
 ):
 
@@ -367,3 +367,33 @@ def generar_factura_electronica_pdf(
     c.drawCentredString(width/2, 20, f"Página 1 de 1")
 
     c.save()
+
+
+def generar_nota_credito_pdf(
+    venta,
+    detalles,
+    cliente,
+    distribuidor,
+    archivo="nota_credito.pdf",
+    datos_negocio=None,
+    **kwargs,
+):
+    """Genera un PDF para una Nota de Cr\u00e9dito."""
+    venta_neg = {k: (-abs(v) if isinstance(v, (int, float)) else v) for k, v in venta.items()}
+    det_neg = []
+    for d in detalles:
+        dn = d.copy()
+        if "cantidad" in dn and isinstance(dn["cantidad"], (int, float)):
+            dn["cantidad"] = -abs(dn["cantidad"])
+        det_neg.append(dn)
+
+    generar_factura_electronica_pdf(
+        venta_neg,
+        det_neg,
+        cliente,
+        distribuidor,
+        "Nota de Cr\u00e9dito",
+        archivo=archivo,
+        datos_negocio=datos_negocio,
+        **kwargs,
+    )

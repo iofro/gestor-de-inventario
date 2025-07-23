@@ -27,6 +27,7 @@ from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
+from utils.jws import get_cert_config, sign_and_save
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
 import tempfile
@@ -34,6 +35,7 @@ import subprocess
 import shutil
 import os
 import json
+import uuid
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -572,7 +574,14 @@ class SalesTab(QWidget):
         if not modelo_facturacion:
             modelo_facturacion = "1 - Facturación previo"
         tipo_transmision = venta_data.get("tipo_transmision") or ident.get("tipoTransmision", "")
+        if not tipo_transmision:
+            tipo_transmision = "1 - Transmisión normal"
         fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
+
+        if tipo_transmision.startswith("1") and not sello_recepcion:
+            sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"
+            venta_data["sello_recepcion"] = sello_recepcion
+        venta_data["tipo_transmision"] = tipo_transmision
 
         tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
         doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
@@ -598,8 +607,16 @@ class SalesTab(QWidget):
         json_data = build_invoice_json(venta_data, cliente or {}, detalles)
         with open(json_path, 'w', encoding='utf-8') as fh:
             json.dump(json_data, fh, ensure_ascii=False, indent=2)
+        if tipo_transmision.startswith("2"):
+            self.manager.db.add_dte_pendiente(venta_id, json_data, tipo_transmision)
         if not os.path.exists(json_path):
             raise IOError(f"No se pudo guardar JSON en {json_path}")
+        cert_path, cert_pass = get_cert_config(DATOS_NEGOCIO_PATH)
+        if cert_path:
+            try:
+                sign_and_save(json_data, json_path, cert_path, cert_pass)
+            except Exception:
+                pass
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
 
@@ -632,6 +649,12 @@ class SalesTab(QWidget):
             json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
         if not os.path.exists(json_path):
             raise IOError(f"No se pudo guardar JSON en {json_path}")
+        cert_path, cert_pass = get_cert_config(DATOS_NEGOCIO_PATH)
+        if cert_path:
+            try:
+                sign_and_save({"venta": venta, "detalles": detalles}, json_path, cert_path, cert_pass)
+            except Exception:
+                pass
         self.manager.db.add_ticket_pdf(venta_id, filename)
         return filename
 
@@ -700,6 +723,12 @@ class SalesTab(QWidget):
             json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
         if not os.path.exists(json_path):
             raise IOError(f"No se pudo guardar JSON en {json_path}")
+        cert_path, cert_pass = get_cert_config(DATOS_NEGOCIO_PATH)
+        if cert_path:
+            try:
+                sign_and_save({"venta": venta, "detalles": detalles}, json_path, cert_path, cert_pass)
+            except Exception:
+                pass
         self.manager.db.add_ticket_pdf(venta_id, filename)
         QMessageBox.information(self, "Ticket", f"Ticket guardado en {filename}")
 

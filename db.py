@@ -270,6 +270,7 @@ class DB:
             )
         """
         )
+
         self.cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS dte_envios (
@@ -279,6 +280,7 @@ class DB:
                 estado TEXT,
                 sello TEXT,
                 fecha_hora TEXT,
+
                 FOREIGN KEY (venta_id) REFERENCES ventas(id)
             )
         """
@@ -1105,6 +1107,27 @@ class DB:
         """Elimina registros de tickets PDF asociados a una venta."""
         self.cursor.execute("DELETE FROM tickets_pdf WHERE venta_id=?", (venta_id,))
         self.conn.commit()
+
+    def add_dte_pendiente(self, venta_id, dte_json, modo):
+        """Registra un DTE pendiente de transmisión a Hacienda."""
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self.cursor.execute(
+            "INSERT INTO dte_pendientes (venta_id, dte_json, modo, fecha_creacion) VALUES (?, ?, ?, ?)",
+            (venta_id, json.dumps(dte_json, ensure_ascii=False), modo, fecha),
+        )
+        self.conn.commit()
+        return self.cursor.lastrowid
+
+    def get_dte_pendientes(self):
+        """Devuelve la lista de DTE pendientes de transmitir."""
+        self.cursor.execute("SELECT * FROM dte_pendientes WHERE transmitido=0")
+        rows = [dict(row) for row in self.cursor.fetchall()]
+        for r in rows:
+            try:
+                r["dte_json"] = json.loads(r["dte_json"])
+            except Exception:
+                pass
+        return rows
 
     def get_notas_by_venta(self, venta_id):
         """Devuelve las notas asociadas a una venta."""

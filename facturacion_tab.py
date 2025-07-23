@@ -472,6 +472,13 @@ class FacturacionTab(QWidget):
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el PDF.")
             return
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        if not os.path.exists(json_path):
+            pdf_path = self._generate_invoice_pdf(venta_id)
+            json_path = os.path.splitext(pdf_path)[0] + ".json"
+            if not os.path.exists(json_path):
+                QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON firmado.")
+                return
 
         creds = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -489,10 +496,21 @@ class FacturacionTab(QWidget):
             return
 
         subject = "Factura"
-        body = "Adjunto se envía la factura"
+        body = (
+            "Adjunto se envía la representación gráfica en PDF y el documento firmado en formato JSON"
+        )
 
         self.btn_enviar.setEnabled(False)
-        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread = EmailSender(
+            server,
+            port,
+            user,
+            password,
+            cliente_email,
+            subject,
+            body,
+            [pdf_path, json_path],
+        )
         self.email_thread.finished.connect(self._on_email_sent)
         self.email_thread.start()
 
@@ -906,6 +924,13 @@ class FacturacionTab(QWidget):
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar ticket", "No se pudo generar el ticket.")
             return
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        if not os.path.exists(json_path):
+            pdf_path = self._generate_ticket_pdf(venta_id)
+            json_path = os.path.splitext(pdf_path)[0] + ".json"
+            if not os.path.exists(json_path):
+                QMessageBox.warning(self, "Enviar ticket", "No se encontró el JSON firmado.")
+                return
 
         creds = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -923,10 +948,21 @@ class FacturacionTab(QWidget):
             return
 
         subject = "Ticket"
-        body = "Adjunto se envía el ticket"
+        body = (
+            "Adjunto se envía la representación gráfica en PDF y el documento firmado en formato JSON"
+        )
 
         self.btn_enviar.setEnabled(False)
-        self.email_thread = EmailSender(server, port, user, password, cliente_email, subject, body, pdf_path)
+        self.email_thread = EmailSender(
+            server,
+            port,
+            user,
+            password,
+            cliente_email,
+            subject,
+            body,
+            [pdf_path, json_path],
+        )
         self.email_thread.finished.connect(self._on_email_sent)
         self.email_thread.start()
 

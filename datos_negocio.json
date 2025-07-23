@@ -27,5 +27,10 @@
   "smtp_server": "smtp.gmail.com",
   "smtp_port": "587",
   "email_usuario": "contacto@tiendademo.com",
-  "email_contrasena": ""
+  "email_contrasena": "",
+  "dte_api": {
+    "url": "https://api.hacienda.test/dtes",
+    "ambiente": "pruebas",
+    "token": ""
+  }
 }

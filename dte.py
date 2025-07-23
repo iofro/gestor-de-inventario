@@ -3,6 +3,7 @@ import os
 import uuid
 from datetime import datetime
 from db import DB
+import requests
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -152,3 +153,47 @@ def generar_dte_json(db: DB, venta_id: int) -> dict:
             result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
 
     return result
+
+
+def _load_dte_api_config():
+    datos = _load_datos_negocio()
+    return datos.get("dte_api", {})
+
+
+def _post_dte(url: str, token: str, data: dict) -> dict:
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    resp = requests.post(url, json=data, headers=headers, timeout=20)
+    resp.raise_for_status()
+    try:
+        return resp.json()
+    except Exception:
+        return {"estado": "Transmitido", "sello": ""}
+
+
+def transmitir_dte(db: DB, venta_id: int, modo: str = "normal") -> dict:
+    """Envía un DTE a la API configurada y registra su estado."""
+    config = _load_dte_api_config()
+    if modo == "contingencia":
+        db.registrar_envio_dte(venta_id, modo, "Pendiente", "")
+        return {"estado": "Pendiente"}
+
+    dte_data = generar_dte_json(db, venta_id)
+    url = config.get("url")
+    token = config.get("token")
+    if not url:
+        raise ValueError("URL de API no configurada")
+
+    try:
+        respuesta = _post_dte(url, token, dte_data)
+        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+        estado = respuesta.get("estado") or "Transmitido"
+    except Exception:
+        db.registrar_envio_dte(venta_id, modo, "Rechazado", "")
+        raise
+
+    db.registrar_envio_dte(venta_id, modo, estado, sello)
+    if sello:
+        db.update_venta_extra(venta_id, {"selloRecibido": sello})
+    return {"estado": estado, "sello": sello}

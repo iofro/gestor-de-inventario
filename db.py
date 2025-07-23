@@ -270,6 +270,19 @@ class DB:
             )
         """
         )
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dte_envios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER,
+                modo TEXT,
+                estado TEXT,
+                sello TEXT,
+                fecha_hora TEXT,
+                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+            )
+        """
+        )
         self.conn.commit()
 
 
@@ -1395,3 +1408,33 @@ class DB:
                 except Exception:
                     pass
         return rows
+
+    def registrar_envio_dte(self, venta_id, modo, estado, sello):
+        """Guarda un registro del estado de transmisión de un DTE."""
+        fecha_hora = datetime.now().isoformat()
+        self.cursor.execute(
+            """
+            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (venta_id, modo, estado, sello, fecha_hora),
+        )
+        self.conn.commit()
+
+    def update_venta_extra(self, venta_id, extra_dict):
+        """Actualiza el campo ``extra`` de la venta, fusionando los datos."""
+        self.ensure_column("ventas", "extra", "TEXT")
+        self.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,))
+        row = self.cursor.fetchone()
+        current = {}
+        if row and row[0]:
+            try:
+                current = json.loads(row[0])
+            except Exception:
+                current = {}
+        current.update(extra_dict)
+        self.cursor.execute(
+            "UPDATE ventas SET extra=? WHERE id=?",
+            (json.dumps(current, ensure_ascii=False), venta_id),
+        )
+        self.conn.commit()

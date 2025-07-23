@@ -9,10 +9,36 @@ from reportlab.lib.units import mm
 
 from utils.pdf_utils import draw_wrapped_text
 from dte import generar_cabecera_dte_data
+from urllib.parse import urlencode
 import json
 import os
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
+
+def build_qr_value(
+    codigo_generacion: str,
+    numero_control: str,
+    nit_emisor: str = "",
+    tipo_dte: str = "01",
+    ambiente: str = "00",
+    fecha_emision: str | None = None,
+    total: float | None = None,
+) -> str:
+    """Return the URL encoded string for the DTE QR code."""
+    params = {
+        "ambiente": ambiente,
+        "codGen": codigo_generacion,
+        "tipoDte": tipo_dte,
+        "numeroControl": numero_control,
+    }
+    if nit_emisor:
+        params["nitEmisor"] = nit_emisor
+    if fecha_emision:
+        params["fechaEmi"] = fecha_emision
+    if total is not None:
+        params["montoTotal"] = f"{total:.2f}"
+    return "https://portaldgii.mh.gob.sv/consulta?" + urlencode(params)
 
 
 def generar_factura_electronica_pdf(
@@ -111,7 +137,15 @@ def generar_factura_electronica_pdf(
     # --- Código QR ---
     qr_x = x_margin + box_w + col_margin + 5
     qr_y = box_y + (box_h - qr_size) / 2
-    qr_value = f"{numero_control}|{codigo_generacion}"
+    nit_emisor = datos_negocio.get("nit", "")
+    qr_value = build_qr_value(
+        codigo_generacion,
+        numero_control,
+        nit_emisor=nit_emisor,
+        tipo_dte="01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03",
+        fecha_emision=venta.get("fecha"),
+        total=venta.get("total"),
+    )
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
     w = bounds[2] - bounds[0]
@@ -151,6 +185,12 @@ def generar_factura_electronica_pdf(
         max_w,
         12,
     )
+
+    if tipo_transmision and "contingencia" in tipo_transmision.lower():
+        c.setFont("Helvetica-Bold", 12)
+        c.setFillColor(colors.red)
+        c.drawCentredString(width / 2, box_y - 15, "TRANSMISIÓN DIFERIDA")
+        c.setFillColor(colors.black)
 
     # Posiciones base para los cuadros de emisor y receptor
     # Mantenemos un espacio de 20 puntos debajo del código QR para acercarlos al encabezado

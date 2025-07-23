@@ -1,6 +1,6 @@
 import pytest
 import fitz
-from factura_sv import generar_factura_electronica_pdf
+from factura_sv import generar_factura_electronica_pdf, build_qr_value
 
 
 def _sample_data(tipo):
@@ -75,4 +75,29 @@ def test_values_are_rounded(tmp_path):
     assert '1.30' in text
     # Precio unitario is shown with four decimals
     assert '10.0000' in text
+
+
+def test_qr_value_contains_params():
+    url = build_qr_value('ABC', 'NC-1', nit_emisor='0614', ambiente='01')
+    assert 'codGen=ABC' in url
+    assert 'numeroControl=NC-1' in url
+    assert 'nitEmisor=0614' in url
+
+
+def test_contingencia_draws_message(tmp_path):
+    venta, detalles = _sample_data('Consumidor Final')
+    out = tmp_path / 'cont.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        'Consumidor Final',
+        archivo=str(out),
+        datos_negocio={},
+        tipo_transmision='2 - Contingencia',
+    )
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+    assert 'TRANSMISIÓN DIFERIDA' in text
 

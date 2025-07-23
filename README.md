@@ -64,6 +64,12 @@ contraseña de la cuenta utilizada para enviar correos ya **no** se guarda en el
 archivo. En su lugar, define la variable de entorno `INVENTARIO_EMAIL_PASSWORD`
 con la contraseña correspondiente antes de ejecutar la aplicación.
 
+Para firmar electrónicamente los DTE puedes especificar un certificado en
+`datos_negocio.json`. Agrega las claves `certificado_digital_path` con la ruta
+al archivo `.p12` de Hacienda y `certificado_digital_password` con la contraseña
+codificada en Base64. Al generar facturas o tickets se creará junto al PDF un
+archivo `.jws` con el JSON firmado.
+
 Las facturas generadas desde la pestaña **Ventas** se guardan automáticamente en
 `facturas_consumidor_final` o `facturas_credito_fiscal` dependiendo del tipo de
 documento. Los tickets se almacenan en la carpeta `tickets`. Al imprimir,

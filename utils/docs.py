@@ -66,6 +66,10 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
         ident['codigoGeneracion'] = venta['codigo_generacion']
     if venta.get('fecha'):
         ident['fecEmi'] = venta['fecha']
+    if venta.get('modelo_facturacion'):
+        ident['modeloFacturacion'] = venta['modelo_facturacion']
+    if venta.get('tipo_transmision'):
+        ident['tipoTransmision'] = venta['tipo_transmision']
     data['identificacion'] = ident
 
     rec = data.get('receptor', {})

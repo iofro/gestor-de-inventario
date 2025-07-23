@@ -27,7 +27,7 @@ def generar_factura_electronica_pdf(
     numero_control="",
     sello_recepcion="",
     modelo_facturacion="1 - Facturación previo",
-    tipo_transmision="",
+    tipo_transmision="1 - Transmisión normal",
     fecha_generacion="",
 ):
 

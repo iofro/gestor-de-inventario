@@ -199,6 +199,37 @@ def generar_dte_json(
     return result
 
 
+def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
+    """Genera la estructura JSON para una nota de crédito."""
+    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
+    if not row:
+        raise ValueError("Nota no encontrada")
+    nota = dict(row)
+    if nota.get("tipo") != "credito":
+        raise ValueError("La nota indicada no es de crédito")
+
+    venta_id = nota.get("venta_id")
+    data = generar_dte_json(db, venta_id)
+    data.setdefault("identificacion", {})["tipoDte"] = "05"
+    data["documentoRelacionado"] = {
+        "tipoDoc": "01",
+        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+    }
+
+    for item in data.get("cuerpoDocumento", []):
+        if isinstance(item.get("cantidad"), (int, float)):
+            item["cantidad"] = -abs(item["cantidad"])
+        if isinstance(item.get("precioUnitario"), (int, float)):
+            item["precioUnitario"] = -abs(item["precioUnitario"])
+
+    resumen = data.get("resumen", {})
+    for k, v in resumen.items():
+        if isinstance(v, (int, float)):
+            resumen[k] = -abs(v)
+    data["resumen"] = resumen
+    return data
+
+
 def _load_dte_api_config():
     datos = _load_datos_negocio()
     return datos.get("dte_api", {})

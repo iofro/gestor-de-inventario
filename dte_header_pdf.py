@@ -7,6 +7,7 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 
 from utils.pdf_utils import draw_wrapped_text
+from factura_sv import build_qr_value
 
 
 def generar_cabecera_dte(
@@ -16,6 +17,10 @@ def generar_cabecera_dte(
     modelo_facturacion: str,
     tipo_transmision: str,
     fecha_generacion: str,
+    nit_emisor: str = "",
+    fecha_emision: str | None = None,
+    tipo_dte: str = "01",
+    ambiente: str = "pruebas",
     tipo_documento: str = "CONSUMIDOR FINAL",
     archivo: str = "cabecera_dte.pdf",
 ):
@@ -77,7 +82,15 @@ def generar_cabecera_dte(
     # QR en el centro
     qr_x = 40 + box_w + col_margin + 3
     qr_y = box_y + (box_h - qr_size) / 2
-    qr_code = qr.QrCodeWidget(codigo_generacion)
+    qr_value = build_qr_value(
+        codigo_generacion,
+        numero_control,
+        nit_emisor=nit_emisor,
+        tipo_dte=tipo_dte,
+        fecha_emision=fecha_emision,
+        ambiente=ambiente,
+    )
+    qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
@@ -128,6 +141,8 @@ if __name__ == "__main__":
         modelo_facturacion="1 - Facturación previo",
         tipo_transmision="1 - Transmisión normal",
         fecha_generacion="01/07/2025, 11:15 AM",
+        nit_emisor="06140020001001",
+        fecha_emision="2025-07-30",
         tipo_documento="CONSUMIDOR FINAL",
         archivo="cabecera_consumidor_final.pdf",
     )
@@ -138,6 +153,8 @@ if __name__ == "__main__":
         modelo_facturacion="1 - Facturación previo",
         tipo_transmision="1 - Transmisión normal",
         fecha_generacion="01/07/2025, 11:15 AM",
+        nit_emisor="06140020001001",
+        fecha_emision="2025-07-30",
         tipo_documento="CREDITO FISCAL",
         archivo="cabecera_credito_fiscal.pdf",
     )

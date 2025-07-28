@@ -78,10 +78,18 @@ def test_values_are_rounded(tmp_path):
 
 
 def test_qr_value_contains_params():
-    url = build_qr_value('ABC', 'NC-1', nit_emisor='0614', ambiente='01')
-    assert 'codGen=ABC' in url
+    url = build_qr_value(
+        'ABC',
+        'NC-1',
+        nit_emisor='0614',
+        ambiente='pruebas',
+        fecha_emision='2025-07-30',
+    )
+    assert url.startswith('https://sandbox.mh.gob.sv/consulta-dte?')
+    assert 'codigoGeneracion=ABC' in url
     assert 'numeroControl=NC-1' in url
     assert 'nitEmisor=0614' in url
+    assert 'fechaEmision=2025-07-30' in url
 
 
 def test_contingencia_draws_message(tmp_path):

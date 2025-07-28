@@ -21,24 +21,31 @@ def build_qr_value(
     numero_control: str,
     nit_emisor: str = "",
     tipo_dte: str = "01",
-    ambiente: str = "00",
+    ambiente: str = "pruebas",
     fecha_emision: str | None = None,
     total: float | None = None,
 ) -> str:
-    """Return the URL encoded string for the DTE QR code."""
+    """Return the URL used for the DTE QR code."""
+
+    base_url = (
+        "https://www.mh.gob.sv/consulta-dte"
+        if ambiente == "produccion"
+        else "https://sandbox.mh.gob.sv/consulta-dte"
+    )
+
     params = {
-        "ambiente": ambiente,
-        "codGen": codigo_generacion,
         "tipoDte": tipo_dte,
         "numeroControl": numero_control,
+        "codigoGeneracion": codigo_generacion,
     }
     if nit_emisor:
         params["nitEmisor"] = nit_emisor
     if fecha_emision:
-        params["fechaEmi"] = fecha_emision
+        params["fechaEmision"] = fecha_emision
     if total is not None:
         params["montoTotal"] = f"{total:.2f}"
-    return "https://portaldgii.mh.gob.sv/consulta?" + urlencode(params)
+
+    return base_url + "?" + urlencode(params)
 
 
 def generar_factura_electronica_pdf(
@@ -55,6 +62,7 @@ def generar_factura_electronica_pdf(
     modelo_facturacion="1 - Facturación previo",
     tipo_transmision="1 - Transmisión normal",
     fecha_generacion="",
+    ambiente="pruebas",
 ):
 
     if datos_negocio is None:
@@ -65,6 +73,8 @@ def generar_factura_electronica_pdf(
                     datos_negocio = json.load(f)
             except Exception:
                 datos_negocio = {}
+    if ambiente == "pruebas" and datos_negocio.get("dte_api", {}).get("ambiente"):
+        ambiente = datos_negocio["dte_api"].get("ambiente")
 
     if not codigo_generacion or not numero_control or not fecha_generacion:
         cab = generar_cabecera_dte_data(modelo_facturacion, tipo_transmision)
@@ -145,6 +155,7 @@ def generar_factura_electronica_pdf(
         tipo_dte="01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03",
         fecha_emision=venta.get("fecha"),
         total=venta.get("total"),
+        ambiente=ambiente,
     )
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()

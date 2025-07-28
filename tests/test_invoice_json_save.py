@@ -1,4 +1,5 @@
 import os
+import json
 import pytest
 from PyQt5.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
 
@@ -89,3 +90,6 @@ def test_save_ticket_creates_json(qt_app, tmp_path):
 
     assert pdf_path.exists()
     assert json_path.exists()
+    data = json.load(open(json_path))
+    assert data.get("identificacion", {}).get("codigoGeneracion")
+    assert data.get("identificacion", {}).get("numeroControl")

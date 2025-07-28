@@ -272,14 +272,23 @@ def _post_dte(url: str, token: str, data: dict) -> dict:
         return {"estado": "Transmitido", "sello": ""}
 
 
-def transmitir_dte(db: DB, venta_id: int, modo: str = "normal") -> dict:
-    """Envía un DTE a la API configurada y registra su estado."""
+def transmitir_dte(
+    db: DB, venta_id: int, modo: str = "normal", tipo_dte: str = "01"
+) -> dict:
+    """Envía un DTE a la API configurada y registra su estado.
+
+    ``tipo_dte`` permite especificar el código del documento a transmitir,
+    usando ``"01"`` para facturas y ``"03"`` para tickets.
+    """
     config = _load_dte_api_config()
     if modo == "contingencia":
         db.registrar_envio_dte(venta_id, modo, "Pendiente", "")
         return {"estado": "Pendiente"}
 
-    dte_data = generar_dte_json(db, venta_id)
+    if tipo_dte == "03":
+        dte_data = generar_ticket_json(db, venta_id)
+    else:
+        dte_data = generar_dte_json(db, venta_id)
     url = config.get("url")
     token = config.get("token")
     if not url:

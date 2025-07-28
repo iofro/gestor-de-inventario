@@ -38,7 +38,76 @@ def create_p12(path, password):
         fh.write(p12)
 
 
-def test_sign_and_save(tmp_path, monkeypatch):
+def create_key_cert(key_path, cert_path, password):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    enc = serialization.BestAvailableEncryption(password.encode()) if password else serialization.NoEncryption()
+    with open(key_path, "wb") as fh:
+        fh.write(
+            key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.TraditionalOpenSSL,
+                enc,
+            )
+        )
+    subject = issuer = x509.Name([
+        x509.NameAttribute(NameOID.COUNTRY_NAME, "SV"),
+        x509.NameAttribute(NameOID.ORGANIZATION_NAME, "Test"),
+        x509.NameAttribute(NameOID.COMMON_NAME, "Test Cert"),
+    ])
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    with open(cert_path, "wb") as fh:
+        fh.write(cert.public_bytes(serialization.Encoding.PEM))
+
+
+def test_sign_and_save_pem(tmp_path, monkeypatch):
+    key_path = tmp_path / "key.pem"
+    cert_path = tmp_path / "cert.crt"
+    password = "pass"
+    create_key_cert(key_path, cert_path, password)
+
+    cfg_path = tmp_path / "config.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(
+            {
+                "firma_electronica": {
+                    "certificado": str(cert_path),
+                    "clave_privada": str(key_path),
+                    "frase_acceso": base64.b64encode(password.encode()).decode(),
+                }
+            },
+            fh,
+        )
+
+    monkeypatch.setattr(jws, "CONFIG_NEGOCIO_PATH", str(cfg_path))
+
+    payload = {"foo": "bar"}
+    json_file = tmp_path / "dte.json"
+    with open(json_file, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+
+    cert, key, phrase = jws.get_cert_config(str(cfg_path))
+    jws_path = jws.sign_and_save(payload, str(json_file), cert, phrase, key)
+    token = open(jws_path).read()
+
+    cert_obj = x509.load_pem_x509_certificate(open(cert_path, "rb").read())
+    public_pem = cert_obj.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    data = jwt.decode(token, public_pem, algorithms=["RS256"])
+    assert data == payload
+
+
+def test_sign_and_save_p12(tmp_path, monkeypatch):
     cert_file = tmp_path / "cert.p12"
     password = "secret"
     create_p12(cert_file, password)
@@ -53,6 +122,7 @@ def test_sign_and_save(tmp_path, monkeypatch):
             fh,
         )
 
+    monkeypatch.setattr(jws, "CONFIG_NEGOCIO_PATH", str(tmp_path / "missing.json"))
     monkeypatch.setattr(jws, "DATOS_NEGOCIO_PATH", str(datos_path))
 
     payload = {"foo": "bar"}
@@ -60,8 +130,8 @@ def test_sign_and_save(tmp_path, monkeypatch):
     with open(json_file, "w", encoding="utf-8") as fh:
         json.dump(payload, fh)
 
-    cert_path, cert_pass = jws.get_cert_config(str(datos_path))
-    jws_path = jws.sign_and_save(payload, str(json_file), cert_path, cert_pass)
+    cert_path, key_path, cert_pass = jws.get_cert_config(str(tmp_path / "missing.json"))
+    jws_path = jws.sign_and_save(payload, str(json_file), cert_path, cert_pass, key_path)
     assert jws_path
     token = open(jws_path).read()
     # verify

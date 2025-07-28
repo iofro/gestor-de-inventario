@@ -24,7 +24,11 @@ import os
 import re
 
 from ticket_pdf import generar_ticket_personalizado
-from factura_sv import generar_factura_electronica_pdf
+from factura_sv import (
+    generar_factura_electronica_pdf,
+    generar_nota_credito_pdf,
+)
+from dte import generar_nota_credito_json
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 import uuid
@@ -35,6 +39,8 @@ import shutil
 
 # Directory where debit notes will be stored
 NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
+# Directory where credit notes will be stored
+NOTAS_CREDITO_DIR = os.path.join(os.path.dirname(__file__), "notas_credito")
 import json
 from datetime import datetime
 
@@ -563,6 +569,84 @@ class FacturacionTab(QWidget):
                 f.write(
                     f"Venta ID: {venta_id}\nFecha: {fecha}\nMonto: {monto}\nMotivo: {motivo}"
                 )
+        else:
+            os.makedirs(NOTAS_CREDITO_DIR, exist_ok=True)
+            venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+            detalles = self.manager.db.get_detalles_venta(venta_id)
+            credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
+            venta_data = dict(venta)
+            if credito_info:
+                venta_data.update(credito_info)
+
+            if venta_data.get("vendedor_id"):
+                trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
+                if trabajador:
+                    venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
+
+            sumas = descuentos = 0
+            ventas_exentas = ventas_no_sujetas = iva = 0
+            for d in detalles:
+                base_total = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+                desc = d.get("descuento", 0)
+                if d.get("descuento_tipo") == "%":
+                    desc = base_total * d.get("descuento", 0) / 100
+                base = base_total - desc
+                iva_item = d.get("iva", 0)
+                tipo_fiscal = d.get("tipo_fiscal", "").lower()
+                if tipo_fiscal == "venta exenta":
+                    d["ventas_exentas"] = base
+                    ventas_exentas += base
+                elif tipo_fiscal == "venta no sujeta":
+                    d["ventas_no_sujetas"] = base
+                    ventas_no_sujetas += base
+                else:
+                    d["ventas_gravadas"] = base
+                    sumas += base_total
+                    descuentos += desc
+                    iva += iva_item
+
+            subtotal = (sumas - descuentos) + iva
+            total = subtotal + ventas_exentas + ventas_no_sujetas
+            venta_data.update(
+                {
+                    "sumas": sumas,
+                    "descuentos": descuentos,
+                    "iva": iva,
+                    "ventas_exentas": ventas_exentas,
+                    "ventas_no_sujetas": ventas_no_sujetas,
+                    "subtotal": subtotal,
+                    "total": total,
+                }
+            )
+            if not venta_data.get("total_letras"):
+                try:
+                    venta_data["total_letras"] = monto_a_texto_sv(total)
+                except Exception:
+                    venta_data["total_letras"] = ""
+
+            cliente = None
+            if venta.get("cliente_id"):
+                cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
+            distribuidor = None
+            if venta.get("Distribuidor_id"):
+                distribuidor = next(
+                    (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
+                    None,
+                )
+
+            pdf_path, json_path = get_document_paths(
+                venta.get("fecha"), cliente.get("nombre") if cliente else "", nota_id, "NotaCredito"
+            )
+            generar_nota_credito_pdf(
+                venta_data,
+                detalles,
+                cliente or {},
+                distribuidor or {},
+                archivo=pdf_path,
+            )
+            nota_json = generar_nota_credito_json(self.manager.db, nota_id)
+            with open(json_path, "w", encoding="utf-8") as fh:
+                json.dump(nota_json, fh, ensure_ascii=False, indent=2)
 
         QMessageBox.information(self, "Nota", "Nota registrada")
         self.load_invoices()

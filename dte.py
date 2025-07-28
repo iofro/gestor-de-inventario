@@ -57,6 +57,7 @@ def generar_dte_json(
     venta_id: int,
     modelo_facturacion: str = "1 - Facturación previo",
     tipo_transmision: str = "1 - Transmisión normal",
+    tipo_dte: str = "01",
 ) -> dict:
     """Genera un diccionario DTE básico para una venta."""
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
@@ -88,7 +89,7 @@ def generar_dte_json(
 
     identificacion = {
         "version": "1",
-        "tipoDte": "01",
+        "tipoDte": tipo_dte,
         "codigoGeneracion": codigo_generacion,
         "numeroControl": numero_control,
         "fecEmi": fecha,
@@ -125,8 +126,14 @@ def generar_dte_json(
     cuerpo = []
     items_total = Decimal("0")
     for idx, d in enumerate(detalles, 1):
-        cant = Decimal(str(d.get("cantidad", 0)))
-        price = Decimal(str(d.get("precio_unitario", 0)))
+        try:
+            cant = Decimal(str(d.get("cantidad") or 0))
+        except Exception:
+            cant = Decimal(0)
+        try:
+            price = Decimal(str(d.get("precio_unitario") or 0))
+        except Exception:
+            price = Decimal(0)
         cant_r = cant.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
         price_r = price.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
         items_total += cant_r * price_r
@@ -199,6 +206,22 @@ def generar_dte_json(
     return result
 
 
+def generar_ticket_json(
+    db: DB,
+    venta_id: int,
+    modelo_facturacion: str = "1 - Facturación previo",
+    tipo_transmision: str = "1 - Transmisión normal",
+) -> dict:
+    """Genera la estructura JSON para un Ticket Electrónico."""
+    return generar_dte_json(
+        db,
+        venta_id,
+        modelo_facturacion=modelo_facturacion,
+        tipo_transmision=tipo_transmision,
+        tipo_dte="03",
+    )
+
+
 def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
     """Genera la estructura JSON para una nota de crédito."""
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -209,8 +232,7 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
         raise ValueError("La nota indicada no es de crédito")
 
     venta_id = nota.get("venta_id")
-    data = generar_dte_json(db, venta_id)
-    data.setdefault("identificacion", {})["tipoDte"] = "05"
+    data = generar_dte_json(db, venta_id, tipo_dte="05")
     data["documentoRelacionado"] = {
         "tipoDoc": "01",
         "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,

@@ -93,3 +93,16 @@ def test_dte_sum_mismatch_warning(capsys):
     generar_dte_json(db, venta_id)
     out = capsys.readouterr().out
     assert "Advertencia" in out
+
+
+def test_generar_ticket_json_tipo():
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 5)
+    db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
+
+    data = generar_dte_json(db, venta_id, tipo_dte="03")
+    assert data["identificacion"]["tipoDte"] == "03"

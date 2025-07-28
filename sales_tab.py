@@ -27,7 +27,9 @@ from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
+
 from utils.jws import get_cert_config, sign_and_save, CONFIG_NEGOCIO_PATH
+
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
 import tempfile
@@ -650,14 +652,20 @@ class SalesTab(QWidget):
         )
 
         generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
+        if hasattr(self.manager.db, "cursor"):
+            ticket_json = generar_ticket_json(self.manager.db, venta_id)
+        else:
+            ticket_json = {"venta": venta, "detalles": detalles}
         with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
+            json.dump(ticket_json, fh, ensure_ascii=False, indent=2)
         if not os.path.exists(json_path):
             raise IOError(f"No se pudo guardar JSON en {json_path}")
         cert_path, key_path, cert_pass = get_cert_config(CONFIG_NEGOCIO_PATH)
         if cert_path:
             try:
+
                 sign_and_save({"venta": venta, "detalles": detalles}, json_path, cert_path, cert_pass, key_path)
+
             except Exception:
                 pass
         self.manager.db.add_ticket_pdf(venta_id, filename)

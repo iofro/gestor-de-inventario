@@ -2,11 +2,14 @@ import json
 import os
 import uuid
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, getcontext
 from db import DB
 import requests
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
+# Ensure enough precision when other modules modify the global decimal context
+getcontext().prec = 28
 
 
 def _round(value, digits):
@@ -294,4 +297,16 @@ def transmitir_dte(db: DB, venta_id: int, modo: str = "normal") -> dict:
     if sello:
         db.update_venta_extra(venta_id, {"selloRecibido": sello})
     return {"estado": estado, "sello": sello}
+
+
+def enviar_dte_a_hacienda(dte_json_firmado: dict) -> dict:
+    """Envía un DTE firmado al entorno de pruebas de Hacienda."""
+    url = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
+    config = _load_dte_api_config()
+    token = config.get("token")
+    respuesta = _post_dte(url, token, dte_json_firmado)
+    estado = respuesta.get("estado") or respuesta.get("estadoDte") or respuesta.get("descripcionEstado")
+    if estado:
+        respuesta["estado"] = estado
+    return respuesta
 

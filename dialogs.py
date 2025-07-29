@@ -2,6 +2,8 @@ from decimal import Decimal, getcontext, ROUND_HALF_UP
 import json
 import logging
 import base64
+from cryptography.hazmat.primitives.serialization import load_pem_private_key
+from cryptography import x509
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
@@ -2769,11 +2771,31 @@ class DatosNegocioDialog(QDialog):
         self.email.textChanged.connect(self._update_user_field)
         self._update_smtp_fields()
 
+        self.btn_load_cert.clicked.connect(self._load_cert_file)
+        self.btn_load_key.clicked.connect(self._load_key_file)
+        self.btn_load_pub.clicked.connect(self._load_pub_file)
+
         # --- Grupo 5: Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica ---
         grupo5 = QGroupBox("\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
         form5 = QFormLayout()
         self.dte_certificado = QLineEdit()
+        self.btn_load_cert = QPushButton("...")
+        cert_row = QHBoxLayout()
+        cert_row.addWidget(self.dte_certificado)
+        cert_row.addWidget(self.btn_load_cert)
+
         self.dte_key = QLineEdit()
+        self.btn_load_key = QPushButton("...")
+        key_row = QHBoxLayout()
+        key_row.addWidget(self.dte_key)
+        key_row.addWidget(self.btn_load_key)
+
+        self.dte_public_key = QLineEdit()
+        self.btn_load_pub = QPushButton("...")
+        pub_row = QHBoxLayout()
+        pub_row.addWidget(self.dte_public_key)
+        pub_row.addWidget(self.btn_load_pub)
+
         self.dte_pass = QLineEdit()
         self.dte_pass.setEchoMode(QLineEdit.Password)
         self.tipo_contribuyente = QComboBox()
@@ -2790,8 +2812,9 @@ class DatosNegocioDialog(QDialog):
         self.incluir_sello_pdf = QCheckBox("Incluir sello de recepci\u00f3n en el PDF (si existe)")
         self.guardar_respuesta_bd = QCheckBox("Guardar respuesta de Hacienda en base de datos")
 
-        form5.addRow("Certificado (.crt):", self.dte_certificado)
-        form5.addRow("Llave privada (.key):", self.dte_key)
+        form5.addRow("Certificado (.crt):", cert_row)
+        form5.addRow("Llave privada (.key):", key_row)
+        form5.addRow("Llave p\xC3\xBAblica (.key):", pub_row)
         form5.addRow("Contrase\u00f1a clave privada:", self.dte_pass)
         form5.addRow("Tipo contribuyente:", self.tipo_contribuyente)
         form5.addRow("Prefijo n\u00famero control:", self.prefijo_control)
@@ -2873,14 +2896,38 @@ class DatosNegocioDialog(QDialog):
             "tipo_contribuyente": self.tipo_contribuyente.currentText(),
         }
 
-        config = {
-            "firma_electronica": {
-                "certificado": self.dte_certificado.text(),
-                "clave_privada": self.dte_key.text(),
-                "frase_acceso": base64.b64encode(self.dte_pass.text().encode()).decode()
-                if self.dte_pass.text() else "",
-            }
+        fe_config = {
+            "certificado": self.dte_certificado.text(),
+            "clave_privada": self.dte_key.text(),
+            "llave_publica": self.dte_public_key.text(),
+            "frase_acceso": base64.b64encode(self.dte_pass.text().encode()).decode()
+            if self.dte_pass.text() else "",
+            "certificado_data": "",
+            "clave_privada_data": "",
+            "llave_publica_data": "",
         }
+
+        for path, key in [
+            (self.dte_certificado.text(), "certificado_data"),
+            (self.dte_key.text(), "clave_privada_data"),
+            (self.dte_public_key.text(), "llave_publica_data"),
+        ]:
+            if path:
+                try:
+                    with open(path, "rb") as fh:
+                        data_f = fh.read()
+                    if key == "certificado_data":
+                        x509.load_pem_x509_certificate(data_f)
+                    elif key == "clave_privada_data":
+                        load_pem_private_key(
+                            data_f,
+                            self.dte_pass.text().encode() if self.dte_pass.text() else None,
+                        )
+                    fe_config[key] = base64.b64encode(data_f).decode()
+                except Exception as e:
+                    QMessageBox.warning(self, "Archivo de firma", f"Error al leer {path}: {e}")
+
+        config = {"firma_electronica": fe_config}
 
         return datos, config
 
@@ -2924,6 +2971,7 @@ class DatosNegocioDialog(QDialog):
         fe = config.get("firma_electronica", {})
         self.dte_certificado.setText(fe.get("certificado", ""))
         self.dte_key.setText(fe.get("clave_privada", ""))
+        self.dte_public_key.setText(fe.get("llave_publica", ""))
         frase = fe.get("frase_acceso", "")
         if frase:
             try:
@@ -2974,6 +3022,27 @@ class DatosNegocioDialog(QDialog):
         self.smtp_port.setReadOnly(True)
         self.email_usuario.setText(self.email.text())
         self.email_usuario.setReadOnly(True)
+
+    def _load_cert_file(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar certificado", "", "Cert Files (*.crt *.pem *.cer)"
+        )
+        if fname:
+            self.dte_certificado.setText(fname)
+
+    def _load_key_file(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar llave privada", "", "Key Files (*.key *.pem)"
+        )
+        if fname:
+            self.dte_key.setText(fname)
+
+    def _load_pub_file(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar llave publica", "", "Key Files (*.key *.pem)"
+        )
+        if fname:
+            self.dte_public_key.setText(fname)
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):
         super().__init__(parent)

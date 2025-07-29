@@ -142,3 +142,46 @@ def test_sign_and_save_p12(tmp_path, monkeypatch):
     )
     data = jwt.decode(token, public_pem, algorithms=["RS256"])
     assert data == payload
+
+
+def test_get_cert_config_embedded(tmp_path, monkeypatch):
+    key_path = tmp_path / "key.pem"
+    cert_path = tmp_path / "cert.crt"
+    password = "abc"
+    create_key_cert(key_path, cert_path, password)
+    key_data = key_path.read_bytes()
+    cert_data = cert_path.read_bytes()
+
+    cfg_path = tmp_path / "config.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
+        json.dump(
+            {
+                "firma_electronica": {
+                    "certificado": "",
+                    "clave_privada": "",
+                    "frase_acceso": base64.b64encode(password.encode()).decode(),
+                    "certificado_data": base64.b64encode(cert_data).decode(),
+                    "clave_privada_data": base64.b64encode(key_data).decode(),
+                }
+            },
+            fh,
+        )
+
+    monkeypatch.setattr(jws, "CONFIG_NEGOCIO_PATH", str(cfg_path))
+
+    payload = {"foo": "bar"}
+    json_file = tmp_path / "dte.json"
+    with open(json_file, "w", encoding="utf-8") as fh:
+        json.dump(payload, fh)
+
+    cert, key, phrase = jws.get_cert_config(str(cfg_path))
+    jws_path = jws.sign_and_save(payload, str(json_file), cert, phrase, key)
+    token = open(jws_path).read()
+
+    cert_obj = x509.load_pem_x509_certificate(cert_data)
+    public_pem = cert_obj.public_key().public_bytes(
+        serialization.Encoding.PEM,
+        serialization.PublicFormat.SubjectPublicKeyInfo,
+    )
+    data = jwt.decode(token, public_pem, algorithms=["RS256"])
+    assert data == payload

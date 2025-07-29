@@ -1,6 +1,7 @@
 from decimal import Decimal, getcontext, ROUND_HALF_UP
 import json
 import logging
+import base64
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
@@ -2660,7 +2661,7 @@ class CompraDetalleDialog(QDialog):
         self.setLayout(layout)
 
 class DatosNegocioDialog(QDialog):
-    def __init__(self, datos=None, parent=None):
+    def __init__(self, datos=None, config=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Datos del negocio")
         self.setMinimumWidth(900)
@@ -2768,8 +2769,59 @@ class DatosNegocioDialog(QDialog):
         self.email.textChanged.connect(self._update_user_field)
         self._update_smtp_fields()
 
+        # --- Grupo 5: Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica ---
+        grupo5 = QGroupBox("\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
+        form5 = QFormLayout()
+        self.dte_certificado = QLineEdit()
+        self.dte_key = QLineEdit()
+        self.dte_pass = QLineEdit()
+        self.dte_pass.setEchoMode(QLineEdit.Password)
+        self.emisor_nombre = QLineEdit()
+        self.emisor_nit = QLineEdit()
+        self.emisor_nrc = QLineEdit()
+        self.tipo_contribuyente = QComboBox()
+        self.tipo_contribuyente.addItems(["Persona Natural", "Persona Jur\u00eddica"])
+        self.codigo_establecimiento = QLineEdit()
+        self.direccion_establecimiento = QLineEdit()
+        self.correo_notificaciones = QLineEdit()
+        self.prefijo_control = QLineEdit("DTE-01-S001P001")
+        self.modo_transmision = QComboBox()
+        self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
+        self.ambiente_hacienda = QComboBox()
+        self.ambiente_hacienda.addItems(["Pruebas", "Producci\u00f3n"])
+        self.token_hacienda = QLineEdit()
+        self.endpoint_hacienda = QLineEdit()
+        self.envio_automatico = QCheckBox("Activar env\u00edo autom\u00e1tico a Hacienda")
+        self.adjuntar_json_correo = QCheckBox("Adjuntar JSON firmado en correo al cliente")
+        self.incluir_sello_pdf = QCheckBox("Incluir sello de recepci\u00f3n en el PDF (si existe)")
+        self.guardar_respuesta_bd = QCheckBox("Guardar respuesta de Hacienda en base de datos")
+
+        form5.addRow("Certificado (.crt):", self.dte_certificado)
+        form5.addRow("Llave privada (.key):", self.dte_key)
+        form5.addRow("Contrase\u00f1a clave privada:", self.dte_pass)
+        form5.addRow("Nombre/Raz\u00f3n Social:", self.emisor_nombre)
+        form5.addRow("NIT:", self.emisor_nit)
+        form5.addRow("NRC:", self.emisor_nrc)
+        form5.addRow("Tipo contribuyente:", self.tipo_contribuyente)
+        form5.addRow("C\u00f3digo establecimiento:", self.codigo_establecimiento)
+        form5.addRow("Direcci\u00f3n establecimiento:", self.direccion_establecimiento)
+        form5.addRow("Correo notificaciones:", self.correo_notificaciones)
+        form5.addRow("Prefijo n\u00famero control:", self.prefijo_control)
+        form5.addRow("Modo transmisi\u00f3n por defecto:", self.modo_transmision)
+        form5.addRow("Ambiente:", self.ambiente_hacienda)
+        form5.addRow("Token autenticaci\u00f3n:", self.token_hacienda)
+        form5.addRow("Endpoint API:", self.endpoint_hacienda)
+        form5.addRow(self.envio_automatico)
+        form5.addRow(self.adjuntar_json_correo)
+        form5.addRow(self.incluir_sello_pdf)
+        form5.addRow(self.guardar_respuesta_bd)
+        grupo5.setLayout(form5)
+
         main_layout.addLayout(h_layout)
-        main_layout.addWidget(grupo4)
+        footer_layout = QHBoxLayout()
+        footer_layout.addWidget(grupo4)
+        footer_layout.addWidget(grupo5)
+        main_layout.addLayout(footer_layout)
 
         # --- Botones ---
         btns = QHBoxLayout()
@@ -2784,11 +2836,11 @@ class DatosNegocioDialog(QDialog):
         self.btn_cancelar.clicked.connect(self.reject)
 
         # Si hay datos previos, cárgalos
-        if datos:
-            self.set_data(datos)
+        if datos or config:
+            self.set_data(datos or {}, config or {})
 
     def get_data(self):
-        return {
+        datos = {
             "nombre_comercial": self.nombre_comercial.text(),
             "razon_social": self.razon_social.text(),
             "giro": self.giro.text(),
@@ -2820,7 +2872,37 @@ class DatosNegocioDialog(QDialog):
             "email_contrasena": self.email_contrasena.text(),
         }
 
-    def set_data(self, datos):
+        datos["dte_api"] = {
+            "url": self.endpoint_hacienda.text(),
+            "ambiente": self.ambiente_hacienda.currentText().lower(),
+            "token": self.token_hacienda.text(),
+            "prefijo_control": self.prefijo_control.text(),
+            "modo_transmision": self.modo_transmision.currentText(),
+            "codigo_establecimiento": self.codigo_establecimiento.text(),
+            "direccion_establecimiento": self.direccion_establecimiento.text(),
+            "correo_notificaciones": self.correo_notificaciones.text(),
+            "envio_automatico": self.envio_automatico.isChecked(),
+            "adjuntar_json_correo": self.adjuntar_json_correo.isChecked(),
+            "incluir_sello_pdf": self.incluir_sello_pdf.isChecked(),
+            "guardar_respuesta": self.guardar_respuesta_bd.isChecked(),
+            "emisor_nombre": self.emisor_nombre.text(),
+            "emisor_nit": self.emisor_nit.text(),
+            "emisor_nrc": self.emisor_nrc.text(),
+            "tipo_contribuyente": self.tipo_contribuyente.currentText(),
+        }
+
+        config = {
+            "firma_electronica": {
+                "certificado": self.dte_certificado.text(),
+                "clave_privada": self.dte_key.text(),
+                "frase_acceso": base64.b64encode(self.dte_pass.text().encode()).decode()
+                if self.dte_pass.text() else "",
+            }
+        }
+
+        return datos, config
+
+    def set_data(self, datos, config):
         self.nombre_comercial.setText(datos.get("nombre_comercial", ""))
         self.razon_social.setText(datos.get("razon_social", ""))
         self.giro.setText(datos.get("giro", ""))
@@ -2856,6 +2938,44 @@ class DatosNegocioDialog(QDialog):
         self.email_usuario.setText(datos.get("email_usuario", self.email.text()))
         self.email_contrasena.setText(datos.get("email_contrasena", ""))
         self._update_smtp_fields()
+
+        fe = config.get("firma_electronica", {})
+        self.dte_certificado.setText(fe.get("certificado", ""))
+        self.dte_key.setText(fe.get("clave_privada", ""))
+        frase = fe.get("frase_acceso", "")
+        if frase:
+            try:
+                frase = base64.b64decode(frase).decode("utf-8")
+            except Exception:
+                pass
+        self.dte_pass.setText(frase)
+
+        dte = datos.get("dte_api", {})
+        self.endpoint_hacienda.setText(dte.get("url", ""))
+        amb = dte.get("ambiente", "pruebas").capitalize()
+        idx = self.ambiente_hacienda.findText(amb)
+        if idx >= 0:
+            self.ambiente_hacienda.setCurrentIndex(idx)
+        self.token_hacienda.setText(dte.get("token", ""))
+        self.prefijo_control.setText(dte.get("prefijo_control", "DTE-01-S001P001"))
+        modo = dte.get("modo_transmision", "1 - Normal")
+        idx = self.modo_transmision.findText(modo)
+        if idx >= 0:
+            self.modo_transmision.setCurrentIndex(idx)
+        self.codigo_establecimiento.setText(dte.get("codigo_establecimiento", ""))
+        self.direccion_establecimiento.setText(dte.get("direccion_establecimiento", ""))
+        self.correo_notificaciones.setText(dte.get("correo_notificaciones", ""))
+        self.envio_automatico.setChecked(bool(dte.get("envio_automatico")))
+        self.adjuntar_json_correo.setChecked(bool(dte.get("adjuntar_json_correo")))
+        self.incluir_sello_pdf.setChecked(bool(dte.get("incluir_sello_pdf")))
+        self.guardar_respuesta_bd.setChecked(bool(dte.get("guardar_respuesta")))
+        self.emisor_nombre.setText(dte.get("emisor_nombre", datos.get("razon_social", "")))
+        self.emisor_nit.setText(dte.get("emisor_nit", datos.get("nit", "")))
+        self.emisor_nrc.setText(dte.get("emisor_nrc", datos.get("nrc", "")))
+        tipo = dte.get("tipo_contribuyente", "Persona Jur\u00eddica")
+        idx = self.tipo_contribuyente.findText(tipo)
+        if idx >= 0:
+            self.tipo_contribuyente.setCurrentIndex(idx)
 
     def _update_user_field(self):
         """Autocompletar el usuario con el correo oficial."""

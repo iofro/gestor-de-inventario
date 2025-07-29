@@ -99,6 +99,21 @@ La contraseña puede dejarse vacía si la clave privada no está cifrada. Al
 generar facturas o tickets se creará junto al PDF un archivo `.jws` con el JSON
 firmado.
 
+La pestaña **Configuración de Facturación Electrónica** permite definir
+otros parámetros dentro de `datos_negocio.json` bajo el bloque `dte_api`:
+
+```json
+{
+  "dte_api": {
+    "url": "https://api.hacienda.test/dtes",
+    "ambiente": "pruebas",
+    "token": "TOKEN",
+    "prefijo_control": "DTE-01-S001P001",
+    "modo_transmision": "1 - Normal"
+  }
+}
+```
+
 Las facturas generadas desde la pestaña **Ventas** se guardan automáticamente en
 `facturas_consumidor_final` o `facturas_credito_fiscal` dependiendo del tipo de
 documento. Los tickets se almacenan en la carpeta `tickets`. Al imprimir,

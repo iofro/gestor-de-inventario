@@ -21,6 +21,7 @@ from dialogs import (
 )
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab
 from facturacion_tab import FacturacionTab
@@ -1288,19 +1289,29 @@ class MainWindow(QMainWindow):
         # Puedes guardar/cargar los datos en un archivo JSON local, por ejemplo:
         import os, json
         datos_path = DATOS_NEGOCIO_PATH
+        config_path = CONFIG_NEGOCIO_PATH
         datos = {}
+        config = {}
         if os.path.exists(datos_path):
             try:
                 with open(datos_path, "r", encoding="utf-8") as f:
                     datos = json.load(f)
             except Exception:
                 datos = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                config = {}
         from dialogs import DatosNegocioDialog
-        dlg = DatosNegocioDialog(datos, self)
+        dlg = DatosNegocioDialog(datos, config, self)
         if dlg.exec_():
-            datos_nuevos = dlg.get_data()
+            datos_nuevos, config_nuevo = dlg.get_data()
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos_nuevos, f, ensure_ascii=False, indent=2)
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config_nuevo, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Datos del negocio", "Datos guardados correctamente.")
 
     def _actualizar_tabla_trabajadores(self):

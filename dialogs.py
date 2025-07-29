@@ -2919,6 +2919,8 @@ class DatosNegocioDialog(QDialog):
                     if key == "certificado_data":
                         x509.load_pem_x509_certificate(data_f)
                     elif key == "clave_privada_data":
+                        if b"-----BEGIN" not in data_f:
+                            raise ValueError("El archivo no parece ser una clave privada PEM")
                         load_pem_private_key(
                             data_f,
                             self.dte_pass.text().encode() if self.dte_pass.text() else None,

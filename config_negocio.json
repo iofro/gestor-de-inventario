@@ -2,6 +2,10 @@
   "firma_electronica": {
     "certificado": "",
     "clave_privada": "",
-    "frase_acceso": ""
+    "frase_acceso": "",
+    "certificado_data": "",
+    "clave_privada_data": "",
+    "llave_publica": "",
+    "llave_publica_data": ""
   }
 }

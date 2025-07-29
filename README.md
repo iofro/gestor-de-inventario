@@ -89,7 +89,11 @@ Para firmar electrónicamente los DTE define los archivos de firma en
 {
   "firma_electronica": {
     "certificado": "ruta/al/certificado.crt",
+    "certificado_data": "PEM_O_BASE64",
     "clave_privada": "ruta/al/clave.key",
+    "clave_privada_data": "PEM_O_BASE64",
+    "llave_publica": "ruta/opcional/public.key",
+    "llave_publica_data": "PEM_O_BASE64",
     "frase_acceso": "PASSWORD_EN_BASE64"
   }
 }

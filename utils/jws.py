@@ -43,12 +43,17 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
                 with open(cert, "rb") as fh:
                     x509.load_pem_x509_certificate(fh.read())
                 with open(key, "rb") as fh:
-                    load_pem_private_key(fh.read(), password.encode() if password else None)
+                    key_bytes = fh.read()
+                if b"-----BEGIN" not in key_bytes:
+                    raise ValueError("La clave privada no parece ser PEM")
+                load_pem_private_key(key_bytes, password.encode() if password else None)
                 return cert, key, password
             if cert_data_b64 and key_data_b64:
                 cert_bytes = base64.b64decode(cert_data_b64)
                 key_bytes = base64.b64decode(key_data_b64)
                 x509.load_pem_x509_certificate(cert_bytes)
+                if b"-----BEGIN" not in key_bytes:
+                    raise ValueError("La clave privada no parece ser PEM")
                 load_pem_private_key(key_bytes, password.encode() if password else None)
                 return cert_bytes, key_bytes, password
         except Exception:

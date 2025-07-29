@@ -2771,10 +2771,6 @@ class DatosNegocioDialog(QDialog):
         self.email.textChanged.connect(self._update_user_field)
         self._update_smtp_fields()
 
-        self.btn_load_cert.clicked.connect(self._load_cert_file)
-        self.btn_load_key.clicked.connect(self._load_key_file)
-        self.btn_load_pub.clicked.connect(self._load_pub_file)
-
         # --- Grupo 5: Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica ---
         grupo5 = QGroupBox("\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
         form5 = QFormLayout()
@@ -2827,6 +2823,10 @@ class DatosNegocioDialog(QDialog):
         form5.addRow(self.incluir_sello_pdf)
         form5.addRow(self.guardar_respuesta_bd)
         grupo5.setLayout(form5)
+
+        self.btn_load_cert.clicked.connect(self._load_cert_file)
+        self.btn_load_key.clicked.connect(self._load_key_file)
+        self.btn_load_pub.clicked.connect(self._load_pub_file)
 
         main_layout.addLayout(h_layout)
         footer_layout = QHBoxLayout()

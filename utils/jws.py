@@ -22,8 +22,22 @@ DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "d
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 
 
+def _get_ambiente() -> str:
+    """Return configured DTE environment or ``"pruebas"`` by default."""
+    if os.path.exists(DATOS_NEGOCIO_PATH):
+        try:
+            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                datos = json.load(fh)
+            return datos.get("dte_api", {}).get("ambiente", "pruebas").lower()
+        except Exception:
+            pass
+    return "pruebas"
+
+
 def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
     """Return certificate (.crt), key (.key) and password from config."""
+    ambiente = _get_ambiente()
+    verificar = ambiente == "produccion"
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as fh:
@@ -40,21 +54,23 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
                 except Exception:
                     pass
             if cert and os.path.exists(cert) and key and os.path.exists(key):
-                with open(cert, "rb") as fh:
-                    x509.load_pem_x509_certificate(fh.read())
-                with open(key, "rb") as fh:
-                    key_bytes = fh.read()
-                if b"-----BEGIN" not in key_bytes:
-                    raise ValueError("La clave privada no parece ser PEM")
-                load_pem_private_key(key_bytes, password.encode() if password else None)
+                if verificar:
+                    with open(cert, "rb") as fh:
+                        x509.load_pem_x509_certificate(fh.read())
+                    with open(key, "rb") as fh:
+                        key_bytes = fh.read()
+                    if b"-----BEGIN" not in key_bytes:
+                        raise ValueError("La clave privada no parece ser PEM")
+                    load_pem_private_key(key_bytes, password.encode() if password else None)
                 return cert, key, password
             if cert_data_b64 and key_data_b64:
                 cert_bytes = base64.b64decode(cert_data_b64)
                 key_bytes = base64.b64decode(key_data_b64)
-                x509.load_pem_x509_certificate(cert_bytes)
-                if b"-----BEGIN" not in key_bytes:
-                    raise ValueError("La clave privada no parece ser PEM")
-                load_pem_private_key(key_bytes, password.encode() if password else None)
+                if verificar:
+                    x509.load_pem_x509_certificate(cert_bytes)
+                    if b"-----BEGIN" not in key_bytes:
+                        raise ValueError("La clave privada no parece ser PEM")
+                    load_pem_private_key(key_bytes, password.encode() if password else None)
                 return cert_bytes, key_bytes, password
         except Exception:
             return None, None, None
@@ -71,6 +87,8 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
                 except Exception:
                     pass
             if cert_path and os.path.exists(cert_path):
+                if verificar:
+                    _load_p12_key(cert_path, password)
                 return cert_path, None, password
         except Exception:
             return None, None, None

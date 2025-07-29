@@ -2907,6 +2907,8 @@ class DatosNegocioDialog(QDialog):
             "llave_publica_data": "",
         }
 
+        verificar = self.ambiente_hacienda.currentText().lower() == "producción" or self.ambiente_hacienda.currentText().lower() == "produccion"
+
         for path, key in [
             (self.dte_certificado.text(), "certificado_data"),
             (self.dte_key.text(), "clave_privada_data"),
@@ -2916,15 +2918,16 @@ class DatosNegocioDialog(QDialog):
                 try:
                     with open(path, "rb") as fh:
                         data_f = fh.read()
-                    if key == "certificado_data":
-                        x509.load_pem_x509_certificate(data_f)
-                    elif key == "clave_privada_data":
-                        if b"-----BEGIN" not in data_f:
-                            raise ValueError("El archivo no parece ser una clave privada PEM")
-                        load_pem_private_key(
-                            data_f,
-                            self.dte_pass.text().encode() if self.dte_pass.text() else None,
-                        )
+                    if verificar:
+                        if key == "certificado_data":
+                            x509.load_pem_x509_certificate(data_f)
+                        elif key == "clave_privada_data":
+                            if b"-----BEGIN" not in data_f:
+                                raise ValueError("El archivo no parece ser una clave privada PEM")
+                            load_pem_private_key(
+                                data_f,
+                                self.dte_pass.text().encode() if self.dte_pass.text() else None,
+                            )
                     fe_config[key] = base64.b64encode(data_f).decode()
                 except Exception as e:
                     QMessageBox.warning(self, "Archivo de firma", f"Error al leer {path}: {e}")

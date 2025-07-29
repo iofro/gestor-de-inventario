@@ -2,6 +2,7 @@ import os
 import json
 import base64
 import os
+import json
 from cryptography.hazmat.primitives.serialization import (
     pkcs12,
     Encoding,
@@ -30,22 +31,26 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
             fe = data.get("firma_electronica", {})
             cert = fe.get("certificado")
             key = fe.get("clave_privada")
+            cert_data_b64 = fe.get("certificado_data")
+            key_data_b64 = fe.get("clave_privada_data")
             password = fe.get("frase_acceso")
             if password:
                 try:
                     password = base64.b64decode(password).decode("utf-8")
                 except Exception:
                     pass
-            if cert and not os.path.exists(cert):
-                raise FileNotFoundError(cert)
-            if key and not os.path.exists(key):
-                raise FileNotFoundError(key)
-            if cert and key:
+            if cert and os.path.exists(cert) and key and os.path.exists(key):
                 with open(cert, "rb") as fh:
                     x509.load_pem_x509_certificate(fh.read())
                 with open(key, "rb") as fh:
                     load_pem_private_key(fh.read(), password.encode() if password else None)
                 return cert, key, password
+            if cert_data_b64 and key_data_b64:
+                cert_bytes = base64.b64decode(cert_data_b64)
+                key_bytes = base64.b64decode(key_data_b64)
+                x509.load_pem_x509_certificate(cert_bytes)
+                load_pem_private_key(key_bytes, password.encode() if password else None)
+                return cert_bytes, key_bytes, password
         except Exception:
             return None, None, None
 
@@ -75,6 +80,11 @@ def _load_p12_key(cert_path: str, password: str | None):
     return key
 
 
+def _load_p12_key_bytes(data: bytes, password: str | None):
+    key, _cert, _ = pkcs12.load_key_and_certificates(data, password.encode() if password else None)
+    return key
+
+
 def sign_json(
     payload: dict,
     cert_path: str | None = None,
@@ -83,10 +93,17 @@ def sign_json(
 ) -> str:
     """Return a JWS token (compact serialization) for ``payload``."""
     if key_path:
-        with open(key_path, "rb") as fh:
-            key = load_pem_private_key(fh.read(), password.encode() if password else None)
+        if isinstance(key_path, bytes):
+            key_bytes = key_path
+        else:
+            with open(key_path, "rb") as fh:
+                key_bytes = fh.read()
+        key = load_pem_private_key(key_bytes, password.encode() if password else None)
     elif cert_path:
-        key = _load_p12_key(cert_path, password)
+        if isinstance(cert_path, bytes):
+            key = _load_p12_key_bytes(cert_path, password)
+        else:
+            key = _load_p12_key(cert_path, password)
     else:
         raise ValueError("Missing certificate information")
     pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())

@@ -2776,14 +2776,8 @@ class DatosNegocioDialog(QDialog):
         self.dte_key = QLineEdit()
         self.dte_pass = QLineEdit()
         self.dte_pass.setEchoMode(QLineEdit.Password)
-        self.emisor_nombre = QLineEdit()
-        self.emisor_nit = QLineEdit()
-        self.emisor_nrc = QLineEdit()
         self.tipo_contribuyente = QComboBox()
         self.tipo_contribuyente.addItems(["Persona Natural", "Persona Jur\u00eddica"])
-        self.codigo_establecimiento = QLineEdit()
-        self.direccion_establecimiento = QLineEdit()
-        self.correo_notificaciones = QLineEdit()
         self.prefijo_control = QLineEdit("DTE-01-S001P001")
         self.modo_transmision = QComboBox()
         self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
@@ -2799,13 +2793,7 @@ class DatosNegocioDialog(QDialog):
         form5.addRow("Certificado (.crt):", self.dte_certificado)
         form5.addRow("Llave privada (.key):", self.dte_key)
         form5.addRow("Contrase\u00f1a clave privada:", self.dte_pass)
-        form5.addRow("Nombre/Raz\u00f3n Social:", self.emisor_nombre)
-        form5.addRow("NIT:", self.emisor_nit)
-        form5.addRow("NRC:", self.emisor_nrc)
         form5.addRow("Tipo contribuyente:", self.tipo_contribuyente)
-        form5.addRow("C\u00f3digo establecimiento:", self.codigo_establecimiento)
-        form5.addRow("Direcci\u00f3n establecimiento:", self.direccion_establecimiento)
-        form5.addRow("Correo notificaciones:", self.correo_notificaciones)
         form5.addRow("Prefijo n\u00famero control:", self.prefijo_control)
         form5.addRow("Modo transmisi\u00f3n por defecto:", self.modo_transmision)
         form5.addRow("Ambiente:", self.ambiente_hacienda)
@@ -2878,16 +2866,10 @@ class DatosNegocioDialog(QDialog):
             "token": self.token_hacienda.text(),
             "prefijo_control": self.prefijo_control.text(),
             "modo_transmision": self.modo_transmision.currentText(),
-            "codigo_establecimiento": self.codigo_establecimiento.text(),
-            "direccion_establecimiento": self.direccion_establecimiento.text(),
-            "correo_notificaciones": self.correo_notificaciones.text(),
             "envio_automatico": self.envio_automatico.isChecked(),
             "adjuntar_json_correo": self.adjuntar_json_correo.isChecked(),
             "incluir_sello_pdf": self.incluir_sello_pdf.isChecked(),
             "guardar_respuesta": self.guardar_respuesta_bd.isChecked(),
-            "emisor_nombre": self.emisor_nombre.text(),
-            "emisor_nit": self.emisor_nit.text(),
-            "emisor_nrc": self.emisor_nrc.text(),
             "tipo_contribuyente": self.tipo_contribuyente.currentText(),
         }
 
@@ -2962,16 +2944,10 @@ class DatosNegocioDialog(QDialog):
         idx = self.modo_transmision.findText(modo)
         if idx >= 0:
             self.modo_transmision.setCurrentIndex(idx)
-        self.codigo_establecimiento.setText(dte.get("codigo_establecimiento", ""))
-        self.direccion_establecimiento.setText(dte.get("direccion_establecimiento", ""))
-        self.correo_notificaciones.setText(dte.get("correo_notificaciones", ""))
         self.envio_automatico.setChecked(bool(dte.get("envio_automatico")))
         self.adjuntar_json_correo.setChecked(bool(dte.get("adjuntar_json_correo")))
         self.incluir_sello_pdf.setChecked(bool(dte.get("incluir_sello_pdf")))
         self.guardar_respuesta_bd.setChecked(bool(dte.get("guardar_respuesta")))
-        self.emisor_nombre.setText(dte.get("emisor_nombre", datos.get("razon_social", "")))
-        self.emisor_nit.setText(dte.get("emisor_nit", datos.get("nit", "")))
-        self.emisor_nrc.setText(dte.get("emisor_nrc", datos.get("nrc", "")))
         tipo = dte.get("tipo_contribuyente", "Persona Jur\u00eddica")
         idx = self.tipo_contribuyente.findText(tipo)
         if idx >= 0:

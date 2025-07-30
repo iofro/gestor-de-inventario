@@ -1,8 +1,7 @@
 import os
 import json
 import base64
-import os
-import json
+import time
 from cryptography.hazmat.primitives.serialization import (
     pkcs12,
     Encoding,
@@ -122,15 +121,37 @@ def sign_json(
             with open(key_path, "rb") as fh:
                 key_bytes = fh.read()
         key = load_pem_private_key(key_bytes, password.encode() if password else None)
+        cert_bytes = None
+        if cert_path and os.path.exists(cert_path):
+            with open(cert_path, "rb") as fh:
+                cert_data = fh.read()
+            if b"-----BEGIN" in cert_data:
+                cert = x509.load_pem_x509_certificate(cert_data)
+            else:
+                _k, cert, _ = pkcs12.load_key_and_certificates(cert_data, password.encode() if password else None)
+            cert_bytes = cert.public_bytes(Encoding.DER)
     elif cert_path:
         if isinstance(cert_path, bytes):
             key = _load_p12_key_bytes(cert_path, password)
+            _k, cert, _ = pkcs12.load_key_and_certificates(cert_path, password.encode() if password else None)
+            cert_bytes = cert.public_bytes(Encoding.DER) if cert else None
         else:
             key = _load_p12_key(cert_path, password)
+            with open(cert_path, "rb") as fh:
+                cert_data = fh.read()
+            if b"-----BEGIN" in cert_data:
+                cert_obj = x509.load_pem_x509_certificate(cert_data)
+            else:
+                _k, cert_obj, _ = pkcs12.load_key_and_certificates(cert_data, password.encode() if password else None)
+            cert_bytes = cert_obj.public_bytes(Encoding.DER)
     else:
         raise ValueError("Missing certificate information")
+
     pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
-    token = jwt.encode(payload, pem, algorithm="RS256")
+    header = {"alg": "RS256", "typ": "JWT"}
+    if cert_bytes:
+        header["x5c"] = [base64.b64encode(cert_bytes).decode()]
+    token = jwt.encode(payload, pem, algorithm="RS256", headers=header)
     return token
 
 
@@ -147,3 +168,18 @@ def sign_and_save(
     with open(jws_path, "w", encoding="utf-8") as fh:
         fh.write(token)
     return jws_path
+
+
+def create_auth_jwt(
+    subject: str,
+    cert_path: str | None = None,
+    password: str | None = None,
+    key_path: str | None = None,
+) -> str:
+    """Return a short-lived JWT for API authentication."""
+    payload = {
+        "sub": subject,
+        "iat": int(time.time()),
+        "exp": int(time.time()) + 300,
+    }
+    return sign_json(payload, cert_path, password, key_path)

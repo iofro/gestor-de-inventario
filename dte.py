@@ -5,6 +5,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from db import DB
 import requests
+from utils import jws
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -209,6 +210,51 @@ def generar_dte_json(
     return result
 
 
+def validate_dte_json(data: dict) -> None:
+    """Basic validation for DTE payload before signing."""
+    required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
+    for key in required:
+        if key not in data:
+            raise ValueError(f"Falta el campo obligatorio: {key}")
+
+    cuerpo = data.get("cuerpoDocumento", [])
+    items_total = Decimal("0")
+    for item in cuerpo:
+        cantidad = Decimal(str(item.get("cantidad", 0)))
+        precio = Decimal(str(item.get("precioUnitario", 0)))
+        item["cantidad"] = float(cantidad.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
+        item["precioUnitario"] = float(precio.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
+        items_total += cantidad * precio
+
+    resumen = data.get("resumen", {})
+    for k, v in resumen.items():
+        if isinstance(v, (int, float, str)):
+            resumen[k] = _round(v, 2)
+
+    sumas = Decimal(str(resumen.get("sumas", 0)))
+    descuentos = Decimal(str(resumen.get("descuentos", 0)))
+    iva = Decimal(str(resumen.get("iva", 0)))
+    sub_total = Decimal(str(resumen.get("subTotal", 0)))
+    total = Decimal(str(resumen.get("totalPagar", 0)))
+
+    items_total_2 = Decimal(str(_round(items_total, 2)))
+    if abs(items_total_2 - sumas) > Decimal("0.01"):
+        print(
+            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {sumas:.2f}"
+        )
+
+    calc_sub = sumas - descuentos + iva
+    calc_sub = Decimal(str(_round(calc_sub, 2)))
+    if abs(calc_sub - sub_total) > Decimal("0.01"):
+        print(
+            f"Advertencia: el subtotal calculado {calc_sub:.2f} difiere del resumen {sub_total:.2f}"
+        )
+    if abs(calc_sub - total) > Decimal("0.01"):
+        print(
+            f"Advertencia: el total a pagar {total:.2f} difiere del subtotal calculado {calc_sub:.2f}"
+        )
+
+
 def generar_ticket_json(
     db: DB,
     venta_id: int,
@@ -260,11 +306,12 @@ def _load_dte_api_config():
     return datos.get("dte_api", {})
 
 
-def _post_dte(url: str, token: str, data: dict) -> dict:
+def _post_dte(url: str, token: str, jws_token: str) -> dict:
     headers = {"Content-Type": "application/json"}
     if token:
-        headers["Authorization"] = f"Bearer {token}"
-    resp = requests.post(url, json=data, headers=headers, timeout=20)
+        headers["Authorization"] = f"FIRMANTE {token}"
+    payload = {"dte": jws_token}
+    resp = requests.post(url, json=payload, headers=headers, timeout=20)
     resp.raise_for_status()
     try:
         return resp.json()
@@ -289,20 +336,21 @@ def transmitir_dte(
         dte_data = generar_ticket_json(db, venta_id)
     else:
         dte_data = generar_dte_json(db, venta_id)
-    url = config.get("url")
-    token = config.get("token")
-    if not url:
-        raise ValueError("URL de API no configurada")
+    validate_dte_json(dte_data)
+    url = config.get("url") or "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    cert, key, phrase = jws.get_cert_config()
+    signed = jws.sign_json(dte_data, cert, phrase, key)
+    token = jws.create_auth_jwt("inventario", cert, phrase, key)
 
     try:
-        respuesta = _post_dte(url, token, dte_data)
+        respuesta = _post_dte(url, token, signed)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = respuesta.get("estado") or "Transmitido"
     except Exception:
         db.registrar_envio_dte(venta_id, modo, "Rechazado", "")
         raise
 
-    db.registrar_envio_dte(venta_id, modo, estado, sello)
+    db.registrar_envio_dte(venta_id, modo, estado, sello, json.dumps(respuesta, ensure_ascii=False))
     if sello:
         db.update_venta_extra(venta_id, {"selloRecibido": sello})
     return {"estado": estado, "sello": sello}
@@ -310,10 +358,11 @@ def transmitir_dte(
 
 def enviar_dte_a_hacienda(dte_json_firmado: dict) -> dict:
     """Envía un DTE firmado al entorno de pruebas de Hacienda."""
-    url = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
-    config = _load_dte_api_config()
-    token = config.get("token")
-    respuesta = _post_dte(url, token, dte_json_firmado)
+    url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    cert, key, phrase = jws.get_cert_config()
+    jws_token = jws.sign_json(dte_json_firmado, cert, phrase, key)
+    jwt_token = jws.create_auth_jwt("inventario", cert, phrase, key)
+    respuesta = _post_dte(url, jwt_token, jws_token)
     estado = respuesta.get("estado") or respuesta.get("estadoDte") or respuesta.get("descripcionEstado")
     if estado:
         respuesta["estado"] = estado

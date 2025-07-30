@@ -185,3 +185,34 @@ def test_get_cert_config_embedded(tmp_path, monkeypatch):
     )
     data = jwt.decode(token, public_pem, algorithms=["RS256"])
     assert data == payload
+
+
+def test_sign_json_adds_header(tmp_path):
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "SV")]))
+        .issuer_name(x509.Name([x509.NameAttribute(NameOID.COUNTRY_NAME, "SV")]))
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=1))
+        .sign(key, hashes.SHA256())
+    )
+    cert_pem = cert.public_bytes(serialization.Encoding.PEM)
+    key_pem = key.private_bytes(
+        serialization.Encoding.PEM,
+        serialization.PrivateFormat.TraditionalOpenSSL,
+        serialization.NoEncryption(),
+    )
+    cert_file = tmp_path / "cert.crt"
+    key_file = tmp_path / "key.pem"
+    cert_file.write_bytes(cert_pem)
+    key_file.write_bytes(key_pem)
+    payload = {"a": 1}
+    token = jws.sign_json(payload, str(cert_file), None, str(key_file))
+    header = jwt.get_unverified_header(token)
+    assert header["alg"] == "RS256"
+    assert header["typ"] == "JWT"
+    assert "x5c" in header
+

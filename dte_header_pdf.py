@@ -83,12 +83,10 @@ def generar_cabecera_dte(
     qr_x = 40 + box_w + col_margin + 3
     qr_y = box_y + (box_h - qr_size) / 2
     qr_value = build_qr_value(
+        1 if ambiente == "produccion" else 2,
         codigo_generacion,
+        tipo_dte,
         numero_control,
-        nit_emisor=nit_emisor,
-        tipo_dte=tipo_dte,
-        fecha_emision=fecha_emision,
-        ambiente=ambiente,
     )
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()

@@ -17,33 +17,23 @@ DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json
 
 
 def build_qr_value(
+    ambiente: int,
     codigo_generacion: str,
-    numero_control: str,
-    nit_emisor: str = "",
-    tipo_dte: str = "01",
-    ambiente: str = "pruebas",
-    fecha_emision: str | None = None,
-    total: float | None = None,
+    tipo_dte: str,
+    numero_documento: str,
 ) -> str:
     """Return the URL used for the DTE QR code."""
 
     base_url = (
-        "https://www.mh.gob.sv/consulta-dte"
-        if ambiente == "produccion"
-        else "https://sandbox.mh.gob.sv/consulta-dte"
+        "https://www.mh.gob.sv/consulta-dte" if ambiente == 1 else "https://sandbox.mh.gob.sv/consulta-dte"
     )
 
     params = {
-        "tipoDte": tipo_dte,
-        "numeroControl": numero_control,
+        "ambiente": ambiente,
         "codigoGeneracion": codigo_generacion,
+        "tipoDte": tipo_dte,
+        "numeroDocumento": numero_documento,
     }
-    if nit_emisor:
-        params["nitEmisor"] = nit_emisor
-    if fecha_emision:
-        params["fechaEmision"] = fecha_emision
-    if total is not None:
-        params["montoTotal"] = f"{total:.2f}"
 
     return base_url + "?" + urlencode(params)
 
@@ -147,15 +137,11 @@ def generar_factura_electronica_pdf(
     # --- Código QR ---
     qr_x = x_margin + box_w + col_margin + 5
     qr_y = box_y + (box_h - qr_size) / 2
-    nit_emisor = datos_negocio.get("nit", "")
     qr_value = build_qr_value(
+        1 if ambiente == "produccion" else 2,
         codigo_generacion,
+        "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03",
         numero_control,
-        nit_emisor=nit_emisor,
-        tipo_dte="01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03",
-        fecha_emision=venta.get("fecha"),
-        total=venta.get("total"),
-        ambiente=ambiente,
     )
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()

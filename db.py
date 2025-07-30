@@ -280,6 +280,7 @@ class DB:
                 estado TEXT,
                 sello TEXT,
                 fecha_hora TEXT,
+                respuesta TEXT,
 
                 FOREIGN KEY (venta_id) REFERENCES ventas(id)
             )
@@ -1432,15 +1433,16 @@ class DB:
                     pass
         return rows
 
-    def registrar_envio_dte(self, venta_id, modo, estado, sello):
+    def registrar_envio_dte(self, venta_id, modo, estado, sello, respuesta_json=""):
         """Guarda un registro del estado de transmisión de un DTE."""
+        self.ensure_column("dte_envios", "respuesta", "TEXT")
         fecha_hora = datetime.now().isoformat()
         self.cursor.execute(
             """
-            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (venta_id, modo, estado, sello, fecha_hora),
+            (venta_id, modo, estado, sello, fecha_hora, respuesta_json),
         )
         self.conn.commit()
 

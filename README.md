@@ -99,6 +99,26 @@ Para firmar electrónicamente los DTE define los archivos de firma en
 }
 ```
 
+Para diferenciar entre los ambientes de pruebas y producción de Hacienda,
+configura el campo `ambiente` y las URLs en `config_negocio.json`:
+
+```json
+{
+  "ambiente": "pruebas",
+  "auth_url": {
+    "pruebas": "https://apifacturatest.mh.gob.sv/auth",
+    "produccion": "https://api.factura.gob.sv/auth"
+  },
+  "recepcion_url": {
+    "pruebas": "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte",
+    "produccion": "https://api.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+  }
+}
+```
+
+Al cambiar `ambiente` a `produccion` la aplicación utilizará los servicios
+productivos.
+
 La contraseña puede dejarse vacía si la clave privada no está cifrada. Al
 generar facturas o tickets se creará junto al PDF un archivo `.jws` con el JSON
 firmado.
@@ -109,8 +129,6 @@ otros parámetros dentro de `datos_negocio.json` bajo el bloque `dte_api`:
 ```json
 {
   "dte_api": {
-    "url": "https://api.hacienda.test/dtes",
-    "ambiente": "pruebas",
     "token": "TOKEN",
     "prefijo_control": "DTE-01-S001P001",
     "modo_transmision": "1 - Normal"

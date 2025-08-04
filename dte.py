@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP, getcontext
 from db import DB
 import requests
 from utils import jws
+import auth
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -340,7 +341,7 @@ def transmitir_dte(
     url = config.get("url") or "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
     cert, key, phrase = jws.get_cert_config()
     signed = jws.sign_json(dte_data, cert, phrase, key)
-    token = jws.create_auth_jwt("inventario", cert, phrase, key)
+    token = auth.get_token()
 
     try:
         respuesta = _post_dte(url, token, signed)

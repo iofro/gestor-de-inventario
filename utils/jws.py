@@ -2,12 +2,14 @@ import os
 import json
 import base64
 import time
+import subprocess
 from cryptography.hazmat.primitives.serialization import (
     pkcs12,
     Encoding,
     PrivateFormat,
     NoEncryption,
     load_pem_private_key,
+    PublicFormat,
 )
 from cryptography import x509
 try:
@@ -107,6 +109,32 @@ def _load_p12_key_bytes(data: bytes, password: str | None):
     return key
 
 
+def sign_jwt(payload: dict, key_pem: bytes, cert_der: bytes | None = None) -> str:
+    """Sign ``payload`` using RS512 and return a JWT."""
+    header = {"alg": "RS512", "typ": "JWT"}
+    if cert_der:
+        header["x5c"] = [base64.b64encode(cert_der).decode()]
+    return jwt.encode(payload, key_pem, algorithm="RS512", headers=header)
+
+
+def sign_with_container(payload: dict, p12_path: str, password: str | None = None) -> str:
+    """Sign ``payload`` using external ``svfe-api-firmador`` container.
+
+    The container should read data from STDIN and output the signed token to
+    STDOUT. ``password`` is passed as an optional argument.
+    """
+    cmd = ["svfe-api-firmador", p12_path]
+    if password:
+        cmd.append(password)
+    proc = subprocess.run(
+        cmd,
+        input=json.dumps(payload).encode(),
+        capture_output=True,
+        check=True,
+    )
+    return proc.stdout.decode().strip()
+
+
 def sign_json(
     payload: dict,
     cert_path: str | None = None,
@@ -114,6 +142,21 @@ def sign_json(
     key_path: str | None = None,
 ) -> str:
     """Return a JWS token (compact serialization) for ``payload``."""
+    if cert_path and isinstance(cert_path, str) and cert_path.lower().endswith(".p12") and not key_path:
+        try:
+            return sign_with_container(payload, cert_path, password)
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            # fallback to local signing
+            key = _load_p12_key(cert_path, password)
+            with open(cert_path, "rb") as fh:
+                cert_data = fh.read()
+            _k, cert_obj, _ = pkcs12.load_key_and_certificates(
+                cert_data, password.encode() if password else None
+            )
+            cert_bytes = cert_obj.public_bytes(Encoding.DER) if cert_obj else None
+            pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
+            return sign_jwt(payload, pem, cert_bytes)
+
     if key_path:
         if isinstance(key_path, bytes):
             key_bytes = key_path
@@ -148,11 +191,7 @@ def sign_json(
         raise ValueError("Missing certificate information")
 
     pem = key.private_bytes(Encoding.PEM, PrivateFormat.PKCS8, NoEncryption())
-    header = {"alg": "RS256", "typ": "JWT"}
-    if cert_bytes:
-        header["x5c"] = [base64.b64encode(cert_bytes).decode()]
-    token = jwt.encode(payload, pem, algorithm="RS256", headers=header)
-    return token
+    return sign_jwt(payload, pem, cert_bytes)
 
 
 def sign_and_save(
@@ -183,3 +222,17 @@ def create_auth_jwt(
         "exp": int(time.time()) + 300,
     }
     return sign_json(payload, cert_path, password, key_path)
+
+
+def verify_jws(token: str, cert_path: str) -> dict:
+    """Verify ``token`` using a public certificate located at ``cert_path``."""
+    with open(cert_path, "rb") as fh:
+        cert_data = fh.read()
+    try:
+        cert = x509.load_pem_x509_certificate(cert_data)
+        public_pem = cert.public_key().public_bytes(
+            Encoding.PEM, PublicFormat.SubjectPublicKeyInfo
+        )
+    except ValueError:
+        public_pem = cert_data
+    return jwt.decode(token, public_pem, algorithms=["RS512"])

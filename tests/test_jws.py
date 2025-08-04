@@ -1,5 +1,8 @@
 import json
+import json
+import json
 import base64
+from pathlib import Path
 from utils import jws
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization, hashes
@@ -8,6 +11,9 @@ from cryptography import x509
 from cryptography.x509.oid import NameOID
 import datetime
 import jwt
+
+
+FIXTURES = Path(__file__).parent / "fixtures"
 
 
 def create_p12(path, password):
@@ -103,7 +109,7 @@ def test_sign_and_save_pem(tmp_path, monkeypatch):
         serialization.Encoding.PEM,
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    data = jwt.decode(token, public_pem, algorithms=["RS256"])
+    data = jwt.decode(token, public_pem, algorithms=["RS512"])
     assert data == payload
 
 
@@ -140,7 +146,7 @@ def test_sign_and_save_p12(tmp_path, monkeypatch):
         serialization.Encoding.PEM,
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    data = jwt.decode(token, public_pem, algorithms=["RS256"])
+    data = jwt.decode(token, public_pem, algorithms=["RS512"])
     assert data == payload
 
 
@@ -183,7 +189,7 @@ def test_get_cert_config_embedded(tmp_path, monkeypatch):
         serialization.Encoding.PEM,
         serialization.PublicFormat.SubjectPublicKeyInfo,
     )
-    data = jwt.decode(token, public_pem, algorithms=["RS256"])
+    data = jwt.decode(token, public_pem, algorithms=["RS512"])
     assert data == payload
 
 
@@ -212,7 +218,17 @@ def test_sign_json_adds_header(tmp_path):
     payload = {"a": 1}
     token = jws.sign_json(payload, str(cert_file), None, str(key_file))
     header = jwt.get_unverified_header(token)
-    assert header["alg"] == "RS256"
+    assert header["alg"] == "RS512"
     assert header["typ"] == "JWT"
     assert "x5c" in header
+
+
+def test_verify_jws(tmp_path):
+    payload = {"hello": "world"}
+    private_key = (FIXTURES / "private.pem").read_bytes()
+    token = jws.sign_jwt(payload, private_key)
+    data = jws.verify_jws(token, str(FIXTURES / "public.pem"))
+    assert data == payload
+    header = jwt.get_unverified_header(token)
+    assert header["alg"] == "RS512"
 

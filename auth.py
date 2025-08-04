@@ -80,8 +80,8 @@ def _get_auth_url() -> str:
         with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
             data = json.load(fh)
         ambiente = data.get("ambiente", "pruebas")
-        urls = data.get("auth_url", {})
-        url = urls.get(ambiente) if isinstance(urls, dict) else urls
+        env_conf = data.get(ambiente, {})
+        url = env_conf.get("auth_url")
         return url or DEFAULT_AUTH_URL
     except Exception:
         return DEFAULT_AUTH_URL

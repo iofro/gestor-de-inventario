@@ -356,11 +356,29 @@ def _load_dte_api_config():
         with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             data = json.load(fh)
         ambiente = data.get("ambiente", "pruebas")
-        urls = data.get("recepcion_url", {})
-        url = urls.get(ambiente) if isinstance(urls, dict) else urls
+        env_conf = data.get(ambiente, {})
+        url = env_conf.get("recepcion_url")
         return {"ambiente": ambiente, "url": url}
     except Exception:
         return {}
+
+
+def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
+    """Guarda el JSON original y el JWS en ``/dtes/{anio}/``."""
+    try:
+        fecha = dte_data.get("identificacion", {}).get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
+        year = str(fecha)[:4]
+        base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
+        os.makedirs(base_dir, exist_ok=True)
+        nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        json_path = os.path.join(base_dir, f"{nombre}.json")
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump(dte_data, fh, ensure_ascii=False)
+        jws_path = os.path.join(base_dir, f"{nombre}.jws")
+        with open(jws_path, "w", encoding="utf-8") as fh:
+            fh.write(jws_token)
+    except Exception:
+        pass
 
 
 def _post_dte(url: str, token: str, jws_token: str) -> dict:
@@ -397,6 +415,7 @@ def transmitir_dte(
     url = config.get("url") or DEFAULT_RECEPCION_URL
     cert, key, phrase = jws.get_cert_config()
     signed = jws.sign_json(dte_data, cert, phrase, key)
+    _save_signed_dte(dte_data, signed)
     token = auth.get_token()
 
     try:

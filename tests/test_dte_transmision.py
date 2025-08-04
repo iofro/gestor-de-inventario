@@ -1,5 +1,5 @@
 from db import DB
-from dte import transmitir_dte
+from dte import transmitir_dte, _post_dte
 import json
 
 
@@ -42,13 +42,10 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
                 pass
         return R()
 
-    from dte import _post_dte
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {
-        "dte_api": {"url": "http://example.com", "ambiente": "pruebas", "token": "t"}
-    }
-    with open("datos_negocio.json", "w", encoding="utf-8") as fh:
+    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
+    with open("config_negocio.json", "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     res = transmitir_dte(db, venta)
@@ -58,3 +55,28 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     ).fetchone()
     assert row["estado"] == "Transmitido"
     assert row["sello"] == "ABC123"
+
+
+def test_post_dte_uses_bearer(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        captured["headers"] = headers
+        class R:
+            status_code = 200
+            def json(self):
+                return {}
+            def raise_for_status(self):
+                pass
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    _post_dte("http://example.com", "TOKEN", "SIGNED")
+    assert captured["headers"]["Authorization"] == "Bearer TOKEN"
+
+
+def test_consultar_envio_dte():
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(venta, "normal", "Transmitido", "S", '{"ok": true}')
+    assert db.consultar_envio_dte(venta) == {"ok": True}

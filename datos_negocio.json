@@ -29,6 +29,17 @@
   "email_usuario": "contacto@tiendademo.com",
   "email_contrasena": "",
   "dte_api": {
-    "url": "https://api.hacienda.test/dtes",
+    "url": "",
     "ambiente": "pruebas",
-    "token": ""
+    "token": "",
+    "prefijo_control": "DTE-01-S001P001",
+    "modo_transmision": "1 - Normal",
+    "envio_automatico": true,
+    "adjuntar_json_correo": true,
+    "incluir_sello_pdf": true,
+    "guardar_respuesta": true,
+    "tipo_contribuyente": "Persona Jurídica"
+  },
+  "default_email_subject": "hola",
+  "default_email_body": "factura de compra"
+}

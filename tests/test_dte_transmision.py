@@ -1,6 +1,7 @@
 from db import DB
 from dte import transmitir_dte, _post_dte
 import json
+from datetime import datetime
 
 
 def create_sale(db):
@@ -44,7 +45,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
+    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
     with open("config_negocio.json", "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
@@ -80,3 +81,15 @@ def test_consultar_envio_dte():
     venta = create_sale(db)
     db.registrar_envio_dte(venta, "normal", "Transmitido", "S", '{"ok": true}')
     assert db.consultar_envio_dte(venta) == {"ok": True}
+
+
+def test_listar_dtes():
+    db = DB(":memory:")
+    v1 = create_sale(db)
+    v2 = create_sale(db)
+    db.registrar_envio_dte(v1, "normal", "Transmitido", "S")
+    db.registrar_envio_dte(v2, "normal", "Rechazado", "")
+    today = datetime.now().date().isoformat()
+    rows = db.listar_dtes(today, today, "Transmitido")
+    assert len(rows) == 1
+    assert rows[0]["estado"] == "Transmitido"

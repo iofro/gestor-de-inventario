@@ -84,11 +84,14 @@ def test_sign_and_save_pem(tmp_path, monkeypatch):
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(
             {
-                "firma_electronica": {
-                    "certificado": str(cert_path),
-                    "clave_privada": str(key_path),
-                    "frase_acceso": base64.b64encode(password.encode()).decode(),
-                }
+                "ambiente": "pruebas",
+                "pruebas": {
+                    "firma_electronica": {
+                        "certificado": str(cert_path),
+                        "clave_privada": str(key_path),
+                        "frase_acceso": base64.b64encode(password.encode()).decode(),
+                    }
+                },
             },
             fh,
         )
@@ -162,13 +165,16 @@ def test_get_cert_config_embedded(tmp_path, monkeypatch):
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(
             {
-                "firma_electronica": {
-                    "certificado": "",
-                    "clave_privada": "",
-                    "frase_acceso": base64.b64encode(password.encode()).decode(),
-                    "certificado_data": base64.b64encode(cert_data).decode(),
-                    "clave_privada_data": base64.b64encode(key_data).decode(),
-                }
+                "ambiente": "pruebas",
+                "pruebas": {
+                    "firma_electronica": {
+                        "certificado": "",
+                        "clave_privada": "",
+                        "frase_acceso": base64.b64encode(password.encode()).decode(),
+                        "certificado_data": base64.b64encode(cert_data).decode(),
+                        "clave_privada_data": base64.b64encode(key_data).decode(),
+                    }
+                },
             },
             fh,
         )

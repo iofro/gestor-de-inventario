@@ -25,6 +25,13 @@ CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "
 
 def _get_ambiente() -> str:
     """Return configured DTE environment or ``"pruebas"`` by default."""
+    if os.path.exists(CONFIG_NEGOCIO_PATH):
+        try:
+            with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            return data.get("ambiente", "pruebas").lower()
+        except Exception:
+            pass
     if os.path.exists(DATOS_NEGOCIO_PATH):
         try:
             with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
@@ -43,7 +50,8 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            fe = data.get("firma_electronica", {})
+            ambiente = data.get("ambiente", "pruebas")
+            fe = data.get(ambiente, {}).get("firma_electronica", {})
             cert = fe.get("certificado")
             key = fe.get("clave_privada")
             cert_data_b64 = fe.get("certificado_data")

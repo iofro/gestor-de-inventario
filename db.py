@@ -1460,6 +1460,24 @@ class DB:
         except Exception:
             return {}
 
+    def listar_dtes(self, fecha_inicio=None, fecha_fin=None, estado=None):
+        """Lista registros de ``dte_envios`` filtrando por fecha y estado."""
+        self.ensure_column("dte_envios", "respuesta", "TEXT")
+        query = "SELECT * FROM dte_envios WHERE 1=1"
+        params = []
+        if fecha_inicio:
+            query += " AND date(fecha_hora) >= date(?)"
+            params.append(fecha_inicio)
+        if fecha_fin:
+            query += " AND date(fecha_hora) <= date(?)"
+            params.append(fecha_fin)
+        if estado:
+            query += " AND estado = ?"
+            params.append(estado)
+        query += " ORDER BY fecha_hora"
+        self.cursor.execute(query, params)
+        return [dict(row) for row in self.cursor.fetchall()]
+
     def update_venta_extra(self, venta_id, extra_dict):
         """Actualiza el campo ``extra`` de la venta, fusionando los datos."""
         self.ensure_column("ventas", "extra", "TEXT")

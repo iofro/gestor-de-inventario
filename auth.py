@@ -6,7 +6,7 @@ from typing import Optional, Tuple
 
 import requests
 
-TOKEN_URL = "https://apifacturatest.mh.gob.sv/auth"
+DEFAULT_AUTH_URL = "https://apifacturatest.mh.gob.sv/auth"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DB_PATH = os.path.join(os.path.dirname(__file__), "inventario.db")
 
@@ -74,11 +74,25 @@ def _get_credentials() -> Tuple[str, str]:
     return nit, pwd
 
 
+def _get_auth_url() -> str:
+    """Obtiene la URL de autenticación según el ambiente configurado."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        ambiente = data.get("ambiente", "pruebas")
+        urls = data.get("auth_url", {})
+        url = urls.get(ambiente) if isinstance(urls, dict) else urls
+        return url or DEFAULT_AUTH_URL
+    except Exception:
+        return DEFAULT_AUTH_URL
+
+
 def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, float]:
     """Solicita un nuevo token de acceso a la API."""
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {"user": nit, "pwd": pwd}
-    resp = requests.post(TOKEN_URL, data=data, headers=headers, timeout=20)
+    url = _get_auth_url()
+    resp = requests.post(url, data=data, headers=headers, timeout=20)
     resp.raise_for_status()
     info = resp.json()
     token = info.get("access_token")

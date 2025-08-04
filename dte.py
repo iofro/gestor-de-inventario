@@ -13,6 +13,8 @@ from jsonschema import validate as _jsonschema_validate
 from utils import catalogos
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
+DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
 
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
@@ -349,14 +351,22 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
 
 
 def _load_dte_api_config():
-    datos = _load_datos_negocio()
-    return datos.get("dte_api", {})
+    """Lee configuración de URLs y ambiente desde ``config_negocio.json``."""
+    try:
+        with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        ambiente = data.get("ambiente", "pruebas")
+        urls = data.get("recepcion_url", {})
+        url = urls.get(ambiente) if isinstance(urls, dict) else urls
+        return {"ambiente": ambiente, "url": url}
+    except Exception:
+        return {}
 
 
 def _post_dte(url: str, token: str, jws_token: str) -> dict:
     headers = {"Content-Type": "application/json"}
     if token:
-        headers["Authorization"] = f"FIRMANTE {token}"
+        headers["Authorization"] = f"Bearer {token}"
     payload = {"dte": jws_token}
     resp = requests.post(url, json=payload, headers=headers, timeout=20)
     resp.raise_for_status()
@@ -384,7 +394,7 @@ def transmitir_dte(
     else:
         dte_data = generar_dte_json(db, venta_id)
     validate_dte_json(dte_data)
-    url = config.get("url") or "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    url = config.get("url") or DEFAULT_RECEPCION_URL
     cert, key, phrase = jws.get_cert_config()
     signed = jws.sign_json(dte_data, cert, phrase, key)
     token = auth.get_token()

@@ -1,11 +1,20 @@
 {
   "firma_electronica": {
-    "certificado": "C:/Users/ariel/Desktop/repositorio de github/Certificado_1324030479101.crt",
-    "clave_privada": "C:/Users/ariel/Desktop/repositorio de github/PrivateKey_007989352.key",
-    "llave_publica": "C:/Users/ariel/Desktop/repositorio de github/PublicteKey_007989352.key",
-    "frase_acceso": "RXhpdG9leGl0bzEu",
-    "certificado_data": "eyJzdGF0dXMiOiJFUlJPUiIsImJvZHkiOnsiY29kaWdvIjoiODAxIiwibWVuc2FqZSI6Ik5vIGV4aXN0ZSBjZXJ0aWZpY2FkbyBhY3Rpdm8ifX0=",
-    "clave_privada_data": "eyJzdGF0dXMiOiJFUlJPUiIsImJvZHkiOiI4MTMifQ==",
-    "llave_publica_data": "eyJzdGF0dXMiOiJFUlJPUiIsImJvZHkiOiI4MTMifQ=="
+    "certificado": "",
+    "clave_privada": "",
+    "frase_acceso": "",
+    "certificado_data": "",
+    "clave_privada_data": "",
+    "llave_publica": "",
+    "llave_publica_data": ""
+  },
+  "ambiente": "pruebas",
+  "auth_url": {
+    "pruebas": "https://apifacturatest.mh.gob.sv/auth",
+    "produccion": "https://api.factura.gob.sv/auth"
+  },
+  "recepcion_url": {
+    "pruebas": "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte",
+    "produccion": "https://api.dtes.mh.gob.sv/recepciondte/api/recepciondte"
   }
 }

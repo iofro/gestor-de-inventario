@@ -1446,6 +1446,20 @@ class DB:
         )
         self.conn.commit()
 
+    def consultar_envio_dte(self, venta_id):
+        """Devuelve el JSON almacenado en ``dte_envios.respuesta``."""
+        self.ensure_column("dte_envios", "respuesta", "TEXT")
+        row = self.cursor.execute(
+            "SELECT respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+            (venta_id,),
+        ).fetchone()
+        if not row or not row[0]:
+            return {}
+        try:
+            return json.loads(row[0])
+        except Exception:
+            return {}
+
     def update_venta_extra(self, venta_id, extra_dict):
         """Actualiza el campo ``extra`` de la venta, fusionando los datos."""
         self.ensure_column("ventas", "extra", "TEXT")

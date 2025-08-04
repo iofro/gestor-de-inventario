@@ -174,7 +174,7 @@ class SalesTab(QWidget):
 
         btn_layout = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar y enviar")
-        self.btn_enviar = QPushButton("Enviar por correo")
+        self.btn_enviar = QPushButton("Solo enviar por correo")
         btn_layout.addWidget(self.btn_guardar)
         btn_layout.addWidget(self.btn_enviar)
         self.btn_guardar.clicked.connect(self.save_and_send)
@@ -711,6 +711,9 @@ class SalesTab(QWidget):
         except Exception as e:
             QMessageBox.warning(self, "Enviar a Hacienda", str(e))
 
+        # Después de guardar y transmitir, también enviar por correo
+        self.send_email()
+
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""
         if self.sales_table.currentRow() < 0:
@@ -787,14 +790,14 @@ class SalesTab(QWidget):
     def send_email(self):
         """Send the selected document via email in a background thread."""
         if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(self, "Enviar por correo", "No has seleccionado ninguna venta.")
+            QMessageBox.warning(self, "Solo enviar por correo", "No has seleccionado ninguna venta.")
             return
 
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
-            QMessageBox.warning(self, "Enviar por correo", "No se encontró la venta seleccionada.")
+            QMessageBox.warning(self, "Solo enviar por correo", "No se encontró la venta seleccionada.")
             return
 
         cliente_email = ""
@@ -803,7 +806,7 @@ class SalesTab(QWidget):
             if cli:
                 cliente_email = cli.get("email", "")
         if not cliente_email:
-            QMessageBox.warning(self, "Enviar por correo", "El cliente no tiene correo registrado.")
+            QMessageBox.warning(self, "Solo enviar por correo", "El cliente no tiene correo registrado.")
             return
 
         subject = self.email_subject_edit.text().strip()
@@ -821,7 +824,7 @@ class SalesTab(QWidget):
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_ticket_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
-            QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el documento.")
+            QMessageBox.warning(self, "Solo enviar por correo", "No se pudo generar el documento.")
             return
         json_path = os.path.splitext(pdf_path)[0] + ".json"
         if not os.path.exists(json_path):
@@ -831,7 +834,7 @@ class SalesTab(QWidget):
                 pdf_path = self._generate_invoice_pdf(venta_id)
             json_path = os.path.splitext(pdf_path)[0] + ".json"
             if not os.path.exists(json_path):
-                QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON firmado.")
+                QMessageBox.warning(self, "Solo enviar por correo", "No se encontró el JSON firmado.")
                 return
 
         creds = {}
@@ -846,7 +849,7 @@ class SalesTab(QWidget):
         user = creds.get("email_usuario")
         password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
         if not all([server, port, user, password]):
-            QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
+            QMessageBox.warning(self, "Solo enviar por correo", "Credenciales SMTP incompletas.")
             return
 
         body += (
@@ -874,11 +877,11 @@ class SalesTab(QWidget):
         if success:
             self.status_label.setText("Estado actual: Enviado")
             self.sent_label.setText("Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M"))
-            QMessageBox.information(self, "Enviar por correo", message)
+            QMessageBox.information(self, "Solo enviar por correo", message)
             self.retry_btn.setEnabled(False)
         else:
             self.status_label.setText("Estado actual: Error")
-            QMessageBox.critical(self, "Enviar por correo", message)
+            QMessageBox.critical(self, "Solo enviar por correo", message)
             self.retry_btn.setEnabled(True)
         self.email_thread = None
 

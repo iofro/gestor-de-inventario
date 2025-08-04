@@ -7,6 +7,10 @@ from db import DB
 import requests
 from utils import jws
 import auth
+import json
+import os
+from jsonschema import validate as _jsonschema_validate
+from utils import catalogos
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -222,15 +226,21 @@ def validate_dte_json(data: dict) -> None:
     items_total = Decimal("0")
     for item in cuerpo:
         cantidad = Decimal(str(item.get("cantidad", 0)))
-        precio = Decimal(str(item.get("precioUnitario", 0)))
+        precio = Decimal(str(item.get("precioUnitario", item.get("precioUni", 0))))
         item["cantidad"] = float(cantidad.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
-        item["precioUnitario"] = float(precio.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
+        precio_key = "precioUnitario" if "precioUnitario" in item else "precioUni"
+        item[precio_key] = float(precio.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
         items_total += cantidad * precio
 
     resumen = data.get("resumen", {})
     for k, v in resumen.items():
-        if isinstance(v, (int, float, str)):
+        if isinstance(v, (int, float)):
             resumen[k] = _round(v, 2)
+        elif isinstance(v, str):
+            try:
+                resumen[k] = _round(float(v), 2)
+            except Exception:
+                pass
 
     sumas = Decimal(str(resumen.get("sumas", 0)))
     descuentos = Decimal(str(resumen.get("descuentos", 0)))
@@ -254,6 +264,42 @@ def validate_dte_json(data: dict) -> None:
         print(
             f"Advertencia: el total a pagar {total:.2f} difiere del subtotal calculado {calc_sub:.2f}"
         )
+
+    # --- Catálogo validations ---
+    ident = data.get("identificacion", {})
+    tipo_dte = ident.get("tipoDte")
+    if tipo_dte not in catalogos.TIPOS_DTE:
+        raise ValueError("Código de tipoDte inválido")
+
+    # Modelo de facturación / tipo de operación
+    modelo_val = ident.get("tipoModelo") or ident.get("modeloFacturacion")
+    try:
+        modelo_cod = int(str(modelo_val).split("-")[0].strip())
+    except Exception:
+        raise ValueError("Modelo de facturación inválido")
+    if modelo_cod not in catalogos.MODELOS_FACTURACION:
+        raise ValueError("Modelo de facturación inválido")
+    ident["tipoModelo"] = modelo_cod
+
+    oper_val = ident.get("tipoOperacion") or ident.get("tipoTransmision")
+    try:
+        oper_cod = int(str(oper_val).split("-")[0].strip())
+    except Exception:
+        raise ValueError("Tipo de operación inválido")
+    ident["tipoOperacion"] = oper_cod
+
+    # Validación de longitud de NIT
+    for parte in ("emisor", "receptor"):
+        nit = data.get(parte, {}).get("nit")
+        if nit and len(nit.replace("-", "")) != catalogos.NIT_LENGTH:
+            raise ValueError(f"NIT inválido en {parte}")
+
+    # --- Schema validation ---
+    schema_path = catalogos.SCHEMA_MAP.get(tipo_dte)
+    if schema_path and os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = json.load(fh)
+        _jsonschema_validate(instance=data, schema=schema)
 
 
 def generar_ticket_json(

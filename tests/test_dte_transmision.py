@@ -31,6 +31,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     monkeypatch.setattr("utils.jws.sign_json", lambda data, cert, p, key: "SIGNED")
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
 
     def fake_post(url, json=None, headers=None, timeout=20):
         class R:

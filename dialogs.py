@@ -2416,7 +2416,6 @@ class DistribuidorInfoDialog(QDialog):
             ("Email:", distribuidor.get("email", "")),
             ("Cargo:", distribuidor.get("cargo", "")),
             ("Sucursal/Laboratorio:", distribuidor.get("sucursal", "")),
-            ("Comisión base:", str(distribuidor.get("comision_base", ""))),
             ("Fecha de inicio:", distribuidor.get("fecha_inicio", "")),
             ("Dirección:", distribuidor.get("direccion", "")),
             ("Departamento:", distribuidor.get("departamento", "")),

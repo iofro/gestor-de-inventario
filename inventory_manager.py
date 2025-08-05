@@ -11,8 +11,14 @@ logger = logging.getLogger(__name__)
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 class InventoryManager:
-    def __init__(self):
+    def __init__(self, page_size=50):
         self.db = DB()
+        self.page_size = page_size
+        self.current_page = 0
+        self._filter_vendedor_id = None
+        self._filter_Distribuidor_id = None
+        self._filter_search = ""
+        self._model = None
         self.refresh_data()
 
     def refresh_data(self):
@@ -21,8 +27,9 @@ class InventoryManager:
         self._vendedor_name_to_id = {vend["nombre"]: vend["id"] for vend in self._vendedores}
         self._Distribuidor_name_to_id = {dist["nombre"]: dist["id"] for dist in self._Distribuidores}
         self._products = self.db.get_productos()
+
         self._clientes = self.db.get_clientes()
-        self._model = ProductTableModel(self._products, self._vendedores, self._Distribuidores)
+        self.load_page(self.current_page)
 
     def get_vendedor_names(self):
         return [vend["nombre"] for vend in self._vendedores]
@@ -30,23 +37,64 @@ class InventoryManager:
     def get_Distribuidor_names(self):
         return [dist["nombre"] for dist in self._Distribuidores]
 
-    def add_producto(self, nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
-        self.db.add_producto(nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
-        self.refresh_data()
+    def add_producto(
+        self,
+        nombre,
+        codigo,
+        vendedor_id,
+        Distribuidor_id,
+        precio_compra,
+        precio_venta_minorista,
+        precio_venta_mayorista,
+        stock,
+    ):
+        self.db.add_producto(
+            nombre,
+            codigo,
+            vendedor_id,
+            Distribuidor_id,
+            precio_compra,
+            precio_venta_minorista,
+            precio_venta_mayorista,
+            stock,
+        )
+        self.load_page(self.current_page)
 
-    def edit_producto(self, producto_id, nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
-        self.db.edit_producto(producto_id, nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
-        self.refresh_data()
+    def edit_producto(
+        self,
+        producto_id,
+        nombre,
+        codigo,
+        vendedor_id,
+        Distribuidor_id,
+        precio_compra,
+        precio_venta_minorista,
+        precio_venta_mayorista,
+        stock,
+    ):
+        self.db.edit_producto(
+            producto_id,
+            nombre,
+            codigo,
+            vendedor_id,
+            Distribuidor_id,
+            precio_compra,
+            precio_venta_minorista,
+            precio_venta_mayorista,
+            stock,
+        )
+        self.load_page(self.current_page)
 
     def delete_producto(self, producto_id):
         self.db.delete_producto(producto_id)
-        self.refresh_data()
+        self.load_page(self.current_page)
 
     def filter_products(self, vendedor_nombre=None, Distribuidor_nombre=None, search=""):
         vendedor_id = self._vendedor_name_to_id.get(vendedor_nombre) if vendedor_nombre else None
         Distribuidor_id = self._Distribuidor_name_to_id.get(Distribuidor_nombre) if Distribuidor_nombre else None
         self._products = self.db.get_productos(vendedor_id=vendedor_id, Distribuidor_id=Distribuidor_id, search=search)
         self._model.update_data(self._products)
+
 
     def get_products_model(self):
         return self._model

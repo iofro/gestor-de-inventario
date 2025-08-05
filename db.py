@@ -512,9 +512,22 @@ class DB:
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
 
     # CRUD Distribuidores
-    def add_Distribuidor(self, nombre):
+    def add_Distribuidor(self, nombre, commit: bool = True):
+        """Insert a new distributor.
+
+        Parameters
+        ----------
+        nombre: str
+            Distributor name.
+        commit: bool, optional
+            If ``True`` (default) the change is committed immediately.  When
+            executing inside a larger transaction set this to ``False`` to
+            defer the commit.
+        """
+
         self.cursor.execute("INSERT INTO Distribuidores (nombre) VALUES (?)", (nombre,))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_Distribuidores(self):
         self.cursor.execute("SELECT * FROM Distribuidores")
@@ -535,7 +548,21 @@ class DB:
             logger.exception("Error al eliminar Distribuidor: %s", e)
 
     # CRUD VENDEDORES (antes vendedores)
-    def add_vendedor(self, nombre, descripcion="", Distribuidor_id=None, codigo=None, dui=None):
+    def add_vendedor(
+        self,
+        nombre,
+        descripcion: str = "",
+        Distribuidor_id=None,
+        codigo=None,
+        dui=None,
+        commit: bool = True,
+    ):
+        """Insert a new vendor.
+
+        ``commit`` can be set to ``False`` when called inside an existing
+        transaction to avoid committing after each insertion.
+        """
+
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
         self.cursor.execute(
@@ -543,7 +570,8 @@ class DB:
             (codigo, nombre, dui, descripcion, Distribuidor_id),
 
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_vendedores(self):
         self.cursor.execute("SELECT * FROM vendedores")
@@ -568,13 +596,34 @@ class DB:
             logger.exception("Error al eliminar vendedor: %s", e)
 
     # CRUD PRODUCTOS
-    def add_producto(self, nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
+    def add_producto(
+        self,
+        nombre,
+        codigo,
+        vendedor_id,
+        Distribuidor_id,
+        precio_compra,
+        precio_venta_minorista,
+        precio_venta_mayorista,
+        stock,
+        commit: bool = True,
+    ):
+        """Insert a product into the database.
+
+        Parameters
+        ----------
+        commit: bool, optional
+            If ``False`` the insertion is not committed immediately.  This is
+            useful when the caller manages the transaction manually.
+        """
+
         # Elimina fecha_vencimiento del método y de la consulta
         self.cursor.execute(
             "INSERT INTO productos (nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_productos(
         self,
@@ -964,7 +1013,21 @@ class DB:
         return [row["nombre"] for row in self.cursor.fetchall()]
 
     # CRUD CLIENTES
-    def add_cliente(self, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio, codigo=None):
+    def add_cliente(
+        self,
+        nombre,
+        nrc,
+        nit,
+        dui,
+        giro,
+        telefono,
+        email,
+        direccion,
+        departamento,
+        municipio,
+        codigo=None,
+        commit: bool = True,
+    ):
         if codigo is None:
             codigo = self.get_next_cliente_codigo()
         self.cursor.execute(
@@ -974,7 +1037,8 @@ class DB:
             """,
             (codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_next_cliente_codigo(self):
         self.cursor.execute("SELECT MAX(id) FROM clientes")
@@ -1182,7 +1246,7 @@ class DB:
         self.cursor.execute("DELETE FROM ventas_credito_fiscal")
         self.conn.commit()
 
-    def add_Distribuidor_detallado(self, data):
+    def add_Distribuidor_detallado(self, data, commit: bool = True):
         self.cursor.execute("""
             INSERT INTO Distribuidores (
                 codigo, nombre, telefono, email, cargo, sucursal,
@@ -1210,9 +1274,10 @@ class DB:
             data.get("cuenta_bancaria", ""),
             data.get("notas", "")
         ))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
-    def add_compra_detallada(self, data):
+    def add_compra_detallada(self, data, commit: bool = True):
         self.cursor.execute("""
             INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -1227,11 +1292,26 @@ class DB:
             data.get("comision_monto", 0),
             data.get("vendedor_id", None)
         ))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
         return self.cursor.lastrowid  # <-- RETORNA EL ID
 
-    def add_detalle_compra(self, compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento="",
-                           descuento=0, descuento_tipo="", iva=0, iva_tipo="", comision_pct=0, comision_monto=0, comision_tipo=""):
+    def add_detalle_compra(
+        self,
+        compra_id,
+        producto_id,
+        cantidad,
+        precio_unitario,
+        fecha_vencimiento="",
+        descuento=0,
+        descuento_tipo="",
+        iva=0,
+        iva_tipo="",
+        comision_pct=0,
+        comision_monto=0,
+        comision_tipo="",
+        commit: bool = True,
+    ):
         self.cursor.execute("""
             INSERT INTO detalles_compra (
                 compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
@@ -1241,15 +1321,26 @@ class DB:
             compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
             descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
         ))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
 
-    def add_movimiento(self, fecha, tipo, producto_id, cantidad, motivo="", usuario=""):
+    def add_movimiento(
+        self,
+        fecha,
+        tipo,
+        producto_id,
+        cantidad,
+        motivo="",
+        usuario="",
+        commit: bool = True,
+    ):
         self.cursor.execute("""
             INSERT INTO movimientos (fecha, tipo, producto_id, cantidad, motivo, usuario)
             VALUES (?, ?, ?, ?, ?, ?)
         """, (fecha, tipo, producto_id, cantidad, motivo, usuario))
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_movimientos(self):
         self.cursor.execute("SELECT * FROM movimientos")
@@ -1291,7 +1382,7 @@ class DB:
             ))
         self.conn.commit()
 
-    def add_trabajador(self, data):
+    def add_trabajador(self, data, commit: bool = True):
         codigo = data.get("codigo") or self.get_next_trabajador_codigo()
         self.cursor.execute(
             """
@@ -1316,7 +1407,8 @@ class DB:
                 1 if data.get("es_vendedor") else 0,
             ),
         )
-        self.conn.commit()
+        if commit:
+            self.conn.commit()
 
     def get_trabajadores(self, solo_vendedores=False, area=None, search=""):
         query = "SELECT * FROM trabajadores"

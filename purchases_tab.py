@@ -177,7 +177,12 @@ class PurchasesTab(QWidget):
                     if search not in nombres:
                         continue
             detalles_cache[c["id"]] = detalles_cache.get(c["id"], self.manager.db.get_detalles_compra(c["id"]))
-            comision_total = sum(float(d.get("comision_monto", 0)) for d in detalles_cache[c["id"]])
+            comision_total = 0.0
+            for d in detalles_cache[c["id"]]:
+                try:
+                    comision_total += float(d.get("comision_monto", 0))
+                except (TypeError, ValueError):
+                    continue
             rows.append((c, dist, vend, comision_total, detalles_cache[c["id"]]))
 
         self.table.setRowCount(len(rows))

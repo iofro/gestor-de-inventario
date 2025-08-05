@@ -26,10 +26,24 @@ class InventoryManager:
         self._Distribuidores = self.db.get_Distribuidores()
         self._vendedor_name_to_id = {vend["nombre"]: vend["id"] for vend in self._vendedores}
         self._Distribuidor_name_to_id = {dist["nombre"]: dist["id"] for dist in self._Distribuidores}
-        self._products = self.db.get_productos()
+        self._products = self.db.get_productos(
+            vendedor_id=self._filter_vendedor_id,
+            Distribuidor_id=self._filter_Distribuidor_id,
+            search=self._filter_search,
+        )
 
         self._clientes = self.db.get_clientes()
         self.load_page(self.current_page)
+
+    def load_page(self, page: int):
+        start = page * self.page_size
+        end = start + self.page_size
+        page_data = self._products[start:end]
+        if self._model is None:
+            self._model = ProductTableModel(page_data, self._vendedores, self._Distribuidores)
+        else:
+            self._model.update_data(page_data)
+        self.current_page = page
 
     def get_vendedor_names(self):
         return [vend["nombre"] for vend in self._vendedores]
@@ -92,9 +106,56 @@ class InventoryManager:
     def filter_products(self, vendedor_nombre=None, Distribuidor_nombre=None, search=""):
         vendedor_id = self._vendedor_name_to_id.get(vendedor_nombre) if vendedor_nombre else None
         Distribuidor_id = self._Distribuidor_name_to_id.get(Distribuidor_nombre) if Distribuidor_nombre else None
-        self._products = self.db.get_productos(vendedor_id=vendedor_id, Distribuidor_id=Distribuidor_id, search=search)
-        self._model.update_data(self._products)
+        changed = False
+        if vendedor_id != self._filter_vendedor_id:
+            self._filter_vendedor_id = vendedor_id
+            changed = True
+        if Distribuidor_id != self._filter_Distribuidor_id:
+            self._filter_Distribuidor_id = Distribuidor_id
+            changed = True
+        if search != self._filter_search:
+            self._filter_search = search
+            changed = True
+        if changed:
+            self._apply_filters()
 
+    def _apply_filters(self):
+        self._products = self.db.get_productos(
+            vendedor_id=self._filter_vendedor_id,
+            Distribuidor_id=self._filter_Distribuidor_id,
+            search=self._filter_search,
+        )
+        self.load_page(0)
+
+    @property
+    def filter_vendedor_id(self):
+        return self._filter_vendedor_id
+
+    @filter_vendedor_id.setter
+    def filter_vendedor_id(self, value):
+        if value != self._filter_vendedor_id:
+            self._filter_vendedor_id = value
+            self._apply_filters()
+
+    @property
+    def filter_Distribuidor_id(self):
+        return self._filter_Distribuidor_id
+
+    @filter_Distribuidor_id.setter
+    def filter_Distribuidor_id(self, value):
+        if value != self._filter_Distribuidor_id:
+            self._filter_Distribuidor_id = value
+            self._apply_filters()
+
+    @property
+    def filter_search(self):
+        return self._filter_search
+
+    @filter_search.setter
+    def filter_search(self, value):
+        if value != self._filter_search:
+            self._filter_search = value
+            self._apply_filters()
 
     def get_products_model(self):
         return self._model

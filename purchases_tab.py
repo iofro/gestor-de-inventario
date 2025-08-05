@@ -152,13 +152,15 @@ class PurchasesTab(QWidget):
         rows = []
         for c in compras:
             fecha = c.get("fecha")
-            try:
-                fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
-            except ValueError:
+            fdate = None
+            if isinstance(fecha, str):
                 try:
-                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
-                except ValueError:
-                    fdate = None
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
+                except (ValueError, TypeError):
+                    try:
+                        fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                    except (ValueError, TypeError):
+                        fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
             dist = Distribuidores.get(c.get("Distribuidor_id"), "")
@@ -177,7 +179,12 @@ class PurchasesTab(QWidget):
                     if search not in nombres:
                         continue
             detalles_cache[c["id"]] = detalles_cache.get(c["id"], self.manager.db.get_detalles_compra(c["id"]))
-            comision_total = sum(float(d.get("comision_monto", 0)) for d in detalles_cache[c["id"]])
+            comision_total = 0.0
+            for d in detalles_cache[c["id"]]:
+                try:
+                    comision_total += float(d.get("comision_monto", 0))
+                except (TypeError, ValueError):
+                    continue
             rows.append((c, dist, vend, comision_total, detalles_cache[c["id"]]))
 
         self.table.setRowCount(len(rows))

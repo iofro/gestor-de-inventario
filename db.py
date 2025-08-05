@@ -72,7 +72,7 @@ class DB:
                 dui TEXT,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
-                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id)
+                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE SET NULL
             )
         """)
         self.cursor.execute("""
@@ -86,8 +86,8 @@ class DB:
                 stock INTEGER,
                 precio_compra REAL DEFAULT 0,
                 -- fecha_vencimiento TEXT,  # <-- ELIMINADA
-                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id),
-                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id)
+                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE SET NULL,
+                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE SET NULL
             )
         """)
         self.cursor.execute(
@@ -107,7 +107,13 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 fecha TEXT,
                 total REAL,
-                estado TEXT DEFAULT 'Pagada'
+                estado TEXT DEFAULT 'Pagada',
+                cliente_id INTEGER,
+                Distribuidor_id INTEGER,
+                vendedor_id INTEGER,
+                extra TEXT,
+                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
+                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
             )
         """)
         self.cursor.execute("""
@@ -120,7 +126,7 @@ class DB:
                 vendedor_id INTEGER,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id),
                 FOREIGN KEY (producto_id) REFERENCES productos(id),
-                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE SET NULL
             )
         """)
         self.cursor.execute("""
@@ -188,8 +194,8 @@ class DB:
                 comision_monto REAL DEFAULT 0,
                 vendedor_id INTEGER,
                 FOREIGN KEY (producto_id) REFERENCES productos(id),
-                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id),
-                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id)
+                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
+                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
             )
         """)
         self.cursor.execute("""
@@ -555,28 +561,36 @@ class DB:
         except Exception as e:
             logger.exception("Error al actualizar Distribuidor: %s", e)
 
-    def delete_Distribuidor(self, id):
+    def delete_Distribuidor(self, id, reassign_to=...):
+        tables = {
+            "vendedores": "Distribuidor_id",
+            "productos": "Distribuidor_id",
+            "compras": "Distribuidor_id",
+            "ventas": "Distribuidor_id",
+        }
         try:
-            self.cursor.execute(
-                "UPDATE vendedores SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "UPDATE productos SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "UPDATE compras SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "UPDATE ventas SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
-                (id,),
-            )
+            counts = []
+            for table, column in tables.items():
+                self.cursor.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {column}=?", (id,)
+                )
+                counts.append(self.cursor.fetchone()[0])
+            if any(counts):
+                if reassign_to is ...:
+                    raise ValueError(
+                        "No se puede eliminar distribuidor con registros asociados"
+                    )
+                for table, column in tables.items():
+                    self.cursor.execute(
+                        f"UPDATE {table} SET {column}=? WHERE {column}=?", (reassign_to, id)
+                    )
             self.cursor.execute("DELETE FROM Distribuidores WHERE id=?", (id,))
             self.conn.commit()
+        except ValueError:
+            raise
         except Exception as e:
             logger.exception("Error al eliminar Distribuidor: %s", e)
+            raise
 
     # CRUD VENDEDORES (antes vendedores)
     def add_vendedor(
@@ -619,28 +633,36 @@ class DB:
         except Exception as e:
             logger.exception("Error al actualizar vendedor: %s", e)
 
-    def delete_vendedor(self, id):
+    def delete_vendedor(self, id, reassign_to=...):
+        tables = {
+            "productos": "vendedor_id",
+            "compras": "vendedor_id",
+            "ventas": "vendedor_id",
+            "detalles_venta": "vendedor_id",
+        }
         try:
-            self.cursor.execute(
-                "UPDATE productos SET vendedor_id=NULL WHERE vendedor_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "UPDATE detalles_venta SET vendedor_id=NULL WHERE vendedor_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "UPDATE compras SET vendedor_id=NULL WHERE vendedor_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "UPDATE ventas SET vendedor_id=NULL WHERE vendedor_id=?",
-                (id,),
-            )
+            counts = []
+            for table, column in tables.items():
+                self.cursor.execute(
+                    f"SELECT COUNT(*) FROM {table} WHERE {column}=?", (id,)
+                )
+                counts.append(self.cursor.fetchone()[0])
+            if any(counts):
+                if reassign_to is ...:
+                    raise ValueError(
+                        "No se puede eliminar vendedor con registros asociados"
+                    )
+                for table, column in tables.items():
+                    self.cursor.execute(
+                        f"UPDATE {table} SET {column}=? WHERE {column}=?", (reassign_to, id)
+                    )
             self.cursor.execute("DELETE FROM vendedores WHERE id=?", (id,))
             self.conn.commit()
+        except ValueError:
+            raise
         except Exception as e:
             logger.exception("Error al eliminar vendedor: %s", e)
+            raise
 
     # CRUD PRODUCTOS
     def add_producto(

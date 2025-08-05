@@ -117,24 +117,65 @@ class InventoryManager:
                     datos_negocio = json.load(f)
             except Exception:
                 logger.exception("Failed to parse %s", DATOS_NEGOCIO_PATH)
-        ventas_credito_fiscal = [dict(row) for row in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")]
-        data = {
-            "productos": self._products,
-            "vendedores": [dict(vend) for vend in self._vendedores],
-            "Distribuidores": [dict(v) for v in self._Distribuidores],
-            "clientes": [dict(c) for c in self._clientes],
-            "ventas": [dict(v) for v in self.db.get_ventas()],
-            "compras": [dict(c) for c in self.db.get_compras()],
-            "movimientos": [dict(m) for m in self.db.get_movimientos()],
-            "detalles_venta": [dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_venta")],
-            "detalles_compra": [dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")],
-            "datos_negocio": datos_negocio,
-            "trabajadores": [dict(t) for t in self.db.get_trabajadores()],
-            "ventas_credito_fiscal": ventas_credito_fiscal,
-            "tab_order": tab_order,
-        }
+
+        def write_array(key, iterator):
+            nonlocal first_section
+            if not first_section:
+                f.write(",\n")
+            f.write(f'"{key}":[')
+            first_item = True
+            for item in iterator:
+                if not first_item:
+                    f.write(",")
+                json.dump(item, f, ensure_ascii=False)
+                first_item = False
+            f.write("]")
+            first_section = False
+
         with open(filename, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            first_section = True
+            f.write("{")
+            write_array("productos", self._products)
+            write_array("vendedores", (dict(v) for v in self._vendedores))
+            write_array("Distribuidores", (dict(v) for v in self._Distribuidores))
+            write_array("clientes", (dict(c) for c in self._clientes))
+            write_array(
+                "ventas",
+                (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas")),
+            )
+            write_array(
+                "compras",
+                (dict(c) for c in self.db.cursor.execute("SELECT * FROM compras")),
+            )
+            write_array(
+                "movimientos",
+                (dict(m) for m in self.db.cursor.execute("SELECT * FROM movimientos")),
+            )
+            write_array(
+                "detalles_venta",
+                (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_venta")),
+            )
+            write_array(
+                "detalles_compra",
+                (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")),
+            )
+            if datos_negocio:
+                f.write(",\n\"datos_negocio\":")
+                json.dump(datos_negocio, f, ensure_ascii=False)
+            else:
+                f.write(",\n\"datos_negocio\":{}")
+            write_array(
+                "trabajadores",
+                (dict(t) for t in self.db.cursor.execute("SELECT * FROM trabajadores")),
+            )
+            write_array(
+                "ventas_credito_fiscal",
+                (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")),
+            )
+            if tab_order is not None:
+                f.write(",\n\"tab_order\":")
+                json.dump(tab_order, f, ensure_ascii=False)
+            f.write("}")
 
     def importar_inventario_json(self, filename):
         with open(filename, "r", encoding="utf-8") as f:

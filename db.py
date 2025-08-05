@@ -89,6 +89,18 @@ class DB:
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id)
             )
         """)
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_productos_vendedor_id ON productos(vendedor_id)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_productos_distribuidor_id ON productos(Distribuidor_id)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_productos_codigo ON productos(codigo)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre)"
+        )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

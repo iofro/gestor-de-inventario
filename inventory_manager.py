@@ -18,6 +18,8 @@ class InventoryManager:
     def refresh_data(self):
         self._vendedores = self.db.get_vendedores()
         self._Distribuidores = self.db.get_Distribuidores()
+        self._vendedor_name_to_id = {vend["nombre"]: vend["id"] for vend in self._vendedores}
+        self._Distribuidor_name_to_id = {dist["nombre"]: dist["id"] for dist in self._Distribuidores}
         self._products = self.db.get_productos()
         self._clientes = self.db.get_clientes()
         self._model = ProductTableModel(self._products, self._vendedores, self._Distribuidores)
@@ -41,16 +43,8 @@ class InventoryManager:
         self.refresh_data()
 
     def filter_products(self, vendedor_nombre=None, Distribuidor_nombre=None, search=""):
-        vendedor_id = None
-        Distribuidor_id = None
-        for vend in self._vendedores:
-            if vend["nombre"] == vendedor_nombre:
-                vendedor_id = vend["id"]
-                break
-        for dist in self._Distribuidores:
-            if dist["nombre"] == Distribuidor_nombre:
-                Distribuidor_id = dist["id"]
-                break
+        vendedor_id = self._vendedor_name_to_id.get(vendedor_nombre) if vendedor_nombre else None
+        Distribuidor_id = self._Distribuidor_name_to_id.get(Distribuidor_nombre) if Distribuidor_nombre else None
         self._products = self.db.get_productos(vendedor_id=vendedor_id, Distribuidor_id=Distribuidor_id, search=search)
         self._model.update_data(self._products)
 
@@ -58,16 +52,10 @@ class InventoryManager:
         return self._model
 
     def get_vendedor_id_by_name(self, nombre):
-        for vend in self._vendedores:
-            if vend["nombre"] == nombre:
-                return vend["id"]
-        return None
+        return self._vendedor_name_to_id.get(nombre)
 
     def get_Distribuidor_id_by_name(self, nombre):
-        for dist in self._Distribuidores:
-            if dist["nombre"] == nombre:
-                return dist["id"]
-        return None
+        return self._Distribuidor_name_to_id.get(nombre)
 
     def aumentar_stock(self, producto_id, cantidad):
         self.db.aumentar_stock(producto_id, cantidad)

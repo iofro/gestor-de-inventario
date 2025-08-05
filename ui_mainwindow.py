@@ -4,7 +4,7 @@ from PyQt5.QtWidgets import (
     QListWidget, QInputDialog, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
     QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy
 )
-from PyQt5.QtCore import Qt, QDate
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 import os
 import json
@@ -38,6 +38,26 @@ logger = logging.getLogger(__name__)
 
 def redondear(valor):
     return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+class ExportThread(QThread):
+    finished = pyqtSignal()
+    error = pyqtSignal(str)
+
+    def __init__(self, manager, filename, tab_order):
+        super().__init__()
+        self.manager = manager
+        self.filename = filename
+        self.tab_order = tab_order
+
+    def run(self):
+        try:
+            self.manager.exportar_inventario_json(
+                self.filename, tab_order=self.tab_order
+            )
+            self.finished.emit()
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 class MainWindow(QMainWindow):
@@ -806,17 +826,18 @@ class MainWindow(QMainWindow):
     def guardar_como(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Guardar inventario como", "", "Archivos JSON (*.json);;Todos los archivos (*)")
         if filename:
-            try:
-                self.manager.exportar_inventario_json(
-                    filename, tab_order=self.get_tab_order()
-                )
+            thread = ExportThread(self.manager, filename, self.get_tab_order())
+
+            def on_finished():
                 self.ultimo_archivo_json = filename
                 with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
                 QMessageBox.information(self, "Guardar como", "Inventario guardado correctamente.")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}")
-                self._actualizar_historial()
+
+            thread.finished.connect(on_finished)
+            thread.error.connect(lambda e: QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}"))
+            thread.start()
+            self.export_thread = thread
 
     def cargar_inventario(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Cargar inventario", "", "Archivos JSON (*.json);;Todos los archivos (*)")
@@ -849,13 +870,21 @@ class MainWindow(QMainWindow):
 
     def guardar_rapido(self):
         if self.ultimo_archivo_json:
-            try:
-                self.manager.exportar_inventario_json(
-                    self.ultimo_archivo_json, tab_order=self.get_tab_order()
+            thread = ExportThread(
+                self.manager, self.ultimo_archivo_json, self.get_tab_order()
+            )
+
+            def on_finished():
+                QMessageBox.information(
+                    self,
+                    "Guardar rápido",
+                    f"Inventario guardado en:\n{self.ultimo_archivo_json}",
                 )
-                QMessageBox.information(self, "Guardar rápido", f"Inventario guardado en:\n{self.ultimo_archivo_json}")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}")
+
+            thread.finished.connect(on_finished)
+            thread.error.connect(lambda e: QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}"))
+            thread.start()
+            self.export_thread = thread
         else:
             QMessageBox.warning(self, "Guardar rápido", "Primero debes guardar o cargar un inventario manualmente.")
             self._actualizar_historial()

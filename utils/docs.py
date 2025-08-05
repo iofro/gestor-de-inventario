@@ -1,6 +1,6 @@
+import json
 import os
 import re
-import json
 from datetime import datetime
 
 # Base path is repository root two levels up from this file

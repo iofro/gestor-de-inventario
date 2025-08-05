@@ -511,7 +511,7 @@ class DB:
             self.conn.commit()
         except Exception:
             pass  # Ya existe la columna
-        # Índices únicos para códigos de clientes y vendedores
+        # Índices únicos para campos de texto
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_codigo ON clientes(codigo)"
         )
@@ -520,6 +520,12 @@ class DB:
         )
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_trabajadores_codigo ON trabajadores(codigo)"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_distribuidores_codigo ON Distribuidores(codigo)"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_distribuidores_nombre ON Distribuidores(nombre)"
         )
         self.conn.commit()
 

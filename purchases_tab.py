@@ -23,26 +23,28 @@ class PurchasesTab(QWidget):
         self.distribuidor_combo.blockSignals(True)
         self.vendedor_combo.blockSignals(True)
 
-        current_dist = self.distribuidor_combo.currentText()
-        current_vend = self.vendedor_combo.currentText()
+        current_dist = self.distribuidor_combo.currentData()
+        current_vend = self.vendedor_combo.currentData()
 
         self.distribuidor_combo.clear()
-        self.distribuidor_combo.addItem("Todos")
-        self.distribuidor_combo.addItems([d["nombre"] for d in self.manager._Distribuidores])
+        self.distribuidor_combo.addItem("Todos", None)
+        for d in self.manager._Distribuidores:
+            self.distribuidor_combo.addItem(d["nombre"], d["id"])
 
         self.vendedor_combo.clear()
-        self.vendedor_combo.addItem("Todos")
-        self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
+        self.vendedor_combo.addItem("Todos", None)
+        for v in self.manager._vendedores:
+            self.vendedor_combo.addItem(v["nombre"], v["id"])
 
-        if current_dist in [d["nombre"] for d in self.manager._Distribuidores]:
-            idx = self.distribuidor_combo.findText(current_dist)
+        if current_dist in [d["id"] for d in self.manager._Distribuidores]:
+            idx = self.distribuidor_combo.findData(current_dist)
             if idx >= 0:
                 self.distribuidor_combo.setCurrentIndex(idx)
         else:
             self.distribuidor_combo.setCurrentIndex(0)
 
-        if current_vend in [v["nombre"] for v in self.manager._vendedores]:
-            idx = self.vendedor_combo.findText(current_vend)
+        if current_vend in [v["id"] for v in self.manager._vendedores]:
+            idx = self.vendedor_combo.findData(current_vend)
             if idx >= 0:
                 self.vendedor_combo.setCurrentIndex(idx)
         else:
@@ -73,11 +75,13 @@ class PurchasesTab(QWidget):
         self.date_to = QDateEdit(QDate.currentDate())
         self.date_to.setCalendarPopup(True)
         self.distribuidor_combo = QComboBox()
-        self.distribuidor_combo.addItem("Todos")
-        self.distribuidor_combo.addItems([d["nombre"] for d in self.manager._Distribuidores])
+        self.distribuidor_combo.addItem("Todos", None)
+        for d in self.manager._Distribuidores:
+            self.distribuidor_combo.addItem(d["nombre"], d["id"])
         self.vendedor_combo = QComboBox()
-        self.vendedor_combo.addItem("Todos")
-        self.vendedor_combo.addItems([v["nombre"] for v in self.manager._vendedores])
+        self.vendedor_combo.addItem("Todos", None)
+        for v in self.manager._vendedores:
+            self.vendedor_combo.addItem(v["nombre"], v["id"])
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("ID o producto")
 
@@ -141,8 +145,8 @@ class PurchasesTab(QWidget):
 
         d_from = self.date_from.date().toPyDate()
         d_to = self.date_to.date().toPyDate()
-        dist_filter = self.distribuidor_combo.currentText()
-        vend_filter = self.vendedor_combo.currentText()
+        dist_filter = self.distribuidor_combo.currentData()
+        vend_filter = self.vendedor_combo.currentData()
         search = self.search_bar.text().lower()
 
         rows = []
@@ -159,9 +163,9 @@ class PurchasesTab(QWidget):
                 continue
             dist = Distribuidores.get(c.get("Distribuidor_id"), "")
             vend = Vendedores.get(c.get("vendedor_id"), "")
-            if dist_filter != "Todos" and dist_filter != dist:
+            if dist_filter and c.get("Distribuidor_id") != dist_filter:
                 continue
-            if vend_filter != "Todos" and vend_filter != vend:
+            if vend_filter and c.get("vendedor_id") != vend_filter:
                 continue
             if search:
                 if search not in str(c.get("id", "")).lower():

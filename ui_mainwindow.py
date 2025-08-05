@@ -155,15 +155,17 @@ class MainWindow(QMainWindow):
         # --- Filtros en una sola fila ---
         filtros_layout = QHBoxLayout()
         self.vendedor_combo_filtro = QComboBox()
-        self.vendedor_combo_filtro.addItem("Todos")
-        self.vendedor_combo_filtro.addItems(self.manager.get_vendedor_names())
+        self.vendedor_combo_filtro.addItem("Todos", None)
+        for v in self.manager._vendedores:
+            self.vendedor_combo_filtro.addItem(v["nombre"], v["id"])
         self.vendedor_combo_filtro.currentIndexChanged.connect(self.filter_products)
         filtros_layout.addWidget(QLabel("Vendedor:"))
         filtros_layout.addWidget(self.vendedor_combo_filtro)
 
         self.distribuidor_combo_filtro = QComboBox()
-        self.distribuidor_combo_filtro.addItem("Todos")
-        self.distribuidor_combo_filtro.addItems(self.manager.get_Distribuidor_names())
+        self.distribuidor_combo_filtro.addItem("Todos", None)
+        for d in self.manager._Distribuidores:
+            self.distribuidor_combo_filtro.addItem(d["nombre"], d["id"])
         self.distribuidor_combo_filtro.currentIndexChanged.connect(self.filter_products)
         filtros_layout.addWidget(QLabel("Distribuidor:"))
         filtros_layout.addWidget(self.distribuidor_combo_filtro)
@@ -516,16 +518,11 @@ class MainWindow(QMainWindow):
 
     def filter_products(self):
         search = self.search_bar.text()
-        vendedor_nombre = None
-        vendedor_combo_index = self.vendedor_combo_filtro.currentIndex()
-        if vendedor_combo_index > 0:  # Si no es "Todos"
-            vendedor_nombre = self.vendedor_combo_filtro.itemText(vendedor_combo_index)
+        vendedor_id = self.vendedor_combo_filtro.currentData()
 
-        Distribuidor_nombre = None
+        Distribuidor_id = None
         if hasattr(self, "distribuidor_combo_filtro"):
-            distribuidor_index = self.distribuidor_combo_filtro.currentIndex()
-            if distribuidor_index > 0:  # Si no es "Todos"
-                Distribuidor_nombre = self.distribuidor_combo_filtro.itemText(distribuidor_index)
+            Distribuidor_id = self.distribuidor_combo_filtro.currentData()
 
         # Orden por stock
         stock_sort = None
@@ -533,8 +530,8 @@ class MainWindow(QMainWindow):
             stock_sort = self.stock_sort_combo.currentIndex()
 
         self.manager.filter_products(
-            vendedor_nombre=vendedor_nombre,
-            Distribuidor_nombre=Distribuidor_nombre,
+            vendedor_id=vendedor_id,
+            Distribuidor_id=Distribuidor_id,
             search=search,
         )
         productos = self.manager._products

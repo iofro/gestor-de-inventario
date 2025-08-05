@@ -2294,6 +2294,7 @@ class DistribuidorDialog(QDialog):
         self.setWindowTitle("Registrar/Editar Distribuidor")
         self.setMinimumWidth(900)
         main_layout = QVBoxLayout()
+        self._distribuidor_id = Distribuidor.get("id") if Distribuidor else None
 
         # --- Datos principales ---
         datos_principales = QGroupBox("Datos principales")
@@ -2401,6 +2402,35 @@ class DistribuidorDialog(QDialog):
             "cuenta_bancaria": self.cuenta_bancaria_edit.text(),
             "notas": self.notas_edit.text()
         }
+
+    def accept(self):
+        db = getattr(getattr(self.parent(), "manager", None), "db", None)
+        if db:
+            codigo = self.codigo_edit.text().strip()
+            nombre = self.nombre_edit.text().strip()
+            if codigo:
+                if self._distribuidor_id is None:
+                    db.cursor.execute("SELECT 1 FROM Distribuidores WHERE codigo=?", (codigo,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM Distribuidores WHERE codigo=? AND id<>?",
+                        (codigo, self._distribuidor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Código duplicado", "Ya existe un distribuidor con ese código.")
+                    return
+            if nombre:
+                if self._distribuidor_id is None:
+                    db.cursor.execute("SELECT 1 FROM Distribuidores WHERE nombre=?", (nombre,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM Distribuidores WHERE nombre=? AND id<>?",
+                        (nombre, self._distribuidor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Nombre duplicado", "Ya existe un distribuidor con ese nombre.")
+                    return
+        super().accept()
 
 class DistribuidorInfoDialog(QDialog):
     def __init__(self, distribuidor, parent=None):
@@ -2554,8 +2584,10 @@ class VendedorDialog(QDialog):
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
-        self.Distribuidor_combo.addItem("Sin Distribuidor")
-        self.Distribuidor_combo.addItems([d["nombre"] for d in self.Distribuidores])
+        self.Distribuidor_combo.addItem("Sin Distribuidor", None)
+        for d in self.Distribuidores:
+            self.Distribuidor_combo.addItem(d["nombre"], d["id"])
+        self._vendedor_id = vendedor.get("id") if vendedor else None
 
         layout.addWidget(QLabel("Código:"))
         layout.addWidget(self.codigo_edit)
@@ -2589,23 +2621,47 @@ class VendedorDialog(QDialog):
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
             if Distribuidor_id:
-                for i, d in enumerate(self.Distribuidores):
-                    if d["id"] == Distribuidor_id:
-                        self.Distribuidor_combo.setCurrentIndex(i + 1)  # +1 por "Sin Distribuidor"
-                        break
+                idx = self.Distribuidor_combo.findData(Distribuidor_id)
+                if idx >= 0:
+                    self.Distribuidor_combo.setCurrentIndex(idx)
 
     def get_data(self):
-        idx = self.Distribuidor_combo.currentIndex()
-        Distribuidor_id = None
-        if idx > 0:
-            Distribuidor_id = self.Distribuidores[idx - 1]["id"]
         return {
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
             "dui": self.dui_edit.text(),
             "descripcion": self.descripcion_edit.text(),
-            "Distribuidor_id": Distribuidor_id,
+            "Distribuidor_id": self.Distribuidor_combo.currentData(),
         }
+
+    def accept(self):
+        db = getattr(getattr(self.parent(), "manager", None), "db", None)
+        if db:
+            codigo = self.codigo_edit.text().strip()
+            nombre = self.nombre_edit.text().strip()
+            if codigo:
+                if self._vendedor_id is None:
+                    db.cursor.execute("SELECT 1 FROM vendedores WHERE codigo=?", (codigo,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM vendedores WHERE codigo=? AND id<>?",
+                        (codigo, self._vendedor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Código duplicado", "Ya existe un vendedor con ese código.")
+                    return
+            if nombre:
+                if self._vendedor_id is None:
+                    db.cursor.execute("SELECT 1 FROM vendedores WHERE nombre=?", (nombre,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM vendedores WHERE nombre=? AND id<>?",
+                        (nombre, self._vendedor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Nombre duplicado", "Ya existe un vendedor con ese nombre.")
+                    return
+        super().accept()
 class CompraDetalleDialog(QDialog):
     def __init__(self, compra, detalles, parent=None):
         super().__init__(parent)

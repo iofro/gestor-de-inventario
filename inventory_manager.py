@@ -24,6 +24,10 @@ class InventoryManager:
     def refresh_data(self):
         self._vendedores = self.db.get_vendedores()
         self._Distribuidores = self.db.get_Distribuidores()
+        self._vendedor_name_to_id = {vend["nombre"]: vend["id"] for vend in self._vendedores}
+        self._Distribuidor_name_to_id = {dist["nombre"]: dist["id"] for dist in self._Distribuidores}
+        self._products = self.db.get_productos()
+
         self._clientes = self.db.get_clientes()
         self.load_page(self.current_page)
 
@@ -86,57 +90,20 @@ class InventoryManager:
         self.load_page(self.current_page)
 
     def filter_products(self, vendedor_nombre=None, Distribuidor_nombre=None, search=""):
-        self._filter_vendedor_id = None
-        self._filter_Distribuidor_id = None
-        self._filter_search = search or ""
-        for vend in self._vendedores:
-            if vend["nombre"] == vendedor_nombre:
-                self._filter_vendedor_id = vend["id"]
-                break
-        for dist in self._Distribuidores:
-            if dist["nombre"] == Distribuidor_nombre:
-                self._filter_Distribuidor_id = dist["id"]
-                break
-        self.load_page(0)
+        vendedor_id = self._vendedor_name_to_id.get(vendedor_nombre) if vendedor_nombre else None
+        Distribuidor_id = self._Distribuidor_name_to_id.get(Distribuidor_nombre) if Distribuidor_nombre else None
+        self._products = self.db.get_productos(vendedor_id=vendedor_id, Distribuidor_id=Distribuidor_id, search=search)
+        self._model.update_data(self._products)
 
-    def load_page(self, page):
-        self.current_page = max(0, page)
-        offset = self.current_page * self.page_size
-        self._products = self.db.get_productos(
-            vendedor_id=self._filter_vendedor_id,
-            Distribuidor_id=self._filter_Distribuidor_id,
-            search=self._filter_search,
-            limit=self.page_size,
-            offset=offset,
-        )
-        if self._model is None:
-            self._model = ProductTableModel(
-                self._products, self._vendedores, self._Distribuidores
-            )
-        else:
-            self._model.update_data(self._products)
-
-    def next_page(self):
-        self.load_page(self.current_page + 1)
-
-    def previous_page(self):
-        if self.current_page > 0:
-            self.load_page(self.current_page - 1)
 
     def get_products_model(self):
         return self._model
 
     def get_vendedor_id_by_name(self, nombre):
-        for vend in self._vendedores:
-            if vend["nombre"] == nombre:
-                return vend["id"]
-        return None
+        return self._vendedor_name_to_id.get(nombre)
 
     def get_Distribuidor_id_by_name(self, nombre):
-        for dist in self._Distribuidores:
-            if dist["nombre"] == nombre:
-                return dist["id"]
-        return None
+        return self._Distribuidor_name_to_id.get(nombre)
 
     def aumentar_stock(self, producto_id, cantidad):
         self.db.aumentar_stock(producto_id, cantidad)

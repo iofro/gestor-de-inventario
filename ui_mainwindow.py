@@ -161,6 +161,13 @@ class MainWindow(QMainWindow):
         filtros_layout.addWidget(QLabel("Vendedor:"))
         filtros_layout.addWidget(self.vendedor_combo_filtro)
 
+        self.distribuidor_combo_filtro = QComboBox()
+        self.distribuidor_combo_filtro.addItem("Todos")
+        self.distribuidor_combo_filtro.addItems(self.manager.get_Distribuidor_names())
+        self.distribuidor_combo_filtro.currentIndexChanged.connect(self.filter_products)
+        filtros_layout.addWidget(QLabel("Distribuidor:"))
+        filtros_layout.addWidget(self.distribuidor_combo_filtro)
+
         self.stock_sort_combo = QComboBox()
         self.stock_sort_combo.addItems(["Ordenar por stock", "Más stock a menos", "Menos stock a más"])
         self.stock_sort_combo.currentIndexChanged.connect(self.filter_products)
@@ -514,12 +521,22 @@ class MainWindow(QMainWindow):
         if vendedor_combo_index > 0:  # Si no es "Todos"
             vendedor_nombre = self.vendedor_combo_filtro.itemText(vendedor_combo_index)
 
+        Distribuidor_nombre = None
+        if hasattr(self, "distribuidor_combo_filtro"):
+            distribuidor_index = self.distribuidor_combo_filtro.currentIndex()
+            if distribuidor_index > 0:  # Si no es "Todos"
+                Distribuidor_nombre = self.distribuidor_combo_filtro.itemText(distribuidor_index)
+
         # Orden por stock
         stock_sort = None
         if hasattr(self, "stock_sort_combo"):
             stock_sort = self.stock_sort_combo.currentIndex()
 
-        self.manager.filter_products(vendedor_nombre=vendedor_nombre, search=search)
+        self.manager.filter_products(
+            vendedor_nombre=vendedor_nombre,
+            Distribuidor_nombre=Distribuidor_nombre,
+            search=search,
+        )
         productos = self.manager._products
 
         if stock_sort == 1:  # Más stock a menos
@@ -543,6 +560,8 @@ class MainWindow(QMainWindow):
             self._actualizar_arbol_Distribuidores()
             if hasattr(self, "vendedor_combo_filtro"):
                 self.vendedor_combo_filtro.setCurrentIndex(0)
+            if hasattr(self, "distribuidor_combo_filtro"):
+                self.distribuidor_combo_filtro.setCurrentIndex(0)
             self.filter_products()
             QMessageBox.information(self, "Producto", "Producto agregado correctamente.")
 
@@ -957,6 +976,8 @@ class MainWindow(QMainWindow):
             self._cargar_personas_estado()
             if hasattr(self, "vendedor_combo_filtro"):
                 self.vendedor_combo_filtro.setCurrentIndex(0)
+            if hasattr(self, "distribuidor_combo_filtro"):
+                self.distribuidor_combo_filtro.setCurrentIndex(0)
             self._actualizar_inventario_actual()
             QMessageBox.information(self, "Nuevo inventario", "Inventario limpio y listo para usar.")
 

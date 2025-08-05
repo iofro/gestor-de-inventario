@@ -576,7 +576,15 @@ class DB:
         )
         self.conn.commit()
 
-    def get_productos(self, vendedor_id=None, Distribuidor_id=None, search=""):
+    def get_productos(
+        self,
+        vendedor_id=None,
+        Distribuidor_id=None,
+        search="",
+        limit=None,
+        offset=0,
+    ):
+        """Retrieve products with optional pagination."""
         query = "SELECT * FROM productos"
         params = []
         filtros = []
@@ -591,6 +599,9 @@ class DB:
             params.extend([f"%{search}%", f"%{search}%"])
         if filtros:
             query += " WHERE " + " AND ".join(filtros)
+        if limit is not None:
+            query += " LIMIT ? OFFSET ?"
+            params.extend([limit, offset])
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 

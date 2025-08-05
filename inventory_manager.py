@@ -192,7 +192,6 @@ class InventoryManager:
         self.db.limpiar_productos()
         self.db.limpiar_vendedores()
         self.db.limpiar_Distribuidores()
-        self.db.limpiar_ventas_credito_fiscal()
         try:
             self.db.cursor.execute("DELETE FROM clientes")
             self.db.cursor.execute("DELETE FROM ventas")
@@ -443,6 +442,12 @@ class InventoryManager:
                 )
 
             # Ventas crédito fiscal
+            self.db.limpiar_ventas_credito_fiscal()
+            self.db.cursor.execute(
+                "DELETE FROM sqlite_sequence WHERE name='ventas_credito_fiscal'"
+            )
+            self.db.conn.commit()
+            self.db.conn.execute("BEGIN")
             for vcf in data.get("ventas_credito_fiscal", []):
                 extra = vcf.get("extra")
                 extra_json = json.dumps(extra) if extra is not None else None

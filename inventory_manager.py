@@ -52,6 +52,12 @@ class InventoryManager:
     def get_Distribuidor_names(self):
         return [dist["nombre"] for dist in self._Distribuidores]
 
+    def get_vendedores(self):
+        return self._vendedores
+
+    def get_Distribuidores(self):
+        return self._Distribuidores
+
     def add_producto(
         self,
         nombre,

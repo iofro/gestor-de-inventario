@@ -158,6 +158,7 @@ class MainWindow(QMainWindow):
         self.vendedor_combo_filtro.addItem("Todos", None)
         for v in self.manager._vendedores:
             self.vendedor_combo_filtro.addItem(v["nombre"], v["id"])
+
         self.vendedor_combo_filtro.currentIndexChanged.connect(self.filter_products)
         filtros_layout.addWidget(QLabel("Vendedor:"))
         filtros_layout.addWidget(self.vendedor_combo_filtro)
@@ -166,6 +167,7 @@ class MainWindow(QMainWindow):
         self.distribuidor_combo_filtro.addItem("Todos", None)
         for d in self.manager._Distribuidores:
             self.distribuidor_combo_filtro.addItem(d["nombre"], d["id"])
+
         self.distribuidor_combo_filtro.currentIndexChanged.connect(self.filter_products)
         filtros_layout.addWidget(QLabel("Distribuidor:"))
         filtros_layout.addWidget(self.distribuidor_combo_filtro)
@@ -523,6 +525,7 @@ class MainWindow(QMainWindow):
         Distribuidor_id = None
         if hasattr(self, "distribuidor_combo_filtro"):
             Distribuidor_id = self.distribuidor_combo_filtro.currentData()
+
 
         # Orden por stock
         stock_sort = None
@@ -1086,7 +1089,7 @@ class MainWindow(QMainWindow):
             self.manager.db.cursor.execute("""
                 UPDATE Distribuidores SET
                     codigo=?, nombre=?, telefono=?, email=?, cargo=?, sucursal=?,
-                    comision_base=?, fecha_inicio=?, direccion=?, departamento=?, municipio=?,
+                    fecha_inicio=?, direccion=?, departamento=?, municipio=?,
                     tipo_contrato=?, comisiones_especificas=?, metodo_pago=?, nit=?, nrc=?,
                     cuenta_bancaria=?, notas=?
                 WHERE id=?
@@ -1097,7 +1100,6 @@ class MainWindow(QMainWindow):
                 data.get("email", ""),
                 data.get("cargo", ""),
                 data.get("sucursal", ""),
-                data.get("comision_base", 0),
                 data.get("fecha_inicio", ""),
                 data.get("direccion", ""),
                 data.get("departamento", ""),

@@ -1192,16 +1192,6 @@ class RegisterPurchaseDialog(QDialog):
         producto_layout.addWidget(self.product_list)
         layout.addLayout(producto_layout)
 
-        # ...dentro de __init__ de RegisterPurchaseDialog, antes de self.btn_agregar...
-        self.subtotal_label = QLabel("Subtotal: $0.00")
-        self.iva_label = QLabel("IVA: $0.00")
-        self.comision_label_resumen = QLabel("Comisión: $0.00")
-        self.total_label = QLabel("TOTAL: $0.00")
-        layout.addWidget(self.subtotal_label)
-        layout.addWidget(self.iva_label)
-        layout.addWidget(self.comision_label_resumen)
-        layout.addWidget(self.total_label)
-
         # Cantidad, precio unitario y precio total
         cantidad_layout = QHBoxLayout()
         cantidad_layout.addWidget(QLabel("Cantidad:"))
@@ -1265,9 +1255,11 @@ class RegisterPurchaseDialog(QDialog):
         # Resumen
         self.subtotal_label = QLabel("Subtotal: $0.00")
         self.iva_label = QLabel("IVA: $0.00")
+        self.comision_label_resumen = QLabel("Comisión: $0.00")
         self.total_label = QLabel("TOTAL: $0.00")
         layout.addWidget(self.subtotal_label)
         layout.addWidget(self.iva_label)
+        layout.addWidget(self.comision_label_resumen)
         layout.addWidget(self.total_label)
 
         # Conexiones para IVA
@@ -1446,20 +1438,14 @@ class RegisterPurchaseDialog(QDialog):
         self._calcular_preview_item()
 
     def _actualizar_total_general(self):
-        total_general = 0
-        subtotal_general = 0
-        iva_general = 0
-        for item in self.compra_items:
-            subtotal = item["cantidad"] * item["precio"]
-            subtotal_general += subtotal
-            if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked() and self.iva_desglosado_radio.isChecked():
-                iva = subtotal - (subtotal / 1.13)
-            else:
-                iva = 0
-            iva_general += iva
-            total_general += subtotal
+        subtotal_general = sum(item.get("subtotal", item["cantidad"] * item["precio"]) for item in self.compra_items)
+        iva_general = sum(item.get("iva", 0) for item in self.compra_items)
+        comision_general = sum(item.get("comision_monto", 0) for item in self.compra_items)
+        total_general = sum(item.get("total", 0) for item in self.compra_items)
+
         self.subtotal_label.setText(f"Subtotal: ${subtotal_general:.2f}")
         self.iva_label.setText(f"IVA: ${iva_general:.2f}")
+        self.comision_label_resumen.setText(f"Comisión: ${comision_general:.2f}")
         self.total_label.setText(f"TOTAL: ${total_general:.2f}")
         self.total_general_label.setText(f"Total compra: ${total_general:.2f}")
 
@@ -1604,10 +1590,6 @@ class RegisterPurchaseDialog(QDialog):
             del self.compra_items[row]
             self._actualizar_tabla()
             self._actualizar_total_general()
-
-    def _actualizar_total_general(self):
-        total_general = sum(item["total"] for item in self.compra_items)
-        self.total_general_label.setText(f"Total compra: ${total_general:.2f}")
 
     def _registrar_compra(self):
         if not self.compra_items:

@@ -52,6 +52,12 @@ class InventoryManager:
     def get_Distribuidor_names(self):
         return [dist["nombre"] for dist in self._Distribuidores]
 
+    def get_vendedores(self):
+        return self._vendedores
+
+    def get_Distribuidores(self):
+        return self._Distribuidores
+
     def add_producto(
         self,
         nombre,
@@ -104,9 +110,7 @@ class InventoryManager:
         self.db.delete_producto(producto_id)
         self.refresh_data()
 
-    def filter_products(self, vendedor_nombre=None, Distribuidor_nombre=None, search=""):
-        vendedor_id = self._vendedor_name_to_id.get(vendedor_nombre) if vendedor_nombre else None
-        Distribuidor_id = self._Distribuidor_name_to_id.get(Distribuidor_nombre) if Distribuidor_nombre else None
+    def filter_products(self, vendedor_id=None, Distribuidor_id=None, search=""):
         changed = False
         if vendedor_id != self._filter_vendedor_id:
             self._filter_vendedor_id = vendedor_id

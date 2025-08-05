@@ -156,16 +156,18 @@ class MainWindow(QMainWindow):
         filtros_layout = QHBoxLayout()
         self.vendedor_combo_filtro = QComboBox()
         self.vendedor_combo_filtro.addItem("Todos", None)
-        for vend in self.manager.get_vendedores():
-            self.vendedor_combo_filtro.addItem(vend["nombre"], vend["id"])
+        for v in self.manager._vendedores:
+            self.vendedor_combo_filtro.addItem(v["nombre"], v["id"])
+
         self.vendedor_combo_filtro.currentIndexChanged.connect(self.filter_products)
         filtros_layout.addWidget(QLabel("Vendedor:"))
         filtros_layout.addWidget(self.vendedor_combo_filtro)
 
         self.distribuidor_combo_filtro = QComboBox()
         self.distribuidor_combo_filtro.addItem("Todos", None)
-        for dist in self.manager.get_Distribuidores():
-            self.distribuidor_combo_filtro.addItem(dist["nombre"], dist["id"])
+        for d in self.manager._Distribuidores:
+            self.distribuidor_combo_filtro.addItem(d["nombre"], d["id"])
+
         self.distribuidor_combo_filtro.currentIndexChanged.connect(self.filter_products)
         filtros_layout.addWidget(QLabel("Distribuidor:"))
         filtros_layout.addWidget(self.distribuidor_combo_filtro)
@@ -518,16 +520,12 @@ class MainWindow(QMainWindow):
 
     def filter_products(self):
         search = self.search_bar.text()
-        vendedor_id = None
-        vendedor_combo_index = self.vendedor_combo_filtro.currentIndex()
-        if vendedor_combo_index > 0:  # Si no es "Todos"
-            vendedor_id = self.vendedor_combo_filtro.itemData(vendedor_combo_index)
+        vendedor_id = self.vendedor_combo_filtro.currentData()
 
         Distribuidor_id = None
         if hasattr(self, "distribuidor_combo_filtro"):
-            distribuidor_index = self.distribuidor_combo_filtro.currentIndex()
-            if distribuidor_index > 0:  # Si no es "Todos"
-                Distribuidor_id = self.distribuidor_combo_filtro.itemData(distribuidor_index)
+            Distribuidor_id = self.distribuidor_combo_filtro.currentData()
+
 
         # Orden por stock
         stock_sort = None

@@ -163,237 +163,276 @@ class InventoryManager:
         compra_id_map = {}
         trabajador_id_map = {}
 
-        # --- Distribuidores primero ---
-        for v in data.get("Distribuidores", []):
-            self.db.add_Distribuidor_detallado(v)
-            self.db.cursor.execute("SELECT id FROM Distribuidores WHERE nombre=? ORDER BY id DESC LIMIT 1", (v["nombre"],))
-            new_id = self.db.cursor.fetchone()["id"]
-            Distribuidor_id_map[v["id"]] = new_id
-
-        # --- Vendedores después, usando el mapeo correcto ---
-        for vend in data.get("vendedores", []):
-            dist_id = vend.get("Distribuidor_id")
-            new_dist_id = Distribuidor_id_map.get(dist_id) if dist_id is not None else None
-            self.db.add_vendedor(
-                vend["nombre"],
-                vend.get("descripcion", ""),
-                new_dist_id,
-                vend.get("codigo"),
-                vend.get("dui"),
-
-            )
-            self.db.cursor.execute("SELECT id FROM vendedores WHERE nombre=? ORDER BY id DESC LIMIT 1", (vend["nombre"],))
-            new_id = self.db.cursor.fetchone()["id"]
-            vendedor_id_map[vend["id"]] = new_id
-
-        for t in data.get("trabajadores", []):
-            self.db.add_trabajador(t)
-            trabajador_id_map[t.get("id")] = self.db.cursor.lastrowid
-
-        # Productos
-        for p in data.get("productos", []):
-            vend = vendedor_id_map.get(p.get("vendedor_id"))
-            dist = Distribuidor_id_map.get(p.get("Distribuidor_id"))
-            self.db.add_producto(
-                p.get("nombre", ""),
-                p.get("codigo", ""),
-                vend,
-                dist,
-                p.get("precio_compra", 0),
-                p.get("precio_venta_minorista", 0),
-                p.get("precio_venta_mayorista", 0),
-                p.get("stock", 0)
-            )
-            new_id = self.db.cursor.lastrowid  # Usa el ID real insertado, no busques por nombre
-            producto_id_map[p["id"]] = new_id
-
-        # Clientes
-        for c in data.get("clientes", []):
-            self.db.add_cliente(
-                c.get("nombre", ""),
-                c.get("nrc", ""),
-                c.get("nit", ""),
-                c.get("dui", ""),
-                c.get("giro", ""),
-                c.get("telefono", ""),
-                c.get("email", ""),
-                c.get("direccion", ""),
-                c.get("departamento", ""),
-                c.get("municipio", ""),
-                c.get("codigo")
-            )
-            self.db.cursor.execute("SELECT id FROM clientes WHERE nombre=? ORDER BY id DESC LIMIT 1", (c["nombre"],))
-            new_id = self.db.cursor.fetchone()["id"]
-            cliente_id_map[c["id"]] = new_id
-
-        # Ventas
-        for v in data.get("ventas", []):
-            cliente_id = cliente_id_map.get(v.get("cliente_id"))
-            Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
-            vendedor_id = trabajador_id_map.get(v.get("vendedor_id")) if v.get("vendedor_id") is not None else None
-            if vendedor_id is None and v.get("vendedor_id") is not None:
-                vendedor_id = vendedor_id_map.get(v.get("vendedor_id"))
-
-            extra = v.get("extra")
-            if isinstance(extra, str):
-                try:
-                    extra = json.loads(extra)
-                except Exception:
-                    pass
-            extra_json = json.dumps(extra) if extra is not None else None
-
-            estado = v.get("estado", "Pagada")
-            self.db.cursor.execute(
-                "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    v.get("id"),
-                    v.get("fecha", ""),
-                    v.get("total", 0),
-                    cliente_id,
-                    Distribuidor_id,
-                    vendedor_id,
-                    extra_json,
-                    estado,
-                ),
-            )
-            venta_id_map[v["id"]] = v.get("id")
-
-        # ensure AUTOINCREMENT counters are updated
-        max_venta_id = self.db.cursor.execute("SELECT MAX(id) FROM ventas").fetchone()[0] or 0
-        self.db.cursor.execute(
-            "UPDATE sqlite_sequence SET seq=? WHERE name='ventas'", (max_venta_id,)
-        )
-
-        # Compras
-        for c in data.get("compras", []):
-            Distribuidor_id = Distribuidor_id_map.get(c.get("Distribuidor_id")) if c.get("Distribuidor_id") is not None else None
-            vendedor_id = vendedor_id_map.get(c.get("vendedor_id")) if c.get("vendedor_id") is not None else None
-            comision_pct = c.get("comision_pct", 0)
-            comision_monto = c.get("comision_monto", 0)
-            self.db.cursor.execute(
-                "INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    c.get("fecha", ""),
-                    None,   # <-- SIEMPRE None
-                    0,      # <-- SIEMPRE 0
-                    0,      # <-- SIEMPRE 0
-                    c.get("total", 0),
-                    Distribuidor_id,
-                    comision_pct,
-                    comision_monto,
-                    vendedor_id
-                )
-            )
-            new_id = self.db.cursor.lastrowid
-            compra_id_map[c["id"]] = new_id
-
-        # Detalles de venta
-        for d in data.get("detalles_venta", []):
-            venta_id = venta_id_map.get(d.get("venta_id"))
-            producto_id = producto_id_map.get(d.get("producto_id"))
-            vendedor_id = None
-            if d.get("vendedor_id") is not None:
-                vendedor_id = trabajador_id_map.get(d.get("vendedor_id"))
-                if vendedor_id is None:
-                    vendedor_id = vendedor_id_map.get(d.get("vendedor_id"))
-            if venta_id and producto_id:
+        self.db.conn.execute("BEGIN")
+        try:
+            # --- Distribuidores primero ---
+            for v in data.get("Distribuidores", []):
+                self.db.add_Distribuidor_detallado(v, commit=False)
                 self.db.cursor.execute(
-                    "INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    "SELECT id FROM Distribuidores WHERE nombre=? ORDER BY id DESC LIMIT 1",
+                    (v["nombre"],),
+                )
+                new_id = self.db.cursor.fetchone()["id"]
+                Distribuidor_id_map[v["id"]] = new_id
+
+            # --- Vendedores después, usando el mapeo correcto ---
+            for vend in data.get("vendedores", []):
+                dist_id = vend.get("Distribuidor_id")
+                new_dist_id = (
+                    Distribuidor_id_map.get(dist_id) if dist_id is not None else None
+                )
+                self.db.add_vendedor(
+                    vend["nombre"],
+                    vend.get("descripcion", ""),
+                    new_dist_id,
+                    vend.get("codigo"),
+                    vend.get("dui"),
+                    commit=False,
+                )
+                self.db.cursor.execute(
+                    "SELECT id FROM vendedores WHERE nombre=? ORDER BY id DESC LIMIT 1",
+                    (vend["nombre"],),
+                )
+                new_id = self.db.cursor.fetchone()["id"]
+                vendedor_id_map[vend["id"]] = new_id
+
+            for t in data.get("trabajadores", []):
+                self.db.add_trabajador(t, commit=False)
+                trabajador_id_map[t.get("id")] = self.db.cursor.lastrowid
+
+            # Productos
+            for p in data.get("productos", []):
+                vend = vendedor_id_map.get(p.get("vendedor_id"))
+                dist = Distribuidor_id_map.get(p.get("Distribuidor_id"))
+                self.db.add_producto(
+                    p.get("nombre", ""),
+                    p.get("codigo", ""),
+                    vend,
+                    dist,
+                    p.get("precio_compra", 0),
+                    p.get("precio_venta_minorista", 0),
+                    p.get("precio_venta_mayorista", 0),
+                    p.get("stock", 0),
+                    commit=False,
+                )
+                new_id = self.db.cursor.lastrowid  # Usa el ID real insertado, no busques por nombre
+                producto_id_map[p["id"]] = new_id
+
+            # Clientes
+            for c in data.get("clientes", []):
+                self.db.add_cliente(
+                    c.get("nombre", ""),
+                    c.get("nrc", ""),
+                    c.get("nit", ""),
+                    c.get("dui", ""),
+                    c.get("giro", ""),
+                    c.get("telefono", ""),
+                    c.get("email", ""),
+                    c.get("direccion", ""),
+                    c.get("departamento", ""),
+                    c.get("municipio", ""),
+                    c.get("codigo"),
+                    commit=False,
+                )
+                self.db.cursor.execute(
+                    "SELECT id FROM clientes WHERE nombre=? ORDER BY id DESC LIMIT 1",
+                    (c["nombre"],),
+                )
+                new_id = self.db.cursor.fetchone()["id"]
+                cliente_id_map[c["id"]] = new_id
+
+            # Ventas
+            for v in data.get("ventas", []):
+                cliente_id = cliente_id_map.get(v.get("cliente_id"))
+                Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
+                vendedor_id = (
+                    trabajador_id_map.get(v.get("vendedor_id"))
+                    if v.get("vendedor_id") is not None
+                    else None
+                )
+                if vendedor_id is None and v.get("vendedor_id") is not None:
+                    vendedor_id = vendedor_id_map.get(v.get("vendedor_id"))
+
+                extra = v.get("extra")
+                if isinstance(extra, str):
+                    try:
+                        extra = json.loads(extra)
+                    except Exception:
+                        pass
+                extra_json = json.dumps(extra) if extra is not None else None
+
+                estado = v.get("estado", "Pagada")
+                self.db.cursor.execute(
+                    "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
-                        venta_id,
+                        v.get("id"),
+                        v.get("fecha", ""),
+                        v.get("total", 0),
+                        cliente_id,
+                        Distribuidor_id,
+                        vendedor_id,
+                        extra_json,
+                        estado,
+                    ),
+                )
+                venta_id_map[v["id"]] = v.get("id")
+
+            # ensure AUTOINCREMENT counters are updated
+            max_venta_id = (
+                self.db.cursor.execute("SELECT MAX(id) FROM ventas").fetchone()[0] or 0
+            )
+            self.db.cursor.execute(
+                "UPDATE sqlite_sequence SET seq=? WHERE name='ventas'", (max_venta_id,)
+            )
+
+            # Compras
+            for c in data.get("compras", []):
+                Distribuidor_id = (
+                    Distribuidor_id_map.get(c.get("Distribuidor_id"))
+                    if c.get("Distribuidor_id") is not None
+                    else None
+                )
+                vendedor_id = (
+                    vendedor_id_map.get(c.get("vendedor_id"))
+                    if c.get("vendedor_id") is not None
+                    else None
+                )
+                comision_pct = c.get("comision_pct", 0)
+                comision_monto = c.get("comision_monto", 0)
+                self.db.cursor.execute(
+                    "INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        c.get("fecha", ""),
+                        None,
+                        0,
+                        0,
+                        c.get("total", 0),
+                        Distribuidor_id,
+                        comision_pct,
+                        comision_monto,
+                        vendedor_id,
+                    ),
+                )
+                new_id = self.db.cursor.lastrowid
+                compra_id_map[c["id"]] = new_id
+
+            # Detalles de venta
+            for d in data.get("detalles_venta", []):
+                venta_id = venta_id_map.get(d.get("venta_id"))
+                producto_id = producto_id_map.get(d.get("producto_id"))
+                vendedor_id = None
+                if d.get("vendedor_id") is not None:
+                    vendedor_id = trabajador_id_map.get(d.get("vendedor_id"))
+                    if vendedor_id is None:
+                        vendedor_id = vendedor_id_map.get(d.get("vendedor_id"))
+                if venta_id and producto_id:
+                    self.db.cursor.execute(
+                        "INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            venta_id,
+                            producto_id,
+                            d.get("cantidad", 0),
+                            d.get("precio_unitario", 0),
+                            d.get("descuento", 0),
+                            d.get("descuento_tipo", ""),
+                            d.get("iva", 0),
+                            d.get("comision", 0),
+                            d.get("iva_tipo", ""),
+                            d.get("tipo_fiscal", "Gravada"),
+                            d.get("extra", None),
+                            d.get("precio_con_iva", 0),
+                            vendedor_id,
+                        ),
+                    )
+
+            # Detalles de compra
+            for d in data.get("detalles_compra", []):
+                compra_id = compra_id_map.get(d.get("compra_id"))
+                producto_id = producto_id_map.get(d.get("producto_id"))
+                if compra_id and producto_id:
+                    self.db.add_detalle_compra(
+                        compra_id,
                         producto_id,
                         d.get("cantidad", 0),
                         d.get("precio_unitario", 0),
+                        d.get("fecha_vencimiento", ""),
                         d.get("descuento", 0),
                         d.get("descuento_tipo", ""),
                         d.get("iva", 0),
-                        d.get("comision", 0),
                         d.get("iva_tipo", ""),
-                        d.get("tipo_fiscal", "Gravada"),
-                        d.get("extra", None),
-                        d.get("precio_con_iva", 0),
-                        vendedor_id
+                        d.get("comision_pct", 0),
+                        d.get("comision_monto", 0),
+                        d.get("comision_tipo", ""),
+                        commit=False,
                     )
+
+            # Movimientos (opcional, si tienes movimientos)
+            for m in data.get("movimientos", []):
+                producto_id = producto_id_map.get(m.get("producto_id"))
+                self.db.cursor.execute(
+                    "INSERT INTO movimientos (fecha, tipo, producto_id, cantidad, motivo, usuario) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        m.get("fecha", ""),
+                        m.get("tipo", ""),
+                        producto_id,
+                        m.get("cantidad", 0),
+                        m.get("motivo", ""),
+                        m.get("usuario", ""),
+                    ),
                 )
 
-        # Detalles de compra
-        for d in data.get("detalles_compra", []):
-            compra_id = compra_id_map.get(d.get("compra_id"))
-            producto_id = producto_id_map.get(d.get("producto_id"))
-            if compra_id and producto_id:
-                self.db.add_detalle_compra(
-                    compra_id,
-                    producto_id,
-                    d.get("cantidad", 0),
-                    d.get("precio_unitario", 0),
-                    d.get("fecha_vencimiento", ""),
-                    d.get("descuento", 0),
-                    d.get("descuento_tipo", ""),
-                    d.get("iva", 0),
-                    d.get("iva_tipo", ""),
-                    d.get("comision_pct", 0),
-                    d.get("comision_monto", 0),
-                    d.get("comision_tipo", "")
-            )
+            # Ventas crédito fiscal
+            for vcf in data.get("ventas_credito_fiscal", []):
+                extra = vcf.get("extra")
+                extra_json = json.dumps(extra) if extra is not None else None
+                self.db.cursor.execute(
+                    """
+                    INSERT INTO ventas_credito_fiscal (
+                        venta_id, cliente_id, nrc, nit, giro, no_remision, orden_no, condicion_pago,
+                        venta_a_cuenta_de, documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
+                        sumas, iva, subtotal, total_letras, descuentos, extra, ventas_exentas, ventas_no_sujetas
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        venta_id_map.get(vcf.get("venta_id")),
+                        cliente_id_map.get(vcf.get("cliente_id")),
+                        vcf.get("nrc"),
+                        vcf.get("nit"),
+                        vcf.get("giro"),
+                        vcf.get("no_remision"),
+                        vcf.get("orden_no"),
+                        vcf.get("condicion_pago"),
+                        vcf.get("venta_a_cuenta_de"),
+                        vcf.get("documento_venta_a_cuenta"),
+                        vcf.get("fecha_remision_anterior"),
+                        vcf.get("fecha_remision"),
+                        vcf.get("sumas", 0),
+                        vcf.get("iva", 0),
+                        vcf.get("subtotal", 0),
+                        vcf.get("total_letras", ""),
+                        vcf.get("descuentos", 0),
+                        extra_json,
+                        vcf.get("ventas_exentas", 0),
+                        vcf.get("ventas_no_sujetas", 0),
+                    ),
+                )
 
-        # Movimientos (opcional, si tienes movimientos)
-        for m in data.get("movimientos", []):
-            producto_id = producto_id_map.get(m.get("producto_id"))
-            self.db.cursor.execute(
-                "INSERT INTO movimientos (fecha, tipo, producto_id, cantidad, motivo, usuario) VALUES (?, ?, ?, ?, ?, ?)",
-                (m.get("fecha", ""), m.get("tipo", ""), producto_id, m.get("cantidad", 0), m.get("motivo", ""), m.get("usuario", ""))
-            )
+            self.db.conn.commit()
+        except Exception:
+            self.db.conn.rollback()
+            raise
 
-        self.db.conn.commit()
         self.refresh_data()
-        # --- BLOQUE MODIFICADO PARA DATOS DEL NEGOCIO ---
+
         datos_negocio = data.get("datos_negocio", None)
         datos_path = DATOS_NEGOCIO_PATH
         if datos_negocio:
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos_negocio, f, ensure_ascii=False, indent=2)
         elif os.path.exists(datos_path):
-            # Si no hay datos del negocio en el inventario, elimina el archivo local
             os.remove(datos_path)
 
-        # --- AGREGA DESPUÉS DE IMPORTAR VENTAS ---
-        for vcf in data.get("ventas_credito_fiscal", []):
-            extra = vcf.get("extra")
-            extra_json = json.dumps(extra) if extra is not None else None
-            self.db.cursor.execute(
-                """
-                INSERT INTO ventas_credito_fiscal (
-                    venta_id, cliente_id, nrc, nit, giro, no_remision, orden_no, condicion_pago,
-                    venta_a_cuenta_de, documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
-                    sumas, iva, subtotal, total_letras, descuentos, extra, ventas_exentas, ventas_no_sujetas
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    venta_id_map.get(vcf.get("venta_id")),
-                    cliente_id_map.get(vcf.get("cliente_id")),
-                    vcf.get("nrc"),
-                    vcf.get("nit"),
-                    vcf.get("giro"),
-                    vcf.get("no_remision"),
-                    vcf.get("orden_no"),
-                    vcf.get("condicion_pago"),
-                    vcf.get("venta_a_cuenta_de"),
-                    vcf.get("documento_venta_a_cuenta"),
-                    vcf.get("fecha_remision_anterior"),
-                    vcf.get("fecha_remision"),
-                    vcf.get("sumas", 0),
-                    vcf.get("iva", 0),
-                    vcf.get("subtotal", 0),
-                    vcf.get("total_letras", ""),
-                    vcf.get("descuentos", 0),
-                    extra_json,
-                    vcf.get("ventas_exentas", 0),
-                    vcf.get("ventas_no_sujetas", 0),
-                ),
-            )
-        self.db.conn.commit()
-        self.refresh_data()
         return data
 
     def add_Distribuidor(self, nombre):

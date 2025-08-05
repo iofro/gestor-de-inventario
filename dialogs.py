@@ -2357,7 +2357,7 @@ class DistribuidorDialog(QDialog):
         main_layout.addLayout(btns)
         self.setLayout(main_layout)
 
-        self.btn_ok.clicked.connect(self.accept)
+        self.btn_ok.clicked.connect(self._validar_y_aceptar)
         self.btn_cancel.clicked.connect(self.reject)
 
         # Si es edición, carga los datos existentes
@@ -2380,6 +2380,26 @@ class DistribuidorDialog(QDialog):
             self.nrc_edit.setText(Distribuidor["nrc"] if "nrc" in Distribuidor.keys() else "")
             self.cuenta_bancaria_edit.setText(Distribuidor["cuenta_bancaria"] if "cuenta_bancaria" in Distribuidor.keys() else "")
             self.notas_edit.setText(Distribuidor["notas"] if "notas" in Distribuidor.keys() else "")
+
+    def _validar_y_aceptar(self):
+        nombre = self.nombre_edit.text().strip()
+        telefono = self.telefono_edit.text().strip()
+        email = self.email_edit.text().strip()
+        nit = self.nit_edit.text().strip()
+
+        if not nombre:
+            QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
+            return
+        if not telefono:
+            QMessageBox.warning(self, "Datos inválidos", "El teléfono no puede estar vacío.")
+            return
+        if not nit or not validar_nit(nit):
+            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
+            return
+        if not email or not validar_email(email):
+            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
+            return
+        self.accept()
 
     def get_data(self):
         return {
@@ -2576,7 +2596,7 @@ class VendedorDialog(QDialog):
         layout.addLayout(btns)
         self.setLayout(layout)
 
-        self.btn_ok.clicked.connect(self.accept)
+        self.btn_ok.clicked.connect(self._validar_y_aceptar)
         self.btn_cancel.clicked.connect(self.reject)
 
         if codigo_sugerido and not vendedor:
@@ -2594,6 +2614,27 @@ class VendedorDialog(QDialog):
                         self.Distribuidor_combo.setCurrentIndex(i + 1)  # +1 por "Sin Distribuidor"
                         break
 
+    def _validar_y_aceptar(self):
+        nombre = self.nombre_edit.text().strip()
+        if not nombre:
+            QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
+            return
+        if hasattr(self, 'telefono_edit'):
+            telefono = self.telefono_edit.text().strip()
+            if not telefono:
+                QMessageBox.warning(self, "Datos inválidos", "El teléfono no puede estar vacío.")
+                return
+        if hasattr(self, 'nit_edit'):
+            nit = self.nit_edit.text().strip()
+            if not nit or not validar_nit(nit):
+                QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
+                return
+        if hasattr(self, 'email_edit'):
+            email = self.email_edit.text().strip()
+            if not email or not validar_email(email):
+                QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
+                return
+        self.accept()
     def get_data(self):
         idx = self.Distribuidor_combo.currentIndex()
         Distribuidor_id = None

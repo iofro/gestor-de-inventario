@@ -63,6 +63,13 @@ def test_generate_invoice_creates_json(qt_app, tmp_path):
     assert pdf_path.exists()
     assert json_path.exists()
 
+    data = json.load(open(json_path))
+    ident = data.get("identificacion", {})
+    assert ident.get("codigoGeneracion")
+    assert ident.get("numeroControl")
+    assert data.get("cuerpoDocumento")
+    assert data.get("resumen", {}).get("totalPagar") == 10
+
 
 def test_save_ticket_creates_json(qt_app, tmp_path):
     db = FakeDB()
@@ -90,6 +97,10 @@ def test_save_ticket_creates_json(qt_app, tmp_path):
 
     assert pdf_path.exists()
     assert json_path.exists()
+
     data = json.load(open(json_path))
-    assert data.get("identificacion", {}).get("codigoGeneracion")
-    assert data.get("identificacion", {}).get("numeroControl")
+    ident = data.get("identificacion", {})
+    assert ident.get("codigoGeneracion")
+    assert ident.get("numeroControl")
+    assert data.get("cuerpoDocumento")
+    assert data.get("resumen", {}).get("totalPagar") == 10

@@ -1089,7 +1089,7 @@ class MainWindow(QMainWindow):
             self.manager.db.cursor.execute("""
                 UPDATE Distribuidores SET
                     codigo=?, nombre=?, telefono=?, email=?, cargo=?, sucursal=?,
-                    comision_base=?, fecha_inicio=?, direccion=?, departamento=?, municipio=?,
+                    fecha_inicio=?, direccion=?, departamento=?, municipio=?,
                     tipo_contrato=?, comisiones_especificas=?, metodo_pago=?, nit=?, nrc=?,
                     cuenta_bancaria=?, notas=?
                 WHERE id=?
@@ -1100,7 +1100,6 @@ class MainWindow(QMainWindow):
                 data.get("email", ""),
                 data.get("cargo", ""),
                 data.get("sucursal", ""),
-                data.get("comision_base", 0),
                 data.get("fecha_inicio", ""),
                 data.get("direccion", ""),
                 data.get("departamento", ""),

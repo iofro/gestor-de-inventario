@@ -2294,6 +2294,7 @@ class DistribuidorDialog(QDialog):
         self.setWindowTitle("Registrar/Editar Distribuidor")
         self.setMinimumWidth(900)
         main_layout = QVBoxLayout()
+        self._distribuidor_id = Distribuidor.get("id") if Distribuidor else None
 
         # --- Datos principales ---
         datos_principales = QGroupBox("Datos principales")
@@ -2357,7 +2358,7 @@ class DistribuidorDialog(QDialog):
         main_layout.addLayout(btns)
         self.setLayout(main_layout)
 
-        self.btn_ok.clicked.connect(self.accept)
+        self.btn_ok.clicked.connect(self._validar_y_aceptar)
         self.btn_cancel.clicked.connect(self.reject)
 
         # Si es edición, carga los datos existentes
@@ -2381,6 +2382,26 @@ class DistribuidorDialog(QDialog):
             self.cuenta_bancaria_edit.setText(Distribuidor["cuenta_bancaria"] if "cuenta_bancaria" in Distribuidor.keys() else "")
             self.notas_edit.setText(Distribuidor["notas"] if "notas" in Distribuidor.keys() else "")
 
+    def _validar_y_aceptar(self):
+        nombre = self.nombre_edit.text().strip()
+        telefono = self.telefono_edit.text().strip()
+        email = self.email_edit.text().strip()
+        nit = self.nit_edit.text().strip()
+
+        if not nombre:
+            QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
+            return
+        if not telefono:
+            QMessageBox.warning(self, "Datos inválidos", "El teléfono no puede estar vacío.")
+            return
+        if not nit or not validar_nit(nit):
+            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
+            return
+        if not email or not validar_email(email):
+            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
+            return
+        self.accept()
+
     def get_data(self):
         return {
             "codigo": self.codigo_edit.text(),
@@ -2402,6 +2423,35 @@ class DistribuidorDialog(QDialog):
             "notas": self.notas_edit.text()
         }
 
+    def accept(self):
+        db = getattr(getattr(self.parent(), "manager", None), "db", None)
+        if db:
+            codigo = self.codigo_edit.text().strip()
+            nombre = self.nombre_edit.text().strip()
+            if codigo:
+                if self._distribuidor_id is None:
+                    db.cursor.execute("SELECT 1 FROM Distribuidores WHERE codigo=?", (codigo,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM Distribuidores WHERE codigo=? AND id<>?",
+                        (codigo, self._distribuidor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Código duplicado", "Ya existe un distribuidor con ese código.")
+                    return
+            if nombre:
+                if self._distribuidor_id is None:
+                    db.cursor.execute("SELECT 1 FROM Distribuidores WHERE nombre=?", (nombre,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM Distribuidores WHERE nombre=? AND id<>?",
+                        (nombre, self._distribuidor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Nombre duplicado", "Ya existe un distribuidor con ese nombre.")
+                    return
+        super().accept()
+
 class DistribuidorInfoDialog(QDialog):
     def __init__(self, distribuidor, parent=None):
         super().__init__(parent)
@@ -2416,7 +2466,6 @@ class DistribuidorInfoDialog(QDialog):
             ("Email:", distribuidor.get("email", "")),
             ("Cargo:", distribuidor.get("cargo", "")),
             ("Sucursal/Laboratorio:", distribuidor.get("sucursal", "")),
-            ("Comisión base:", str(distribuidor.get("comision_base", ""))),
             ("Fecha de inicio:", distribuidor.get("fecha_inicio", "")),
             ("Dirección:", distribuidor.get("direccion", "")),
             ("Departamento:", distribuidor.get("departamento", "")),
@@ -2554,8 +2603,10 @@ class VendedorDialog(QDialog):
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
-        self.Distribuidor_combo.addItem("Sin Distribuidor")
-        self.Distribuidor_combo.addItems([d["nombre"] for d in self.Distribuidores])
+        self.Distribuidor_combo.addItem("Sin Distribuidor", None)
+        for d in self.Distribuidores:
+            self.Distribuidor_combo.addItem(d["nombre"], d["id"])
+        self._vendedor_id = vendedor.get("id") if vendedor else None
 
         layout.addWidget(QLabel("Código:"))
         layout.addWidget(self.codigo_edit)
@@ -2576,7 +2627,7 @@ class VendedorDialog(QDialog):
         layout.addLayout(btns)
         self.setLayout(layout)
 
-        self.btn_ok.clicked.connect(self.accept)
+        self.btn_ok.clicked.connect(self._validar_y_aceptar)
         self.btn_cancel.clicked.connect(self.reject)
 
         if codigo_sugerido and not vendedor:
@@ -2589,23 +2640,68 @@ class VendedorDialog(QDialog):
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
             if Distribuidor_id:
-                for i, d in enumerate(self.Distribuidores):
-                    if d["id"] == Distribuidor_id:
-                        self.Distribuidor_combo.setCurrentIndex(i + 1)  # +1 por "Sin Distribuidor"
-                        break
+                idx = self.Distribuidor_combo.findData(Distribuidor_id)
+                if idx >= 0:
+                    self.Distribuidor_combo.setCurrentIndex(idx)
 
+    def _validar_y_aceptar(self):
+        nombre = self.nombre_edit.text().strip()
+        if not nombre:
+            QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
+            return
+        if hasattr(self, 'telefono_edit'):
+            telefono = self.telefono_edit.text().strip()
+            if not telefono:
+                QMessageBox.warning(self, "Datos inválidos", "El teléfono no puede estar vacío.")
+                return
+        if hasattr(self, 'nit_edit'):
+            nit = self.nit_edit.text().strip()
+            if not nit or not validar_nit(nit):
+                QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
+                return
+        if hasattr(self, 'email_edit'):
+            email = self.email_edit.text().strip()
+            if not email or not validar_email(email):
+                QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
+                return
+        self.accept()
     def get_data(self):
-        idx = self.Distribuidor_combo.currentIndex()
-        Distribuidor_id = None
-        if idx > 0:
-            Distribuidor_id = self.Distribuidores[idx - 1]["id"]
         return {
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
             "dui": self.dui_edit.text(),
             "descripcion": self.descripcion_edit.text(),
-            "Distribuidor_id": Distribuidor_id,
+            "Distribuidor_id": self.Distribuidor_combo.currentData(),
         }
+
+    def accept(self):
+        db = getattr(getattr(self.parent(), "manager", None), "db", None)
+        if db:
+            codigo = self.codigo_edit.text().strip()
+            nombre = self.nombre_edit.text().strip()
+            if codigo:
+                if self._vendedor_id is None:
+                    db.cursor.execute("SELECT 1 FROM vendedores WHERE codigo=?", (codigo,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM vendedores WHERE codigo=? AND id<>?",
+                        (codigo, self._vendedor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Código duplicado", "Ya existe un vendedor con ese código.")
+                    return
+            if nombre:
+                if self._vendedor_id is None:
+                    db.cursor.execute("SELECT 1 FROM vendedores WHERE nombre=?", (nombre,))
+                else:
+                    db.cursor.execute(
+                        "SELECT 1 FROM vendedores WHERE nombre=? AND id<>?",
+                        (nombre, self._vendedor_id),
+                    )
+                if db.cursor.fetchone():
+                    QMessageBox.warning(self, "Nombre duplicado", "Ya existe un vendedor con ese nombre.")
+                    return
+        super().accept()
 class CompraDetalleDialog(QDialog):
     def __init__(self, compra, detalles, parent=None):
         super().__init__(parent)

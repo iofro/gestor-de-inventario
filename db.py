@@ -10,6 +10,7 @@ logger = logging.getLogger(__name__)
 class DB:
     def __init__(self, db_name=os.path.join(os.path.dirname(__file__), "inventario.db")):
         self.conn = sqlite3.connect(db_name)
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
         self.setup()
@@ -556,6 +557,22 @@ class DB:
 
     def delete_Distribuidor(self, id):
         try:
+            self.cursor.execute(
+                "UPDATE vendedores SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "UPDATE productos SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "UPDATE compras SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "UPDATE ventas SET Distribuidor_id=NULL WHERE Distribuidor_id=?",
+                (id,),
+            )
             self.cursor.execute("DELETE FROM Distribuidores WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
@@ -604,6 +621,22 @@ class DB:
 
     def delete_vendedor(self, id):
         try:
+            self.cursor.execute(
+                "UPDATE productos SET vendedor_id=NULL WHERE vendedor_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "UPDATE detalles_venta SET vendedor_id=NULL WHERE vendedor_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "UPDATE compras SET vendedor_id=NULL WHERE vendedor_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "UPDATE ventas SET vendedor_id=NULL WHERE vendedor_id=?",
+                (id,),
+            )
             self.cursor.execute("DELETE FROM vendedores WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
@@ -677,6 +710,18 @@ class DB:
         self.conn.commit()
 
     def delete_producto(self, producto_id):
+        self.cursor.execute(
+            "DELETE FROM detalles_venta WHERE producto_id=?", (producto_id,)
+        )
+        self.cursor.execute(
+            "DELETE FROM detalles_compra WHERE producto_id=?", (producto_id,)
+        )
+        self.cursor.execute(
+            "DELETE FROM compras WHERE producto_id=?", (producto_id,)
+        )
+        self.cursor.execute(
+            "DELETE FROM movimientos WHERE producto_id=?", (producto_id,)
+        )
         self.cursor.execute("DELETE FROM productos WHERE id=?", (producto_id,))
         self.conn.commit()
 
@@ -979,6 +1024,30 @@ class DB:
 
     def delete_venta(self, id):
         try:
+            self.cursor.execute(
+                "DELETE FROM detalles_venta WHERE venta_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "DELETE FROM notas WHERE venta_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "DELETE FROM ventas_credito_fiscal WHERE venta_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "DELETE FROM facturas_pdf WHERE venta_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "DELETE FROM tickets_pdf WHERE venta_id=?",
+                (id,),
+            )
+            self.cursor.execute(
+                "DELETE FROM dte_envios WHERE venta_id=?",
+                (id,),
+            )
             self.cursor.execute("DELETE FROM ventas WHERE id=?", (id,))
             self.conn.commit()
         except Exception as e:
@@ -1092,6 +1161,15 @@ class DB:
         self.conn.commit()
 
     def delete_cliente(self, id):
+        self.cursor.execute("DELETE FROM pagos WHERE cliente_id=?", (id,))
+        self.cursor.execute(
+            "UPDATE ventas SET cliente_id=NULL WHERE cliente_id=?",
+            (id,),
+        )
+        self.cursor.execute(
+            "UPDATE ventas_credito_fiscal SET cliente_id=NULL WHERE cliente_id=?",
+            (id,),
+        )
         self.cursor.execute("DELETE FROM clientes WHERE id=?", (id,))
         self.conn.commit()
 

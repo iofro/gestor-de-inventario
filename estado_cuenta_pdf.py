@@ -188,7 +188,7 @@ def generar_estado_cuenta_pdf(
         Spacer(1, 2),
     ]
 
-    col_widths = [70, 60, 55, 120, 50, 60, 60, 50, 55]
+    col_widths = [70, 60, 55, 120, 50, 60, 60, 60, 55]
     headers = [
         "Comprobante",
         "Valor Fact",

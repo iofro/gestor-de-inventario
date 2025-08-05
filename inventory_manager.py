@@ -246,16 +246,19 @@ class InventoryManager:
         self.db.limpiar_vendedores()
         self.db.limpiar_Distribuidores()
         try:
-            self.db.cursor.execute("DELETE FROM clientes")
-            self.db.cursor.execute("DELETE FROM ventas")
             self.db.cursor.execute("DELETE FROM detalles_venta")
+            self.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
+            self.db.cursor.execute("DELETE FROM dte_envios")
+            self.db.cursor.execute("DELETE FROM notas")
+            self.db.cursor.execute("DELETE FROM ventas")
             self.db.cursor.execute("DELETE FROM compras")
             self.db.cursor.execute("DELETE FROM detalles_compra")
             self.db.cursor.execute("DELETE FROM movimientos")
+            self.db.cursor.execute("DELETE FROM clientes")
             self.db.cursor.execute("DELETE FROM trabajadores")
             self.db.conn.commit()
         except Exception:
-            pass
+            self.db.conn.rollback()
 
         vendedor_id_map = {}
         Distribuidor_id_map = {}
@@ -300,12 +303,23 @@ class InventoryManager:
 
             for t in data.get("trabajadores", []):
                 self.db.add_trabajador(t, commit=False)
-                trabajador_id_map[t.get("id")] = self.db.cursor.lastrowid
+                tid = self.db.cursor.lastrowid
+                trabajador_id_map[t.get("id")] = tid
+                if t.get("es_vendedor"):
+                    self.db.add_vendedor(
+                        t.get("nombre"),
+                        t.get("descripcion", ""),
+                        t.get("Distribuidor_id"),
+                        t.get("codigo"),
+                        t.get("dui"),
+                        commit=False,
+                    )
+                    vendedor_id_map[t.get("id")] = self.db.cursor.lastrowid
 
             # Productos
             for p in data.get("productos", []):
                 old_vend_id = p.get("vendedor_id")
-                vend = trabajador_id_map.get(old_vend_id) or vendedor_id_map.get(old_vend_id)
+                vend = vendedor_id_map.get(old_vend_id) or trabajador_id_map.get(old_vend_id)
                 if old_vend_id and vend is None:
                     logger.warning(
                         "vendedor_id %s not found in mapping, defaulting to None",
@@ -354,7 +368,7 @@ class InventoryManager:
                 cliente_id = cliente_id_map.get(v.get("cliente_id"))
                 Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
                 old_vend_id = v.get("vendedor_id")
-                vendedor_id = trabajador_id_map.get(old_vend_id) or vendedor_id_map.get(old_vend_id)
+                vendedor_id = vendedor_id_map.get(old_vend_id) or trabajador_id_map.get(old_vend_id)
                 if old_vend_id and vendedor_id is None:
                     logger.warning(
                         "vendedor_id %s not found in mapping, defaulting to None",
@@ -432,7 +446,7 @@ class InventoryManager:
                 vendedor_id = None
                 old_vend_id = d.get("vendedor_id")
                 if old_vend_id is not None:
-                    vendedor_id = trabajador_id_map.get(old_vend_id) or vendedor_id_map.get(old_vend_id)
+                    vendedor_id = vendedor_id_map.get(old_vend_id) or trabajador_id_map.get(old_vend_id)
                     if vendedor_id is None:
                         logger.warning(
                             "detalle_venta vendedor_id %s not found in mapping, defaulting to None",

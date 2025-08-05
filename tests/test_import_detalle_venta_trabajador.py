@@ -63,6 +63,6 @@ def test_import_maps_detalle_trabajador(tmp_path, monkeypatch):
     assert len(ventas) == 1
     venta_id = ventas[0]["id"]
     detalles = manager.db.get_detalles_venta(venta_id)
-    trab_id = manager.db.get_trabajadores()[0]["id"]
-    assert detalles[0]["vendedor_id"] == trab_id
+    vend_id = manager.db.get_vendedores()[0]["id"]
+    assert detalles[0]["vendedor_id"] == vend_id
 

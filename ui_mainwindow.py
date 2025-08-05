@@ -538,11 +538,12 @@ class MainWindow(QMainWindow):
                 data["nombre"], data["codigo"], None, None,
                 data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], 0
             )
-            self.manager.refresh_data()
             self._actualizar_arbol_vendedores()
             self._actualizar_arbol_Distribuidores()
             if hasattr(self, "vendedor_combo_filtro"):
+                self.vendedor_combo_filtro.blockSignals(True)
                 self.vendedor_combo_filtro.setCurrentIndex(0)
+                self.vendedor_combo_filtro.blockSignals(False)
             self.filter_products()
             QMessageBox.information(self, "Producto", "Producto agregado correctamente.")
 
@@ -573,7 +574,6 @@ class MainWindow(QMainWindow):
         confirm = QMessageBox.question(self, "Eliminar", f"¿Eliminar producto '{prod['nombre']}'?", QMessageBox.Yes | QMessageBox.No)
         if confirm == QMessageBox.Yes:
             self.manager.delete_producto(prod["id"])
-            self.manager.refresh_data()
             self._actualizar_arbol_vendedores()
             self._actualizar_arbol_Distribuidores()
             self.filter_products()

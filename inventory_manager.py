@@ -24,8 +24,8 @@ class InventoryManager:
     def refresh_data(self):
         self._vendedores = self.db.get_vendedores()
         self._Distribuidores = self.db.get_Distribuidores()
-        self._vendedor_name_to_id = {vend["nombre"]: vend["id"] for vend in self._vendedores}
-        self._Distribuidor_name_to_id = {dist["nombre"]: dist["id"] for dist in self._Distribuidores}
+        self._vendedores_by_id = {vend["id"]: vend["nombre"] for vend in self._vendedores}
+        self._Distribuidores_by_id = {dist["id"]: dist["nombre"] for dist in self._Distribuidores}
         self._products = self.db.get_productos(
             vendedor_id=self._filter_vendedor_id,
             Distribuidor_id=self._filter_Distribuidor_id,
@@ -166,10 +166,16 @@ class InventoryManager:
         return self._model
 
     def get_vendedor_id_by_name(self, nombre):
-        return self._vendedor_name_to_id.get(nombre)
+        for vid, vname in self._vendedores_by_id.items():
+            if vname == nombre:
+                return vid
+        return None
 
     def get_Distribuidor_id_by_name(self, nombre):
-        return self._Distribuidor_name_to_id.get(nombre)
+        for did, dname in self._Distribuidores_by_id.items():
+            if dname == nombre:
+                return did
+        return None
 
     def aumentar_stock(self, producto_id, cantidad):
         self.db.aumentar_stock(producto_id, cantidad)

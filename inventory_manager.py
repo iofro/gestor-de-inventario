@@ -73,7 +73,7 @@ class InventoryManager:
             precio_venta_mayorista,
             stock,
         )
-        self.load_page(self.current_page)
+        self.refresh_data()
 
     def edit_producto(
         self,
@@ -98,11 +98,11 @@ class InventoryManager:
             precio_venta_mayorista,
             stock,
         )
-        self.load_page(self.current_page)
+        self.refresh_data()
 
     def delete_producto(self, producto_id):
         self.db.delete_producto(producto_id)
-        self.load_page(self.current_page)
+        self.refresh_data()
 
     def filter_products(self, vendedor_nombre=None, Distribuidor_nombre=None, search=""):
         vendedor_id = self._vendedor_name_to_id.get(vendedor_nombre) if vendedor_nombre else None

@@ -1614,6 +1614,19 @@ class RegisterPurchaseDialog(QDialog):
             QMessageBox.warning(self, "Validación", "Debe agregar al menos un producto a la compra.")
             return
 
+        # Validar que cada producto exista antes de registrar la compra
+        productos_dict = {p["nombre"]: p["id"] for p in self.productos}
+        for item in self.compra_items:
+            producto_id = productos_dict.get(item["producto"])
+            if producto_id is None:
+                QMessageBox.warning(
+                    self,
+                    "Producto no válido",
+                    f"El producto '{item['producto']}' no existe. Registro cancelado."
+                )
+                return
+            item["producto_id"] = producto_id
+
         # Obtén los datos DIRECTAMENTE de los combos y la lista de items
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
         total_general = sum(item["total"] for item in self.compra_items)
@@ -1652,9 +1665,8 @@ class RegisterPurchaseDialog(QDialog):
         })
 
         # Guarda cada detalle de compra con todos los campos
-        productos_dict = {p["nombre"]: p["id"] for p in self.productos}
         for item in self.compra_items:
-            producto_id = productos_dict.get(item["producto"])
+            producto_id = item["producto_id"]
             self.parent().manager.db.add_detalle_compra(
                 compra_id,
                 producto_id,

@@ -168,10 +168,12 @@ class DB:
                 fecha TEXT,
                 monto REAL,
                 motivo TEXT,
+                detalles TEXT,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id)
 
             )
         """)
+        self.ensure_column("notas", "detalles", "TEXT")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS compras (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

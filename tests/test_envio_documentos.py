@@ -97,6 +97,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
 def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     db = DB(":memory:")
+    venta_id = create_sale(db)
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     monkeypatch.setattr("utils.jws.sign_json", lambda data, c, p, k: "SIGNED")
@@ -122,15 +123,16 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
         json.dump(config, fh)
 
     caplog.set_level(logging.ERROR)
-    res = enviar_evento_contingencia(db, 1, {"id": 1})
+    res = enviar_evento_contingencia(db, venta_id, {"id": venta_id})
     assert res["estado"] == "Rechazado"
     assert "Fallo" in caplog.text and "campo: invalido" in caplog.text
-    row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (1,)).fetchone()
+    row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (venta_id,)).fetchone()
     assert row["estado"] == "Rechazado"
 
 
 def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     db = DB(":memory:")
+    venta_id = create_sale(db)
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     monkeypatch.setattr("utils.jws.sign_json", lambda data, c, p, k: "SIGNED")
@@ -151,8 +153,8 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     with open("config_negocio.json", "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
-    res = enviar_evento_anulacion(db, 2, {"id": 2})
+    res = enviar_evento_anulacion(db, venta_id, {"id": venta_id})
     assert res["estado"] == "Transmitido"
-    row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (2,)).fetchone()
+    row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (venta_id,)).fetchone()
     assert row["estado"] == "Transmitido"
 

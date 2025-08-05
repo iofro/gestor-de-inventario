@@ -7,8 +7,6 @@ from db import DB
 import requests
 from utils import jws
 import auth
-import json
-import os
 from jsonschema import validate as _jsonschema_validate
 from utils import catalogos
 import logging

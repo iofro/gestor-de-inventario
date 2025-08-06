@@ -232,13 +232,18 @@ class SalesTab(QWidget):
         rows = []
         for v in ventas:
             fecha = v.get("fecha")
-            try:
-                fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
-            except ValueError:
+            fdate = None
+            if isinstance(fecha, str):
                 try:
-                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
-                except ValueError:
-                    fdate = None
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
+                except (ValueError, TypeError):
+                    try:
+                        fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                    except (ValueError, TypeError):
+                        fdate = None
+            else:
+                # fecha no es una cadena o está ausente
+                fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
             cliente = ""

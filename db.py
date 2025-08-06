@@ -18,27 +18,47 @@ class DB:
     def ensure_column(self, table: str, column: str, definition: str) -> bool:
         """Ensure that a specific column exists in ``table``.
 
-        If the column is missing the user is asked whether it should be created.
-        Returns ``True`` if the column exists or was created successfully.
+        Missing columns are created automatically. If the creation fails a
+        warning is logged. Returns ``True`` if the column exists or was created
+        successfully, ``False`` otherwise.
         """
         self.cursor.execute(f"PRAGMA table_info({table})")
         cols = [row[1] for row in self.cursor.fetchall()]
         if column not in cols:
-            resp = input(
-                f"La tabla '{table}' no tiene la columna '{column}'. ¿Crear columna? (s/n): "
-            )
-            if resp.strip().lower().startswith("s"):
+            try:
                 self.cursor.execute(
                     f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
                 )
                 self.conn.commit()
-                print(f"Columna '{column}' creada en '{table}'.")
+                logger.info("Column '%s' added to '%s'.", column, table)
                 return True
-            print(
-                f"No se agregó la columna '{column}'. Algunas funciones podrían fallar."
-            )
-            return False
+            except Exception as exc:  # sqlite3.OperationalError, etc.
+                logger.warning(
+                    "No se agregó la columna '%s' en '%s': %s", column, table, exc
+                )
+                return False
         return True
+
+    def add_column_if_missing(self, table: str, column_def: str) -> bool:
+        """Add a column to ``table`` if it is missing.
+
+        ``column_def`` should include the column name and its definition
+        (e.g. ``"nombre TEXT"``). Returns ``True`` if the column exists or
+        was created successfully, otherwise ``False``. Failures are logged
+        using ``logger``.
+        """
+        column = column_def.split()[0]
+        self.cursor.execute(f"PRAGMA table_info({table})")
+        cols = [row[1] for row in self.cursor.fetchall()]
+        if column in cols:
+            return True
+        try:
+            self.cursor.execute(f"ALTER TABLE {table} ADD COLUMN {column_def}")
+            self.conn.commit()
+            return True
+        except Exception:
+            logger.exception("Failed to add column %s to table %s", column, table)
+            return False
 
     def migrate_ventas_cliente_fk(self):
         """Ensure ``ventas`` has proper foreign keys for cliente and vendedor.
@@ -453,208 +473,54 @@ class DB:
         if self.cursor.fetchone()[0] == 0:
             self.cursor.execute("INSERT INTO Distribuidor_info (nombre) VALUES ('')")
             self.conn.commit()
-        try:
-            self.cursor.execute("ALTER TABLE productos ADD COLUMN precio_compra REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE productos ADD COLUMN precio_venta_minorista REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE productos ADD COLUMN precio_venta_mayorista REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE productos ADD COLUMN precio_total_mayorista REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        # Asegura que la columna Distribuidor_id exista in productos
-        try:
-            self.cursor.execute("ALTER TABLE productos ADD COLUMN Distribuidor_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        # Elimina el intento de agregar fecha_vencimiento
-        # try:
-        #     self.cursor.execute("ALTER TABLE productos ADD COLUMN fecha_vencimiento TEXT")
-        #     self.conn.commit()
-        # except Exception:
-        #     pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE ventas ADD COLUMN cliente_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE ventas ADD COLUMN Distribuidor_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE ventas ADD COLUMN vendedor_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE compras ADD COLUMN Distribuidor_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE compras ADD COLUMN comision_pct REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE compras ADD COLUMN comision_monto REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN fecha_vencimiento TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        # Asegura que la columna descripcion exista en vendedores
-        try:
-            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN descripcion TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN codigo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN Distribuidor_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE vendedores ADD COLUMN dui TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE trabajadores ADD COLUMN codigo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN descuento REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN descuento_tipo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN iva REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN iva_tipo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN comision_pct REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN comision_monto REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_compra ADD COLUMN comision_tipo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN descuento REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN descuento_tipo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN iva REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN comision REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN iva_tipo TEXT")
-            self.conn.commit()
-        except Exception:
-            pass
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN tipo_fiscal TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        # Asegura columnas adicionales en ventas_credito_fiscal y ventas
-        for stmt in [
-            "ALTER TABLE ventas_credito_fiscal ADD COLUMN sumas REAL DEFAULT 0",
-            "ALTER TABLE ventas_credito_fiscal ADD COLUMN iva REAL DEFAULT 0",
-            "ALTER TABLE ventas_credito_fiscal ADD COLUMN subtotal REAL DEFAULT 0",
-            "ALTER TABLE ventas_credito_fiscal ADD COLUMN total_letras TEXT",
-            "ALTER TABLE ventas_credito_fiscal ADD COLUMN descuentos REAL DEFAULT 0",
-            "ALTER TABLE ventas ADD COLUMN extra TEXT",
-            "ALTER TABLE ventas ADD COLUMN estado TEXT DEFAULT 'Pagada'",
-        ]:
-            try:
-                self.cursor.execute(stmt)
-                self.conn.commit()
-            except Exception:
-                pass  # La columna ya existe o no se pudo crear
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN extra TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN extra TEXT")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        # Forzar la creación de columnas ventas_exentas y ventas_no_sujetas en ventas_credito_fiscal
-        try:
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN ventas_exentas REAL DEFAULT 0")
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE ventas_credito_fiscal ADD COLUMN ventas_no_sujetas REAL DEFAULT 0")
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN precio_con_iva REAL DEFAULT 0")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
-        try:
-            self.cursor.execute("ALTER TABLE detalles_venta ADD COLUMN vendedor_id INTEGER")
-            self.conn.commit()
-        except Exception:
-            pass  # Ya existe la columna
+        # Asegura columnas adicionales en tablas existentes
+        columns = [
+            ("productos", "precio_compra REAL DEFAULT 0"),
+            ("productos", "precio_venta_minorista REAL DEFAULT 0"),
+            ("productos", "precio_venta_mayorista REAL DEFAULT 0"),
+            ("productos", "precio_total_mayorista REAL DEFAULT 0"),
+            ("productos", "Distribuidor_id INTEGER"),
+            ("ventas", "cliente_id INTEGER"),
+            ("ventas", "Distribuidor_id INTEGER"),
+            ("ventas", "vendedor_id INTEGER"),
+            ("compras", "Distribuidor_id INTEGER"),
+            ("compras", "comision_pct REAL DEFAULT 0"),
+            ("compras", "comision_monto REAL DEFAULT 0"),
+            ("detalles_compra", "fecha_vencimiento TEXT"),
+            ("vendedores", "descripcion TEXT"),
+            ("vendedores", "codigo TEXT"),
+            ("vendedores", "Distribuidor_id INTEGER"),
+            ("vendedores", "dui TEXT"),
+            ("trabajadores", "codigo TEXT"),
+            ("detalles_compra", "descuento REAL DEFAULT 0"),
+            ("detalles_compra", "descuento_tipo TEXT"),
+            ("detalles_compra", "iva REAL DEFAULT 0"),
+            ("detalles_compra", "iva_tipo TEXT"),
+            ("detalles_compra", "comision_pct REAL DEFAULT 0"),
+            ("detalles_compra", "comision_monto REAL DEFAULT 0"),
+            ("detalles_compra", "comision_tipo TEXT"),
+            ("detalles_venta", "descuento REAL DEFAULT 0"),
+            ("detalles_venta", "descuento_tipo TEXT"),
+            ("detalles_venta", "iva REAL DEFAULT 0"),
+            ("detalles_venta", "comision REAL DEFAULT 0"),
+            ("detalles_venta", "iva_tipo TEXT"),
+            ("detalles_venta", "tipo_fiscal TEXT"),
+            ("ventas_credito_fiscal", "sumas REAL DEFAULT 0"),
+            ("ventas_credito_fiscal", "iva REAL DEFAULT 0"),
+            ("ventas_credito_fiscal", "subtotal REAL DEFAULT 0"),
+            ("ventas_credito_fiscal", "total_letras TEXT"),
+            ("ventas_credito_fiscal", "descuentos REAL DEFAULT 0"),
+            ("ventas", "extra TEXT"),
+            ("ventas", "estado TEXT DEFAULT 'Pagada'"),
+            ("detalles_venta", "extra TEXT"),
+            ("ventas_credito_fiscal", "extra TEXT"),
+            ("ventas_credito_fiscal", "ventas_exentas REAL DEFAULT 0"),
+            ("ventas_credito_fiscal", "ventas_no_sujetas REAL DEFAULT 0"),
+            ("detalles_venta", "precio_con_iva REAL DEFAULT 0"),
+            ("detalles_venta", "vendedor_id INTEGER"),
+        ]
+        for table, definition in columns:
+            self.add_column_if_missing(table, definition)
         # Índices únicos para campos de texto
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_codigo ON clientes(codigo)"

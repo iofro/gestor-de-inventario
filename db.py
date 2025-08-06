@@ -215,6 +215,15 @@ class DB:
                 otros TEXT
             )
         """)
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clientes_nombre ON clientes(nombre)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clientes_nit ON clientes(nit)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_clientes_nrc ON clientes(nrc)"
+        )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS pagos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1260,11 +1269,18 @@ class DB:
         self.conn.commit()
 
     def get_clientes(self, search=""):
-        query = "SELECT * FROM clientes"
+        query = (
+            "SELECT id, codigo, nombre, nrc, nit, telefono, email, giro, direccion, departamento, municipio, otros "
+            "FROM clientes"
+        )
         params = []
         if search:
-            query += " WHERE nombre LIKE ? OR codigo LIKE ? OR nit LIKE ?"
-            params = [f"%{search}%"] * 3
+            like = f"%{search}%"
+            query += (
+                " WHERE nombre LIKE ? OR codigo LIKE ? OR nit LIKE ? OR nrc LIKE ? "
+                "OR telefono LIKE ? OR email LIKE ?"
+            )
+            params = [like, like, like, like, like, like]
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 

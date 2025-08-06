@@ -629,9 +629,16 @@ class DB:
         ``commit`` can be set to ``False`` when called inside an existing
         transaction to avoid committing after each insertion.
         """
-
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
+
+        self.cursor.execute(
+            "SELECT 1 FROM trabajadores WHERE codigo=?",
+            (codigo,),
+        )
+        if self.cursor.fetchone():
+            raise ValueError("El código ya existe")
+
         self.cursor.execute(
             """
             INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)

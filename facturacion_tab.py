@@ -666,6 +666,9 @@ class FacturacionTab(QWidget):
             estado = dialog.get_estado()
             self.manager.db.update_venta_estado(venta_id, estado)
             self.load_invoices()
+            parent = self.parent()
+            if parent and hasattr(parent, "sales_tab"):
+                parent.sales_tab.load_sales()
 
     def delete_files(self):
         """Elimina PDF y JSON asociados a la venta seleccionada."""

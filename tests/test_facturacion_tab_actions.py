@@ -39,6 +39,7 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
     tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
 
     save_path = tmp_path / "ticket.pdf"
 
@@ -48,16 +49,22 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     monkeypatch.setattr(facturacion_tab, "generar_ticket_personalizado", fake_gen)
     monkeypatch.setattr(facturacion_tab.QFileDialog, "getSaveFileName", lambda *a, **k: (str(save_path), None))
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
 
     tab.create_ticket()
     assert save_path.exists()
     assert save_path.with_suffix(".json").exists()
 
 
-def test_change_estado_updates_table(qt_app, monkeypatch):
+def test_change_estado_updates_table(qt_app, monkeypatch, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    pdf_path.with_suffix(".json").write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
     tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
 
     class DummyDlg:
         def __init__(self, estado, parent=None):
@@ -90,6 +97,7 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     monkeypatch.setenv("INVENTARIO_EMAIL_PASSWORD", "pw")
 
     tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
 
     class DummyCheck:
         def __init__(self):
@@ -102,6 +110,7 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
         def __init__(self, parent=None):
             self.email_cb = DummyCheck()
             self.hacienda_cb = DummyCheck()
+            self.hacienda_cb.setChecked(True)
         def exec_(self):
             return QDialog.Accepted
     monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)

@@ -11,7 +11,6 @@ import json
 from inventory_manager import InventoryManager
 from dialogs import (
     RegisterSaleDialog,
-    ClienteSelectorDialog,
     ProductDialog,
     RegisterPurchaseDialog,
     DistribuidorDialog,
@@ -624,10 +623,9 @@ class MainWindow(QMainWindow):
                         "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
                         "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
                     })
-        clientes = [dict(c) for c in self.manager._clientes]
         Distribuidores = [v["nombre"] for v in self.manager._Distribuidores]
         vendedores_trabajadores = self.manager.db.get_trabajadores(solo_vendedores=True)
-        dialog = RegisterSaleDialog(productos_lote, clientes, Distribuidores, vendedores_trabajadores, self)
+        dialog = RegisterSaleDialog(productos_lote, Distribuidores, vendedores_trabajadores, self)
         try:
             if dialog.exec_():
                 data = dialog.get_data()
@@ -751,7 +749,7 @@ class MainWindow(QMainWindow):
             from dialogs import RegisterCreditoFiscalDialog
             Distribuidores = [dict(v) for v in self.manager._Distribuidores]
             vendedores_trabajadores = self.manager.db.get_trabajadores(solo_vendedores=True)
-            dialog = RegisterCreditoFiscalDialog(productos_lote, clientes, Distribuidores, vendedores_trabajadores, self)
+            dialog = RegisterCreditoFiscalDialog(productos_lote, Distribuidores, vendedores_trabajadores, self)
             dialog.set_productos_data(productos_lote)
             if dialog.exec_():
                 
@@ -1170,19 +1168,23 @@ class MainWindow(QMainWindow):
         dialog = ClienteDialog(self, codigo_sugerido=codigo)
         if dialog.exec_():
             data = dialog.get_data()
-            self.manager.add_cliente(
-                data["nombre"],
-                data["nrc"],
-                data["nit"],
-                data["dui"],
-                data["giro"],
-                data["telefono"],
-                data["email"],
-                data["direccion"],
-                data["departamento"],
-                data["municipio"],
-                data["codigo"],
-            )
+            try:
+                self.manager.add_cliente(
+                    data["nombre"],
+                    data["nrc"],
+                    data["nit"],
+                    data["dui"],
+                    data["giro"],
+                    data["telefono"],
+                    data["email"],
+                    data["direccion"],
+                    data["departamento"],
+                    data["municipio"],
+                    data["codigo"],
+                )
+            except ValueError as e:
+                QMessageBox.warning(dialog, "Cliente", str(e))
+                return
             self._actualizar_tabla_clientes()
             QMessageBox.information(self, "Cliente", "Cliente agregado correctamente.")
 
@@ -1194,20 +1196,24 @@ class MainWindow(QMainWindow):
         dialog = ClienteDialog(self, cliente=cli)
         if dialog.exec_():
             data = dialog.get_data()
-            self.manager.update_cliente(
-                cli["id"],
-                data["codigo"],
-                data["nombre"],
-                data["nrc"],
-                data["nit"],
-                data["dui"],
-                data["giro"],
-                data["telefono"],
-                data["email"],
-                data["direccion"],
-                data["departamento"],
-                data["municipio"],
-            )
+            try:
+                self.manager.update_cliente(
+                    cli["id"],
+                    data["codigo"],
+                    data["nombre"],
+                    data["nrc"],
+                    data["nit"],
+                    data["dui"],
+                    data["giro"],
+                    data["telefono"],
+                    data["email"],
+                    data["direccion"],
+                    data["departamento"],
+                    data["municipio"],
+                )
+            except ValueError as e:
+                QMessageBox.warning(dialog, "Cliente", str(e))
+                return
             self._actualizar_tabla_clientes()
             QMessageBox.information(self, "Cliente", "Cliente editado correctamente.")
 

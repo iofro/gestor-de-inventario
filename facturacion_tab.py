@@ -32,7 +32,8 @@ from dte import generar_nota_credito_json
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 import uuid
-from sales_tab import EmailSender, DATOS_NEGOCIO_PATH
+from utils.email_sender import EmailSender
+from sales_tab import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
 import shutil

@@ -634,24 +634,24 @@ class DB:
         ``trabajadores`` will be updated (and marked as vendor) instead of
         inserting a new one.
         """
-
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
 
-        if trabajador_id is None:
-            self.cursor.execute(
-                """
-                INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)
-                VALUES (?, ?, ?, 1)
-                """,
-                (codigo, nombre, dui),
-            )
-            trabajador_id = self.cursor.lastrowid
-        else:
-            self.cursor.execute(
-                "UPDATE trabajadores SET codigo=?, nombre=?, dui=?, es_vendedor=1 WHERE id=?",
-                (codigo, nombre, dui, trabajador_id),
-            )
+        self.cursor.execute(
+            "SELECT 1 FROM trabajadores WHERE codigo=?",
+            (codigo,),
+        )
+        if self.cursor.fetchone():
+            raise ValueError("El código ya existe")
+
+        self.cursor.execute(
+            """
+            INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)
+            VALUES (?, ?, ?, 1)
+            """,
+            (codigo, nombre, dui),
+        )
+        trabajador_id = self.cursor.lastrowid
 
         self.cursor.execute(
             "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",

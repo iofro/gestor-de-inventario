@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog
+    QFileDialog, QTabWidget
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -2795,6 +2795,7 @@ class DatosNegocioDialog(QDialog):
         self.setWindowTitle("Datos del negocio")
         self.setMinimumWidth(900)
         main_layout = QVBoxLayout()
+        tabs = QTabWidget()
 
         # --- Agrupación horizontal ---
         h_layout = QHBoxLayout()
@@ -2955,11 +2956,20 @@ class DatosNegocioDialog(QDialog):
         self.btn_load_key.clicked.connect(self._load_key_file)
         self.btn_load_pub.clicked.connect(self._load_pub_file)
 
-        main_layout.addLayout(h_layout)
+        # Tab 1: datos generales (siempre accesibles aunque no visibles)
+        tab_general = QWidget()
+        tab_general.setLayout(h_layout)
+        tabs.addTab(tab_general, "Datos")
+
+        # Tab 2: configuración de correo y facturación electrónica
         footer_layout = QHBoxLayout()
         footer_layout.addWidget(grupo4)
         footer_layout.addWidget(grupo5)
-        main_layout.addLayout(footer_layout)
+        tab_config = QWidget()
+        tab_config.setLayout(footer_layout)
+        tabs.addTab(tab_config, "Configuración")
+
+        main_layout.addWidget(tabs)
 
         # --- Botones ---
         btns = QHBoxLayout()
@@ -2978,6 +2988,8 @@ class DatosNegocioDialog(QDialog):
             self.set_data(datos or {}, config or {})
 
     def get_data(self):
+        # Tab visibility does not affect data persistence; all widget values
+        # are collected regardless of which tab is currently shown.
         datos = {
             "nombre_comercial": self.nombre_comercial.text(),
             "razon_social": self.razon_social.text(),
@@ -3064,6 +3076,7 @@ class DatosNegocioDialog(QDialog):
         return datos, config
 
     def set_data(self, datos, config):
+        # Populate widgets across all tabs even if some tabs start hidden.
         self.nombre_comercial.setText(datos.get("nombre_comercial", ""))
         self.razon_social.setText(datos.get("razon_social", ""))
         self.giro.setText(datos.get("giro", ""))

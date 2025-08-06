@@ -347,8 +347,9 @@ class InventoryManager:
                         t.get("codigo"),
                         t.get("dui"),
                         commit=False,
+                        trabajador_id=tid,
                     )
-                    vendedor_id_map[t.get("id")] = self.db.cursor.lastrowid
+                    vendedor_id_map[t.get("id")] = tid
 
             # Productos
             for p in data.get("productos", []):

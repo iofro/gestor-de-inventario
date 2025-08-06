@@ -430,14 +430,17 @@ def transmitir_dte(
 
 
 
-def enviar_dte_a_hacienda(dte_json_firmado: dict) -> dict:
-    """Envía un DTE firmado al entorno de pruebas de Hacienda."""
+def enviar_dte_a_hacienda(jws_token: str) -> dict:
+    """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
     cert, key, phrase = jws.get_cert_config()
-    jws_token = jws.sign_json(dte_json_firmado, cert, phrase, key)
     jwt_token = jws.create_auth_jwt("inventario", cert, phrase, key)
     respuesta = _post_dte(url, jwt_token, jws_token)
-    estado = respuesta.get("estado") or respuesta.get("estadoDte") or respuesta.get("descripcionEstado")
+    estado = (
+        respuesta.get("estado")
+        or respuesta.get("estadoDte")
+        or respuesta.get("descripcionEstado")
+    )
     if estado:
         respuesta["estado"] = estado
     return respuesta

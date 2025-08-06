@@ -1726,8 +1726,8 @@ class DB:
         if solo_vendedores:
             filtros.append("es_vendedor=1")
         if area:
-            filtros.append("area=?")
-            params.append(area)
+            filtros.append("LOWER(area) LIKE LOWER(?)")
+            params.append(f"%{area}%")
         if search:
             filtros.append("(nombre LIKE ? OR codigo LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])

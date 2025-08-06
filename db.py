@@ -18,26 +18,25 @@ class DB:
     def ensure_column(self, table: str, column: str, definition: str) -> bool:
         """Ensure that a specific column exists in ``table``.
 
-        If the column is missing the user is asked whether it should be created.
-        Returns ``True`` if the column exists or was created successfully.
+        Missing columns are created automatically. If the creation fails a
+        warning is logged. Returns ``True`` if the column exists or was created
+        successfully, ``False`` otherwise.
         """
         self.cursor.execute(f"PRAGMA table_info({table})")
         cols = [row[1] for row in self.cursor.fetchall()]
         if column not in cols:
-            resp = input(
-                f"La tabla '{table}' no tiene la columna '{column}'. ¿Crear columna? (s/n): "
-            )
-            if resp.strip().lower().startswith("s"):
+            try:
                 self.cursor.execute(
                     f"ALTER TABLE {table} ADD COLUMN {column} {definition}"
                 )
                 self.conn.commit()
-                print(f"Columna '{column}' creada en '{table}'.")
+                logger.info("Column '%s' added to '%s'.", column, table)
                 return True
-            print(
-                f"No se agregó la columna '{column}'. Algunas funciones podrían fallar."
-            )
-            return False
+            except Exception as exc:  # sqlite3.OperationalError, etc.
+                logger.warning(
+                    "No se agregó la columna '%s' en '%s': %s", column, table, exc
+                )
+                return False
         return True
 
     def add_column_if_missing(self, table: str, column_def: str) -> bool:

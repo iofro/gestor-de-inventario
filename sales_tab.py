@@ -32,7 +32,7 @@ from utils.jws import get_cert_config, sign_and_save, CONFIG_NEGOCIO_PATH
 
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
-from dte import transmitir_dte
+from dte import transmitir_dte, generar_ticket_json
 import tempfile
 import subprocess
 import shutil
@@ -113,6 +113,7 @@ class SalesTab(QWidget):
         self._setup_ui()
         self._load_email_config()
         self.load_sales()
+        self._check_smtp_credentials()
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -232,13 +233,18 @@ class SalesTab(QWidget):
         rows = []
         for v in ventas:
             fecha = v.get("fecha")
-            try:
-                fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
-            except ValueError:
+            fdate = None
+            if isinstance(fecha, str):
                 try:
-                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
-                except ValueError:
-                    fdate = None
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
+                except (ValueError, TypeError):
+                    try:
+                        fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                    except (ValueError, TypeError):
+                        fdate = None
+            else:
+                # fecha no es una cadena o está ausente
+                fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
             cliente = ""
@@ -291,7 +297,9 @@ class SalesTab(QWidget):
 
         # Fetch credit-fiscal information for this sale
         self.current_credito_fiscal = self.manager.db.get_venta_credito_fiscal(venta_id)
-        if self.current_credito_fiscal:
+        if not self.current_credito_fiscal and not venta.get("cliente_id"):
+            self.info_label.setText(f"Ticket {venta_id}")
+        elif self.current_credito_fiscal:
             self.info_label.setText(
                 f"Factura {venta_id} - Crédito Fiscal - Cliente: {cliente}"
             )
@@ -395,7 +403,10 @@ class SalesTab(QWidget):
             pass
 
     def _check_smtp_credentials(self):
-        """Warn user if SMTP settings are incomplete when the tab is opened."""
+        """Check for SMTP data and warn if any are missing.
+
+        Returns a dict with the credentials if complete, otherwise ``None``.
+        """
         path = DATOS_NEGOCIO_PATH
         if not os.path.exists(path):
             QMessageBox.warning(
@@ -403,7 +414,7 @@ class SalesTab(QWidget):
                 "Configuración de correo",
                 "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
             )
-            return
+            return None
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -413,7 +424,7 @@ class SalesTab(QWidget):
                 "Configuración de correo",
                 "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
             )
-            return
+            return None
 
         server = data.get("smtp_server")
         port = data.get("smtp_port")
@@ -434,7 +445,14 @@ class SalesTab(QWidget):
                 "Configuración de correo",
                 "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
             )
+            return None
 
+        return {
+            "server": server,
+            "port": port,
+            "user": user,
+            "password": password,
+        }
     def _update_preview(self, venta_id):
         """Generate PDF preview image for the given sale ID and display it."""
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
@@ -444,12 +462,18 @@ class SalesTab(QWidget):
 
         self._clear_preview_files()
 
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
+        if is_ticket:
+            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_ticket_pdf(venta_id)
+        else:
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = self._generate_invoice_pdf(venta_id)
-            if not pdf_path:
-                self.preview_label.setText("No se pudo generar previsualización")
-                return
+            self.preview_label.setText("No se pudo generar previsualización")
+            return
 
         prefix = tempfile.mktemp()
         try:
@@ -710,8 +734,23 @@ class SalesTab(QWidget):
         QMessageBox.information(self, "Guardar y enviar", f"{doc_type} guardado en {file_path}")
         try:
             modo = "contingencia" if venta.get("tipo_transmision", "").startswith("2") else "normal"
-            transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
+            resp = transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
+            estado = (resp or {}).get("estado", "")
+            if estado.lower() != "rechazado":
+                self.status_label.setText("Estado actual: Enviado")
+                self.sent_label.setText(
+                    "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                )
+            else:
+                self.status_label.setText("Estado actual: Error")
+                self.gen_label.setText(
+                    "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                )
         except Exception as e:
+            self.status_label.setText("Estado actual: Error")
+            self.gen_label.setText(
+                "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+            )
             QMessageBox.warning(self, "Enviar a Hacienda", str(e))
 
         # Después de guardar y transmitir, también enviar por correo
@@ -746,9 +785,15 @@ class SalesTab(QWidget):
 
             return
 
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
-        if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = self._generate_invoice_pdf(venta_id)
+        is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
+        if is_ticket:
+            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_ticket_pdf(venta_id)
+        else:
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Previsualizar", "No se pudo generar el PDF.")
             return
@@ -812,20 +857,13 @@ class SalesTab(QWidget):
                 QMessageBox.warning(self, "Solo enviar por correo", "No se encontró el JSON firmado.")
                 return
 
-        creds = {}
-        if os.path.exists(DATOS_NEGOCIO_PATH):
-            try:
-                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
-                    creds = json.load(f)
-            except Exception:
-                creds = {}
-        server = creds.get("smtp_server")
-        port = creds.get("smtp_port")
-        user = creds.get("email_usuario")
-        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
-        if not all([server, port, user, password]):
-            QMessageBox.warning(self, "Solo enviar por correo", "Credenciales SMTP incompletas.")
+        creds = self._check_smtp_credentials()
+        if not creds:
             return
+        server = creds["server"]
+        port = creds["port"]
+        user = creds["user"]
+        password = creds["password"]
 
         body += (
             "\n\nSe adjuntan la representaci\u00f3n gr\u00e1fica en PDF y el documento firmado en formato JSON."

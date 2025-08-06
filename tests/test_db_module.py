@@ -2,23 +2,21 @@ import threading
 from db import DB
 
 
-def test_ensure_column_creation(monkeypatch, tmp_path):
+def test_ensure_column_creation(tmp_path):
     db = DB(str(tmp_path / 'db.sqlite'))
     db.cursor.execute('CREATE TABLE t(id INTEGER)')
     db.conn.commit()
-    monkeypatch.setattr('builtins.input', lambda prompt: 's')
     assert db.ensure_column('t', 'name', 'TEXT')
     db.cursor.execute('PRAGMA table_info(t)')
     cols = [r[1] for r in db.cursor.fetchall()]
     assert 'name' in cols
 
 
-def test_ensure_column_decline(monkeypatch, tmp_path):
+def test_ensure_column_warning(tmp_path, caplog):
     db = DB(str(tmp_path / 'db.sqlite'))
-    db.cursor.execute('CREATE TABLE t(id INTEGER)')
-    db.conn.commit()
-    monkeypatch.setattr('builtins.input', lambda prompt: 'n')
-    assert not db.ensure_column('t', 'name', 'TEXT')
+    with caplog.at_level('WARNING'):
+        assert not db.ensure_column('missing_table', 'name', 'TEXT')
+    assert "No se agregó la columna" in caplog.text
 
 
 def test_concurrent_access(tmp_path):

@@ -734,8 +734,23 @@ class SalesTab(QWidget):
         QMessageBox.information(self, "Guardar y enviar", f"{doc_type} guardado en {file_path}")
         try:
             modo = "contingencia" if venta.get("tipo_transmision", "").startswith("2") else "normal"
-            transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
+            resp = transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
+            estado = (resp or {}).get("estado", "")
+            if estado.lower() != "rechazado":
+                self.status_label.setText("Estado actual: Enviado")
+                self.sent_label.setText(
+                    "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                )
+            else:
+                self.status_label.setText("Estado actual: Error")
+                self.gen_label.setText(
+                    "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                )
         except Exception as e:
+            self.status_label.setText("Estado actual: Error")
+            self.gen_label.setText(
+                "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+            )
             QMessageBox.warning(self, "Enviar a Hacienda", str(e))
 
         # Después de guardar y transmitir, también enviar por correo

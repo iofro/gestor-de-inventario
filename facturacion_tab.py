@@ -550,7 +550,13 @@ class FacturacionTab(QWidget):
                 extra = json.loads(raw_extra)
             except Exception:
                 extra = {}
-        fname, _ = QFileDialog.getSaveFileName(self, "Guardar ticket", "ticket.pdf", "PDF (*.pdf)")
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar ticket",
+            "ticket.pdf",
+            "PDF (*.pdf)",
+            options=QFileDialog.DontUseNativeDialog,
+        )
         if not fname:
             return
         generar_ticket_personalizado(venta, detalles, fname, dte_data=extra)

@@ -34,6 +34,17 @@ def validar_email(email):
     import re
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
 
+def validar_nrc(nrc):
+    """Valida el formato del NRC salvadoreño (######-#)."""
+    import re
+    return bool(re.match(r"^\d{6}-\d$", nrc))
+
+def validar_telefono(telefono):
+    """Valida números de teléfono salvadoreños con o sin código de país."""
+    import re
+    digits = re.sub(r"\D", "", telefono)
+    return len(digits) == 8 or (len(digits) == 11 and digits.startswith("503"))
+
 def cargar_departamentos_municipios():
     # Lista completa de departamentos y municipios de El Salvador
     return {
@@ -118,25 +129,25 @@ def cargar_departamentos_municipios():
     }
 
 class ClienteSelectorDialog(QDialog):
-    def __init__(self, clientes, parent=None):
+    def __init__(self, db, parent=None):
         super().__init__(parent)
+        self.db = db
         self.setWindowTitle("Seleccionar Cliente")
         layout = QVBoxLayout()
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Buscar cliente por nombre, NIT, NRC, etc.")
         layout.addWidget(self.search_bar)
         self.lista_clientes = QListWidget()
-        self.clientes = sorted(clientes, key=lambda c: get_field(c, "codigo", "") or get_field(c, "nombre", ""))
-        self.clientes_mostrados = self.clientes[:]  # <-- NUEVO: lista de los clientes actualmente mostrados
-        self._mostrar_clientes(self.clientes)
+        self.clientes_mostrados = []
+        self._mostrar_clientes(self.db.get_clientes())
         layout.addWidget(self.lista_clientes)
         self.btn_ok = QPushButton("Seleccionar")
-        self.btn_ok.clicked.connect(self.accept)
+        self.btn_ok.clicked.connect(self._handle_accept)
         layout.addWidget(self.btn_ok)
         self.setLayout(layout)
         self.search_bar.textChanged.connect(self._filtrar_clientes)
         self.selected_cliente = None
-        self.lista_clientes.itemClicked.connect(self._seleccionar_cliente)
+        self.lista_clientes.itemSelectionChanged.connect(self._seleccionar_cliente)
 
     def _mostrar_clientes(self, clientes):
         self.lista_clientes.clear()
@@ -149,20 +160,19 @@ class ClienteSelectorDialog(QDialog):
             self.lista_clientes.addItem(texto)
 
     def _filtrar_clientes(self, texto):
-        texto = texto.lower()
-        filtrados = [
-            cli for cli in self.clientes
-            if texto in (get_field(cli, "codigo", "") or "").lower()
-            or texto in (get_field(cli, "nombre", "") or "").lower()
-            or texto in (get_field(cli, "nit", "") or "").lower()
-            or texto in (get_field(cli, "nrc", "") or "").lower()
-        ]
+        filtrados = self.db.get_clientes(texto)
         self._mostrar_clientes(filtrados)
 
-    def _seleccionar_cliente(self, item):
+    def _seleccionar_cliente(self, item=None):
         idx = self.lista_clientes.currentRow()
         if idx >= 0:
             self.selected_cliente = self.clientes_mostrados[idx]  # <-- Usa la lista de mostrados
+
+    def _handle_accept(self):
+        idx = self.lista_clientes.currentRow()
+        if idx >= 0:
+            self.selected_cliente = self.clientes_mostrados[idx]
+        self.accept()
 
     def get_selected_cliente(self):
         return self.selected_cliente
@@ -502,7 +512,7 @@ class ProductDialogBase:
                     break
 
     def _abrir_selector_cliente(self):
-        selector = ClienteSelectorDialog(self.clientes, self)
+        selector = ClienteSelectorDialog(self.db, self)
         if selector.exec_():
             cli = selector.get_selected_cliente()
             if cli:
@@ -522,15 +532,15 @@ class ProductDialogBase:
 
 
 class RegisterSaleDialog(QDialog, ProductDialogBase):
-    def __init__(self, productos, clientes, Distribuidores, vendedores_trabajadores, parent=None):
+    def __init__(self, productos, Distribuidores, vendedores_trabajadores, parent=None, db=None):
         super().__init__(parent)
+        self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta")
 
 
         main_layout = QHBoxLayout()
 
         self.productos = productos
-        self.clientes = clientes
         self.vendedores_trabajadores = vendedores_trabajadores
         self.venta_items = []
 
@@ -1690,8 +1700,9 @@ class RegisterPurchaseDialog(QDialog):
         }
     
 class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
-    def __init__(self, productos, clientes, Distribuidores, vendedores_trabajadores, parent=None):
+    def __init__(self, productos, Distribuidores, vendedores_trabajadores, parent=None, db=None):
         super().__init__(parent)
+        self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta a Crédito Fiscal")
         main_layout = QHBoxLayout()
 
@@ -1699,8 +1710,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         left_layout = QVBoxLayout()
         self.productos = productos
         self.venta_items = []
-        self.clientes = clientes
         self.Distribuidores = Distribuidores
+        self.vendedores_trabajadores = vendedores_trabajadores
 
         # Distribuidor
         left_layout.addWidget(QLabel("Distribuidor:"))
@@ -2317,6 +2328,7 @@ class DistribuidorDialog(QDialog):
         self.direccion_edit = QLineEdit()
         self.departamento_edit = QLineEdit()
         self.municipio_edit = QLineEdit()
+        self._cliente_id = cliente.get("id") if cliente else None
         self.tipo_contrato_edit = QLineEdit()
         self.comisiones_especificas_edit = QLineEdit()
         self.metodo_pago_edit = QLineEdit()
@@ -2501,6 +2513,7 @@ class ClienteDialog(QDialog):
         self.direccion_edit = QLineEdit()
         self.departamento_edit = QLineEdit()
         self.municipio_edit = QLineEdit()
+        self._cliente_id = cliente.get("id") if cliente else None
 
         form = [
             ("Código:", self.codigo_edit),
@@ -2553,20 +2566,46 @@ class ClienteDialog(QDialog):
         if not self.nombre_edit.text().strip():
             QMessageBox.warning(self, "Validación", "El nombre es obligatorio.")
             return
+        nrc = self.nrc_edit.text().strip()
+        if not nrc:
+            QMessageBox.warning(self, "Validación", "El NRC es obligatorio.")
+            return
+        if not validar_nrc(nrc):
+            QMessageBox.warning(self, "Validación", "Ingrese un NRC válido.")
+            return
+        nit = self.nit_edit.text().strip()
+        if not nit:
+            QMessageBox.warning(self, "Validación", "El NIT es obligatorio.")
+            return
+        if not validar_nit(nit):
+            QMessageBox.warning(self, "Validación", "Ingrese un NIT válido.")
+            return
+        telefono = self.telefono_edit.text().strip()
+        if not telefono:
+            QMessageBox.warning(self, "Validación", "El teléfono es obligatorio.")
+            return
+        if not validar_telefono(telefono):
+            QMessageBox.warning(self, "Validación", "Ingrese un teléfono válido.")
+            return
         email = self.email_edit.text().strip()
         if not email:
             QMessageBox.warning(
                 self,
                 "Validación",
-                "El correo electrónico es obligatorio."
+                "El correo electrónico es obligatorio.",
             )
             return
         if not validar_email(email):
             QMessageBox.warning(
                 self,
                 "Validación",
-                "Ingrese un correo electrónico válido."
+                "Ingrese un correo electrónico válido.",
             )
+            return
+        nit = self.nit_edit.text().strip()
+        db = getattr(getattr(self.parent(), "manager", None), "db", None)
+        if db and db.nit_exists(nit, exclude_id=self._cliente_id):
+            QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
             return
         self.accept()
 

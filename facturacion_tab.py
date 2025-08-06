@@ -542,8 +542,7 @@ class FacturacionTab(QWidget):
     def create_ticket(self):
         venta_id = self._selected_venta()
         if venta_id is None:
-            QMessageBox.warning(self, "Ticket", "Seleccione una venta")
-            return
+            raise ValueError("No sale selected")
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         detalles = self.manager.db.get_detalles_venta(venta_id)
         extra = {}

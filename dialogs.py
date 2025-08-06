@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
-    QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
+    QAbstractItemView, QTextEdit, QStackedLayout, QTabWidget, QWidget, QHeaderView, QSizePolicy,
     QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
@@ -2956,10 +2956,18 @@ class DatosNegocioDialog(QDialog):
         self.btn_load_pub.clicked.connect(self._load_pub_file)
 
         main_layout.addLayout(h_layout)
-        footer_layout = QHBoxLayout()
-        footer_layout.addWidget(grupo4)
-        footer_layout.addWidget(grupo5)
-        main_layout.addLayout(footer_layout)
+
+        self.tab_config = QTabWidget()
+        self.tab_config.addTab(grupo4, "Configuración de correo")
+        self.tab_config.addTab(grupo5, "Configuración de facturación electrónica")
+        self.tab_config.setVisible(False)
+
+        self.btn_toggle_tabs = QPushButton("Mostrar configuraciones avanzadas")
+        self.btn_toggle_tabs.setCheckable(True)
+        self.btn_toggle_tabs.toggled.connect(self._toggle_tabs)
+
+        main_layout.addWidget(self.btn_toggle_tabs)
+        main_layout.addWidget(self.tab_config)
 
         # --- Botones ---
         btns = QHBoxLayout()
@@ -2976,6 +2984,12 @@ class DatosNegocioDialog(QDialog):
         # Si hay datos previos, cárgalos
         if datos or config:
             self.set_data(datos or {}, config or {})
+
+    def _toggle_tabs(self, checked):
+        self.tab_config.setVisible(checked)
+        self.btn_toggle_tabs.setText(
+            "Ocultar configuraciones avanzadas" if checked else "Mostrar configuraciones avanzadas"
+        )
 
     def get_data(self):
         datos = {

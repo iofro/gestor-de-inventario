@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QTabWidget
+
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -2971,6 +2972,7 @@ class DatosNegocioDialog(QDialog):
 
         main_layout.addWidget(tabs)
 
+
         # --- Botones ---
         btns = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar")
@@ -2986,6 +2988,12 @@ class DatosNegocioDialog(QDialog):
         # Si hay datos previos, cárgalos
         if datos or config:
             self.set_data(datos or {}, config or {})
+
+    def _toggle_tabs(self, checked):
+        self.tab_config.setVisible(checked)
+        self.btn_toggle_tabs.setText(
+            "Ocultar configuraciones avanzadas" if checked else "Mostrar configuraciones avanzadas"
+        )
 
     def get_data(self):
         # Tab visibility does not affect data persistence; all widget values

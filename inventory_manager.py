@@ -347,6 +347,12 @@ class InventoryManager:
                 tid = self.db.cursor.lastrowid
                 trabajador_id_map[t.get("id")] = tid
                 if t.get("es_vendedor"):
+                    dist_id = t.get("Distribuidor_id")
+                    new_dist_id = (
+                        Distribuidor_id_map.get(dist_id)
+                        if dist_id is not None
+                        else None
+                    )
                     self.db.cursor.execute(
                         "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
                         (
@@ -355,7 +361,7 @@ class InventoryManager:
                             t.get("nombre"),
                             t.get("dui"),
                             t.get("descripcion", ""),
-                            t.get("Distribuidor_id"),
+                            new_dist_id,
                         ),
 
                     )

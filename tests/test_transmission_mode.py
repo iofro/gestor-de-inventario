@@ -60,7 +60,7 @@ def test_generate_invoice_registers_pending(qt_app, tmp_path, monkeypatch):
     db._ventas.append(venta)
     db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
     man = Manager(db)
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
     pdf = tmp_path / "fact.pdf"
     js = tmp_path / "fact.json"
     def fake_paths(date, cliente, identifier, doc_type, root=None):

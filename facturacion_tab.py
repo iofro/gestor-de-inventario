@@ -459,10 +459,15 @@ class FacturacionTab(QWidget):
         if dialog.hacienda_cb.isChecked():
             tipo = "03" if entry.get("row_type") == "ticket" else "01"
             try:
-                transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
-                QMessageBox.information(
-                    self, "Enviar a Hacienda", "Documento enviado"
-                )
+                resp = transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
+                if resp.get("estado") == "Error":
+                    QMessageBox.critical(
+                        self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                    )
+                else:
+                    QMessageBox.information(
+                        self, "Enviar a Hacienda", "Documento enviado"
+                    )
             except Exception as exc:
                 QMessageBox.critical(
                     self, "Enviar a Hacienda", str(exc)

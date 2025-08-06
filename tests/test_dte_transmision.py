@@ -76,6 +76,25 @@ def test_post_dte_uses_bearer(monkeypatch):
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
 
 
+def test_post_dte_handles_non_json(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=20):
+        class R:
+            status_code = 200
+            text = "error"
+
+            def json(self):
+                raise ValueError("no json")
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    res = _post_dte("http://example.com", "", "SIGNED")
+    assert res == {"estado": "Error", "detalle": "error"}
+
+
 def test_consultar_envio_dte():
     db = DB(":memory:")
     venta = create_sale(db)

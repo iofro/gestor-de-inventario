@@ -1682,6 +1682,14 @@ class DB:
         self.conn.commit()
 
     def delete_trabajador(self, id):
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM ventas WHERE vendedor_id=?",
+            (id,),
+        )
+        if self.cursor.fetchone()[0] > 0:
+            raise ValueError(
+                "No se puede eliminar el trabajador: tiene ventas asociadas"
+            )
         self.cursor.execute("DELETE FROM trabajadores WHERE id=?", (id,))
         self.conn.commit()
 

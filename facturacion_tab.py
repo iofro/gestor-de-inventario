@@ -666,6 +666,9 @@ class FacturacionTab(QWidget):
             estado = dialog.get_estado()
             self.manager.db.update_venta_estado(venta_id, estado)
             self.load_invoices()
+            parent = self.parent()
+            if parent and hasattr(parent, "sales_tab"):
+                parent.sales_tab.load_sales()
 
     def delete_files(self):
         """Elimina PDF y JSON asociados a la venta seleccionada."""
@@ -823,12 +826,18 @@ class FacturacionTab(QWidget):
 
         self._clear_preview_files()
 
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
+        if is_ticket:
+            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_ticket_pdf(venta_id)
+        else:
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
-            pdf_path = self._generate_invoice_pdf(venta_id)
-            if not pdf_path:
-                self.preview_label.setText("No se pudo generar previsualización")
-                return
+            self.preview_label.setText("No se pudo generar previsualización")
+            return
 
         self._show_pdf_preview(pdf_path)
 

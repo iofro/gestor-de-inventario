@@ -407,43 +407,27 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
 def transmitir_dte(
     db: DB, venta_id: int, modo: str = "normal", tipo_dte: str = "01"
 ) -> dict:
-    """Envía un DTE a la API configurada y registra su estado.
+    """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
     ``tipo_dte`` permite especificar el código del documento a transmitir,
     usando ``"01"`` para facturas y ``"03"`` para tickets.
     """
-    config = _load_dte_api_config()
+
+    # For contingency mode, simply register the pending state
     if modo == "contingencia":
-        db.registrar_envio_dte(venta_id, modo, "Pendiente", "")
-        return {"estado": "Pendiente"}
+        return _enviar_documento(db, venta_id, {}, modo)
 
     if tipo_dte == "03":
-        dte_data = generar_ticket_json(db, venta_id)
+        data = generar_ticket_json(db, venta_id)
     else:
-        dte_data = generar_dte_json(db, venta_id)
-    validate_dte_json(dte_data)
-    url = config.get("url") or DEFAULT_RECEPCION_URL
-    cert, key, phrase = jws.get_cert_config()
-    signed = jws.sign_json(dte_data, cert, phrase, key)
-    _save_signed_dte(dte_data, signed)
-    token = auth.get_token()
+        data = generar_dte_json(db, venta_id)
 
-    try:
-        respuesta = _post_dte(url, token, signed)
-        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
-        estado = respuesta.get("estado") or "Transmitido"
-        detalle = respuesta.get("detalle")
-    except Exception:
-        db.registrar_envio_dte(venta_id, modo, "Rechazado", "")
-        raise
+    validate_dte_json(data)
+    resp = _enviar_documento(db, venta_id, data, modo)
+    if resp.get("sello"):
+        db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
+    return resp
 
-    db.registrar_envio_dte(venta_id, modo, estado, sello, json.dumps(respuesta, ensure_ascii=False))
-    if sello:
-        db.update_venta_extra(venta_id, {"selloRecibido": sello})
-    res = {"estado": estado, "sello": sello}
-    if detalle:
-        res["detalle"] = detalle
-    return res
 
 
 def enviar_dte_a_hacienda(dte_json_firmado: dict) -> dict:

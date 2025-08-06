@@ -40,6 +40,59 @@ class DB:
             return False
         return True
 
+    def migrate_ventas_cliente_fk(self):
+        """Ensure ``ventas`` has a foreign key to ``clientes`` on ``cliente_id``.
+
+        Older database versions created ``ventas`` without the foreign key.
+        SQLite does not support adding foreign keys via ``ALTER TABLE``, so we
+        migrate by recreating the table when the constraint is missing.
+        """
+        self.cursor.execute("PRAGMA foreign_key_list(ventas)")
+        fk_exists = any(
+            row[2] == "clientes" and row[3] == "cliente_id"
+            for row in self.cursor.fetchall()
+        )
+        if fk_exists:
+            # Index might be missing in some installations
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ventas_cliente_id ON ventas(cliente_id)"
+            )
+            return
+        logger.info("Migrating 'ventas' table to add cliente_id foreign key")
+        self.cursor.execute("PRAGMA foreign_keys=off")
+        try:
+            self.cursor.execute(
+                """
+                CREATE TABLE ventas_temp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    fecha TEXT,
+                    total REAL,
+                    estado TEXT DEFAULT 'Pagada',
+                    cliente_id INTEGER,
+                    Distribuidor_id INTEGER,
+                    vendedor_id INTEGER,
+                    extra TEXT,
+                    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+                    FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
+                    FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
+                )
+                """
+            )
+            self.cursor.execute(
+                """
+                INSERT INTO ventas_temp (id, fecha, total, estado, cliente_id, Distribuidor_id, vendedor_id, extra)
+                SELECT id, fecha, total, estado, cliente_id, Distribuidor_id, vendedor_id, extra FROM ventas
+                """
+            )
+            self.cursor.execute("DROP TABLE ventas")
+            self.cursor.execute("ALTER TABLE ventas_temp RENAME TO ventas")
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_ventas_cliente_id ON ventas(cliente_id)"
+            )
+            self.conn.commit()
+        finally:
+            self.cursor.execute("PRAGMA foreign_keys=on")
+
     def setup(self):
         # Create tables if they don't exist without dropping existing data
         self.cursor.execute("""
@@ -112,10 +165,14 @@ class DB:
                 Distribuidor_id INTEGER,
                 vendedor_id INTEGER,
                 extra TEXT,
+                FOREIGN KEY (cliente_id) REFERENCES clientes(id),
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
                 FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
             )
         """)
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_ventas_cliente_id ON ventas(cliente_id)"
+        )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS detalles_venta (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -160,6 +217,7 @@ class DB:
         """)
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_nit ON clientes(nit)"
+
         )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS pagos (
@@ -536,6 +594,7 @@ class DB:
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_distribuidores_nombre ON Distribuidores(nombre)"
         )
+        self.migrate_ventas_cliente_fk()
         self.conn.commit()
 
         # Verifica que la columna estado exista en ventas
@@ -1233,11 +1292,18 @@ class DB:
         self.conn.commit()
 
     def get_clientes(self, search=""):
-        query = "SELECT * FROM clientes"
+        query = (
+            "SELECT id, codigo, nombre, nrc, nit, telefono, email, giro, direccion, departamento, municipio, otros "
+            "FROM clientes"
+        )
         params = []
         if search:
-            query += " WHERE nombre LIKE ? OR codigo LIKE ? OR nit LIKE ?"
-            params = [f"%{search}%"] * 3
+            like = f"%{search}%"
+            query += (
+                " WHERE nombre LIKE ? OR codigo LIKE ? OR nit LIKE ? OR nrc LIKE ? "
+                "OR telefono LIKE ? OR email LIKE ?"
+            )
+            params = [like, like, like, like, like, like]
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 

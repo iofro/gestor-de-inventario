@@ -32,7 +32,7 @@ from utils.jws import get_cert_config, sign_and_save, CONFIG_NEGOCIO_PATH
 
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
-from dte import transmitir_dte
+from dte import transmitir_dte, generar_ticket_json
 import tempfile
 import subprocess
 import shutil

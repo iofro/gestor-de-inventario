@@ -686,15 +686,19 @@ class SalesTab(QWidget):
             modo = "contingencia" if venta.get("tipo_transmision", "").startswith("2") else "normal"
             resp = transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
             estado = (resp or {}).get("estado", "")
-            if estado.lower() != "rechazado":
-                self.status_label.setText("Estado actual: Enviado")
-                self.sent_label.setText(
-                    "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
-                )
-            else:
+            if estado.lower() in ("rechazado", "error"):
                 self.status_label.setText("Estado actual: Error")
                 self.gen_label.setText(
                     "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+                )
+                if estado.lower() == "error":
+                    QMessageBox.warning(
+                        self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                    )
+            else:
+                self.status_label.setText("Estado actual: Enviado")
+                self.sent_label.setText(
+                    "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
                 )
         except Exception as e:
             self.status_label.setText("Estado actual: Error")

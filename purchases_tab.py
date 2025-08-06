@@ -7,6 +7,10 @@ from PyQt5.QtGui import QColor
 from datetime import datetime, date
 
 from dialogs import CompraDetalleDialog
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 
 class PurchasesTab(QWidget):
@@ -211,8 +215,8 @@ class PurchasesTab(QWidget):
                         fv_date = datetime.strptime(fv, "%Y-%m-%d").date()
                         if fv_date < today:
                             expired = True
-                    except Exception:
-                        pass
+                    except (ValueError, TypeError):
+                        logger.exception("Fecha de vencimiento inválida: %s", fv)
                 prod_count[d["producto_id"]] = prod_count.get(d["producto_id"], 0) + d.get("cantidad", 0)
             if compra.get("Distribuidor_id"):
                 dist_count[compra["Distribuidor_id"]] = dist_count.get(compra["Distribuidor_id"], 0) + 1

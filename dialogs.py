@@ -2795,6 +2795,7 @@ class DatosNegocioDialog(QDialog):
         self.setWindowTitle("Datos del negocio")
         self.setMinimumWidth(900)
         main_layout = QVBoxLayout()
+        tabs = QTabWidget()
 
         # --- Agrupación horizontal ---
         h_layout = QHBoxLayout()
@@ -2964,6 +2965,7 @@ class DatosNegocioDialog(QDialog):
         tabs.addTab(tab_dte, "\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
         main_layout.addWidget(tabs)
 
+
         # --- Botones ---
         btns = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar")
@@ -2980,7 +2982,15 @@ class DatosNegocioDialog(QDialog):
         if datos or config:
             self.set_data(datos or {}, config or {})
 
+    def _toggle_tabs(self, checked):
+        self.tab_config.setVisible(checked)
+        self.btn_toggle_tabs.setText(
+            "Ocultar configuraciones avanzadas" if checked else "Mostrar configuraciones avanzadas"
+        )
+
     def get_data(self):
+        # Tab visibility does not affect data persistence; all widget values
+        # are collected regardless of which tab is currently shown.
         datos = {
             "nombre_comercial": self.nombre_comercial.text(),
             "razon_social": self.razon_social.text(),
@@ -3067,6 +3077,7 @@ class DatosNegocioDialog(QDialog):
         return datos, config
 
     def set_data(self, datos, config):
+        # Populate widgets across all tabs even if some tabs start hidden.
         self.nombre_comercial.setText(datos.get("nombre_comercial", ""))
         self.razon_social.setText(datos.get("razon_social", ""))
         self.giro.setText(datos.get("giro", ""))

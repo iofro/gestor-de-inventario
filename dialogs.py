@@ -1352,8 +1352,6 @@ class RegisterPurchaseDialog(QDialog):
         self.product_list.currentRowChanged.connect(self._calcular_preview_item)
         self._calcular_preview_item()
 
-        self._calcular_preview_item()
-
     # --- NUEVO MÉTODO ---
     def _actualizar_precio_unitario_por_producto(self):
         idx = self.product_list.currentRow()

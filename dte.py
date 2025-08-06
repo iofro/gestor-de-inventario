@@ -401,55 +401,46 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
     try:
         return resp.json()
     except Exception:
-        return {"estado": "Transmitido", "sello": ""}
+        return {"estado": "Error", "detalle": resp.text}
 
 
 def transmitir_dte(
     db: DB, venta_id: int, modo: str = "normal", tipo_dte: str = "01"
 ) -> dict:
-    """Envía un DTE a la API configurada y registra su estado.
+    """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
     ``tipo_dte`` permite especificar el código del documento a transmitir,
     usando ``"01"`` para facturas y ``"03"`` para tickets.
     """
-    config = _load_dte_api_config()
+
+    # For contingency mode, simply register the pending state
     if modo == "contingencia":
-        db.registrar_envio_dte(venta_id, modo, "Pendiente", "")
-        return {"estado": "Pendiente"}
+        return _enviar_documento(db, venta_id, {}, modo)
 
     if tipo_dte == "03":
-        dte_data = generar_ticket_json(db, venta_id)
+        data = generar_ticket_json(db, venta_id)
     else:
-        dte_data = generar_dte_json(db, venta_id)
-    validate_dte_json(dte_data)
-    url = config.get("url") or DEFAULT_RECEPCION_URL
-    cert, key, phrase = jws.get_cert_config()
-    signed = jws.sign_json(dte_data, cert, phrase, key)
-    _save_signed_dte(dte_data, signed)
-    token = auth.get_token()
+        data = generar_dte_json(db, venta_id)
 
-    try:
-        respuesta = _post_dte(url, token, signed)
-        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
-        estado = respuesta.get("estado") or "Transmitido"
-    except Exception:
-        db.registrar_envio_dte(venta_id, modo, "Rechazado", "")
-        raise
-
-    db.registrar_envio_dte(venta_id, modo, estado, sello, json.dumps(respuesta, ensure_ascii=False))
-    if sello:
-        db.update_venta_extra(venta_id, {"selloRecibido": sello})
-    return {"estado": estado, "sello": sello}
+    validate_dte_json(data)
+    resp = _enviar_documento(db, venta_id, data, modo)
+    if resp.get("sello"):
+        db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
+    return resp
 
 
-def enviar_dte_a_hacienda(dte_json_firmado: dict) -> dict:
-    """Envía un DTE firmado al entorno de pruebas de Hacienda."""
+
+def enviar_dte_a_hacienda(jws_token: str) -> dict:
+    """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
     cert, key, phrase = jws.get_cert_config()
-    jws_token = jws.sign_json(dte_json_firmado, cert, phrase, key)
     jwt_token = jws.create_auth_jwt("inventario", cert, phrase, key)
     respuesta = _post_dte(url, jwt_token, jws_token)
-    estado = respuesta.get("estado") or respuesta.get("estadoDte") or respuesta.get("descripcionEstado")
+    estado = (
+        respuesta.get("estado")
+        or respuesta.get("estadoDte")
+        or respuesta.get("descripcionEstado")
+    )
     if estado:
         respuesta["estado"] = estado
     return respuesta
@@ -496,6 +487,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
             or respuesta.get("descripcionEstado")
             or "Transmitido"
         )
+        detalle = respuesta.get("detalle")
     except Exception:
         db.registrar_envio_dte(doc_id, modo, "Rechazado", "")
         raise
@@ -509,7 +501,10 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
-    return {"estado": estado, "sello": sello}
+    res = {"estado": estado, "sello": sello}
+    if detalle:
+        res["detalle"] = detalle
+    return res
 
 
 def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
@@ -546,6 +541,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
             or respuesta.get("descripcionEstado")
             or "Transmitido"
         )
+        detalle = respuesta.get("detalle")
     except Exception:
         db.registrar_envio_dte(evento_id, "evento", "Rechazado", "")
         raise
@@ -559,7 +555,10 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
-    return {"estado": estado, "sello": sello}
+    res = {"estado": estado, "sello": sello}
+    if detalle:
+        res["detalle"] = detalle
+    return res
 
 
 def enviar_evento_contingencia(db: DB, evento_id: int, data: dict) -> dict:

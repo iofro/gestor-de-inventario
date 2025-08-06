@@ -22,9 +22,10 @@ def qt_app():
     return app
 
 def test_manual_invoice_requires_selection(qt_app, monkeypatch):
+    monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)
     db = DB(":memory:")
     man = Manager(db)
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
 
     opened = {}
     def fake_exec(self):
@@ -74,10 +75,11 @@ def test_manual_invoice_consumidor_final_fields(qt_app):
 
 
 def test_preview_uses_stored_pdf(qt_app, tmp_path, monkeypatch):
+    monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)
     db = DB(":memory:")
     venta_id = db.add_venta("2024-01-01", 5)
     man = Manager(db)
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
     tab.sales_table.setRowCount(1)
     tab.sales_table.setItem(0, 0, QTableWidgetItem(str(venta_id)))
     tab.sales_table.selectRow(0)

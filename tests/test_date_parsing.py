@@ -67,7 +67,7 @@ def test_load_purchases_date_formats(qt_app):
 def test_load_sales_date_formats(qt_app):
     db = setup_db()
     man = Manager(db)
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
     tab.date_from.setDate(QDate(2024, 1, 1))
     tab.date_to.setDate(QDate(2024, 1, 31))
     tab.load_sales()
@@ -82,7 +82,7 @@ def test_load_sales_handles_null_dates(qt_app):
     db = setup_db()
     db.add_venta(None, 30)
     man = Manager(db)
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
     tab.date_from.setDate(QDate(2024, 1, 1))
     tab.date_to.setDate(QDate(2024, 1, 31))
     tab.load_sales()

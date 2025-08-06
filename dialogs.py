@@ -34,6 +34,17 @@ def validar_email(email):
     import re
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
 
+def validar_nrc(nrc):
+    """Valida el formato del NRC salvadoreño (######-#)."""
+    import re
+    return bool(re.match(r"^\d{6}-\d$", nrc))
+
+def validar_telefono(telefono):
+    """Valida números de teléfono salvadoreños con o sin código de país."""
+    import re
+    digits = re.sub(r"\D", "", telefono)
+    return len(digits) == 8 or (len(digits) == 11 and digits.startswith("503"))
+
 def cargar_departamentos_municipios():
     # Lista completa de departamentos y municipios de El Salvador
     return {
@@ -2554,6 +2565,27 @@ class ClienteDialog(QDialog):
     def _validar_y_accept(self):
         if not self.nombre_edit.text().strip():
             QMessageBox.warning(self, "Validación", "El nombre es obligatorio.")
+            return
+        nrc = self.nrc_edit.text().strip()
+        if not nrc:
+            QMessageBox.warning(self, "Validación", "El NRC es obligatorio.")
+            return
+        if not validar_nrc(nrc):
+            QMessageBox.warning(self, "Validación", "Ingrese un NRC válido.")
+            return
+        nit = self.nit_edit.text().strip()
+        if not nit:
+            QMessageBox.warning(self, "Validación", "El NIT es obligatorio.")
+            return
+        if not validar_nit(nit):
+            QMessageBox.warning(self, "Validación", "Ingrese un NIT válido.")
+            return
+        telefono = self.telefono_edit.text().strip()
+        if not telefono:
+            QMessageBox.warning(self, "Validación", "El teléfono es obligatorio.")
+            return
+        if not validar_telefono(telefono):
+            QMessageBox.warning(self, "Validación", "Ingrese un teléfono válido.")
             return
         email = self.email_edit.text().strip()
         if not email:

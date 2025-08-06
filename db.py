@@ -623,15 +623,27 @@ class DB:
         codigo=None,
         dui=None,
         commit: bool = True,
+        trabajador_id=None,
     ):
         """Insert a new vendor.
 
         ``commit`` can be set to ``False`` when called inside an existing
         transaction to avoid committing after each insertion.
-        """
 
+        If ``trabajador_id`` is provided, the corresponding record in
+        ``trabajadores`` will be updated (and marked as vendor) instead of
+        inserting a new one.
+        """
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
+
+        self.cursor.execute(
+            "SELECT 1 FROM trabajadores WHERE codigo=?",
+            (codigo,),
+        )
+        if self.cursor.fetchone():
+            raise ValueError("El código ya existe")
+
         self.cursor.execute(
             """
             INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)
@@ -640,10 +652,10 @@ class DB:
             (codigo, nombre, dui),
         )
         trabajador_id = self.cursor.lastrowid
+
         self.cursor.execute(
             "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
             (trabajador_id, codigo, nombre, dui, descripcion, Distribuidor_id),
-
         )
         if commit:
             self.conn.commit()

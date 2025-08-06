@@ -5,10 +5,17 @@ import json
 from datetime import datetime, timedelta
 import os
 import logging
+import sqlite3
 
 logger = logging.getLogger(__name__)
 
+
+class InventoryManagerError(Exception):
+    """Errores de dominio del administrador de inventario."""
+
+
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+
 
 class InventoryManager:
     def __init__(self, page_size=50):
@@ -340,15 +347,19 @@ class InventoryManager:
                 tid = self.db.cursor.lastrowid
                 trabajador_id_map[t.get("id")] = tid
                 if t.get("es_vendedor"):
-                    self.db.add_vendedor(
-                        t.get("nombre"),
-                        t.get("descripcion", ""),
-                        t.get("Distribuidor_id"),
-                        t.get("codigo"),
-                        t.get("dui"),
-                        commit=False,
+                    self.db.cursor.execute(
+                        "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
+                        (
+                            tid,
+                            t.get("codigo"),
+                            t.get("nombre"),
+                            t.get("dui"),
+                            t.get("descripcion", ""),
+                            t.get("Distribuidor_id"),
+                        ),
+
                     )
-                    vendedor_id_map[t.get("id")] = self.db.cursor.lastrowid
+                    vendedor_id_map[t.get("id")] = tid
 
             # Productos
             for p in data.get("productos", []):
@@ -606,7 +617,25 @@ class InventoryManager:
         self.refresh_data()
 
     def add_vendedor(self, nombre, Distribuidor_id=None, codigo=None, dui=None):
-        self.db.add_vendedor(nombre, descripcion="", Distribuidor_id=Distribuidor_id, codigo=codigo, dui=dui)
+        try:
+            self.db.add_vendedor(
+                nombre,
+                descripcion="",
+                Distribuidor_id=Distribuidor_id,
+                codigo=codigo,
+                dui=dui,
+            )
+        except sqlite3.IntegrityError as exc:
+            logger.exception("Error de integridad al agregar vendedor %s", nombre)
+            raise InventoryManagerError(
+                "No se pudo agregar el vendedor; el registro ya existe o los datos son inválidos."
+            ) from exc
+        except sqlite3.DatabaseError as exc:
+            logger.exception("Error de base de datos al agregar vendedor %s", nombre)
+            raise InventoryManagerError(
+                "Ocurrió un error de base de datos al agregar el vendedor."
+            ) from exc
+
 
         self.refresh_data()
 

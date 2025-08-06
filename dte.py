@@ -331,9 +331,18 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
         raise ValueError("La nota indicada no es de crédito")
 
     venta_id = nota.get("venta_id")
+    # Determine document type of the original sale
+    venta_row = db.cursor.execute(
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+    ).fetchone()
+    tipo_doc = "01"
+    if venta_row:
+        venta = dict(venta_row)
+        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+            tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="05")
     data["documentoRelacionado"] = {
-        "tipoDoc": "01",
+        "tipoDoc": tipo_doc,
         "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
     }
 

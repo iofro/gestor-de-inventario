@@ -41,24 +41,29 @@ class DB:
         return True
 
     def migrate_ventas_cliente_fk(self):
-        """Ensure ``ventas`` has a foreign key to ``clientes`` on ``cliente_id``.
+        """Ensure ``ventas`` has proper foreign keys for cliente and vendedor.
 
-        Older database versions created ``ventas`` without the foreign key.
-        SQLite does not support adding foreign keys via ``ALTER TABLE``, so we
-        migrate by recreating the table when the constraint is missing.
+        Older database versions created ``ventas`` without the cliente foreign
+        key or pointing ``vendedor_id`` to the ``vendedores`` table.  SQLite
+        does not support adding or altering foreign keys via ``ALTER TABLE``,
+        so we migrate by recreating the table when constraints are missing or
+        incorrect.
         """
         self.cursor.execute("PRAGMA foreign_key_list(ventas)")
-        fk_exists = any(
-            row[2] == "clientes" and row[3] == "cliente_id"
-            for row in self.cursor.fetchall()
+        fk_data = self.cursor.fetchall()
+        fk_cliente = any(
+            row[2] == "clientes" and row[3] == "cliente_id" for row in fk_data
         )
-        if fk_exists:
+        fk_vendedor = any(
+            row[2] == "trabajadores" and row[3] == "vendedor_id" for row in fk_data
+        )
+        if fk_cliente and fk_vendedor:
             # Index might be missing in some installations
             self.cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_ventas_cliente_id ON ventas(cliente_id)"
             )
             return
-        logger.info("Migrating 'ventas' table to add cliente_id foreign key")
+        logger.info("Migrating 'ventas' table to fix foreign keys")
         self.cursor.execute("PRAGMA foreign_keys=off")
         try:
             self.cursor.execute(
@@ -74,7 +79,7 @@ class DB:
                     extra TEXT,
                     FOREIGN KEY (cliente_id) REFERENCES clientes(id),
                     FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
-                    FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
+                    FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE RESTRICT
                 )
                 """
             )
@@ -92,6 +97,78 @@ class DB:
             self.conn.commit()
         finally:
             self.cursor.execute("PRAGMA foreign_keys=on")
+
+    def migrate_detalles_venta_vendedor_fk(self):
+        """Ensure ``detalles_venta`` references ``trabajadores`` via ``vendedor_id``."""
+        self.cursor.execute("PRAGMA foreign_key_list(detalles_venta)")
+        fk_exists = any(
+            row[2] == "trabajadores" and row[3] == "vendedor_id"
+            for row in self.cursor.fetchall()
+        )
+        if fk_exists:
+            return
+        logger.info("Migrating 'detalles_venta' table to reference trabajadores")
+        self.cursor.execute("PRAGMA foreign_keys=off")
+        try:
+            self.cursor.execute(
+                """
+                CREATE TABLE detalles_venta_temp (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    venta_id INTEGER,
+                    producto_id INTEGER,
+                    cantidad INTEGER,
+                    precio_unitario REAL,
+                    descuento REAL DEFAULT 0,
+                    descuento_tipo TEXT,
+                    iva REAL DEFAULT 0,
+                    comision REAL DEFAULT 0,
+                    iva_tipo TEXT,
+                    tipo_fiscal TEXT,
+                    extra TEXT,
+                    precio_con_iva REAL DEFAULT 0,
+                    vendedor_id INTEGER,
+                    FOREIGN KEY (venta_id) REFERENCES ventas(id),
+                    FOREIGN KEY (producto_id) REFERENCES productos(id),
+                    FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE SET NULL
+                )
+                """
+            )
+            self.cursor.execute(
+                """
+                INSERT INTO detalles_venta_temp (
+                    id, venta_id, producto_id, cantidad, precio_unitario,
+                    descuento, descuento_tipo, iva, comision, iva_tipo,
+                    tipo_fiscal, extra, precio_con_iva, vendedor_id
+                )
+                SELECT id, venta_id, producto_id, cantidad, precio_unitario,
+                       descuento, descuento_tipo, iva, comision, iva_tipo,
+                       tipo_fiscal, extra, precio_con_iva, vendedor_id
+                FROM detalles_venta
+                """
+            )
+            self.cursor.execute("DROP TABLE detalles_venta")
+            self.cursor.execute("ALTER TABLE detalles_venta_temp RENAME TO detalles_venta")
+            self.conn.commit()
+        finally:
+            self.cursor.execute("PRAGMA foreign_keys=on")
+
+    def ensure_vendedores_trabajadores(self):
+        """Ensure every vendedor has a corresponding trabajador entry."""
+        self.cursor.execute("SELECT id, codigo, nombre, dui FROM vendedores")
+        for vend in self.cursor.fetchall():
+            self.cursor.execute(
+                "SELECT 1 FROM trabajadores WHERE id=?", (vend["id"],)
+            )
+            if self.cursor.fetchone():
+                continue
+            self.cursor.execute(
+                """
+                INSERT INTO trabajadores (id, codigo, nombre, dui, es_vendedor)
+                VALUES (?, ?, ?, ?, 1)
+                """,
+                (vend["id"], vend["codigo"], vend["nombre"], vend["dui"]),
+            )
+        self.conn.commit()
 
     def setup(self):
         # Create tables if they don't exist without dropping existing data
@@ -167,7 +244,7 @@ class DB:
                 extra TEXT,
                 FOREIGN KEY (cliente_id) REFERENCES clientes(id),
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
-                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
+                FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE RESTRICT
             )
         """)
         self.cursor.execute(
@@ -183,7 +260,7 @@ class DB:
                 vendedor_id INTEGER,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id),
                 FOREIGN KEY (producto_id) REFERENCES productos(id),
-                FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE SET NULL
+                FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE SET NULL
             )
         """)
         self.cursor.execute("""
@@ -594,7 +671,9 @@ class DB:
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_distribuidores_nombre ON Distribuidores(nombre)"
         )
+        self.ensure_vendedores_trabajadores()
         self.migrate_ventas_cliente_fk()
+        self.migrate_detalles_venta_vendedor_fk()
         self.conn.commit()
 
         # Verifica que la columna estado exista en ventas
@@ -679,8 +758,16 @@ class DB:
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
         self.cursor.execute(
-            "INSERT INTO vendedores (codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?)",
-            (codigo, nombre, dui, descripcion, Distribuidor_id),
+            """
+            INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)
+            VALUES (?, ?, ?, 1)
+            """,
+            (codigo, nombre, dui),
+        )
+        trabajador_id = self.cursor.lastrowid
+        self.cursor.execute(
+            "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
+            (trabajador_id, codigo, nombre, dui, descripcion, Distribuidor_id),
 
         )
         if commit:
@@ -696,6 +783,10 @@ class DB:
                 "UPDATE vendedores SET codigo=?, nombre=?, dui=?, descripcion=?, Distribuidor_id=? WHERE id=?",
                 (codigo, nombre, dui, descripcion, Distribuidor_id, id),
 
+            )
+            self.cursor.execute(
+                "UPDATE trabajadores SET codigo=?, nombre=?, dui=? WHERE id=?",
+                (codigo, nombre, dui, id),
             )
             self.conn.commit()
         except Exception as e:
@@ -725,6 +816,7 @@ class DB:
                         f"UPDATE {table} SET {column}=? WHERE {column}=?", (reassign_to, id)
                     )
             self.cursor.execute("DELETE FROM vendedores WHERE id=?", (id,))
+            self.cursor.execute("DELETE FROM trabajadores WHERE id=?", (id,))
             self.conn.commit()
         except ValueError:
             raise
@@ -1634,8 +1726,8 @@ class DB:
         if solo_vendedores:
             filtros.append("es_vendedor=1")
         if area:
-            filtros.append("area=?")
-            params.append(area)
+            filtros.append("LOWER(area) LIKE LOWER(?)")
+            params.append(f"%{area}%")
         if search:
             filtros.append("(nombre LIKE ? OR codigo LIKE ?)")
             params.extend([f"%{search}%", f"%{search}%"])
@@ -1682,6 +1774,14 @@ class DB:
         self.conn.commit()
 
     def delete_trabajador(self, id):
+        self.cursor.execute(
+            "SELECT COUNT(*) FROM ventas WHERE vendedor_id=?",
+            (id,),
+        )
+        if self.cursor.fetchone()[0] > 0:
+            raise ValueError(
+                "No se puede eliminar el trabajador: tiene ventas asociadas"
+            )
         self.cursor.execute("DELETE FROM trabajadores WHERE id=?", (id,))
         self.conn.commit()
 

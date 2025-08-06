@@ -63,7 +63,7 @@ def _setup_tab(tmp_path, monkeypatch=None):
         monkeypatch.setattr(SalesTab, "_load_email_config", lambda self: None)
         monkeypatch.setattr(SalesTab, "_check_smtp_credentials", lambda self: {})
         monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
     tab.sales_table.setRowCount(1)
     tab.sales_table.setItem(0, 0, QTableWidgetItem("1"))
     return db, tab

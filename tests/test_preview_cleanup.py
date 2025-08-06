@@ -58,7 +58,7 @@ def test_preview_keeps_pdfs(qt_app, tmp_path, monkeypatch):
 
     monkeypatch.setattr("sales_tab.get_document_paths", fake_paths)
 
-    tab = SalesTab(man)
+    tab = SalesTab(man, check_smtp=False)
 
     pdf1 = tab._generate_invoice_pdf(1)
     pdf2 = tab._generate_invoice_pdf(2)

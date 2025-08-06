@@ -113,6 +113,7 @@ class SalesTab(QWidget):
         self._setup_ui()
         self._load_email_config()
         self.load_sales()
+        self._check_smtp_credentials()
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -395,7 +396,10 @@ class SalesTab(QWidget):
             pass
 
     def _check_smtp_credentials(self):
-        """Warn user if SMTP settings are incomplete when the tab is opened."""
+        """Check for SMTP data and warn if any are missing.
+
+        Returns a dict with the credentials if complete, otherwise ``None``.
+        """
         path = DATOS_NEGOCIO_PATH
         if not os.path.exists(path):
             QMessageBox.warning(
@@ -403,7 +407,7 @@ class SalesTab(QWidget):
                 "Configuración de correo",
                 "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
             )
-            return
+            return None
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
@@ -413,7 +417,7 @@ class SalesTab(QWidget):
                 "Configuración de correo",
                 "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
             )
-            return
+            return None
 
         server = data.get("smtp_server")
         port = data.get("smtp_port")
@@ -434,7 +438,14 @@ class SalesTab(QWidget):
                 "Configuración de correo",
                 "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
             )
+            return None
 
+        return {
+            "server": server,
+            "port": port,
+            "user": user,
+            "password": password,
+        }
     def _update_preview(self, venta_id):
         """Generate PDF preview image for the given sale ID and display it."""
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
@@ -812,20 +823,13 @@ class SalesTab(QWidget):
                 QMessageBox.warning(self, "Solo enviar por correo", "No se encontró el JSON firmado.")
                 return
 
-        creds = {}
-        if os.path.exists(DATOS_NEGOCIO_PATH):
-            try:
-                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
-                    creds = json.load(f)
-            except Exception:
-                creds = {}
-        server = creds.get("smtp_server")
-        port = creds.get("smtp_port")
-        user = creds.get("email_usuario")
-        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
-        if not all([server, port, user, password]):
-            QMessageBox.warning(self, "Solo enviar por correo", "Credenciales SMTP incompletas.")
+        creds = self._check_smtp_credentials()
+        if not creds:
             return
+        server = creds["server"]
+        port = creds["port"]
+        user = creds["user"]
+        password = creds["password"]
 
         body += (
             "\n\nSe adjuntan la representaci\u00f3n gr\u00e1fica en PDF y el documento firmado en formato JSON."

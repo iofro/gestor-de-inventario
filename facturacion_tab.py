@@ -28,7 +28,7 @@ from factura_sv import (
     generar_factura_electronica_pdf,
     generar_nota_credito_pdf,
 )
-from dte import generar_nota_credito_json
+from dte import generar_nota_credito_json, transmitir_dte
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 import uuid
@@ -454,9 +454,16 @@ class FacturacionTab(QWidget):
             elif entry.get("row_type") == "ticket":
                 self._send_ticket_email(venta_id)
         if dialog.hacienda_cb.isChecked():
-            QMessageBox.information(
-                self, "Enviar a Hacienda", "Funcionalidad no implementada"
-            )
+            tipo = "03" if entry.get("row_type") == "ticket" else "01"
+            try:
+                transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
+                QMessageBox.information(
+                    self, "Enviar a Hacienda", "Documento enviado"
+                )
+            except Exception as exc:
+                QMessageBox.critical(
+                    self, "Enviar a Hacienda", str(exc)
+                )
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

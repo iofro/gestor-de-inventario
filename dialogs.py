@@ -2317,6 +2317,7 @@ class DistribuidorDialog(QDialog):
         self.direccion_edit = QLineEdit()
         self.departamento_edit = QLineEdit()
         self.municipio_edit = QLineEdit()
+        self._cliente_id = cliente.get("id") if cliente else None
         self.tipo_contrato_edit = QLineEdit()
         self.comisiones_especificas_edit = QLineEdit()
         self.metodo_pago_edit = QLineEdit()
@@ -2501,6 +2502,7 @@ class ClienteDialog(QDialog):
         self.direccion_edit = QLineEdit()
         self.departamento_edit = QLineEdit()
         self.municipio_edit = QLineEdit()
+        self._cliente_id = cliente.get("id") if cliente else None
 
         form = [
             ("Código:", self.codigo_edit),
@@ -2558,15 +2560,20 @@ class ClienteDialog(QDialog):
             QMessageBox.warning(
                 self,
                 "Validación",
-                "El correo electrónico es obligatorio."
+                "El correo electrónico es obligatorio.",
             )
             return
         if not validar_email(email):
             QMessageBox.warning(
                 self,
                 "Validación",
-                "Ingrese un correo electrónico válido."
+                "Ingrese un correo electrónico válido.",
             )
+            return
+        nit = self.nit_edit.text().strip()
+        db = getattr(getattr(self.parent(), "manager", None), "db", None)
+        if db and db.nit_exists(nit, exclude_id=self._cliente_id):
+            QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
             return
         self.accept()
 

@@ -158,6 +158,9 @@ class DB:
                 otros TEXT
             )
         """)
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_nit ON clientes(nit)"
+        )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS pagos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1124,6 +1127,26 @@ class DB:
         return [row["nombre"] for row in self.cursor.fetchall()]
 
     # CRUD CLIENTES
+    def nit_exists(self, nit, exclude_id=None):
+        """Check if a NIT already exists in the clientes table.
+
+        Args:
+            nit: NIT value to check. Empty values are ignored.
+            exclude_id: Optional client ID to exclude from the check.
+
+        Returns:
+            bool: True if the NIT exists for another client.
+        """
+        if not nit:
+            return False
+        query = "SELECT 1 FROM clientes WHERE nit=?"
+        params = [nit]
+        if exclude_id is not None:
+            query += " AND id<>?"
+            params.append(exclude_id)
+        self.cursor.execute(query, params)
+        return self.cursor.fetchone() is not None
+
     def add_cliente(
         self,
         nombre,
@@ -1141,6 +1164,10 @@ class DB:
     ):
         if codigo is None:
             codigo = self.get_next_cliente_codigo()
+        nit = nit.strip() if isinstance(nit, str) else nit
+        nit = nit or None
+        if self.nit_exists(nit):
+            raise ValueError("El NIT ya existe")
         self.cursor.execute(
             """
             INSERT INTO clientes (codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio)
@@ -1167,6 +1194,10 @@ class DB:
         return f"T-{(max_id + 1) if max_id else 1:03d}"
 
     def update_cliente(self, id, codigo, nombre, nrc, nit, dui, giro, telefono, email, direccion, departamento, municipio):
+        nit = nit.strip() if isinstance(nit, str) else nit
+        nit = nit or None
+        if self.nit_exists(nit, exclude_id=id):
+            raise ValueError("El NIT ya existe")
         self.cursor.execute(
             """
             UPDATE clientes SET codigo=?, nombre=?, nrc=?, nit=?, dui=?, giro=?, telefono=?, email=?, direccion=?, departamento=?, municipio=? WHERE id=?

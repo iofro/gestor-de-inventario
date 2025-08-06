@@ -21,7 +21,7 @@ from PyQt5.QtWidgets import (
     QDialog,
 
 )
-from PyQt5.QtCore import Qt, QDate, QUrl, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime
 from factura_sv import generar_factura_electronica_pdf
@@ -29,6 +29,7 @@ from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 
 from utils.jws import get_cert_config, sign_and_save, CONFIG_NEGOCIO_PATH
+from utils.email_sender import EmailSender
 
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
@@ -39,64 +40,12 @@ import shutil
 import os
 import json
 import uuid
-import smtplib
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
-from email.mime.base import MIMEBase
-from email import encoders
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
 CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
 TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
-
-
-class EmailSender(QThread):
-    finished = pyqtSignal(bool, str)
-
-    def __init__(self, server, port, user, password, to_addr, subject, body, attachments):
-        super().__init__()
-        self.server = server
-        self.port = port
-        self.user = user
-        self.password = password
-        self.to_addr = to_addr
-        self.subject = subject
-        self.body = body
-        if isinstance(attachments, str):
-            self.attachments = [attachments]
-        else:
-            self.attachments = attachments or []
-
-    def run(self):
-        try:
-            msg = MIMEMultipart()
-            msg["From"] = self.user
-            msg["To"] = self.to_addr
-            msg["Subject"] = self.subject
-            msg.attach(MIMEText(self.body or "", "plain"))
-
-            for path in self.attachments:
-                with open(path, "rb") as f:
-                    part = MIMEBase("application", "octet-stream")
-                    part.set_payload(f.read())
-                encoders.encode_base64(part)
-                part.add_header(
-                    "Content-Disposition",
-                    f'attachment; filename="{os.path.basename(path)}"',
-                )
-                msg.attach(part)
-
-            smtp = smtplib.SMTP(self.server, int(self.port))
-            smtp.starttls()
-            smtp.login(self.user, self.password)
-            smtp.send_message(msg)
-            smtp.quit()
-            self.finished.emit(True, "Correo enviado correctamente")
-        except Exception as e:
-            self.finished.emit(False, str(e))
-
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""

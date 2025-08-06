@@ -40,6 +40,7 @@ import shutil
 import os
 import json
 import uuid
+import warnings
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
@@ -50,7 +51,7 @@ TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
 
-    def __init__(self, manager, parent=None):
+    def __init__(self, manager, parent=None, check_smtp=True):
         super().__init__(parent)
         self.manager = manager
         self.current_credito_fiscal = None
@@ -62,7 +63,8 @@ class SalesTab(QWidget):
         self._setup_ui()
         self._load_email_config()
         self.load_sales()
-        self._check_smtp_credentials()
+        if check_smtp:
+            self._check_smtp_credentials()
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -357,22 +359,25 @@ class SalesTab(QWidget):
         Returns a dict with the credentials if complete, otherwise ``None``.
         """
         path = DATOS_NEGOCIO_PATH
+        headless = os.environ.get("QT_QPA_PLATFORM") in {"offscreen", "minimal"}
+        msg = (
+            "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'."
+        )
+
+        def warn():
+            if headless:
+                warnings.warn(msg)
+            else:
+                QMessageBox.warning(self, "Configuración de correo", msg)
+
         if not os.path.exists(path):
-            QMessageBox.warning(
-                self,
-                "Configuración de correo",
-                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
-            )
+            warn()
             return None
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
-            QMessageBox.warning(
-                self,
-                "Configuración de correo",
-                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
-            )
+            warn()
             return None
 
         server = data.get("smtp_server")
@@ -389,11 +394,7 @@ class SalesTab(QWidget):
                 pass
 
         if not all([server, port, user, password]):
-            QMessageBox.warning(
-                self,
-                "Configuración de correo",
-                "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'.",
-            )
+            warn()
             return None
 
         return {

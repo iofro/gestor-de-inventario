@@ -248,10 +248,11 @@ class FacturacionTab(QWidget):
 
         rows.extend(self._find_orphan_documents())
 
-        # Sort invoices by date descending, leaving entries without a date in
-        # their original relative order
+        # Sort invoices, placing sales and tickets first, orphan documents at
+        # the end, and ordering by date descending with undated entries last
         rows.sort(
             key=lambda r: (
+                r.get("row_type") == "orphan",
                 r.get("_parsed_fecha") is None,
                 -(r.get("_parsed_fecha").toordinal() if r.get("_parsed_fecha") else 0),
             )

@@ -1425,11 +1425,39 @@ class MainWindow(QMainWindow):
         if not t:
             QMessageBox.warning(self, "Eliminar trabajador", "Seleccione un trabajador para eliminar.")
             return
-        confirm = QMessageBox.question(self, "Eliminar", f"¿Eliminar trabajador '{t['nombre']}'?", QMessageBox.Yes | QMessageBox.No)
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar",
+            f"¿Eliminar trabajador '{t['nombre']}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
         if confirm == QMessageBox.Yes:
-            self.manager.db.delete_trabajador(t["id"])
+            count = self.manager.db.cursor.execute(
+                "SELECT COUNT(*) FROM ventas WHERE vendedor_id=?",
+                (t["id"],),
+            ).fetchone()[0]
+            if count > 0:
+                QMessageBox.warning(
+                    self,
+                    "Eliminar trabajador",
+                    "El trabajador tiene ventas asociadas y no puede eliminarse.",
+                )
+                return
+            try:
+                self.manager.db.delete_trabajador(t["id"])
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Eliminar trabajador",
+                    "El trabajador tiene ventas asociadas y no puede eliminarse.",
+                )
+                return
             self._actualizar_tabla_trabajadores()
-            QMessageBox.information(self, "Trabajador eliminado", f"El trabajador '{t['nombre']}' ha sido eliminado.")
+            QMessageBox.information(
+                self,
+                "Trabajador eliminado",
+                f"El trabajador '{t['nombre']}' ha sido eliminado.",
+            )
 
 
     def _toggle_estado_fechas(self, checked: bool):

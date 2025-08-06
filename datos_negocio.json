@@ -39,7 +39,5 @@
     "incluir_sello_pdf": true,
     "guardar_respuesta": true,
     "tipo_contribuyente": "Persona Jurídica"
-  },
-  "default_email_subject": "hola",
-  "default_email_body": "factura de compra"
+  }
 }

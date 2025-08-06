@@ -252,23 +252,47 @@ class InventoryManager:
     def importar_inventario_json(self, filename):
         with open(filename, "r", encoding="utf-8") as f:
             data = json.load(f)
-        self.db.limpiar_productos()
-        self.db.limpiar_vendedores()
-        self.db.limpiar_Distribuidores()
+        # Limpia tablas hijas primero para evitar violaciones de clave foránea
+        self.db.conn.execute("BEGIN")
         try:
             self.db.cursor.execute("DELETE FROM detalles_venta")
             self.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
             self.db.cursor.execute("DELETE FROM dte_envios")
             self.db.cursor.execute("DELETE FROM notas")
+            self.db.cursor.execute("DELETE FROM detalles_compra")
             self.db.cursor.execute("DELETE FROM ventas")
             self.db.cursor.execute("DELETE FROM compras")
-            self.db.cursor.execute("DELETE FROM detalles_compra")
             self.db.cursor.execute("DELETE FROM movimientos")
             self.db.cursor.execute("DELETE FROM clientes")
             self.db.cursor.execute("DELETE FROM trabajadores")
+
+            tablas = [
+                "detalles_venta",
+                "ventas_credito_fiscal",
+                "dte_envios",
+                "notas",
+                "detalles_compra",
+                "ventas",
+                "compras",
+                "movimientos",
+                "clientes",
+                "trabajadores",
+            ]
+            for tabla in tablas:
+                count = self.db.cursor.execute(
+                    f"SELECT COUNT(*) FROM {tabla}"
+                ).fetchone()[0]
+                if count:
+                    raise Exception(f"La tabla {tabla} aún contiene registros")
+
             self.db.conn.commit()
         except Exception:
             self.db.conn.rollback()
+            raise
+
+        self.db.limpiar_productos()
+        self.db.limpiar_vendedores()
+        self.db.limpiar_Distribuidores()
 
         vendedor_id_map = {}
         Distribuidor_id_map = {}

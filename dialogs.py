@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog
+    QFileDialog, QTabWidget
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -2795,6 +2795,7 @@ class DatosNegocioDialog(QDialog):
         self.setWindowTitle("Datos del negocio")
         self.setMinimumWidth(900)
         main_layout = QVBoxLayout()
+        tabs = QTabWidget()
 
         # --- Agrupación horizontal ---
         h_layout = QHBoxLayout()
@@ -2865,8 +2866,8 @@ class DatosNegocioDialog(QDialog):
         grupo3.setLayout(form3)
         h_layout.addWidget(grupo3)
 
-        # --- Grupo 4: Configuración de correo ---
-        grupo4 = QGroupBox("\ud83d\udce7 Configuraci\u00f3n de correo")
+        # --- Configuración de correo ---
+        tab_correo = QWidget()
         form4 = QFormLayout()
 
         # Proveedor de correo y configuraci\u00f3n SMTP predefinida
@@ -2890,7 +2891,7 @@ class DatosNegocioDialog(QDialog):
         form4.addRow("Puerto SMTP:", self.smtp_port)
         form4.addRow("Usuario:", self.email_usuario)
         form4.addRow("Contrase\u00f1a:", self.email_contrasena)
-        grupo4.setLayout(form4)
+        tab_correo.setLayout(form4)
 
         self.combo_email_provider.currentTextChanged.connect(
             self._update_smtp_fields
@@ -2898,8 +2899,8 @@ class DatosNegocioDialog(QDialog):
         self.email.textChanged.connect(self._update_user_field)
         self._update_smtp_fields()
 
-        # --- Grupo 5: Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica ---
-        grupo5 = QGroupBox("\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
+        # --- Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica ---
+        tab_dte = QWidget()
         form5 = QFormLayout()
         self.dte_certificado = QLineEdit()
         self.btn_load_cert = QPushButton("...")
@@ -2949,17 +2950,21 @@ class DatosNegocioDialog(QDialog):
         form5.addRow(self.adjuntar_json_correo)
         form5.addRow(self.incluir_sello_pdf)
         form5.addRow(self.guardar_respuesta_bd)
-        grupo5.setLayout(form5)
+        tab_dte.setLayout(form5)
 
         self.btn_load_cert.clicked.connect(self._load_cert_file)
         self.btn_load_key.clicked.connect(self._load_key_file)
         self.btn_load_pub.clicked.connect(self._load_pub_file)
 
         main_layout.addLayout(h_layout)
-        footer_layout = QHBoxLayout()
-        footer_layout.addWidget(grupo4)
-        footer_layout.addWidget(grupo5)
-        main_layout.addLayout(footer_layout)
+        # Using a QTabWidget here instead of checkable QGroupBoxes or
+        # separate QDialog popups offers native tab switching and keeps
+        # related data in one place, simplifying state management.
+        tabs = QTabWidget()
+        tabs.addTab(tab_correo, "\ud83d\udce7 Configuraci\u00f3n de correo")
+        tabs.addTab(tab_dte, "\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
+        main_layout.addWidget(tabs)
+
 
         # --- Botones ---
         btns = QHBoxLayout()
@@ -2977,7 +2982,15 @@ class DatosNegocioDialog(QDialog):
         if datos or config:
             self.set_data(datos or {}, config or {})
 
+    def _toggle_tabs(self, checked):
+        self.tab_config.setVisible(checked)
+        self.btn_toggle_tabs.setText(
+            "Ocultar configuraciones avanzadas" if checked else "Mostrar configuraciones avanzadas"
+        )
+
     def get_data(self):
+        # Tab visibility does not affect data persistence; all widget values
+        # are collected regardless of which tab is currently shown.
         datos = {
             "nombre_comercial": self.nombre_comercial.text(),
             "razon_social": self.razon_social.text(),
@@ -3064,6 +3077,7 @@ class DatosNegocioDialog(QDialog):
         return datos, config
 
     def set_data(self, datos, config):
+        # Populate widgets across all tabs even if some tabs start hidden.
         self.nombre_comercial.setText(datos.get("nombre_comercial", ""))
         self.razon_social.setText(datos.get("razon_social", ""))
         self.giro.setText(datos.get("giro", ""))

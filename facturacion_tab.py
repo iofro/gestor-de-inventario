@@ -420,9 +420,11 @@ class FacturacionTab(QWidget):
         return result
 
     def _selected_entry(self):
-        if self.table.currentRow() < 0:
+        selected_rows = self.table.selectionModel().selectedRows()
+        if not selected_rows:
             return None
-        item = self.table.item(self.table.currentRow(), 0)
+        row = selected_rows[0].row()
+        item = self.table.item(row, 0)
         return item.data(Qt.UserRole) if item else None
 
     def _selected_venta(self):

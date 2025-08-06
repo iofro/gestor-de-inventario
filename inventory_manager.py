@@ -350,6 +350,7 @@ class InventoryManager:
                             t.get("descripcion", ""),
                             t.get("Distribuidor_id"),
                         ),
+
                     )
                     vendedor_id_map[t.get("id")] = tid
 

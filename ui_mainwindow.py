@@ -1370,8 +1370,10 @@ class MainWindow(QMainWindow):
 
     def _actualizar_tabla_trabajadores(self):
         solo_vendedores = self.trabajadores_filtro_vendedor.isChecked()
-        area = self.trabajadores_filtro_area.text().strip() or None
-        trabajadores = self.manager.db.get_trabajadores(solo_vendedores=solo_vendedores, area=area)
+        area = self.trabajadores_filtro_area.text()
+        trabajadores = self.manager.db.get_trabajadores(
+            solo_vendedores=solo_vendedores, area=area
+        )
         self.trabajadores_table.setRowCount(len(trabajadores))
         for row, t in enumerate(trabajadores):
             self.trabajadores_table.setItem(row, 0, QTableWidgetItem(t.get("codigo", "")))

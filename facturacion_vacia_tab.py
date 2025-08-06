@@ -16,6 +16,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import QDate, Qt
 
 from datetime import datetime
+import logging
+
+
+logger = logging.getLogger(__name__)
 
 class FacturacionVaciaTab(QWidget):
     """Pestaña de facturación con filtros y acciones básicas."""
@@ -89,7 +93,8 @@ class FacturacionVaciaTab(QWidget):
         try:
             notas = manager.db.obtener_notas()
         except Exception:
-            pass
+            logger.exception("Error obteniendo notas")
+            notas = []
         clientes = {c["id"]: c["nombre"] for c in manager._clientes}
 
         search = self.search_bar.text().lower()
@@ -102,7 +107,8 @@ class FacturacionVaciaTab(QWidget):
             fecha = v.get("fecha", "")
             try:
                 fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date()
-            except Exception:
+            except (ValueError, AttributeError, IndexError):
+                logger.exception("Fecha inválida: %s", fecha)
                 fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue
@@ -131,7 +137,8 @@ class FacturacionVaciaTab(QWidget):
             fecha = n.get("fecha", "")
             try:
                 fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date()
-            except Exception:
+            except (ValueError, AttributeError, IndexError):
+                logger.exception("Fecha inválida: %s", fecha)
                 fdate = None
             if fdate and (fdate < d_from or fdate > d_to):
                 continue

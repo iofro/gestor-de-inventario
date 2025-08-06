@@ -131,12 +131,12 @@ class ClienteSelectorDialog(QDialog):
         self._mostrar_clientes(self.clientes)
         layout.addWidget(self.lista_clientes)
         self.btn_ok = QPushButton("Seleccionar")
-        self.btn_ok.clicked.connect(self.accept)
+        self.btn_ok.clicked.connect(self._handle_accept)
         layout.addWidget(self.btn_ok)
         self.setLayout(layout)
         self.search_bar.textChanged.connect(self._filtrar_clientes)
         self.selected_cliente = None
-        self.lista_clientes.itemClicked.connect(self._seleccionar_cliente)
+        self.lista_clientes.itemSelectionChanged.connect(self._seleccionar_cliente)
 
     def _mostrar_clientes(self, clientes):
         self.lista_clientes.clear()
@@ -159,10 +159,16 @@ class ClienteSelectorDialog(QDialog):
         ]
         self._mostrar_clientes(filtrados)
 
-    def _seleccionar_cliente(self, item):
+    def _seleccionar_cliente(self, item=None):
         idx = self.lista_clientes.currentRow()
         if idx >= 0:
             self.selected_cliente = self.clientes_mostrados[idx]  # <-- Usa la lista de mostrados
+
+    def _handle_accept(self):
+        idx = self.lista_clientes.currentRow()
+        if idx >= 0:
+            self.selected_cliente = self.clientes_mostrados[idx]
+        self.accept()
 
     def get_selected_cliente(self):
         return self.selected_cliente

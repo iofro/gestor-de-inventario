@@ -43,15 +43,21 @@ class ExportThread(QThread):
     finished = pyqtSignal()
     error = pyqtSignal(str)
 
-    def __init__(self, manager, filename, tab_order):
+    def __init__(self, filename, tab_order):
         super().__init__()
-        self.manager = manager
         self.filename = filename
         self.tab_order = tab_order
 
     def run(self):
+        """Run the export in a background thread.
+
+        A new ``InventoryManager`` instance is created so that this thread uses
+        its own database connection, avoiding any cross-thread usage of the
+        main application's connection.
+        """
         try:
-            self.manager.exportar_inventario_json(
+            manager = InventoryManager()
+            manager.exportar_inventario_json(
                 self.filename, tab_order=self.tab_order
             )
             self.finished.emit()
@@ -842,7 +848,9 @@ class MainWindow(QMainWindow):
     def guardar_como(self):
         filename, _ = QFileDialog.getSaveFileName(self, "Guardar inventario como", "", "Archivos JSON (*.json);;Todos los archivos (*)")
         if filename:
-            thread = ExportThread(self.manager, filename, self.get_tab_order())
+            # Use a background thread with its own DB connection to avoid
+            # blocking the UI or sharing the main thread's connection.
+            thread = ExportThread(filename, self.get_tab_order())
 
             def on_finished():
                 self.ultimo_archivo_json = filename
@@ -886,8 +894,10 @@ class MainWindow(QMainWindow):
 
     def guardar_rapido(self):
         if self.ultimo_archivo_json:
+            # Reuse the background export thread with its own database
+            # connection to keep the GUI responsive.
             thread = ExportThread(
-                self.manager, self.ultimo_archivo_json, self.get_tab_order()
+                self.ultimo_archivo_json, self.get_tab_order()
             )
 
             def on_finished():

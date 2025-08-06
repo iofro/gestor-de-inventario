@@ -3,16 +3,25 @@ from datetime import datetime
 import json
 import logging
 import os
+import threading
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DB:
     def __init__(self, db_name=os.path.join(os.path.dirname(__file__), "inventario.db")):
-        self.conn = sqlite3.connect(db_name)
+        # ``check_same_thread=False`` allows the connection to be used from
+        # multiple threads.  Each thread should ideally use its own connection
+        # but this flag prevents SQLite from raising an exception if a
+        # connection crosses thread boundaries.
+        self.conn = sqlite3.connect(db_name, check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()
+        # Simple mutex to guard database operations when the same connection is
+        # accessed from multiple threads.  Threads may also create their own
+        # ``DB`` instances to keep connections separate.
+        self.lock = threading.Lock()
         self.setup()
 
     def ensure_column(self, table: str, column: str, definition: str) -> bool:

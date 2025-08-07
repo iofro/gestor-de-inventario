@@ -1,10 +1,11 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem,
-    QPushButton, QLabel, QDateEdit, QComboBox, QAbstractItemView, QHeaderView, QSizePolicy
+    QPushButton, QLabel, QDateEdit, QComboBox, QAbstractItemView, QHeaderView, QSizePolicy,
+    QCheckBox,
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from dialogs import CompraDetalleDialog
 import logging
@@ -74,6 +75,9 @@ class PurchasesTab(QWidget):
 
         # Filters
         filter_layout = QHBoxLayout()
+        self.date_filter_cb = QCheckBox("Filtrar por fecha")
+        self.quick_range = QComboBox()
+        self.quick_range.addItems(["Personalizado", "Esta semana", "Este mes", "Este año"])
         self.date_from = QDateEdit(QDate.currentDate().addMonths(-1))
         self.date_from.setCalendarPopup(True)
         self.date_to = QDateEdit(QDate.currentDate())
@@ -89,8 +93,13 @@ class PurchasesTab(QWidget):
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("ID o producto")
 
-        for w in [QLabel("Desde"), self.date_from, QLabel("Hasta"), self.date_to,
-                  self.distribuidor_combo, self.vendedor_combo, self.search_bar]:
+        self.quick_range.setEnabled(False)
+        self.date_from.setEnabled(False)
+        self.date_to.setEnabled(False)
+
+        for w in [self.date_filter_cb, self.quick_range, QLabel("Desde"), self.date_from,
+                  QLabel("Hasta"), self.date_to, self.distribuidor_combo,
+                  self.vendedor_combo, self.search_bar]:
             filter_layout.addWidget(w)
         layout.addLayout(filter_layout)
 
@@ -118,6 +127,8 @@ class PurchasesTab(QWidget):
         layout.addLayout(content_layout)
 
         # Connections
+        self.date_filter_cb.toggled.connect(self._toggle_date_filter)
+        self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.date_from.dateChanged.connect(self.load_purchases)
         self.date_to.dateChanged.connect(self.load_purchases)
         self.distribuidor_combo.currentIndexChanged.connect(self.load_purchases)
@@ -140,6 +151,50 @@ class PurchasesTab(QWidget):
         compra_id = self._selected_compra_id()
         if compra_id is not None:
             self.show_detail(compra_id)
+
+    def _toggle_date_filter(self, checked):
+        self.quick_range.setEnabled(checked)
+        custom = self.quick_range.currentIndex() == 0
+        self.date_from.setEnabled(checked and custom)
+        self.date_to.setEnabled(checked and custom)
+        if checked:
+            self._apply_quick_range()
+        else:
+            self.load_purchases()
+
+    def _apply_quick_range(self):
+        if not self.date_filter_cb.isChecked():
+            return
+        option = self.quick_range.currentText()
+        today = date.today()
+        if option == "Esta semana":
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Este mes":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = date(today.year, 12, 31)
+            else:
+                end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Este año":
+            start = date(today.year, 1, 1)
+            end = date(today.year, 12, 31)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        else:
+            self.date_from.setEnabled(True)
+            self.date_to.setEnabled(True)
+        self.load_purchases()
     def load_purchases(self):
         compras = self.manager.db.get_compras()
         detalles_cache = {}
@@ -147,8 +202,11 @@ class PurchasesTab(QWidget):
         Distribuidores = {d["id"]: d["nombre"] for d in self.manager.db.get_Distribuidores()}
         Vendedores = {v["id"]: v["nombre"] for v in self.manager.db.get_vendedores()}
 
-        d_from = self.date_from.date().toPyDate()
-        d_to = self.date_to.date().toPyDate()
+        if self.date_filter_cb.isChecked():
+            d_from = self.date_from.date().toPyDate()
+            d_to = self.date_to.date().toPyDate()
+        else:
+            d_from = d_to = None
         dist_filter = self.distribuidor_combo.currentData()
         vend_filter = self.vendedor_combo.currentData()
         search = self.search_bar.text().lower()
@@ -165,7 +223,9 @@ class PurchasesTab(QWidget):
                         fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
                     except (ValueError, TypeError):
                         fdate = None
-            if fdate and (fdate < d_from or fdate > d_to):
+            if self.date_filter_cb.isChecked() and fdate and (
+                (d_from and fdate < d_from) or (d_to and fdate > d_to)
+            ):
                 continue
             dist = Distribuidores.get(c.get("Distribuidor_id"), "")
             vend = Vendedores.get(c.get("vendedor_id"), "")

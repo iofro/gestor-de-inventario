@@ -96,11 +96,16 @@ class MainWindow(QMainWindow):
         archivo_menu.addAction(guardar_como_action)
         archivo_menu.addAction(cargar_inventario_action)
 
-        # --- NUEVO MENÚ CONFIGURACIÓN ---
-        configuracion_menu = menubar.addMenu("Configuración")
+        # --- CONFIGURACIÓN ---
         datos_negocio_action = QAction("Datos del negocio", self)
         datos_negocio_action.triggered.connect(self._abrir_datos_negocio)
-        configuracion_menu.addAction(datos_negocio_action)
+        menubar.addAction(datos_negocio_action)
+        correo_action = QAction("Configurar correo", self)
+        correo_action.triggered.connect(self._abrir_config_correo)
+        menubar.addAction(correo_action)
+        dte_action = QAction("Facturación electrónica", self)
+        dte_action.triggered.connect(self._abrir_config_facturacion)
+        menubar.addAction(dte_action)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
@@ -1377,6 +1382,56 @@ class MainWindow(QMainWindow):
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config_nuevo, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Datos del negocio", "Datos guardados correctamente.")
+
+    def _abrir_config_correo(self):
+        import os, json
+        datos_path = DATOS_NEGOCIO_PATH
+        datos = {}
+        if os.path.exists(datos_path):
+            try:
+                with open(datos_path, "r", encoding="utf-8") as f:
+                    datos = json.load(f)
+            except Exception:
+                datos = {}
+        from dialogs import EmailConfigDialog
+        dlg = EmailConfigDialog(datos, self)
+        if dlg.exec_():
+            datos.update(dlg.get_data())
+            with open(datos_path, "w", encoding="utf-8") as f:
+                json.dump(datos, f, ensure_ascii=False, indent=2)
+            QMessageBox.information(self, "Configuración de correo", "Datos guardados correctamente.")
+
+    def _abrir_config_facturacion(self):
+        import os, json
+        datos_path = DATOS_NEGOCIO_PATH
+        config_path = CONFIG_NEGOCIO_PATH
+        datos = {}
+        config = {}
+        if os.path.exists(datos_path):
+            try:
+                with open(datos_path, "r", encoding="utf-8") as f:
+                    datos = json.load(f)
+            except Exception:
+                datos = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                config = {}
+        from dialogs import DTEConfigDialog
+        dte_api = datos.get("dte_api", {})
+        fe_config = config.get("firma_electronica", {})
+        dlg = DTEConfigDialog(dte_api, fe_config, self)
+        if dlg.exec_():
+            new_dte_api, new_fe = dlg.get_data()
+            datos["dte_api"] = new_dte_api
+            config["firma_electronica"] = new_fe
+            with open(datos_path, "w", encoding="utf-8") as f:
+                json.dump(datos, f, ensure_ascii=False, indent=2)
+            with open(config_path, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+            QMessageBox.information(self, "Facturación electrónica", "Datos guardados correctamente.")
 
     def _actualizar_tabla_trabajadores(self):
         solo_vendedores = self.trabajadores_filtro_vendedor.isChecked()

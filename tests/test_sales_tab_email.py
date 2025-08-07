@@ -1,8 +1,13 @@
 import os
+import warnings
 import pytest
 from PyQt5.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
 
 from sales_tab import SalesTab
+
+warnings.filterwarnings(
+    "ignore", message="Credenciales SMTP incompletas.*"
+)
 
 
 class FakeDB:

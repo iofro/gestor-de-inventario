@@ -266,10 +266,13 @@ class InventoryManager:
             self.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
             self.db.cursor.execute("DELETE FROM dte_envios")
             self.db.cursor.execute("DELETE FROM notas")
+            self.db.cursor.execute("DELETE FROM facturas_pdf")
+            self.db.cursor.execute("DELETE FROM tickets_pdf")
             self.db.cursor.execute("DELETE FROM detalles_compra")
             self.db.cursor.execute("DELETE FROM ventas")
             self.db.cursor.execute("DELETE FROM compras")
             self.db.cursor.execute("DELETE FROM movimientos")
+            self.db.cursor.execute("DELETE FROM pagos")
             self.db.cursor.execute("DELETE FROM clientes")
             self.db.cursor.execute("DELETE FROM trabajadores")
 
@@ -278,10 +281,13 @@ class InventoryManager:
                 "ventas_credito_fiscal",
                 "dte_envios",
                 "notas",
+                "facturas_pdf",
+                "tickets_pdf",
                 "detalles_compra",
                 "ventas",
                 "compras",
                 "movimientos",
+                "pagos",
                 "clientes",
                 "trabajadores",
             ]

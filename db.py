@@ -1426,6 +1426,32 @@ class DB:
             "saldo": saldo,
         }
 
+    def limpiar_inventario(self):
+        """Elimina ventas, compras y movimientos de forma atómica.
+
+        Se utilizan transacciones explícitas para asegurar que si ocurre un
+        error al borrar alguna tabla el estado de la base de datos se
+        restablezca mediante ``ROLLBACK``.
+        """
+        with self.lock:
+            try:
+                self.cursor.execute("BEGIN")
+                for table in (
+                    "detalles_venta",
+                    "detalles_compra",
+                    "movimientos",
+                    "ventas",
+                    "compras",
+                    "ventas_credito_fiscal",
+                    "trabajadores",
+                    "clientes",
+                ):
+                    self.cursor.execute(f"DELETE FROM {table}")
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
     def limpiar_productos(self):
         self.cursor.execute("DELETE FROM productos")
         self.conn.commit()

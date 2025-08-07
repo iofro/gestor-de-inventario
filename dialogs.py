@@ -2326,7 +2326,6 @@ class DistribuidorDialog(QDialog):
         self.direccion_edit = QLineEdit()
         self.departamento_edit = QLineEdit()
         self.municipio_edit = QLineEdit()
-        self._cliente_id = cliente.get("id") if cliente else None
         self.tipo_contrato_edit = QLineEdit()
         self.comisiones_especificas_edit = QLineEdit()
         self.metodo_pago_edit = QLineEdit()

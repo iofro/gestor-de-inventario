@@ -423,6 +423,8 @@ class SalesTab(QWidget):
             "Credenciales SMTP incompletas. Configure sus datos en la opción 'Configuración de correo'."
         )
 
+        suppress = os.environ.get("INVENTARIO_SUPPRESS_SMTP_WARNING")
+
         def warn():
             if headless:
                 warnings.warn(msg)
@@ -430,13 +432,15 @@ class SalesTab(QWidget):
                 QMessageBox.warning(self, "Configuración de correo", msg)
 
         if not os.path.exists(path):
-            warn()
+            if not suppress:
+                warn()
             return None
         try:
             with open(path, "r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
-            warn()
+            if not suppress:
+                warn()
             return None
 
         server = data.get("smtp_server")
@@ -453,7 +457,8 @@ class SalesTab(QWidget):
                 pass
 
         if not all([server, port, user, password]):
-            warn()
+            if not suppress:
+                warn()
             return None
 
         return {

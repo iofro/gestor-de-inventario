@@ -49,6 +49,7 @@ def test_filters_documents(qt_app, tmp_path, monkeypatch):
     assert tab.table.rowCount() == 0
 
     tab.search_bar.setText("")
+    tab.date_filter_cb.setChecked(True)
     tab.date_from.setDate(QDate(2024, 2, 1))
     tab.load_invoices()
     assert tab.table.rowCount() == 0

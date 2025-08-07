@@ -82,6 +82,11 @@ contraseña de la cuenta utilizada para enviar correos ya **no** se guarda en el
 archivo. En su lugar, define la variable de entorno `INVENTARIO_EMAIL_PASSWORD`
 con la contraseña correspondiente antes de ejecutar la aplicación.
 
+Si estás ejecutando pruebas automatizadas o no planeas enviar correos, puedes
+evitar la advertencia sobre credenciales incompletas estableciendo la variable
+de entorno `INVENTARIO_SUPPRESS_SMTP_WARNING=1` o iniciando `SalesTab` con
+`check_smtp=False`.
+
 Para firmar electrónicamente los DTE define los archivos de firma en
 `config_negocio.json` dentro del bloque `firma_electronica`:
 

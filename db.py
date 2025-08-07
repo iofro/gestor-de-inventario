@@ -1436,17 +1436,30 @@ class DB:
         with self.lock:
             try:
                 self.cursor.execute("BEGIN")
-                for table in (
+                tables = [
+                    # child tables first
                     "detalles_venta",
                     "detalles_compra",
                     "movimientos",
+                    "notas",
+                    "facturas_pdf",
+                    "tickets_pdf",
+                    "dte_envios",
+                    "ventas_credito_fiscal",
+                    "pagos",
+                    # then parent tables
                     "ventas",
                     "compras",
-                    "ventas_credito_fiscal",
                     "trabajadores",
                     "clientes",
-                ):
-                    self.cursor.execute(f"DELETE FROM {table}")
+                ]
+                for table in tables:
+                    self.cursor.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table' AND name=?",
+                        (table,),
+                    )
+                    if self.cursor.fetchone():
+                        self.cursor.execute(f"DELETE FROM {table}")
                 self.conn.commit()
             except Exception:
                 self.conn.rollback()

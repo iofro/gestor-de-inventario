@@ -1,6 +1,17 @@
 import sys
 import os
 import json
+import warnings
+
+# Swig-generated types from external libraries (e.g. PyMuPDF) may emit
+# warnings about missing ``__module__`` attributes. Since these wrappers
+# live outside this repository, silence the warning to keep the console
+# clean until the dependencies are updated upstream.
+warnings.filterwarnings(
+    "ignore",
+    message=r".*(SwigPyObject|SwigPyPacked|swigvarlink).*__module__.*",
+)
+
 from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow

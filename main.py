@@ -5,8 +5,9 @@ from PyQt5.QtWidgets import QApplication, QMessageBox
 from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
 
-LAST_FILE_PATH = "ultimo_inventario.json"
-DEFAULT_INVENTORY = "inventario.json"
+BASE_DIR = os.path.dirname(__file__)
+LAST_FILE_PATH = os.path.join(BASE_DIR, "ultimo_inventario.json")
+DEFAULT_INVENTORY = os.path.join(BASE_DIR, "inventario.json")
 
 def cargar_ultimo_archivo():
     """Devuelve la ruta del inventario a cargar al iniciar la aplicación."""
@@ -20,9 +21,8 @@ def cargar_ultimo_archivo():
         except Exception:
             pass
 
-    default_path = os.path.join(os.path.dirname(__file__), DEFAULT_INVENTORY)
-    if os.path.exists(default_path):
-        return default_path
+    if os.path.exists(DEFAULT_INVENTORY):
+        return DEFAULT_INVENTORY
     return ""
 
 if __name__ == "__main__":

@@ -950,11 +950,8 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes | QMessageBox.No
         )
         if reply == QMessageBox.Yes:
-            self.manager.db.limpiar_productos()
-            self.manager.db.limpiar_vendedores()
-            self.manager.db.limpiar_Distribuidores()
-            self.manager.db.limpiar_ventas_credito_fiscal()
             try:
+                self.manager.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
                 self.manager.db.cursor.execute("DELETE FROM trabajadores")
                 self.manager.db.cursor.execute("DELETE FROM clientes")
                 self.manager.db.cursor.execute("DELETE FROM ventas")
@@ -965,6 +962,9 @@ class MainWindow(QMainWindow):
                 self.manager.db.conn.commit()
             except Exception:
                 pass
+            self.manager.db.limpiar_productos()
+            self.manager.db.limpiar_vendedores()
+            self.manager.db.limpiar_Distribuidores()
             # Reset last loaded inventory so old data is not reimported
             self.ultimo_archivo_json = None
             try:

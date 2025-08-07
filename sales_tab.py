@@ -19,11 +19,12 @@ from PyQt5.QtWidgets import (
 
     QInputDialog,
     QDialog,
-
+    QCheckBox,
+    QComboBox,
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QDesktopServices, QPixmap
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from factura_sv import generar_factura_electronica_pdf
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
@@ -77,14 +78,23 @@ class SalesTab(QWidget):
         left_layout.addWidget(self.search_bar)
 
         filter_layout = QHBoxLayout()
+        self.date_filter_cb = QCheckBox("Filtrar por fecha")
+        self.quick_range = QComboBox()
+        self.quick_range.addItems(["Personalizado", "Esta semana", "Este mes", "Este año"])
         self.date_from = QDateEdit(QDate.currentDate().addYears(-2))
         self.date_from.setCalendarPopup(True)
         self.date_to = QDateEdit(QDate.currentDate())
         self.date_to.setCalendarPopup(True)
+        self.quick_range.setEnabled(False)
+        self.date_from.setEnabled(False)
+        self.date_to.setEnabled(False)
+        self.date_filter_cb.toggled.connect(self._toggle_date_filter)
+        self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.date_from.dateChanged.connect(self.load_sales)
         self.date_to.dateChanged.connect(self.load_sales)
-        filter_layout.addWidget(self.date_from)
-        filter_layout.addWidget(self.date_to)
+        for w in [self.date_filter_cb, self.quick_range, QLabel("Desde"), self.date_from,
+                  QLabel("Hasta"), self.date_to]:
+            filter_layout.addWidget(w)
         left_layout.addLayout(filter_layout)
 
         self.client_filter = QLineEdit()
@@ -175,12 +185,59 @@ class SalesTab(QWidget):
         main_layout.setStretch(0, 2)
         main_layout.setStretch(1, 3)
 
+    def _toggle_date_filter(self, checked):
+        self.quick_range.setEnabled(checked)
+        custom = self.quick_range.currentIndex() == 0
+        self.date_from.setEnabled(checked and custom)
+        self.date_to.setEnabled(checked and custom)
+        if checked:
+            self._apply_quick_range()
+        else:
+            self.load_sales()
+
+    def _apply_quick_range(self):
+        if not self.date_filter_cb.isChecked():
+            return
+        option = self.quick_range.currentText()
+        today = date.today()
+        if option == "Esta semana":
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Este mes":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = date(today.year, 12, 31)
+            else:
+                end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Este año":
+            start = date(today.year, 1, 1)
+            end = date(today.year, 12, 31)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        else:
+            self.date_from.setEnabled(True)
+            self.date_to.setEnabled(True)
+        self.load_sales()
+
     def load_sales(self):
         ventas = self.manager.db.get_ventas()
         search = self.search_bar.text().lower()
         cliente_filter = self.client_filter.text().lower()
-        d_from = self.date_from.date().toPyDate()
-        d_to = self.date_to.date().toPyDate()
+        if self.date_filter_cb.isChecked():
+            d_from = self.date_from.date().toPyDate()
+            d_to = self.date_to.date().toPyDate()
+        else:
+            d_from = d_to = None
         rows = []
         for v in ventas:
             fecha = v.get("fecha")
@@ -196,7 +253,9 @@ class SalesTab(QWidget):
             else:
                 # fecha no es una cadena o está ausente
                 fdate = None
-            if fdate and (fdate < d_from or fdate > d_to):
+            if self.date_filter_cb.isChecked() and fdate and (
+                (d_from and fdate < d_from) or (d_to and fdate > d_to)
+            ):
                 continue
             cliente = ""
             if v.get("cliente_id"):

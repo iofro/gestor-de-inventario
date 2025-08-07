@@ -43,7 +43,7 @@ NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
 # Directory where credit notes will be stored
 NOTAS_CREDITO_DIR = os.path.join(os.path.dirname(__file__), "notas_credito")
 import json
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
 CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
@@ -112,12 +112,21 @@ class FacturacionTab(QWidget):
         self.tipo_filter.addItems(["Todos", "Consumidor final", "Crédito fiscal", "Ticket"])
         filter_layout.addWidget(self.tipo_filter)
 
+        self.date_filter_cb = QCheckBox("Filtrar por fecha")
+        self.quick_range = QComboBox()
+        self.quick_range.addItems(["Personalizado", "Esta semana", "Este mes", "Este año"])
         self.date_from = QDateEdit(QDate.currentDate().addYears(-2))
         self.date_from.setCalendarPopup(True)
         self.date_to = QDateEdit(QDate.currentDate())
         self.date_to.setCalendarPopup(True)
-        filter_layout.addWidget(self.date_from)
-        filter_layout.addWidget(self.date_to)
+        self.quick_range.setEnabled(False)
+        self.date_from.setEnabled(False)
+        self.date_to.setEnabled(False)
+        for w in [self.date_filter_cb, self.quick_range, QLabel("Desde"), self.date_from,
+                  QLabel("Hasta"), self.date_to]:
+            filter_layout.addWidget(w)
+        self.date_filter_cb.toggled.connect(self._toggle_date_filter)
+        self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.update_btn = QPushButton("Actualizar")
         filter_layout.addWidget(self.update_btn)
         filter_layout.addStretch(1)
@@ -177,6 +186,50 @@ class FacturacionTab(QWidget):
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_eliminar.clicked.connect(self.delete_files)
 
+    def _toggle_date_filter(self, checked):
+        self.quick_range.setEnabled(checked)
+        custom = self.quick_range.currentIndex() == 0
+        self.date_from.setEnabled(checked and custom)
+        self.date_to.setEnabled(checked and custom)
+        if checked:
+            self._apply_quick_range()
+        else:
+            self.load_invoices()
+
+    def _apply_quick_range(self):
+        if not self.date_filter_cb.isChecked():
+            return
+        option = self.quick_range.currentText()
+        today = date.today()
+        if option == "Esta semana":
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Este mes":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = date(today.year, 12, 31)
+            else:
+                end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Este año":
+            start = date(today.year, 1, 1)
+            end = date(today.year, 12, 31)
+            self.date_from.setDate(QDate(start))
+            self.date_to.setDate(QDate(end))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        else:
+            self.date_from.setEnabled(True)
+            self.date_to.setEnabled(True)
+        self.load_invoices()
+
     def refresh_filters(self):
         """Update client and vendor filter combos with latest data."""
         self.client_filter.blockSignals(True)
@@ -220,8 +273,11 @@ class FacturacionTab(QWidget):
     def load_invoices(self):
         clientes = {c["id"]: c["nombre"] for c in self.manager._clientes}
         search = self.search_bar.text().lower() if hasattr(self, "search_bar") else ""
-        d_from = self.date_from.date().toPyDate() if hasattr(self, "date_from") else None
-        d_to = self.date_to.date().toPyDate() if hasattr(self, "date_to") else None
+        if self.date_filter_cb.isChecked():
+            d_from = self.date_from.date().toPyDate()
+            d_to = self.date_to.date().toPyDate()
+        else:
+            d_from = d_to = None
         cli_id = self.client_filter.currentData()
         vend_id = self.vendedor_filter.currentData()
         tipo = self.tipo_filter.currentText()
@@ -230,12 +286,13 @@ class FacturacionTab(QWidget):
         rows.extend(self._get_tickets_from_db())
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
-            if d_from and fdate and fdate < d_from:
-                rows.remove(r)
-                continue
-            if d_to and fdate and fdate > d_to:
-                rows.remove(r)
-                continue
+            if self.date_filter_cb.isChecked():
+                if d_from and fdate and fdate < d_from:
+                    rows.remove(r)
+                    continue
+                if d_to and fdate and fdate > d_to:
+                    rows.remove(r)
+                    continue
             if cli_id and r.get("cliente_id") != cli_id:
                 rows.remove(r)
                 continue

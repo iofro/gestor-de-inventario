@@ -2394,14 +2394,14 @@ class DistribuidorDialog(QDialog):
         if not nombre:
             QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
             return
-        if not telefono:
-            QMessageBox.warning(self, "Datos inválidos", "El teléfono no puede estar vacío.")
+        if telefono and not validar_telefono(telefono):
+            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un teléfono válido.")
             return
-        if not nit or not validar_nit(nit):
-            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
-            return
-        if not email or not validar_email(email):
+        if email and not validar_email(email):
             QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
+            return
+        if nit and not validar_nit(nit):
+            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
             return
         self.accept()
 

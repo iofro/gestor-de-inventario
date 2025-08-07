@@ -349,8 +349,43 @@ class InventoryManager:
                 vendedor_id_map[vend["id"]] = new_id
 
             for t in data.get("trabajadores", []):
-                self.db.add_trabajador(t, commit=False)
-                tid = self.db.cursor.lastrowid
+                codigo = t.get("codigo")
+                existing = None
+                if codigo:
+                    self.db.cursor.execute(
+                        "SELECT id FROM trabajadores WHERE codigo=?",
+                        (codigo,),
+                    )
+                    existing = self.db.cursor.fetchone()
+                if existing:
+                    tid = existing["id"]
+                    self.db.cursor.execute(
+                        """
+                        UPDATE trabajadores SET
+                            nombre=?, dui=?, nit=?, fecha_nacimiento=?, cargo=?, area=?, fecha_contratacion=?,
+                            telefono=?, email=?, direccion=?, salario_base=?, comentarios=?, es_vendedor=?
+                        WHERE id=?
+                        """,
+                        (
+                            t.get("nombre", ""),
+                            t.get("dui", ""),
+                            t.get("nit", ""),
+                            t.get("fecha_nacimiento", ""),
+                            t.get("cargo", ""),
+                            t.get("area", ""),
+                            t.get("fecha_contratacion", ""),
+                            t.get("telefono", ""),
+                            t.get("email", ""),
+                            t.get("direccion", ""),
+                            t.get("salario_base", None),
+                            t.get("comentarios", ""),
+                            1 if t.get("es_vendedor") else 0,
+                            tid,
+                        ),
+                    )
+                else:
+                    self.db.add_trabajador(t, commit=False)
+                    tid = self.db.cursor.lastrowid
                 trabajador_id_map[t.get("id")] = tid
                 if t.get("es_vendedor"):
                     dist_id = t.get("Distribuidor_id")
@@ -360,17 +395,21 @@ class InventoryManager:
                         else None
                     )
                     self.db.cursor.execute(
-                        "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
-                        (
-                            tid,
-                            t.get("codigo"),
-                            t.get("nombre"),
-                            t.get("dui"),
-                            t.get("descripcion", ""),
-                            new_dist_id,
-                        ),
-
+                        "SELECT 1 FROM vendedores WHERE id=?",
+                        (tid,),
                     )
+                    if not self.db.cursor.fetchone():
+                        self.db.cursor.execute(
+                            "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
+                            (
+                                tid,
+                                t.get("codigo"),
+                                t.get("nombre"),
+                                t.get("dui"),
+                                t.get("descripcion", ""),
+                                new_dist_id,
+                            ),
+                        )
                     vendedor_id_map[t.get("id")] = tid
 
             # Productos

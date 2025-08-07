@@ -1426,9 +1426,71 @@ class DB:
             "saldo": saldo,
         }
 
+    def limpiar_inventario(self):
+        """Elimina ventas, compras y movimientos de forma atómica.
+
+        Se utilizan transacciones explícitas para asegurar que si ocurre un
+        error al borrar alguna tabla el estado de la base de datos se
+        restablezca mediante ``ROLLBACK``.
+        """
+        with self.lock:
+            try:
+                self.cursor.execute("BEGIN")
+                for table in (
+                    "detalles_venta",
+                    "detalles_compra",
+                    "movimientos",
+                    "ventas",
+                    "compras",
+                    "ventas_credito_fiscal",
+                    "trabajadores",
+                    "clientes",
+                ):
+                    self.cursor.execute(f"DELETE FROM {table}")
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
     def limpiar_productos(self):
-        self.cursor.execute("DELETE FROM productos")
-        self.conn.commit()
+        """Remove all products and their dependent records.
+
+        The operation runs inside an explicit transaction to avoid
+        inconsistent intermediate states.  All rows referencing
+        ``producto_id`` in other tables are removed before deleting from
+        ``productos`` itself.
+        """
+        try:
+            self.cursor.execute("BEGIN")
+
+            # Known dependent tables are deleted first.
+            dependent_tables = [
+                "detalles_venta",
+                "detalles_compra",
+                "compras",
+                "movimientos",
+            ]
+
+            # Include any additional table that has a ``producto_id`` column.
+            self.cursor.execute(
+                "SELECT name FROM sqlite_master WHERE type='table'"
+            )
+            for row in self.cursor.fetchall():
+                table = row[0]
+                if table == "productos" or table in dependent_tables:
+                    continue
+                self.cursor.execute(f"PRAGMA table_info({table})")
+                if any(col[1] == "producto_id" for col in self.cursor.fetchall()):
+                    dependent_tables.append(table)
+
+            for table in dependent_tables:
+                self.cursor.execute(f"DELETE FROM {table}")
+
+            self.cursor.execute("DELETE FROM productos")
+            self.conn.commit()
+        except Exception:
+            self.conn.rollback()
+            raise
 
     def limpiar_vendedores(self):
         self.cursor.execute("DELETE FROM vendedores")

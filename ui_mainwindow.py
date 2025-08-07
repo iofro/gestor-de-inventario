@@ -951,17 +951,14 @@ class MainWindow(QMainWindow):
         )
         if reply == QMessageBox.Yes:
             try:
-                self.manager.db.cursor.execute("DELETE FROM ventas_credito_fiscal")
-                self.manager.db.cursor.execute("DELETE FROM trabajadores")
-                self.manager.db.cursor.execute("DELETE FROM clientes")
-                self.manager.db.cursor.execute("DELETE FROM ventas")
-                self.manager.db.cursor.execute("DELETE FROM detalles_venta")
-                self.manager.db.cursor.execute("DELETE FROM compras")
-                self.manager.db.cursor.execute("DELETE FROM detalles_compra")
-                self.manager.db.cursor.execute("DELETE FROM movimientos")
-                self.manager.db.conn.commit()
-            except Exception:
-                pass
+                self.manager.db.limpiar_inventario()
+            except Exception as exc:
+                QMessageBox.warning(
+                    self,
+                    "Nuevo inventario",
+                    f"No se pudo limpiar la base de datos: {exc}",
+                )
+                return
             self.manager.db.limpiar_productos()
             self.manager.db.limpiar_vendedores()
             self.manager.db.limpiar_Distribuidores()

@@ -3189,6 +3189,223 @@ class DatosNegocioDialog(QDialog):
         )
         if fname:
             self.dte_public_key.setText(fname)
+
+
+class EmailConfigDialog(QDialog):
+    def __init__(self, datos=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configuración de correo")
+        layout = QVBoxLayout()
+        form = QFormLayout()
+        self.combo_email_provider = QComboBox()
+        self.combo_email_provider.addItems([
+            "Gmail",
+            "Outlook",
+            "Yahoo",
+            "Zoho",
+            "iCloud",
+        ])
+        self.smtp_server = QLineEdit()
+        self.smtp_port = QLineEdit()
+        self.email_usuario = QLineEdit()
+        self.email_contrasena = QLineEdit()
+        self.email_contrasena.setEchoMode(QLineEdit.Password)
+        form.addRow("Proveedor:", self.combo_email_provider)
+        form.addRow("Servidor SMTP:", self.smtp_server)
+        form.addRow("Puerto SMTP:", self.smtp_port)
+        form.addRow("Usuario:", self.email_usuario)
+        form.addRow("Contraseña:", self.email_contrasena)
+        layout.addLayout(form)
+        btns = QHBoxLayout()
+        guardar = QPushButton("Guardar")
+        cancelar = QPushButton("Cancelar")
+        btns.addWidget(guardar)
+        btns.addWidget(cancelar)
+        layout.addLayout(btns)
+        self.setLayout(layout)
+        guardar.clicked.connect(self.accept)
+        cancelar.clicked.connect(self.reject)
+        self.combo_email_provider.currentTextChanged.connect(self._update_smtp_fields)
+        self._update_smtp_fields()
+        if datos:
+            self.set_data(datos)
+
+    def _update_smtp_fields(self):
+        provider = self.combo_email_provider.currentText()
+        defaults = {
+            "Gmail": ("smtp.gmail.com", 587),
+            "Outlook": ("smtp.office365.com", 587),
+            "Yahoo": ("smtp.mail.yahoo.com", 587),
+            "Zoho": ("smtp.zoho.com", 587),
+            "iCloud": ("smtp.mail.me.com", 587),
+        }
+        server, port = defaults.get(provider, ("", ""))
+        self.smtp_server.setText(server)
+        self.smtp_port.setText(str(port))
+        self.smtp_server.setReadOnly(True)
+        self.smtp_port.setReadOnly(True)
+
+    def get_data(self):
+        return {
+            "email_provider": self.combo_email_provider.currentText(),
+            "smtp_server": self.smtp_server.text(),
+            "smtp_port": self.smtp_port.text(),
+            "email_usuario": self.email_usuario.text(),
+            "email_contrasena": self.email_contrasena.text(),
+        }
+
+    def set_data(self, datos):
+        self.combo_email_provider.setCurrentText(datos.get("email_provider", "Gmail"))
+        self.smtp_server.setText(datos.get("smtp_server", ""))
+        self.smtp_port.setText(str(datos.get("smtp_port", "")))
+        self.email_usuario.setText(datos.get("email_usuario", ""))
+        self.email_contrasena.setText(datos.get("email_contrasena", ""))
+
+
+class DTEConfigDialog(QDialog):
+    def __init__(self, dte_api=None, fe_config=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Configuración de Facturación Electrónica")
+        layout = QVBoxLayout()
+        form = QFormLayout()
+        self.dte_certificado = QLineEdit()
+        self.btn_load_cert = QPushButton("...")
+        cert_row = QHBoxLayout()
+        cert_row.addWidget(self.dte_certificado)
+        cert_row.addWidget(self.btn_load_cert)
+        self.dte_key = QLineEdit()
+        self.btn_load_key = QPushButton("...")
+        key_row = QHBoxLayout()
+        key_row.addWidget(self.dte_key)
+        key_row.addWidget(self.btn_load_key)
+        self.dte_public_key = QLineEdit()
+        self.btn_load_pub = QPushButton("...")
+        pub_row = QHBoxLayout()
+        pub_row.addWidget(self.dte_public_key)
+        pub_row.addWidget(self.btn_load_pub)
+        self.dte_pass = QLineEdit()
+        self.dte_pass.setEchoMode(QLineEdit.Password)
+        self.tipo_contribuyente = QComboBox()
+        self.tipo_contribuyente.addItems(["Persona Natural", "Persona Jurídica"])
+        self.prefijo_control = QLineEdit("DTE-01-S001P001")
+        self.modo_transmision = QComboBox()
+        self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
+        self.ambiente_hacienda = QComboBox()
+        self.ambiente_hacienda.addItems(["Pruebas", "Producción"])
+        self.token_hacienda = QLineEdit()
+        self.endpoint_hacienda = QLineEdit()
+        self.envio_automatico = QCheckBox("Activar envío automático a Hacienda")
+        self.adjuntar_json_correo = QCheckBox("Adjuntar JSON firmado en correo al cliente")
+        self.incluir_sello_pdf = QCheckBox("Incluir sello de recepción en el PDF (si existe)")
+        self.guardar_respuesta_bd = QCheckBox("Guardar respuesta de Hacienda en base de datos")
+        form.addRow("Certificado (.crt):", cert_row)
+        form.addRow("Llave privada (.key):", key_row)
+        form.addRow("Llave pública (.key):", pub_row)
+        form.addRow("Contraseña clave privada:", self.dte_pass)
+        form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
+        form.addRow("Prefijo número control:", self.prefijo_control)
+        form.addRow("Modo transmisión por defecto:", self.modo_transmision)
+        form.addRow("Ambiente:", self.ambiente_hacienda)
+        form.addRow("Token autenticación:", self.token_hacienda)
+        form.addRow("Endpoint API:", self.endpoint_hacienda)
+        form.addRow(self.envio_automatico)
+        form.addRow(self.adjuntar_json_correo)
+        form.addRow(self.incluir_sello_pdf)
+        form.addRow(self.guardar_respuesta_bd)
+        layout.addLayout(form)
+        btns = QHBoxLayout()
+        guardar = QPushButton("Guardar")
+        cancelar = QPushButton("Cancelar")
+        btns.addWidget(guardar)
+        btns.addWidget(cancelar)
+        layout.addLayout(btns)
+        self.setLayout(layout)
+        guardar.clicked.connect(self.accept)
+        cancelar.clicked.connect(self.reject)
+        self.btn_load_cert.clicked.connect(self._load_cert_file)
+        self.btn_load_key.clicked.connect(self._load_key_file)
+        self.btn_load_pub.clicked.connect(self._load_pub_file)
+        if dte_api or fe_config:
+            self.set_data(dte_api or {}, fe_config or {})
+
+    def _load_cert_file(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar certificado", "", "Cert Files (*.crt *.pem *.cer)"
+        )
+        if fname:
+            self.dte_certificado.setText(fname)
+
+    def _load_key_file(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar llave privada", "", "Key Files (*.key *.pem)"
+        )
+        if fname:
+            self.dte_key.setText(fname)
+
+    def _load_pub_file(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar llave publica", "", "Key Files (*.key *.pem)"
+        )
+        if fname:
+            self.dte_public_key.setText(fname)
+
+    def set_data(self, dte_api, fe_config):
+        self.dte_certificado.setText(fe_config.get("certificado", ""))
+        self.dte_key.setText(fe_config.get("clave_privada", ""))
+        self.dte_public_key.setText(fe_config.get("llave_publica", ""))
+        frase = fe_config.get("frase_acceso", "")
+        if frase:
+            try:
+                self.dte_pass.setText(base64.b64decode(frase).decode())
+            except Exception:
+                self.dte_pass.setText("")
+        self.tipo_contribuyente.setCurrentText(dte_api.get("tipo_contribuyente", "Persona Natural"))
+        self.prefijo_control.setText(dte_api.get("prefijo_control", "DTE-01-S001P001"))
+        self.modo_transmision.setCurrentText(dte_api.get("modo_transmision", "1 - Normal"))
+        ambiente = dte_api.get("ambiente", "pruebas")
+        self.ambiente_hacienda.setCurrentText("Producción" if ambiente.lower() in ["producción", "produccion"] else "Pruebas")
+        self.token_hacienda.setText(dte_api.get("token", ""))
+        self.endpoint_hacienda.setText(dte_api.get("url", ""))
+        self.envio_automatico.setChecked(dte_api.get("envio_automatico", False))
+        self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
+        self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
+        self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
+
+    def get_data(self):
+        dte_api = {
+            "url": self.endpoint_hacienda.text(),
+            "ambiente": self.ambiente_hacienda.currentText().lower(),
+            "token": self.token_hacienda.text(),
+            "prefijo_control": self.prefijo_control.text(),
+            "modo_transmision": self.modo_transmision.currentText(),
+            "envio_automatico": self.envio_automatico.isChecked(),
+            "adjuntar_json_correo": self.adjuntar_json_correo.isChecked(),
+            "incluir_sello_pdf": self.incluir_sello_pdf.isChecked(),
+            "guardar_respuesta": self.guardar_respuesta_bd.isChecked(),
+            "tipo_contribuyente": self.tipo_contribuyente.currentText(),
+        }
+        fe_config = {
+            "certificado": self.dte_certificado.text(),
+            "clave_privada": self.dte_key.text(),
+            "llave_publica": self.dte_public_key.text(),
+            "frase_acceso": base64.b64encode(self.dte_pass.text().encode()).decode() if self.dte_pass.text() else "",
+            "certificado_data": "",
+            "clave_privada_data": "",
+            "llave_publica_data": "",
+        }
+        for path, key in [
+            (self.dte_certificado.text(), "certificado_data"),
+            (self.dte_key.text(), "clave_privada_data"),
+            (self.dte_public_key.text(), "llave_publica_data"),
+        ]:
+            if path:
+                try:
+                    with open(path, "rb") as fh:
+                        data_f = fh.read()
+                        fe_config[key] = base64.b64encode(data_f).decode()
+                except Exception as e:
+                    QMessageBox.warning(self, "Archivo de firma", f"Error al leer {path}: {e}")
+        return dte_api, fe_config
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):
         super().__init__(parent)

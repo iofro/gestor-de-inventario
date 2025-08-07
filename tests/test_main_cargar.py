@@ -17,13 +17,11 @@ def test_cargar_ultimo_archivo_default(tmp_path, monkeypatch):
     inv = tmp_path / "inv.json"
     inv.write_text("{}")
     monkeypatch.setattr(main, "LAST_FILE_PATH", str(tmp_path / "missing.json"))
-    monkeypatch.setattr(main, "DEFAULT_INVENTORY", inv.name)
-    monkeypatch.setattr(main, "__file__", str(tmp_path / "mod.py"))
+    monkeypatch.setattr(main, "DEFAULT_INVENTORY", str(inv))
     assert main.cargar_ultimo_archivo() == str(inv)
 
 
 def test_cargar_ultimo_archivo_empty(tmp_path, monkeypatch):
     monkeypatch.setattr(main, "LAST_FILE_PATH", str(tmp_path / "missing.json"))
-    monkeypatch.setattr(main, "DEFAULT_INVENTORY", "missing.json")
-    monkeypatch.setattr(main, "__file__", str(tmp_path / "mod.py"))
+    monkeypatch.setattr(main, "DEFAULT_INVENTORY", str(tmp_path / "missing.json"))
     assert main.cargar_ultimo_archivo() == ""

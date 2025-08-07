@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QTabWidget
+    QFileDialog
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -2790,17 +2790,14 @@ class CompraDetalleDialog(QDialog):
         self.setLayout(layout)
 
 class DatosNegocioDialog(QDialog):
-    def __init__(self, datos=None, config=None, parent=None):
+    """Diálogo para editar únicamente los datos generales del negocio."""
+
+    def __init__(self, datos=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Datos del negocio")
         self.setMinimumWidth(900)
         main_layout = QVBoxLayout()
-        tabs = QTabWidget()
-
-        # --- Agrupación horizontal ---
         h_layout = QHBoxLayout()
-
-        # --- Grupo 1: Identificación comercial y Ubicación ---
         grupo1 = QGroupBox("🧾 Identificación comercial y 🗺️ Ubicación")
         form1 = QFormLayout()
         self.nombre_comercial = QLineEdit()
@@ -2823,8 +2820,6 @@ class DatosNegocioDialog(QDialog):
         form1.addRow("País:", self.pais)
         grupo1.setLayout(form1)
         h_layout.addWidget(grupo1)
-
-        # --- Grupo 2: Contacto y Representante Legal ---
         grupo2 = QGroupBox("📞 Contacto y 🧑‍💼 Representante Legal")
         form2 = QFormLayout()
         self.telefono_fijo = QLineEdit()
@@ -2847,8 +2842,6 @@ class DatosNegocioDialog(QDialog):
         form2.addRow("Teléfono representante:", self.representante_telefono)
         grupo2.setLayout(form2)
         h_layout.addWidget(grupo2)
-
-        # --- Grupo 3: Datos Fiscales ---
         grupo3 = QGroupBox("💼 Datos Fiscales")
         form3 = QFormLayout()
         self.nit = QLineEdit()
@@ -2865,108 +2858,7 @@ class DatosNegocioDialog(QDialog):
         form3.addRow("NIT contador:", self.contador_nit)
         grupo3.setLayout(form3)
         h_layout.addWidget(grupo3)
-
-        # --- Configuración de correo ---
-        tab_correo = QWidget()
-        form4 = QFormLayout()
-
-        # Proveedor de correo y configuraci\u00f3n SMTP predefinida
-        self.combo_email_provider = QComboBox()
-        self.combo_email_provider.addItems([
-            "Gmail",
-            "Outlook",
-            "Yahoo",
-            "Zoho",
-            "iCloud",
-        ])
-
-        self.smtp_server = QLineEdit()
-        self.smtp_port = QLineEdit()
-        self.email_usuario = QLineEdit()
-        self.email_contrasena = QLineEdit()
-        self.email_contrasena.setEchoMode(QLineEdit.Password)
-
-        form4.addRow("Proveedor:", self.combo_email_provider)
-        form4.addRow("Servidor SMTP:", self.smtp_server)
-        form4.addRow("Puerto SMTP:", self.smtp_port)
-        form4.addRow("Usuario:", self.email_usuario)
-        form4.addRow("Contrase\u00f1a:", self.email_contrasena)
-        tab_correo.setLayout(form4)
-
-        self.combo_email_provider.currentTextChanged.connect(
-            self._update_smtp_fields
-        )
-        self.email.textChanged.connect(self._update_user_field)
-        self._update_smtp_fields()
-
-        # --- Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica ---
-        tab_dte = QWidget()
-        form5 = QFormLayout()
-        self.dte_certificado = QLineEdit()
-        self.btn_load_cert = QPushButton("...")
-        cert_row = QHBoxLayout()
-        cert_row.addWidget(self.dte_certificado)
-        cert_row.addWidget(self.btn_load_cert)
-
-        self.dte_key = QLineEdit()
-        self.btn_load_key = QPushButton("...")
-        key_row = QHBoxLayout()
-        key_row.addWidget(self.dte_key)
-        key_row.addWidget(self.btn_load_key)
-
-        self.dte_public_key = QLineEdit()
-        self.btn_load_pub = QPushButton("...")
-        pub_row = QHBoxLayout()
-        pub_row.addWidget(self.dte_public_key)
-        pub_row.addWidget(self.btn_load_pub)
-
-        self.dte_pass = QLineEdit()
-        self.dte_pass.setEchoMode(QLineEdit.Password)
-        self.tipo_contribuyente = QComboBox()
-        self.tipo_contribuyente.addItems(["Persona Natural", "Persona Jur\u00eddica"])
-        self.prefijo_control = QLineEdit("DTE-01-S001P001")
-        self.modo_transmision = QComboBox()
-        self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
-        self.ambiente_hacienda = QComboBox()
-        self.ambiente_hacienda.addItems(["Pruebas", "Producci\u00f3n"])
-        self.token_hacienda = QLineEdit()
-        self.endpoint_hacienda = QLineEdit()
-        self.envio_automatico = QCheckBox("Activar env\u00edo autom\u00e1tico a Hacienda")
-        self.adjuntar_json_correo = QCheckBox("Adjuntar JSON firmado en correo al cliente")
-        self.incluir_sello_pdf = QCheckBox("Incluir sello de recepci\u00f3n en el PDF (si existe)")
-        self.guardar_respuesta_bd = QCheckBox("Guardar respuesta de Hacienda en base de datos")
-
-        form5.addRow("Certificado (.crt):", cert_row)
-        form5.addRow("Llave privada (.key):", key_row)
-        form5.addRow("Llave p\xC3\xBAblica (.key):", pub_row)
-        form5.addRow("Contrase\u00f1a clave privada:", self.dte_pass)
-        form5.addRow("Tipo contribuyente:", self.tipo_contribuyente)
-        form5.addRow("Prefijo n\u00famero control:", self.prefijo_control)
-        form5.addRow("Modo transmisi\u00f3n por defecto:", self.modo_transmision)
-        form5.addRow("Ambiente:", self.ambiente_hacienda)
-        form5.addRow("Token autenticaci\u00f3n:", self.token_hacienda)
-        form5.addRow("Endpoint API:", self.endpoint_hacienda)
-        form5.addRow(self.envio_automatico)
-        form5.addRow(self.adjuntar_json_correo)
-        form5.addRow(self.incluir_sello_pdf)
-        form5.addRow(self.guardar_respuesta_bd)
-        tab_dte.setLayout(form5)
-
-        self.btn_load_cert.clicked.connect(self._load_cert_file)
-        self.btn_load_key.clicked.connect(self._load_key_file)
-        self.btn_load_pub.clicked.connect(self._load_pub_file)
-
         main_layout.addLayout(h_layout)
-        # Using a QTabWidget here instead of checkable QGroupBoxes or
-        # separate QDialog popups offers native tab switching and keeps
-        # related data in one place, simplifying state management.
-        tabs = QTabWidget()
-        tabs.addTab(tab_correo, "\ud83d\udce7 Configuraci\u00f3n de correo")
-        tabs.addTab(tab_dte, "\ud83d\udcc3 Configuraci\u00f3n de Facturaci\u00f3n Electr\u00f3nica")
-        main_layout.addWidget(tabs)
-
-
-        # --- Botones ---
         btns = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar")
         self.btn_cancelar = QPushButton("Cancelar")
@@ -2974,24 +2866,13 @@ class DatosNegocioDialog(QDialog):
         btns.addWidget(self.btn_cancelar)
         main_layout.addLayout(btns)
         self.setLayout(main_layout)
-
         self.btn_guardar.clicked.connect(self.accept)
         self.btn_cancelar.clicked.connect(self.reject)
-
-        # Si hay datos previos, cárgalos
-        if datos or config:
-            self.set_data(datos or {}, config or {})
-
-    def _toggle_tabs(self, checked):
-        self.tab_config.setVisible(checked)
-        self.btn_toggle_tabs.setText(
-            "Ocultar configuraciones avanzadas" if checked else "Mostrar configuraciones avanzadas"
-        )
+        if datos:
+            self.set_data(datos)
 
     def get_data(self):
-        # Tab visibility does not affect data persistence; all widget values
-        # are collected regardless of which tab is currently shown.
-        datos = {
+        return {
             "nombre_comercial": self.nombre_comercial.text(),
             "razon_social": self.razon_social.text(),
             "giro": self.giro.text(),
@@ -3016,68 +2897,9 @@ class DatosNegocioDialog(QDialog):
             "ciiu": self.ciiu.text(),
             "contador_nombre": self.contador_nombre.text(),
             "contador_nit": self.contador_nit.text(),
-            "email_provider": self.combo_email_provider.currentText(),
-            "smtp_server": self.smtp_server.text(),
-            "smtp_port": self.smtp_port.text(),
-            "email_usuario": self.email_usuario.text(),
-            "email_contrasena": self.email_contrasena.text(),
         }
 
-        datos["dte_api"] = {
-            "url": self.endpoint_hacienda.text(),
-            "ambiente": self.ambiente_hacienda.currentText().lower(),
-            "token": self.token_hacienda.text(),
-            "prefijo_control": self.prefijo_control.text(),
-            "modo_transmision": self.modo_transmision.currentText(),
-            "envio_automatico": self.envio_automatico.isChecked(),
-            "adjuntar_json_correo": self.adjuntar_json_correo.isChecked(),
-            "incluir_sello_pdf": self.incluir_sello_pdf.isChecked(),
-            "guardar_respuesta": self.guardar_respuesta_bd.isChecked(),
-            "tipo_contribuyente": self.tipo_contribuyente.currentText(),
-        }
-
-        fe_config = {
-            "certificado": self.dte_certificado.text(),
-            "clave_privada": self.dte_key.text(),
-            "llave_publica": self.dte_public_key.text(),
-            "frase_acceso": base64.b64encode(self.dte_pass.text().encode()).decode()
-            if self.dte_pass.text() else "",
-            "certificado_data": "",
-            "clave_privada_data": "",
-            "llave_publica_data": "",
-        }
-
-        verificar = self.ambiente_hacienda.currentText().lower() == "producción" or self.ambiente_hacienda.currentText().lower() == "produccion"
-
-        for path, key in [
-            (self.dte_certificado.text(), "certificado_data"),
-            (self.dte_key.text(), "clave_privada_data"),
-            (self.dte_public_key.text(), "llave_publica_data"),
-        ]:
-            if path:
-                try:
-                    with open(path, "rb") as fh:
-                        data_f = fh.read()
-                    if verificar:
-                        if key == "certificado_data":
-                            x509.load_pem_x509_certificate(data_f)
-                        elif key == "clave_privada_data":
-                            if b"-----BEGIN" not in data_f:
-                                raise ValueError("El archivo no parece ser una clave privada PEM")
-                            load_pem_private_key(
-                                data_f,
-                                self.dte_pass.text().encode() if self.dte_pass.text() else None,
-                            )
-                    fe_config[key] = base64.b64encode(data_f).decode()
-                except Exception as e:
-                    QMessageBox.warning(self, "Archivo de firma", f"Error al leer {path}: {e}")
-
-        config = {"firma_electronica": fe_config}
-
-        return datos, config
-
-    def set_data(self, datos, config):
-        # Populate widgets across all tabs even if some tabs start hidden.
+    def set_data(self, datos):
         self.nombre_comercial.setText(datos.get("nombre_comercial", ""))
         self.razon_social.setText(datos.get("razon_social", ""))
         self.giro.setText(datos.get("giro", ""))
@@ -3102,93 +2924,6 @@ class DatosNegocioDialog(QDialog):
         self.ciiu.setText(datos.get("ciiu", ""))
         self.contador_nombre.setText(datos.get("contador_nombre", ""))
         self.contador_nit.setText(datos.get("contador_nit", ""))
-        provider = datos.get("email_provider", "Gmail")
-        idx = self.combo_email_provider.findText(provider)
-        if idx >= 0:
-            self.combo_email_provider.setCurrentIndex(idx)
-        else:
-            self.combo_email_provider.setCurrentIndex(0)
-        self.smtp_server.setText(datos.get("smtp_server", ""))
-        self.smtp_port.setText(str(datos.get("smtp_port", "")))
-        self.email_usuario.setText(datos.get("email_usuario", self.email.text()))
-        self.email_contrasena.setText(datos.get("email_contrasena", ""))
-        self._update_smtp_fields()
-
-        fe = config.get("firma_electronica", {})
-        self.dte_certificado.setText(fe.get("certificado", ""))
-        self.dte_key.setText(fe.get("clave_privada", ""))
-        self.dte_public_key.setText(fe.get("llave_publica", ""))
-        frase = fe.get("frase_acceso", "")
-        if frase:
-            try:
-                frase = base64.b64decode(frase).decode("utf-8")
-            except Exception:
-                pass
-        self.dte_pass.setText(frase)
-
-        dte = datos.get("dte_api", {})
-        self.endpoint_hacienda.setText(dte.get("url", ""))
-        amb = dte.get("ambiente", "pruebas").capitalize()
-        idx = self.ambiente_hacienda.findText(amb)
-        if idx >= 0:
-            self.ambiente_hacienda.setCurrentIndex(idx)
-        self.token_hacienda.setText(dte.get("token", ""))
-        self.prefijo_control.setText(dte.get("prefijo_control", "DTE-01-S001P001"))
-        modo = dte.get("modo_transmision", "1 - Normal")
-        idx = self.modo_transmision.findText(modo)
-        if idx >= 0:
-            self.modo_transmision.setCurrentIndex(idx)
-        self.envio_automatico.setChecked(bool(dte.get("envio_automatico")))
-        self.adjuntar_json_correo.setChecked(bool(dte.get("adjuntar_json_correo")))
-        self.incluir_sello_pdf.setChecked(bool(dte.get("incluir_sello_pdf")))
-        self.guardar_respuesta_bd.setChecked(bool(dte.get("guardar_respuesta")))
-        tipo = dte.get("tipo_contribuyente", "Persona Jur\u00eddica")
-        idx = self.tipo_contribuyente.findText(tipo)
-        if idx >= 0:
-            self.tipo_contribuyente.setCurrentIndex(idx)
-
-    def _update_user_field(self):
-        """Autocompletar el usuario con el correo oficial."""
-        self.email_usuario.setText(self.email.text())
-
-    def _update_smtp_fields(self):
-        """Actualizar datos SMTP al cambiar de proveedor."""
-        provider = self.combo_email_provider.currentText()
-        defaults = {
-            "Gmail": ("smtp.gmail.com", 587),
-            "Outlook": ("smtp.office365.com", 587),
-            "Yahoo": ("smtp.mail.yahoo.com", 587),
-            "Zoho": ("smtp.zoho.com", 587),
-            "iCloud": ("smtp.mail.me.com", 587),
-        }
-        server, port = defaults.get(provider, ("", ""))
-        self.smtp_server.setText(server)
-        self.smtp_port.setText(str(port))
-        self.smtp_server.setReadOnly(True)
-        self.smtp_port.setReadOnly(True)
-        self.email_usuario.setText(self.email.text())
-        self.email_usuario.setReadOnly(True)
-
-    def _load_cert_file(self):
-        fname, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar certificado", "", "Cert Files (*.crt *.pem *.cer)"
-        )
-        if fname:
-            self.dte_certificado.setText(fname)
-
-    def _load_key_file(self):
-        fname, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar llave privada", "", "Key Files (*.key *.pem)"
-        )
-        if fname:
-            self.dte_key.setText(fname)
-
-    def _load_pub_file(self):
-        fname, _ = QFileDialog.getOpenFileName(
-            self, "Seleccionar llave publica", "", "Key Files (*.key *.pem)"
-        )
-        if fname:
-            self.dte_public_key.setText(fname)
 
 
 class EmailConfigDialog(QDialog):

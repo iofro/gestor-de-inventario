@@ -97,15 +97,16 @@ class MainWindow(QMainWindow):
         archivo_menu.addAction(cargar_inventario_action)
 
         # --- CONFIGURACIÓN ---
+        config_menu = menubar.addMenu("Configuración")
         datos_negocio_action = QAction("Datos del negocio", self)
         datos_negocio_action.triggered.connect(self._abrir_datos_negocio)
-        menubar.addAction(datos_negocio_action)
-        correo_action = QAction("Configurar correo", self)
+        config_menu.addAction(datos_negocio_action)
+        correo_action = QAction("Configuración de correo", self)
         correo_action.triggered.connect(self._abrir_config_correo)
-        menubar.addAction(correo_action)
+        config_menu.addAction(correo_action)
         dte_action = QAction("Facturación electrónica", self)
         dte_action.triggered.connect(self._abrir_config_facturacion)
-        menubar.addAction(dte_action)
+        config_menu.addAction(dte_action)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
@@ -1358,29 +1359,20 @@ class MainWindow(QMainWindow):
         # Puedes guardar/cargar los datos en un archivo JSON local, por ejemplo:
         import os, json
         datos_path = DATOS_NEGOCIO_PATH
-        config_path = CONFIG_NEGOCIO_PATH
         datos = {}
-        config = {}
         if os.path.exists(datos_path):
             try:
                 with open(datos_path, "r", encoding="utf-8") as f:
                     datos = json.load(f)
             except Exception:
                 datos = {}
-        if os.path.exists(config_path):
-            try:
-                with open(config_path, "r", encoding="utf-8") as f:
-                    config = json.load(f)
-            except Exception:
-                config = {}
         from dialogs import DatosNegocioDialog
-        dlg = DatosNegocioDialog(datos, config, self)
+        dlg = DatosNegocioDialog(datos, self)
         if dlg.exec_():
-            datos_nuevos, config_nuevo = dlg.get_data()
+            datos_nuevos = dlg.get_data()
+            datos.update(datos_nuevos)
             with open(datos_path, "w", encoding="utf-8") as f:
-                json.dump(datos_nuevos, f, ensure_ascii=False, indent=2)
-            with open(config_path, "w", encoding="utf-8") as f:
-                json.dump(config_nuevo, f, ensure_ascii=False, indent=2)
+                json.dump(datos, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Datos del negocio", "Datos guardados correctamente.")
 
     def _abrir_config_correo(self):

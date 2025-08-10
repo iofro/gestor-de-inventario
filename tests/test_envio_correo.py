@@ -121,3 +121,4 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
     assert db.envios and db.envios[0]["estado"] == "Transmitido"
     assert tab.status_label.text() == "Estado actual: Error"
     assert tab.retry_btn.isEnabled()
+

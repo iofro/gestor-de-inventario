@@ -7,6 +7,7 @@ from dte import transmitir_dte
 
 
 def create_sale(db):
+
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("P1", "X", vid, None, 0, 0, 0, 1)

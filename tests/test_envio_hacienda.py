@@ -1,76 +1,89 @@
+import json
 import pytest
+import requests
 
 from db import DB
-import dte
 from dte import transmitir_dte
-import auth
-from utils import jws
 
 
-@pytest.fixture
-def db_venta():
-    db = DB(":memory:")
+def create_sale(db):
+
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("P1", "X", vid, None, 0, 0, 0, 1)
     pid = db.cursor.lastrowid
-    venta = db.add_venta("2024-01-01", 10)
-    db.add_detalle_venta(venta, pid, 1, 10, vendedor_id=vid)
-    return db, venta
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    return venta_id
 
 
-def test_envio_hacienda(monkeypatch, db_venta):
-    db, venta_id = db_venta
+@pytest.mark.parametrize("status", [401, 500])
+def test_http_error_negativo(monkeypatch, tmp_path, status):
+    """Token 401 and response 500 should mark envio as Rechazado."""
+    db = DB(":memory:")
+    venta = create_sale(db)
 
-    captured_payload = {}
+    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
+    monkeypatch.setattr("utils.jws.sign_json", lambda d, c, p, k: "SIGNED")
+    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
-    def fake_sign_json(payload, cert, phrase, key):
-        captured_payload["data"] = payload
-        return "FAKE_SIGNATURE"
+    class Resp:
+        status_code = status
+        text = f"error {status}"
 
-    monkeypatch.setattr(jws, "sign_json", fake_sign_json)
-    monkeypatch.setattr(dte, "validate_dte_json", lambda data: None)
+        def json(self):
+            return {"estado": "Rechazado", "descripcionMsg": self.text}
 
-    token_calls = {"count": 0}
-    original_get_token = auth.get_token
+        def raise_for_status(self):
+            raise requests.HTTPError(self.text)
 
-    def tracking_get_token():
-        token_calls["count"] += 1
-        return original_get_token()
+    monkeypatch.setattr("dte.requests.post", lambda *a, **k: Resp())
 
-    monkeypatch.setattr(auth, "get_token", tracking_get_token)
-    monkeypatch.setattr(auth, "_get_credentials", lambda: ("NIT", "PWD"))
-    auth._access_token = None
-    auth._expires_at = 0
+    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
+    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+        json.dump(config, fh)
 
-    def fake_post(url, data=None, json=None, headers=None, timeout=20):
-        class Resp:
-            status_code = 200
-
-            def __init__(self, payload):
-                self._payload = payload
-
-            def json(self):
-                return self._payload
-
-            def raise_for_status(self):
-                pass
-
-        if url.endswith("/auth"):
-            return Resp({"access_token": "TOK", "expires_in": 300})
-        if url.endswith("/recepciondte"):
-            return Resp({"estado": "RECIBIDO", "sello": "XYZ"})
-        raise AssertionError(f"Unexpected URL: {url}")
-
-    monkeypatch.setattr("requests.post", fake_post)
-
-    transmitir_dte(db, venta_id)
-
-    assert "data" in captured_payload
-    assert token_calls["count"] == 1
+    with pytest.raises(requests.HTTPError) as excinfo:
+        transmitir_dte(db, venta)
+    assert f"error {status}" in str(excinfo.value)
     row = db.cursor.execute(
-        "SELECT estado, sello, fecha_hora FROM dte_envios WHERE venta_id=?", (venta_id,)
+        "SELECT estado, count(*) c FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
-    assert row["estado"] == "RECIBIDO"
-    assert row["sello"] == "XYZ"
-    assert row["fecha_hora"]
+    assert row["estado"] == "Rechazado"
+    assert row["c"] == 1
+
+
+def test_firma_fallida_negativo(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+
+    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
+    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+
+    def fail(*a, **k):
+        raise RuntimeError("firma")
+
+    monkeypatch.setattr("utils.jws.sign_json", fail)
+
+    called = {}
+
+    def fake_post(*a, **k):
+        called["called"] = True
+        raise AssertionError("should not post")
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+
+    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
+    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+        json.dump(config, fh)
+
+    with pytest.raises(RuntimeError):
+        transmitir_dte(db, venta)
+
+    row = db.cursor.execute(
+        "SELECT count(*) c FROM dte_envios WHERE venta_id=?", (venta,)
+    ).fetchone()
+    assert row["c"] == 0
+    assert "called" not in called

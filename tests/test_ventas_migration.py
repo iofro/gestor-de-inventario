@@ -1,12 +1,12 @@
 import sqlite3
 import pytest
 
-from db import DB
 
-
-def test_ventas_cliente_fk_and_index(tmp_path):
-    db_path = tmp_path / "db.sqlite"
-    conn = sqlite3.connect(db_path)
+def test_ventas_cliente_fk_and_index(db_conn):
+    """Existing ``ventas`` tables are migrated to add missing constraints."""
+    conn = db_conn.conn
+    # Replace the automatically created table with one missing the cliente FK
+    conn.execute("DROP TABLE ventas")
     conn.execute(
         """
         CREATE TABLE ventas (
@@ -27,18 +27,18 @@ def test_ventas_cliente_fk_and_index(tmp_path):
         "INSERT INTO ventas (fecha, total, cliente_id) VALUES ('2024-01-01', 100, 1)"
     )
     conn.commit()
-    conn.close()
 
-    db = DB(str(db_path))
+    # Run migration on the fixture-provided DB instance
+    db_conn.migrate_ventas_cliente_fk()
 
-    db.cursor.execute("PRAGMA foreign_key_list(ventas)")
-    fks = db.cursor.fetchall()
+    db_conn.cursor.execute("PRAGMA foreign_key_list(ventas)")
+    fks = db_conn.cursor.fetchall()
     assert any(row[2] == "clientes" and row[3] == "cliente_id" for row in fks)
 
-    db.cursor.execute("PRAGMA index_list(ventas)")
-    idxs = [row[1] for row in db.cursor.fetchall()]
+    db_conn.cursor.execute("PRAGMA index_list(ventas)")
+    idxs = [row[1] for row in db_conn.cursor.fetchall()]
     assert "idx_ventas_cliente_id" in idxs
 
     with pytest.raises(sqlite3.IntegrityError):
-        db.add_venta("2024-02-01", 50, cliente_id=999)
+        db_conn.add_venta("2024-02-01", 50, cliente_id=999)
 

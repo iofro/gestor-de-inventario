@@ -17,6 +17,98 @@ def create_sale(db):
     return venta_id
 
 
+def test_transmision_exitosa(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    monkeypatch.setattr(
+        "dte._load_datos_negocio",
+        lambda: {
+            "razon_social": "ACME",
+            "nit": "0614-123456-102-3",
+            "nrc": "123456-7",
+            "giro": "Giro",
+            "direccion": "Calle 1",
+        },
+    )
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("P1", "X", vid, None, 0, 0, 0, 1)
+    pid = db.cursor.lastrowid
+    db.add_cliente("Cliente", "", "0614-987654-321-0", "", "Giro", "", "", "Dir", "", "")
+    cid = db.cursor.lastrowid
+    venta = db.add_venta("2024-01-01", 10, cliente_id=cid)
+    db.add_detalle_venta(venta, pid, 1, 10, vendedor_id=vid)
+
+    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
+
+    signed = {}
+
+    def fake_sign(data, c, p, k):
+        signed["payload"] = data
+        signed["count"] = signed.get("count", 0) + 1
+        return "JWS_SIGNED"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+
+    tokens = {"count": 0}
+
+    def fake_token():
+        tokens["count"] += 1
+        return "JWT"
+
+    monkeypatch.setattr("auth.get_token", fake_token)
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+
+    auth_url = "http://auth.test"
+    recepcion_url = "http://recepcion.test"
+    calls = []
+
+    class Resp:
+        def __init__(self, data):
+            self.data = data
+            self.status_code = 200
+            self.text = json.dumps(data)
+
+        def json(self):
+            return self.data
+
+        def raise_for_status(self):
+            pass
+
+    def fake_post(url, *a, **k):
+        headers = k.get("headers", {})
+        calls.append((url, headers, k.get("json")))
+        if url == auth_url:
+            return Resp({"access_token": "JWT"})
+        if url == recepcion_url:
+            return Resp({"estado": "Transmitido", "sello": "ABC123"})
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    cfg = {"ambiente": "pruebas", "pruebas": {"recepcion_url": recepcion_url}}
+    config_path = tmp_path / "cfg.json"
+    config_path.write_text(json.dumps(cfg), encoding="utf-8")
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
+
+    transmitir_dte(db, venta)
+
+    assert signed.get("count") == 1
+    payload = signed["payload"]
+    assert payload["receptor"]["nombre"] == "Cliente"
+    assert payload["cuerpoDocumento"][0]["cantidad"] == 1
+    assert payload["resumen"]["totalPagar"] == 10
+
+    assert tokens["count"] == 1
+    recep = [c for c in calls if c[0] == recepcion_url]
+    assert recep[0][1]["Authorization"] == "Bearer JWT"
+
+    row = db.cursor.execute(
+        "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
+    ).fetchone()
+    assert row["estado"] == "Transmitido"
+    assert row["sello"] == "ABC123"
+
+
 @pytest.mark.parametrize("status", [401, 500])
 def test_http_error_negativo(monkeypatch, tmp_path, status):
     """Token 401 and response 500 should mark envio as Rechazado."""

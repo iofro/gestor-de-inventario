@@ -40,11 +40,11 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
 
-    signed = {}
+    captured = {}
 
     def fake_sign(data, c, p, k):
-        signed["payload"] = data
-        signed["count"] = signed.get("count", 0) + 1
+        captured["data"] = data
+        captured["count"] = captured.get("count", 0) + 1
         return "JWS_SIGNED"
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
@@ -92,11 +92,20 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     transmitir_dte(db, venta)
 
-    assert signed.get("count") == 1
-    payload = signed["payload"]
+    assert captured.get("count") == 1
+    payload = captured["data"]
     assert payload["receptor"]["nombre"] == "Cliente"
+    assert payload["receptor"]["nit"] == "0614-987654-321-0"
     assert payload["cuerpoDocumento"][0]["cantidad"] == 1
-    assert payload["resumen"]["totalPagar"] == 10
+
+    items_total = sum(
+        i["cantidad"] * i.get("precioUnitario", i.get("precioUni", 0))
+        for i in payload["cuerpoDocumento"]
+    )
+    assert payload["resumen"]["sumas"] == pytest.approx(items_total)
+    assert payload["resumen"]["iva"] == pytest.approx(0)
+    assert payload["resumen"]["totalPagar"] == pytest.approx(items_total)
+    assert payload["identificacion"]["tipoDte"] == "01"
 
     assert tokens["count"] == 1
     recep = [c for c in calls if c[0] == recepcion_url]

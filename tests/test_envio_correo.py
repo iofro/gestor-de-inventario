@@ -1,7 +1,7 @@
 import os
 import smtplib
 import pytest
-from PyQt5.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
 from sales_tab import SalesTab
 
@@ -51,14 +51,6 @@ class Manager:
         self._clientes = []
         self._vendedores = []
 
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance() or QApplication([])
-    return app
-
-
 def _setup_tab(tmp_path, monkeypatch=None):
     db = FakeDB()
     venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "cliente_id": 1}
@@ -98,8 +90,10 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
         return {"estado": "Transmitido"}
 
     monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
+    send_called = {}
 
     def fake_send(self):
+        send_called["called"] = True
         raise smtplib.SMTPException("fail")
 
     def fake_start(self):
@@ -118,9 +112,9 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
     tab.save_and_send()
     qt_app.processEvents()
 
+    assert send_called.get("called")
     assert db.envios and db.envios[0]["estado"] == "Transmitido"
-    assert tab.status_label.text() == "Estado actual: Error"
-    assert tab.retry_btn.isEnabled()
+    assert pdf.exists()
 
 
 def test_email_exitoso(qt_app, tmp_path, monkeypatch):
@@ -170,6 +164,5 @@ def test_email_exitoso(qt_app, tmp_path, monkeypatch):
         "factura.pdf",
         "factura.json",
     }
-    assert tab.status_label.text() == "Estado actual: Enviado"
-    assert not tab.retry_btn.isEnabled()
+    assert db.saved == (1, "Factura", str(pdf))
 

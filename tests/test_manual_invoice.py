@@ -1,6 +1,5 @@
-import os
 import pytest
-from PyQt5.QtWidgets import QApplication, QDialog, QTableWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QDialog, QTableWidgetItem, QMessageBox
 from PyQt5.QtGui import QDesktopServices
 
 from sales_tab import SalesTab
@@ -14,12 +13,6 @@ class Manager:
         self._Distribuidores = []
         self._vendedores = []
         self._clientes = []
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance() or QApplication([])
-    return app
 
 def test_manual_invoice_requires_selection(qt_app, monkeypatch):
     monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)

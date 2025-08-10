@@ -31,6 +31,7 @@ from utils.docs import get_document_paths, build_invoice_json
 
 from utils.jws import get_cert_config, sign_and_save, CONFIG_NEGOCIO_PATH
 from utils.email_sender import EmailSender
+from utils.email_builder import build_email
 
 from ticket_pdf import generar_ticket_personalizado
 from dialogs import ManualInvoiceDialog
@@ -847,8 +848,10 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Solo enviar por correo", "El cliente no tiene correo registrado.")
             return
 
-        subject = self.email_subject_edit.text().strip()
-        body = self.email_body_edit.toPlainText()
+        dte_meta = {
+            "subject": self.email_subject_edit.text(),
+            "body": self.email_body_edit.toPlainText(),
+        }
 
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
         if credito_info or venta.get("cliente_id"):
@@ -883,9 +886,13 @@ class SalesTab(QWidget):
         user = creds["user"]
         password = creds["password"]
 
-        body += (
-            "\n\nSe adjuntan la representaci\u00f3n gr\u00e1fica en PDF y el documento firmado en formato JSON."
+        email_data = build_email(
+            cliente_email,
+            dte_meta,
+            pdf_path,
+            json_path,
         )
+
         self.status_label.setText("Estado actual: Enviando...")
         self.retry_btn.setEnabled(False)
         self.btn_enviar.setEnabled(False)
@@ -895,10 +902,10 @@ class SalesTab(QWidget):
             port,
             user,
             password,
-            cliente_email,
-            subject,
-            body,
-            [pdf_path, json_path],
+            email_data["to"],
+            email_data["subject"],
+            email_data["body"],
+            email_data["attachments"],
         )
         self.email_thread.finished.connect(self._on_email_sent)
         self.email_thread.start()

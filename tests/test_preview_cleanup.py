@@ -1,6 +1,5 @@
 import os
 import pytest
-from PyQt5.QtWidgets import QApplication
 
 from sales_tab import SalesTab
 from utils import docs
@@ -33,12 +32,6 @@ class Manager:
         self._Distribuidores = []
         self._clientes = []
         self._vendedores = []
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    return QApplication.instance() or QApplication([])
-
 
 def test_preview_keeps_pdfs(qt_app, tmp_path, monkeypatch):
     db = FakeDB()

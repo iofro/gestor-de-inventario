@@ -1,6 +1,4 @@
-import os
 import pytest
-from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QDate
 
 from purchases_tab import PurchasesTab
@@ -44,12 +42,6 @@ def setup_db():
     db.add_venta("2024-01-01 12:00:00", 10)
     db.add_venta("2024-01-02", 20)
     return db
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance() or QApplication([])
-    return app
 
 def test_load_purchases_date_formats(qt_app):
     db = setup_db()

@@ -1,5 +1,9 @@
 import os
+import sys
+
 import pytest
+from PyQt5.QtWidgets import QApplication
+
 from db import DB
 
 @pytest.fixture(scope="function")
@@ -18,3 +22,9 @@ def db_conn(tmp_path):
     db.conn.close()
     if db_path.exists():
         os.remove(db_path)
+
+
+@pytest.fixture(scope="session")
+def qt_app():
+    os.environ["QT_QPA_PLATFORM"] = "offscreen"
+    return QApplication.instance() or QApplication(sys.argv)

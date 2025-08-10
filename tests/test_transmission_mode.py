@@ -1,4 +1,3 @@
-import os
 import pytest
 from sales_tab import SalesTab
 from utils.docs import build_invoice_json
@@ -33,12 +32,6 @@ class Manager:
         self._Distribuidores = []
         self._clientes = []
         self._vendedores = []
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from PyQt5.QtWidgets import QApplication
-    return QApplication.instance() or QApplication([])
 
 def test_build_json_includes_transmission(tmp_path):
     template = tmp_path / "t.json"

@@ -1146,6 +1146,7 @@ class DB:
         self.conn.commit()
 
     def close(self):
+        self.cursor.close()
         self.conn.close()
 
     def get_Distribuidor_info(self):

@@ -19,7 +19,7 @@ def db_conn(tmp_path):
     db = DB(str(db_path))
     db.conn.execute("PRAGMA foreign_keys=ON")
     yield db
-    db.conn.close()
+    db.close()
     if db_path.exists():
         os.remove(db_path)
 

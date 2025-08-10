@@ -1,7 +1,7 @@
 import os
 import smtplib
 import pytest
-from PyQt5.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
 from sales_tab import SalesTab
 
@@ -50,13 +50,6 @@ class Manager:
         self._Distribuidores = []
         self._clientes = []
         self._vendedores = []
-
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance() or QApplication([])
-    return app
 
 
 def _setup_tab(tmp_path, monkeypatch=None):

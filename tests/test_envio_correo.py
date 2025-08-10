@@ -122,3 +122,54 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
     assert tab.status_label.text() == "Estado actual: Error"
     assert tab.retry_btn.isEnabled()
 
+
+def test_email_exitoso(qt_app, tmp_path, monkeypatch):
+    db, tab = _setup_tab(tmp_path, monkeypatch)
+    pdf = tmp_path / "factura.pdf"
+
+    def fake_gen(self, vid):
+        pdf.write_bytes(b"%PDF")
+        pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
+        self.manager.db.add_factura_pdf(vid, "Factura", str(pdf))
+        return str(pdf)
+
+    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr(
+        SalesTab,
+        "_check_smtp_credentials",
+        lambda self: {"server": "s", "port": 25, "user": "u", "password": "p"},
+    )
+
+    monkeypatch.setattr(
+        "sales_tab.transmitir_dte",
+        lambda db_obj, venta_id, modo="normal", tipo_dte="01": {"estado": "Transmitido"},
+    )
+
+    captured = {}
+
+    def fake_send(self):
+        captured["to"] = self.to_addr
+        captured["attachments"] = list(self.attachments)
+        self.finished.emit(True, "ok")
+
+    def fake_start(self):
+        self.send()
+
+    monkeypatch.setattr("utils.email_sender.EmailSender.send", fake_send, raising=False)
+    monkeypatch.setattr("utils.email_sender.EmailSender.start", fake_start)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+
+    tab.sales_table.selectRow(0)
+    tab.save_and_send()
+    qt_app.processEvents()
+
+    assert captured["to"] == "cli@example.com"
+    assert {os.path.basename(p) for p in captured["attachments"]} == {
+        "factura.pdf",
+        "factura.json",
+    }
+    assert tab.status_label.text() == "Estado actual: Enviado"
+    assert not tab.retry_btn.isEnabled()
+

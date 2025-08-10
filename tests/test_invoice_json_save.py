@@ -1,7 +1,6 @@
-import os
 import json
 import pytest
-from PyQt5.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
+from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
 from sales_tab import SalesTab
 from utils import docs
@@ -33,13 +32,6 @@ class Manager:
         self._Distribuidores = []
         self._clientes = []
         self._vendedores = []
-
-@pytest.fixture(scope="module")
-def qt_app():
-    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    app = QApplication.instance() or QApplication([])
-    return app
-
 
 def test_generate_invoice_creates_json(qt_app, tmp_path):
     db = FakeDB()

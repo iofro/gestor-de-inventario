@@ -87,3 +87,52 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
     ).fetchone()
     assert row["c"] == 0
     assert "called" not in called
+
+
+def test_sign_json_receives_valid_dte(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    nit_esperado = "NIT123"
+
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente("Cliente", "123", nit_esperado, "", "giro", "", "", "", "", "")
+    cid = db.cursor.lastrowid
+    venta_id = db.add_venta_credito_fiscal(
+        cid,
+        "2024-01-01",
+        11.3,
+        "123",
+        nit_esperado,
+        "giro",
+        sumas=10,
+        descuentos=0,
+        iva=1.3,
+    )
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    captured = {}
+
+    def fake_sign_json(data, cert, phrase, key):
+        captured["data"] = data
+        return "JWS_SIGNED"
+
+    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign_json)
+    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    monkeypatch.setattr("dte._post_dte", lambda url, token, jws: {"estado": "recibido"})
+
+    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
+    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+        json.dump(config, fh)
+
+    transmitir_dte(db, venta_id)
+
+    data = captured["data"]
+    assert data["receptor"]["nit"] == nit_esperado
+    total_items = sum(i["cantidad"] * i["precioUnitario"] for i in data["cuerpoDocumento"])
+    assert data["resumen"]["sumas"] == total_items
+    assert data["resumen"]["iva"] == pytest.approx(total_items * 0.13, rel=1e-6)
+    assert data["identificacion"]["tipoDte"] == "01"

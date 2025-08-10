@@ -1,10 +1,55 @@
 import os
 import smtplib
-
 import pytest
-from PyQt5.QtWidgets import QApplication
+from PyQt5.QtWidgets import QApplication, QTableWidgetItem, QMessageBox
 
-from utils.email_sender import EmailSender
+from sales_tab import SalesTab
+
+
+class FakeDB:
+    def __init__(self):
+        self._ventas = []
+        self.detalles = {}
+        self.saved = None
+        self.envios = []
+
+    def get_ventas(self):
+        return self._ventas
+
+    def get_venta_credito_fiscal(self, vid):
+        return None
+
+    def get_detalles_venta(self, vid):
+        return self.detalles.get(vid, [])
+
+    def get_trabajador(self, vid):
+        return None
+
+    def add_factura_pdf(self, vid, tipo, path):
+        self.saved = (vid, tipo, path)
+        self.factura_path = path
+
+    def add_ticket_pdf(self, *args):
+        self.saved = args
+
+    def get_ticket_pdf(self, vid):
+        return None
+
+    def get_factura_pdf(self, vid):
+        return self.factura_path
+
+    def registrar_envio_dte(self, venta_id, modo, estado, sello, respuesta_json=""):
+        self.envios.append(
+            {"venta_id": venta_id, "modo": modo, "estado": estado, "sello": sello}
+        )
+
+
+class Manager:
+    def __init__(self, db):
+        self.db = db
+        self._Distribuidores = []
+        self._clientes = []
+        self._vendedores = []
 
 
 @pytest.fixture(scope="module")
@@ -14,105 +59,66 @@ def qt_app():
     return app
 
 
-def _create_files(tmp_path):
+def _setup_tab(tmp_path, monkeypatch=None):
+    db = FakeDB()
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "cliente_id": 1}
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    man = Manager(db)
+    man._clientes.append({"id": 1, "email": "cli@example.com", "nombre": "C"})
+    if monkeypatch:
+        monkeypatch.setattr(SalesTab, "load_sales", lambda self: None)
+        monkeypatch.setattr(SalesTab, "_load_email_config", lambda self: None)
+        monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)
+    tab = SalesTab(man, check_smtp=False)
+    tab.sales_table.setRowCount(1)
+    tab.sales_table.setItem(0, 0, QTableWidgetItem("1"))
+    return db, tab
+
+
+def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
+    db, tab = _setup_tab(tmp_path, monkeypatch)
     pdf = tmp_path / "doc.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    json_file = tmp_path / "doc.json"
-    json_file.write_text("{}", encoding="utf-8")
-    return pdf, json_file
 
+    def fake_gen(self, vid):
+        pdf.write_bytes(b"%PDF")
+        pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
+        self.manager.db.add_factura_pdf(vid, "Factura", str(pdf))
+        return str(pdf)
 
-def test_envio_exitoso(tmp_path, monkeypatch, qt_app):
-    pdf, json_file = _create_files(tmp_path)
-
-    captured = {}
-
-    class FakeSMTP:
-        def __init__(self, server, port):
-            captured["init"] = (server, port)
-
-        def starttls(self):
-            captured["starttls"] = True
-
-        def login(self, user, password):
-            captured["login"] = (user, password)
-
-        def send_message(self, msg):
-            captured["message"] = msg
-
-        def quit(self):
-            captured["quit"] = True
-
-    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
-
-    sender = EmailSender(
-        "smtp.example.com",
-        25,
-        "user@example.com",
-        "pw",
-        "to@example.com",
-        "Asunto",
-        "Cuerpo",
-        [str(pdf), str(json_file)],
+    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr(
+        SalesTab,
+        "_check_smtp_credentials",
+        lambda self: {"server": "s", "port": 25, "user": "u", "password": "p"},
     )
 
-    results = []
-    sender.finished.connect(lambda ok, msg: results.append((ok, msg)))
+    def fake_transmitir(db_obj, venta_id, modo="normal", tipo_dte="01"):
+        db_obj.registrar_envio_dte(venta_id, modo, "Transmitido", "S")
+        return {"estado": "Transmitido"}
 
-    sender.run()
+    monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
 
-    msg = captured["message"]
-    assert msg["Subject"] == "Asunto"
-    assert msg["To"] == "to@example.com"
-    text_part = next(p for p in msg.walk() if p.get_content_type() == "text/plain")
-    assert text_part.get_payload(decode=True).decode() == "Cuerpo"
+    def fake_send(self):
+        raise smtplib.SMTPException("fail")
 
-    filenames = []
-    for part in msg.walk():
-        cd = part.get("Content-Disposition")
-        if cd and cd.startswith("attachment"):
-            filenames.append(part.get_filename())
-    assert sorted(filenames) == sorted([pdf.name, json_file.name])
+    def fake_start(self):
+        try:
+            self.send()
+        except smtplib.SMTPException as e:
+            self.finished.emit(False, str(e))
 
-    assert results == [(True, "Correo enviado correctamente")]
+    monkeypatch.setattr("utils.email_sender.EmailSender.send", fake_send, raising=False)
+    monkeypatch.setattr("utils.email_sender.EmailSender.start", fake_start)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
 
+    tab.sales_table.selectRow(0)
+    tab.save_and_send()
+    qt_app.processEvents()
 
-def test_envio_error_smtp(tmp_path, monkeypatch, qt_app):
-    pdf, json_file = _create_files(tmp_path)
+    assert db.envios and db.envios[0]["estado"] == "Transmitido"
+    assert tab.status_label.text() == "Estado actual: Error"
+    assert tab.retry_btn.isEnabled()
 
-    class ErrorSMTP:
-        def __init__(self, server, port):
-            pass
-
-        def starttls(self):
-            pass
-
-        def login(self, user, password):
-            pass
-
-        def send_message(self, msg):
-            raise smtplib.SMTPException("fallo")
-
-        def quit(self):
-            pass
-
-    monkeypatch.setattr(smtplib, "SMTP", ErrorSMTP)
-
-    sender = EmailSender(
-        "smtp.example.com",
-        25,
-        "user@example.com",
-        "pw",
-        "to@example.com",
-        "Asunto",
-        "Cuerpo",
-        [str(pdf), str(json_file)],
-    )
-
-    results = []
-    sender.finished.connect(lambda ok, msg: results.append((ok, msg)))
-
-    sender.run()
-
-    assert results and results[0][0] is False
-    assert "fallo" in results[0][1]

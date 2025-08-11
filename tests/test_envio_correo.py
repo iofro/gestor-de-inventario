@@ -93,11 +93,11 @@ def test_transmit_success_email_fail(qt_app, tmp_path, temp_invoice_files, monke
     db, tab = _setup_tab(tmp_path, monkeypatch)
     pdf, _json = temp_invoice_files
 
-    def fake_gen(self, vid, p=pdf):
-        self.manager.db.add_factura_pdf(vid, "Factura", str(p))
+    def fake_gen(manager, vid, p=pdf):
+        manager.db.add_factura_pdf(vid, "Factura", str(p))
         return str(p)
 
-    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
     monkeypatch.setattr(
         SalesTab,
         "_check_smtp_credentials",
@@ -163,11 +163,11 @@ def test_email_exitoso(qt_app, tmp_path, temp_invoice_files, monkeypatch):
     pdf, _json = temp_invoice_files
     tab.email_subject_edit.setText("Factura enviada")
 
-    def fake_gen(self, vid, p=pdf):
-        self.manager.db.add_factura_pdf(vid, "Factura", str(p))
+    def fake_gen(manager, vid, p=pdf):
+        manager.db.add_factura_pdf(vid, "Factura", str(p))
         return str(p)
 
-    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
     monkeypatch.setattr(
         SalesTab,
         "_check_smtp_credentials",

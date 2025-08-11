@@ -3466,65 +3466,6 @@ class EstadoVentaDialog(QDialog):
         return self.estado_combo.currentText()
 
 
-class LegacyLoginDialog(QDialog):
-    def __init__(self, db, parent=None):
-        super().__init__(parent)
-        self.db = db
-        self.user = None
-        self.setWindowTitle("Iniciar sesión")
-        layout = QVBoxLayout(self)
-        form = QFormLayout()
-
-        # Mostrar un menú con los usuarios existentes para facilitar la selección
-        self.selected_label = QLabel()
-        layout.addWidget(self.selected_label)
-
-        self.user_combo = QComboBox()
-        for u in self.db.get_users():
-            self.user_combo.addItem(u["username"])
-        self.user_combo.currentTextChanged.connect(self._update_selected)
-
-        self.password_edit = QLineEdit()
-        self.password_edit.setEchoMode(QLineEdit.Password)
-
-        form.addRow("Usuario:", self.user_combo)
-        form.addRow("Contraseña:", self.password_edit)
-        layout.addLayout(form)
-
-        # Inicializa la etiqueta con el usuario actual seleccionado
-        self._update_selected(self.user_combo.currentText())
-        btns = QHBoxLayout()
-        ok_btn = QPushButton("Aceptar")
-        cancel_btn = QPushButton("Cancelar")
-        ok_btn.clicked.connect(self._attempt_login)
-        cancel_btn.clicked.connect(self.reject)
-        btns.addWidget(ok_btn)
-        btns.addWidget(cancel_btn)
-        layout.addLayout(btns)
-
-    def _attempt_login(self):
-        user = self.db.authenticate(
-            self.user_combo.currentText().strip(),
-            self.password_edit.text().strip(),
-        )
-        if user:
-            self.user = user
-            self.accept()
-        else:
-            QMessageBox.warning(self, "Error", "Usuario o contraseña incorrectos")
-
-    def get_user(self):
-        return self.user
-
-    def _update_selected(self, username: str) -> None:
-        """Actualiza la etiqueta para mostrar el usuario seleccionado."""
-        self.selected_label.setText(f"Ingresando como: {username}")
-
-
-class LoginDialog:
-    def __init__(self, *a, **k):
-        raise RuntimeError("LoginDialog obsoleto. Usar UserPickerDialog.")
-
 
 class UserEditDialog(QDialog):
     def __init__(self, username="", password="", role="user", parent=None):

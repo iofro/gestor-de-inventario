@@ -19,5 +19,5 @@ def test_single_selection(qt_app):
     ]
     dlg = UserPickerDialog(users)
     # simulate click on first user
-    list(dlg._buttons.values())[0].click()
+    list(dlg._cards.values())[0].click()
     assert dlg.selected_user_ids() == 1

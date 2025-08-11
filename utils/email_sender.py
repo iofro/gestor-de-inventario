@@ -5,12 +5,24 @@ from email.mime.text import MIMEText
 from email.mime.base import MIMEBase
 from email import encoders
 import os
+import base64
 
 
 class EmailSender(QThread):
     finished = pyqtSignal(bool, str)
 
-    def __init__(self, server, port, user, password, to_addr, subject, body, attachments):
+    def __init__(
+        self,
+        server,
+        port,
+        user,
+        password,
+        to_addr,
+        subject,
+        body,
+        attachments,
+        oauth_token=None,
+    ):
         super().__init__()
         self.server = server
         self.port = port
@@ -19,6 +31,7 @@ class EmailSender(QThread):
         self.to_addr = to_addr
         self.subject = subject
         self.body = body
+        self.oauth_token = oauth_token
         if isinstance(attachments, str):
             self.attachments = [attachments]
         else:
@@ -45,9 +58,17 @@ class EmailSender(QThread):
 
             smtp = smtplib.SMTP(self.server, int(self.port))
             smtp.starttls()
-            smtp.login(self.user, self.password)
+            if self.oauth_token:
+                auth_str = f"user={self.user}\1auth=Bearer {self.oauth_token}\1\1"
+                b64 = base64.b64encode(auth_str.encode()).decode()
+                smtp.docmd("AUTH", "XOAUTH2 " + b64)
+            else:
+                smtp.login(self.user, self.password)
             smtp.send_message(msg)
             smtp.quit()
             self.finished.emit(True, "Correo enviado correctamente")
+        except smtplib.SMTPAuthenticationError as e:
+            error_msg = e.smtp_error.decode() if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
+            self.finished.emit(False, f"Error de autenticación: {error_msg}")
         except Exception as e:
             self.finished.emit(False, str(e))

@@ -6,6 +6,7 @@ pyinstaller
 dbfread
 PyMuPDF
 requests
+msal
 pyjwt
 cryptography
 

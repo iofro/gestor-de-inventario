@@ -3466,7 +3466,7 @@ class EstadoVentaDialog(QDialog):
         return self.estado_combo.currentText()
 
 
-class LoginDialog(QDialog):
+class LegacyLoginDialog(QDialog):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
@@ -3519,6 +3519,11 @@ class LoginDialog(QDialog):
     def _update_selected(self, username: str) -> None:
         """Actualiza la etiqueta para mostrar el usuario seleccionado."""
         self.selected_label.setText(f"Ingresando como: {username}")
+
+
+class LoginDialog:
+    def __init__(self, *a, **k):
+        raise RuntimeError("LoginDialog obsoleto. Usar UserPickerDialog.")
 
 
 class UserEditDialog(QDialog):

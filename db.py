@@ -3,19 +3,23 @@ from datetime import datetime
 import json
 import logging
 import threading
-
-from utils import resource_path
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DB:
-    def __init__(self, db_name=resource_path("inventario.db")):
+    def __init__(self, db_name: str | Path | None = None):
+        if db_name is None:
+            db_path = Path.home() / ".gestor-inventario" / "inventario.db"
+        else:
+            db_path = Path(db_name)
+        db_path.parent.mkdir(parents=True, exist_ok=True)
         # ``check_same_thread=False`` allows the connection to be used from
         # multiple threads.  Each thread should ideally use its own connection
         # but this flag prevents SQLite from raising an exception if a
         # connection crosses thread boundaries.
-        self.conn = sqlite3.connect(db_name, check_same_thread=False)
+        self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row
         self.cursor = self.conn.cursor()

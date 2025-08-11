@@ -116,9 +116,9 @@
                 "codActividad": {
                     "type": "string",
                     "description": "Código de Actividad Económica (Emisor)",
-                    "pattern": "^[0-9]{5,6}$",
+                    "pattern": "^[0-9]{4,6}$",
                     "maxLength": 6,
-                    "minLength": 5
+                    "minLength": 4
                 },
                 "descActividad": {
                     "type": "string",
@@ -472,7 +472,9 @@
                 "codActividad": {
                     "type": "string",
                     "description": "Código de Actividad Económica (Receptor)",
-                    "pattern": "^[0-9]{5,6}$"
+                    "pattern": "^[0-9]{4,6}$",
+                    "maxLength": 6,
+                    "minLength": 4
                 },
                 "descActividad": {
                     "type": "string",

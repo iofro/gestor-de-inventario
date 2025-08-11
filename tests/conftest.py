@@ -3,9 +3,21 @@ import sys
 import time
 import gc
 import copy
+import sqlite3
+
 
 import pytest
-from PyQt5.QtWidgets import QApplication
+
+try:
+    from PyQt5.QtWidgets import QApplication
+except ImportError:  # pragma: no cover - PyQt5 may be missing in CI
+    class QApplication:  # minimal stub for tests that don't use the GUI
+        def __init__(self, *args, **kwargs):
+            pass
+
+        @staticmethod
+        def instance():
+            return None
 
 from db import DB
 
@@ -31,16 +43,16 @@ def db_conn(tmp_path):
     # Ensure cursors are closed and checkpoints run so SQLite releases locks
     try:
         db.cursor.close()
-    except Exception:
+    except (AttributeError, sqlite3.Error):
         pass
     try:
         db.conn.execute("PRAGMA wal_checkpoint(FULL)")
         db.conn.execute("PRAGMA journal_mode=DELETE")
-    except Exception:
+    except sqlite3.Error:
         pass
     try:
         db.conn.close()
-    except Exception:
+    except sqlite3.Error:
         pass
 
     gc.collect()

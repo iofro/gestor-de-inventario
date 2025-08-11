@@ -3474,12 +3474,25 @@ class LoginDialog(QDialog):
         self.setWindowTitle("Iniciar sesión")
         layout = QVBoxLayout(self)
         form = QFormLayout()
-        self.username_edit = QLineEdit()
+
+        # Mostrar un menú con los usuarios existentes para facilitar la selección
+        self.selected_label = QLabel()
+        layout.addWidget(self.selected_label)
+
+        self.user_combo = QComboBox()
+        for u in self.db.get_users():
+            self.user_combo.addItem(u["username"])
+        self.user_combo.currentTextChanged.connect(self._update_selected)
+
         self.password_edit = QLineEdit()
         self.password_edit.setEchoMode(QLineEdit.Password)
-        form.addRow("Usuario:", self.username_edit)
+
+        form.addRow("Usuario:", self.user_combo)
         form.addRow("Contraseña:", self.password_edit)
         layout.addLayout(form)
+
+        # Inicializa la etiqueta con el usuario actual seleccionado
+        self._update_selected(self.user_combo.currentText())
         btns = QHBoxLayout()
         ok_btn = QPushButton("Aceptar")
         cancel_btn = QPushButton("Cancelar")
@@ -3491,7 +3504,7 @@ class LoginDialog(QDialog):
 
     def _attempt_login(self):
         user = self.db.authenticate(
-            self.username_edit.text().strip(),
+            self.user_combo.currentText().strip(),
             self.password_edit.text().strip(),
         )
         if user:
@@ -3502,6 +3515,10 @@ class LoginDialog(QDialog):
 
     def get_user(self):
         return self.user
+
+    def _update_selected(self, username: str) -> None:
+        """Actualiza la etiqueta para mostrar el usuario seleccionado."""
+        self.selected_label.setText(f"Ingresando como: {username}")
 
 
 class UserEditDialog(QDialog):

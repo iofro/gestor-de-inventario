@@ -7,7 +7,7 @@ from db import DB
 import requests
 from utils import jws
 import auth
-from jsonschema import validate as _jsonschema_validate
+from jsonschema import Draft7Validator, ValidationError
 from utils import catalogos
 import logging
 
@@ -69,6 +69,24 @@ def _round(value, digits):
         value = 0
     fmt = "0." + "0" * digits
     return float(Decimal(str(value)).quantize(Decimal(fmt), rounding=ROUND_HALF_UP))
+
+
+def _validate_schema(instance: dict, schema: dict) -> None:
+    """Validate ``instance`` against ``schema`` reporting all errors.
+
+    Prints a full report of all schema validation issues found and raises
+    ``ValidationError`` with the combined message if any problems exist.
+    """
+    validator = Draft7Validator(schema)
+    errors = sorted(validator.iter_errors(instance), key=lambda e: e.path)
+    if errors:
+        lines = ["Errores de esquema encontrados:"]
+        for err in errors:
+            path = ".".join(str(p) for p in err.path) or "<root>"
+            lines.append(f"- {path}: {err.message}")
+        report = "\n".join(lines)
+        print(report)
+        raise ValidationError(report)
 
 
 def _load_datos_negocio():
@@ -574,7 +592,7 @@ def validate_dte_json(data: dict) -> None:
     if schema_path and os.path.exists(schema_path):
         with open(schema_path, "r", encoding="utf-8") as fh:
             schema = json.load(fh)
-        _jsonschema_validate(instance=data, schema=schema)
+        _validate_schema(instance=data, schema=schema)
 
 
 def generar_ticket_json(

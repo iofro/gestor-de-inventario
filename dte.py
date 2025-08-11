@@ -99,6 +99,40 @@ def _load_datos_negocio():
     return {}
 
 
+DEPARTAMENTO_CODES = {
+    "Ahuachapán": "01",
+    "Santa Ana": "02",
+    "Sonsonate": "03",
+    "Chalatenango": "04",
+    "La Libertad": "05",
+    "San Salvador": "06",
+    "Cuscatlán": "07",
+    "La Paz": "08",
+    "Cabañas": "09",
+    "San Vicente": "10",
+    "Usulután": "11",
+    "San Miguel": "12",
+    "Morazán": "13",
+    "La Unión": "14",
+}
+
+
+def _map_departamento(nombre: str | None) -> str:
+    return DEPARTAMENTO_CODES.get(nombre, "01")
+
+
+def _clean_nit(nit):
+    if nit:
+        return "".join(c for c in str(nit) if c.isdigit())
+    return None
+
+
+def _clean_nrc(nrc):
+    if nrc:
+        return "".join(c for c in str(nrc) if c.isdigit())
+    return None
+
+
 # --- Helpers ---------------------------------------------------------------
 
 # Valores por defecto del resumen según el tipo de DTE
@@ -319,7 +353,7 @@ def generar_cabecera_dte_data(modelo_facturacion: str, tipo_transmision: str) ->
     enviar la factura. Los valores que envía Hacienda posteriormente (código de
     generación y sello recibido) se dejan en ``None``.
     """
-    codigo_generacion = uuid.uuid4().hex.upper()
+    codigo_generacion = str(uuid.uuid4()).upper()
     numero_control = generar_numero_control()
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     return {
@@ -360,7 +394,7 @@ def generar_dte_json(
 
     datos = _load_datos_negocio()
 
-    codigo_generacion = uuid.uuid4().hex.upper()
+    codigo_generacion = str(uuid.uuid4()).upper()
     numero_control = generar_numero_control()
 
     fecha = venta.get("fecha") or datetime.now().strftime("%Y-%m-%d")
@@ -502,21 +536,97 @@ def generar_dte_json(
 
 
 def validate_dte_json(data: dict) -> None:
-    """Basic validation for DTE payload before signing."""
+    """Basic validation and normalization for DTE payload before signing."""
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
     for key in required:
         if key not in data:
             raise ValueError(f"Falta el campo obligatorio: {key}")
 
+    negocio = _load_datos_negocio()
+
+    ident = data.get("identificacion", {})
+    config = _load_dte_api_config()
+    ambiente = "01" if config.get("ambiente") == "produccion" else "00"
+    ident.setdefault("ambiente", ambiente)
+    ident.setdefault("tipoMoneda", "USD")
+    ident.setdefault("tipoContingencia", None)
+    ident.setdefault("motivoContin", None)
+    if "modeloFacturacion" in ident:
+        ident["tipoModelo"] = int(str(ident.pop("modeloFacturacion")).split()[0])
+    ident.setdefault("tipoModelo", 1)
+    if "tipoTransmision" in ident:
+        ident["tipoOperacion"] = int(str(ident.pop("tipoTransmision")).split()[0])
+    ident.setdefault("tipoOperacion", 1)
+    ident["version"] = int(ident.get("version", 1))
+    cg = ident.get("codigoGeneracion")
+    try:
+        ident["codigoGeneracion"] = str(uuid.UUID(str(cg))).upper()
+    except Exception:
+        ident["codigoGeneracion"] = str(uuid.uuid4()).upper()
+    data["identificacion"] = ident
+
+    emisor = data.get("emisor", {})
+    emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
+    emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
+    emisor.setdefault("nombre", negocio.get("razon_social"))
+    emisor.setdefault("codActividad", negocio.get("ciiu"))
+    emisor.setdefault("descActividad", negocio.get("giro"))
+    emisor.setdefault("nombreComercial", negocio.get("nombre_comercial"))
+    emisor.setdefault("tipoEstablecimiento", "01")
+    direccion = emisor.get("direccion")
+    if not isinstance(direccion, dict):
+        direccion = {
+            "departamento": _map_departamento(negocio.get("departamento")),
+            "municipio": "01",
+            "complemento": negocio.get("direccion") if direccion is None else direccion,
+        }
+    emisor["direccion"] = direccion
+    emisor.setdefault("telefono", negocio.get("telefono_movil") or negocio.get("telefono_fijo"))
+    emisor.setdefault("correo", negocio.get("email"))
+    emisor.setdefault("codEstableMH", "0000")
+    emisor.setdefault("codEstable", "0000")
+    emisor.setdefault("codPuntoVentaMH", "0000")
+    emisor.setdefault("codPuntoVenta", "0000")
+    emisor.pop("giro", None)
+    data["emisor"] = emisor
+
+    receptor = data.get("receptor", {})
+    receptor["nrc"] = _clean_nrc(receptor.get("nrc"))
+    if "nit" in receptor:
+        receptor["numDocumento"] = _clean_nit(receptor.pop("nit"))
+    else:
+        receptor["numDocumento"] = _clean_nit(receptor.get("numDocumento"))
+    receptor.pop("giro", None)
+    data["receptor"] = receptor
+
     cuerpo = data.get("cuerpoDocumento", [])
     items_total = Decimal("0")
     for item in cuerpo:
+        if "precioUnitario" in item:
+            item["precioUni"] = item.pop("precioUnitario")
+        item.setdefault("tipoItem", 1)
+        item.setdefault("numeroDocumento", None)
+        item.setdefault("codigo", None)
+        item.setdefault("codTributo", None)
+        item.setdefault("uniMedida", 59)
+        item.setdefault("montoDescu", 0.0)
+        item.setdefault("ventaNoSuj", 0.0)
+        item.setdefault("ventaExenta", 0.0)
+        item.setdefault("tributos", None)
+        item.setdefault("psv", 0.0)
+        item.setdefault("noGravado", 0.0)
+        item.setdefault("ivaItem", 0.0)
         cantidad = Decimal(str(item.get("cantidad", 0)))
-        precio = Decimal(str(item.get("precioUnitario", item.get("precioUni", 0))))
+        precio = Decimal(str(item.get("precioUni", 0)))
         item["cantidad"] = float(cantidad.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
-        precio_key = "precioUnitario" if "precioUnitario" in item else "precioUni"
-        item[precio_key] = float(precio.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
-        items_total += cantidad * precio
+        item["precioUni"] = float(precio.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
+        importe = cantidad * precio
+        item.setdefault(
+            "ventaGravada",
+            float(importe.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)),
+        )
+        items_total += importe
+    data["cuerpoDocumento"] = cuerpo
 
     resumen = data.get("resumen", {})
     for k, v in resumen.items():
@@ -527,6 +637,7 @@ def validate_dte_json(data: dict) -> None:
                 resumen[k] = _round(float(v), 2)
             except Exception:
                 pass
+    data["resumen"] = resumen
 
     total_grav = Decimal(str(resumen.get("totalGravada", 0)))
     total_exenta = Decimal(str(resumen.get("totalExenta", 0)))

@@ -258,3 +258,33 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
     ).fetchone()
     assert row["estado"] == "Rechazado"
     assert row["c"] == 1
+
+
+def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+
+    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
+    monkeypatch.setattr("utils.jws.sign_json", lambda d, c, p, k: "SIGNED")
+    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+
+    def fake_post(*a, **k):
+        raise requests.Timeout("timeout")
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+
+    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+        json.dump(config, fh)
+
+    with pytest.raises(requests.Timeout):
+        transmitir_dte(db, venta)
+
+    row = db.cursor.execute(
+        "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
+    ).fetchone()
+    assert row["estado"] == "Rechazado"
+    assert row["sello"] == ""
+    extra = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta,)).fetchone()["extra"]
+    assert not extra

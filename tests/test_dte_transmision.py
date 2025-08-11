@@ -31,16 +31,30 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     monkeypatch.setattr("utils.jws.sign_json", lambda data, cert, p, key: "SIGNED")
-    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+
+    token_calls = {"count": 0}
+
+    def fake_get_token():
+        token_calls["count"] += 1
+        return "JWT"
+
+    monkeypatch.setattr("auth.get_token", fake_get_token)
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
 
+    captured = {}
+
     def fake_post(url, json=None, headers=None, timeout=20):
+        captured["headers"] = headers
+
         class R:
             status_code = 200
+
             def json(self):
                 return {"estado": "Transmitido", "sello": "ABC123"}
+
             def raise_for_status(self):
                 pass
+
         return R()
 
     monkeypatch.setattr("dte.requests.post", fake_post)
@@ -51,6 +65,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Transmitido"
+    assert token_calls["count"] == 1
+    assert captured["headers"]["Authorization"] == "Bearer JWT"
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -102,12 +118,19 @@ def test_consultar_envio_dte():
     assert db.consultar_envio_dte(venta) == {"ok": True}
 
 
+def test_consultar_envio_dte_texto():
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(venta, "normal", "Rechazado", "", "error")
+    assert db.consultar_envio_dte(venta) == {}
+
+
 def test_listar_dtes():
     db = DB(":memory:")
     v1 = create_sale(db)
     v2 = create_sale(db)
-    db.registrar_envio_dte(v1, "normal", "Transmitido", "S")
-    db.registrar_envio_dte(v2, "normal", "Rechazado", "")
+    db.registrar_envio_dte(v1, "normal", "Transmitido", "S", '{"ok": true}')
+    db.registrar_envio_dte(v2, "normal", "Rechazado", "", "error")
     today = datetime.now().date().isoformat()
     rows = db.listar_dtes(today, today, "Transmitido")
     assert len(rows) == 1

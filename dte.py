@@ -202,36 +202,63 @@ def generar_dte_json(
     sumas_val = fiscal.get("sumas", total) if fiscal else total
     descuentos_val = fiscal.get("descuentos", 0) if fiscal else 0
     iva_val = fiscal.get("iva") if fiscal else 0
+    total_no_suj = fiscal.get("ventas_no_sujetas") if fiscal else 0
+    total_exenta = fiscal.get("ventas_exentas") if fiscal else 0
+
+    sub_total_ventas = total_no_suj + total_exenta + sumas_val
+    sub_total_calc = sub_total_ventas - descuentos_val
+    monto_total_calc = sub_total_calc + iva_val
 
     resumen = {
-        "totalNoSuj": fiscal.get("ventas_no_sujetas") if fiscal else 0,
-        "totalExenta": fiscal.get("ventas_exentas") if fiscal else 0,
-        "sumas": sumas_val,
-        "descuentos": descuentos_val,
-        "iva": iva_val,
-        "subTotal": (sumas_val - descuentos_val) + iva_val,
-        "totalPagar": venta.get("total", total),
+        "totalNoSuj": total_no_suj,
+        "totalExenta": total_exenta,
+        "totalGravada": sumas_val,
+        "subTotalVentas": sub_total_ventas,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": descuentos_val,
+        "porcentajeDescuento": 0,
+        "totalDescu": descuentos_val,
+        "tributos": None,
+        "subTotal": sub_total_calc,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": monto_total_calc,
+        "totalNoGravado": 0,
+        "totalPagar": venta.get("total", monto_total_calc),
+        "totalLetras": venta.get("total_letras", ""),
+        "totalIva": iva_val,
+        "saldoFavor": 0,
+        "condicionOperacion": 1,
+        "pagos": None,
+        "numPagoElectronico": None,
     }
 
-    # Round resumen values to two decimals
+    # Round resumen values to two decimals where applicable
     for k, v in resumen.items():
-        resumen[k] = _round(v, 2)
+        if isinstance(v, (int, float)):
+            resumen[k] = _round(v, 2)
 
     # Validate totals within tolerance
     items_total_2 = _round(items_total, 2)
-    if abs(items_total_2 - resumen["sumas"]) > 0.01:
+    if abs(items_total_2 - resumen["subTotalVentas"]) > 0.01:
         print(
-            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen['sumas']:.2f}"
+            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen['subTotalVentas']:.2f}"
         )
 
-    calc_sub = _round(resumen["sumas"] - resumen["descuentos"] + resumen["iva"], 2)
-    if abs(calc_sub - resumen["subTotal"]) > 0.01:
+    calc_sub_total = _round(resumen["subTotalVentas"] - resumen["totalDescu"], 2)
+    if abs(calc_sub_total - resumen["subTotal"]) > 0.01:
         print(
-            f"Advertencia: el subtotal calculado {calc_sub:.2f} difiere del resumen {resumen['subTotal']:.2f}"
+            f"Advertencia: el subtotal calculado {calc_sub_total:.2f} difiere del resumen {resumen['subTotal']:.2f}"
         )
-    if abs(calc_sub - resumen["totalPagar"]) > 0.01:
+    calc_total = _round(calc_sub_total + resumen["totalIva"], 2)
+    if abs(calc_total - resumen["montoTotalOperacion"]) > 0.01:
         print(
-            f"Advertencia: el total a pagar {resumen['totalPagar']:.2f} difiere del subtotal calculado {calc_sub:.2f}"
+            f"Advertencia: el monto total {resumen['montoTotalOperacion']:.2f} difiere del calculado {calc_total:.2f}"
+        )
+    if abs(calc_total - resumen["totalPagar"]) > 0.01:
+        print(
+            f"Advertencia: el total a pagar {resumen['totalPagar']:.2f} difiere del calculado {calc_total:.2f}"
         )
 
     result = {
@@ -293,27 +320,34 @@ def validate_dte_json(data: dict) -> None:
             except Exception:
                 pass
 
-    sumas = Decimal(str(resumen.get("sumas", 0)))
-    descuentos = Decimal(str(resumen.get("descuentos", 0)))
-    iva = Decimal(str(resumen.get("iva", 0)))
+    total_grav = Decimal(str(resumen.get("totalGravada", 0)))
+    total_exenta = Decimal(str(resumen.get("totalExenta", 0)))
+    total_no_suj = Decimal(str(resumen.get("totalNoSuj", 0)))
+    sub_total_ventas = Decimal(
+        str(resumen.get("subTotalVentas", total_grav + total_exenta + total_no_suj))
+    )
+    total_descu = Decimal(str(resumen.get("totalDescu", 0)))
+    total_iva = Decimal(str(resumen.get("totalIva", 0)))
     sub_total = Decimal(str(resumen.get("subTotal", 0)))
     total = Decimal(str(resumen.get("totalPagar", 0)))
 
     items_total_2 = Decimal(str(_round(items_total, 2)))
-    if abs(items_total_2 - sumas) > Decimal("0.01"):
+    if abs(items_total_2 - sub_total_ventas) > Decimal("0.01"):
         print(
-            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {sumas:.2f}"
+            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {sub_total_ventas:.2f}"
         )
 
-    calc_sub = sumas - descuentos + iva
+    calc_sub = sub_total_ventas - total_descu
     calc_sub = Decimal(str(_round(calc_sub, 2)))
     if abs(calc_sub - sub_total) > Decimal("0.01"):
         print(
             f"Advertencia: el subtotal calculado {calc_sub:.2f} difiere del resumen {sub_total:.2f}"
         )
-    if abs(calc_sub - total) > Decimal("0.01"):
+    calc_total = calc_sub + total_iva
+    calc_total = Decimal(str(_round(calc_total, 2)))
+    if abs(calc_total - total) > Decimal("0.01"):
         print(
-            f"Advertencia: el total a pagar {total:.2f} difiere del subtotal calculado {calc_sub:.2f}"
+            f"Advertencia: el total a pagar {total:.2f} difiere del calculado {calc_total:.2f}"
         )
 
     # --- Catálogo validations ---

@@ -81,6 +81,208 @@ def _load_datos_negocio():
     return {}
 
 
+# --- Helpers ---------------------------------------------------------------
+
+# Valores por defecto del resumen según el tipo de DTE
+RESUMEN_DEFAULTS = {
+    "01": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 0,
+        "subTotalVentas": 0,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0,
+        "porcentajeDescuento": 0,
+        "totalDescu": 0,
+        "tributos": None,
+        "subTotal": 0,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": 0,
+        "totalNoGravado": 0,
+        "totalPagar": 0,
+        "totalLetras": "",
+        "totalIva": 0,
+        "saldoFavor": 0,
+        "condicionOperacion": 1,
+        "pagos": None,
+        "numPagoElectronico": None,
+    },
+    "03": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 0,
+        "subTotalVentas": 0,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0,
+        "porcentajeDescuento": 0,
+        "totalDescu": 0,
+        "tributos": None,
+        "subTotal": 0,
+        "ivaPerci1": 0,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": 0,
+        "totalNoGravado": 0,
+        "totalPagar": 0,
+        "totalLetras": "",
+        "saldoFavor": 0,
+        "condicionOperacion": 1,
+        "pagos": None,
+        "numPagoElectronico": None,
+    },
+    "05": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 0,
+        "subTotalVentas": 0,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0,
+        "totalDescu": 0,
+        "tributos": None,
+        "subTotal": 0,
+        "ivaPerci1": 0,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": 0,
+        "totalLetras": "",
+        "condicionOperacion": 1,
+    },
+}
+
+
+import re
+
+
+def normalizar_pagos(pagos_raw, total):
+    """Normaliza la lista de pagos al formato del esquema."""
+    pattern = re.compile(r"^(0[1-9]|1[0-4]|99)$")
+    pagos = []
+    for p in pagos_raw or []:
+        codigo = str(p.get("codigo", "")).zfill(2)
+        if not pattern.match(codigo):
+            continue
+        monto = _round(p.get("montoPago", 0), 2)
+        pagos.append(
+            {
+                "codigo": codigo,
+                "montoPago": monto,
+                "referencia": p.get("referencia"),
+                "periodo": p.get("periodo"),
+                "plazo": p.get("plazo"),
+            }
+        )
+    if not pagos:
+        pagos = [
+            {
+                "codigo": "01",
+                "montoPago": _round(total, 2),
+                "referencia": None,
+                "periodo": None,
+                "plazo": None,
+            }
+        ]
+    return pagos
+
+
+def armar_tributos(tributos_raw, tipo_dte):
+    """Construye la lista de tributos o retorna ``None``."""
+    if not tributos_raw:
+        return None
+    schema_path = catalogos.SCHEMA_MAP.get(tipo_dte)
+    allowed = set()
+    if schema_path and os.path.exists(schema_path):
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = json.load(fh)
+        allowed = set(
+            schema.get("properties", {})
+            .get("resumen", {})
+            .get("properties", {})
+            .get("tributos", {})
+            .get("items", {})
+            .get("properties", {})
+            .get("codigo", {})
+            .get("enum", [])
+        )
+    result = []
+    for t in tributos_raw or []:
+        codigo = str(t.get("codigo", "")).upper()
+        if allowed and codigo not in allowed:
+            continue
+        result.append(
+            {
+                "codigo": codigo,
+                "descripcion": t.get("descripcion"),
+                "valor": _round(t.get("valor", 0), 2),
+            }
+        )
+    return result or None
+
+
+def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01"):
+    """Calcula la sección resumen acorde al esquema oficial."""
+    fiscal = fiscal or {}
+    extra = extra or {}
+
+    items_total = Decimal(str(items_total))
+    sumas_val = Decimal(str(fiscal.get("sumas", items_total)))
+    descuentos_val = Decimal(str(fiscal.get("descuentos", 0)))
+    iva_val = Decimal(str(fiscal.get("iva", 0)))
+    total_no_suj = Decimal(str(fiscal.get("ventas_no_sujetas", 0)))
+    total_exenta = Decimal(str(fiscal.get("ventas_exentas", 0)))
+
+    sub_total_ventas = total_no_suj + total_exenta + sumas_val
+    total_descu = descuentos_val
+    porcentaje_desc = (
+        (total_descu * Decimal("100") / sub_total_ventas) if sub_total_ventas else Decimal("0")
+    )
+    sub_total = sub_total_ventas - total_descu
+    monto_total = sub_total + iva_val
+
+    resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
+    resumen.update(
+        {
+            "totalNoSuj": total_no_suj,
+            "totalExenta": total_exenta,
+            "totalGravada": sumas_val,
+            "subTotalVentas": sub_total_ventas,
+            "descuNoSuj": Decimal("0"),
+            "descuExenta": Decimal("0"),
+            "descuGravada": descuentos_val,
+            "totalDescu": total_descu,
+            "subTotal": sub_total,
+            "montoTotalOperacion": monto_total,
+            "totalLetras": venta.get("total_letras", ""),
+        }
+    )
+    if "porcentajeDescuento" in resumen:
+        resumen["porcentajeDescuento"] = porcentaje_desc
+
+    if tipo_dte == "01":
+        resumen["totalIva"] = iva_val
+    else:
+        resumen["ivaPerci1"] = resumen.get("ivaPerci1", 0)
+
+    if "totalPagar" in resumen:
+        resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
+    if "pagos" in resumen:
+        resumen["pagos"] = normalizar_pagos(extra.get("pagos"), resumen["totalPagar"])
+    if "tributos" in resumen:
+        resumen["tributos"] = armar_tributos(extra.get("tributos"), tipo_dte)
+    if "numPagoElectronico" in resumen:
+        resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
+
+    # Redondeamos valores numéricos
+    for k, v in resumen.items():
+        if isinstance(v, (int, float, Decimal)):
+            resumen[k] = _round(v, 2)
+
+    return resumen
+
+
 def generar_numero_control(prefijo: str = "DTE-01-S001P001") -> str:
     """Crea un número de control único siguiendo el formato de Hacienda."""
     secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
@@ -198,67 +400,40 @@ def generar_dte_json(
             "precioUnitario": float(price_r),
         })
 
-    total = float(items_total)
-    sumas_val = fiscal.get("sumas", total) if fiscal else total
-    descuentos_val = fiscal.get("descuentos", 0) if fiscal else 0
-    iva_val = fiscal.get("iva") if fiscal else 0
-    total_no_suj = fiscal.get("ventas_no_sujetas") if fiscal else 0
-    total_exenta = fiscal.get("ventas_exentas") if fiscal else 0
+    resumen = calcular_resumen(
+        items_total,
+        venta,
+        fiscal=fiscal,
+        extra=extra,
+        tipo_dte=tipo_dte,
+    )
 
-    sub_total_ventas = total_no_suj + total_exenta + sumas_val
-    sub_total_calc = sub_total_ventas - descuentos_val
-    monto_total_calc = sub_total_calc + iva_val
-
-    resumen = {
-        "totalNoSuj": total_no_suj,
-        "totalExenta": total_exenta,
-        "totalGravada": sumas_val,
-        "subTotalVentas": sub_total_ventas,
-        "descuNoSuj": 0,
-        "descuExenta": 0,
-        "descuGravada": descuentos_val,
-        "porcentajeDescuento": 0,
-        "totalDescu": descuentos_val,
-        "tributos": None,
-        "subTotal": sub_total_calc,
-        "ivaRete1": 0,
-        "reteRenta": 0,
-        "montoTotalOperacion": monto_total_calc,
-        "totalNoGravado": 0,
-        "totalPagar": venta.get("total", monto_total_calc),
-        "totalLetras": venta.get("total_letras", ""),
-        "totalIva": iva_val,
-        "saldoFavor": 0,
-        "condicionOperacion": 1,
-        "pagos": None,
-        "numPagoElectronico": None,
-    }
-
-    # Round resumen values to two decimals where applicable
-    for k, v in resumen.items():
-        if isinstance(v, (int, float)):
-            resumen[k] = _round(v, 2)
-
-    # Validate totals within tolerance
+    # Validaciones básicas de consistencia
     items_total_2 = _round(items_total, 2)
-    if abs(items_total_2 - resumen["subTotalVentas"]) > 0.01:
+    if abs(items_total_2 - resumen.get("subTotalVentas", 0)) > 0.01:
         print(
-            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen['subTotalVentas']:.2f}"
+            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen.get('subTotalVentas',0):.2f}"
         )
 
-    calc_sub_total = _round(resumen["subTotalVentas"] - resumen["totalDescu"], 2)
-    if abs(calc_sub_total - resumen["subTotal"]) > 0.01:
+    calc_sub_total = _round(
+        resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0), 2
+    )
+    if abs(calc_sub_total - resumen.get("subTotal", 0)) > 0.01:
         print(
-            f"Advertencia: el subtotal calculado {calc_sub_total:.2f} difiere del resumen {resumen['subTotal']:.2f}"
+            f"Advertencia: el subtotal calculado {calc_sub_total:.2f} difiere del resumen {resumen.get('subTotal',0):.2f}"
         )
-    calc_total = _round(calc_sub_total + resumen["totalIva"], 2)
-    if abs(calc_total - resumen["montoTotalOperacion"]) > 0.01:
+
+    iva_ref = resumen.get("totalIva")
+    if iva_ref is None:
+        iva_ref = resumen.get("ivaPerci1", 0)
+    calc_total = _round(calc_sub_total + (iva_ref or 0), 2)
+    if abs(calc_total - resumen.get("montoTotalOperacion", 0)) > 0.01:
         print(
-            f"Advertencia: el monto total {resumen['montoTotalOperacion']:.2f} difiere del calculado {calc_total:.2f}"
+            f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
-    if abs(calc_total - resumen["totalPagar"]) > 0.01:
+    if "totalPagar" in resumen and abs(calc_total - resumen.get("totalPagar", 0)) > 0.01:
         print(
-            f"Advertencia: el total a pagar {resumen['totalPagar']:.2f} difiere del calculado {calc_total:.2f}"
+            f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total:.2f}"
         )
 
     result = {
@@ -327,9 +502,9 @@ def validate_dte_json(data: dict) -> None:
         str(resumen.get("subTotalVentas", total_grav + total_exenta + total_no_suj))
     )
     total_descu = Decimal(str(resumen.get("totalDescu", 0)))
-    total_iva = Decimal(str(resumen.get("totalIva", 0)))
+    total_iva = Decimal(str(resumen.get("totalIva", resumen.get("ivaPerci1", 0))))
     sub_total = Decimal(str(resumen.get("subTotal", 0)))
-    total = Decimal(str(resumen.get("totalPagar", 0)))
+    total = Decimal(str(resumen.get("totalPagar", resumen.get("montoTotalOperacion", 0))))
 
     items_total_2 = Decimal(str(_round(items_total, 2)))
     if abs(items_total_2 - sub_total_ventas) > Decimal("0.01"):

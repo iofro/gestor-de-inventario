@@ -569,7 +569,7 @@ class FacturacionTab(QWidget):
         server = creds.get("smtp_server")
         port = creds.get("smtp_port")
         user = creds.get("email_usuario")
-        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD") or creds.get("email_contrasena")
         if not all([server, port, user, password]):
             QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
             return
@@ -1113,7 +1113,7 @@ class FacturacionTab(QWidget):
         server = creds.get("smtp_server")
         port = creds.get("smtp_port")
         user = creds.get("email_usuario")
-        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD") or creds.get("email_contrasena")
         if not all([server, port, user, password]):
             QMessageBox.warning(self, "Enviar ticket", "Credenciales SMTP incompletas.")
             return

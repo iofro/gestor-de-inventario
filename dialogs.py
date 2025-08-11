@@ -3466,3 +3466,170 @@ class EstadoVentaDialog(QDialog):
         return self.estado_combo.currentText()
 
 
+class LoginDialog(QDialog):
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.user = None
+        self.setWindowTitle("Iniciar sesión")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.username_edit = QLineEdit()
+        self.password_edit = QLineEdit()
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        form.addRow("Usuario:", self.username_edit)
+        form.addRow("Contraseña:", self.password_edit)
+        layout.addLayout(form)
+        btns = QHBoxLayout()
+        ok_btn = QPushButton("Aceptar")
+        cancel_btn = QPushButton("Cancelar")
+        ok_btn.clicked.connect(self._attempt_login)
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(ok_btn)
+        btns.addWidget(cancel_btn)
+        layout.addLayout(btns)
+
+    def _attempt_login(self):
+        user = self.db.authenticate(
+            self.username_edit.text().strip(),
+            self.password_edit.text().strip(),
+        )
+        if user:
+            self.user = user
+            self.accept()
+        else:
+            QMessageBox.warning(self, "Error", "Usuario o contraseña incorrectos")
+
+    def get_user(self):
+        return self.user
+
+
+class UserEditDialog(QDialog):
+    def __init__(self, username="", password="", role="user", parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Usuario")
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+        self.username_edit = QLineEdit(username)
+        self.password_edit = QLineEdit(password)
+        self.password_edit.setEchoMode(QLineEdit.Password)
+        self.role_combo = QComboBox()
+        self.role_combo.addItems(["guest", "user", "admin"])
+        idx = self.role_combo.findText(role)
+        if idx >= 0:
+            self.role_combo.setCurrentIndex(idx)
+        form.addRow("Usuario:", self.username_edit)
+        form.addRow("Contraseña:", self.password_edit)
+        form.addRow("Rol:", self.role_combo)
+        layout.addLayout(form)
+        btns = QHBoxLayout()
+        ok_btn = QPushButton("Aceptar")
+        cancel_btn = QPushButton("Cancelar")
+        ok_btn.clicked.connect(self.accept)
+        cancel_btn.clicked.connect(self.reject)
+        btns.addWidget(ok_btn)
+        btns.addWidget(cancel_btn)
+        layout.addLayout(btns)
+
+    def get_data(self):
+        return (
+            self.username_edit.text().strip(),
+            self.password_edit.text().strip(),
+            self.role_combo.currentText(),
+        )
+
+
+class UserConfigDialog(QDialog):
+    def __init__(self, db, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.setWindowTitle("Configuración de usuarios")
+        layout = QVBoxLayout(self)
+        self.table = QTableWidget()
+        self.table.setColumnCount(3)
+        self.table.setHorizontalHeaderLabels(["ID", "Usuario", "Rol"])
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        layout.addWidget(self.table)
+        btns = QHBoxLayout()
+        add_btn = QPushButton("Agregar")
+        edit_btn = QPushButton("Editar")
+        del_btn = QPushButton("Eliminar")
+        btns.addWidget(add_btn)
+        btns.addWidget(edit_btn)
+        btns.addWidget(del_btn)
+        layout.addLayout(btns)
+        add_btn.clicked.connect(self._add_user)
+        edit_btn.clicked.connect(self._edit_user)
+        del_btn.clicked.connect(self._delete_user)
+        self.refresh()
+
+    def refresh(self):
+        users = self.db.get_users()
+        self.table.setRowCount(len(users))
+        for row, u in enumerate(users):
+            self.table.setItem(row, 0, QTableWidgetItem(str(u["id"])))
+            self.table.setItem(row, 1, QTableWidgetItem(u["username"]))
+            self.table.setItem(row, 2, QTableWidgetItem(u["role"]))
+
+    def _add_user(self):
+        dlg = UserEditDialog(parent=self)
+        if dlg.exec_() == QDialog.Accepted:
+            username, password, role = dlg.get_data()
+            if not username or not password:
+                QMessageBox.warning(self, "Error", "Usuario y contraseña requeridos")
+                return
+            if not self._check_limit(role):
+                return
+            try:
+                self.db.add_user(username, password, role)
+            except Exception:
+                QMessageBox.warning(self, "Error", "No se pudo crear el usuario")
+            self.refresh()
+
+    def _edit_user(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        user_id = int(self.table.item(row, 0).text())
+        current = self.db.get_user(user_id)
+        dlg = UserEditDialog(
+            current["username"], current["password"], current["role"], self
+        )
+        if dlg.exec_() == QDialog.Accepted:
+            username, password, role = dlg.get_data()
+            if not username or not password:
+                QMessageBox.warning(self, "Error", "Usuario y contraseña requeridos")
+                return
+            if role != current["role"] and not self._check_limit(role):
+                return
+            try:
+                self.db.update_user(user_id, username, password, role)
+            except Exception:
+                QMessageBox.warning(self, "Error", "No se pudo actualizar el usuario")
+            self.refresh()
+
+    def _delete_user(self):
+        row = self.table.currentRow()
+        if row < 0:
+            return
+        user_id = int(self.table.item(row, 0).text())
+        if (
+            QMessageBox.question(self, "Eliminar", "¿Desea eliminar el usuario?")
+            == QMessageBox.Yes
+        ):
+            self.db.delete_user(user_id)
+            self.refresh()
+
+    def _check_limit(self, role):
+        users = self.db.get_users()
+        limits = {"guest": 1, "user": 6, "admin": 3}
+        count = sum(1 for u in users if u["role"] == role)
+        if count >= limits[role]:
+            QMessageBox.warning(
+                self, "Error", "Se alcanzó el límite para el rol seleccionado"
+            )
+            return False
+        return True
+
+

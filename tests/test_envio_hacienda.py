@@ -60,7 +60,17 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "dte.generar_dte_json",
         lambda db_obj, vid: {
-            "receptor": {"nombre": "Cliente", "nit": "0614-987654-321-0"},
+            "receptor": {
+                "nombre": "Cliente",
+                "tipoDocumento": "36",
+                "numDocumento": "06149876543210",
+                "nrc": None,
+                "codActividad": None,
+                "descActividad": None,
+                "direccion": None,
+                "telefono": None,
+                "correo": None,
+            },
             "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
             "resumen": {
                 "totalNoSuj": 0,
@@ -128,7 +138,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     assert captured.get("count") == 1
     payload = captured["data"]
     assert payload["receptor"]["nombre"] == "Cliente"
-    assert payload["receptor"]["nit"] == "0614-987654-321-0"
+    assert payload["receptor"]["numDocumento"] == "06149876543210"
     assert payload["cuerpoDocumento"][0]["cantidad"] == 1
 
     items_total = sum(

@@ -148,8 +148,13 @@ RESUMEN_DEFAULTS = {
         "ivaRete1": 0,
         "reteRenta": 0,
         "montoTotalOperacion": 0,
+        "totalNoGravado": 0,
+        "totalPagar": 0,
         "totalLetras": "",
+        "saldoFavor": 0,
         "condicionOperacion": 1,
+        "pagos": None,
+        "numPagoElectronico": None,
     },
 }
 
@@ -363,17 +368,27 @@ def generar_dte_json(
     }
 
     rec = cliente or {}
+    def _clean_nit(nit):
+        if nit:
+            return "".join(c for c in str(nit) if c.isdigit())
+        return None
+
+    nit = rec.get("nit")
+    if fiscal:
+        nit = fiscal.get("nit") or nit
+
     receptor = {
+        "tipoDocumento": "36" if nit else None,
+        "numDocumento": _clean_nit(nit),
+        "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
         "nombre": rec.get("nombre"),
-        "direccion": rec.get("direccion"),
-        "nit": rec.get("nit"),
+        "codActividad": None,
+        "descActividad": None,
+        "direccion": None,
+        "telefono": rec.get("telefono"),
+        "correo": rec.get("correo"),
     }
     if fiscal:
-        receptor.update({
-            "nrc": fiscal.get("nrc") or rec.get("nrc"),
-            "giro": fiscal.get("giro") or rec.get("giro"),
-            "nit": fiscal.get("nit") or rec.get("nit"),
-        })
         if fiscal.get("no_remision"):
             receptor["noRemision"] = fiscal.get("no_remision")
         if fiscal.get("orden_no"):

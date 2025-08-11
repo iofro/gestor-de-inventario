@@ -19,6 +19,15 @@ import os
 
 getcontext().prec = 4
 
+
+class LoginDialog(QDialog):
+    def __init__(self, *args, **kwargs):
+        raise RuntimeError("NO DEBERÍA USARSE")
+
+    def exec_(self):
+        raise RuntimeError("NO DEBERÍA USARSE")
+
+
 def get_field(obj, key, default=0):
     if isinstance(obj, dict):
         return obj.get(key, default)

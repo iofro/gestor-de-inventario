@@ -52,7 +52,17 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
     monkeypatch.setattr(
         "dte.generar_dte_json",
         lambda db_obj, vid: {
-            "receptor": {"nombre": "Cliente", "nit": "0614-987654-321-0"},
+            "receptor": {
+                "nombre": "Cliente",
+                "tipoDocumento": "36",
+                "numDocumento": "06149876543210",
+                "nrc": None,
+                "codActividad": None,
+                "descActividad": None,
+                "direccion": None,
+                "telefono": None,
+                "correo": None,
+            },
             "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
             "resumen": {
                 "totalNoSuj": 0,

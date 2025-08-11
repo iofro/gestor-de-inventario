@@ -13,7 +13,7 @@ warnings.filterwarnings(
     message=r".*(SwigPyObject|SwigPyPacked|swigvarlink).*__module__.*",
 )
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog, QInputDialog, QLineEdit
+from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog
 from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
 from user_picker_dialog import UserPickerDialog
@@ -41,6 +41,10 @@ def cargar_ultimo_archivo():
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
+    style_path = os.path.join(os.path.dirname(__file__), "style.qss")
+    if os.path.exists(style_path):
+        with open(style_path, "r", encoding="utf-8") as f:
+            app.setStyleSheet(f.read())
     icon_path = os.path.join(os.path.dirname(__file__), "logoinventario.jpg")
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
@@ -57,24 +61,9 @@ if __name__ == "__main__":
     if not selected:
         sys.exit(0)
     user_id = selected if not isinstance(selected, list) else selected[0]
-    selected_user = db.get_user(user_id)
-    if not selected_user:
+    user = db.get_user(user_id)
+    if not user:
         sys.exit(0)
-
-    # Prompt for the user's password before continuing
-    while True:
-        password, ok = QInputDialog.getText(
-            None,
-            "Contraseña",
-            f"Ingrese la contraseña para {selected_user['username']}",
-            QLineEdit.Password,
-        )
-        if not ok:
-            sys.exit(0)
-        user = db.authenticate(selected_user["username"], password)
-        if user:
-            break
-        QMessageBox.critical(None, "Error", "Contraseña incorrecta")
 
     window = MainWindow(user)
     if os.path.exists(icon_path):

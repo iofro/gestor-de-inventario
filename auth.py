@@ -31,7 +31,7 @@ def _read_db_credentials() -> Tuple[Optional[str], Optional[str]]:
                 cur.execute("SELECT value FROM tokens WHERE key='pwd'")
                 row = cur.fetchone()
                 pwd = row[0] if row else None
-    except Exception:
+    except sqlite3.Error:
         pass
     return nit, pwd
 
@@ -56,7 +56,7 @@ def _read_config_credentials() -> Tuple[Optional[str], Optional[str]]:
             or data.get("api", {}).get("pwd")
             or data.get("dte_api", {}).get("pwd")
         )
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         pass
     return nit, pwd
 
@@ -82,7 +82,7 @@ def _get_auth_url() -> str:
         env_conf = data.get(ambiente, {})
         url = env_conf.get("auth_url")
         return url or DEFAULT_AUTH_URL
-    except Exception:
+    except (OSError, json.JSONDecodeError):
         return DEFAULT_AUTH_URL
 
 
@@ -121,7 +121,7 @@ def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
                 (str(obtained_at),),
             )
             conn.commit()
-    except Exception:
+    except sqlite3.Error:
         pass
 
 

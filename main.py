@@ -2,6 +2,7 @@ import sys
 import os
 import json
 import warnings
+import sqlite3
 
 # Swig-generated types from external libraries (e.g. PyMuPDF) may emit
 # warnings about missing ``__module__`` attributes. Since these wrappers
@@ -29,7 +30,7 @@ def cargar_ultimo_archivo():
             path = data.get("ultimo", "")
             if path and os.path.exists(path):
                 return path
-        except Exception:
+        except (OSError, json.JSONDecodeError):
             pass
 
     if os.path.exists(DEFAULT_INVENTORY):
@@ -64,7 +65,7 @@ if __name__ == "__main__":
             window._actualizar_historial()
             window._cargar_personas_estado()
             QMessageBox.information(window, "Inventario", "Inventario cargado exitosamente.")
-        except Exception as e:
+        except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as e:
             QMessageBox.critical(window, "Error", f"No se pudo cargar el inventario:\n{e}")
 
     sys.exit(app.exec_())

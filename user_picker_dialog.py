@@ -20,7 +20,7 @@ BACKGROUND_COLOR = "#F7FAFC"
 TEXT_COLOR = "#1F2937"
 
 
-def _load_avatar(user: Dict, size: int = 64) -> QPixmap:
+def _load_avatar(user: Dict, size: int = 96) -> QPixmap:
     """Return a pixmap for the user avatar or a default one."""
     path = (
         user.get("avatar")
@@ -61,6 +61,8 @@ class UserPickerDialog(QDialog):
         self._buttons: Dict[Union[int, str], QPushButton] = {}
         self.setWindowTitle("Seleccionar Usuario")
         self._build_ui()
+        # Make the dialog a bit larger for easier interaction
+        self.setMinimumSize(600, 400)
 
     # ---------------------------- UI SETUP ---------------------------------
     def _build_ui(self):
@@ -75,7 +77,7 @@ class UserPickerDialog(QDialog):
                 color: {TEXT_COLOR};
                 border: 1px solid {BRAND_COLOR};
                 border-radius: 16px;
-                padding: 16px;
+                padding: 24px;
             }}
             QPushButton#CardButton:hover {{
                 background-color: #E0F2FE;
@@ -114,7 +116,7 @@ class UserPickerDialog(QDialog):
 
         grid_widget = QWidget(self)
         grid = QGridLayout(grid_widget)
-        grid.setSpacing(12)
+        grid.setSpacing(24)
         columns = max(1, min(len(self.users), 3))
 
         for index, user in enumerate(self.users):
@@ -158,7 +160,7 @@ class UserPickerDialog(QDialog):
         pix = _load_avatar(user)
         avatar.setPixmap(pix)
         avatar.setFixedSize(pix.size())
-        avatar.setStyleSheet("border-radius: 32px;")
+        avatar.setStyleSheet(f"border-radius: {pix.width() // 2}px;")
         avatar.setAlignment(Qt.AlignCenter)
 
         name = QLabel(user.get("name", ""))

@@ -13,7 +13,7 @@ warnings.filterwarnings(
     message=r".*(SwigPyObject|SwigPyPacked|swigvarlink).*__module__.*",
 )
 
-from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog
+from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog, QInputDialog, QLineEdit
 from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
 from user_picker_dialog import UserPickerDialog
@@ -57,7 +57,25 @@ if __name__ == "__main__":
     if not selected:
         sys.exit(0)
     user_id = selected if not isinstance(selected, list) else selected[0]
-    user = db.get_user(user_id)
+    selected_user = db.get_user(user_id)
+    if not selected_user:
+        sys.exit(0)
+
+    # Prompt for the user's password before continuing
+    while True:
+        password, ok = QInputDialog.getText(
+            None,
+            "Contraseña",
+            f"Ingrese la contraseña para {selected_user['username']}",
+            QLineEdit.Password,
+        )
+        if not ok:
+            sys.exit(0)
+        user = db.authenticate(selected_user["username"], password)
+        if user:
+            break
+        QMessageBox.critical(None, "Error", "Contraseña incorrecta")
+
     window = MainWindow(user)
     if os.path.exists(icon_path):
         window.setWindowIcon(QIcon(icon_path))

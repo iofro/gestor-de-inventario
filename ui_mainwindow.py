@@ -8,6 +8,7 @@ from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
 import os
 import json
+import sys
 from inventory_manager import InventoryManager
 from dialogs import (
     RegisterSaleDialog,
@@ -115,6 +116,10 @@ class MainWindow(QMainWindow):
             config_menu.addAction(user_action)
         else:
             config_menu.menuAction().setVisible(False)
+
+        logout_action = QAction("Cerrar sesión", self)
+        logout_action.triggered.connect(self.cerrar_sesion)
+        menubar.addAction(logout_action)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
@@ -962,6 +967,17 @@ class MainWindow(QMainWindow):
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
         else:
             QMessageBox.warning(self, "Cargar rápido", "No hay un inventario guardado previamente para cargar.")
+
+    def cerrar_sesion(self):
+        reply = QMessageBox.question(
+            self,
+            "Cerrar sesión",
+            "¿Desea cerrar la sesión actual?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes:
+            python = sys.executable
+            os.execl(python, python, *sys.argv)
 
     def nuevo_inventario(self):
         reply = QMessageBox.question(

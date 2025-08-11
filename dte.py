@@ -240,6 +240,12 @@ def generar_dte_json(
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
+        # Campos obligatorios que pueden no tener información
+        "documentoRelacionado": None,
+        "otrosDocumentos": None,
+        "ventaTercero": None,
+        "extension": None,
+        "apendice": None,
         "firmaElectronica": None,
         "selloRecibido": None,
     }

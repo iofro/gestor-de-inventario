@@ -2,7 +2,8 @@ from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableView, QLineEdit,
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
     QListWidget, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
-    QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy
+    QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy,
+    QInputDialog
 )
 from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal
 from PyQt5.QtGui import QColor
@@ -975,9 +976,60 @@ class MainWindow(QMainWindow):
             "¿Desea cerrar la sesión actual?",
             QMessageBox.Yes | QMessageBox.No,
         )
-        if reply == QMessageBox.Yes:
-            python = sys.executable
-            os.execl(python, python, *sys.argv)
+        if reply != QMessageBox.Yes:
+            return
+
+        # Al confirmar, mostrar nuevamente el diálogo de selección de usuario
+        from PyQt5.QtWidgets import QApplication, QLineEdit
+        from user_picker_dialog import UserPickerDialog
+        from db import DB
+
+        app = QApplication.instance()
+
+        # Cerrar la ventana actual antes de abrir el selector de usuarios
+        self.close()
+
+        db = DB()
+        users = [
+            {"id": u["id"], "name": u["username"], "subtitle": u.get("role", "")}
+            for u in db.get_users()
+        ]
+        dlg = UserPickerDialog(users, multi_select=False, parent=None)
+        if dlg.exec_() != QDialog.Accepted:
+            app.quit()
+            return
+
+        selected = dlg.selected_user_ids()
+        if not selected:
+            app.quit()
+            return
+
+        user_id = selected if not isinstance(selected, list) else selected[0]
+        user = db.get_user(user_id)
+        if not user:
+            app.quit()
+            return
+
+        if user["username"] != "invitado":
+            while True:
+                password, ok = QInputDialog.getText(
+                    None,
+                    "Contraseña",
+                    f"Ingrese la contraseña para {user['username']}",
+                    QLineEdit.Password,
+                )
+                if not ok:
+                    app.quit()
+                    return
+                if db.authenticate(user["username"], password):
+                    break
+                QMessageBox.warning(None, "Error", "Contraseña incorrecta")
+
+        # Abrir una nueva ventana principal para el usuario seleccionado
+        nueva_ventana = MainWindow(user)
+        nueva_ventana.show()
+        # Mantener referencia para evitar que se recolecte
+        self._next_window = nueva_ventana
 
     def nuevo_inventario(self):
         reply = QMessageBox.question(

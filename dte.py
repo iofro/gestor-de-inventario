@@ -17,6 +17,48 @@ DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
 
+ALLOWED_TOP_KEYS = {
+    "identificacion",
+    "emisor",
+    "receptor",
+    "cuerpoDocumento",
+    "resumen",
+    "documentoRelacionado",
+    "otrosDocumentos",
+    "ventaTercero",
+    "extension",
+    "apendice",
+}
+
+DISALLOWED_KEYS = {"firmaElectronica", "selloRecibido"}
+
+
+def _sanitize(data, allowed_keys=None):
+    """Recursively remove keys not allowed by ``allowed_keys`` or present in
+    ``DISALLOWED_KEYS``."""
+    if isinstance(data, dict):
+        clean = {}
+        for k, v in data.items():
+            if k in DISALLOWED_KEYS:
+                continue
+            if allowed_keys is not None and k not in allowed_keys:
+                continue
+            if isinstance(v, dict):
+                clean[k] = _sanitize(v)
+            elif isinstance(v, list):
+                clean[k] = [_sanitize(x) for x in v]
+            else:
+                clean[k] = v
+        return clean
+    if isinstance(data, list):
+        return [_sanitize(x) for x in data]
+    return data
+
+
+def sanitize_dte_payload(data: dict) -> dict:
+    """Return ``data`` excluding properties not allowed by the DTE schema."""
+    return _sanitize(data, ALLOWED_TOP_KEYS)
+
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
 
@@ -422,6 +464,7 @@ def transmitir_dte(
     else:
         data = generar_dte_json(db, venta_id)
 
+    data = sanitize_dte_payload(data)
     validate_dte_json(data)
     resp = _enviar_documento(db, venta_id, data, modo)
     if resp.get("sello"):
@@ -510,6 +553,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
 def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una factura electrónica."""
     data = generar_dte_json(db, venta_id)
+    data = sanitize_dte_payload(data)
     validate_dte_json(data)
     resp = _enviar_documento(db, venta_id, data, modo)
     if resp.get("sello"):
@@ -520,6 +564,7 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
 def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de crédito."""
     data = generar_nota_credito_json(db, nota_id)
+    data = sanitize_dte_payload(data)
     validate_dte_json(data)
     return _enviar_documento(db, nota_id, data, modo)
 

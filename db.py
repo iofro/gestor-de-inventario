@@ -69,6 +69,24 @@ class DB:
             logger.exception("Failed to add column %s to table %s", column, table)
             return False
 
+    def _ensure_default_users(self) -> None:
+        """Create default user, admin and guest accounts if missing."""
+        users = [
+            ("invitado", "invitado", "guest"),
+            ("usuario", "usuario", "user"),
+            ("admin", "admin", "admin"),
+        ]
+        for username, password, role in users:
+            self.cursor.execute(
+                "SELECT id FROM usuarios WHERE username=?", (username,)
+            )
+            if not self.cursor.fetchone():
+                self.cursor.execute(
+                    "INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
+                    (username, password, role),
+                )
+        self.conn.commit()
+
     def migrate_ventas_cliente_fk(self):
         """Ensure ``ventas`` has proper foreign keys for cliente and vendedor.
 
@@ -472,10 +490,23 @@ class DB:
 
                 FOREIGN KEY (venta_id) REFERENCES ventas(id)
             )
-        """
+            """
         )
         self.conn.commit()
 
+        # Tabla de usuarios y cuentas por defecto
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                username TEXT UNIQUE,
+                password TEXT NOT NULL,
+                role TEXT CHECK(role IN ('admin','user','guest')) NOT NULL
+            )
+            """
+        )
+        self.conn.commit()
+        self._ensure_default_users()
 
         # Si no hay registro, crea uno por defecto
         self.cursor.execute("SELECT COUNT(*) FROM Distribuidor_info")
@@ -1878,3 +1909,43 @@ class DB:
             (json.dumps(current, ensure_ascii=False), venta_id),
         )
         self.conn.commit()
+
+    # ---- Gestión de usuarios ----
+
+    def get_users(self):
+        self.cursor.execute("SELECT id, username, role FROM usuarios")
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_user(self, user_id):
+        self.cursor.execute(
+            "SELECT id, username, password, role FROM usuarios WHERE id=?",
+            (user_id,),
+        )
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+
+    def add_user(self, username, password, role):
+        self.cursor.execute(
+            "INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
+            (username, password, role),
+        )
+        self.conn.commit()
+
+    def update_user(self, user_id, username, password, role):
+        self.cursor.execute(
+            "UPDATE usuarios SET username=?, password=?, role=? WHERE id=?",
+            (username, password, role, user_id),
+        )
+        self.conn.commit()
+
+    def delete_user(self, user_id):
+        self.cursor.execute("DELETE FROM usuarios WHERE id=?", (user_id,))
+        self.conn.commit()
+
+    def authenticate(self, username, password):
+        self.cursor.execute(
+            "SELECT id, username, role FROM usuarios WHERE username=? AND password=?",
+            (username, password),
+        )
+        row = self.cursor.fetchone()
+        return dict(row) if row else None

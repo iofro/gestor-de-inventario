@@ -13,9 +13,11 @@ warnings.filterwarnings(
     message=r".*(SwigPyObject|SwigPyPacked|swigvarlink).*__module__.*",
 )
 
-from PyQt5.QtWidgets import QApplication, QMessageBox
+from PyQt5.QtWidgets import QApplication, QMessageBox, QDialog
 from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
+from dialogs import LoginDialog
+from db import DB
 
 BASE_DIR = os.path.dirname(__file__)
 LAST_FILE_PATH = os.path.join(BASE_DIR, "ultimo_inventario.json")
@@ -43,7 +45,12 @@ if __name__ == "__main__":
     if os.path.exists(icon_path):
         app.setWindowIcon(QIcon(icon_path))
 
-    window = MainWindow()
+    db = DB()
+    login = LoginDialog(db)
+    if login.exec_() != QDialog.Accepted:
+        sys.exit(0)
+    user = login.get_user()
+    window = MainWindow(user)
     if os.path.exists(icon_path):
         window.setWindowIcon(QIcon(icon_path))
     window.show()

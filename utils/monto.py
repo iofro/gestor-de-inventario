@@ -1,6 +1,6 @@
 try:
     from num2words import num2words
-except Exception:  # pragma: no cover - fallback for environments without num2words
+except ImportError:  # pragma: no cover - fallback for environments without num2words
     def num2words(n, lang='es'):
         raise ImportError("num2words is required")
 

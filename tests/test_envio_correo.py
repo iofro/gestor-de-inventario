@@ -62,36 +62,37 @@ class Manager:
         self._Distribuidores = []
         self._clientes = []
         self._vendedores = []
+    
 
-def _setup_tab(tmp_path, monkeypatch=None):
+def _setup_tab(venta, cliente, producto, monkeypatch=None):
     db = FakeDB()
-    venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "cliente_id": 1}
     db._ventas.append(venta)
-    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    db.detalles[venta["id"]] = [{**producto, "cantidad": 1, "precio_unitario": 10}]
     man = Manager(db)
-    man._clientes.append({"id": 1, "email": "cli@example.com", "nombre": "C"})
+    man._clientes.append(cliente)
     if monkeypatch:
         monkeypatch.setattr(SalesTab, "load_sales", lambda self: None)
         monkeypatch.setattr(SalesTab, "_load_email_config", lambda self: None)
         monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)
     tab = SalesTab(man, check_smtp=False)
     tab.sales_table.setRowCount(1)
-    tab.sales_table.setItem(0, 0, QTableWidgetItem("1"))
+    tab.sales_table.setItem(0, 0, QTableWidgetItem(str(venta["id"])))
     return db, tab
 
 
-@pytest.fixture
-def temp_invoice_files(tmp_path):
-    pdf = tmp_path / "factura.pdf"
-    pdf.write_bytes(b"%PDF")
-    json_file = pdf.with_suffix(".json")
-    json_file.write_text("{}", encoding="utf-8")
-    return pdf, json_file
-
-
-def test_transmit_success_email_fail(qt_app, tmp_path, temp_invoice_files, monkeypatch):
-    db, tab = _setup_tab(tmp_path, monkeypatch)
-    pdf, _json = temp_invoice_files
+def test_transmit_success_email_fail(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    pdf, _json = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
 
     def fake_gen(manager, vid, p=pdf):
         manager.db.add_factura_pdf(vid, "Factura", str(p))
@@ -158,9 +159,19 @@ def test_transmit_success_email_fail(qt_app, tmp_path, temp_invoice_files, monke
     assert not smtp_calls
 
 
-def test_email_exitoso(qt_app, tmp_path, temp_invoice_files, monkeypatch):
-    db, tab = _setup_tab(tmp_path, monkeypatch)
-    pdf, _json = temp_invoice_files
+def test_email_exitoso(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    pdf, _json = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
     tab.email_subject_edit.setText("Factura enviada")
 
     def fake_gen(manager, vid, p=pdf):
@@ -222,8 +233,8 @@ def test_email_exitoso(qt_app, tmp_path, temp_invoice_files, monkeypatch):
     assert captured["to"] == "cli@example.com"
     assert captured["subject"] == "Factura enviada"
     assert {os.path.basename(p) for p in captured["attachments"]} == {
-        "factura.pdf",
-        "factura.json",
+        pdf.name,
+        pdf.with_suffix(".json").name,
     }
     assert db.saved == (1, "Factura", str(pdf))
     assert len(init_calls) == 1

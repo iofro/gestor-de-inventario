@@ -62,7 +62,30 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         lambda db_obj, vid: {
             "receptor": {"nombre": "Cliente", "nit": "0614-987654-321-0"},
             "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-            "resumen": {"sumas": 10, "iva": 0, "totalPagar": 10},
+            "resumen": {
+                "totalNoSuj": 0,
+                "totalExenta": 0,
+                "totalGravada": 10,
+                "subTotalVentas": 10,
+                "descuNoSuj": 0,
+                "descuExenta": 0,
+                "descuGravada": 0,
+                "porcentajeDescuento": 0,
+                "totalDescu": 0,
+                "tributos": None,
+                "subTotal": 10,
+                "ivaRete1": 0,
+                "reteRenta": 0,
+                "montoTotalOperacion": 10,
+                "totalNoGravado": 0,
+                "totalPagar": 10,
+                "totalLetras": "",
+                "totalIva": 0,
+                "saldoFavor": 0,
+                "condicionOperacion": 1,
+                "pagos": None,
+                "numPagoElectronico": None,
+            },
             "identificacion": {"tipoDte": "01"},
         },
     )
@@ -112,8 +135,8 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         i["cantidad"] * i.get("precioUnitario", i.get("precioUni", 0))
         for i in payload["cuerpoDocumento"]
     )
-    assert payload["resumen"]["sumas"] == pytest.approx(items_total)
-    assert payload["resumen"]["iva"] == pytest.approx(0)
+    assert payload["resumen"]["subTotalVentas"] == pytest.approx(items_total)
+    assert payload["resumen"]["totalIva"] == pytest.approx(0)
     assert payload["resumen"]["totalPagar"] == pytest.approx(items_total)
     assert payload["identificacion"]["tipoDte"] == "01"
 

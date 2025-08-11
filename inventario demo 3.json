@@ -414,6 +414,36 @@
       "departamento": "San Salvador",
       "municipio": "San Salvador",
       "otros": null
+    },
+    {
+      "id": 5009,
+      "codigo": "C-009",
+      "nombre": "Cliente Demo 9",
+      "nrc": "000009-1",
+      "nit": "0614-1000009-101-9",
+      "dui": "0123456009",
+      "giro": "Cliente de demostración",
+      "telefono": "7000-0009",
+      "email": "cliente9@demo.com",
+      "direccion": "Calle Falsa 9, San Salvador",
+      "departamento": "San Salvador",
+      "municipio": "San Salvador",
+      "otros": null
+    },
+    {
+      "id": 5010,
+      "codigo": "C-010",
+      "nombre": "Cliente Demo 10",
+      "nrc": "000010-1",
+      "nit": "0614-1000010-101-9",
+      "dui": "0123456010",
+      "giro": "Cliente de demostración",
+      "telefono": "7000-0010",
+      "email": "cliente10@demo.com",
+      "direccion": "Calle Falsa 10, San Salvador",
+      "departamento": "San Salvador",
+      "municipio": "San Salvador",
+      "otros": null
     }
   ],
   "ventas": [
@@ -496,6 +526,26 @@
       "Distribuidor_id": 1,
       "vendedor_id": 1,
       "extra": null
+    },
+    {
+      "id": 9,
+      "fecha": "2024-08-18",
+      "total": 44.84,
+      "estado": "Pagada",
+      "cliente_id": 5009,
+      "Distribuidor_id": 1,
+      "vendedor_id": 1,
+      "extra": null
+    },
+    {
+      "id": 10,
+      "fecha": "2024-08-19",
+      "total": 42.9,
+      "estado": "Pagada",
+      "cliente_id": 5010,
+      "Distribuidor_id": 1,
+      "vendedor_id": 1,
+      "extra": null
     }
   ],
   "compras": [
@@ -510,9 +560,61 @@
       "comision_pct": 0.0,
       "comision_monto": 0.0,
       "vendedor_id": 1
+    },
+    {
+      "id": 2,
+      "fecha": "2024-08-05",
+      "producto_id": null,
+      "cantidad": 0,
+      "precio_unitario": 0.0,
+      "total": 168.75,
+      "Distribuidor_id": 1,
+      "comision_pct": 5.0,
+      "comision_monto": 5.0,
+      "vendedor_id": 1
+    },
+    {
+      "id": 3,
+      "fecha": "2024-08-07",
+      "producto_id": null,
+      "cantidad": 0,
+      "precio_unitario": 0.0,
+      "total": 160.74,
+      "Distribuidor_id": 1,
+      "comision_pct": 3.0,
+      "comision_monto": 0.0,
+      "vendedor_id": 1
     }
   ],
-  "movimientos": [],
+  "movimientos": [
+    {
+      "id": 1,
+      "fecha": "2024-08-02",
+      "tipo": "entrada",
+      "producto_id": 1001,
+      "cantidad": 5,
+      "motivo": "Ingreso inicial",
+      "usuario": "admin"
+    },
+    {
+      "id": 2,
+      "fecha": "2024-08-03",
+      "tipo": "salida",
+      "producto_id": 1002,
+      "cantidad": 3,
+      "motivo": "Venta especial",
+      "usuario": "admin"
+    },
+    {
+      "id": 3,
+      "fecha": "2024-08-04",
+      "tipo": "ajuste",
+      "producto_id": 1003,
+      "cantidad": -2,
+      "motivo": "Ajuste de inventario",
+      "usuario": "admin"
+    }
+  ],
   "detalles_venta": [
     {
       "id": 1,
@@ -720,6 +822,70 @@
       "tipo_fiscal": "Venta no sujeta",
       "extra": null,
       "precio_con_iva": 19.0,
+      "vendedor_id": 1
+    },
+    {
+      "id": 14,
+      "venta_id": 9,
+      "producto_id": 1014,
+      "cantidad": 1,
+      "precio_unitario": 20.0,
+      "descuento": 5.0,
+      "descuento_tipo": "%",
+      "iva": 2.47,
+      "comision": 1.9,
+      "iva_tipo": "agregado",
+      "tipo_fiscal": "Venta gravada",
+      "extra": null,
+      "precio_con_iva": 21.47,
+      "vendedor_id": 1
+    },
+    {
+      "id": 15,
+      "venta_id": 9,
+      "producto_id": 1015,
+      "cantidad": 1,
+      "precio_unitario": 21.0,
+      "descuento": 2.0,
+      "descuento_tipo": "$",
+      "iva": 2.47,
+      "comision": 0.0,
+      "iva_tipo": "desglosado",
+      "tipo_fiscal": "Venta gravada",
+      "extra": null,
+      "precio_con_iva": 21.47,
+      "vendedor_id": 1
+    },
+    {
+      "id": 16,
+      "venta_id": 10,
+      "producto_id": 1016,
+      "cantidad": 1,
+      "precio_unitario": 22.0,
+      "descuento": 10.0,
+      "descuento_tipo": "%",
+      "iva": 0.0,
+      "comision": 0.0,
+      "iva_tipo": "ninguno",
+      "tipo_fiscal": "Venta exenta",
+      "extra": null,
+      "precio_con_iva": 19.8,
+      "vendedor_id": 1
+    },
+    {
+      "id": 17,
+      "venta_id": 10,
+      "producto_id": 1017,
+      "cantidad": 1,
+      "precio_unitario": 23.0,
+      "descuento": 1.0,
+      "descuento_tipo": "$",
+      "iva": 0.0,
+      "comision": 1.1,
+      "iva_tipo": "ninguno",
+      "tipo_fiscal": "Venta no sujeta",
+      "extra": null,
+      "precio_con_iva": 22.0,
       "vendedor_id": 1
     }
   ],
@@ -1023,6 +1189,66 @@
       "comision_pct": 0.0,
       "comision_monto": 0.0,
       "comision_tipo": ""
+    },
+    {
+      "id": 21,
+      "compra_id": 2,
+      "producto_id": 1014,
+      "cantidad": 10,
+      "precio_unitario": 10.0,
+      "fecha_vencimiento": "2025-12-31",
+      "descuento": 5.0,
+      "descuento_tipo": "%",
+      "iva": 1.24,
+      "iva_tipo": "desglosado",
+      "comision_pct": 5.0,
+      "comision_monto": 0.5,
+      "comision_tipo": "Añadida al total"
+    },
+    {
+      "id": 22,
+      "compra_id": 2,
+      "producto_id": 1015,
+      "cantidad": 5,
+      "precio_unitario": 10.5,
+      "fecha_vencimiento": "2025-12-31",
+      "descuento": 1.0,
+      "descuento_tipo": "$",
+      "iva": 1.24,
+      "iva_tipo": "desglosado",
+      "comision_pct": 5.0,
+      "comision_monto": 0.53,
+      "comision_tipo": "Añadida al total"
+    },
+    {
+      "id": 23,
+      "compra_id": 3,
+      "producto_id": 1016,
+      "cantidad": 8,
+      "precio_unitario": 11.0,
+      "fecha_vencimiento": "2025-12-31",
+      "descuento": 10.0,
+      "descuento_tipo": "%",
+      "iva": 1.29,
+      "iva_tipo": "añadido",
+      "comision_pct": 3.0,
+      "comision_monto": 0.33,
+      "comision_tipo": "Desglosada"
+    },
+    {
+      "id": 24,
+      "compra_id": 3,
+      "producto_id": 1017,
+      "cantidad": 6,
+      "precio_unitario": 11.5,
+      "fecha_vencimiento": "2025-12-31",
+      "descuento": 1.0,
+      "descuento_tipo": "$",
+      "iva": 1.37,
+      "iva_tipo": "añadido",
+      "comision_pct": 3.0,
+      "comision_monto": 0.35,
+      "comision_tipo": "Desglosada"
     }
   ],
   "datos_negocio": {

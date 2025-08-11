@@ -77,10 +77,10 @@ pendiente en modo de contingencia.
 ### Datos del negocio y correo
 
 La configuración general se almacena en `datos_negocio.json`. Para que el envío
-de facturas por correo funcione, completa los campos SMTP de este archivo. La
-contraseña de la cuenta utilizada para enviar correos ya **no** se guarda en el
-archivo. En su lugar, define la variable de entorno `INVENTARIO_EMAIL_PASSWORD`
-con la contraseña correspondiente antes de ejecutar la aplicación.
+de facturas por correo funcione, completa los campos SMTP de este archivo. Puedes
+especificar la contraseña directamente en `email_contrasena` o definir la
+variable de entorno `INVENTARIO_EMAIL_PASSWORD` antes de ejecutar la aplicación;
+la variable de entorno tiene prioridad si se define.
 
 Si estás ejecutando pruebas automatizadas o no planeas enviar correos, puedes
 evitar la advertencia sobre credenciales incompletas estableciendo la variable

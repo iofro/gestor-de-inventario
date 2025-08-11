@@ -443,7 +443,7 @@ class SalesTab(QWidget):
         server = data.get("smtp_server")
         port = data.get("smtp_port")
         user = data.get("email_usuario") or data.get("email")
-        password = os.getenv("INVENTARIO_EMAIL_PASSWORD")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD") or data.get("email_contrasena")
 
         if not data.get("email_usuario") and user:
             data["email_usuario"] = user

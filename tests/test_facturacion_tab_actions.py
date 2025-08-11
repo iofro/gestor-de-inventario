@@ -92,9 +92,17 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
 
     creds_path = tmp_path / "creds.json"
-    creds_path.write_text(json.dumps({"smtp_server": "s", "smtp_port": 25, "email_usuario": "u"}))
+    creds_path.write_text(
+        json.dumps(
+            {
+                "smtp_server": "s",
+                "smtp_port": 25,
+                "email_usuario": "u",
+                "email_contrasena": "pw",
+            }
+        )
+    )
     monkeypatch.setattr(facturacion_tab, "DATOS_NEGOCIO_PATH", str(creds_path))
-    monkeypatch.setenv("INVENTARIO_EMAIL_PASSWORD", "pw")
 
     tab = _make_tab(db, cid)
     monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)

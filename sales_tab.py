@@ -239,17 +239,17 @@ class SalesTab(QWidget):
             fdate = None
             if isinstance(fecha, str):
                 try:
-                    fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S").date()
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d %H:%M:%S")
                 except (ValueError, TypeError):
                     try:
-                        fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                        fdate = datetime.strptime(fecha, "%Y-%m-%d")
                     except (ValueError, TypeError):
                         fdate = None
             else:
                 # fecha no es una cadena o está ausente
                 fdate = None
             if self.date_filter_cb.isChecked() and fdate and (
-                (d_from and fdate < d_from) or (d_to and fdate > d_to)
+                (d_from and fdate.date() < d_from) or (d_to and fdate.date() > d_to)
             ):
                 continue
             cliente = ""
@@ -261,10 +261,12 @@ class SalesTab(QWidget):
                 continue
             if search and search not in str(v.get("id")).lower() and search not in cliente.lower():
                 continue
-            rows.append((v, cliente))
+            rows.append((v, cliente, fdate))
+
+        rows.sort(key=lambda x: x[2] or datetime.min, reverse=True)
 
         self.sales_table.setRowCount(len(rows))
-        for row, (venta, cli) in enumerate(rows):
+        for row, (venta, cli, _) in enumerate(rows):
             self.sales_table.setItem(row, 0, QTableWidgetItem(str(venta.get("id"))))
             self.sales_table.setItem(row, 1, QTableWidgetItem(cli))
             self.sales_table.setItem(row, 2, QTableWidgetItem(venta.get("fecha", "")))

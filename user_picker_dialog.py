@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Union
 import os
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap, QColor, QPainter
 from PyQt5.QtWidgets import (
     QDialog,
@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QApplication,
     QGraphicsDropShadowEffect,
+    QFrame,
 )
 
 BRAND_COLOR = "#0EA5E9"
@@ -61,13 +62,23 @@ def _load_avatar(user: Dict, size: int = 96) -> QPixmap:
     return pix
 
 
+class ClickableFrame(QFrame):
+    """Simple QFrame that emits a clicked signal when pressed."""
+
+    clicked = pyqtSignal()
+
+    def mousePressEvent(self, event):  # type: ignore[override]
+        self.clicked.emit()
+        super().mousePressEvent(event)
+
+
 class UserPickerDialog(QDialog):
     def __init__(self, users: List[Dict], multi_select: bool = False, parent: Optional[QWidget] = None):
         QApplication.setStyle("Fusion")
         super().__init__(parent)
         self.users = users
         self.multi_select = multi_select
-        self._buttons: Dict[Union[int, str], QPushButton] = {}
+        self._cards: Dict[Union[int, str], QFrame] = {}
         self.setWindowTitle("Seleccionar Usuario")
         self._build_ui()
         # Make the dialog a bit larger for easier interaction
@@ -81,21 +92,21 @@ class UserPickerDialog(QDialog):
                 background-color: {BACKGROUND_COLOR};
                 color: {TEXT_COLOR};
             }}
-            QPushButton#CardButton {{
+            QFrame[user-card] {
                 background-color: {BACKGROUND_COLOR};
                 color: {TEXT_COLOR};
                 border: 1px solid {BRAND_COLOR};
                 border-radius: 16px;
                 padding: 24px;
-            }}
-            QPushButton#CardButton:hover {{
+            }
+            QFrame[user-card]:hover {
                 background-color: #E0F2FE;
                 border: 2px solid #7DD3FC;
-            }}
-            QPushButton#CardButton:checked {{
-                border: 2px solid {BRAND_COLOR};
+            }
+            QFrame[user-card][selected="true"] {
+                border: 2px solid #7DD3FC;
                 background-color: #BAE6FD;
-            }}
+            }
             QPushButton#PrimaryButton {{
                 background-color: {BRAND_COLOR};
                 color: white;
@@ -130,16 +141,16 @@ class UserPickerDialog(QDialog):
         columns = max(1, min(len(self.users), 3))
 
         for index, user in enumerate(self.users):
-            btn = self._create_user_button(user)
-            shadow = QGraphicsDropShadowEffect(btn)
+            card = self._create_user_card(user)
+            shadow = QGraphicsDropShadowEffect(card)
             shadow.setBlurRadius(15)
             shadow.setOffset(0, 3)
             shadow.setColor(QColor(0, 0, 0, 80))
-            btn.setGraphicsEffect(shadow)
-            self._buttons[user.get("id")] = btn
+            card.setGraphicsEffect(shadow)
+            self._cards[user.get("id")] = card
             row = index // columns
             col = index % columns
-            grid.addWidget(btn, row, col)
+            grid.addWidget(card, row, col)
 
         main_layout.addWidget(grid_widget)
 
@@ -150,20 +161,20 @@ class UserPickerDialog(QDialog):
         cancel_btn.setObjectName("SecondaryButton")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
-        ok_btn = QPushButton("Aceptar")
-        ok_btn.setObjectName("PrimaryButton")
-        ok_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(ok_btn)
+        self._ok_btn = QPushButton("Aceptar")
+        self._ok_btn.setObjectName("PrimaryButton")
+        self._ok_btn.setEnabled(False)
+        self._ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self._ok_btn)
         main_layout.addLayout(btn_layout)
 
-    def _create_user_button(self, user: Dict) -> QPushButton:
-        btn = QPushButton()
-        btn.setObjectName("CardButton")
-        btn.setCheckable(True)
-        btn.setCursor(Qt.PointingHandCursor)
-        btn.setFocusPolicy(Qt.StrongFocus)
+    def _create_user_card(self, user: Dict) -> QFrame:
+        card = ClickableFrame()
+        card.setProperty("user-card", True)
+        card.setProperty("selected", "false")
+        card.setCursor(Qt.PointingHandCursor)
 
-        layout = QVBoxLayout(btn)
+        layout = QVBoxLayout(card)
         layout.setAlignment(Qt.AlignCenter)
 
         avatar = QLabel()
@@ -187,23 +198,42 @@ class UserPickerDialog(QDialog):
             layout.addWidget(avatar)
             layout.addWidget(name)
 
-        btn.clicked.connect(lambda checked, b=btn: self._on_card_clicked(b))
-        return btn
+        card.clicked.connect(lambda b=card: self._on_card_clicked(b))
+        return card
 
     # --------------------------- BEHAVIOR ----------------------------------
-    def _on_card_clicked(self, button: QPushButton):
-        if not self.multi_select and button.isChecked():
-            for other in self._buttons.values():
-                if other is not button:
-                    other.setChecked(False)
+    def _on_card_clicked(self, card: QFrame):
+        currently_selected = card.property("selected") == "true"
+        if self.multi_select:
+            new_state = not currently_selected
+            self._set_selected(card, new_state)
+        else:
+            for other in self._cards.values():
+                if other is not card:
+                    self._set_selected(other, False)
+            self._set_selected(card, not currently_selected)
+        self._update_ok_button()
+
+    def _set_selected(self, card: QFrame, selected: bool):
+        card.setProperty("selected", "true" if selected else "false")
+        card.style().unpolish(card)
+        card.style().polish(card)
 
     def selected_user_ids(self):
         if self.multi_select:
-            return [uid for uid, btn in self._buttons.items() if btn.isChecked()]
-        for uid, btn in self._buttons.items():
-            if btn.isChecked():
+            return [uid for uid, card in self._cards.items() if card.property("selected") == "true"]
+        for uid, card in self._cards.items():
+            if card.property("selected") == "true":
                 return uid
         return None
+
+    def _update_ok_button(self):
+        ids = self.selected_user_ids()
+        if self.multi_select:
+            enabled = bool(ids)
+        else:
+            enabled = ids is not None
+        self._ok_btn.setEnabled(enabled)
 
 
 # ----------------------------- Helper API ---------------------------------

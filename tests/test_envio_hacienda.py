@@ -48,7 +48,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         return "JWS_SIGNED"
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
-
+    
     tokens = {"count": 0}
 
     def fake_token():
@@ -57,6 +57,15 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     monkeypatch.setattr("auth.get_token", fake_token)
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    monkeypatch.setattr(
+        "dte.generar_dte_json",
+        lambda db_obj, vid: {
+            "receptor": {"nombre": "Cliente", "nit": "0614-987654-321-0"},
+            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+            "resumen": {"sumas": 10, "iva": 0, "totalPagar": 10},
+            "identificacion": {"tipoDte": "01"},
+        },
+    )
 
     auth_url = "http://auth.test"
     recepcion_url = "http://recepcion.test"
@@ -92,6 +101,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     transmitir_dte(db, venta)
 
+    assert len(calls) == 1
     assert captured.get("count") == 1
     payload = captured["data"]
     assert payload["receptor"]["nombre"] == "Cliente"

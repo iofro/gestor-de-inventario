@@ -72,7 +72,7 @@ class DB:
     def _ensure_default_users(self) -> None:
         """Create default user, admin and guest accounts if missing."""
         users = [
-            ("invitado", "invitado", "guest"),
+            ("invitado", "", "guest"),
             ("usuario", "usuario", "user"),
             ("admin", "admin", "admin"),
         ]

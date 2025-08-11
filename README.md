@@ -28,6 +28,20 @@ aplicación.
 
 Se cargará el último inventario si está disponible y podrás comenzar a registrar compras y ventas.
 
+## Empaquetado con PyInstaller
+
+Puedes generar un ejecutable independiente con **PyInstaller** usando:
+
+```bash
+pyinstaller --onefile --windowed \
+    --add-data "style.qss;." --add-data "logoinventario.jpg;." \
+    --add-data "inventario.db;." main.py
+```
+
+El comando anterior también está preconfigurado en `setup.py`, por lo que puedes ejecutar `python setup.py` si prefieres.
+
+Si la interfaz no aparece al ejecutar el binario, inicia el programa desde una terminal para ver los mensajes de error.
+
 ## Pruebas
 
 Las pruebas unitarias se ejecutan con **pytest**. Para lanzarlas usa:

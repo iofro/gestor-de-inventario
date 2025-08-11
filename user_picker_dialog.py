@@ -1,4 +1,5 @@
 from typing import List, Dict, Optional, Union
+import os
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QPixmap, QIcon, QPainter, QPainterPath, QColor
@@ -19,14 +20,17 @@ BRAND_COLOR = "#0EA5E9"
 BACKGROUND_COLOR = "#F7FAFC"
 TEXT_COLOR = "#1F2937"
 
+DEFAULT_AVATAR = os.path.join(os.path.dirname(__file__), "avatar.jpg")
+
 
 def _load_avatar(user: Dict, size: int = 96) -> QPixmap:
-    """Return a pixmap for the user avatar or a default one."""
+    """Return a pixmap for the user avatar or the default avatar image."""
     path = (
         user.get("avatar")
         or user.get("photo")
         or user.get("image")
         or user.get("avatar_path")
+        or DEFAULT_AVATAR
     )
     pix = QPixmap()
     if path:

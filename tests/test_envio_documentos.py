@@ -1,7 +1,7 @@
 import json
 import logging
+import pytest
 
-from db import DB
 from dte import (
     enviar_factura,
     enviar_nota_credito,
@@ -10,19 +10,9 @@ from dte import (
 )
 
 
-def create_sale(db):
-    db.add_vendedor("V1")
-    vid = db.cursor.lastrowid
-    db.add_producto("P1", "X", vid, None, 0, 0, 0, 1)
-    pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10)
-    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    return venta_id
-
-
-def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
-    db = DB(":memory:")
-    venta = create_sale(db)
+def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, venta_factory, dte_metadata_factory, temp_json, db_conn):
+    db = db_conn
+    venta = venta_factory()
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
@@ -34,15 +24,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
-    monkeypatch.setattr(
-        "dte.generar_dte_json",
-        lambda db_obj, vid: {
-            "receptor": {"nombre": "Cliente"},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-            "resumen": {"sumas": 10, "iva": 0, "totalPagar": 10},
-            "identificacion": {"tipoDte": "01"},
-        },
-    )
+    monkeypatch.setattr("dte.generar_dte_json", lambda db_obj, vid: dte_metadata_factory())
 
     responses = [
         {"estado": "Rechazado", "descripcionMsg": "Error", "observaciones": ["campo"]},
@@ -68,21 +50,26 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    config_path = temp_json(
+        "cfg.json", {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    )
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
 
     caplog.set_level(logging.ERROR)
     res = enviar_factura(db, venta)
     assert res["estado"] == "Rechazado"
     assert "Error" in caplog.text and "campo" in caplog.text
-    row = db.cursor.execute("SELECT count(*) c FROM dte_envios WHERE venta_id=?", (venta,)).fetchone()
+    row = db.cursor.execute(
+        "SELECT count(*) c FROM dte_envios WHERE venta_id=?", (venta,)
+    ).fetchone()
     assert row["c"] == 1
 
     caplog.clear()
     res = enviar_factura(db, venta)
     assert res["estado"] == "Transmitido"
-    row = db.cursor.execute("SELECT count(*) c FROM dte_envios WHERE venta_id=?", (venta,)).fetchone()
+    row = db.cursor.execute(
+        "SELECT count(*) c FROM dte_envios WHERE venta_id=?", (venta,)
+    ).fetchone()
     assert row["c"] == 2
 
     assert sign_calls["count"] == 2
@@ -93,9 +80,9 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         assert headers["Authorization"] == "Bearer JWT"
 
 
-def test_enviar_nota_credito(monkeypatch, tmp_path):
-    db = DB(":memory:")
-    venta = create_sale(db)
+def test_enviar_nota_credito(monkeypatch, venta_factory, dte_metadata_factory, temp_json, db_conn):
+    db = db_conn
+    venta = venta_factory()
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
@@ -108,15 +95,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
-    monkeypatch.setattr(
-        "dte.generar_nota_credito_json",
-        lambda db_obj, nid: {
-            "receptor": {"nombre": "Cliente"},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-            "resumen": {"sumas": 10, "iva": 0, "totalPagar": 10},
-            "identificacion": {"tipoDte": "01"},
-        },
-    )
+    monkeypatch.setattr("dte.generar_nota_credito_json", lambda db_obj, nid: dte_metadata_factory())
 
     calls = []
 
@@ -136,9 +115,10 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    config_path = temp_json(
+        "cfg.json", {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    )
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
 
     res = enviar_nota_credito(db, nota_id)
     assert res["estado"] == "Transmitido"
@@ -152,9 +132,9 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert headers["Authorization"] == "Bearer JWT"
 
 
-def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
-    db = DB(":memory:")
-    venta_id = create_sale(db)
+def test_enviar_evento_contingencia(monkeypatch, caplog, venta_factory, temp_json, db_conn):
+    db = db_conn
+    venta_id = venta_factory()
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
@@ -188,9 +168,10 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    config_path = temp_json(
+        "cfg.json", {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    )
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
 
     caplog.set_level(logging.ERROR)
     res = enviar_evento_contingencia(db, venta_id, {"id": venta_id})
@@ -206,9 +187,9 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert headers["Authorization"] == "Bearer JWT"
 
 
-def test_enviar_evento_anulacion(monkeypatch, tmp_path):
-    db = DB(":memory:")
-    venta_id = create_sale(db)
+def test_enviar_evento_anulacion(monkeypatch, venta_factory, temp_json, db_conn):
+    db = db_conn
+    venta_id = venta_factory()
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
@@ -238,9 +219,10 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    config_path = temp_json(
+        "cfg.json", {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    )
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
 
     res = enviar_evento_anulacion(db, venta_id, {"id": venta_id})
     assert res["estado"] == "Transmitido"
@@ -252,4 +234,3 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert url == "http://example.com"
     assert payload == {"dte": "SIGNED"}
     assert headers["Authorization"] == "Bearer JWT"
-

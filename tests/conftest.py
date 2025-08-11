@@ -7,6 +7,7 @@ import pytest
 from PyQt5.QtWidgets import QApplication
 
 from db import DB
+pytest_plugins = ['tests.fixtures.factories']
 
 
 @pytest.fixture(scope="function")

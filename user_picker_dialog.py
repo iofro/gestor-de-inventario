@@ -2,7 +2,7 @@ from typing import List, Dict, Optional, Union
 import os
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QIcon, QPainter, QPainterPath, QColor
+from PyQt5.QtGui import QPixmap, QIcon, QColor
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -43,17 +43,11 @@ def _load_avatar(user: Dict, size: int = 96) -> QPixmap:
         pix = icon.pixmap(size, size)
 
     pix = pix.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-    # make circular
-    result = QPixmap(size, size)
-    result.fill(Qt.transparent)
-    painter = QPainter(result)
-    painter.setRenderHint(QPainter.Antialiasing, True)
-    path = QPainterPath()
-    path.addEllipse(0, 0, size, size)
-    painter.setClipPath(path)
-    painter.drawPixmap(0, 0, pix)
-    painter.end()
-    return result
+    if pix.width() > size or pix.height() > size:
+        x = max(0, (pix.width() - size) // 2)
+        y = max(0, (pix.height() - size) // 2)
+        pix = pix.copy(x, y, size, size)
+    return pix
 
 
 class UserPickerDialog(QDialog):
@@ -164,7 +158,6 @@ class UserPickerDialog(QDialog):
         pix = _load_avatar(user)
         avatar.setPixmap(pix)
         avatar.setFixedSize(pix.size())
-        avatar.setStyleSheet(f"border-radius: {pix.width() // 2}px;")
         avatar.setAlignment(Qt.AlignCenter)
 
         name = QLabel(user.get("name", ""))

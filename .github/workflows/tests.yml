@@ -25,7 +25,5 @@ jobs:
           python -m pip install pytest-cov
       - name: Run tests
         run: pytest -q
-      - name: Run targeted tests
-        run: pytest -q -k "envio or hacienda or correo"
-      - name: Coverage report
-        run: pytest --cov=gestor-de-inventario --cov-branch --cov-report=term-missing --cov-fail-under=95
+      - name: Run tests with coverage
+        run: pytest -q

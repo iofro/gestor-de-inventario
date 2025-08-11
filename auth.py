@@ -19,19 +19,18 @@ def _read_db_credentials() -> Tuple[Optional[str], Optional[str]]:
     """Intenta obtener NIT y contraseña desde la tabla 'tokens'."""
     nit = pwd = None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' AND name='tokens'"
-        )
-        if cur.fetchone():
-            cur.execute("SELECT value FROM tokens WHERE key='nit'")
-            row = cur.fetchone()
-            nit = row[0] if row else None
-            cur.execute("SELECT value FROM tokens WHERE key='pwd'")
-            row = cur.fetchone()
-            pwd = row[0] if row else None
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='tokens'"
+            )
+            if cur.fetchone():
+                cur.execute("SELECT value FROM tokens WHERE key='nit'")
+                row = cur.fetchone()
+                nit = row[0] if row else None
+                cur.execute("SELECT value FROM tokens WHERE key='pwd'")
+                row = cur.fetchone()
+                pwd = row[0] if row else None
     except Exception:
         pass
     return nit, pwd
@@ -104,25 +103,24 @@ def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, float]:
 def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
     """Guarda el token y metadatos en la tabla 'tokens' si es posible."""
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cur = conn.cursor()
-        cur.execute(
-            "CREATE TABLE IF NOT EXISTS tokens (key TEXT PRIMARY KEY, value TEXT)"
-        )
-        cur.execute(
-            "INSERT OR REPLACE INTO tokens(key, value) VALUES('access_token', ?)",
-            (token,),
-        )
-        cur.execute(
-            "INSERT OR REPLACE INTO tokens(key, value) VALUES('expires_in', ?)",
-            (str(expires_in),),
-        )
-        cur.execute(
-            "INSERT OR REPLACE INTO tokens(key, value) VALUES('obtained_at', ?)",
-            (str(obtained_at),),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "CREATE TABLE IF NOT EXISTS tokens (key TEXT PRIMARY KEY, value TEXT)"
+            )
+            cur.execute(
+                "INSERT OR REPLACE INTO tokens(key, value) VALUES('access_token', ?)",
+                (token,),
+            )
+            cur.execute(
+                "INSERT OR REPLACE INTO tokens(key, value) VALUES('expires_in', ?)",
+                (str(expires_in),),
+            )
+            cur.execute(
+                "INSERT OR REPLACE INTO tokens(key, value) VALUES('obtained_at', ?)",
+                (str(obtained_at),),
+            )
+            conn.commit()
     except Exception:
         pass
 

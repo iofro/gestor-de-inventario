@@ -1,6 +1,7 @@
 import json
 import logging
 
+from pathlib import Path
 from db import DB
 from dte import (
     enviar_factura,
@@ -69,7 +70,8 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     monkeypatch.setattr("dte.requests.post", fake_post)
 
     config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     caplog.set_level(logging.ERROR)
@@ -137,7 +139,8 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     monkeypatch.setattr("dte.requests.post", fake_post)
 
     config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     res = enviar_nota_credito(db, nota_id)
@@ -189,7 +192,8 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     monkeypatch.setattr("dte.requests.post", fake_post)
 
     config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     caplog.set_level(logging.ERROR)
@@ -239,7 +243,8 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     monkeypatch.setattr("dte.requests.post", fake_post)
 
     config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     res = enviar_evento_anulacion(db, venta_id, {"id": venta_id})

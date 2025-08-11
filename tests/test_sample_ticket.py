@@ -1,10 +1,12 @@
 import json
 import fitz
+from pathlib import Path
 from ticket_pdf import generar_ticket_personalizado
 
 
 def test_sample_ticket_generation(tmp_path):
-    with open('tests/data/sample_ticket.json', encoding='utf-8') as f:
+    data_path = Path(__file__).resolve().parent / 'data' / 'sample_ticket.json'
+    with open(data_path, encoding='utf-8') as f:
         data = json.load(f)
 
     out = tmp_path / 'ticket.pdf'

@@ -116,13 +116,13 @@ def test_save_and_send_generates_files_and_registers(qt_app, tmp_path, monkeypat
     db, tab = _setup_tab(tmp_path, monkeypatch)
     pdf = tmp_path / "doc.pdf"
 
-    def fake_gen(self, vid):
+    def fake_gen(manager, vid):
         pdf.write_bytes(b"%PDF")
         pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
-        self.manager.db.add_factura_pdf(vid, "Factura", str(pdf))
+        manager.db.add_factura_pdf(vid, "Factura", str(pdf))
         return str(pdf)
 
-    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
     monkeypatch.setattr(SalesTab, "send_email", lambda self: None)
     monkeypatch.setattr("sales_tab.transmitir_dte", lambda *a, **k: {"estado": "recibido"})
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)

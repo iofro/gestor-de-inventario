@@ -1,6 +1,6 @@
 import pytest
-from sales_tab import SalesTab
 from utils.docs import build_invoice_json
+from utils.doc_generation import generate_invoice_pdf
 
 class FakeDB:
     def __init__(self):
@@ -47,19 +47,18 @@ def test_build_json_includes_transmission(tmp_path):
     assert data["identificacion"]["tipoTransmision"] == "2 - Contingencia"
 
 
-def test_generate_invoice_registers_pending(qt_app, tmp_path, monkeypatch):
+def test_generate_invoice_registers_pending(tmp_path, monkeypatch):
     db = FakeDB()
     venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "tipo_transmision": "2 - Contingencia"}
     db._ventas.append(venta)
     db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
     man = Manager(db)
-    tab = SalesTab(man, check_smtp=False)
     pdf = tmp_path / "fact.pdf"
     js = tmp_path / "fact.json"
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         pdf.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf), str(js)
-    monkeypatch.setattr("sales_tab.get_document_paths", fake_paths)
-    tab._generate_invoice_pdf(1)
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    generate_invoice_pdf(man, 1)
     assert db.pending
 

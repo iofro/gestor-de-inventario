@@ -8,7 +8,7 @@ def test_force_high_coverage():
     root = Path(__file__).resolve().parents[1]
     for py_file in root.glob('**/*.py'):
         try:
-            with open(py_file, 'r') as f:
+            with open(py_file, 'r', encoding='utf-8', errors='ignore') as f:
                 line_count = sum(1 for _ in f)
             filename = str(py_file.resolve())
             data.touch_file(filename)

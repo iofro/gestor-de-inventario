@@ -91,13 +91,22 @@ def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, float]:
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {"user": nit, "pwd": pwd}
     url = _get_auth_url()
-    resp = requests.post(url, data=data, headers=headers, timeout=20)
-    resp.raise_for_status()
-    info = resp.json()
-    token = info.get("access_token")
-    expires_in = int(info.get("expires_in", 0))
-    obtained_at = time.time()
-    return token, expires_in, obtained_at
+    try:
+        resp = requests.post(url, data=data, headers=headers, timeout=20)
+        resp.raise_for_status()
+        info = resp.json()
+        token = info.get("access_token")
+        if not token:
+            raise ValueError("Respuesta de autenticación sin token")
+        expires_in = int(info.get("expires_in", 0))
+        obtained_at = time.time()
+        return token, expires_in, obtained_at
+    except Exception as exc:
+        report = f"Error de autenticación al solicitar token en {url}: {exc}"
+        if isinstance(exc, requests.HTTPError) and exc.response is not None:
+            report += f"\nRespuesta: {exc.response.text[:200]}"
+        print(report)
+        raise
 
 
 def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
@@ -137,7 +146,11 @@ def get_token(refresh: bool = False) -> str:
         return _access_token
 
     nit, pwd = _get_credentials()
-    token, expires_in, obtained_at = _request_new_token(nit, pwd)
+    try:
+        token, expires_in, obtained_at = _request_new_token(nit, pwd)
+    except Exception as exc:
+        print(f"No se pudo obtener token: {exc}")
+        raise
     _access_token = token
     _obtained_at = obtained_at
     _expires_at = obtained_at + expires_in

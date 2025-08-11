@@ -48,13 +48,13 @@ class Manager:
         self._clientes = []
         self._vendedores = []
 
-def _setup_tab(tmp_path, monkeypatch=None):
+
+def _setup_tab(venta, cliente, producto, monkeypatch=None):
     db = FakeDB()
-    venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "cliente_id": 1}
     db._ventas.append(venta)
-    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    db.detalles[venta["id"]] = [{**producto, "cantidad": 1, "precio_unitario": 10}]
     man = Manager(db)
-    man._clientes.append({"id": 1, "email": "cli@example.com", "nombre": "C"})
+    man._clientes.append(cliente)
     if monkeypatch:
         monkeypatch.setattr(SalesTab, "load_sales", lambda self: None)
         monkeypatch.setattr(SalesTab, "_load_email_config", lambda self: None)
@@ -62,15 +62,23 @@ def _setup_tab(tmp_path, monkeypatch=None):
         monkeypatch.setattr(SalesTab, "show_sale", lambda self, clear=False: None)
     tab = SalesTab(man, check_smtp=False)
     tab.sales_table.setRowCount(1)
-    tab.sales_table.setItem(0, 0, QTableWidgetItem("1"))
+    tab.sales_table.setItem(0, 0, QTableWidgetItem(str(venta["id"])))
     return db, tab
 
 
-def test_send_email_builds_message_and_marks_status(qt_app, tmp_path, monkeypatch):
-    db, tab = _setup_tab(tmp_path, monkeypatch)
-    pdf = tmp_path / "fact.pdf"
-    pdf.write_bytes(b"%PDF-1.4")
-    pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
+def test_send_email_builds_message_and_marks_status(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    pdf, json_path = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
     db.factura_path = str(pdf)
 
     tab.sales_table.selectRow(0)
@@ -107,22 +115,32 @@ def test_send_email_builds_message_and_marks_status(qt_app, tmp_path, monkeypatc
     assert calls["subject"] == "Subject"
     assert calls["body"].startswith("Body")
     assert {os.path.basename(p) for p in calls["attachments"]} == {
-        "fact.pdf",
-        "fact.json",
+        pdf.name,
+        json_path.name,
     }
 
 
-def test_save_and_send_generates_files_and_registers(qt_app, tmp_path, monkeypatch):
-    db, tab = _setup_tab(tmp_path, monkeypatch)
-    pdf = tmp_path / "doc.pdf"
+def test_save_and_send_generates_files_and_registers(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    pdf, json_path = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
 
-    def fake_gen(self, vid):
+    def fake_gen(manager, vid):
         pdf.write_bytes(b"%PDF")
-        pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
-        self.manager.db.add_factura_pdf(vid, "Factura", str(pdf))
+        json_path.write_text("{}", encoding="utf-8")
+        manager.db.add_factura_pdf(vid, "Factura", str(pdf))
         return str(pdf)
 
-    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
     monkeypatch.setattr(SalesTab, "send_email", lambda self: None)
     monkeypatch.setattr("sales_tab.transmitir_dte", lambda *a, **k: {"estado": "recibido"})
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)

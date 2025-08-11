@@ -3,6 +3,7 @@ import pytest
 
 from sales_tab import SalesTab
 from utils import docs
+from utils.doc_generation import generate_invoice_pdf
 
 class FakeDB:
     def __init__(self):
@@ -49,12 +50,12 @@ def test_preview_keeps_pdfs(qt_app, tmp_path, monkeypatch):
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         return docs.get_document_paths(date, cliente, identifier, doc_type, root=tmp_path)
 
-    monkeypatch.setattr("sales_tab.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
 
     tab = SalesTab(man, check_smtp=False)
 
-    pdf1 = tab._generate_invoice_pdf(1)
-    pdf2 = tab._generate_invoice_pdf(2)
+    pdf1 = generate_invoice_pdf(man, 1)
+    pdf2 = generate_invoice_pdf(man, 2)
 
     tab.load_sales()
     tab.sales_table.selectRow(0)

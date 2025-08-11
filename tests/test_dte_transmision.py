@@ -2,6 +2,7 @@ from db import DB
 from dte import transmitir_dte, _post_dte
 import json
 from datetime import datetime
+from pathlib import Path
 import pytest
 
 
@@ -80,7 +81,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
         "ambiente": ambiente,
         ambiente: {"recepcion_url": f"http://{ambiente}.example.com"},
     }
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
+    with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     res = transmitir_dte(db, venta)

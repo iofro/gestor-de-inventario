@@ -64,7 +64,7 @@ def test_dte_rounding_and_validation(capsys):
     out = capsys.readouterr().out
     # Values rounded
     assert data["cuerpoDocumento"][0]["precioUnitario"] == 1.12345679
-    assert data["resumen"]["sumas"] == 2.25
+    assert data["resumen"]["totalGravada"] == 2.25
     # No warnings printed
     assert out.strip() == ""
 

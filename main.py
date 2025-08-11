@@ -24,10 +24,10 @@ from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
 from user_picker_dialog import UserPickerDialog
 from db import DB
+from utils import resource_path
 
-BASE_DIR = os.path.dirname(__file__)
-LAST_FILE_PATH = os.path.join(BASE_DIR, "ultimo_inventario.json")
-DEFAULT_INVENTORY = os.path.join(BASE_DIR, "inventario.json")
+LAST_FILE_PATH = resource_path("ultimo_inventario.json")
+DEFAULT_INVENTORY = resource_path("inventario.json")
 
 def cargar_ultimo_archivo():
     """Devuelve la ruta del inventario a cargar al iniciar la aplicación."""
@@ -42,18 +42,18 @@ def cargar_ultimo_archivo():
             pass
 
     if os.path.exists(DEFAULT_INVENTORY):
-        return DEFAULT_INVENTORY
+        return str(DEFAULT_INVENTORY)
     return ""
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
-    style_path = os.path.join(os.path.dirname(__file__), "style.qss")
-    if os.path.exists(style_path):
+    style_path = resource_path("style.qss")
+    if style_path.exists():
         with open(style_path, "r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
-    icon_path = os.path.join(os.path.dirname(__file__), "logoinventario.jpg")
-    if os.path.exists(icon_path):
-        app.setWindowIcon(QIcon(icon_path))
+    icon_path = resource_path("logoinventario.jpg")
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
 
     db = DB()
     users = [
@@ -86,8 +86,8 @@ if __name__ == "__main__":
             QMessageBox.warning(None, "Error", "Contraseña incorrecta")
 
     window = MainWindow(user)
-    if os.path.exists(icon_path):
-        window.setWindowIcon(QIcon(icon_path))
+    if icon_path.exists():
+        window.setWindowIcon(QIcon(str(icon_path)))
     window.show()
 
     # Cargar automáticamente el último inventario usado

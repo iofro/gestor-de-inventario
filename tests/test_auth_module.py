@@ -67,9 +67,16 @@ def test_get_token_expired(monkeypatch, tmp_path):
 def test_request_error(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 
+    calls = []
+
     def fake_post(url, data, headers, timeout):
+        calls.append((url, data, headers))
         raise requests.HTTPError("boom")
 
     monkeypatch.setattr(auth.requests, "post", fake_post)
     with pytest.raises(requests.HTTPError):
         auth.get_token(refresh=True)
+
+    assert len(calls) == 1
+    assert "user" in calls[0][1]
+    assert calls[0][2]["Content-Type"] == "application/x-www-form-urlencoded"

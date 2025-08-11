@@ -2,6 +2,7 @@ from db import DB
 from dte import transmitir_dte, _post_dte
 import json
 from datetime import datetime
+import pytest
 
 
 def create_sale(db):
@@ -25,32 +26,57 @@ def test_transmitir_dte_contingencia(tmp_path):
     assert row["estado"] == "Pendiente"
 
 
-def test_transmitir_dte_normal(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "ambiente,url",
+    [
+        ("pruebas", "http://example.com"),
+        ("produccion", "http://prod.example"),
+    ],
+)
+def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente, url):
     db = DB(":memory:")
     venta = create_sale(db)
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
-    monkeypatch.setattr("utils.jws.sign_json", lambda data, cert, p, key: "SIGNED")
+    sign_calls = []
+
+    def fake_sign(data, cert, p, key):
+        sign_calls.append(data)
+        return "SIGNED"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    posts = []
+
+    def fake_post(url_called, json=None, headers=None, timeout=20):
+        posts.append((url_called, json, headers))
         class R:
             status_code = 200
+
             def json(self):
                 return {"estado": "Transmitido", "sello": "ABC123"}
+
             def raise_for_status(self):
                 pass
+
         return R()
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    cfg = {"ambiente": ambiente, ambiente: {"recepcion_url": url}}
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(cfg_path))
 
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Transmitido"
+    assert len(posts) == 1
+    assert posts[0][0] == url
+    assert posts[0][1] == {"dte": "SIGNED"}
+    assert posts[0][2]["Authorization"] == "Bearer JWT"
+    assert len(sign_calls) == 1
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()

@@ -1,6 +1,7 @@
 import json
 import pytest
 import requests
+import json
 
 from db import DB
 from dte import transmitir_dte
@@ -17,7 +18,14 @@ def create_sale(db):
     return venta_id
 
 
-def test_transmision_exitosa(monkeypatch, tmp_path):
+@pytest.mark.parametrize(
+    "ambiente,recepcion_url",
+    [
+        ("pruebas", "http://recepcion.test"),
+        ("produccion", "http://recepcion.prod"),
+    ],
+)
+def test_transmision_exitosa(monkeypatch, tmp_path, ambiente, recepcion_url):
     db = DB(":memory:")
     monkeypatch.setattr(
         "dte._load_datos_negocio",
@@ -40,11 +48,10 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
 
-    captured = {}
+    sign_calls = []
 
     def fake_sign(data, c, p, k):
-        captured["data"] = data
-        captured["count"] = captured.get("count", 0) + 1
+        sign_calls.append(data)
         return "JWS_SIGNED"
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
@@ -58,8 +65,6 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     monkeypatch.setattr("auth.get_token", fake_token)
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
-    auth_url = "http://auth.test"
-    recepcion_url = "http://recepcion.test"
     calls = []
 
     class Resp:
@@ -77,23 +82,21 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     def fake_post(url, *a, **k):
         headers = k.get("headers", {})
         calls.append((url, headers, k.get("json")))
-        if url == auth_url:
-            return Resp({"access_token": "JWT"})
         if url == recepcion_url:
             return Resp({"estado": "Transmitido", "sello": "ABC123"})
         raise AssertionError(f"unexpected url {url}")
 
     monkeypatch.setattr("requests.post", fake_post)
 
-    cfg = {"ambiente": "pruebas", "pruebas": {"recepcion_url": recepcion_url}}
+    cfg = {"ambiente": ambiente, ambiente: {"recepcion_url": recepcion_url}}
     config_path = tmp_path / "cfg.json"
     config_path.write_text(json.dumps(cfg), encoding="utf-8")
     monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
 
     transmitir_dte(db, venta)
 
-    assert captured.get("count") == 1
-    payload = captured["data"]
+    assert len(sign_calls) == 1
+    payload = sign_calls[0]
     assert payload["receptor"]["nombre"] == "Cliente"
     assert payload["receptor"]["nit"] == "0614-987654-321-0"
     assert payload["cuerpoDocumento"][0]["cantidad"] == 1
@@ -108,8 +111,10 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     assert payload["identificacion"]["tipoDte"] == "01"
 
     assert tokens["count"] == 1
-    recep = [c for c in calls if c[0] == recepcion_url]
-    assert recep[0][1]["Authorization"] == "Bearer JWT"
+    assert len(calls) == 1
+    assert calls[0][0] == recepcion_url
+    assert calls[0][1]["Authorization"] == "Bearer JWT"
+    assert calls[0][2] == {"dte": "JWS_SIGNED"}
 
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
@@ -141,9 +146,10 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
 
     monkeypatch.setattr("dte.requests.post", lambda *a, **k: Resp())
 
-    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    cfg = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(cfg_path))
 
     with pytest.raises(requests.HTTPError) as excinfo:
         transmitir_dte(db, venta)
@@ -176,9 +182,10 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    cfg = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    cfg_path = tmp_path / "cfg.json"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(cfg_path))
 
     with pytest.raises(RuntimeError):
         transmitir_dte(db, venta)

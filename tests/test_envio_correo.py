@@ -90,10 +90,10 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
         return {"estado": "Transmitido"}
 
     monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
-    send_called = {}
+    send_called = {"count": 0}
 
     def fake_send(self):
-        send_called["called"] = True
+        send_called["count"] += 1
         raise smtplib.SMTPException("fail")
 
     def fake_start(self):
@@ -112,7 +112,7 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
     tab.save_and_send()
     qt_app.processEvents()
 
-    assert send_called.get("called")
+    assert send_called["count"] == 1
     assert db.envios and db.envios[0]["estado"] == "Transmitido"
     assert pdf.exists()
 
@@ -139,9 +139,10 @@ def test_email_exitoso(qt_app, tmp_path, monkeypatch):
         lambda db_obj, venta_id, modo="normal", tipo_dte="01": {"estado": "Transmitido"},
     )
 
-    captured = {}
+    captured = {"count": 0}
 
     def fake_send(self):
+        captured["count"] += 1
         captured["to"] = self.to_addr
         captured["attachments"] = list(self.attachments)
         self.finished.emit(True, "ok")
@@ -159,6 +160,7 @@ def test_email_exitoso(qt_app, tmp_path, monkeypatch):
     tab.save_and_send()
     qt_app.processEvents()
 
+    assert captured["count"] == 1
     assert captured["to"] == "cli@example.com"
     assert {os.path.basename(p) for p in captured["attachments"]} == {
         "factura.pdf",

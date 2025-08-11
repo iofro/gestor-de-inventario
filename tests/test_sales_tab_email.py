@@ -80,9 +80,10 @@ def test_send_email_builds_message_and_marks_status(qt_app, tmp_path, monkeypatc
 
     monkeypatch.setattr(SalesTab, "_check_smtp_credentials", lambda self: {"server": "s", "port": 25, "user": "u", "password": "p"})
 
-    calls = {}
+    calls = {"count": 0}
 
     def fake_send(self):
+        calls["count"] += 1
         calls.update({"to": self.to_addr, "subject": self.subject, "body": self.body, "attachments": self.attachments})
         self.finished.emit(True, "ok")
 
@@ -95,6 +96,7 @@ def test_send_email_builds_message_and_marks_status(qt_app, tmp_path, monkeypatc
     tab.send_email()
     qt_app.processEvents()
 
+    assert calls["count"] == 1
     assert calls["subject"] == "Subject"
     assert calls["body"].startswith("Body")
     assert {os.path.basename(p) for p in calls["attachments"]} == {

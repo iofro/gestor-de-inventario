@@ -53,29 +53,29 @@ def square_avatar(path: str, size: int) -> QPixmap:
 
 
 class UserCard(QFrame):
-    clicked = pyqtSignal(bool)
+    clicked = pyqtSignal()
 
     def __init__(self, parent: Optional[QWidget] = None):
         super().__init__(parent)
-        self._checked = False
-        self.setProperty("class", "user-card")
+        self._selected = False
+        self.setProperty("user-card", True)
+        self.setProperty("selected", "false")
         self.setCursor(Qt.PointingHandCursor)
         self.setFocusPolicy(Qt.StrongFocus)
 
     def mousePressEvent(self, event):  # type: ignore[override]
-        self.setChecked(not self._checked)
-        self.clicked.emit(self._checked)
+        self.clicked.emit()
         if event is not None:
             super().mousePressEvent(event)
 
-    def setChecked(self, checked: bool):
-        self._checked = checked
-        self.setProperty("checked", checked)
+    def setSelected(self, selected: bool):
+        self._selected = selected
+        self.setProperty("selected", "true" if selected else "false")
         self.style().unpolish(self)
         self.style().polish(self)
 
-    def isChecked(self) -> bool:
-        return self._checked
+    def isSelected(self) -> bool:
+        return self._selected
 
     def click(self):
         self.mousePressEvent(None)  # type: ignore[arg-type]
@@ -101,20 +101,17 @@ class UserPickerDialog(QDialog):
                 background-color: {BACKGROUND_COLOR};
                 color: {TEXT_COLOR};
             }}
-            QFrame.user-card {{
+            QFrame[user-card] {{
                 background-color: {BACKGROUND_COLOR};
                 color: {TEXT_COLOR};
                 border: 1px solid {BRAND_COLOR};
                 border-radius: 16px;
                 padding: 24px;
             }}
-            QFrame.user-card:hover {{
+            QFrame[user-card]:hover,
+            QFrame[user-card][selected="true"] {{
                 background-color: #E0F2FE;
                 border: 2px solid #7DD3FC;
-            }}
-            QFrame.user-card[checked="true"] {{
-                border: 2px solid {BRAND_COLOR};
-                background-color: #BAE6FD;
             }}
             QLabel.user-name {{
                 font-weight: bold;
@@ -172,10 +169,11 @@ class UserPickerDialog(QDialog):
         cancel_btn.setObjectName("SecondaryButton")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
-        ok_btn = QPushButton("Aceptar")
-        ok_btn.setObjectName("PrimaryButton")
-        ok_btn.clicked.connect(self.accept)
-        btn_layout.addWidget(ok_btn)
+        self.ok_btn = QPushButton("Aceptar")
+        self.ok_btn.setObjectName("PrimaryButton")
+        self.ok_btn.setEnabled(False)
+        self.ok_btn.clicked.connect(self.accept)
+        btn_layout.addWidget(self.ok_btn)
         main_layout.addLayout(btn_layout)
 
     def _create_user_card(self, user: Dict) -> UserCard:
@@ -209,21 +207,27 @@ class UserPickerDialog(QDialog):
             subtitle.setAlignment(Qt.AlignCenter)
             layout.addWidget(subtitle)
 
-        card.clicked.connect(lambda checked, c=card: self._on_card_clicked(c))
+        card.clicked.connect(lambda c=card: self._on_card_clicked(c))
         return card
 
     # --------------------------- BEHAVIOR ----------------------------------
     def _on_card_clicked(self, card: UserCard):
-        if not self.multi_select and card.isChecked():
+        new_state = not card.isSelected()
+        if not self.multi_select and new_state:
             for other in self._cards.values():
                 if other is not card:
-                    other.setChecked(False)
+                    other.setSelected(False)
+        card.setSelected(new_state)
+        self._update_ok_state()
+
+    def _update_ok_state(self):
+        self.ok_btn.setEnabled(bool(self.selected_user_ids()))
 
     def selected_user_ids(self):
         if self.multi_select:
-            return [uid for uid, card in self._cards.items() if card.isChecked()]
+            return [uid for uid, card in self._cards.items() if card.isSelected()]
         for uid, card in self._cards.items():
-            if card.isChecked():
+            if card.isSelected():
                 return uid
         return None
 

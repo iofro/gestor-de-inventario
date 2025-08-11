@@ -6,6 +6,18 @@ from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 from sales_tab import SalesTab
 
 
+class DummySignal:
+    def __init__(self):
+        self._callbacks = []
+
+    def connect(self, cb):
+        self._callbacks.append(cb)
+
+    def emit(self, *args, **kwargs):
+        for cb in list(self._callbacks):
+            cb(*args, **kwargs)
+
+
 class FakeDB:
     def __init__(self):
         self._ventas = []
@@ -68,15 +80,22 @@ def _setup_tab(tmp_path, monkeypatch=None):
     return db, tab
 
 
-def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
-    db, tab = _setup_tab(tmp_path, monkeypatch)
-    pdf = tmp_path / "doc.pdf"
+@pytest.fixture
+def temp_invoice_files(tmp_path):
+    pdf = tmp_path / "factura.pdf"
+    pdf.write_bytes(b"%PDF")
+    json_file = pdf.with_suffix(".json")
+    json_file.write_text("{}", encoding="utf-8")
+    return pdf, json_file
 
-    def fake_gen(self, vid):
-        pdf.write_bytes(b"%PDF")
-        pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
-        self.manager.db.add_factura_pdf(vid, "Factura", str(pdf))
-        return str(pdf)
+
+def test_transmit_success_email_fail(qt_app, tmp_path, temp_invoice_files, monkeypatch):
+    db, tab = _setup_tab(tmp_path, monkeypatch)
+    pdf, _json = temp_invoice_files
+
+    def fake_gen(self, vid, p=pdf):
+        self.manager.db.add_factura_pdf(vid, "Factura", str(p))
+        return str(p)
 
     monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
     monkeypatch.setattr(
@@ -90,6 +109,18 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
         return {"estado": "Transmitido"}
 
     monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
+
+    init_calls = []
+
+    def fake_init(self, server, port, user, password, to_addr, subject, body, attachments):
+        init_calls.append(to_addr)
+        self.to_addr = to_addr
+        self.subject = subject
+        self.attachments = attachments if isinstance(attachments, list) else [attachments]
+        self.finished = DummySignal()
+
+    monkeypatch.setattr("utils.email_sender.EmailSender.__init__", fake_init, raising=False)
+
     send_called = {}
 
     def fake_send(self):
@@ -104,6 +135,14 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
 
     monkeypatch.setattr("utils.email_sender.EmailSender.send", fake_send, raising=False)
     monkeypatch.setattr("utils.email_sender.EmailSender.start", fake_start)
+
+    smtp_calls = []
+
+    class DummySMTP:
+        def __init__(self, *a, **k):
+            smtp_calls.append((a, k))
+
+    monkeypatch.setattr(smtplib, "SMTP", DummySMTP)
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
@@ -115,17 +154,18 @@ def test_transmit_success_email_fail(qt_app, tmp_path, monkeypatch):
     assert send_called.get("called")
     assert db.envios and db.envios[0]["estado"] == "Transmitido"
     assert pdf.exists()
+    assert len(init_calls) == 1
+    assert not smtp_calls
 
 
-def test_email_exitoso(qt_app, tmp_path, monkeypatch):
+def test_email_exitoso(qt_app, tmp_path, temp_invoice_files, monkeypatch):
     db, tab = _setup_tab(tmp_path, monkeypatch)
-    pdf = tmp_path / "factura.pdf"
+    pdf, _json = temp_invoice_files
+    tab.email_subject_edit.setText("Factura enviada")
 
-    def fake_gen(self, vid):
-        pdf.write_bytes(b"%PDF")
-        pdf.with_suffix(".json").write_text("{}", encoding="utf-8")
-        self.manager.db.add_factura_pdf(vid, "Factura", str(pdf))
-        return str(pdf)
+    def fake_gen(self, vid, p=pdf):
+        self.manager.db.add_factura_pdf(vid, "Factura", str(p))
+        return str(p)
 
     monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fake_gen)
     monkeypatch.setattr(
@@ -141,8 +181,20 @@ def test_email_exitoso(qt_app, tmp_path, monkeypatch):
 
     captured = {}
 
+    init_calls = []
+
+    def fake_init(self, server, port, user, password, to_addr, subject, body, attachments):
+        init_calls.append(to_addr)
+        self.to_addr = to_addr
+        self.subject = subject
+        self.attachments = attachments if isinstance(attachments, list) else [attachments]
+        self.finished = DummySignal()
+
+    monkeypatch.setattr("utils.email_sender.EmailSender.__init__", fake_init, raising=False)
+
     def fake_send(self):
         captured["to"] = self.to_addr
+        captured["subject"] = self.subject
         captured["attachments"] = list(self.attachments)
         self.finished.emit(True, "ok")
 
@@ -151,6 +203,14 @@ def test_email_exitoso(qt_app, tmp_path, monkeypatch):
 
     monkeypatch.setattr("utils.email_sender.EmailSender.send", fake_send, raising=False)
     monkeypatch.setattr("utils.email_sender.EmailSender.start", fake_start)
+
+    smtp_calls = []
+
+    class DummySMTP:
+        def __init__(self, *a, **k):
+            smtp_calls.append((a, k))
+
+    monkeypatch.setattr(smtplib, "SMTP", DummySMTP)
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
@@ -160,9 +220,12 @@ def test_email_exitoso(qt_app, tmp_path, monkeypatch):
     qt_app.processEvents()
 
     assert captured["to"] == "cli@example.com"
+    assert captured["subject"] == "Factura enviada"
     assert {os.path.basename(p) for p in captured["attachments"]} == {
         "factura.pdf",
         "factura.json",
     }
     assert db.saved == (1, "Factura", str(pdf))
+    assert len(init_calls) == 1
+    assert not smtp_calls
 

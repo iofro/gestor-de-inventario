@@ -2,14 +2,15 @@ import sqlite3
 from datetime import datetime
 import json
 import logging
-import os
 import threading
+
+from utils import resource_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 class DB:
-    def __init__(self, db_name=os.path.join(os.path.dirname(__file__), "inventario.db")):
+    def __init__(self, db_name=resource_path("inventario.db")):
         # ``check_same_thread=False`` allows the connection to be used from
         # multiple threads.  Each thread should ideally use its own connection
         # but this flag prevents SQLite from raising an exception if a

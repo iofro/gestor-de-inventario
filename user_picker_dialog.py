@@ -1,7 +1,7 @@
 from typing import List, Dict, Optional, Union
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QIcon, QPainter, QPainterPath
+from PyQt5.QtGui import QPixmap, QIcon, QPainter, QPainterPath, QColor
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -12,6 +12,7 @@ from PyQt5.QtWidgets import (
     QHBoxLayout,
     QApplication,
     QStyle,
+    QGraphicsDropShadowEffect,
 )
 
 BRAND_COLOR = "#0EA5E9"
@@ -53,6 +54,7 @@ def _load_avatar(user: Dict, size: int = 64) -> QPixmap:
 
 class UserPickerDialog(QDialog):
     def __init__(self, users: List[Dict], multi_select: bool = False, parent: Optional[QWidget] = None):
+        QApplication.setStyle("Fusion")
         super().__init__(parent)
         self.users = users
         self.multi_select = multi_select
@@ -69,17 +71,18 @@ class UserPickerDialog(QDialog):
                 color: {TEXT_COLOR};
             }}
             QPushButton#CardButton {{
-                background-color: white;
-                border: 1px solid #E2E8F0;
-                border-radius: 12px;
-                padding: 12px;
+                background-color: {BACKGROUND_COLOR};
+                color: {TEXT_COLOR};
+                border: 1px solid {BRAND_COLOR};
+                border-radius: 16px;
+                padding: 16px;
             }}
             QPushButton#CardButton:hover {{
-                background-color: #F1F5F9;
+                background-color: #E0F2FE;
             }}
             QPushButton#CardButton:checked {{
                 border: 2px solid {BRAND_COLOR};
-                background-color: #E0F2FE;
+                background-color: #BAE6FD;
             }}
             QPushButton#PrimaryButton {{
                 background-color: {BRAND_COLOR};
@@ -116,6 +119,11 @@ class UserPickerDialog(QDialog):
 
         for index, user in enumerate(self.users):
             btn = self._create_user_button(user)
+            shadow = QGraphicsDropShadowEffect(btn)
+            shadow.setBlurRadius(15)
+            shadow.setOffset(0, 3)
+            shadow.setColor(QColor(0, 0, 0, 80))
+            btn.setGraphicsEffect(shadow)
             self._buttons[user.get("id")] = btn
             row = index // columns
             col = index % columns
@@ -190,6 +198,7 @@ class UserPickerDialog(QDialog):
 # ----------------------------- Helper API ---------------------------------
 
 def pick_user(parent: QWidget, users: List[Dict], multi_select: bool = False):
+    QApplication.setStyle("Fusion")
     dialog = UserPickerDialog(users, multi_select=multi_select, parent=parent)
     result = dialog.exec_()
     if result == QDialog.Accepted:

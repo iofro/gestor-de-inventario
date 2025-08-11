@@ -2,7 +2,7 @@ from typing import List, Dict, Optional, Union
 import os
 
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QPixmap, QIcon, QColor
+from PyQt5.QtGui import QPixmap, QColor, QPainter
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -12,7 +12,6 @@ from PyQt5.QtWidgets import (
     QWidget,
     QHBoxLayout,
     QApplication,
-    QStyle,
     QGraphicsDropShadowEffect,
 )
 
@@ -24,7 +23,7 @@ DEFAULT_AVATAR = os.path.join(os.path.dirname(__file__), "avatar.jpg")
 
 
 def _load_avatar(user: Dict, size: int = 96) -> QPixmap:
-    """Return a pixmap for the user avatar or the default avatar image."""
+    """Return a squared pixmap for the user avatar or a placeholder image."""
     path = (
         user.get("avatar")
         or user.get("photo")
@@ -33,20 +32,32 @@ def _load_avatar(user: Dict, size: int = 96) -> QPixmap:
         or DEFAULT_AVATAR
     )
     pix = QPixmap()
-    if path:
+    if path and os.path.exists(path):
         pix.load(path)
-    if pix.isNull():
-        # Fallback to a themed icon that resembles a person
-        icon = QIcon.fromTheme("user")
-        if icon.isNull():
-            icon = QApplication.style().standardIcon(QStyle.SP_FileIcon)
-        pix = icon.pixmap(size, size)
 
+    if pix.isNull():
+        # Draw a placeholder gray square with a question mark
+        pix = QPixmap(size, size)
+        pix.fill(QColor("#E5E7EB"))
+        painter = QPainter(pix)
+        painter.setPen(QColor("#374151"))
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(int(size * 0.5))
+        painter.setFont(font)
+        painter.drawText(pix.rect(), Qt.AlignCenter, "?")
+        painter.end()
+        return pix
+
+    # Crop a centered square from the original image
+    if pix.width() != pix.height():
+        side = min(pix.width(), pix.height())
+        x = (pix.width() - side) // 2
+        y = (pix.height() - side) // 2
+        pix = pix.copy(x, y, side, side)
+
+    # Scale to the desired size smoothly without distortion
     pix = pix.scaled(size, size, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
-    if pix.width() > size or pix.height() > size:
-        x = max(0, (pix.width() - size) // 2)
-        y = max(0, (pix.height() - size) // 2)
-        pix = pix.copy(x, y, size, size)
     return pix
 
 
@@ -79,6 +90,7 @@ class UserPickerDialog(QDialog):
             }}
             QPushButton#CardButton:hover {{
                 background-color: #E0F2FE;
+                border: 2px solid #7DD3FC;
             }}
             QPushButton#CardButton:checked {{
                 border: 2px solid {BRAND_COLOR};

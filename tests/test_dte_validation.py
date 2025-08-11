@@ -1,5 +1,5 @@
 import pytest
-from dte import validate_dte_json
+from dte import sanitize_dte_payload, validate_dte_json
 
 
 def test_dte_valido_pasa(dte_metadata_factory):
@@ -28,3 +28,15 @@ def test_estructura_invalida(dte_metadata_factory):
     del dte["emisor"]["nit"]
     with pytest.raises(ValidationError):
         validate_dte_json(dte)
+
+
+def test_strips_additional_properties(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["firmaElectronica"] = "XYZ"
+    dte["selloRecibido"] = "ABC"
+    dte["identificacion"]["firmaElectronica"] = "XYZ"
+    clean = sanitize_dte_payload(dte)
+    assert "firmaElectronica" not in clean
+    assert "selloRecibido" not in clean
+    assert "firmaElectronica" not in clean["identificacion"]
+    validate_dte_json(clean)

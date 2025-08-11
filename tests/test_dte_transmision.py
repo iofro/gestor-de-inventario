@@ -2,6 +2,7 @@ from db import DB
 from dte import transmitir_dte, _post_dte
 import json
 from datetime import datetime
+import pytest
 
 
 def create_sale(db):
@@ -25,12 +26,19 @@ def test_transmitir_dte_contingencia(tmp_path):
     assert row["estado"] == "Pendiente"
 
 
-def test_transmitir_dte_normal(monkeypatch, tmp_path):
+@pytest.mark.parametrize("ambiente", ["pruebas", "produccion"])
+def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
     db = DB(":memory:")
     venta = create_sale(db)
 
     monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
-    monkeypatch.setattr("utils.jws.sign_json", lambda data, cert, p, key: "SIGNED")
+    sign_calls = {"count": 0}
+
+    def fake_sign(data, cert, p, key):
+        sign_calls["count"] += 1
+        return "SIGNED"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
 
     token_calls = {"count": 0}
 
@@ -40,11 +48,20 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     monkeypatch.setattr("auth.get_token", fake_get_token)
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
+    monkeypatch.setattr(
+        "dte.generar_dte_json",
+        lambda db_obj, vid: {
+            "receptor": {"nombre": "Cliente", "nit": "0614-987654-321-0"},
+            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+            "resumen": {"sumas": 10, "iva": 0, "totalPagar": 10},
+            "identificacion": {"tipoDte": "01"},
+        },
+    )
 
-    captured = {}
+    calls = []
 
     def fake_post(url, json=None, headers=None, timeout=20):
-        captured["headers"] = headers
+        calls.append((url, headers, json))
 
         class R:
             status_code = 200
@@ -59,14 +76,22 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+    config = {
+        "ambiente": ambiente,
+        ambiente: {"recepcion_url": f"http://{ambiente}.example.com"},
+    }
     with open("config_negocio.json", "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Transmitido"
     assert token_calls["count"] == 1
-    assert captured["headers"]["Authorization"] == "Bearer JWT"
+    assert sign_calls["count"] == 1
+    assert len(calls) == 1
+    url, headers, payload = calls[0]
+    assert url == f"http://{ambiente}.example.com"
+    assert headers["Authorization"] == "Bearer JWT"
+    assert payload == {"dte": "SIGNED"}
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()

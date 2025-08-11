@@ -17,6 +17,7 @@ from dialogs import (
     DistribuidorInfoDialog,
     ClienteDialog,
     EstadoCuentaDialog,
+    UserConfigDialog,
 )
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
@@ -66,8 +67,9 @@ class ExportThread(QThread):
 
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, user=None):
         super().__init__()
+        self.user = user or {"username": "admin", "role": "admin"}
         self.setWindowTitle("Inventario Farmacia")
         self.resize(1200, 700)
         self.manager = InventoryManager()
@@ -107,6 +109,12 @@ class MainWindow(QMainWindow):
         dte_action = QAction("Facturación electrónica", self)
         dte_action.triggered.connect(self._abrir_config_facturacion)
         config_menu.addAction(dte_action)
+        if self.user["role"] == "admin":
+            user_action = QAction("Configuración de usuarios", self)
+            user_action.triggered.connect(self._abrir_config_usuarios)
+            config_menu.addAction(user_action)
+        else:
+            config_menu.menuAction().setVisible(False)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
@@ -130,6 +138,19 @@ class MainWindow(QMainWindow):
             btn.setMinimumWidth(140)
             btn.setMaximumWidth(200)
             btn.setStyleSheet("font-size:11px; padding:4px 0;")
+
+        if self.user["role"] == "guest":
+            for btn in [
+                self.btn_add_product,
+                self.btn_edit_product,
+                self.btn_register_sale,
+                self.btn_register_credito_fiscal,
+                self.btn_register_purchase,
+                self.btn_delete_product,
+                self.btn_guardar_rapido,
+                self.btn_cargar_inventario,
+            ]:
+                btn.setEnabled(False)
 
         # Botones verdes más pequeños y debajo de los celestes pero encima del rojo
         self.btn_guardar_rapido.setStyleSheet(
@@ -1421,6 +1442,10 @@ class MainWindow(QMainWindow):
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Facturación electrónica", "Datos guardados correctamente.")
+
+    def _abrir_config_usuarios(self):
+        dlg = UserConfigDialog(self.manager.db, self)
+        dlg.exec_()
 
     def _actualizar_tabla_trabajadores(self):
         solo_vendedores = self.trabajadores_filtro_vendedor.isChecked()

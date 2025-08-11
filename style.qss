@@ -1,0 +1,4 @@
+/* Basic application styling */
+QMainWindow {
+    background-color: #f5f5f5;
+}

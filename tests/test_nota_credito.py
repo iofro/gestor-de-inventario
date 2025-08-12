@@ -83,4 +83,11 @@ def test_nota_credito_pdf(tmp_path):
     assert out.exists()
     with fitz.open(out) as doc:
         text = "".join(p.get_text() for p in doc)
-    assert "NOTA DE CR\xc9DITO" in text
+    assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in text
+    assert "NOTA DE CRÉDITO" in text
+    assert "Código Generación:" in text
+    assert "Número Control:" in text
+    assert "Sello Recepción:" in text
+    assert "Modelo Facturación:" in text
+    assert "Tipo Transmisión:" in text
+    assert "Fecha Generación:" in text

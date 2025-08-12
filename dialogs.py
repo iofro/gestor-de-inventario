@@ -2991,6 +2991,9 @@ class DTEConfigDialog(QDialog):
         self.dte_nit = QLineEdit()
         self.dte_pass = QLineEdit()
         self.dte_pass.setEchoMode(QLineEdit.Password)
+        self.api_user = QLineEdit()
+        self.api_pwd = QLineEdit()
+        self.api_pwd.setEchoMode(QLineEdit.Password)
         self.dte_activo = QCheckBox("Certificado activo")
         self.dte_activo.setChecked(True)
         self.tipo_contribuyente = QComboBox()
@@ -3011,6 +3014,8 @@ class DTEConfigDialog(QDialog):
         self.guardar_respuesta_bd = QCheckBox("Guardar respuesta de Hacienda en base de datos")
         form.addRow("NIT certificación:", self.dte_nit)
         form.addRow("Contraseña firma:", self.dte_pass)
+        form.addRow("NIT usuario API:", self.api_user)
+        form.addRow("Contraseña API:", self.api_pwd)
         form.addRow(self.dte_activo)
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
         form.addRow("Prefijo número control:", self.prefijo_control)
@@ -3044,6 +3049,7 @@ class DTEConfigDialog(QDialog):
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
 
     def set_data(self, dte_api, fe_config, env_config):
+        auth_conf = env_config.get("auth", {})
         self.dte_nit.setText(fe_config.get("nit", ""))
         frase = fe_config.get("passwordPri", "")
         if frase:
@@ -3051,6 +3057,18 @@ class DTEConfigDialog(QDialog):
                 self.dte_pass.setText(base64.b64decode(frase).decode())
             except Exception:
                 self.dte_pass.setText("")
+        self.api_user.setText(
+            auth_conf.get("nitUsuario")
+            or auth_conf.get("user")
+            or auth_conf.get("nit")
+            or ""
+        )
+        pwd_api = auth_conf.get("pwd") or auth_conf.get("password") or ""
+        if pwd_api:
+            try:
+                self.api_pwd.setText(base64.b64decode(pwd_api).decode())
+            except Exception:
+                self.api_pwd.setText(pwd_api)
         self.dte_activo.setChecked(fe_config.get("activo", True))
         self.tipo_contribuyente.setCurrentText(dte_api.get("tipo_contribuyente", "Persona Natural"))
         self.prefijo_control.setText(dte_api.get("prefijo_control", "DTE-01-S001P001"))
@@ -3067,8 +3085,8 @@ class DTEConfigDialog(QDialog):
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
 
     def _fetch_token(self):
-        nit_default = self.dte_nit.text().strip()
-        pwd_default = self.dte_pass.text().strip()
+        nit_default = self.api_user.text().strip()
+        pwd_default = self.api_pwd.text().strip()
         nit, pwd = prompt_auth_credentials(self, nit_default, pwd_default)
         if nit is None:
             return
@@ -3093,6 +3111,8 @@ class DTEConfigDialog(QDialog):
                         QApplication.clipboard().setText(token)
                     except Exception:
                         pass
+                    self.api_user.setText(nit)
+                    self.api_pwd.setText(pwd)
                     return
                 QMessageBox.warning(self, "Error", "Respuesta sin token válido.")
             else:
@@ -3122,6 +3142,12 @@ class DTEConfigDialog(QDialog):
         urls = {
             "auth_url": self.auth_url.text(),
             "recepcion_url": self.recepcion_url.text(),
+            "auth": {
+                "nitUsuario": self.api_user.text().strip(),
+                "pwd": base64.b64encode(self.api_pwd.text().encode()).decode()
+                if self.api_pwd.text()
+                else "",
+            },
         }
         return dte_api, fe_config, urls
 class TrabajadorDialog(QDialog):

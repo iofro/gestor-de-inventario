@@ -121,6 +121,11 @@ vendor/jdk/bin/java -jar target/svfe-api-firmador-0.1.1.jar --server.port=8080
 Luego se firmará cada DTE enviándolo a
 `http://127.0.0.1:8080/firma/firmardocumento` de forma automática.
 
+El firmador utiliza HTTP por defecto. Si deseas habilitar HTTPS, define las
+variables `SVFE_ARCHIVO` y `SVFE_PASSWORD` en un archivo `.env` (consulta
+`.env.example`). Esta configuración es opcional y el perfil principal seguirá
+siendo el modo normal basado en HTTP.
+
 Para diferenciar entre los ambientes de pruebas y producción de Hacienda,
 configura el campo `ambiente` y las URLs en `config_negocio.json`:
 

@@ -29,7 +29,7 @@ def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None
     y = height - 40
 
     c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(width / 2, y, datos_negocio.get("nombre_comercial", "TICKET"))
+    c.drawCentredString(width / 2, y, datos_negocio.get("nombreComercial", "TICKET"))
     y -= 20
     c.setFont("Helvetica", 10)
     c.drawString(40, y, f"Fecha: {venta.get('fecha', '')}")
@@ -145,7 +145,7 @@ def generar_ticket_personalizado(
     c.drawCentredString(width / 2, y, "------------------- DATOS DEL EMISOR ------------------")
     y -= 4 * mm
     c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(width / 2, y, _with_falta(datos_negocio.get("nombre_comercial")))
+    c.drawCentredString(width / 2, y, _with_falta(datos_negocio.get("nombreComercial")))
     y -= 4 * mm
     nit = datos_negocio.get("nit")
     c.setFont("Helvetica", 7)
@@ -154,10 +154,10 @@ def generar_ticket_personalizado(
     nrc = datos_negocio.get("nrc")
     c.drawCentredString(width / 2, y, f"NRC: {_with_falta(nrc)}")
     y -= 4 * mm
-    giro = datos_negocio.get("giro")
+    giro = datos_negocio.get("descActividad")
     c.drawCentredString(width / 2, y, f"Actividad Económica: {_with_falta(giro)}")
     y -= 4 * mm
-    direccion = datos_negocio.get("direccion")
+    direccion = datos_negocio.get("direccion", {}).get("complemento")
     c.drawCentredString(width / 2, y, f"Dirección: {_with_falta(direccion)}")
     y -= 5 * mm
     c.setFont("Helvetica-Bold", 7)

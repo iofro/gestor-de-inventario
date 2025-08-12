@@ -22,11 +22,20 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "dte._load_datos_negocio",
         lambda: {
-            "razon_social": "ACME",
+            "nombre": "ACME",
+            "nombreComercial": "ACME",
             "nit": "0614-123456-102-3",
             "nrc": "123456-7",
-            "giro": "Giro",
-            "direccion": "Calle 1",
+            "codActividad": "0000",
+            "descActividad": "Giro",
+            "tipoContribuyente": "Persona Jurídica",
+            "telefono": "",
+            "correo": "",
+            "direccion": {
+                "departamento": "San Salvador",
+                "municipio": "San Salvador",
+                "complemento": "Calle 1",
+            },
         },
     )
     db.add_vendedor("V1")

@@ -74,6 +74,7 @@ def test_missing_emisor_fields_listed(dte_metadata_factory, monkeypatch):
         "nit",
         "nrc",
         "nombre",
+        "nombreComercial",
         "codActividad",
         "descActividad",
         "direccion.complemento",

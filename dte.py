@@ -488,11 +488,16 @@ def generar_dte_json(
     }
 
     emisor = {
-        "nombre": datos.get("razon_social"),
+        "nombre": datos.get("nombre"),
+        "nombreComercial": datos.get("nombreComercial"),
         "nit": datos.get("nit"),
         "nrc": datos.get("nrc"),
-        "giro": datos.get("giro"),
+        "codActividad": datos.get("codActividad"),
+        "descActividad": datos.get("descActividad"),
+        "tipoContribuyente": datos.get("tipoContribuyente"),
         "direccion": datos.get("direccion"),
+        "telefono": datos.get("telefono"),
+        "correo": datos.get("correo"),
     }
 
     rec = cliente or {}
@@ -653,32 +658,37 @@ def validate_dte_json(payload: dict) -> None:
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
-    emisor.setdefault("nombre", negocio.get("razon_social"))
-    emisor.setdefault("codActividad", negocio.get("ciiu"))
-    emisor.setdefault("descActividad", negocio.get("giro"))
-    emisor.setdefault("nombreComercial", negocio.get("nombre_comercial"))
+    emisor.setdefault("nombre", negocio.get("nombre"))
+    emisor.setdefault("nombreComercial", negocio.get("nombreComercial"))
+    emisor.setdefault("codActividad", negocio.get("codActividad"))
+    emisor.setdefault("descActividad", negocio.get("descActividad"))
     emisor.setdefault("tipoEstablecimiento", "01")
     direccion = emisor.get("direccion")
     if not isinstance(direccion, dict):
+        dir_neg = negocio.get("direccion") or {}
         direccion = {
-            "departamento": _map_departamento(negocio.get("departamento")),
-            "municipio": "01",
-            "complemento": negocio.get("direccion") if direccion is None else direccion,
+            "departamento": _map_departamento(dir_neg.get("departamento")),
+            "municipio": dir_neg.get("municipio", "01"),
+            "complemento": dir_neg.get("complemento") if direccion is None else direccion,
         }
     emisor["direccion"] = direccion
-    emisor.setdefault("telefono", negocio.get("telefono_movil") or negocio.get("telefono_fijo"))
-    emisor.setdefault("correo", negocio.get("email"))
+    emisor.setdefault("telefono", negocio.get("telefono"))
+    emisor.setdefault("correo", negocio.get("correo"))
     emisor.setdefault("codEstableMH", "0000")
     emisor.setdefault("codEstable", "0000")
     emisor.setdefault("codPuntoVentaMH", "0000")
     emisor.setdefault("codPuntoVenta", "0000")
     emisor.pop("giro", None)
+    emisor.pop("tipoContribuyente", None)
     required_emisor = {
         "nit": emisor.get("nit"),
         "nrc": emisor.get("nrc"),
         "nombre": emisor.get("nombre"),
+        "nombreComercial": emisor.get("nombreComercial"),
         "codActividad": emisor.get("codActividad"),
         "descActividad": emisor.get("descActividad"),
+        "direccion.departamento": emisor.get("direccion", {}).get("departamento"),
+        "direccion.municipio": emisor.get("direccion", {}).get("municipio"),
         "direccion.complemento": emisor.get("direccion", {}).get("complemento"),
         "telefono": emisor.get("telefono"),
         "correo": emisor.get("correo"),

@@ -150,6 +150,7 @@ def dte_metadata_factory():
                 "codActividad": "12345",
                 "descActividad": "Venta de productos",
                 "nombreComercial": "Empresa",
+                "tipoContribuyente": "Persona Jurídica",
                 "tipoEstablecimiento": "01",
                 "direccion": {
                     "departamento": "01",

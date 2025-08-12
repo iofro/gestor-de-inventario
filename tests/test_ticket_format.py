@@ -25,7 +25,7 @@ def test_custom_ticket_matches_example(tmp_path):
         example_text = "\n".join(p.get_text() for p in doc)
 
     subset = [
-        data['datos_negocio']['nombre_comercial'],
+        data['datos_negocio']['nombreComercial'],
         'Bencobal',
         '21.08',
     ]

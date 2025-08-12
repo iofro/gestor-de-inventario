@@ -1,4 +1,18 @@
 {
+  "nit": "",
+  "nrc": "",
+  "nombre": "",
+  "nombreComercial": "",
+  "codActividad": "",
+  "descActividad": "",
+  "tipoContribuyente": "",
+  "telefono": "",
+  "correo": "",
+  "direccion": {
+    "departamento": "",
+    "municipio": "",
+    "complemento": ""
+  },
   "dte_api": {
     "url": "https://apitest.dtes.mh.gob.sv\n",
     "ambiente": "pruebas",
@@ -8,7 +22,6 @@
     "envio_automatico": true,
     "adjuntar_json_correo": true,
     "incluir_sello_pdf": true,
-    "guardar_respuesta": true,
-    "tipo_contribuyente": "Persona Natural"
+    "guardar_respuesta": true
   }
 }

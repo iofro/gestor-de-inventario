@@ -74,12 +74,13 @@ def _load_emisor() -> Dict[str, Any]:
     emisor = {
         "nit": datos.get("nit"),
         "nrc": datos.get("nrc"),
-        "nombre": datos.get("razon_social") or datos.get("nombre_comercial"),
-        "codActividad": datos.get("ciiu"),
-        "descActividad": datos.get("giro"),
-        "direccion": {"complemento": datos.get("direccion")},
-        "telefono": datos.get("telefono_movil") or datos.get("telefono_fijo"),
-        "correo": datos.get("email"),
+        "nombre": datos.get("nombre"),
+        "nombreComercial": datos.get("nombreComercial"),
+        "codActividad": datos.get("codActividad"),
+        "descActividad": datos.get("descActividad"),
+        "telefono": datos.get("telefono"),
+        "correo": datos.get("correo"),
+        "direccion": datos.get("direccion"),
     }
     return emisor
 
@@ -89,8 +90,11 @@ def _validate_emisor(emisor: Dict[str, Any]) -> List[str]:
         "nit",
         "nrc",
         "nombre",
+        "nombreComercial",
         "codActividad",
         "descActividad",
+        ("direccion", "departamento"),
+        ("direccion", "municipio"),
         ("direccion", "complemento"),
         "telefono",
         "correo",

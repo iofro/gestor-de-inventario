@@ -978,7 +978,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "ventas_exentas": ventas_exentas,
             "ventas_no_sujetas": ventas_no_sujetas,
             "subtotal": (sumas - descuentos) + iva,
-            "total": (sumas - descuentos) + iva + ventas_exentas + ventas_no_sujetas,
+            # Usar el total acumulado para reflejar comisiones u otros cargos
+            "total": total,
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()

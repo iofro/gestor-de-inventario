@@ -106,3 +106,28 @@ def test_generar_ticket_json_tipo():
 
     data = generar_dte_json(db, venta_id, tipo_dte="03")
     assert data["identificacion"]["tipoDte"] == "03"
+
+
+def test_dte_comision_sin_advertencia_total(capsys):
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        12,
+        "123",
+        "nit1",
+        "giro",
+        sumas=10,
+        descuentos=0,
+        iva=0,
+    )
+    db.add_detalle_venta(venta_id, pid, 1, 10, comision=2, vendedor_id=vid)
+    generar_dte_json(db, venta_id)
+    out = capsys.readouterr().out.lower()
+    assert out.strip() == "" and "total a pagar" not in out

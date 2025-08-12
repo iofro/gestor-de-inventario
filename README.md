@@ -199,6 +199,11 @@ especificar el usuario y la contraseña de la API. Estos datos se utilizan
 al solicitar el token de autenticación. También es posible obtener un
 token programáticamente llamando a `auth.get_token(nit="USUARIO", pwd="CLAVE")`.
 
+El token obtenido se almacena en la base de datos `inventario.db` con
+permisos restringidos al usuario que ejecuta la aplicación. Si se desea
+eliminar voluntariamente el token guardado puede invocarse
+`auth.delete_token()`.
+
 La contraseña puede dejarse vacía si la clave privada no está cifrada. Al
 generar facturas o tickets se creará junto al PDF un archivo `.jws` con el JSON
 firmado.

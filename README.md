@@ -177,19 +177,20 @@ configura el campo `ambiente` y las URLs en `config_negocio.json`:
 ```json
 {
   "ambiente": "pruebas",
-  "auth_url": {
-    "pruebas": "https://apifacturatest.mh.gob.sv/auth",
-    "produccion": "https://api.factura.gob.sv/auth"
+  "pruebas": {
+    "auth_url": "https://apitest.dtes.mh.gob.sv/seguridad/auth",
+    "recepcion_url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
   },
-  "recepcion_url": {
-    "pruebas": "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte",
-    "produccion": "https://api.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+  "produccion": {
+    "auth_url": "https://api.factura.gob.sv/auth",
+    "recepcion_url": "https://api.dtes.mh.gob.sv/recepciondte/api/recepciondte"
   }
 }
 ```
 
-Al cambiar `ambiente` a `produccion` la aplicación utilizará los servicios
-productivos.
+La aplicación buscará `auth_url` y `recepcion_url` dentro del bloque del
+ambiente seleccionado (`pruebas` o `produccion`). Al cambiar `ambiente` a
+`produccion` la aplicación utilizará los servicios productivos.
 
 La contraseña puede dejarse vacía si la clave privada no está cifrada. Al
 generar facturas o tickets se creará junto al PDF un archivo `.jws` con el JSON

@@ -1,14 +1,14 @@
 {
   "dte_api": {
-    "url": "",
+    "url": "https://apitest.dtes.mh.gob.sv\n",
     "ambiente": "pruebas",
-    "token": "",
-    "prefijo_control": "",
+    "token": "https://apitest.dtes.mh.gob.sv/seguridad/auth",
+    "prefijo_control": "DTE-01-S001P001",
     "modo_transmision": "1 - Normal",
-    "envio_automatico": false,
-    "adjuntar_json_correo": false,
-    "incluir_sello_pdf": false,
-    "guardar_respuesta": false,
+    "envio_automatico": true,
+    "adjuntar_json_correo": true,
+    "incluir_sello_pdf": true,
+    "guardar_respuesta": true,
     "tipo_contribuyente": "Persona Natural"
   }
 }

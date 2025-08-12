@@ -132,6 +132,9 @@ configuración por ambiente. El campo `ambiente` indica qué sección utilizar
 }
 ```
 
+El campo `passwordPri` puede almacenarse codificado en Base64 y será
+decodificado automáticamente al leer la configuración.
+
 Los datos se guardan dentro del nodo del ambiente (`pruebas` o `produccion`),
 por lo que cada uno debe contar con su propio bloque `firma_electronica`.
 

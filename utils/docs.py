@@ -12,6 +12,7 @@ FOLDERS = {
     'Ticket': os.path.join(BASE_DIR, 'tickets'),
     'NotaDebito': os.path.join(BASE_DIR, 'notas_debito'),
     'NotaCredito': os.path.join(BASE_DIR, 'notas_credito'),
+    'NotaRemision': os.path.join(BASE_DIR, 'notas_remision'),
 }
 
 TEMPLATE_PATH = os.path.join(BASE_DIR, 'formato_factura.json')

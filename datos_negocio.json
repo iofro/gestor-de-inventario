@@ -1,4 +1,15 @@
 {
+  "nit": "0614-000000-102-5",
+  "nrc": "123456-7",
+  "razon_social": "Demo S.A. de C.V.",
+  "ciiu": "4759",
+  "giro": "Comercio de demostración",
+  "nombre_comercial": "Negocio Demo",
+  "departamento": "San Salvador",
+  "direccion": "Calle Falsa 123, San Salvador",
+  "telefono_fijo": "2222-3333",
+  "telefono_movil": "7000-1111",
+  "email": "contacto@demo.com",
   "dte_api": {
     "url": "https://apitest.dtes.mh.gob.sv\n",
     "ambiente": "pruebas",

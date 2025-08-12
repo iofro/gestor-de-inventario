@@ -74,3 +74,21 @@ def test_sign_json_missing_p12(tmp_path):
 def test_sign_json_missing_cert(tmp_path):
     with pytest.raises(ValueError):
         jws.sign_json({}, None, None, None)
+
+
+def test_get_cert_config_defaults(tmp_path, monkeypatch):
+    key, cert = create_keypair()
+    key_file = tmp_path / "default.key"
+    cert_file = tmp_path / "default.crt"
+    key_file.write_bytes(key)
+    cert_file.write_bytes(cert)
+
+    cfg_path = tmp_path / "config.json"
+    cfg_path.write_text("{}", encoding="utf-8")
+    monkeypatch.setattr(jws, "CONFIG_NEGOCIO_PATH", str(cfg_path))
+    monkeypatch.setattr(jws, "DATOS_NEGOCIO_PATH", str(tmp_path / "missing.json"))
+
+    cert_path, key_path, phrase = jws.get_cert_config(str(cfg_path))
+    assert cert_path == str(cert_file)
+    assert key_path == str(key_file)
+    assert phrase is None

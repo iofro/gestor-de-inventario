@@ -238,6 +238,22 @@ class InventoryManager:
                 "detalles_compra",
                 (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")),
             )
+            write_array(
+                "dte_envios",
+                (dict(d) for d in self.db.cursor.execute("SELECT * FROM dte_envios")),
+            )
+            write_array(
+                "notas",
+                (dict(n) for n in self.db.cursor.execute("SELECT * FROM notas")),
+            )
+            write_array(
+                "facturas_pdf",
+                (dict(f) for f in self.db.cursor.execute("SELECT * FROM facturas_pdf")),
+            )
+            write_array(
+                "tickets_pdf",
+                (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
+            )
             if datos_negocio:
                 f.write(",\n\"datos_negocio\":")
                 json.dump(datos_negocio, f, ensure_ascii=False)
@@ -601,6 +617,53 @@ class InventoryManager:
                         m.get("cantidad", 0),
                         m.get("motivo", ""),
                         m.get("usuario", ""),
+                    ),
+                )
+
+            for de in data.get("dte_envios", []):
+                self.db.cursor.execute(
+                    "INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        venta_id_map.get(de.get("venta_id")),
+                        de.get("modo"),
+                        de.get("estado"),
+                        de.get("sello"),
+                        de.get("fecha_hora"),
+                        de.get("respuesta"),
+                    ),
+                )
+
+            for n in data.get("notas", []):
+                self.db.cursor.execute(
+                    "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo, detalles) VALUES (?, ?, ?, ?, ?, ?)",
+                    (
+                        venta_id_map.get(n.get("venta_id")),
+                        n.get("tipo"),
+                        n.get("fecha"),
+                        n.get("monto"),
+                        n.get("motivo"),
+                        n.get("detalles"),
+                    ),
+                )
+
+            for fp in data.get("facturas_pdf", []):
+                self.db.cursor.execute(
+                    "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, ?)",
+                    (
+                        venta_id_map.get(fp.get("venta_id")),
+                        fp.get("tipo"),
+                        fp.get("ruta"),
+                        fp.get("fecha_creacion"),
+                    ),
+                )
+
+            for tp in data.get("tickets_pdf", []):
+                self.db.cursor.execute(
+                    "INSERT INTO tickets_pdf (venta_id, ruta, fecha_creacion) VALUES (?, ?, ?)",
+                    (
+                        venta_id_map.get(tp.get("venta_id")),
+                        tp.get("ruta"),
+                        tp.get("fecha_creacion"),
                     ),
                 )
 

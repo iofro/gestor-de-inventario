@@ -104,7 +104,7 @@ Para firmar electrónicamente los DTE define en `config_negocio.json` el bloque
 
 ```json
 {
-  "firmador_url": "http://127.0.0.1:8080/firma/firmardocumento/",
+  "sign_url": "http://127.0.0.1:8080/firma/firmardocumento/",
   "firma_electronica": {
     "nit": "09061712791014",
     "passwordPri": "PASSWORD_EN_BASE64",
@@ -131,14 +131,14 @@ server:
 ```
 
 Si el firmador escucha en otro puerto o en otro equipo, especifica la URL
-mediante la variable de entorno `FIRMADOR_URL`:
+mediante la variable de entorno `SIGN_URL`:
 
 ```bash
-export FIRMADOR_URL="http://127.0.0.1:8080/firma/firmardocumento/"
+export SIGN_URL="http://127.0.0.1:8080/firma/firmardocumento/"
 ```
 
 Alternativamente, puede definirse en `config_negocio.json` bajo la clave
-`firmador_url`.
+`sign_url`.
 
 Luego se firmará cada DTE enviándolo a
 `http://127.0.0.1:8080/firma/firmardocumento/` de forma automática si no se

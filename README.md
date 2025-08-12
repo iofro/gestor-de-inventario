@@ -104,6 +104,7 @@ Para firmar electrónicamente los DTE define en `config_negocio.json` el bloque
 
 ```json
 {
+  "firmador_url": "http://127.0.0.1:8080/firma/firmardocumento/",
   "firma_electronica": {
     "nit": "09061712791014",
     "passwordPri": "PASSWORD_EN_BASE64",
@@ -118,8 +119,27 @@ El servicio de firmado debe ejecutarse con:
 vendor/jdk/bin/java -jar target/svfe-api-firmador-0.1.1.jar --server.port=8080
 ```
 
+El puerto por defecto es `8080`, pero puede cambiarse editando el archivo
+`application.yml` del servicio:
+
+```yaml
+server:
+  port: 8080
+```
+
+Si el firmador escucha en otro puerto o en otro equipo, especifica la URL
+mediante la variable de entorno `FIRMADOR_URL`:
+
+```bash
+export FIRMADOR_URL="http://127.0.0.1:8080/firma/firmardocumento/"
+```
+
+Alternativamente, puede definirse en `config_negocio.json` bajo la clave
+`firmador_url`.
+
 Luego se firmará cada DTE enviándolo a
-`http://127.0.0.1:8080/firma/firmardocumento` de forma automática.
+`http://127.0.0.1:8080/firma/firmardocumento/` de forma automática si no se
+especifica otra URL.
 
 Para diferenciar entre los ambientes de pruebas y producción de Hacienda,
 configura el campo `ambiente` y las URLs en `config_negocio.json`:

@@ -32,10 +32,9 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
 
-    def fake_sign(data, cert, p, key):
+    def fake_sign(data):
         sign_calls["count"] += 1
         return "SIGNED"
 

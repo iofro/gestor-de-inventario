@@ -921,9 +921,8 @@ def transmitir_dte(
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
-    cert, key, phrase = jws.get_cert_config()
-    jwt_token = jws.create_auth_jwt("inventario", cert, phrase, key)
-    respuesta = _post_dte(url, jwt_token, jws_token)
+    token = auth.get_token()
+    respuesta = _post_dte(url, token, jws_token)
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -962,8 +961,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         return {"estado": "Pendiente"}
 
     url = config.get("url") or DEFAULT_RECEPCION_URL
-    cert, key, phrase = jws.get_cert_config()
-    signed = jws.sign_json(data, cert, phrase, key)
+    signed = jws.sign_json(data)
     token = auth.get_token()
 
     try:
@@ -1034,8 +1032,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     """Firma y envía un evento a Hacienda."""
     config = _load_dte_api_config()
     url = config.get("url") or DEFAULT_RECEPCION_URL
-    cert, key, phrase = jws.get_cert_config()
-    signed = jws.sign_json(data, cert, phrase, key)
+    signed = jws.sign_json(data)
     token = auth.get_token()
 
     try:

@@ -11,8 +11,7 @@ Esta aplicación permite gestionar inventarios y ventas utilizando una interfaz 
 pip install -r requirements.txt
 ```
 
-Esto instalará también **PyMuPDF** para las previsualizaciones de facturas,
-así como **PyJWT** y **cryptography**, necesarias para firmar los DTE.
+Esto instalará también **PyMuPDF** para las previsualizaciones de facturas.
 
 ## Ejecutar la aplicación
 
@@ -51,8 +50,7 @@ pytest
 ```
 
 Las pruebas que verifican la generación y lectura de PDF utilizan
-**PyMuPDF**, por lo que debes instalar las dependencias (incluyendo
-**PyJWT** y **cryptography**) antes de
+**PyMuPDF**, por lo que debes instalar las dependencias antes de
 ejecutarlas. Puedes hacerlo ejecutando:
 
 ```bash
@@ -101,22 +99,27 @@ evitar la advertencia sobre credenciales incompletas estableciendo la variable
 de entorno `INVENTARIO_SUPPRESS_SMTP_WARNING=1` o iniciando `SalesTab` con
 `check_smtp=False`.
 
-Para firmar electrónicamente los DTE define los archivos de firma en
-`config_negocio.json` dentro del bloque `firma_electronica`:
+Para firmar electrónicamente los DTE define en `config_negocio.json` el bloque
+`firma_electronica` con las credenciales del firmador:
 
 ```json
 {
   "firma_electronica": {
-    "certificado": "ruta/al/certificado.crt",
-    "certificado_data": "PEM_O_BASE64",
-    "clave_privada": "ruta/al/clave.key",
-    "clave_privada_data": "PEM_O_BASE64",
-    "llave_publica": "ruta/opcional/public.key",
-    "llave_publica_data": "PEM_O_BASE64",
-    "frase_acceso": "PASSWORD_EN_BASE64"
+    "nit": "09061712791014",
+    "passwordPri": "PASSWORD_EN_BASE64",
+    "activo": true
   }
 }
 ```
+
+El servicio de firmado debe ejecutarse con:
+
+```bash
+vendor/jdk/bin/java -jar target/svfe-api-firmador-0.1.1.jar --server.port=8080
+```
+
+Luego se firmará cada DTE enviándolo a
+`http://127.0.0.1:8080/firma/firmardocumento` de forma automática.
 
 Para diferenciar entre los ambientes de pruebas y producción de Hacienda,
 configura el campo `ambiente` y las URLs en `config_negocio.json`:

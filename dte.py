@@ -578,9 +578,11 @@ def generar_dte_json(
 def validate_dte_json(data: dict) -> None:
     """Basic validation and normalization for DTE payload before signing."""
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
-    for key in required:
-        if key not in data:
-            raise ValueError(f"Falta el campo obligatorio: {key}")
+    missing = [key for key in required if key not in data]
+    if missing:
+        raise ValueError(
+            "Faltan campos obligatorios: " + ", ".join(missing)
+        )
 
     negocio = _load_datos_negocio()
 

@@ -106,19 +106,34 @@ evitar la advertencia sobre credenciales incompletas estableciendo la variable
 de entorno `INVENTARIO_SUPPRESS_SMTP_WARNING=1` o iniciando `SalesTab` con
 `check_smtp=False`.
 
-Para firmar electrónicamente los DTE define en `config_negocio.json` el bloque
+Para firmar electrónicamente los DTE define en `config_negocio.json` la
+configuración por ambiente. El campo `ambiente` indica qué sección utilizar
+(`pruebas` o `produccion`) y dentro de cada una se debe agregar su propio bloque
 `firma_electronica` con las credenciales del firmador:
 
 ```json
 {
   "sign_url": "http://127.0.0.1:8080/firma/firmardocumento/",
-  "firma_electronica": {
-    "nit": "09061712791014",
-    "passwordPri": "PASSWORD_EN_BASE64",
-    "activo": true
+  "ambiente": "pruebas",
+  "pruebas": {
+    "firma_electronica": {
+      "nit": "09061712791014",
+      "passwordPri": "PASSWORD_EN_BASE64",
+      "activo": true
+    }
+  },
+  "produccion": {
+    "firma_electronica": {
+      "nit": "NIT_PRODUCCION",
+      "passwordPri": "PASSWORD_PROD_EN_BASE64",
+      "activo": true
+    }
   }
 }
 ```
+
+Los datos se guardan dentro del nodo del ambiente (`pruebas` o `produccion`),
+por lo que cada uno debe contar con su propio bloque `firma_electronica`.
 
 Coloca el certificado correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`. La carpeta `uploads/` está incluida en `.gitignore`,
 por lo que los certificados no se versionan en el repositorio.

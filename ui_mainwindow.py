@@ -1510,6 +1510,8 @@ class MainWindow(QMainWindow):
             config[ambiente]["firma_electronica"] = new_fe
             config[ambiente]["auth_url"] = new_urls.get("auth_url", "")
             config[ambiente]["recepcion_url"] = new_urls.get("recepcion_url", "")
+            if "auth" in new_urls:
+                config[ambiente]["auth"] = new_urls["auth"]
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             with open(config_path, "w", encoding="utf-8") as f:

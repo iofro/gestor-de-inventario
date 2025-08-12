@@ -1,1 +1,8 @@
-{"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
+{
+  "ambiente": "pruebas",
+  "pruebas": {
+    "recepcion_url": "http://example.com",
+    "api_user": "TU_USUARIO_API",
+    "api_pwd": "TU_CONTRASEÑA_API"
+  }
+}

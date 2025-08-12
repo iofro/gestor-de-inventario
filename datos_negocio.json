@@ -27,5 +27,17 @@
   "smtp_server": "smtp.gmail.com",
   "smtp_port": "587",
   "email_usuario": "contacto@demo3.com",
-  "email_contrasena": ""
+  "email_contrasena": "",
+  "dte_api": {
+    "url": "https://apitest.dtes.mh.gob.sv\n",
+    "ambiente": "pruebas",
+    "token": "https://apitest.dtes.mh.gob.sv/seguridad/auth",
+    "prefijo_control": "DTE-01-S001P001",
+    "modo_transmision": "1 - Normal",
+    "envio_automatico": true,
+    "adjuntar_json_correo": true,
+    "incluir_sello_pdf": true,
+    "guardar_respuesta": true,
+    "tipo_contribuyente": "Persona Natural"
+  }
 }

@@ -3,9 +3,14 @@
   "pruebas": {
     "recepcion_url": "http://example.com",
     "firma_electronica": {
-      "nit": "",
-      "passwordPri": "",
+      "nit": "09061712791014",
+      "passwordPri": "THV6I1BpYW5vOF9WZXJkZQ==",
       "activo": true
     }
+  },
+  "firma_electronica": {
+    "nit": "09061712791014\n",
+    "passwordPri": "THV6I1BpYW5vOF9WZXJkZQo=",
+    "activo": true
   }
 }

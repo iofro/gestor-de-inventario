@@ -25,10 +25,9 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
 
-    def fake_sign(data, c, p, k):
+    def fake_sign(data):
         sign_calls["count"] += 1
         return "SIGNED"
 
@@ -123,10 +122,9 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     venta = create_sale(db)
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
 
-    def fake_sign(data, c, p, k):
+    def fake_sign(data):
         sign_calls["count"] += 1
         return "SIGNED"
 
@@ -205,10 +203,9 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
 
-    def fake_sign(data, c, p, k):
+    def fake_sign(data):
         sign_calls["count"] += 1
         return "SIGNED"
 
@@ -260,10 +257,9 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     sign_calls = {"count": 0}
 
-    def fake_sign(data, c, p, k):
+    def fake_sign(data):
         sign_calls["count"] += 1
         return "SIGNED"
 

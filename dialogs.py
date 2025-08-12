@@ -2,10 +2,11 @@ from decimal import Decimal, getcontext, ROUND_HALF_UP
 import json
 import logging
 import base64
+import requests
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
+    QApplication, QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QSpinBox,
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
@@ -2975,6 +2976,7 @@ class DTEConfigDialog(QDialog):
         self.ambiente_hacienda = QComboBox()
         self.ambiente_hacienda.addItems(["Pruebas", "Producción"])
         self.token_hacienda = QLineEdit()
+        self.token_btn = QPushButton("Obtener")
         self.endpoint_hacienda = QLineEdit()
         self.auth_url = QLineEdit()
         self.recepcion_url = QLineEdit()
@@ -2989,7 +2991,12 @@ class DTEConfigDialog(QDialog):
         form.addRow("Prefijo número control:", self.prefijo_control)
         form.addRow("Modo transmisión por defecto:", self.modo_transmision)
         form.addRow("Ambiente:", self.ambiente_hacienda)
-        form.addRow("Token autenticación:", self.token_hacienda)
+        token_widget = QWidget()
+        token_layout = QHBoxLayout(token_widget)
+        token_layout.setContentsMargins(0, 0, 0, 0)
+        token_layout.addWidget(self.token_hacienda)
+        token_layout.addWidget(self.token_btn)
+        form.addRow("Token autenticación:", token_widget)
         form.addRow("Endpoint API:", self.endpoint_hacienda)
         form.addRow("URL autenticación:", self.auth_url)
         form.addRow("URL recepción:", self.recepcion_url)
@@ -3007,6 +3014,7 @@ class DTEConfigDialog(QDialog):
         self.setLayout(layout)
         guardar.clicked.connect(self.accept)
         cancelar.clicked.connect(self.reject)
+        self.token_btn.clicked.connect(self._fetch_token)
         if dte_api or fe_config or env_config:
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
 
@@ -3032,6 +3040,38 @@ class DTEConfigDialog(QDialog):
         self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
+
+    def _fetch_token(self):
+        nit = self.dte_nit.text().strip()
+        pwd = self.dte_pass.text().strip()
+        if not nit or not pwd:
+            QMessageBox.warning(self, "Datos faltantes", "Debe ingresar NIT y contraseña.")
+            return
+        url = self.auth_url.text().strip()
+        if not url:
+            if self.ambiente_hacienda.currentText().startswith("Produc"):
+                url = "https://api.factura.gob.sv/auth"
+            else:
+                url = "https://apitest.dtes.mh.gob.sv/seguridad/auth"
+        try:
+            resp = requests.post(url, data={"user": nit, "pwd": pwd}, timeout=20)
+            resp.raise_for_status()
+            info = resp.json()
+            if info.get("status") == "OK":
+                token = info.get("body", {}).get("token")
+                if token:
+                    self.token_hacienda.setText(token)
+                    try:
+                        QApplication.clipboard().setText(token)
+                    except Exception:
+                        pass
+                    return
+                QMessageBox.warning(self, "Error", "Respuesta sin token válido.")
+            else:
+                msg = info.get("message") or info.get("error") or resp.text
+                QMessageBox.warning(self, "Error", msg)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo obtener token: {exc}")
 
     def get_data(self):
         dte_api = {

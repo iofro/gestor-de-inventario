@@ -1500,13 +1500,16 @@ class MainWindow(QMainWindow):
         from dialogs import DTEConfigDialog
         dte_api = datos.get("dte_api", {})
         ambiente = config.get("ambiente", "pruebas")
-        fe_config = config.get(ambiente, {}).get("firma_electronica", {})
-        dlg = DTEConfigDialog(dte_api, fe_config, self)
+        env_conf = config.get(ambiente, {})
+        fe_config = env_conf.get("firma_electronica", {})
+        dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self)
         if dlg.exec_():
-            new_dte_api, new_fe = dlg.get_data()
-            datos["dte_api"] = new_dte_api
+            new_dte_api, new_fe, new_urls = dlg.get_data()
+            datos = {"dte_api": new_dte_api}
             config.setdefault(ambiente, {})
             config[ambiente]["firma_electronica"] = new_fe
+            config[ambiente]["auth_url"] = new_urls.get("auth_url", "")
+            config[ambiente]["recepcion_url"] = new_urls.get("recepcion_url", "")
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             with open(config_path, "w", encoding="utf-8") as f:

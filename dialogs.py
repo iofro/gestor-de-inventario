@@ -3015,7 +3015,7 @@ class EmailConfigDialog(QDialog):
 
 
 class DTEConfigDialog(QDialog):
-    def __init__(self, dte_api=None, fe_config=None, parent=None):
+    def __init__(self, dte_api=None, fe_config=None, env_config=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Configuración de Facturación Electrónica")
         layout = QVBoxLayout()
@@ -3034,6 +3034,8 @@ class DTEConfigDialog(QDialog):
         self.ambiente_hacienda.addItems(["Pruebas", "Producción"])
         self.token_hacienda = QLineEdit()
         self.endpoint_hacienda = QLineEdit()
+        self.auth_url = QLineEdit()
+        self.recepcion_url = QLineEdit()
         self.envio_automatico = QCheckBox("Activar envío automático a Hacienda")
         self.adjuntar_json_correo = QCheckBox("Adjuntar JSON firmado en correo al cliente")
         self.incluir_sello_pdf = QCheckBox("Incluir sello de recepción en el PDF (si existe)")
@@ -3047,6 +3049,8 @@ class DTEConfigDialog(QDialog):
         form.addRow("Ambiente:", self.ambiente_hacienda)
         form.addRow("Token autenticación:", self.token_hacienda)
         form.addRow("Endpoint API:", self.endpoint_hacienda)
+        form.addRow("URL autenticación:", self.auth_url)
+        form.addRow("URL recepción:", self.recepcion_url)
         form.addRow(self.envio_automatico)
         form.addRow(self.adjuntar_json_correo)
         form.addRow(self.incluir_sello_pdf)
@@ -3061,10 +3065,10 @@ class DTEConfigDialog(QDialog):
         self.setLayout(layout)
         guardar.clicked.connect(self.accept)
         cancelar.clicked.connect(self.reject)
-        if dte_api or fe_config:
-            self.set_data(dte_api or {}, fe_config or {})
+        if dte_api or fe_config or env_config:
+            self.set_data(dte_api or {}, fe_config or {}, env_config or {})
 
-    def set_data(self, dte_api, fe_config):
+    def set_data(self, dte_api, fe_config, env_config):
         self.dte_nit.setText(fe_config.get("nit", ""))
         frase = fe_config.get("passwordPri", "")
         if frase:
@@ -3080,6 +3084,8 @@ class DTEConfigDialog(QDialog):
         self.ambiente_hacienda.setCurrentText("Producción" if ambiente.lower() in ["producción", "produccion"] else "Pruebas")
         self.token_hacienda.setText(dte_api.get("token", ""))
         self.endpoint_hacienda.setText(dte_api.get("url", ""))
+        self.auth_url.setText(env_config.get("auth_url", ""))
+        self.recepcion_url.setText(env_config.get("recepcion_url", ""))
         self.envio_automatico.setChecked(dte_api.get("envio_automatico", False))
         self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
@@ -3103,7 +3109,11 @@ class DTEConfigDialog(QDialog):
             "passwordPri": base64.b64encode(self.dte_pass.text().encode()).decode() if self.dte_pass.text() else "",
             "activo": self.dte_activo.isChecked(),
         }
-        return dte_api, fe_config
+        urls = {
+            "auth_url": self.auth_url.text(),
+            "recepcion_url": self.recepcion_url.text(),
+        }
+        return dte_api, fe_config, urls
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):
         super().__init__(parent)

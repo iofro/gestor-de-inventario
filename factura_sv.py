@@ -198,14 +198,14 @@ def generar_factura_electronica_pdf(
     box_w = (width - 2 * x_margin - 10) // 2
     line_h = 12
 
-    telefono = datos_negocio.get('telefono_fijo') or datos_negocio.get('telefono_movil', '')
-    correo_emisor = datos_negocio.get('email') or datos_negocio.get('email_usuario', '')
+    telefono = datos_negocio.get('telefono', '')
+    correo_emisor = datos_negocio.get('correo') or datos_negocio.get('email_usuario', '')
 
     emisor_lines = [
-        f"Nombre: {datos_negocio.get('razon_social', '')}",
+        f"Nombre: {datos_negocio.get('nombre', '')}",
         f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}",
-        f"Giro: {datos_negocio.get('giro', '')}",
-        f"Dirección: {datos_negocio.get('direccion', '')}",
+        f"Giro: {datos_negocio.get('descActividad', '')}",
+        f"Dirección: {datos_negocio.get('direccion', {}).get('complemento', '')}",
     ]
     if telefono:
         emisor_lines.append(f"Número Teléfono: {telefono}")
@@ -240,13 +240,17 @@ def generar_factura_electronica_pdf(
     c.drawString(emisor_x + 5, text_y, "EMISOR:")
     c.setFont("Helvetica", 8)
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, f"Nombre: {datos_negocio.get('razon_social', '')}")
+    c.drawString(emisor_x + 5, text_y, f"Nombre: {datos_negocio.get('nombre', '')}")
     text_y -= 12
     c.drawString(emisor_x + 5, text_y, f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}")
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, f"Giro: {datos_negocio.get('giro', '')}")
+    c.drawString(emisor_x + 5, text_y, f"Giro: {datos_negocio.get('descActividad', '')}")
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, f"Dirección: {datos_negocio.get('direccion', '')}")
+    c.drawString(
+        emisor_x + 5,
+        text_y,
+        f"Dirección: {datos_negocio.get('direccion', {}).get('complemento', '')}",
+    )
     text_y -= 12
     if telefono:
         c.drawString(emisor_x + 5, text_y, f"Número Teléfono: {telefono}")

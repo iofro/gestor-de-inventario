@@ -6,3 +6,9 @@ last_inventory.txt
 facturacion.log
 ultimo_inventario.json
 *.db
+
+# Build (PyInstaller)
+/dist/
+/build/
+*.spec
+

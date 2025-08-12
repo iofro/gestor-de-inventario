@@ -57,7 +57,7 @@ def generar_reporte_vendedor_pdf(
     y = height - 40
 
     c.setFont("Courier-Bold", 12)
-    c.drawCentredString(width / 2, y, datos_negocio.get("nombre_comercial", ""))
+    c.drawCentredString(width / 2, y, datos_negocio.get("nombreComercial", ""))
     y -= 14
     c.setFont("Courier", 10)
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"
@@ -181,7 +181,7 @@ def generar_estado_cuenta_pdf(
     )
 
     elements = [
-        Paragraph(datos_negocio.get("nombre_comercial", ""), style_title),
+        Paragraph(datos_negocio.get("nombreComercial", ""), style_title),
         Paragraph(
             f"Estado de cuenta desde: {fecha_inicio} al {fecha_fin}", style_subtitle
         ),

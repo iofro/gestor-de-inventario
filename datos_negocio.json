@@ -2,7 +2,7 @@
   "dte_api": {
     "url": "https://apitest.dtes.mh.gob.sv\n",
     "ambiente": "pruebas",
-    "token": "https://apitest.dtes.mh.gob.sv/seguridad/auth",
+    "token": "Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIwOTA2MTcxMjc5MTAxNCIsImF1dGhvcml0aWVzIjpbIlVTRVIiLCJVU0VSX0FQSSIsIlVzdWFyaW8iXSwiY19uaXQiOiIwOTA2MTcxMjc5MTAxNCIsImNfZHVpIjoiMDAwODY4NTQ3IiwiaWF0IjoxNzU1MDM5NjE2LCJleHAiOjE3NTUxMjYwMTZ9.CbkEHICP7DxlH2UYKQPp_3GWfNXuzmgNmU055o7xTaUiYdwsQlvq6syxKDoqSY7iVGVdjTugZcu8reJkOrDN8w",
     "prefijo_control": "DTE-01-S001P001",
     "modo_transmision": "1 - Normal",
     "envio_automatico": true,

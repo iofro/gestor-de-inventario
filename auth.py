@@ -42,15 +42,35 @@ def _read_config_credentials() -> Tuple[Optional[str], Optional[str]]:
     try:
         with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
             data = json.load(fh)
+
+        ambiente = data.get("ambiente", "pruebas")
+        env_conf = data.get(ambiente, {})
+        firma_conf = env_conf.get("firma_electronica", {})
+
         nit = (
-            data.get("nit")
+            firma_conf.get("nit")
+            or firma_conf.get("NIT")
+            or env_conf.get("nit")
+            or env_conf.get("NIT")
+            or env_conf.get("api_nit")
+            or env_conf.get("api", {}).get("nit")
+            or env_conf.get("dte_api", {}).get("nit")
+            or data.get("nit")
             or data.get("NIT")
             or data.get("api_nit")
             or data.get("api", {}).get("nit")
             or data.get("dte_api", {}).get("nit")
         )
         pwd = (
-            data.get("api_pwd")
+            firma_conf.get("pwd")
+            or firma_conf.get("password")
+            or firma_conf.get("passwordPri")
+            or env_conf.get("api_pwd")
+            or env_conf.get("api_password")
+            or env_conf.get("clave")
+            or env_conf.get("api", {}).get("pwd")
+            or env_conf.get("dte_api", {}).get("pwd")
+            or data.get("api_pwd")
             or data.get("api_password")
             or data.get("clave")
             or data.get("api", {}).get("pwd")

@@ -198,6 +198,33 @@ Además, la pestaña **Facturación** buscará archivos también en las rutas
 las facturas almacenadas manualmente en esas carpetas se muestren incluso si no
 están vinculadas a una venta.
 
+### Firmado y pruebas
+
+Para iniciar el servicio de firmado:
+
+```bash
+java -jar svfe-api-firmador-*.jar --server.port=8080
+```
+
+En PowerShell puedes definir las variables necesarias:
+
+```powershell
+setx SIGN_URL "http://127.0.0.1:8080/firma/firmardocumento/"
+setx NIT_FIRMADOR "09061712791014"
+setx HACIENDA_URL "https://sandbox.ejemplo.hacienda.sv/..."
+```
+
+Coloca el certificado del NIT correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`.
+
+Ejecuta las pruebas manuales con:
+
+```bash
+python -m tests.manual_sign_check
+python -m tests.manual_e2e_sandbox
+```
+
+Las salidas esperadas son `SIGN_TEST_OK` o `SIGN_TEST_FAIL` y `E2E_SANDBOX_OK` o `E2E_SANDBOX_FAIL` respectivamente.
+
 ### Generar ticket en formato personalizado
 
 En las pestañas **Ventas** y **Facturación** hay un botón `Ticket`.

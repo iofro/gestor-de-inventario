@@ -1,18 +1,4 @@
 {
-  "nit": "",
-  "nrc": "",
-  "nombre": "",
-  "nombreComercial": "",
-  "codActividad": "",
-  "descActividad": "",
-  "tipoContribuyente": "",
-  "telefono": "",
-  "correo": "",
-  "direccion": {
-    "departamento": "",
-    "municipio": "",
-    "complemento": ""
-  },
   "dte_api": {
     "url": "https://apitest.dtes.mh.gob.sv\n",
     "ambiente": "pruebas",
@@ -22,6 +8,21 @@
     "envio_automatico": true,
     "adjuntar_json_correo": true,
     "incluir_sello_pdf": true,
-    "guardar_respuesta": true
+    "guardar_respuesta": true,
+    "tipo_contribuyente": "Persona Natural"
+  },
+  "nit": "09061712791014",
+  "nrc": "2301408",
+  "nombre": "INVERSIONES",
+  "nombreComercial": "InverTech",
+  "codActividad": "62010",
+  "descActividad": "Desarrollo ",
+  "tipoContribuyente": "Persona Natural",
+  "telefono": "2222-3456",
+  "correo": "farmaciasantacatalina7@gmail.com",
+  "direccion": {
+    "departamento": "San Salvador",
+    "municipio": "San Salvador",
+    "complemento": "Edificio Plaza Centro, Nivel 5, Oficina"
   }
 }

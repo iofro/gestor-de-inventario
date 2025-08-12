@@ -116,3 +116,31 @@ def test_env_specific_credentials(monkeypatch, tmp_path):
     nit, pwd = auth._read_config_credentials()
     assert nit == "env_nit"
     assert pwd == "env_pwd"
+
+
+def test_read_config_api_user(monkeypatch, tmp_path):
+    data = {"api_user": "user1", "api_pwd": "pass1"}
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps(data))
+    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
+    nit, pwd = auth._read_config_credentials()
+    assert nit == "user1"
+    assert pwd == "pass1"
+
+
+def test_get_token_with_explicit_credentials(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_request(nit, pwd):
+        calls["n"] += 1
+        return "tok", 120, "Bearer"
+
+    monkeypatch.setattr(auth, "_request_new_token", fake_request)
+    t1 = auth.get_token(refresh=True, nit="u", pwd="p")
+    assert t1 == "tok"
+    t2 = auth.get_token(nit="u", pwd="p")
+    assert t2 == "tok"
+    assert calls["n"] == 1
+    auth.get_token(nit="u2", pwd="p2")
+    assert calls["n"] == 2

@@ -117,7 +117,10 @@ def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, float]:
         info = resp.json()
         token = info.get("access_token")
         if not token:
-            raise ValueError("Respuesta de autenticación sin token")
+            response_text = resp.text
+            raise ValueError(
+                f"Respuesta de autenticación sin token: {response_text[:200]}"
+            )
         expires_in = int(info.get("expires_in", 0))
         obtained_at = time.time()
         return token, expires_in, obtained_at

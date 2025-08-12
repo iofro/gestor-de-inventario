@@ -38,11 +38,9 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     venta = db.add_venta("2024-01-01", 10, cliente_id=cid)
     db.add_detalle_venta(venta, pid, 1, 10, vendedor_id=vid)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
-
     captured = {}
 
-    def fake_sign(data, c, p, k):
+    def fake_sign(data):
         captured["data"] = data
         captured["count"] = captured.get("count", 0) + 1
         return "JWS_SIGNED"
@@ -167,8 +165,7 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
-    monkeypatch.setattr("utils.jws.sign_json", lambda d, c, p, k: "SIGNED")
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: "SIGNED")
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
@@ -202,7 +199,6 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
@@ -236,8 +232,7 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
-    monkeypatch.setattr("utils.jws.sign_json", lambda d, c, p, k: "SIGNED")
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: "SIGNED")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
     token_calls = []
@@ -307,8 +302,7 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.get_cert_config", lambda: (None, None, None))
-    monkeypatch.setattr("utils.jws.sign_json", lambda d, c, p, k: "SIGNED")
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: "SIGNED")
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 

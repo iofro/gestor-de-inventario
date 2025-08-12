@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog
+    QFileDialog, QDialogButtonBox
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -2957,6 +2957,31 @@ class EmailConfigDialog(QDialog):
         self.email_contrasena.setText(datos.get("email_contrasena", ""))
 
 
+def prompt_auth_credentials(parent=None, user="", password=""):
+    """Abre un cuadro de diálogo para solicitar usuario y contraseña.
+
+    Retorna una tupla ``(usuario, contraseña)`` si el usuario acepta, o ``(None, None)``
+    si cancela la operación.
+    """
+    dialog = QDialog(parent)
+    dialog.setWindowTitle("Autenticación")
+    layout = QVBoxLayout(dialog)
+    form = QFormLayout()
+    layout.addLayout(form)
+    user_edit = QLineEdit(user)
+    pwd_edit = QLineEdit(password)
+    pwd_edit.setEchoMode(QLineEdit.Password)
+    form.addRow("Usuario:", user_edit)
+    form.addRow("Contraseña:", pwd_edit)
+    buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+    layout.addWidget(buttons)
+    buttons.accepted.connect(dialog.accept)
+    buttons.rejected.connect(dialog.reject)
+    if dialog.exec_() == QDialog.Accepted:
+        return user_edit.text().strip(), pwd_edit.text().strip()
+    return None, None
+
+
 class DTEConfigDialog(QDialog):
     def __init__(self, dte_api=None, fe_config=None, env_config=None, parent=None):
         super().__init__(parent)
@@ -3042,8 +3067,11 @@ class DTEConfigDialog(QDialog):
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
 
     def _fetch_token(self):
-        nit = self.dte_nit.text().strip()
-        pwd = self.dte_pass.text().strip()
+        nit_default = self.dte_nit.text().strip()
+        pwd_default = self.dte_pass.text().strip()
+        nit, pwd = prompt_auth_credentials(self, nit_default, pwd_default)
+        if nit is None:
+            return
         if not nit or not pwd:
             QMessageBox.warning(self, "Datos faltantes", "Debe ingresar NIT y contraseña.")
             return

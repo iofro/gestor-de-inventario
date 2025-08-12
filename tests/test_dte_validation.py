@@ -28,13 +28,13 @@ def test_longitud_num_documento_invalida(dte_metadata_factory):
         validate_dte_json(dte)
 
 
-def test_estructura_invalida(dte_metadata_factory):
-    from jsonschema import ValidationError
-
+def test_estructura_invalida(dte_metadata_factory, monkeypatch):
     dte = dte_metadata_factory()
     del dte["emisor"]["nit"]
-    with pytest.raises(ValidationError):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {})
+    with pytest.raises(ValueError) as exc:
         validate_dte_json(dte)
+    assert "nit" in str(exc.value)
 
 
 def test_strips_additional_properties(dte_metadata_factory):
@@ -47,3 +47,50 @@ def test_strips_additional_properties(dte_metadata_factory):
     assert "selloRecibido" not in clean
     assert "firmaElectronica" not in clean["identificacion"]
     validate_dte_json(clean)
+
+
+def test_missing_top_level_fields_listed():
+    with pytest.raises(ValueError) as exc:
+        validate_dte_json({})
+    msg = str(exc.value)
+    for key in [
+        "identificacion",
+        "emisor",
+        "receptor",
+        "cuerpoDocumento",
+        "resumen",
+    ]:
+        assert key in msg
+
+
+def test_missing_emisor_fields_listed(dte_metadata_factory, monkeypatch):
+    dte = dte_metadata_factory()
+    dte["emisor"] = {}
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {})
+    with pytest.raises(ValueError) as exc:
+        validate_dte_json(dte)
+    msg = str(exc.value)
+    for key in [
+        "nit",
+        "nrc",
+        "nombre",
+        "codActividad",
+        "descActividad",
+        "direccion.complemento",
+        "telefono",
+        "correo",
+    ]:
+        assert key in msg
+
+
+def test_schema_reports_multiple_errors(dte_metadata_factory):
+    from jsonschema import ValidationError
+
+    dte = dte_metadata_factory()
+    del dte["cuerpoDocumento"][0]["descripcion"]
+    del dte["cuerpoDocumento"][0]["cantidad"]
+    with pytest.raises(ValidationError) as exc:
+        validate_dte_json(dte)
+    msg = str(exc.value)
+    assert "cuerpoDocumento.0: 'descripcion' is a required property" in msg
+    assert "cuerpoDocumento.0.cantidad" in msg

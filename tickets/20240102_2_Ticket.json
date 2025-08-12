@@ -2,10 +2,10 @@
   "identificacion": {
     "version": "1",
     "tipoDte": "03",
-    "codigoGeneracion": "A84FEBEB-2CB0-4C6A-812A-48218643EF09",
-    "numeroControl": "DTE-01-S001P001-297882105011855",
-    "fecEmi": "2024-01-01",
-    "horEmi": "10:04:14",
+    "codigoGeneracion": "9E1636B4-F745-4A80-A226-BB30DE1EB552",
+    "numeroControl": "DTE-01-S001P001-277695989349102",
+    "fecEmi": "2024-01-02",
+    "horEmi": "10:03:39",
     "modeloFacturacion": "1 - Facturación previo",
     "tipoTransmision": "1 - Transmisión normal"
   },
@@ -45,14 +45,14 @@
     "reteRenta": 0.0,
     "montoTotalOperacion": 0.0,
     "totalNoGravado": 0.0,
-    "totalPagar": 5.0,
+    "totalPagar": 20.0,
     "totalLetras": "",
     "saldoFavor": 0.0,
     "condicionOperacion": 1.0,
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 5.0,
+        "montoPago": 20.0,
         "referencia": null,
         "periodo": null,
         "plazo": null

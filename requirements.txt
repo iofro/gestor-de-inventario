@@ -2,6 +2,7 @@ PyQt5
 num2words
 reportlab
 pytest
+pytest-cov
 pyinstaller
 dbfread
 PyMuPDF

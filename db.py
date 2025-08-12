@@ -1309,7 +1309,7 @@ class DB:
 
     def get_clientes(self, search=""):
         query = (
-            "SELECT id, codigo, nombre, nrc, nit, telefono, email, giro, direccion, departamento, municipio, otros "
+            "SELECT id, codigo, nombre, nrc, nit, dui, telefono, email, giro, direccion, departamento, municipio, otros "
             "FROM clientes"
         )
         params = []
@@ -1317,9 +1317,9 @@ class DB:
             like = f"%{search}%"
             query += (
                 " WHERE nombre LIKE ? OR codigo LIKE ? OR nit LIKE ? OR nrc LIKE ? "
-                "OR telefono LIKE ? OR email LIKE ?"
+                "OR dui LIKE ? OR telefono LIKE ? OR email LIKE ?"
             )
-            params = [like, like, like, like, like, like]
+            params = [like, like, like, like, like, like, like]
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 

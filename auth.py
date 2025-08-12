@@ -2,6 +2,7 @@ import os
 import json
 import sqlite3
 import time
+import base64
 from typing import Optional, Tuple
 
 import requests
@@ -96,6 +97,11 @@ def _read_config_credentials() -> Tuple[Optional[str], Optional[str]]:
             or data.get("api", {}).get("pwd")
             or data.get("dte_api", {}).get("pwd")
         )
+        if pwd:
+            try:
+                pwd = base64.b64decode(pwd).decode()
+            except Exception:
+                pass
     except (OSError, json.JSONDecodeError):
         pass
     return nit, pwd

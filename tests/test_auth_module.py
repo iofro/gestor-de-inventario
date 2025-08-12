@@ -4,6 +4,7 @@ import os
 import pytest
 import requests
 import auth
+import sqlite3
 
 
 def write_config(tmp_path, nit="123", pwd="pwd"):
@@ -143,4 +144,24 @@ def test_get_token_with_explicit_credentials(monkeypatch):
     assert t2 == "tok"
     assert calls["n"] == 1
     auth.get_token(nit="u2", pwd="p2")
+    assert calls["n"] == 2
+
+
+def test_delete_token(monkeypatch, tmp_path):
+    setup_paths(monkeypatch, tmp_path)
+    calls = {"n": 0}
+
+    def fake_request(nit, pwd):
+        calls["n"] += 1
+        return f"tok{calls['n']}", 120, "Bearer"
+
+    monkeypatch.setattr(auth, "_request_new_token", fake_request)
+    auth.get_token(refresh=True)
+    auth.delete_token()
+    with sqlite3.connect(auth.DB_PATH) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT value FROM tokens WHERE key='access_token'")
+        assert cur.fetchone() is None
+    t2 = auth.get_token()
+    assert t2 == "tok2"
     assert calls["n"] == 2

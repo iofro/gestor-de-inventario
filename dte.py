@@ -628,6 +628,25 @@ def validate_dte_json(data: dict) -> None:
     emisor.setdefault("codPuntoVentaMH", "0000")
     emisor.setdefault("codPuntoVenta", "0000")
     emisor.pop("giro", None)
+    required_emisor = {
+        "nit": emisor.get("nit"),
+        "nrc": emisor.get("nrc"),
+        "nombre": emisor.get("nombre"),
+        "codActividad": emisor.get("codActividad"),
+        "descActividad": emisor.get("descActividad"),
+        "direccion.complemento": emisor.get("direccion", {}).get("complemento"),
+        "telefono": emisor.get("telefono"),
+        "correo": emisor.get("correo"),
+    }
+    missing = [
+        key
+        for key, value in required_emisor.items()
+        if value is None or (isinstance(value, str) and not value.strip())
+    ]
+    if missing:
+        raise ValueError(
+            "Faltan campos obligatorios en emisor: " + ", ".join(missing)
+        )
     data["emisor"] = emisor
 
     receptor = data.get("receptor", {})

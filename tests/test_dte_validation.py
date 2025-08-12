@@ -21,6 +21,13 @@ def test_longitud_nit_invalida(dte_metadata_factory):
         validate_dte_json(dte)
 
 
+def test_longitud_num_documento_invalida(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["receptor"]["numDocumento"] = "123"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
 def test_estructura_invalida(dte_metadata_factory):
     from jsonschema import ValidationError
 

@@ -112,6 +112,9 @@ Para firmar electrónicamente los DTE define en `config_negocio.json` el bloque
 }
 ```
 
+Coloca el certificado correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`. La carpeta `uploads/` está incluida en `.gitignore`,
+por lo que los certificados no se versionan en el repositorio.
+
 El servicio de firmado debe ejecutarse con:
 
 ```bash

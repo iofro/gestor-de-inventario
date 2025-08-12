@@ -482,6 +482,7 @@ def generar_dte_json(
 
     cuerpo = []
     items_total = Decimal("0")
+    commission_total = Decimal("0")
     for idx, d in enumerate(detalles, 1):
         try:
             cant = Decimal(str(d.get("cantidad") or 0))
@@ -494,6 +495,10 @@ def generar_dte_json(
         cant_r = cant.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
         price_r = price.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
         items_total += cant_r * price_r
+        try:
+            commission_total += Decimal(str(d.get("comision") or 0))
+        except Exception:
+            pass
         cuerpo.append({
             "numItem": idx,
             "descripcion": d.get("descripcion"),
@@ -532,9 +537,10 @@ def generar_dte_json(
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
-    if "totalPagar" in resumen and abs(calc_total - resumen.get("totalPagar", 0)) > 0.01:
+    calc_total_commission = _round(calc_total + float(commission_total), 2)
+    if "totalPagar" in resumen and abs(calc_total_commission - resumen.get("totalPagar", 0)) > 0.01:
         print(
-            f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total:.2f}"
+            f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
 
     result = {

@@ -9,13 +9,13 @@ SIGN_TIMEOUT = 10
 
 
 def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
-    """Return signer service URL using env var, config or default."""
-    url = os.getenv("FIRMADOR_URL")
+    """Return signer service URL from ``SIGN_URL`` env, config or default."""
+    url = os.getenv("SIGN_URL")
     if not url and os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            url = data.get("firmador_url")
+            url = data.get("sign_url")
         except Exception:
             pass
     return url or DEFAULT_SIGN_URL

@@ -3,6 +3,7 @@ import json
 import base64
 import time
 import subprocess
+import glob
 from cryptography.hazmat.primitives.serialization import (
     pkcs12,
     Encoding,
@@ -46,6 +47,7 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
     """Return certificate (.crt), key (.key) and password from config."""
     ambiente = _get_ambiente()
     verificar = ambiente == "produccion"
+    password = None
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as fh:
@@ -101,6 +103,23 @@ def get_cert_config(path: str = CONFIG_NEGOCIO_PATH):
                 return cert_path, None, password
         except Exception:
             return None, None, None
+
+    # Fallback: search for certificate and key files in repository root
+    root_dir = os.path.dirname(path)
+    cert_candidates = sorted(glob.glob(os.path.join(root_dir, "*.crt")))
+    key_candidates = sorted(glob.glob(os.path.join(root_dir, "*.key")))
+    if cert_candidates and key_candidates:
+        cert_path = cert_candidates[0]
+        key_path = key_candidates[0]
+        if verificar:
+            with open(cert_path, "rb") as fh:
+                x509.load_pem_x509_certificate(fh.read())
+            with open(key_path, "rb") as fh:
+                key_bytes = fh.read()
+            if b"-----BEGIN" not in key_bytes:
+                raise ValueError("La clave privada no parece ser PEM")
+            load_pem_private_key(key_bytes, password.encode() if password else None)
+        return cert_path, key_path, password
 
     return None, None, None
 

@@ -960,6 +960,19 @@ class DB:
         self.cursor.execute("SELECT * FROM ventas")
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_venta_by_id(self, venta_id: int):
+        """Fetch a single sale by its ID."""
+        self.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,))
+        row = self.cursor.fetchone()
+        if row:
+            data = dict(row)
+            try:
+                data["id"] = int(data["id"])
+            except (ValueError, TypeError):
+                pass
+            return data
+        return None
+
     def update_venta_estado(self, venta_id, estado):
         """Actualiza el estado de una venta."""
         self.cursor.execute(

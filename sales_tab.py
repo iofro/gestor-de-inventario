@@ -30,6 +30,7 @@ from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from dialogs import ManualInvoiceDialog
 from dte import transmitir_dte
+import dte
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
 import tempfile
 import subprocess
@@ -529,6 +530,23 @@ class SalesTab(QWidget):
     def _generate_ticket_pdf(self, venta_id):
         return generate_ticket_pdf(self.manager, venta_id)
 
+    def _show_validation_errors(self, errors, json_path):
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Enviar a Hacienda")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText("El DTE contiene errores de validación:")
+        msg.setInformativeText("\n".join(f"- {e}" for e in errors))
+        open_btn = msg.addButton("Abrir reporte", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Close)
+        msg.exec_()
+        if msg.clickedButton() == open_btn and json_path:
+            report_path = os.path.splitext(json_path)[0] + ".md"
+            with open(report_path, "w", encoding="utf-8") as fh:
+                fh.write("# Errores de validación\n\n")
+                for e in errors:
+                    fh.write(f"- {e}\n")
+            QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
+
     def save_and_send(self):
         """Generate the document for the selected sale and transmit it."""
         if self.sales_table.currentRow() < 0:
@@ -587,6 +605,12 @@ class SalesTab(QWidget):
                     "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
                 )
                 envio_ok = True
+        except dte.DTEValidationError as e:
+            self.status_label.setText("Estado actual: Error")
+            self.gen_label.setText(
+                "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
+            )
+            self._show_validation_errors(e.errors, e.json_path)
         except Exception as e:
             self.status_label.setText("Estado actual: Error")
             self.gen_label.setText(

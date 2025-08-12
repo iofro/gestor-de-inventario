@@ -18,8 +18,8 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QCheckBox,
 )
-from PyQt5.QtCore import QDate, Qt
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import QDate, Qt, QUrl
+from PyQt5.QtGui import QPixmap, QDesktopServices
 import os
 import re
 
@@ -44,6 +44,7 @@ from sales_tab import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
 import shutil
+import dte
 
 # Directory where debit notes will be stored
 NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
@@ -505,6 +506,24 @@ class FacturacionTab(QWidget):
         enabled = bool(entry and entry.get("row_type") in ("venta", "ticket"))
         self.btn_enviar.setEnabled(enabled)
 
+    def _show_validation_errors(self, errors, json_path):
+        """Display validation errors and allow opening a report."""
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Enviar a Hacienda")
+        msg.setIcon(QMessageBox.Warning)
+        msg.setText("El DTE contiene errores de validación:")
+        msg.setInformativeText("\n".join(f"- {e}" for e in errors))
+        open_btn = msg.addButton("Abrir reporte", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Close)
+        msg.exec_()
+        if msg.clickedButton() == open_btn and json_path:
+            report_path = os.path.splitext(json_path)[0] + ".md"
+            with open(report_path, "w", encoding="utf-8") as fh:
+                fh.write("# Errores de validación\n\n")
+                for e in errors:
+                    fh.write(f"- {e}\n")
+            QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
+
     def send_selected_invoice(self):
         venta_id = self._selected_venta()
         entry = self._selected_entry()
@@ -534,6 +553,8 @@ class FacturacionTab(QWidget):
                     QMessageBox.information(
                         self, "Enviar a Hacienda", "Documento enviado"
                     )
+            except dte.DTEValidationError as exc:
+                self._show_validation_errors(exc.errors, exc.json_path)
             except Exception as exc:
                 QMessageBox.critical(
                     self, "Enviar a Hacienda", str(exc)

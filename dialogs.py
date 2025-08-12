@@ -1009,6 +1009,13 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         descuento_tipo = self.descuento_tipo_combo.currentText()
         subtotal = precio_total
 
+        iva = 0
+        iva_tipo = "ninguno"
+        if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked() and self.iva_desglosado_radio.isChecked():
+            iva_tipo = "desglosado"
+            subtotal = subtotal / 1.13  # El precio ingresado incluye IVA
+            precio = round(subtotal / cantidad, 6) if cantidad > 0 else 0
+
         if descuento_tipo == "%":
             descuento_monto = subtotal * (descuento_valor / 100)
         else:
@@ -1030,23 +1037,13 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         if comision_tipo == "Desglosada (incluida en el precio)":
             base_iva = subtotal_con_descuento - comision_monto
 
-        iva = 0
-        iva_tipo = "ninguno"
-        precio_sin_iva = precio
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
             if self.iva_agregado_radio.isChecked():
                 iva = round(base_iva * 0.13, 2)
                 iva_tipo = "agregado"
-                total = subtotal_con_descuento + iva
             elif self.iva_desglosado_radio.isChecked():
-                iva = round(base_iva * 13 / 113, 2)
-                iva_tipo = "desglosado"
-                precio_sin_iva_total = base_iva - iva
-                precio = round(precio_sin_iva_total / cantidad, 6) if cantidad > 0 else 0
-                subtotal = precio_sin_iva_total
-                total = subtotal_con_descuento
-            else:
-                total = subtotal_con_descuento
+                iva = round(base_iva * 0.13, 2)
+            total = subtotal_con_descuento + iva
         else:
             total = subtotal_con_descuento
 

@@ -19,6 +19,9 @@ class FakeDB:
     def get_ventas(self):
         return self._ventas
 
+    def get_venta_by_id(self, vid):
+        return next((v for v in self._ventas if int(v["id"]) == vid), None)
+
     def get_venta_credito_fiscal(self, vid):
         return None
 

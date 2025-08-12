@@ -6,13 +6,16 @@ from typing import Optional, Tuple
 
 import requests
 
-DEFAULT_AUTH_URL = "https://apifacturatest.mh.gob.sv/auth"
+DEFAULT_AUTH_URL = "https://apitest.dtes.mh.gob.sv/seguridad/auth"
+# URL de producción proporcionada por el MH
+PRODUCTION_AUTH_URL = "https://api.dtes.mh.gob.sv/seguridad/auth"
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DB_PATH = os.path.join(os.path.dirname(__file__), "inventario.db")
 
 _access_token: Optional[str] = None
 _expires_at: float = 0.0
 _obtained_at: float = 0.0
+_token_type: str = ""
 
 
 def _read_db_credentials() -> Tuple[Optional[str], Optional[str]]:
@@ -106,7 +109,7 @@ def _get_auth_url() -> str:
         return DEFAULT_AUTH_URL
 
 
-def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, float]:
+def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, str]:
     """Solicita un nuevo token de acceso a la API."""
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {"user": nit, "pwd": pwd}
@@ -115,15 +118,19 @@ def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, float]:
         resp = requests.post(url, data=data, headers=headers, timeout=20)
         resp.raise_for_status()
         info = resp.json()
-        token = info.get("access_token")
+        body = info.get("body", {}) if isinstance(info, dict) else {}
+        token = body.get("token") if info.get("status") == "OK" else None
+        token_type = body.get("tokenType", "") if body else ""
+        expires_in = int(body.get("expiresIn", 0)) if body else 0
         if not token:
             response_text = resp.text
             raise ValueError(
                 f"Respuesta de autenticación sin token: {response_text[:200]}"
             )
-        expires_in = int(info.get("expires_in", 0))
-        obtained_at = time.time()
-        return token, expires_in, obtained_at
+        if token_type.lower() == "bearer":
+            token_type = "Bearer"
+            token = f"{token_type} {token}"
+        return token, expires_in, token_type
     except Exception as exc:
         report = f"Error de autenticación al solicitar token en {url}: {exc}"
         if isinstance(exc, requests.HTTPError) and exc.response is not None:
@@ -159,7 +166,7 @@ def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
 
 def get_token(refresh: bool = False) -> str:
     """Devuelve un token válido reutilizándolo y renovándolo al expirar."""
-    global _access_token, _expires_at, _obtained_at
+    global _access_token, _expires_at, _obtained_at, _token_type
     now = time.time()
     if (
         not refresh
@@ -170,11 +177,13 @@ def get_token(refresh: bool = False) -> str:
 
     nit, pwd = _get_credentials()
     try:
-        token, expires_in, obtained_at = _request_new_token(nit, pwd)
+        token, expires_in, token_type = _request_new_token(nit, pwd)
     except Exception as exc:
         print(f"No se pudo obtener token: {exc}")
         raise
+    obtained_at = time.time()
     _access_token = token
+    _token_type = token_type
     _obtained_at = obtained_at
     _expires_at = obtained_at + expires_in
     _save_token(token, expires_in, obtained_at)

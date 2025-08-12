@@ -5,6 +5,20 @@ import requests
 
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
+SIGN_TIMEOUT = 10
+
+
+def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
+    """Return signer service URL using env var, config or default."""
+    url = os.getenv("FIRMADOR_URL")
+    if not url and os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+            url = data.get("firmador_url")
+        except Exception:
+            pass
+    return url or DEFAULT_SIGN_URL
 
 
 def _load_config(path: str = CONFIG_NEGOCIO_PATH):
@@ -30,13 +44,28 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
     return nit, password, activo
 
 
-def sign_json(payload: dict, nit: str | None = None, passwordPri: str | None = None, activo: bool = True, url: str = DEFAULT_SIGN_URL) -> str:
+def sign_json(
+    payload: dict,
+    nit: str | None = None,
+    passwordPri: str | None = None,
+    activo: bool = True,
+    url: str | None = None,
+) -> str:
     """Sign ``payload`` using the external ``svfe-api-firmador`` service."""
     if nit is None or passwordPri is None:
         nit, passwordPri, activo = _load_config()
+    url = url or _get_sign_url()
     body = {"nit": nit, "activo": activo, "passwordPri": passwordPri, "dteJson": payload}
-    response = requests.post(url, json=body, timeout=30)
-    response.raise_for_status()
+    try:
+        response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
+        response.raise_for_status()
+    except requests.Timeout as exc:
+        raise RuntimeError("Tiempo de espera agotado al firmar") from exc
+    except requests.HTTPError as exc:
+        status = exc.response.status_code
+        raise RuntimeError(f"Error HTTP {status} al firmar: {exc.response.text}") from exc
+    except requests.RequestException as exc:
+        raise RuntimeError(f"Error al firmar: {exc}") from exc
     data = response.json()
     if isinstance(data, dict):
         if data.get("status") == "OK":
@@ -45,7 +74,14 @@ def sign_json(payload: dict, nit: str | None = None, passwordPri: str | None = N
     return data
 
 
-def sign_and_save(payload: dict, json_path: str, nit: str | None = None, passwordPri: str | None = None, activo: bool = True, url: str = DEFAULT_SIGN_URL) -> str:
+def sign_and_save(
+    payload: dict,
+    json_path: str,
+    nit: str | None = None,
+    passwordPri: str | None = None,
+    activo: bool = True,
+    url: str | None = None,
+) -> str:
     """Sign ``payload`` and store the JWS next to ``json_path``."""
     token = sign_json(payload, nit, passwordPri, activo, url)
     jws_path = os.path.splitext(json_path)[0] + ".jws"

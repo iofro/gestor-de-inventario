@@ -1,17 +1,1 @@
-{
-  "ambiente": "pruebas",
-  "pruebas": {
-    "auth_url": "https://apitest.dtes.mh.gob.sv/seguridad/auth",
-    "recepcion_url": "https://apitest.dtes.mh.gob.sv\n",
-    "firma_electronica": {
-      "nit": "09061712791014",
-      "passwordPri": "THV6I1BpYW5vOF9WZXJkZQ==",
-      "activo": true
-    }
-  },
-  "firma_electronica": {
-    "nit": "09061712791014\n",
-    "passwordPri": "THV6I1BpYW5vOF9WZXJkZQo=",
-    "activo": true
-  }
-}
+{"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}

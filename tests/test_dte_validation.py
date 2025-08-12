@@ -94,3 +94,11 @@ def test_schema_reports_multiple_errors(dte_metadata_factory):
     msg = str(exc.value)
     assert "cuerpoDocumento.0: 'descripcion' is a required property" in msg
     assert "cuerpoDocumento.0.cantidad" in msg
+    assert hasattr(exc.value, "errors")
+    assert len(exc.value.errors) == 2
+    paths = [e["path"] for e in exc.value.errors]
+    assert ["cuerpoDocumento", 0] in paths
+    assert ["cuerpoDocumento", 0, "cantidad"] in paths
+    messages = {e["message"] for e in exc.value.errors}
+    assert "'descripcion' is a required property" in messages
+    assert "0.0 is less than or equal to the minimum of 0" in messages

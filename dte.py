@@ -71,6 +71,37 @@ def _round(value, digits):
     return float(Decimal(str(value)).quantize(Decimal(fmt), rounding=ROUND_HALF_UP))
 
 
+def _normalize_payload(value):
+    """Recursively trim strings and coerce simple types."""
+    if isinstance(value, dict):
+        for k, v in list(value.items()):
+            value[k] = _normalize_payload(v)
+        return value
+    if isinstance(value, list):
+        for i, v in enumerate(value):
+            value[i] = _normalize_payload(v)
+        return value
+    if isinstance(value, str):
+        v = value.strip()
+        lower = v.lower()
+        if lower == "true":
+            return True
+        if lower == "false":
+            return False
+        if v.startswith("-") and v[1:].isdigit():
+            try:
+                return int(v)
+            except Exception:
+                return v
+        if "." in v:
+            try:
+                return float(v)
+            except Exception:
+                return v
+        return v
+    return value
+
+
 def _validate_schema(instance: dict, schema: dict) -> None:
     """Validate ``instance`` against ``schema`` reporting all errors.
 
@@ -78,15 +109,26 @@ def _validate_schema(instance: dict, schema: dict) -> None:
     ``ValidationError`` with the combined message if any problems exist.
     """
     validator = Draft7Validator(schema)
-    errors = sorted(validator.iter_errors(instance), key=lambda e: e.path)
-    if errors:
+    errs = []
+    for err in sorted(validator.iter_errors(instance), key=lambda e: e.path):
+        errs.append(
+            {
+                "path": list(err.path),
+                "message": err.message,
+                "validator": err.validator,
+                "validator_value": err.validator_value,
+            }
+        )
+    if errs:
         lines = ["Errores de esquema encontrados:"]
-        for err in errors:
-            path = ".".join(str(p) for p in err.path) or "<root>"
-            lines.append(f"- {path}: {err.message}")
+        for info in errs:
+            path = ".".join(str(p) for p in info["path"]) or "<root>"
+            lines.append(f"- {path}: {info['message']}")
         report = "\n".join(lines)
         print(report)
-        raise ValidationError(report)
+        exc = ValidationError(report)
+        exc.errors = errs
+        raise exc
 
 
 def _load_datos_negocio():
@@ -575,10 +617,11 @@ def generar_dte_json(
     return result
 
 
-def validate_dte_json(data: dict) -> None:
+def validate_dte_json(payload: dict) -> None:
     """Basic validation and normalization for DTE payload before signing."""
+    _normalize_payload(payload)
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
-    missing = [key for key in required if key not in data]
+    missing = [key for key in required if key not in payload]
     if missing:
         raise ValueError(
             "Faltan campos obligatorios: " + ", ".join(missing)
@@ -586,7 +629,7 @@ def validate_dte_json(data: dict) -> None:
 
     negocio = _load_datos_negocio()
 
-    ident = data.get("identificacion", {})
+    ident = payload.get("identificacion", {})
     config = _load_dte_api_config()
     ambiente = "01" if config.get("ambiente") == "produccion" else "00"
     ident.setdefault("ambiente", ambiente)
@@ -605,9 +648,9 @@ def validate_dte_json(data: dict) -> None:
         ident["codigoGeneracion"] = str(uuid.UUID(str(cg))).upper()
     except Exception:
         ident["codigoGeneracion"] = str(uuid.uuid4()).upper()
-    data["identificacion"] = ident
+    payload["identificacion"] = ident
 
-    emisor = data.get("emisor", {})
+    emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
     emisor.setdefault("nombre", negocio.get("razon_social"))
@@ -649,18 +692,18 @@ def validate_dte_json(data: dict) -> None:
         raise ValueError(
             "Faltan campos obligatorios en emisor: " + ", ".join(missing)
         )
-    data["emisor"] = emisor
+    payload["emisor"] = emisor
 
-    receptor = data.get("receptor", {})
+    receptor = payload.get("receptor", {})
     receptor["nrc"] = _clean_nrc(receptor.get("nrc"))
     if "nit" in receptor:
         receptor["numDocumento"] = _clean_nit(receptor.pop("nit"))
     else:
         receptor["numDocumento"] = _clean_nit(receptor.get("numDocumento"))
     receptor.pop("giro", None)
-    data["receptor"] = receptor
+    payload["receptor"] = receptor
 
-    cuerpo = data.get("cuerpoDocumento", [])
+    cuerpo = payload.get("cuerpoDocumento", [])
     items_total = Decimal("0")
     for item in cuerpo:
         if "precioUnitario" in item:
@@ -687,9 +730,9 @@ def validate_dte_json(data: dict) -> None:
             float(importe.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)),
         )
         items_total += importe
-    data["cuerpoDocumento"] = cuerpo
+    payload["cuerpoDocumento"] = cuerpo
 
-    resumen = data.get("resumen", {})
+    resumen = payload.get("resumen", {})
     for k, v in resumen.items():
         if isinstance(v, (int, float)):
             resumen[k] = _round(v, 2)
@@ -698,7 +741,7 @@ def validate_dte_json(data: dict) -> None:
                 resumen[k] = _round(float(v), 2)
             except Exception:
                 pass
-    data["resumen"] = resumen
+    payload["resumen"] = resumen
 
     total_grav = Decimal(str(resumen.get("totalGravada", 0)))
     total_exenta = Decimal(str(resumen.get("totalExenta", 0)))
@@ -731,7 +774,7 @@ def validate_dte_json(data: dict) -> None:
         )
 
     # --- Catálogo validations ---
-    ident = data.get("identificacion", {})
+    ident = payload.get("identificacion", {})
     tipo_dte = ident.get("tipoDte")
     if tipo_dte not in catalogos.TIPOS_DTE:
         raise ValueError("Código de tipoDte inválido")
@@ -754,11 +797,11 @@ def validate_dte_json(data: dict) -> None:
     ident["tipoOperacion"] = oper_cod
 
     # Validación de longitud de NIT / numDocumento
-    emisor_nit = data.get("emisor", {}).get("nit")
+    emisor_nit = payload.get("emisor", {}).get("nit")
     if emisor_nit and len(emisor_nit.replace("-", "")) != catalogos.NIT_LENGTH:
         raise ValueError("NIT inválido en emisor")
 
-    receptor_doc = data.get("receptor", {}).get("numDocumento")
+    receptor_doc = payload.get("receptor", {}).get("numDocumento")
     if receptor_doc and len(receptor_doc) not in (9, catalogos.NIT_LENGTH):
         raise ValueError("Número de documento inválido en receptor")
 
@@ -767,7 +810,7 @@ def validate_dte_json(data: dict) -> None:
     if schema_path and os.path.exists(schema_path):
         with open(schema_path, "r", encoding="utf-8") as fh:
             schema = json.load(fh)
-        _validate_schema(instance=data, schema=schema)
+        _validate_schema(payload, schema)
 
 
 def generar_ticket_json(

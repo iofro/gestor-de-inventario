@@ -1499,12 +1499,14 @@ class MainWindow(QMainWindow):
                 config = {}
         from dialogs import DTEConfigDialog
         dte_api = datos.get("dte_api", {})
-        fe_config = config.get("firma_electronica", {})
+        ambiente = config.get("ambiente", "pruebas")
+        fe_config = config.get(ambiente, {}).get("firma_electronica", {})
         dlg = DTEConfigDialog(dte_api, fe_config, self)
         if dlg.exec_():
             new_dte_api, new_fe = dlg.get_data()
             datos["dte_api"] = new_dte_api
-            config["firma_electronica"] = new_fe
+            config.setdefault(ambiente, {})
+            config[ambiente]["firma_electronica"] = new_fe
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             with open(config_path, "w", encoding="utf-8") as f:

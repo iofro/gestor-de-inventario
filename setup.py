@@ -1,16 +1,23 @@
+import os
 import PyInstaller.__main__
+
+SEP = ';' if os.name == 'nt' else ':'
 
 PyInstaller.__main__.run([
     'main.py',
     '--name=InventarioFarmacia',
     '--onefile',                # Un solo ejecutable
     '--windowed',               # Sin consola (para apps gráficas)
-    '--add-data=db.py;.',       # Incluye db.py
-    '--add-data=dialogs.py;.',
-    '--add-data=inventory_manager.py;.',
-    '--add-data=factura_sv.py;.',
-    '--add-data=ui_mainwindow.py;.',
-    '--add-data=inventario.db;.',  # Incluye la base de datos si ya existe
+    f'--add-data=db.py{SEP}.',       # Incluye db.py
+    f'--add-data=dialogs.py{SEP}.',
+    f'--add-data=inventory_manager.py{SEP}.',
+    f'--add-data=factura_sv.py{SEP}.',
+    f'--add-data=ui_mainwindow.py{SEP}.',
+    f'--add-data=style.qss{SEP}.',
+    f'--add-data=logoinventario.jpg{SEP}.',
+    f'--add-data=inventario.json{SEP}.',
+    f'--add-data=ultimo_inventario.json{SEP}.',
+    f'--add-data=avatar.jpg{SEP}.',
     # Agrega aquí otros archivos necesarios (imágenes, .ui, etc.)
 ])
 

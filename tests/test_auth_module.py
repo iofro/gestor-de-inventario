@@ -75,6 +75,29 @@ def test_request_error(monkeypatch, tmp_path):
         auth.get_token(refresh=True)
 
 
+def test_missing_token_includes_response(monkeypatch):
+    def fake_post(url, data, headers, timeout):
+        class Resp:
+            status_code = 200
+            text = "{\"mensaje\": \"sin token\"}"
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {"mensaje": "sin token"}
+
+        return Resp()
+
+    monkeypatch.setattr(auth.requests, "post", fake_post)
+    monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake")
+    with pytest.raises(ValueError) as excinfo:
+        auth._request_new_token("nit", "pwd")
+    msg = str(excinfo.value)
+    assert "sin token" in msg
+    assert "Respuesta de autenticación sin token" in msg
+
+
 def test_env_specific_credentials(monkeypatch, tmp_path):
     data = {
         "ambiente": "pruebas",

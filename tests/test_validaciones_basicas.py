@@ -9,10 +9,12 @@ from dialogs import (
 
 
 @pytest.mark.parametrize("nit, expected", [
-    ("1234-123456-123-1", True),
-    ("0000-000000-000-0", True),
-    ("1234-123456-123-12", False),
-    ("1234-123456-123", False),
+    ("1234-123456-123-1", True),  # NIT con guiones
+    ("12341234561231", True),     # NIT sin guiones
+    ("12345678-9", True),         # DUI con guion
+    ("123456789", True),          # DUI sin guion
+    ("1234-123456-123", False),  # NIT incompleto
+    ("abcd", False),             # caracteres inválidos
 ])
 def test_validar_nit(nit, expected):
     assert validar_nit(nit) is expected

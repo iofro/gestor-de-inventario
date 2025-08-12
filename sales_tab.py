@@ -537,9 +537,8 @@ class SalesTab(QWidget):
 
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
-
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        if not venta:
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        if not venta or int(venta.get("id", 0)) != venta_id:
             QMessageBox.warning(self, "Guardar y enviar", "No se encontró la venta seleccionada.")
             return
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
@@ -658,8 +657,8 @@ class SalesTab(QWidget):
 
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        if not venta:
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        if not venta or int(venta.get("id", 0)) != venta_id:
             QMessageBox.warning(self, "Solo enviar por correo", "No se encontró la venta seleccionada.")
             return
 

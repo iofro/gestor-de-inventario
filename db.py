@@ -1807,8 +1807,8 @@ class DB:
     # --- NOTAS DE CRÉDITO Y DÉBITO ---
     def agregar_nota(self, tipo, venta_id, fecha, monto, motivo, detalles=None):
         """Registra una nota de crédito o débito asociada a una venta."""
-        if tipo not in ("credito", "debito"):
-            raise ValueError("tipo debe ser 'credito' o 'debito'")
+        if tipo not in ("credito", "debito", "remision"):
+            raise ValueError("tipo debe ser 'credito', 'debito' o 'remision'")
 
         self.cursor.execute("SELECT id FROM ventas WHERE id=?", (venta_id,))
         if self.cursor.fetchone() is None:

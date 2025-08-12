@@ -185,6 +185,21 @@ RESUMEN_DEFAULTS = {
         "pagos": None,
         "numPagoElectronico": None,
     },
+    "04": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 0,
+        "subTotalVentas": 0,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0,
+        "porcentajeDescuento": 0,
+        "totalDescu": 0,
+        "tributos": None,
+        "subTotal": 0,
+        "montoTotalOperacion": 0,
+        "totalLetras": "",
+    },
     "05": {
         "totalNoSuj": 0,
         "totalExenta": 0,
@@ -206,6 +221,25 @@ RESUMEN_DEFAULTS = {
         "saldoFavor": 0,
         "condicionOperacion": 1,
         "pagos": None,
+        "numPagoElectronico": None,
+    },
+    "06": {
+        "totalNoSuj": 0,
+        "totalExenta": 0,
+        "totalGravada": 0,
+        "subTotalVentas": 0,
+        "descuNoSuj": 0,
+        "descuExenta": 0,
+        "descuGravada": 0,
+        "totalDescu": 0,
+        "tributos": None,
+        "subTotal": 0,
+        "ivaPerci1": 0,
+        "ivaRete1": 0,
+        "reteRenta": 0,
+        "montoTotalOperacion": 0,
+        "totalLetras": "",
+        "condicionOperacion": 1,
         "numPagoElectronico": None,
     },
 }
@@ -761,6 +795,58 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
     return data
 
 
+def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
+    """Genera la estructura JSON para una nota de débito."""
+    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
+    if not row:
+        raise ValueError("Nota no encontrada")
+    nota = dict(row)
+    if nota.get("tipo") != "debito":
+        raise ValueError("La nota indicada no es de débito")
+
+    venta_id = nota.get("venta_id")
+    venta_row = db.cursor.execute(
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+    ).fetchone()
+    tipo_doc = "01"
+    if venta_row:
+        venta = dict(venta_row)
+        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+            tipo_doc = "03"
+    data = generar_dte_json(db, venta_id, tipo_dte="06")
+    data["documentoRelacionado"] = {
+        "tipoDoc": tipo_doc,
+        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+    }
+    return data
+
+
+def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
+    """Genera la estructura JSON para una nota de remisión."""
+    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
+    if not row:
+        raise ValueError("Nota no encontrada")
+    nota = dict(row)
+    if nota.get("tipo") != "remision":
+        raise ValueError("La nota indicada no es de remisión")
+
+    venta_id = nota.get("venta_id")
+    venta_row = db.cursor.execute(
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+    ).fetchone()
+    tipo_doc = "01"
+    if venta_row:
+        venta = dict(venta_row)
+        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+            tipo_doc = "03"
+    data = generar_dte_json(db, venta_id, tipo_dte="04")
+    data["documentoRelacionado"] = {
+        "tipoDoc": tipo_doc,
+        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+    }
+    return data
+
+
 def _load_dte_api_config():
     """Lee configuración de URLs y ambiente desde ``config_negocio.json``."""
     try:
@@ -923,6 +1009,22 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
 def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de crédito."""
     data = generar_nota_credito_json(db, nota_id)
+    data = sanitize_dte_payload(data)
+    validate_dte_json(data)
+    return _enviar_documento(db, nota_id, data, modo)
+
+
+def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
+    """Genera y transmite una nota de débito."""
+    data = generar_nota_debito_json(db, nota_id)
+    data = sanitize_dte_payload(data)
+    validate_dte_json(data)
+    return _enviar_documento(db, nota_id, data, modo)
+
+
+def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
+    """Genera y transmite una nota de remisión."""
+    data = generar_nota_remision_json(db, nota_id)
     data = sanitize_dte_payload(data)
     validate_dte_json(data)
     return _enviar_documento(db, nota_id, data, modo)

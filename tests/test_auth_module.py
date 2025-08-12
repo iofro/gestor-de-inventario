@@ -73,3 +73,22 @@ def test_request_error(monkeypatch, tmp_path):
     monkeypatch.setattr(auth.requests, "post", fake_post)
     with pytest.raises(requests.HTTPError):
         auth.get_token(refresh=True)
+
+
+def test_env_specific_credentials(monkeypatch, tmp_path):
+    data = {
+        "ambiente": "pruebas",
+        "pruebas": {
+            "firma_electronica": {
+                "nit": "env_nit",
+                "passwordPri": "env_pwd",
+            }
+        },
+    }
+    cfg = tmp_path / "config_env.json"
+    cfg.write_text(json.dumps(data))
+    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
+    nit, pwd = auth._read_config_credentials()
+    assert nit == "env_nit"
+    assert pwd == "env_pwd"

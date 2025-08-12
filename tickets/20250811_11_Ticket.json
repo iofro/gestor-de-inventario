@@ -1,0 +1,77 @@
+{
+  "identificacion": {
+    "version": "1",
+    "tipoDte": "03",
+    "codigoGeneracion": "F87C4697-D6AF-4012-87AB-58096921AEB3",
+    "numeroControl": "DTE-01-S001P001-229207962031024",
+    "fecEmi": "2025-08-11 19:51:59",
+    "horEmi": "19:54:00",
+    "modeloFacturacion": "1 - Facturación previo",
+    "tipoTransmision": "1 - Transmisión normal"
+  },
+  "emisor": {
+    "nombre": "Tienda Demo 3 S.A. de C.V.",
+    "nit": "0614-251289-102-0",
+    "nrc": "123456-7",
+    "giro": "Comercio de demostración",
+    "direccion": "Boulevard de los Héroes #123, San Salvador"
+  },
+  "receptor": {
+    "tipoDocumento": null,
+    "numDocumento": null,
+    "nrc": null,
+    "nombre": null,
+    "codActividad": null,
+    "descActividad": null,
+    "direccion": null,
+    "telefono": null,
+    "correo": null
+  },
+  "cuerpoDocumento": [
+    {
+      "numItem": 1,
+      "descripcion": "Producto Demo 1",
+      "cantidad": 1.0,
+      "precioUnitario": 7.0
+    }
+  ],
+  "resumen": {
+    "totalNoSuj": 0.0,
+    "totalExenta": 0.0,
+    "totalGravada": 7.0,
+    "subTotalVentas": 7.0,
+    "descuNoSuj": 0.0,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "porcentajeDescuento": 0.0,
+    "totalDescu": 0.0,
+    "tributos": null,
+    "subTotal": 7.0,
+    "ivaPerci1": 0.0,
+    "ivaRete1": 0.0,
+    "reteRenta": 0.0,
+    "montoTotalOperacion": 7.0,
+    "totalNoGravado": 0.0,
+    "totalPagar": 7.0,
+    "totalLetras": "",
+    "saldoFavor": 0.0,
+    "condicionOperacion": 1.0,
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 7.0,
+        "referencia": null,
+        "periodo": null,
+        "plazo": null
+      }
+    ],
+    "numPagoElectronico": null
+  },
+  "documentoRelacionado": null,
+  "otrosDocumentos": null,
+  "ventaTercero": null,
+  "extension": null,
+  "apendice": null,
+  "firmaElectronica": null,
+  "selloRecibido": null
+}

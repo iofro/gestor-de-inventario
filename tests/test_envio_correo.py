@@ -240,3 +240,41 @@ def test_email_exitoso(
     assert len(init_calls) == 1
     assert not smtp_calls
 
+
+def test_transmit_fail_no_email(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    pdf, _json = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
+
+    def fake_gen(manager, vid, p=pdf):
+        manager.db.add_factura_pdf(vid, "Factura", str(p))
+        return str(p)
+
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr(
+        "sales_tab.transmitir_dte", lambda *a, **k: {"estado": "error"}
+    )
+
+    called = {}
+
+    def fake_send(self):
+        called["called"] = True
+
+    monkeypatch.setattr(SalesTab, "send_email", fake_send)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+
+    tab.sales_table.selectRow(0)
+    tab.save_and_send()
+
+    assert "called" not in called
+

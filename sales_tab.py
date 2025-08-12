@@ -568,6 +568,7 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Guardar y enviar", "No se pudo generar el documento.")
             return
         QMessageBox.information(self, "Guardar y enviar", f"{doc_type} guardado en {file_path}")
+        envio_ok = False
         try:
             modo = "contingencia" if venta.get("tipo_transmision", "").startswith("2") else "normal"
             resp = transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
@@ -586,6 +587,7 @@ class SalesTab(QWidget):
                 self.sent_label.setText(
                     "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
                 )
+                envio_ok = True
         except Exception as e:
             self.status_label.setText("Estado actual: Error")
             self.gen_label.setText(
@@ -593,8 +595,9 @@ class SalesTab(QWidget):
             )
             QMessageBox.warning(self, "Enviar a Hacienda", str(e))
 
-        # Después de guardar y transmitir, también enviar por correo
-        self.send_email()
+        # Después de guardar y transmitir, también enviar por correo si la transmisión fue exitosa
+        if envio_ok:
+            self.send_email()
 
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""

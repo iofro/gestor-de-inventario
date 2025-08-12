@@ -31,16 +31,16 @@ def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
 
     def fake_request(nit, pwd):
         calls["n"] += 1
-        return f"tok{calls['n']}", 120, time.time()
+        return f"Bearer tok{calls['n']}", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     t1 = auth.get_token(refresh=True)
-    assert t1 == "tok1"
+    assert t1 == "Bearer tok1"
     t2 = auth.get_token()
-    assert t2 == "tok1"
+    assert t2 == "Bearer tok1"
     assert calls["n"] == 1
     t3 = auth.get_token(refresh=True)
-    assert t3 == "tok2"
+    assert t3 == "Bearer tok2"
     assert calls["n"] == 2
 
 
@@ -48,19 +48,20 @@ def test_get_token_expired(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 
     def fake_request(nit, pwd):
-        return "tok", 1, time.time() - 100
+        return "Bearer tok", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     auth.get_token(refresh=True)
+    auth._expires_at = time.time() - 1
     calls = {"n": 0}
 
     def fake_request2(nit, pwd):
         calls["n"] += 1
-        return "new", 1, time.time()
+        return "Bearer new", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request2)
     token2 = auth.get_token()
-    assert token2 == "new"
+    assert token2 == "Bearer new"
     assert calls["n"] == 1
 
 
@@ -79,13 +80,13 @@ def test_missing_token_includes_response(monkeypatch):
     def fake_post(url, data, headers, timeout):
         class Resp:
             status_code = 200
-            text = "{\"mensaje\": \"sin token\"}"
+            text = '{"status":"OK","body":{"mensaje":"sin token"}}'
 
             def raise_for_status(self):
                 return None
 
             def json(self):
-                return {"mensaje": "sin token"}
+                return {"status": "OK", "body": {"mensaje": "sin token"}}
 
         return Resp()
 

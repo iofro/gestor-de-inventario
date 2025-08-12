@@ -127,7 +127,16 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         headers = k.get("headers", {})
         calls.append((url, headers, k.get("json")))
         if url == auth_url:
-            return Resp({"access_token": "JWT"})
+            return Resp(
+                {
+                    "status": "OK",
+                    "body": {
+                        "token": "JWT",
+                        "tokenType": "bearer",
+                        "expiresIn": 3600,
+                    },
+                }
+            )
         if url == recepcion_url:
             return Resp({"estado": "Transmitido", "sello": "ABC123"})
         raise AssertionError(f"unexpected url {url}")
@@ -258,7 +267,14 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
         status_code = 200
 
         def json(self):
-            return {"access_token": "JWT_VALIDO"}
+            return {
+                "status": "OK",
+                "body": {
+                    "token": "JWT_VALIDO",
+                    "tokenType": "bearer",
+                    "expiresIn": 3600,
+                },
+            }
 
         def raise_for_status(self):
             pass

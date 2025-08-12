@@ -24,6 +24,17 @@ def test_agregar_y_obtener_notas():
     assert nota["motivo"] == "Devolucion"
     assert nota["detalles"] == {"linea": 1}
 
+
+def test_agregar_nota_remision():
+    db = create_db()
+    db.add_cliente("Ana", "", "", "", "", "", "", "", "", "")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 50, cliente_id=cliente_id)
+    note_id = db.agregar_nota("remision", venta_id, "2024-01-02", 0, "Envio")
+    assert isinstance(note_id, int)
+    notas = db.obtener_notas_por_venta(venta_id)
+    assert notas[0]["tipo"] == "remision"
+
 def test_agregar_nota_venta_inexistente():
     db = create_db()
     with pytest.raises(ValueError):

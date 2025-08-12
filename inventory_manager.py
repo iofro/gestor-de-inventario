@@ -716,13 +716,14 @@ class InventoryManager:
 
         self.refresh_data()
 
-        datos_negocio = data.get("datos_negocio", None)
         datos_path = DATOS_NEGOCIO_PATH
-        if datos_negocio:
-            with open(datos_path, "w", encoding="utf-8") as f:
-                json.dump(datos_negocio, f, ensure_ascii=False, indent=2)
-        elif os.path.exists(datos_path):
-            os.remove(datos_path)
+        if "datos_negocio" in data:
+            datos_negocio = data.get("datos_negocio")
+            if datos_negocio is not None:
+                with open(datos_path, "w", encoding="utf-8") as f:
+                    json.dump(datos_negocio, f, ensure_ascii=False, indent=2)
+            elif os.path.exists(datos_path):
+                os.remove(datos_path)
 
         return data
 

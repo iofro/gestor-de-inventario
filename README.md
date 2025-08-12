@@ -179,7 +179,9 @@ configura el campo `ambiente` y las URLs en `config_negocio.json`:
   "ambiente": "pruebas",
   "pruebas": {
     "auth_url": "https://apitest.dtes.mh.gob.sv/seguridad/auth",
-    "recepcion_url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
+    "recepcion_url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte",
+    "api_user": "MI_USUARIO_API",
+    "api_pwd": "MI_CONTRASEÑA_API"
   },
   "produccion": {
     "auth_url": "https://api.factura.gob.sv/auth",
@@ -191,6 +193,11 @@ configura el campo `ambiente` y las URLs en `config_negocio.json`:
 La aplicación buscará `auth_url` y `recepcion_url` dentro del bloque del
 ambiente seleccionado (`pruebas` o `produccion`). Al cambiar `ambiente` a
 `produccion` la aplicación utilizará los servicios productivos.
+
+Dentro del mismo bloque puede definirse `api_user` y `api_pwd` para
+especificar el usuario y la contraseña de la API. Estos datos se utilizan
+al solicitar el token de autenticación. También es posible obtener un
+token programáticamente llamando a `auth.get_token(nit="USUARIO", pwd="CLAVE")`.
 
 La contraseña puede dejarse vacía si la clave privada no está cifrada. Al
 generar facturas o tickets se creará junto al PDF un archivo `.jws` con el JSON

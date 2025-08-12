@@ -726,11 +726,14 @@ def validate_dte_json(data: dict) -> None:
         raise ValueError("Tipo de operación inválido")
     ident["tipoOperacion"] = oper_cod
 
-    # Validación de longitud de NIT
-    for parte in ("emisor", "receptor"):
-        nit = data.get(parte, {}).get("nit")
-        if nit and len(nit.replace("-", "")) != catalogos.NIT_LENGTH:
-            raise ValueError(f"NIT inválido en {parte}")
+    # Validación de longitud de NIT / numDocumento
+    emisor_nit = data.get("emisor", {}).get("nit")
+    if emisor_nit and len(emisor_nit.replace("-", "")) != catalogos.NIT_LENGTH:
+        raise ValueError("NIT inválido en emisor")
+
+    receptor_doc = data.get("receptor", {}).get("numDocumento")
+    if receptor_doc and len(receptor_doc) not in (9, catalogos.NIT_LENGTH):
+        raise ValueError("Número de documento inválido en receptor")
 
     # --- Schema validation ---
     schema_path = catalogos.SCHEMA_MAP.get(tipo_dte)

@@ -450,3 +450,47 @@ def generar_nota_credito_pdf(
         datos_negocio=datos_negocio,
         **kwargs,
     )
+
+
+def generar_nota_debito_pdf(
+    venta,
+    detalles,
+    cliente,
+    distribuidor,
+    archivo="nota_debito.pdf",
+    datos_negocio=None,
+    **kwargs,
+):
+    """Genera un PDF para una Nota de Débito."""
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        cliente,
+        distribuidor,
+        "Nota de Débito",
+        archivo=archivo,
+        datos_negocio=datos_negocio,
+        **kwargs,
+    )
+
+
+def generar_nota_remision_pdf(
+    venta,
+    detalles,
+    cliente,
+    distribuidor,
+    archivo="nota_remision.pdf",
+    datos_negocio=None,
+    **kwargs,
+):
+    """Genera un PDF para una Nota de Remisión."""
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        cliente,
+        distribuidor,
+        "Nota de Remisión",
+        archivo=archivo,
+        datos_negocio=datos_negocio,
+        **kwargs,
+    )

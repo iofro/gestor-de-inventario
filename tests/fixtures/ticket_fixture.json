@@ -4,9 +4,11 @@
     {"descripcion": "Bencobal X 30 Capsulas (G)", "cantidad": 1, "precio_unitario": 29.68}
   ],
   "datos_negocio": {
-    "nombre_comercial": "Farmacia San Nicolas S.A. de C.V.",
-    "giro": "Venta de productos farmaceuticos y medicinales",
-    "direccion": "2° Calle Pte. #L-1-13, LA LIBERTAD SUR, La Libertad"
+    "nombreComercial": "Farmacia San Nicolas S.A. de C.V.",
+    "descActividad": "Venta de productos farmaceuticos y medicinales",
+    "direccion": {
+      "complemento": "2° Calle Pte. #L-1-13, LA LIBERTAD SUR, La Libertad"
+    }
   },
   "dte_data": {
     "selloRecibido": "202558120A7ABA2D4533B92916AD1D0F1EABJ1YW",

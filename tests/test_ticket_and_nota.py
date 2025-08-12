@@ -36,7 +36,7 @@ def test_generar_ticket_pdf(tmp_path):
 def test_generar_ticket_pdf_header(tmp_path):
     venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
     detalles = [{"descripcion": "Prod", "cantidad": 1, "precio_unitario": 10}]
-    datos = {"nombre_comercial": "MI NEGOCIO"}
+    datos = {"nombreComercial": "MI NEGOCIO"}
     archivo = tmp_path / "ticket.pdf"
     generar_ticket_pdf(venta, detalles, str(archivo), datos_negocio=datos)
     assert archivo.exists()

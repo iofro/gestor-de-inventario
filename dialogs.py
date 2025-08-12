@@ -2807,82 +2807,45 @@ class CompraDetalleDialog(QDialog):
         self.setLayout(layout)
 
 class DatosNegocioDialog(QDialog):
-    """Diálogo para editar únicamente los datos generales del negocio."""
+    """Diálogo para editar los datos necesarios para la facturación."""
 
     def __init__(self, datos=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Datos del negocio")
-        self.setMinimumWidth(900)
-        main_layout = QVBoxLayout()
-        h_layout = QHBoxLayout()
-        grupo1 = QGroupBox("🧾 Identificación comercial y 🗺️ Ubicación")
-        form1 = QFormLayout()
-        self.nombre_comercial = QLineEdit()
-        self.razon_social = QLineEdit()
-        self.giro = QLineEdit()
-        self.slogan = QLineEdit()
-        self.direccion = QLineEdit()
-        self.municipio = QLineEdit()
-        self.departamento = QLineEdit()
-        self.codigo_postal = QLineEdit()
-        self.pais = QLineEdit()
-        form1.addRow("Nombre comercial:", self.nombre_comercial)
-        form1.addRow("Razón social:", self.razon_social)
-        form1.addRow("Giro o actividad económica:", self.giro)
-        form1.addRow("Slogan o lema empresarial:", self.slogan)
-        form1.addRow("Dirección exacta:", self.direccion)
-        form1.addRow("Municipio:", self.municipio)
-        form1.addRow("Departamento:", self.departamento)
-        form1.addRow("Código postal:", self.codigo_postal)
-        form1.addRow("País:", self.pais)
-        grupo1.setLayout(form1)
-        h_layout.addWidget(grupo1)
-        grupo2 = QGroupBox("📞 Contacto y 🧑‍💼 Representante Legal")
-        form2 = QFormLayout()
-        self.telefono_fijo = QLineEdit()
-        self.telefono_movil = QLineEdit()
-        self.email = QLineEdit()
-        self.sitio_web = QLineEdit()
-        self.representante_nombre = QLineEdit()
-        self.representante_cargo = QLineEdit()
-        self.representante_dui_nit = QLineEdit()
-        self.representante_email = QLineEdit()
-        self.representante_telefono = QLineEdit()
-        form2.addRow("Teléfono fijo:", self.telefono_fijo)
-        form2.addRow("Teléfono móvil:", self.telefono_movil)
-        form2.addRow("Correo electrónico oficial:", self.email)
-        form2.addRow("Sitio web:", self.sitio_web)
-        form2.addRow("Nombre representante:", self.representante_nombre)
-        form2.addRow("Cargo:", self.representante_cargo)
-        form2.addRow("DUI/NIT representante:", self.representante_dui_nit)
-        form2.addRow("Correo representante:", self.representante_email)
-        form2.addRow("Teléfono representante:", self.representante_telefono)
-        grupo2.setLayout(form2)
-        h_layout.addWidget(grupo2)
-        grupo3 = QGroupBox("💼 Datos Fiscales")
-        form3 = QFormLayout()
+        form = QFormLayout()
         self.nit = QLineEdit()
         self.nrc = QLineEdit()
-        self.regimen = QLineEdit()
-        self.ciiu = QLineEdit()
-        self.contador_nombre = QLineEdit()
-        self.contador_nit = QLineEdit()
-        form3.addRow("NIT:", self.nit)
-        form3.addRow("NRC:", self.nrc)
-        form3.addRow("Régimen tributario:", self.regimen)
-        form3.addRow("Código CIIU:", self.ciiu)
-        form3.addRow("Nombre contador:", self.contador_nombre)
-        form3.addRow("NIT contador:", self.contador_nit)
-        grupo3.setLayout(form3)
-        h_layout.addWidget(grupo3)
-        main_layout.addLayout(h_layout)
+        self.nombre = QLineEdit()
+        self.nombre_comercial = QLineEdit()
+        self.cod_actividad = QLineEdit()
+        self.desc_actividad = QLineEdit()
+        self.tipo_contribuyente = QLineEdit()
+        self.telefono = QLineEdit()
+        self.correo = QLineEdit()
+        self.departamento = QLineEdit()
+        self.municipio = QLineEdit()
+        self.complemento = QLineEdit()
+        form.addRow("NIT:", self.nit)
+        form.addRow("NRC:", self.nrc)
+        form.addRow("Nombre:", self.nombre)
+        form.addRow("Nombre comercial:", self.nombre_comercial)
+        form.addRow("Código actividad:", self.cod_actividad)
+        form.addRow("Descripción actividad:", self.desc_actividad)
+        form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
+        form.addRow("Teléfono:", self.telefono)
+        form.addRow("Correo:", self.correo)
+        form.addRow("Departamento:", self.departamento)
+        form.addRow("Municipio:", self.municipio)
+        form.addRow("Dirección:", self.complemento)
         btns = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar")
         self.btn_cancelar = QPushButton("Cancelar")
         btns.addWidget(self.btn_guardar)
         btns.addWidget(self.btn_cancelar)
-        main_layout.addLayout(btns)
-        self.setLayout(main_layout)
+        layout = QVBoxLayout()
+        layout.addLayout(form)
+        layout.addLayout(btns)
+        self.setLayout(layout)
         self.btn_guardar.clicked.connect(self.accept)
         self.btn_cancelar.clicked.connect(self.reject)
         if datos:
@@ -2890,57 +2853,36 @@ class DatosNegocioDialog(QDialog):
 
     def get_data(self):
         return {
-            "nombre_comercial": self.nombre_comercial.text(),
-            "razon_social": self.razon_social.text(),
-            "giro": self.giro.text(),
-            "slogan": self.slogan.text(),
-            "direccion": self.direccion.text(),
-            "municipio": self.municipio.text(),
-            "departamento": self.departamento.text(),
-            "codigo_postal": self.codigo_postal.text(),
-            "pais": self.pais.text(),
-            "telefono_fijo": self.telefono_fijo.text(),
-            "telefono_movil": self.telefono_movil.text(),
-            "email": self.email.text(),
-            "sitio_web": self.sitio_web.text(),
-            "representante_nombre": self.representante_nombre.text(),
-            "representante_cargo": self.representante_cargo.text(),
-            "representante_dui_nit": self.representante_dui_nit.text(),
-            "representante_email": self.representante_email.text(),
-            "representante_telefono": self.representante_telefono.text(),
             "nit": self.nit.text(),
             "nrc": self.nrc.text(),
-            "regimen": self.regimen.text(),
-            "ciiu": self.ciiu.text(),
-            "contador_nombre": self.contador_nombre.text(),
-            "contador_nit": self.contador_nit.text(),
+            "nombre": self.nombre.text(),
+            "nombreComercial": self.nombre_comercial.text(),
+            "codActividad": self.cod_actividad.text(),
+            "descActividad": self.desc_actividad.text(),
+            "tipoContribuyente": self.tipo_contribuyente.text(),
+            "telefono": self.telefono.text(),
+            "correo": self.correo.text(),
+            "direccion": {
+                "departamento": self.departamento.text(),
+                "municipio": self.municipio.text(),
+                "complemento": self.complemento.text(),
+            },
         }
 
     def set_data(self, datos):
-        self.nombre_comercial.setText(datos.get("nombre_comercial", ""))
-        self.razon_social.setText(datos.get("razon_social", ""))
-        self.giro.setText(datos.get("giro", ""))
-        self.slogan.setText(datos.get("slogan", ""))
-        self.direccion.setText(datos.get("direccion", ""))
-        self.municipio.setText(datos.get("municipio", ""))
-        self.departamento.setText(datos.get("departamento", ""))
-        self.codigo_postal.setText(datos.get("codigo_postal", ""))
-        self.pais.setText(datos.get("pais", ""))
-        self.telefono_fijo.setText(datos.get("telefono_fijo", ""))
-        self.telefono_movil.setText(datos.get("telefono_movil", ""))
-        self.email.setText(datos.get("email", ""))
-        self.sitio_web.setText(datos.get("sitio_web", ""))
-        self.representante_nombre.setText(datos.get("representante_nombre", ""))
-        self.representante_cargo.setText(datos.get("representante_cargo", ""))
-        self.representante_dui_nit.setText(datos.get("representante_dui_nit", ""))
-        self.representante_email.setText(datos.get("representante_email", ""))
-        self.representante_telefono.setText(datos.get("representante_telefono", ""))
         self.nit.setText(datos.get("nit", ""))
         self.nrc.setText(datos.get("nrc", ""))
-        self.regimen.setText(datos.get("regimen", ""))
-        self.ciiu.setText(datos.get("ciiu", ""))
-        self.contador_nombre.setText(datos.get("contador_nombre", ""))
-        self.contador_nit.setText(datos.get("contador_nit", ""))
+        self.nombre.setText(datos.get("nombre", ""))
+        self.nombre_comercial.setText(datos.get("nombreComercial", ""))
+        self.cod_actividad.setText(datos.get("codActividad", ""))
+        self.desc_actividad.setText(datos.get("descActividad", ""))
+        self.tipo_contribuyente.setText(datos.get("tipoContribuyente", ""))
+        self.telefono.setText(datos.get("telefono", ""))
+        self.correo.setText(datos.get("correo", ""))
+        dir_info = datos.get("direccion", {}) or {}
+        self.departamento.setText(dir_info.get("departamento", ""))
+        self.municipio.setText(dir_info.get("municipio", ""))
+        self.complemento.setText(dir_info.get("complemento", ""))
 
 
 class EmailConfigDialog(QDialog):

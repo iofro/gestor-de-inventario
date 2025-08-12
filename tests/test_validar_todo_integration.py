@@ -27,12 +27,17 @@ def datos_negocio_completo(tmp_path):
     data = {
         "nit": "0614-000000-102-2",
         "nrc": "123456-7",
-        "razon_social": "Mi Negocio",
-        "ciiu": "0000",
-        "giro": "Comercio",
-        "direccion": "Calle Falsa 123",
-        "telefono_movil": "12345678",
-        "email": "test@example.com",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "codActividad": "0000",
+        "descActividad": "Comercio",
+        "telefono": "12345678",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "San Salvador",
+            "municipio": "San Salvador",
+            "complemento": "Calle Falsa 123",
+        },
     }
     path = tmp_path / "datos_negocio.json"
     path.write_text(json.dumps(data), encoding="utf-8")
@@ -48,8 +53,11 @@ def test_reporta_campos_emisor_faltantes(run_validacion, datos_negocio_incomplet
         "nit",
         "nrc",
         "nombre",
+        "nombreComercial",
         "codActividad",
         "descActividad",
+        "direccion.departamento",
+        "direccion.municipio",
         "direccion.complemento",
         "telefono",
         "correo",

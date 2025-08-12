@@ -13,7 +13,7 @@ def _draw_header(c, width, height, vendedor, fecha_inicio, fecha_fin, datos_nego
     """Dibuja el encabezado principal y retorna la coordenada y inicial."""
     y = height - 40
     c.setFont("Helvetica-Bold", 14)
-    c.drawCentredString(width / 2, y, datos_negocio.get("nombre_comercial", ""))
+    c.drawCentredString(width / 2, y, datos_negocio.get("nombreComercial", ""))
     y -= 16
     c.setFont("Helvetica-Bold", 10)
     titulo = f"Reporte de VENTAS por VENDEDOR desde: {fecha_inicio} al {fecha_fin}"

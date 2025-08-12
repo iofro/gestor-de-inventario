@@ -863,10 +863,10 @@ def _load_dte_api_config():
             data = json.load(fh)
         ambiente = data.get("ambiente", "pruebas")
         env_conf = data.get(ambiente, {})
-        url = env_conf.get("recepcion_url")
-        return {"ambiente": ambiente, "url": url}
+        url = env_conf.get("recepcion_url") or data.get("recepcion_url")
+        return {"ambiente": ambiente, "url": url or DEFAULT_RECEPCION_URL}
     except Exception:
-        return {}
+        return {"ambiente": "pruebas", "url": DEFAULT_RECEPCION_URL}
 
 
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:

@@ -100,7 +100,7 @@ def _get_auth_url() -> str:
             data = json.load(fh)
         ambiente = data.get("ambiente", "pruebas")
         env_conf = data.get(ambiente, {})
-        url = env_conf.get("auth_url")
+        url = env_conf.get("auth_url") or data.get("auth_url")
         return url or DEFAULT_AUTH_URL
     except (OSError, json.JSONDecodeError):
         return DEFAULT_AUTH_URL

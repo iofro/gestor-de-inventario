@@ -1,6 +1,7 @@
 {
   "ambiente": "pruebas",
   "pruebas": {
+    "auth_url": "http://example.com/auth",
     "recepcion_url": "http://example.com",
     "firma_electronica": {
       "nit": "09061712791014",

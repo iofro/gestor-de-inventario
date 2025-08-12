@@ -951,6 +951,49 @@ def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
         pass
 
 
+class DTEValidationError(Exception):
+    """Error de validación que incluye lista de errores y ruta del JSON."""
+
+    def __init__(self, errors, json_path):
+        super().__init__("; ".join(errors))
+        self.errors = errors
+        self.json_path = json_path
+
+
+def save_dte_json(dte_data: dict) -> str:
+    """Guarda ``dte_data`` en ``/dtes/{anio}/`` y devuelve la ruta."""
+    try:
+        fecha = dte_data.get("identificacion", {}).get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
+        year = str(fecha)[:4]
+        base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
+        os.makedirs(base_dir, exist_ok=True)
+        nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        json_path = os.path.join(base_dir, f"{nombre}.json")
+        with open(json_path, "w", encoding="utf-8") as fh:
+            json.dump(dte_data, fh, ensure_ascii=False)
+        return json_path
+    except Exception:
+        return ""
+
+
+def _format_validation_errors(exc: Exception) -> list:
+    """Convierte la excepción de validación en una lista de mensajes."""
+    if isinstance(exc, ValidationError) and getattr(exc, "errors", None):
+        formatted = []
+        for err in exc.errors:
+            path = ".".join(str(p) for p in err.path)
+            if path:
+                formatted.append(f"{path}: {err.message}")
+            else:
+                formatted.append(err.message)
+        return formatted
+    msg = str(exc)
+    if ":" in msg:
+        head, tail = msg.split(":", 1)
+        return [f"{head.strip()}: {part.strip()}" for part in tail.split(",")]
+    return [msg]
+
+
 def _post_dte(url: str, token: str, jws_token: str) -> dict:
     headers = {"Content-Type": "application/json"}
     if token:
@@ -983,7 +1026,12 @@ def transmitir_dte(
         data = generar_dte_json(db, venta_id)
 
     data = sanitize_dte_payload(data)
-    validate_dte_json(data)
+    try:
+        validate_dte_json(data)
+    except Exception as exc:
+        json_path = save_dte_json(data)
+        errors = _format_validation_errors(exc)
+        raise DTEValidationError(errors, json_path) from exc
     resp = _enviar_documento(db, venta_id, data, modo)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})

@@ -16,6 +16,9 @@ _access_token: Optional[str] = None
 _expires_at: float = 0.0
 _obtained_at: float = 0.0
 _token_type: str = ""
+# Credenciales actualmente asociadas al token en caché
+_current_user: Optional[str] = None
+_current_pwd: Optional[str] = None
 
 
 def _read_db_credentials() -> Tuple[Optional[str], Optional[str]]:
@@ -53,16 +56,30 @@ def _read_config_credentials() -> Tuple[Optional[str], Optional[str]]:
         nit = (
             firma_conf.get("nit")
             or firma_conf.get("NIT")
+            or firma_conf.get("user")
+            or firma_conf.get("usuario")
             or env_conf.get("nit")
             or env_conf.get("NIT")
+            or env_conf.get("user")
+            or env_conf.get("usuario")
             or env_conf.get("api_nit")
+            or env_conf.get("api_user")
+            or env_conf.get("api_usuario")
             or env_conf.get("api", {}).get("nit")
+            or env_conf.get("api", {}).get("user")
             or env_conf.get("dte_api", {}).get("nit")
+            or env_conf.get("dte_api", {}).get("user")
             or data.get("nit")
             or data.get("NIT")
+            or data.get("user")
+            or data.get("usuario")
             or data.get("api_nit")
+            or data.get("api_user")
+            or data.get("api_usuario")
             or data.get("api", {}).get("nit")
+            or data.get("api", {}).get("user")
             or data.get("dte_api", {}).get("nit")
+            or data.get("dte_api", {}).get("user")
         )
         pwd = (
             firma_conf.get("pwd")
@@ -164,18 +181,29 @@ def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
         pass
 
 
-def get_token(refresh: bool = False) -> str:
-    """Devuelve un token válido reutilizándolo y renovándolo al expirar."""
-    global _access_token, _expires_at, _obtained_at, _token_type
+def get_token(
+    refresh: bool = False,
+    nit: Optional[str] = None,
+    pwd: Optional[str] = None,
+) -> str:
+    """Devuelve un token válido. Puede recibir credenciales explícitas."""
+    global _access_token, _expires_at, _obtained_at, _token_type, _current_user, _current_pwd
+
+    if nit is not None and pwd is not None:
+        if nit != _current_user or pwd != _current_pwd:
+            refresh = True
+            _access_token = None
+            _expires_at = 0.0
+            _current_user, _current_pwd = nit, pwd
+    else:
+        nit, pwd = _get_credentials()
+        if nit != _current_user or pwd != _current_pwd:
+            _current_user, _current_pwd = nit, pwd
+
     now = time.time()
-    if (
-        not refresh
-        and _access_token
-        and now < _expires_at - 60
-    ):
+    if not refresh and _access_token and now < _expires_at - 60:
         return _access_token
 
-    nit, pwd = _get_credentials()
     try:
         token, expires_in, token_type = _request_new_token(nit, pwd)
     except Exception as exc:

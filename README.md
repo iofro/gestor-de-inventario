@@ -57,6 +57,13 @@ ejecutarlas. Puedes hacerlo ejecutando:
 pip install -r requirements.txt
 ```
 
+Para una prueba manual de extremo a extremo contra el entorno de
+Hacienda, ejecuta:
+
+```bash
+python -m tests.manual_e2e_sandbox
+```
+
 ### Generar DTE
 
 El método `generar_dte_json(venta_id)` crea un diccionario con el formato que

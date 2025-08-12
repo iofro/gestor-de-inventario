@@ -1,14 +1,31 @@
+﻿# Ignorar Java runtime y vendor pesado
+svfe-api-firmador/vendor/
+svfe-api-firmador/vendor/jre/
+svfe-api-firmador/vendor/jdk/
+
+# Ignorar certificados y otros archivos sensibles
+svfe-api-firmador/uploads/
+
+# Ignorar todo target menos el jar final
+svfe-api-firmador/target/*
+!svfe-api-firmador/target/svfe-api-firmador-*.jar
+
+# Python
 __pycache__/
 *.pyc
+*.pyo
+*.pyd
 
-# Ignored inventory and log files
-last_inventory.txt
-facturacion.log
-ultimo_inventario.json
-*.db
-
-# Build (PyInstaller)
-/dist/
-/build/
+# Build/output
+build/
+dist/
 *.spec
 
+# Logs y DB locales
+*.log
+*.db
+facturacion.log
+inventario.db
+
+# Tests cache
+tests/__pycache__/

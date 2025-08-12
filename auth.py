@@ -177,8 +177,30 @@ def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
                 (str(obtained_at),),
             )
             conn.commit()
+        try:
+            os.chmod(DB_PATH, 0o600)
+        except OSError:
+            pass
     except sqlite3.Error:
         pass
+
+
+def delete_token() -> None:
+    """Elimina el token almacenado y limpia la caché."""
+    global _access_token, _expires_at, _obtained_at, _token_type
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM tokens WHERE key IN ('access_token', 'expires_in', 'obtained_at')"
+            )
+            conn.commit()
+    except sqlite3.Error:
+        pass
+    _access_token = None
+    _token_type = ""
+    _expires_at = 0.0
+    _obtained_at = 0.0
 
 
 def get_token(

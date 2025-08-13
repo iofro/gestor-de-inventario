@@ -83,14 +83,16 @@ bloque de configuración similar al siguiente:
 ```json
 {
   "dte_api": {
-    "url": "https://api.hacienda.test/dtes",
+    "url": "https://api.hacienda.test/fesv/recepciondte",
     "ambiente": "produccion" | "pruebas",
     "token": "TOKEN_O_CREDENCIAL"
   }
 }
 ```
-La función `transmitir_dte(db, venta_id)` utilizará estos datos para enviar el
-DTE inmediatamente después de firmarlo en modo normal, o registrará un evento
+La URL debe incluir la ruta `/fesv/recepciondte`; si sólo se especifica el
+dominio, la aplicación la agregará automáticamente. La función
+`transmitir_dte(db, venta_id)` utilizará estos datos para enviar el DTE
+inmediatamente después de firmarlo en modo normal, o registrará un evento
 pendiente en modo de contingencia.
 
 ### Datos del negocio y correo

@@ -135,7 +135,13 @@ def _load_datos_negocio():
     if os.path.exists(DATOS_NEGOCIO_PATH):
         try:
             with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
-                return json.load(fh)
+                data = json.load(fh)
+            dte_api = data.get("dte_api")
+            if isinstance(dte_api, dict):
+                url = dte_api.get("url", "")
+                if url and "/fesv/recepciondte" not in url:
+                    dte_api["url"] = url.rstrip("/") + "/fesv/recepciondte"
+            return data
         except Exception:
             return {}
     return {}

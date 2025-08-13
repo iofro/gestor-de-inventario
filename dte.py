@@ -980,6 +980,8 @@ def _load_dte_api_config():
         ambiente = data.get("ambiente", "pruebas")
         env_conf = data.get(ambiente, {})
         url = env_conf.get("recepcion_url") or data.get("recepcion_url")
+        if url:
+            url = url.strip()
         return {"ambiente": ambiente, "url": url or DEFAULT_RECEPCION_URL}
     except Exception:
         return {"ambiente": "pruebas", "url": DEFAULT_RECEPCION_URL}

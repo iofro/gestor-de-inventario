@@ -1048,10 +1048,14 @@ def _format_validation_errors(exc: Exception) -> list:
 
 def _post_dte(url: str, token: str, jws_token: str) -> dict:
     headers = {"Content-Type": "application/json"}
+    token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
     if token:
-        headers["Authorization"] = (
-            token if token.lower().startswith("bearer ") else f"Bearer {token}"
-        )
+        if not token.lower().startswith("bearer "):
+            token = f"Bearer {token}"
+        logger.debug("Token: %s...%s", token[:5], token[-5:])
+        headers["Authorization"] = token
+    else:
+        logger.debug("Token: <empty>")
     payload = {"dte": jws_token}
     resp = requests.post(url, json=payload, headers=headers, timeout=20)
     resp.raise_for_status()

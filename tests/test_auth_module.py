@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import logging
 import pytest
 import requests
 import auth
@@ -30,7 +31,7 @@ def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
     calls = {"n": 0}
 
-    def fake_request(nit, pwd):
+    def fake_request(nit, pwd, url):
         calls["n"] += 1
         return f"Bearer tok{calls['n']}", 120, "Bearer"
 
@@ -48,7 +49,7 @@ def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
 def test_get_token_expired(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 
-    def fake_request(nit, pwd):
+    def fake_request(nit, pwd, url):
         return "Bearer tok", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
@@ -56,7 +57,7 @@ def test_get_token_expired(monkeypatch, tmp_path):
     auth._expires_at = time.time() - 1
     calls = {"n": 0}
 
-    def fake_request2(nit, pwd):
+    def fake_request2(nit, pwd, url):
         calls["n"] += 1
         return "Bearer new", 1, "Bearer"
 
@@ -133,11 +134,12 @@ def test_read_config_api_user(monkeypatch, tmp_path):
 def test_get_token_with_explicit_credentials(monkeypatch):
     calls = {"n": 0}
 
-    def fake_request(nit, pwd):
+    def fake_request(nit, pwd, url):
         calls["n"] += 1
         return "tok", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
+    monkeypatch.setattr(auth, "_get_config_nit_and_url", lambda: (None, None))
     t1 = auth.get_token(refresh=True, nit="u", pwd="p")
     assert t1 == "tok"
     t2 = auth.get_token(nit="u", pwd="p")
@@ -151,7 +153,7 @@ def test_delete_token(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
     calls = {"n": 0}
 
-    def fake_request(nit, pwd):
+    def fake_request(nit, pwd, url):
         calls["n"] += 1
         return f"tok{calls['n']}", 120, "Bearer"
 
@@ -165,3 +167,49 @@ def test_delete_token(monkeypatch, tmp_path):
     t2 = auth.get_token()
     assert t2 == "tok2"
     assert calls["n"] == 2
+
+
+def test_reauth_logs_nit_and_url(monkeypatch, tmp_path, caplog):
+    data = {
+        "ambiente": "pruebas",
+        "pruebas": {
+            "auth_url": "http://auth.example",
+            "auth": {"nitUsuario": "123", "pwd": "pwd"},
+        },
+    }
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps(data))
+    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
+    caplog.set_level(logging.INFO)
+
+    def fake_request(nit, pwd, url):
+        assert nit == "123"
+        assert url == "http://auth.example"
+        return "tok", 120, "Bearer"
+
+    monkeypatch.setattr(auth, "_request_new_token", fake_request)
+    token = auth.get_token(refresh=True)
+    assert token == "tok"
+    assert "Reautenticando con NIT 123 y URL http://auth.example" in caplog.text
+
+
+def test_reauth_mismatch_nit(monkeypatch, tmp_path):
+    data = {
+        "ambiente": "pruebas",
+        "pruebas": {
+            "auth_url": "http://auth.example",
+            "auth": {"nitUsuario": "123", "pwd": "pwd"},
+        },
+    }
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps(data))
+    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
+
+    def fake_request(nit, pwd, url):
+        return "tok", 120, "Bearer"
+
+    monkeypatch.setattr(auth, "_request_new_token", fake_request)
+    with pytest.raises(ValueError):
+        auth.get_token(refresh=True, nit="999", pwd="pwd")

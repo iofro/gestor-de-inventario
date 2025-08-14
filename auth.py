@@ -3,9 +3,12 @@ import json
 import sqlite3
 import time
 import base64
+import logging
 from typing import Optional, Tuple
 
 import requests
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_AUTH_URL = "https://apitest.dtes.mh.gob.sv/seguridad/auth"
 # URL de producción proporcionada por el MH
@@ -114,6 +117,23 @@ def _read_config_credentials() -> Tuple[Optional[str], Optional[str]]:
     return nit, pwd
 
 
+def _get_config_nit_and_url() -> Tuple[Optional[str], Optional[str]]:
+    """Obtiene ``nitUsuario`` y ``auth_url`` de ``config_negocio.json``."""
+    try:
+        with open(CONFIG_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        ambiente = data.get("ambiente", "pruebas")
+        env_conf = data.get(ambiente, {})
+        auth_conf = env_conf.get("auth", {})
+        nit = auth_conf.get("nitUsuario")
+        url = env_conf.get("auth_url") or data.get("auth_url")
+        if url:
+            url = url.strip()
+        return nit, url
+    except (OSError, json.JSONDecodeError):
+        return None, None
+
+
 def _get_credentials() -> Tuple[str, str]:
     """Obtiene NIT y contraseña de base de datos o de archivo de configuración."""
     nit, pwd = _read_db_credentials()
@@ -141,11 +161,11 @@ def _get_auth_url() -> str:
         return DEFAULT_AUTH_URL
 
 
-def _request_new_token(nit: str, pwd: str) -> Tuple[str, int, str]:
+def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[str, int, str]:
     """Solicita un nuevo token de acceso a la API."""
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {"user": nit, "pwd": pwd}
-    url = _get_auth_url()
+    url = url or _get_auth_url()
     try:
         resp = requests.post(url, data=data, headers=headers, timeout=20)
         resp.raise_for_status()
@@ -241,8 +261,19 @@ def get_token(
     if not refresh and _access_token and now < _expires_at - 60:
         return _access_token
 
+    url = _get_auth_url()
+    conf_nit, conf_url = _get_config_nit_and_url()
+    if conf_nit and nit != conf_nit:
+        raise ValueError(
+            f"NIT utilizado {nit} difiere del configurado {conf_nit}"
+        )
+    if conf_url and url != conf_url:
+        raise ValueError(
+            f"URL de auth {url} difiere de la configurada {conf_url}"
+        )
+    logger.info("Reautenticando con NIT %s y URL %s", nit, url)
     try:
-        token, expires_in, token_type = _request_new_token(nit, pwd)
+        token, expires_in, token_type = _request_new_token(nit, pwd, url)
     except Exception as exc:
         print(f"No se pudo obtener token: {exc}")
         raise

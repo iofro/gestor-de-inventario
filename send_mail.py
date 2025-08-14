@@ -15,6 +15,7 @@ contar con *admin consent*.
 """
 
 import os
+import re
 import requests
 from msal import ConfidentialClientApplication, MsalServiceError
 
@@ -79,6 +80,8 @@ def send_mail(subject: str, content: str, recipient: str) -> None:
 
     send_url = f"https://graph.microsoft.com/v1.0/users/{SENDER}/sendMail"
     headers = {"Authorization": f"Bearer {access_token}", "Content-Type": "application/json"}
+    print(repr(headers["Authorization"]))
+    assert re.fullmatch(r"Bearer [^\s]+", headers["Authorization"]), "Authorization header malformado"
     response = requests.post(send_url, headers=headers, json=message)
     if response.status_code != 202:
         raise RuntimeError(f"Error al enviar correo: {response.status_code} {response.text}")

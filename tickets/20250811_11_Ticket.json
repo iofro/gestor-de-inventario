@@ -2,19 +2,28 @@
   "identificacion": {
     "version": "1",
     "tipoDte": "03",
-    "codigoGeneracion": "64C3A69E-1CF3-437A-95A3-44BCC646A0B9",
-    "numeroControl": "DTE-01-S001P001-398882241571673",
+    "codigoGeneracion": "CDA939C4-6B23-4D00-BAAF-1121D82AFBBF",
+    "numeroControl": "DTE-01-S001P001-413203017257940",
     "fecEmi": "2025-08-11 19:51:59",
-    "horEmi": "03:18:15",
+    "horEmi": "15:01:33",
     "modeloFacturacion": "1 - Facturación previo",
     "tipoTransmision": "1 - Transmisión normal"
   },
   "emisor": {
-    "nombre": "Tienda Demo 3 S.A. de C.V.",
-    "nit": "0614-251289-102-0",
-    "nrc": "123456-7",
-    "giro": "Comercio de demostración",
-    "direccion": "Boulevard de los Héroes #123, San Salvador"
+    "nombre": "INVERSIONES",
+    "nombreComercial": "InverTech",
+    "nit": "09061712791014",
+    "nrc": "2301408",
+    "codActividad": "62010",
+    "descActividad": "Desarrollo ",
+    "tipoContribuyente": "Persona Natural",
+    "direccion": {
+      "departamento": "San Salvador",
+      "municipio": "San Salvador",
+      "complemento": "Edificio Plaza Centro, Nivel 5, Oficina"
+    },
+    "telefono": "2222-3456",
+    "correo": "farmaciasantacatalina7@gmail.com"
   },
   "receptor": {
     "tipoDocumento": null,

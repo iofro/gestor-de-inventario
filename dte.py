@@ -10,6 +10,7 @@ import auth
 from jsonschema import Draft7Validator, ValidationError
 from utils import catalogos
 import logging
+import re
 
 logger = logging.getLogger(__name__)
 
@@ -1065,6 +1066,10 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
     else:
         logger.debug("Token: <empty>")
     payload = {"dte": jws_token}
+    auth_header = headers.get("Authorization")
+    print(repr(auth_header))
+    if auth_header:
+        assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
     resp = requests.post(url, json=payload, headers=headers, timeout=20)
     resp.raise_for_status()
     try:

@@ -10,9 +10,11 @@ DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = 10
 
 # Directory where the signing service expects certificate files (.crt)
-CERT_UPLOAD_DIR = os.path.join(
+# Allow overriding via environment variable and strip any hidden characters.
+_DEFAULT_CERT_DIR = os.path.join(
     os.path.dirname(os.path.dirname(__file__)), "svfe-api-firmador", "uploads"
 )
+CERT_UPLOAD_DIR = os.getenv("CERT_UPLOAD_DIR", _DEFAULT_CERT_DIR).strip()
 
 
 def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
@@ -39,12 +41,14 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
             ambiente = data.get("ambiente", "pruebas")
             fe = data.get(ambiente, {}).get("firma_electronica", {})
             nit = fe.get("nit")
+            if isinstance(nit, str):
+                nit = nit.strip()
             password = fe.get("passwordPri")
             if password:
                 try:
-                    password = base64.b64decode(password).decode()
+                    password = base64.b64decode(password).decode().strip()
                 except Exception:
-                    pass
+                    password = password.strip()
             activo = fe.get("activo", True)
         except Exception:
             pass
@@ -53,8 +57,10 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
 
 def _ensure_cert_file(nit: str) -> None:
     """Verify that the certificate file for ``nit`` exists and is readable."""
-    cert_path = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt")
-    if not os.path.isfile(cert_path) or not os.access(cert_path, os.R_OK):
+    nit = nit.strip()
+    cert_dir = CERT_UPLOAD_DIR.strip()
+    cert_path = os.path.join(cert_dir, f"{nit}.crt")
+    if not (os.path.isfile(cert_path) and os.access(cert_path, os.R_OK)):
         raise RuntimeError(f"Certificado no accesible: {cert_path}")
 
 

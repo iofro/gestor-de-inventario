@@ -211,6 +211,27 @@ def test_post_dte_rejects_mismatch(monkeypatch):
         _post_dte("http://example.com", "TOKEN", token, {**meta, "codigoGeneracion": "XYZ"})
 
 
+def test_post_dte_missing_fields(monkeypatch):
+    calls = {"count": 0}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls["count"] += 1
+        class R:
+            status_code = 200
+            text = ""
+            def json(self):
+                return {}
+            def raise_for_status(self):
+                pass
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    token = make_jws({})
+    with pytest.raises(AssertionError):
+        _post_dte("http://example.com", "TOKEN", token, {})
+    assert calls["count"] == 0
+
+
 def test_consultar_envio_dte():
     db = DB(":memory:")
     venta = create_sale(db)

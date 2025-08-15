@@ -1069,7 +1069,7 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     ident = {}
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or {}
-    payload = {
+    body = {
         "ambiente": ident.get("ambiente"),
         "idEnvio": uuid.uuid4().hex,
         "version": ident.get("version"),
@@ -1078,12 +1078,12 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     }
     codigo = ident.get("codigoGeneracion")
     if codigo:
-        payload["codigoGeneracion"] = codigo
+        body["codigoGeneracion"] = codigo
     auth_header = headers.get("Authorization")
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
-    resp = requests.post(url, json=payload, headers=headers, timeout=20)
-    resp_text = resp.text
+    resp = requests.post(url, headers=headers, json=body, timeout=20)
+    resp_text = getattr(resp, "text", "")
     logger.debug("Respuesta de Hacienda: %s", resp_text)
     resp.raise_for_status()
     try:

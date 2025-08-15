@@ -2,7 +2,7 @@
   "dte_api": {
     "url": "https://apitest.dtes.mh.gob.sv",
     "ambiente": "pruebas",
-    "token": "eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIwOTA2MTcxMjc5MTAxNCIsImF1dGhvcml0aWVzIjpbIlVTRVIiLCJVU0VSX0FQSSIsIlVzdWFyaW8iXSwiY19uaXQiOiIwOTA2MTcxMjc5MTAxNCIsImNfZHVpIjoiMDAwODY4NTQ3IiwiaWF0IjoxNzU1MDQ0NDk5LCJleHAiOjE3NTUxMzA4OTl9.OoCJV79NPdsxFucXuPck2t9DA7B9c6gG-07-9IMMf6z8cmvdbOtugZT7ZhUZxtxHLjrlPwJ6HGI77HInfhDpZw",
+    "token": "Bearer eyJhbGciOiJIUzUxMiJ9.eyJzdWIiOiIwOTA2MTcxMjc5MTAxNCIsImF1dGhvcml0aWVzIjpbIlVTRVIiLCJVU0VSX0FQSSIsIlVzdWFyaW8iXSwiY19uaXQiOiIwOTA2MTcxMjc5MTAxNCIsImNfZHVpIjoiMDAwODY4NTQ3IiwiaWF0IjoxNzU1MjM5MTY2LCJleHAiOjE3NTUzMjU1NjZ9.XKRnpxsOrpHDCVosMt_aV8Rrp1TpSAcXJJNZeo0T3MrYpsajrN2MtaPCNl1nVXi7D8HeZSN41otLSFFrpjW9IQ",
     "prefijo_control": "DTE-01-S001P001",
     "modo_transmision": "1 - Normal",
     "envio_automatico": true,

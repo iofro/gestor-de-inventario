@@ -87,7 +87,12 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
                 "pagos": None,
                 "numPagoElectronico": None,
             },
-            "identificacion": {"tipoDte": "01"},
+            "identificacion": {
+                "tipoDte": "01",
+                "version": 1,
+                "ambiente": "01" if ambiente == "produccion" else "00",
+                "codigoGeneracion": "ABC",
+            },
         },
     )
 
@@ -125,7 +130,12 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
     url, headers, payload = calls[0]
     assert url == f"http://{ambiente}.example.com"
     assert headers["Authorization"] == "Bearer JWT"
-    assert payload == {"dte": "SIGNED"}
+    assert payload["documento"] == "SIGNED"
+    assert payload["tipoDte"] == "01"
+    assert payload["version"] == 1
+    assert payload["ambiente"] == ("01" if ambiente == "produccion" else "00")
+    assert payload["codigoGeneracion"] == "ABC"
+    assert "idEnvio" in payload
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -148,7 +158,12 @@ def test_post_dte_uses_bearer(monkeypatch):
         return R()
 
     monkeypatch.setattr("dte.requests.post", fake_post)
-    _post_dte("http://example.com", "TOKEN", "SIGNED")
+    _post_dte(
+        "http://example.com",
+        "TOKEN",
+        "SIGNED",
+        {"identificacion": {"ambiente": "00", "version": 1, "tipoDte": "01", "codigoGeneracion": "ABC"}},
+    )
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
 
 
@@ -167,7 +182,12 @@ def test_post_dte_handles_non_json(monkeypatch):
         return R()
 
     monkeypatch.setattr("dte.requests.post", fake_post)
-    res = _post_dte("http://example.com", "", "SIGNED")
+    res = _post_dte(
+        "http://example.com",
+        "",
+        "SIGNED",
+        {"identificacion": {"ambiente": "00", "version": 1, "tipoDte": "01", "codigoGeneracion": "ABC"}},
+    )
     assert res == {"estado": "Error", "detalle": "error"}
 
 

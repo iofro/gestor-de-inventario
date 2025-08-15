@@ -1072,11 +1072,13 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
     resp = requests.post(url, json=payload, headers=headers, timeout=20)
+    resp_text = resp.text
+    logger.debug("Respuesta de Hacienda: %s", resp_text)
     resp.raise_for_status()
     try:
         return resp.json()
     except Exception:
-        return {"estado": "Error", "detalle": resp.text}
+        return {"estado": "Error", "detalle": resp_text}
 
 
 def transmitir_dte(

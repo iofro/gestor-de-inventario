@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import logging
 
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
@@ -8,7 +9,10 @@ from dte import generar_ticket_json
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
+from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 
+
+logger = logging.getLogger(__name__)
 
 def generate_invoice_pdf(manager, venta_id):
     """Generate and store the invoice PDF for the given sale."""
@@ -136,6 +140,17 @@ def generate_invoice_pdf(manager, venta_id):
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     try:
+        resumen = json_data.get("resumen", {})
+        condicion = normalize_condicion_operacion(
+            resumen.get("condicionOperacion")
+        )
+        resumen["condicionOperacion"] = condicion
+        validate_pagos_basico(resumen, condicion)
+        json_data["resumen"] = resumen
+    except ValueError as exc:
+        logger.error("ERROR: DTE inválido: %s", exc)
+        raise ValueError(f"DTE inválido: {exc}") from exc
+    try:
         sign_and_save(json_data, json_path)
     except Exception:
         pass
@@ -181,6 +196,17 @@ def generate_ticket_pdf(manager, venta_id):
         json.dump(ticket_json, fh, ensure_ascii=False, indent=2)
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
+    try:
+        resumen = ticket_json.get("resumen", {})
+        condicion = normalize_condicion_operacion(
+            resumen.get("condicionOperacion")
+        )
+        resumen["condicionOperacion"] = condicion
+        validate_pagos_basico(resumen, condicion)
+        ticket_json["resumen"] = resumen
+    except ValueError as exc:
+        logger.error("ERROR: DTE inválido: %s", exc)
+        raise ValueError(f"DTE inválido: {exc}") from exc
     try:
         sign_and_save(ticket_json, json_path)
     except Exception:

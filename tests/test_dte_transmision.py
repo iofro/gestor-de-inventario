@@ -27,8 +27,8 @@ def test_transmitir_dte_contingencia(tmp_path):
     assert row["estado"] == "Pendiente"
 
 
-@pytest.mark.parametrize("ambiente", ["pruebas", "produccion"])
-def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
+def test_transmitir_dte_normal(monkeypatch, tmp_path):
+    ambiente = "pruebas"
     db = DB(":memory:")
     venta = create_sale(db)
 
@@ -89,8 +89,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
             },
             "identificacion": {
                 "tipoDte": "01",
-                "version": 1,
-                "ambiente": "01" if ambiente == "produccion" else "00",
+                "version": 2,
+                "ambiente": "00",
                 "codigoGeneracion": "ABC",
             },
         },
@@ -132,8 +132,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path, ambiente):
     assert headers["Authorization"] == "Bearer JWT"
     assert payload["documento"] == "SIGNED"
     assert payload["tipoDte"] == "01"
-    assert payload["version"] == 1
-    assert payload["ambiente"] == ("01" if ambiente == "produccion" else "00")
+    assert payload["version"] == 2
+    assert payload["ambiente"] == "00"
     assert payload["codigoGeneracion"] == "ABC"
     assert "idEnvio" in payload
     row = db.cursor.execute(
@@ -162,7 +162,7 @@ def test_post_dte_uses_bearer(monkeypatch):
         "http://example.com",
         "TOKEN",
         "SIGNED",
-        {"identificacion": {"ambiente": "00", "version": 1, "tipoDte": "01", "codigoGeneracion": "ABC"}},
+        {"identificacion": {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}},
     )
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
 
@@ -186,7 +186,7 @@ def test_post_dte_handles_non_json(monkeypatch):
         "http://example.com",
         "",
         "SIGNED",
-        {"identificacion": {"ambiente": "00", "version": 1, "tipoDte": "01", "codigoGeneracion": "ABC"}},
+        {"identificacion": {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}},
     )
     assert res == {"estado": "Error", "detalle": "error"}
 

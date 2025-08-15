@@ -5,6 +5,7 @@ import time
 import base64
 import logging
 from typing import Optional, Tuple
+from urllib.parse import urlparse
 
 import requests
 
@@ -23,6 +24,8 @@ _token_type: str = ""
 # Credenciales actualmente asociadas al token en caché
 _current_user: Optional[str] = None
 _current_pwd: Optional[str] = None
+_last_auth_url: Optional[str] = None
+_last_auth_host: Optional[str] = None
 
 
 def _read_db_credentials() -> Tuple[Optional[str], Optional[str]]:
@@ -166,6 +169,9 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
     data = {"user": nit, "pwd": pwd}
     url = url or _get_auth_url()
+    global _last_auth_url, _last_auth_host
+    _last_auth_url = url
+    _last_auth_host = urlparse(url).netloc
     try:
         resp = requests.post(url, data=data, headers=headers, timeout=20)
         status_code = getattr(resp, "status_code", "N/A")
@@ -269,6 +275,9 @@ def get_token(
         return _access_token
 
     url = _get_auth_url()
+    global _last_auth_url, _last_auth_host
+    _last_auth_url = url
+    _last_auth_host = urlparse(url).netloc
     conf_nit, conf_url = _get_config_nit_and_url()
     if conf_nit and nit != conf_nit:
         raise ValueError(
@@ -291,3 +300,11 @@ def get_token(
     _expires_at = obtained_at + expires_in
     _save_token(token, expires_in, obtained_at)
     return token
+
+
+def get_last_auth_host() -> Optional[str]:
+    """Devuelve el host utilizado en la última autenticación."""
+    if _last_auth_host:
+        return _last_auth_host
+    url = _get_auth_url()
+    return urlparse(url).netloc

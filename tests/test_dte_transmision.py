@@ -4,6 +4,7 @@ import json
 from datetime import datetime
 from pathlib import Path
 import pytest
+import auth
 from tests.conftest import make_jws
 
 
@@ -49,7 +50,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
         token_calls["count"] += 1
         return "JWT"
 
-    monkeypatch.setattr("auth.get_token", fake_get_token)
+    monkeypatch.setattr(auth, "get_token", fake_get_token)
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: f"{ambiente}.example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",

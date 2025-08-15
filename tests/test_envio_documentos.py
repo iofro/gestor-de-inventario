@@ -63,7 +63,12 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
                 "pagos": None,
                 "numPagoElectronico": None,
             },
-            "identificacion": {"tipoDte": "01"},
+            "identificacion": {
+                "tipoDte": "01",
+                "version": 1,
+                "ambiente": "00",
+                "codigoGeneracion": "ABC",
+            },
         },
     )
 
@@ -113,7 +118,12 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     assert len(calls) == 2
     for url, headers, payload in calls:
         assert url == "http://example.com"
-        assert payload == {"dte": "SIGNED"}
+        assert payload["documento"] == "SIGNED"
+        assert payload["tipoDte"] == "01"
+        assert payload["version"] == 1
+        assert payload["ambiente"] == "00"
+        assert payload["codigoGeneracion"] == "ABC"
+        assert "idEnvio" in payload
         assert headers["Authorization"] == "Bearer JWT"
 
 
@@ -160,7 +170,12 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
                 "pagos": None,
                 "numPagoElectronico": None,
             },
-            "identificacion": {"tipoDte": "01"},
+            "identificacion": {
+                "tipoDte": "01",
+                "version": 1,
+                "ambiente": "00",
+                "codigoGeneracion": "NC1",
+            },
         },
     )
 
@@ -195,7 +210,12 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert len(calls) == 1
     url, headers, payload = calls[0]
     assert url == "http://example.com"
-    assert payload == {"dte": "SIGNED"}
+    assert payload["documento"] == "SIGNED"
+    assert payload["tipoDte"] == "01"
+    assert payload["version"] == 1
+    assert payload["ambiente"] == "00"
+    assert payload["codigoGeneracion"] == "NC1"
+    assert "idEnvio" in payload
     assert headers["Authorization"] == "Bearer JWT"
 
 
@@ -240,7 +260,16 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
         json.dump(config, fh)
 
     caplog.set_level(logging.ERROR)
-    res = enviar_evento_contingencia(db, venta_id, {"id": venta_id})
+    data = {
+        "identificacion": {
+            "version": 1,
+            "ambiente": "00",
+            "tipoDte": "CON",
+            "codigoGeneracion": "EV1",
+        },
+        "id": venta_id,
+    }
+    res = enviar_evento_contingencia(db, venta_id, data)
     assert res["estado"] == "Rechazado"
     assert "Fallo" in caplog.text and "campo: invalido" in caplog.text
     row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (venta_id,)).fetchone()
@@ -249,7 +278,12 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert len(calls) == 1
     url, headers, payload = calls[0]
     assert url == "http://example.com"
-    assert payload == {"dte": "SIGNED"}
+    assert payload["documento"] == "SIGNED"
+    assert payload["tipoDte"] == "CON"
+    assert payload["version"] == 1
+    assert payload["ambiente"] == "00"
+    assert payload["codigoGeneracion"] == "EV1"
+    assert "idEnvio" in payload
     assert headers["Authorization"] == "Bearer JWT"
 
 
@@ -289,7 +323,16 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(config, fh)
 
-    res = enviar_evento_anulacion(db, venta_id, {"id": venta_id})
+    data = {
+        "identificacion": {
+            "version": 1,
+            "ambiente": "00",
+            "tipoDte": "ANU",
+            "codigoGeneracion": "EV2",
+        },
+        "id": venta_id,
+    }
+    res = enviar_evento_anulacion(db, venta_id, data)
     assert res["estado"] == "Transmitido"
     row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (venta_id,)).fetchone()
     assert row["estado"] == "Transmitido"
@@ -297,6 +340,11 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert len(calls) == 1
     url, headers, payload = calls[0]
     assert url == "http://example.com"
-    assert payload == {"dte": "SIGNED"}
+    assert payload["documento"] == "SIGNED"
+    assert payload["tipoDte"] == "ANU"
+    assert payload["version"] == 1
+    assert payload["ambiente"] == "00"
+    assert payload["codigoGeneracion"] == "EV2"
+    assert "idEnvio" in payload
     assert headers["Authorization"] == "Bearer JWT"
 

@@ -21,6 +21,7 @@ _access_token: Optional[str] = None
 _expires_at: float = 0.0
 _obtained_at: float = 0.0
 _token_type: str = ""
+# Longitud del último token obtenido
 _token_len: int = 0
 # Credenciales actualmente asociadas al token en caché
 _current_user: Optional[str] = None
@@ -165,14 +166,51 @@ def _get_auth_url() -> str:
         return DEFAULT_AUTH_URL
 
 
+def _mask_token(token: str) -> str:
+    """Devuelve una versión parcialmente enmascarada del JWT."""
+    if len(token) <= 24:
+        return token
+    return f"{token[:12]}{'*' * (len(token) - 24)}{token[-12:]}"
+
+
+def _extract_exp(token: str) -> Optional[int]:
+    """Extrae el reclamo ``exp`` del JWT si está disponible."""
+    try:
+        payload_part = token.split(".")[1]
+        padding = "=" * (-len(payload_part) % 4)
+        payload_bytes = base64.urlsafe_b64decode(payload_part + padding)
+        payload = json.loads(payload_bytes.decode())
+        exp = payload.get("exp")
+        if isinstance(exp, (int, float)):
+            return int(exp)
+    except Exception:
+        pass
+    return None
+
+
+def _log_token(token: str, had_prefix: bool) -> None:
+    """Registra información del token sin exponerlo por completo."""
+    token_len = len(token)
+    prefix_msg = "con" if had_prefix else "sin"
+    base_msg = f"Token {prefix_msg} prefijo Bearer; len={token_len}"
+    if token_len < 100:
+        logger.warning("Token sospechoso (%s); patrón=%s", base_msg, _mask_token(token))
+    elif logger.isEnabledFor(logging.DEBUG):
+        logger.debug("%s; patrón=%s", base_msg, _mask_token(token))
+    else:
+        logger.info(base_msg)
+
+
 def _check_and_update_token_len(token: str) -> int:
-    """Verifica la longitud del JWT y actualiza el valor global."""
+    """Actualiza la longitud almacenada del JWT."""
     global _token_len
     token_len = len(token)
-    if not 350 <= token_len <= 800:
-        raise ValueError(f"Longitud de token inesperada: {token_len}")
     if _token_len and token_len != _token_len:
-        raise ValueError("La longitud del token no coincide con la almacenada")
+        logger.warning(
+            "La longitud del token difiere de la previamente almacenada: %s vs %s",
+            token_len,
+            _token_len,
+        )
     _token_len = token_len
     return token_len
 
@@ -189,8 +227,16 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
         resp = requests.post(url, data=data, headers=headers, timeout=20)
         status_code = getattr(resp, "status_code", "N/A")
         resp_text = getattr(resp, "text", "")
-        print(status_code)
-        print(resp_text)
+        try:
+            data_logged = json.loads(resp_text)
+            token_field = data_logged.get("body", {}).get("token")
+            if isinstance(token_field, str):
+                had_prefix = token_field.startswith("Bearer ")
+                token_clean = token_field[7:] if had_prefix else token_field
+                data_logged["body"]["token"] = _mask_token(token_clean)
+                resp_text = json.dumps(data_logged)
+        except Exception:
+            pass
         if isinstance(status_code, int) and status_code >= 400:
             logger.error("Respuesta de Hacienda %s: %s", status_code, resp_text)
         else:
@@ -198,9 +244,13 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
         resp.raise_for_status()
         info = resp.json()
         body = info.get("body", {}) if isinstance(info, dict) else {}
-        token = body.get("token") if info.get("status") == "OK" else None
-        if token and isinstance(token, str) and token.startswith("Bearer "):
-            token = token[7:]
+        raw_token = body.get("token") if info.get("status") == "OK" else None
+        had_prefix = False
+        token = None
+        if raw_token and isinstance(raw_token, str):
+            had_prefix = raw_token.startswith("Bearer ")
+            token = raw_token[7:] if had_prefix else raw_token
+            _log_token(token, had_prefix)
         token_type = body.get("tokenType", "") if body else ""
         expires_in = int(body.get("expiresIn", 0)) if body else 0
         if not token:
@@ -214,12 +264,29 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
     except Exception as exc:
         report = f"Error de autenticación al solicitar token en {url}: {exc}"
         if isinstance(exc, requests.HTTPError) and exc.response is not None:
-            report += f"\nRespuesta: {exc.response.text[:200]}"
-        print(report)
+            try:
+                data_logged = json.loads(exc.response.text)
+                token_field = data_logged.get("body", {}).get("token")
+                if isinstance(token_field, str):
+                    had_prefix = token_field.startswith("Bearer ")
+                    token_clean = token_field[7:] if had_prefix else token_field
+                    data_logged["body"]["token"] = _mask_token(token_clean)
+                    report += f"\nRespuesta: {json.dumps(data_logged)[:200]}"
+                else:
+                    report += f"\nRespuesta: {exc.response.text[:200]}"
+            except Exception:
+                report += f"\nRespuesta: {exc.response.text[:200]}"
+        logger.error(report)
         raise
 
 
-def _save_token(token: str, expires_in: int, obtained_at: float, token_len: int) -> None:
+def _save_token(
+    token: str,
+    expires_in: int,
+    obtained_at: float,
+    token_len: int,
+    exp: Optional[int] = None,
+) -> None:
     """Guarda el token y metadatos en la tabla 'tokens' si es posible."""
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -243,6 +310,11 @@ def _save_token(token: str, expires_in: int, obtained_at: float, token_len: int)
                 "INSERT OR REPLACE INTO tokens(key, value) VALUES('token_len', ?)",
                 (str(token_len),),
             )
+            if exp:
+                cur.execute(
+                    "INSERT OR REPLACE INTO tokens(key, value) VALUES('exp', ?)",
+                    (str(exp),),
+                )
             conn.commit()
         try:
             os.chmod(DB_PATH, 0o600)
@@ -259,7 +331,7 @@ def delete_token() -> None:
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute(
-                "DELETE FROM tokens WHERE key IN ('access_token', 'expires_in', 'obtained_at', 'token_len')"
+                "DELETE FROM tokens WHERE key IN ('access_token', 'expires_in', 'obtained_at', 'token_len', 'exp')"
             )
             conn.commit()
     except sqlite3.Error:
@@ -291,7 +363,13 @@ def get_token(
             _current_user, _current_pwd = nit, pwd
 
     now = time.time()
-    if not refresh and _access_token and now < _expires_at - 60:
+    if _expires_at and _obtained_at:
+        # Renovación anticipada ~10-15 minutos antes de expirar
+        # (vigencia típica 24h producción / 48h pruebas)
+        margin = min(900, max(60, (_expires_at - _obtained_at) / 10))
+    else:
+        margin = 60
+    if not refresh and _access_token and now < _expires_at - margin:
         _check_and_update_token_len(_access_token)
         return _access_token
 
@@ -316,11 +394,12 @@ def get_token(
         raise
     token_len = _check_and_update_token_len(token)
     obtained_at = time.time()
+    token_exp = _extract_exp(token)
     _access_token = token
     _token_type = token_type
     _obtained_at = obtained_at
-    _expires_at = obtained_at + expires_in
-    _save_token(token, expires_in, obtained_at, token_len)
+    _expires_at = token_exp if token_exp else obtained_at + expires_in
+    _save_token(token, expires_in, obtained_at, token_len, token_exp)
     return token
 
 

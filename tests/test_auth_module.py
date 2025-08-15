@@ -258,3 +258,29 @@ def test_records_last_auth_host(monkeypatch, tmp_path):
     )
     auth.get_token(refresh=True, nit="user", pwd="pwd")
     assert auth.get_last_auth_host() == "auth.example"
+
+
+def test_short_token_logs_warning(monkeypatch, tmp_path, caplog):
+    setup_paths(monkeypatch, tmp_path)
+    auth.delete_token()
+
+    class Resp:
+        status_code = 200
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return {
+                "status": "OK",
+                "body": {
+                    "token": "Bearer " + ("x" * 80),
+                    "tokenType": "Bearer",
+                    "expiresIn": 120,
+                },
+            }
+
+    monkeypatch.setattr(auth.requests, "post", lambda url, data, headers, timeout: Resp())
+    caplog.set_level(logging.WARNING, logger="auth")
+    auth.get_token(refresh=True)
+    assert "Token sospechoso" in caplog.text

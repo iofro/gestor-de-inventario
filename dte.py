@@ -14,6 +14,7 @@ from utils import catalogos
 import logging
 import re
 from utils.monto import monto_a_texto_sv
+from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 
 logger = logging.getLogger(__name__)
 
@@ -1374,6 +1375,18 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         raise ValueError(
             f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
         )
+    try:
+        resumen = data.get("resumen", {})
+        condicion = normalize_condicion_operacion(
+            resumen.get("condicionOperacion")
+        )
+        resumen["condicionOperacion"] = condicion
+        validate_pagos_basico(resumen, condicion)
+        data["resumen"] = resumen
+    except ValueError as exc:
+        logger.error("ERROR: DTE inválido: %s", exc)
+        raise ValueError(f"DTE inválido: {exc}") from exc
+
     signed = jws.sign_json(data)
 
     # Verify that metadata matches the signed payload and update it

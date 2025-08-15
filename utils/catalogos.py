@@ -1,4 +1,5 @@
 import os
+import json
 
 # Longitud estándar del NIT sin guiones
 NIT_LENGTH = 14
@@ -27,3 +28,17 @@ SCHEMA_MAP = {
     "05": os.path.join(SCHEMAS_DIR, "fe-nc-v3.json"),
     "06": os.path.join(SCHEMAS_DIR, "fe-nd-v3.json"),
 }
+
+
+def get_dte_schema(tipo: str) -> dict | None:
+    """Return the JSON schema dictionary for ``tipo``.
+
+    ``tipo`` debe ser un código de DTE como ``"01"`` o ``"03"``.  Si no se
+    encuentra un esquema asociado o el archivo no existe, devuelve ``None``.
+    """
+    path = SCHEMA_MAP.get(tipo)
+    if not path or not os.path.exists(path):
+        return None
+    with open(path, "r", encoding="utf-8") as fh:
+        return json.load(fh)
+

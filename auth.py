@@ -21,6 +21,7 @@ _access_token: Optional[str] = None
 _expires_at: float = 0.0
 _obtained_at: float = 0.0
 _token_type: str = ""
+_token_len: int = 0
 # Credenciales actualmente asociadas al token en caché
 _current_user: Optional[str] = None
 _current_pwd: Optional[str] = None
@@ -164,6 +165,18 @@ def _get_auth_url() -> str:
         return DEFAULT_AUTH_URL
 
 
+def _check_and_update_token_len(token: str) -> int:
+    """Verifica la longitud del token y actualiza el valor global."""
+    global _token_len
+    token_len = len(f"Bearer {token}".split()[1])
+    if not 350 <= token_len <= 800:
+        raise ValueError(f"Longitud de token inesperada: {token_len}")
+    if _token_len and token_len != _token_len:
+        raise ValueError("La longitud del token no coincide con la almacenada")
+    _token_len = token_len
+    return token_len
+
+
 def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[str, int, str]:
     """Solicita un nuevo token de acceso a la API."""
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -204,7 +217,7 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
         raise
 
 
-def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
+def _save_token(token: str, expires_in: int, obtained_at: float, token_len: int) -> None:
     """Guarda el token y metadatos en la tabla 'tokens' si es posible."""
     try:
         with sqlite3.connect(DB_PATH) as conn:
@@ -224,6 +237,10 @@ def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
                 "INSERT OR REPLACE INTO tokens(key, value) VALUES('obtained_at', ?)",
                 (str(obtained_at),),
             )
+            cur.execute(
+                "INSERT OR REPLACE INTO tokens(key, value) VALUES('token_len', ?)",
+                (str(token_len),),
+            )
             conn.commit()
         try:
             os.chmod(DB_PATH, 0o600)
@@ -235,12 +252,12 @@ def _save_token(token: str, expires_in: int, obtained_at: float) -> None:
 
 def delete_token() -> None:
     """Elimina el token almacenado y limpia la caché."""
-    global _access_token, _expires_at, _obtained_at, _token_type
+    global _access_token, _expires_at, _obtained_at, _token_type, _token_len
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cur = conn.cursor()
             cur.execute(
-                "DELETE FROM tokens WHERE key IN ('access_token', 'expires_in', 'obtained_at')"
+                "DELETE FROM tokens WHERE key IN ('access_token', 'expires_in', 'obtained_at', 'token_len')"
             )
             conn.commit()
     except sqlite3.Error:
@@ -249,6 +266,7 @@ def delete_token() -> None:
     _token_type = ""
     _expires_at = 0.0
     _obtained_at = 0.0
+    _token_len = 0
 
 
 def get_token(
@@ -272,6 +290,7 @@ def get_token(
 
     now = time.time()
     if not refresh and _access_token and now < _expires_at - 60:
+        _check_and_update_token_len(_access_token)
         return _access_token
 
     url = _get_auth_url()
@@ -293,12 +312,13 @@ def get_token(
     except Exception as exc:
         print(f"No se pudo obtener token: {exc}")
         raise
+    token_len = _check_and_update_token_len(token)
     obtained_at = time.time()
     _access_token = token
     _token_type = token_type
     _obtained_at = obtained_at
     _expires_at = obtained_at + expires_in
-    _save_token(token, expires_in, obtained_at)
+    _save_token(token, expires_in, obtained_at, token_len)
     return token
 
 

@@ -33,16 +33,16 @@ def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
 
     def fake_request(nit, pwd, url):
         calls["n"] += 1
-        return f"Bearer tok{calls['n']}", 120, "Bearer"
+        return f"tok{calls['n']}", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     t1 = auth.get_token(refresh=True)
-    assert t1 == "Bearer tok1"
+    assert t1 == "tok1"
     t2 = auth.get_token()
-    assert t2 == "Bearer tok1"
+    assert t2 == "tok1"
     assert calls["n"] == 1
     t3 = auth.get_token(refresh=True)
-    assert t3 == "Bearer tok2"
+    assert t3 == "tok2"
     assert calls["n"] == 2
 
 
@@ -50,7 +50,7 @@ def test_get_token_expired(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 
     def fake_request(nit, pwd, url):
-        return "Bearer tok", 1, "Bearer"
+        return "tok", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     auth.get_token(refresh=True)
@@ -59,11 +59,11 @@ def test_get_token_expired(monkeypatch, tmp_path):
 
     def fake_request2(nit, pwd, url):
         calls["n"] += 1
-        return "Bearer new", 1, "Bearer"
+        return "new", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request2)
     token2 = auth.get_token()
-    assert token2 == "Bearer new"
+    assert token2 == "new"
     assert calls["n"] == 1
 
 

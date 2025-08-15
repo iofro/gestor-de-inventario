@@ -3158,6 +3158,16 @@ class DTEConfigDialog(QDialog):
             return
         try:
             os.makedirs(CERT_UPLOAD_DIR, exist_ok=True)
+            # Remove any existing files so only the new certificate remains
+            for name in os.listdir(CERT_UPLOAD_DIR):
+                existing = os.path.join(CERT_UPLOAD_DIR, name)
+                try:
+                    if os.path.isfile(existing) or os.path.islink(existing):
+                        os.remove(existing)
+                    elif os.path.isdir(existing):
+                        shutil.rmtree(existing)
+                except Exception as cleanup_exc:
+                    logger.warning("No se pudo eliminar %s: %s", existing, cleanup_exc)
             dest = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt")
             shutil.copy(file_path, dest)
             os.chmod(dest, 0o644)

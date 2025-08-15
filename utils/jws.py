@@ -17,6 +17,17 @@ _DEFAULT_CERT_DIR = os.path.join(
 CERT_UPLOAD_DIR = os.getenv("CERT_UPLOAD_DIR", _DEFAULT_CERT_DIR).strip()
 
 
+def set_cert_upload_dir(path: str) -> None:
+    """Override global certificate directory to ``path``.
+
+    The provided path is converted to an absolute path and stripped of
+    whitespace so that subsequent signing operations read the certificate
+    from the same location where it was copied after an upload.
+    """
+    global CERT_UPLOAD_DIR
+    CERT_UPLOAD_DIR = os.path.abspath(path).strip()
+
+
 def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
     """Return signer service URL from ``SIGN_URL`` env, config or default."""
     url = os.getenv("SIGN_URL")
@@ -58,7 +69,7 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
 def _ensure_cert_file(nit: str) -> None:
     """Verify that the certificate file for ``nit`` exists and is readable."""
     nit = nit.strip()
-    cert_dir = CERT_UPLOAD_DIR.strip()
+    cert_dir = os.path.abspath(CERT_UPLOAD_DIR.strip())
     cert_path = os.path.join(cert_dir, f"{nit}.crt")
     if not (os.path.isfile(cert_path) and os.access(cert_path, os.R_OK)):
         raise RuntimeError(f"Certificado no accesible: {cert_path}")

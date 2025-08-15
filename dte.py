@@ -1084,7 +1084,13 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
     resp = requests.post(url, headers=headers, json=body, timeout=20)
     resp_text = getattr(resp, "text", "")
-    logger.debug("Respuesta de Hacienda: %s", resp_text)
+    status_code = getattr(resp, "status_code", "N/A")
+    print(status_code)
+    print(resp_text)
+    if isinstance(status_code, int) and status_code >= 400:
+        logger.error("Respuesta de Hacienda %s: %s", status_code, resp_text)
+    else:
+        logger.debug("Respuesta de Hacienda %s: %s", status_code, resp_text)
     resp.raise_for_status()
     try:
         return resp.json()

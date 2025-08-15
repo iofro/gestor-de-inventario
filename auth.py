@@ -168,6 +168,14 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
     url = url or _get_auth_url()
     try:
         resp = requests.post(url, data=data, headers=headers, timeout=20)
+        status_code = getattr(resp, "status_code", "N/A")
+        resp_text = getattr(resp, "text", "")
+        print(status_code)
+        print(resp_text)
+        if isinstance(status_code, int) and status_code >= 400:
+            logger.error("Respuesta de Hacienda %s: %s", status_code, resp_text)
+        else:
+            logger.debug("Respuesta de Hacienda %s: %s", status_code, resp_text)
         resp.raise_for_status()
         info = resp.json()
         body = info.get("body", {}) if isinstance(info, dict) else {}

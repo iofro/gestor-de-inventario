@@ -67,7 +67,10 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
     if venta.get('codigo_generacion'):
         ident['codigoGeneracion'] = venta['codigo_generacion']
     if venta.get('fecha'):
-        ident['fecEmi'] = venta['fecha']
+        try:
+            ident['fecEmi'] = datetime.fromisoformat(venta['fecha']).strftime('%Y-%m-%d')
+        except ValueError:
+            ident['fecEmi'] = str(venta['fecha'])[:10]
     if venta.get('modelo_facturacion'):
         ident['modeloFacturacion'] = venta['modelo_facturacion']
     if venta.get('tipo_transmision'):

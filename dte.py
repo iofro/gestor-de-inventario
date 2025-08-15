@@ -577,7 +577,14 @@ def generar_dte_json(
     codigo_generacion = str(uuid.uuid4()).upper()
     numero_control = generar_numero_control()
 
-    fecha = venta.get("fecha") or datetime.now().strftime("%Y-%m-%d")
+    raw_fecha = venta.get("fecha")
+    if raw_fecha:
+        try:
+            fecha = datetime.fromisoformat(str(raw_fecha)).strftime("%Y-%m-%d")
+        except ValueError:
+            fecha = str(raw_fecha)[:10]
+    else:
+        fecha = datetime.now().strftime("%Y-%m-%d")
     hora = datetime.now().strftime("%H:%M:%S")
 
     identificacion = {

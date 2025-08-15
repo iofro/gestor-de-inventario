@@ -1117,29 +1117,29 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     ident = {}
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
-    ambiente = ident.get("ambiente")
-    tipo_dte = ident.get("tipoDte") or ident.get("tipoDocumento")
-    version = ident.get("version")
-    codigo = ident.get("codigoGeneracion")
 
-    # Ensure the JWS payload matches the provided metadata
+    # Always extract identification fields from the signed JWS payload
     payload = _decode_jws_payload(jws_token)
     pident = payload.get("identificacion") or payload.get("identificador") or {}
-    if codigo and pident.get("codigoGeneracion") != codigo:
-        raise ValueError("documento no coincide con codigoGeneracion")
-    if tipo_dte and (pident.get("tipoDte") or pident.get("tipoDocumento")) != tipo_dte:
-        raise ValueError("documento no coincide con tipoDte")
-    if ambiente and pident.get("ambiente") != ambiente:
-        raise ValueError("documento no coincide con ambiente")
+    ambiente = pident.get("ambiente")
+    tipo_dte = pident.get("tipoDte") or pident.get("tipoDocumento")
+    version = pident.get("version")
+    codigo = pident.get("codigoGeneracion")
 
-    if not ambiente:
-        ambiente = pident.get("ambiente")
-    if not tipo_dte:
-        tipo_dte = pident.get("tipoDte") or pident.get("tipoDocumento")
-    if not version:
-        version = pident.get("version")
-    if not codigo:
-        codigo = pident.get("codigoGeneracion")
+    # If explicit metadata was provided, ensure it matches the JWS payload
+    if ident:
+        i_amb = ident.get("ambiente")
+        i_tipo = ident.get("tipoDte") or ident.get("tipoDocumento")
+        i_ver = ident.get("version")
+        i_cod = ident.get("codigoGeneracion")
+        if i_cod and i_cod != codigo:
+            raise ValueError("documento no coincide con codigoGeneracion")
+        if i_tipo and i_tipo != tipo_dte:
+            raise ValueError("documento no coincide con tipoDte")
+        if i_amb and i_amb != ambiente:
+            raise ValueError("documento no coincide con ambiente")
+        if i_ver and i_ver != version:
+            raise ValueError("documento no coincide con version")
 
     missing = [
         name
@@ -1307,6 +1307,22 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
             f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
         )
     signed = jws.sign_json(data)
+
+    # Verify that metadata matches the signed payload and update it
+    payload = _decode_jws_payload(signed)
+    pident = payload.get("identificacion") or payload.get("identificador") or {}
+    p_amb = pident.get("ambiente")
+    p_tipo = pident.get("tipoDte") or pident.get("tipoDocumento")
+    p_cod = pident.get("codigoGeneracion")
+    if meta.get("ambiente") and meta["ambiente"] != p_amb:
+        raise ValueError("ambiente no coincide con datos a firmar")
+    if meta.get("tipoDte") and meta["tipoDte"] != p_tipo:
+        raise ValueError("tipoDte no coincide con datos a firmar")
+    if meta.get("codigoGeneracion") and meta["codigoGeneracion"] != p_cod:
+        raise ValueError("codigoGeneracion no coincide con datos a firmar")
+    meta["ambiente"] = p_amb
+    meta["tipoDte"] = p_tipo
+    meta["codigoGeneracion"] = p_cod
 
     try:
         respuesta = _post_dte(url, token, signed, meta)

@@ -9,6 +9,11 @@ CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = 10
 
+# Directory where the signing service expects certificate files (.crt)
+CERT_UPLOAD_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(__file__)), "svfe-api-firmador", "uploads"
+)
+
 
 def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
     """Return signer service URL from ``SIGN_URL`` env, config or default."""
@@ -46,6 +51,13 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
     return nit, password, activo
 
 
+def _ensure_cert_file(nit: str) -> None:
+    """Verify that the certificate file for ``nit`` exists and is readable."""
+    cert_path = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt")
+    if not os.path.isfile(cert_path) or not os.access(cert_path, os.R_OK):
+        raise RuntimeError(f"Certificado no accesible: {cert_path}")
+
+
 def sign_json(
     payload: dict,
     nit: str | None = None,
@@ -56,6 +68,9 @@ def sign_json(
     """Sign ``payload`` using the external ``svfe-api-firmador`` service."""
     if nit is None or passwordPri is None:
         nit, passwordPri, activo = _load_config()
+    if not nit:
+        raise RuntimeError("NIT del certificado no configurado")
+    _ensure_cert_file(nit)
     url = url or _get_sign_url()
     ident = payload.get("identificacion", {})
     version = ident.get("version")

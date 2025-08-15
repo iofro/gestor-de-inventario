@@ -1069,16 +1069,30 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     ident = {}
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or {}
+    id_envio = uuid.uuid4().int & 0x7FFFFFFF
+    if id_envio == 0:
+        id_envio = 1
     body = {
-        "ambiente": ident.get("ambiente"),
-        "idEnvio": uuid.uuid4().hex,
-        "version": ident.get("version"),
-        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
-        "documento": jws_token,
+        "ambiente": str(ident.get("ambiente") or ""),
+        "idEnvio": id_envio,
+        "version": int(ident.get("version") or 0),
+        "tipoDte": str(ident.get("tipoDte") or ident.get("tipoDocumento") or ""),
+        "documento": str(jws_token),
     }
     codigo = ident.get("codigoGeneracion")
     if codigo:
-        body["codigoGeneracion"] = codigo
+        body["codigoGeneracion"] = str(codigo)
+    print({k: type(v).__name__ for k, v in body.items()})
+    assert isinstance(body["ambiente"], str)
+    assert isinstance(body["tipoDte"], str)
+    assert isinstance(body["version"], int)
+    assert isinstance(body["idEnvio"], int)
+    assert isinstance(body["documento"], str)
+    if "codigoGeneracion" in body:
+        assert isinstance(body["codigoGeneracion"], str)
+    assert body["version"] == 2
+    assert body["ambiente"] == "00"
+    assert body["idEnvio"] > 0
     auth_header = headers.get("Authorization")
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"

@@ -68,7 +68,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
             },
             "identificacion": {
                 "tipoDte": "01",
-                "version": 1,
+                "version": 2,
                 "ambiente": "00",
                 "codigoGeneracion": "ABC",
             },
@@ -123,7 +123,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         assert url == "http://example.com"
         assert payload["documento"] in sign_calls["tokens"]
         assert payload["tipoDte"] == "01"
-        assert payload["version"] == 1
+        assert payload["version"] == 2
         assert payload["ambiente"] == "00"
         assert payload["codigoGeneracion"] == "ABC"
         assert "idEnvio" in payload
@@ -177,7 +177,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
             },
             "identificacion": {
                 "tipoDte": "01",
-                "version": 1,
+                "version": 2,
                 "ambiente": "00",
                 "codigoGeneracion": "NC1",
             },
@@ -217,7 +217,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert url == "http://example.com"
     assert payload["documento"] in sign_calls["tokens"]
     assert payload["tipoDte"] == "01"
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     assert payload["ambiente"] == "00"
     assert payload["codigoGeneracion"] == "NC1"
     assert "idEnvio" in payload
@@ -269,7 +269,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     caplog.set_level(logging.ERROR)
     data = {
         "identificacion": {
-            "version": 1,
+            "version": 2,
             "ambiente": "00",
             "tipoDte": "CON",
             "codigoGeneracion": "EV1",
@@ -287,7 +287,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert url == "http://example.com"
     assert payload["documento"] == sign_calls["token"]
     assert payload["tipoDte"] == "CON"
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     assert payload["ambiente"] == "00"
     assert payload["codigoGeneracion"] == "EV1"
     assert "idEnvio" in payload
@@ -334,7 +334,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     data = {
         "identificacion": {
-            "version": 1,
+            "version": 2,
             "ambiente": "00",
             "tipoDte": "ANU",
             "codigoGeneracion": "EV2",
@@ -351,7 +351,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert url == "http://example.com"
     assert payload["documento"] == sign_calls["token"]
     assert payload["tipoDte"] == "ANU"
-    assert payload["version"] == 1
+    assert payload["version"] == 2
     assert payload["ambiente"] == "00"
     assert payload["codigoGeneracion"] == "EV2"
     assert "idEnvio" in payload

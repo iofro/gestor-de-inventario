@@ -181,7 +181,6 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
             )
         if token_type.lower() == "bearer":
             token_type = "Bearer"
-            token = f"{token_type} {token}"
         return token, expires_in, token_type
     except Exception as exc:
         report = f"Error de autenticación al solicitar token en {url}: {exc}"

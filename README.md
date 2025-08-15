@@ -149,8 +149,10 @@ decodificado automáticamente al leer la configuración.
 Los datos se guardan dentro del nodo del ambiente (`pruebas` o `produccion`),
 por lo que cada uno debe contar con su propio bloque `firma_electronica`.
 
-Coloca el certificado correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`. La carpeta `uploads/` está incluida en `.gitignore`,
-por lo que los certificados no se versionan en el repositorio.
+Coloca el certificado correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`. La carpeta
+`uploads/` está incluida en `.gitignore`, por lo que los certificados no se versionan en el
+repositorio. Si deseas utilizar otra ubicación, define la variable de entorno
+`CERT_UPLOAD_DIR`; la aplicación eliminará espacios ocultos al leerla.
 
 El servicio de firmado debe ejecutarse con:
 
@@ -264,6 +266,7 @@ setx HACIENDA_URL "https://sandbox.ejemplo.hacienda.sv/..."
 ```
 
 Coloca el certificado del NIT correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`.
+También puedes especificar otra ruta con la variable de entorno `CERT_UPLOAD_DIR`.
 
 Ejecuta las pruebas manuales con:
 

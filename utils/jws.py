@@ -2,7 +2,9 @@ import os
 import json
 import base64
 import requests
+import logging
 
+logger = logging.getLogger(__name__)
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = 10
@@ -58,6 +60,14 @@ def sign_json(
     body = {"nit": nit, "activo": activo, "passwordPri": passwordPri, "dteJson": payload}
     try:
         response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
+        status_code = getattr(response, "status_code", "N/A")
+        resp_text = getattr(response, "text", "")
+        print(status_code)
+        print(resp_text)
+        if isinstance(status_code, int) and status_code >= 400:
+            logger.error("Respuesta del firmador %s: %s", status_code, resp_text)
+        else:
+            logger.debug("Respuesta del firmador %s: %s", status_code, resp_text)
         response.raise_for_status()
     except requests.Timeout as exc:
         raise RuntimeError("Tiempo de espera agotado al firmar") from exc

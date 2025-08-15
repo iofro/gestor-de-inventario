@@ -13,6 +13,7 @@ from jsonschema import Draft7Validator, ValidationError
 from utils import catalogos
 import logging
 import re
+from utils.monto import monto_a_texto_sv
 
 logger = logging.getLogger(__name__)
 
@@ -64,6 +65,18 @@ def sanitize_dte_payload(data: dict) -> dict:
 
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
+
+
+def numero_a_letras(monto):
+    """Convierte ``monto`` numérico a su representación en letras."""
+    try:
+        texto = monto_a_texto_sv(float(monto))
+    except Exception:
+        return ""
+    if " " in texto:
+        partes = texto.split(" ", 1)
+        return f"{partes[0]} CON {partes[1]}"
+    return texto
 
 
 def _round(value, digits):
@@ -557,6 +570,13 @@ def generar_dte_json(
     if not row:
         raise ValueError("Venta no encontrada")
     venta = dict(row)
+
+    if not venta.get("total_letras"):
+        total = venta.get("total")
+        if total is not None:
+            venta["total_letras"] = numero_a_letras(total)
+    if not venta.get("total_letras"):
+        raise ValueError("El total en letras es obligatorio")
 
     detalles = db.get_detalles_venta(venta_id)
     fiscal = db.get_venta_credito_fiscal(venta_id)
@@ -1290,6 +1310,9 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     if modo == "contingencia":
         db.registrar_envio_dte(doc_id, modo, "Pendiente", "")
         return {"estado": "Pendiente"}
+
+    if not data.get("resumen", {}).get("totalLetras"):
+        raise ValueError("El total en letras es obligatorio")
 
     url = config.get("url") or DEFAULT_RECEPCION_URL
     ident = data.get("identificacion") or data.get("identificador") or {}

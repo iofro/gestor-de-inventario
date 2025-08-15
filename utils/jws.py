@@ -57,7 +57,19 @@ def sign_json(
     if nit is None or passwordPri is None:
         nit, passwordPri, activo = _load_config()
     url = url or _get_sign_url()
-    body = {"nit": nit, "activo": activo, "passwordPri": passwordPri, "dteJson": payload}
+    ident = payload.get("identificacion", {})
+    version = ident.get("version")
+    tipo_dte = ident.get("tipoDte")
+    body = {
+        "nit": nit,
+        "activo": activo,
+        "passwordPri": passwordPri,
+        "dteJson": payload,
+    }
+    if version is not None:
+        body["version"] = version
+    if tipo_dte is not None:
+        body["tipoDte"] = tipo_dte
     try:
         response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
         status_code = getattr(response, "status_code", "N/A")

@@ -225,6 +225,42 @@ def _clean_nrc(nrc):
 
 # --- Helpers ---------------------------------------------------------------
 
+# Catálogo de ``condicionOperacion`` según el esquema oficial.
+# 1 = Contado, 2 = Crédito, 3 = Otro
+CONDICION_OPERACION_CATALOG = {
+    1: "Contado",
+    2: "Crédito",
+    3: "Otro",
+}
+
+_CONDICION_OPERACION_BY_NAME = {
+    v.lower(): k for k, v in CONDICION_OPERACION_CATALOG.items()
+}
+_CONDICION_OPERACION_BY_NAME["credito"] = 2
+
+
+def _parse_condicion_operacion(value):
+    """Return ``condicionOperacion`` code ensuring it is valid.
+
+    ``value`` may be ``None``/empty, a numeric code or a textual description.
+    Defaults to ``1`` (Contado) when no value is provided.
+    Raises ``ValueError`` if the value is not part of the catalog.
+    """
+
+    if value in (None, ""):
+        code = 1
+    elif isinstance(value, (int, float)):
+        code = int(value)
+    else:
+        val = str(value).strip().lower().replace("...", "")
+        if val.isdigit():
+            code = int(val)
+        else:
+            code = _CONDICION_OPERACION_BY_NAME.get(val)
+    if code not in CONDICION_OPERACION_CATALOG:
+        raise ValueError(f"condicionOperacion inválida: {value}")
+    return code
+
 # Valores por defecto del resumen según el tipo de DTE
 RESUMEN_DEFAULTS = {
     "01": {
@@ -247,7 +283,6 @@ RESUMEN_DEFAULTS = {
         "totalLetras": "",
         "totalIva": 0,
         "saldoFavor": 0,
-        "condicionOperacion": 1,
         "pagos": None,
         "numPagoElectronico": None,
     },
@@ -271,7 +306,6 @@ RESUMEN_DEFAULTS = {
         "totalPagar": 0,
         "totalLetras": "",
         "saldoFavor": 0,
-        "condicionOperacion": 1,
         "pagos": None,
         "numPagoElectronico": None,
     },
@@ -309,7 +343,6 @@ RESUMEN_DEFAULTS = {
         "totalPagar": 0,
         "totalLetras": "",
         "saldoFavor": 0,
-        "condicionOperacion": 1,
         "pagos": None,
         "numPagoElectronico": None,
     },
@@ -329,7 +362,6 @@ RESUMEN_DEFAULTS = {
         "reteRenta": 0,
         "montoTotalOperacion": 0,
         "totalLetras": "",
-        "condicionOperacion": 1,
         "numPagoElectronico": None,
     },
 }
@@ -437,6 +469,11 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             "totalLetras": venta.get("total_letras", ""),
         }
     )
+    if tipo_dte in {"01", "03", "05", "06"}:
+        condicion = extra.get("condicion_operacion")
+        if condicion is None:
+            condicion = fiscal.get("condicion_pago")
+        resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
     if "porcentajeDescuento" in resumen:
         resumen["porcentajeDescuento"] = porcentaje_desc
 
@@ -496,6 +533,7 @@ def recalcular_totales(data: dict) -> list[str]:
         "pagos": resumen.get("pagos"),
         "tributos": resumen.get("tributos"),
         "numPagoElectronico": resumen.get("numPagoElectronico"),
+        "condicion_operacion": resumen.get("condicionOperacion"),
     }
 
     esperado = calcular_resumen(

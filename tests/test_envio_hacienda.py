@@ -1,6 +1,7 @@
 import json
 import pytest
 import requests
+import auth
 
 from db import DB
 from dte import transmitir_dte
@@ -63,7 +64,8 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         tokens["count"] += 1
         return "JWT"
 
-    monkeypatch.setattr("auth.get_token", fake_token)
+    monkeypatch.setattr(auth, "get_token", fake_token)
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "recepcion.test")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
@@ -185,7 +187,8 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
     venta = create_sale(db)
 
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
-    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
     class Resp:
@@ -218,7 +221,8 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
     def fail(*a, **k):
@@ -260,7 +264,8 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
         token_calls.append(refresh)
         return "JWT_VALIDO"
 
-    monkeypatch.setattr("auth.get_token", fake_get_token)
+    monkeypatch.setattr(auth, "get_token", fake_get_token)
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
 
     calls = {"auth": 0, "recepcion": 0}
 
@@ -303,8 +308,8 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
     config = {
         "ambiente": "pruebas",
         "pruebas": {
-            "auth_url": "http://auth.example",
-            "recepcion_url": "http://recepcion.example",
+            "auth_url": "http://example.com/auth",
+            "recepcion_url": "http://example.com/recepcion",
         },
     }
     with open("config_negocio.json", "w", encoding="utf-8") as fh:
@@ -329,7 +334,8 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
     venta = create_sale(db)
 
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
-    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
     def fake_post(*a, **k):
@@ -351,3 +357,17 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
     assert row["sello"] == ""
     extra = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta,)).fetchone()["extra"]
     assert not extra
+
+
+def test_recepcion_url_host_mismatch(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
+    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "auth.example")
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://other.example"}}
+    with open("config_negocio.json", "w", encoding="utf-8") as fh:
+        json.dump(config, fh)
+    with pytest.raises(ValueError):
+        transmitir_dte(db, venta)

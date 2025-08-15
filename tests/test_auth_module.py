@@ -103,6 +103,36 @@ def test_missing_token_includes_response(monkeypatch):
     assert "Respuesta de autenticación sin token" in msg
 
 
+def test_request_new_token_strips_bearer(monkeypatch):
+    """Se obtiene solo el JWT cuando la respuesta incluye el prefijo Bearer."""
+
+    def fake_post(url, data, headers, timeout):
+        class Resp:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {
+                    "status": "OK",
+                    "body": {
+                        "token": "Bearer ABC.DEF.GHI",
+                        "tokenType": "Bearer",
+                        "expiresIn": 60,
+                    },
+                }
+
+        return Resp()
+
+    monkeypatch.setattr(auth.requests, "post", fake_post)
+    monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake")
+    token, expires_in, token_type = auth._request_new_token("nit", "pwd")
+    assert token == "ABC.DEF.GHI"
+    assert token_type == "Bearer"
+    assert expires_in == 60
+
+
 def test_env_specific_credentials(monkeypatch, tmp_path):
     data = {
         "ambiente": "pruebas",

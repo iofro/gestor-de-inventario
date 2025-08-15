@@ -166,9 +166,9 @@ def _get_auth_url() -> str:
 
 
 def _check_and_update_token_len(token: str) -> int:
-    """Verifica la longitud del token y actualiza el valor global."""
+    """Verifica la longitud del JWT y actualiza el valor global."""
     global _token_len
-    token_len = len(f"Bearer {token}".split()[1])
+    token_len = len(token)
     if not 350 <= token_len <= 800:
         raise ValueError(f"Longitud de token inesperada: {token_len}")
     if _token_len and token_len != _token_len:
@@ -199,6 +199,8 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
         info = resp.json()
         body = info.get("body", {}) if isinstance(info, dict) else {}
         token = body.get("token") if info.get("status") == "OK" else None
+        if token and isinstance(token, str) and token.startswith("Bearer "):
+            token = token[7:]
         token_type = body.get("tokenType", "") if body else ""
         expires_in = int(body.get("expiresIn", 0)) if body else 0
         if not token:

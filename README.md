@@ -95,6 +95,15 @@ dominio, la aplicación la agregará automáticamente. La función
 inmediatamente después de firmarlo en modo normal, o registrará un evento
 pendiente en modo de contingencia.
 
+### Condición de operación
+
+El campo `resumen.condicionOperacion` se normaliza siguiendo el catálogo
+oficial **CAT‑016**: `1` = Contado, `2` = Crédito y `3` = Otro. Es posible
+proporcionar el código numérico o un alias textual (por ejemplo,
+"contado" o "crédito"), que se convertirán automáticamente al valor
+correspondiente. Cuando se indique **Crédito**, cada entrada en `pagos`
+debe incluir los campos `plazo` y `periodo`.
+
 ### Datos del negocio y correo
 
 La configuración general se almacena en `datos_negocio.json`. Para que el envío

@@ -166,13 +166,47 @@ def _get_auth_url() -> str:
 
 
 def _check_and_update_token_len(token: str) -> int:
-    """Verifica la longitud del JWT y actualiza el valor global."""
-    global _token_len
+    """Valida la estructura del JWT y actualiza metadatos globales.
+
+    Hacienda devuelve ``body.token`` con la cadena completa ``Bearer <jwt>`` y
+    ``tokenType`` igual a ``"Bearer"``. La longitud del JWT depende de las
+    claves y claims, por lo que aquí se valida el formato en lugar de imponer un
+    tamaño fijo.
+    """
+
+    global _token_len, _expires_at, _obtained_at
+
+    token = token.strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    parts = token.split(".")
+    if len(parts) != 3 or any(not p for p in parts):
+        raise ValueError("Token JWT mal formado")
+
     token_len = len(token)
-    if not 350 <= token_len <= 800:
+    if token_len < 100:
         raise ValueError(f"Longitud de token inesperada: {token_len}")
+
     if _token_len and token_len != _token_len:
         raise ValueError("La longitud del token no coincide con la almacenada")
+
+    # Intentar decodificar header y payload sin verificar firma
+    try:
+        def _b64decode(seg: str) -> dict:
+            padding = "=" * (-len(seg) % 4)
+            return json.loads(base64.urlsafe_b64decode(seg + padding))
+
+        payload = _b64decode(parts[1])
+        exp = payload.get("exp")
+        iat = payload.get("iat")
+        if isinstance(exp, (int, float)):
+            _expires_at = float(exp)
+        if isinstance(iat, (int, float)):
+            _obtained_at = float(iat)
+    except Exception:
+        pass
+
     _token_len = token_len
     return token_len
 

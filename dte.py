@@ -372,11 +372,9 @@ def armar_tributos(tributos_raw, tipo_dte):
     """Construye la lista de tributos o retorna ``None``."""
     if not tributos_raw:
         return None
-    schema_path = catalogos.SCHEMA_MAP.get(tipo_dte)
+    schema = catalogos.get_dte_schema(tipo_dte)
     allowed = set()
-    if schema_path and os.path.exists(schema_path):
-        with open(schema_path, "r", encoding="utf-8") as fh:
-            schema = json.load(fh)
+    if schema:
         allowed = set(
             schema.get("properties", {})
             .get("resumen", {})
@@ -899,10 +897,8 @@ def validate_dte_json(payload: dict) -> None:
         raise ValueError("Número de documento inválido en receptor")
 
     # --- Schema validation ---
-    schema_path = catalogos.SCHEMA_MAP.get(tipo_dte)
-    if schema_path and os.path.exists(schema_path):
-        with open(schema_path, "r", encoding="utf-8") as fh:
-            schema = json.load(fh)
+    schema = catalogos.get_dte_schema(tipo_dte)
+    if schema:
         _validate_schema(payload, schema)
 
 
@@ -1318,7 +1314,12 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una factura electrónica."""
     data = generar_dte_json(db, venta_id)
     data = sanitize_dte_payload(data)
-    validate_dte_json(data)
+    try:
+        validate_dte_json(data)
+    except Exception as exc:
+        json_path = save_dte_json(data)
+        errors = _format_validation_errors(exc)
+        raise DTEValidationError(errors, json_path) from exc
     resp = _enviar_documento(db, venta_id, data, modo)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
@@ -1329,7 +1330,12 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de crédito."""
     data = generar_nota_credito_json(db, nota_id)
     data = sanitize_dte_payload(data)
-    validate_dte_json(data)
+    try:
+        validate_dte_json(data)
+    except Exception as exc:
+        json_path = save_dte_json(data)
+        errors = _format_validation_errors(exc)
+        raise DTEValidationError(errors, json_path) from exc
     return _enviar_documento(db, nota_id, data, modo)
 
 
@@ -1337,7 +1343,12 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de débito."""
     data = generar_nota_debito_json(db, nota_id)
     data = sanitize_dte_payload(data)
-    validate_dte_json(data)
+    try:
+        validate_dte_json(data)
+    except Exception as exc:
+        json_path = save_dte_json(data)
+        errors = _format_validation_errors(exc)
+        raise DTEValidationError(errors, json_path) from exc
     return _enviar_documento(db, nota_id, data, modo)
 
 
@@ -1345,7 +1356,12 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de remisión."""
     data = generar_nota_remision_json(db, nota_id)
     data = sanitize_dte_payload(data)
-    validate_dte_json(data)
+    try:
+        validate_dte_json(data)
+    except Exception as exc:
+        json_path = save_dte_json(data)
+        errors = _format_validation_errors(exc)
+        raise DTEValidationError(errors, json_path) from exc
     return _enviar_documento(db, nota_id, data, modo)
 
 

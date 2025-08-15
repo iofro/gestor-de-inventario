@@ -1,5 +1,6 @@
 import json
 import logging
+import pytest
 
 from pathlib import Path
 from db import DB
@@ -8,6 +9,7 @@ from dte import (
     enviar_nota_credito,
     enviar_evento_contingencia,
     enviar_evento_anulacion,
+    DTEValidationError,
 )
 from tests.conftest import make_jws
 
@@ -128,6 +130,38 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         assert payload["codigoGeneracion"] == "ABC"
         assert "idEnvio" in payload
         assert headers["Authorization"] == "Bearer JWT"
+
+
+def test_no_envia_si_validacion_falla(monkeypatch):
+    db = DB(":memory:")
+    venta = create_sale(db)
+
+    sent = []
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        sent.append(True)
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    monkeypatch.setattr("auth.get_token", lambda: "JWT")
+
+    sign_calls = {"count": 0}
+
+    def fake_sign(data):
+        sign_calls["count"] += 1
+        return "TOKEN"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+
+    monkeypatch.setattr(
+        "dte.generar_dte_json",
+        lambda db_obj, vid: {"identificacion": {"tipoDte": "01"}},
+    )
+
+    with pytest.raises(DTEValidationError):
+        enviar_factura(db, venta)
+
+    assert sent == []
+    assert sign_calls["count"] == 0
 
 
 def test_enviar_nota_credito(monkeypatch, tmp_path):

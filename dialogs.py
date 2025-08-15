@@ -15,6 +15,9 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
 import os
+import shutil
+
+from utils.jws import CERT_UPLOAD_DIR
 
 getcontext().prec = 4
 
@@ -2991,6 +2994,9 @@ class DTEConfigDialog(QDialog):
         self.dte_nit = QLineEdit()
         self.dte_pass = QLineEdit()
         self.dte_pass.setEchoMode(QLineEdit.Password)
+        self.cert_path = QLineEdit()
+        self.cert_path.setReadOnly(True)
+        self.cert_btn = QPushButton("Seleccionar")
         self.api_user = QLineEdit()
         self.api_pwd = QLineEdit()
         self.api_pwd.setEchoMode(QLineEdit.Password)
@@ -3014,6 +3020,12 @@ class DTEConfigDialog(QDialog):
         self.guardar_respuesta_bd = QCheckBox("Guardar respuesta de Hacienda en base de datos")
         form.addRow("NIT certificación:", self.dte_nit)
         form.addRow("Contraseña firma:", self.dte_pass)
+        cert_widget = QWidget()
+        cert_layout = QHBoxLayout(cert_widget)
+        cert_layout.setContentsMargins(0, 0, 0, 0)
+        cert_layout.addWidget(self.cert_path)
+        cert_layout.addWidget(self.cert_btn)
+        form.addRow("Archivo certificado (.crt):", cert_widget)
         form.addRow("NIT usuario API:", self.api_user)
         form.addRow("Contraseña API:", self.api_pwd)
         form.addRow(self.dte_activo)
@@ -3045,6 +3057,7 @@ class DTEConfigDialog(QDialog):
         guardar.clicked.connect(self.accept)
         cancelar.clicked.connect(self.reject)
         self.token_btn.clicked.connect(self._fetch_token)
+        self.cert_btn.clicked.connect(self._select_cert)
         if dte_api or fe_config or env_config:
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
 
@@ -3083,6 +3096,10 @@ class DTEConfigDialog(QDialog):
         self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
+        nit = fe_config.get("nit", "")
+        cert = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt") if nit else ""
+        if cert and os.path.isfile(cert):
+            self.cert_path.setText(cert)
 
     def _fetch_token(self):
         nit_default = self.api_user.text().strip()
@@ -3128,6 +3145,26 @@ class DTEConfigDialog(QDialog):
                 QMessageBox.warning(self, "Error", msg)
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo obtener token: {exc}")
+
+    def _select_cert(self):
+        nit = self.dte_nit.text().strip()
+        if not nit:
+            QMessageBox.warning(self, "NIT requerido", "Ingrese el NIT antes de seleccionar el certificado.")
+            return
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Seleccionar certificado", "", "Certificados (*.crt)"
+        )
+        if not file_path:
+            return
+        try:
+            os.makedirs(CERT_UPLOAD_DIR, exist_ok=True)
+            dest = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt")
+            shutil.copy(file_path, dest)
+            os.chmod(dest, 0o644)
+            self.cert_path.setText(dest)
+            QMessageBox.information(self, "Éxito", "Certificado copiado correctamente.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo copiar el certificado: {exc}")
 
     def get_data(self):
         dte_api = {

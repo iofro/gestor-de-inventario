@@ -39,7 +39,7 @@ def test_recepcion_url_is_stripped(monkeypatch, tmp_path):
     monkeypatch.setattr(dte.auth, "get_token", lambda: "JWT")
     called = {}
 
-    def fake_post_dte(url, token, jws_token):
+    def fake_post_dte(url, token, jws_token, dte_data):
         called["url"] = url
         return {"estado": "Transmitido"}
 

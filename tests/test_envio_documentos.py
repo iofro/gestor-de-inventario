@@ -9,6 +9,7 @@ from dte import (
     enviar_evento_contingencia,
     enviar_evento_anulacion,
 )
+from tests.conftest import make_jws
 
 
 def create_sale(db):
@@ -25,11 +26,13 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    sign_calls = {"count": 0}
+    sign_calls = {"count": 0, "tokens": []}
 
     def fake_sign(data):
         sign_calls["count"] += 1
-        return "SIGNED"
+        token = make_jws(data)
+        sign_calls["tokens"].append(token)
+        return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
@@ -118,7 +121,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     assert len(calls) == 2
     for url, headers, payload in calls:
         assert url == "http://example.com"
-        assert payload["documento"] == "SIGNED"
+        assert payload["documento"] in sign_calls["tokens"]
         assert payload["tipoDte"] == "01"
         assert payload["version"] == 1
         assert payload["ambiente"] == "00"
@@ -132,11 +135,13 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     venta = create_sale(db)
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
 
-    sign_calls = {"count": 0}
+    sign_calls = {"count": 0, "tokens": []}
 
     def fake_sign(data):
         sign_calls["count"] += 1
-        return "SIGNED"
+        token = make_jws(data)
+        sign_calls["tokens"].append(token)
+        return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
@@ -210,7 +215,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert len(calls) == 1
     url, headers, payload = calls[0]
     assert url == "http://example.com"
-    assert payload["documento"] == "SIGNED"
+    assert payload["documento"] in sign_calls["tokens"]
     assert payload["tipoDte"] == "01"
     assert payload["version"] == 1
     assert payload["ambiente"] == "00"
@@ -223,11 +228,13 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
 
-    sign_calls = {"count": 0}
+    sign_calls = {"count": 0, "token": ""}
 
     def fake_sign(data):
         sign_calls["count"] += 1
-        return "SIGNED"
+        token = make_jws(data)
+        sign_calls["token"] = token
+        return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
@@ -278,7 +285,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert len(calls) == 1
     url, headers, payload = calls[0]
     assert url == "http://example.com"
-    assert payload["documento"] == "SIGNED"
+    assert payload["documento"] == sign_calls["token"]
     assert payload["tipoDte"] == "CON"
     assert payload["version"] == 1
     assert payload["ambiente"] == "00"
@@ -291,11 +298,13 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
 
-    sign_calls = {"count": 0}
+    sign_calls = {"count": 0, "token": ""}
 
     def fake_sign(data):
         sign_calls["count"] += 1
-        return "SIGNED"
+        token = make_jws(data)
+        sign_calls["token"] = token
+        return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
@@ -340,7 +349,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert len(calls) == 1
     url, headers, payload = calls[0]
     assert url == "http://example.com"
-    assert payload["documento"] == "SIGNED"
+    assert payload["documento"] == sign_calls["token"]
     assert payload["tipoDte"] == "ANU"
     assert payload["version"] == 1
     assert payload["ambiente"] == "00"

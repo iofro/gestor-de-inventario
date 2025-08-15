@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import base64
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from db import DB
@@ -1088,6 +1089,23 @@ def _format_validation_errors(exc: Exception) -> list:
     return [msg]
 
 
+def _decode_jws_payload(token: str) -> dict:
+    """Return the JSON payload embedded in ``token``.
+
+    Raises ``ValueError`` if the token is not a valid JWS string.
+    """
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            raise ValueError("JWS malformado")
+        payload = parts[1]
+        padding = "=" * (-len(payload) % 4)
+        payload_bytes = base64.urlsafe_b64decode(payload + padding)
+        return json.loads(payload_bytes.decode("utf-8"))
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ValueError("documento inválido") from exc
+
+
 def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None) -> dict:
     token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
     token = re.sub(r"^(?:Bearer\s+)+", "", token, flags=re.I)
@@ -1101,15 +1119,29 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     }
     ident = {}
     if isinstance(dte_data, dict):
-        ident = dte_data.get("identificacion") or dte_data.get("identificador") or {}
+        ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
+    ambiente = ident.get("ambiente")
+    tipo_dte = ident.get("tipoDte") or ident.get("tipoDocumento")
+    version = ident.get("version")
+    codigo = ident.get("codigoGeneracion")
+
+    # Ensure the JWS payload matches the provided metadata
+    payload = _decode_jws_payload(jws_token)
+    pident = payload.get("identificacion") or payload.get("identificador") or {}
+    if codigo and pident.get("codigoGeneracion") != codigo:
+        raise ValueError("documento no coincide con codigoGeneracion")
+    if tipo_dte and (pident.get("tipoDte") or pident.get("tipoDocumento")) != tipo_dte:
+        raise ValueError("documento no coincide con tipoDte")
+    if ambiente and pident.get("ambiente") != ambiente:
+        raise ValueError("documento no coincide con ambiente")
+
     body = {
-        "ambiente": ident.get("ambiente"),
+        "ambiente": ambiente,
         "idEnvio": uuid.uuid4().hex,
-        "version": ident.get("version"),
-        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "version": version or pident.get("version"),
+        "tipoDte": tipo_dte,
         "documento": jws_token,
     }
-    codigo = ident.get("codigoGeneracion")
     if codigo:
         body["codigoGeneracion"] = codigo
     auth_header = headers.get("Authorization")
@@ -1166,8 +1198,16 @@ def transmitir_dte(
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    payload = _decode_jws_payload(jws_token)
+    ident = payload.get("identificacion") or payload.get("identificador") or {}
+    meta = {
+        "ambiente": ident.get("ambiente"),
+        "version": ident.get("version"),
+        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "codigoGeneracion": ident.get("codigoGeneracion"),
+    }
     token = auth.get_token()
-    respuesta = _post_dte(url, token, jws_token, {})
+    respuesta = _post_dte(url, token, jws_token, meta)
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -1206,11 +1246,18 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         return {"estado": "Pendiente"}
 
     url = config.get("url") or DEFAULT_RECEPCION_URL
+    ident = data.get("identificacion") or data.get("identificador") or {}
+    meta = {
+        "ambiente": ident.get("ambiente"),
+        "version": ident.get("version"),
+        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "codigoGeneracion": ident.get("codigoGeneracion"),
+    }
     signed = jws.sign_json(data)
     token = auth.get_token()
 
     try:
-        respuesta = _post_dte(url, token, signed, data)
+        respuesta = _post_dte(url, token, signed, meta)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")

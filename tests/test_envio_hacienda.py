@@ -4,6 +4,7 @@ import requests
 
 from db import DB
 from dte import transmitir_dte
+from tests.conftest import make_jws
 
 
 def create_sale(db):
@@ -52,7 +53,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     def fake_sign(data):
         captured["data"] = data
         captured["count"] = captured.get("count", 0) + 1
-        return "JWS_SIGNED"
+        return make_jws(data)
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     
@@ -183,7 +184,7 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.sign_json", lambda d: "SIGNED")
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
@@ -250,7 +251,7 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.sign_json", lambda d: "SIGNED")
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
     token_calls = []
@@ -327,7 +328,7 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr("utils.jws.sign_json", lambda d: "SIGNED")
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     monkeypatch.setattr("auth.get_token", lambda: "JWT")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 

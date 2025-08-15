@@ -1141,13 +1141,27 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     if not codigo:
         codigo = pident.get("codigoGeneracion")
 
+    missing = [
+        name
+        for name, value in (
+            ("ambiente", ambiente),
+            ("tipoDte", tipo_dte),
+            ("version", version),
+            ("codigoGeneracion", codigo),
+        )
+        if value is None
+    ]
+    if missing:
+        raise AssertionError(
+            "Faltan campos requeridos: " + ", ".join(missing)
+        )
+
     ambiente = str(ambiente)
     tipo_dte = str(tipo_dte)
-    version = 2
+    version = int(version)
     id_envio = int(uuid.uuid4()) & 0x7FFFFFFF or 1
     documento = str(jws_token)
-    if codigo:
-        codigo = str(codigo)
+    codigo = str(codigo)
 
     body = {
         "ambiente": ambiente,
@@ -1160,15 +1174,21 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         body["codigoGeneracion"] = codigo
 
     print({k: type(v).__name__ for k, v in body.items()})
-    assert isinstance(body["ambiente"], str)
-    assert isinstance(body["tipoDte"], str)
-    assert isinstance(body["version"], int)
-    assert isinstance(body["idEnvio"], int)
-    assert isinstance(body["documento"], str)
+
+    required = {
+        "ambiente": str,
+        "tipoDte": str,
+        "version": int,
+        "idEnvio": int,
+        "documento": str,
+    }
     if "codigoGeneracion" in body:
-        assert isinstance(body["codigoGeneracion"], str)
-    assert body["version"] == 2
-    assert body["ambiente"] == "00"
+        required["codigoGeneracion"] = str
+
+    for field, expected in required.items():
+        assert field in body, f"{field} requerido"
+        assert isinstance(body[field], expected), f"{field} debe ser {expected.__name__}"
+
     assert body["idEnvio"] > 0
     auth_header = headers.get("Authorization")
     if token:

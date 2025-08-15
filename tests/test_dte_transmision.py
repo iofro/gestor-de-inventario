@@ -140,6 +140,7 @@ def test_post_dte_uses_bearer(monkeypatch):
         captured["headers"] = headers
         class R:
             status_code = 200
+            text = ""
             def json(self):
                 return {}
             def raise_for_status(self):

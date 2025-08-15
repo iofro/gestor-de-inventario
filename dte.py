@@ -1066,12 +1066,12 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
     }
-    payload = {"dte": jws_token}
+    body = {"dte": jws_token}
     auth_header = headers.get("Authorization")
     print(repr(auth_header))
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
-    resp = requests.post(url, json=payload, headers=headers, timeout=20)
+    resp = requests.post(url, headers=headers, json=body, timeout=20)
     resp.raise_for_status()
     try:
         return resp.json()

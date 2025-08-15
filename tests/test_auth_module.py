@@ -213,3 +213,16 @@ def test_reauth_mismatch_nit(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     with pytest.raises(ValueError):
         auth.get_token(refresh=True, nit="999", pwd="pwd")
+
+
+def test_records_last_auth_host(monkeypatch, tmp_path):
+    data = {"ambiente": "pruebas", "pruebas": {"auth_url": "http://auth.example"}}
+    cfg = tmp_path / "cfg.json"
+    cfg.write_text(json.dumps(data))
+    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
+    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
+    monkeypatch.setattr(
+        auth, "_request_new_token", lambda nit, pwd, url: ("tok", 120, "Bearer")
+    )
+    auth.get_token(refresh=True, nit="user", pwd="pwd")
+    assert auth.get_last_auth_host() == "auth.example"

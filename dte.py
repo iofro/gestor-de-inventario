@@ -4,6 +4,7 @@ import uuid
 import base64
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
+from urllib.parse import urlparse
 from db import DB
 import requests
 from utils import jws
@@ -1278,8 +1279,14 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
-    signed = jws.sign_json(data)
     token = auth.get_token()
+    auth_host = auth.get_last_auth_host()
+    recep_host = urlparse(url).netloc
+    if auth_host and recep_host != auth_host:
+        raise ValueError(
+            f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
+        )
+    signed = jws.sign_json(data)
 
     try:
         respuesta = _post_dte(url, token, signed, meta)

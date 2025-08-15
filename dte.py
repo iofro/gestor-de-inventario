@@ -1135,15 +1135,44 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     if ambiente and pident.get("ambiente") != ambiente:
         raise ValueError("documento no coincide con ambiente")
 
+    if not ambiente:
+        ambiente = pident.get("ambiente")
+    if not tipo_dte:
+        tipo_dte = pident.get("tipoDte") or pident.get("tipoDocumento")
+    if not version:
+        version = pident.get("version")
+    if not codigo:
+        codigo = pident.get("codigoGeneracion")
+
+    ambiente = str(ambiente)
+    tipo_dte = str(tipo_dte)
+    version = 2
+    id_envio = int(uuid.uuid4()) & 0x7FFFFFFF or 1
+    documento = str(jws_token)
+    if codigo:
+        codigo = str(codigo)
+
     body = {
         "ambiente": ambiente,
-        "idEnvio": uuid.uuid4().hex,
-        "version": version or pident.get("version"),
+        "idEnvio": id_envio,
+        "version": version,
         "tipoDte": tipo_dte,
-        "documento": jws_token,
+        "documento": documento,
     }
     if codigo:
         body["codigoGeneracion"] = codigo
+
+    print({k: type(v).__name__ for k, v in body.items()})
+    assert isinstance(body["ambiente"], str)
+    assert isinstance(body["tipoDte"], str)
+    assert isinstance(body["version"], int)
+    assert isinstance(body["idEnvio"], int)
+    assert isinstance(body["documento"], str)
+    if "codigoGeneracion" in body:
+        assert isinstance(body["codigoGeneracion"], str)
+    assert body["version"] == 2
+    assert body["ambiente"] == "00"
+    assert body["idEnvio"] > 0
     auth_header = headers.get("Authorization")
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"

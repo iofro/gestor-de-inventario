@@ -17,7 +17,7 @@ from PyQt5.QtGui import QColor, QDesktopServices
 import os
 import shutil
 
-from utils.jws import CERT_UPLOAD_DIR
+from utils import jws
 
 getcontext().prec = 4
 
@@ -3097,7 +3097,7 @@ class DTEConfigDialog(QDialog):
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
         nit = fe_config.get("nit", "")
-        cert = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt") if nit else ""
+        cert = os.path.join(jws.CERT_UPLOAD_DIR, f"{nit}.crt") if nit else ""
         if cert and os.path.isfile(cert):
             self.cert_path.setText(cert)
 
@@ -3157,10 +3157,11 @@ class DTEConfigDialog(QDialog):
         if not file_path:
             return
         try:
-            os.makedirs(CERT_UPLOAD_DIR, exist_ok=True)
+            dest_dir = os.path.abspath(jws.CERT_UPLOAD_DIR)
+            os.makedirs(dest_dir, exist_ok=True)
             # Remove any existing files so only the new certificate remains
-            for name in os.listdir(CERT_UPLOAD_DIR):
-                existing = os.path.join(CERT_UPLOAD_DIR, name)
+            for name in os.listdir(dest_dir):
+                existing = os.path.join(dest_dir, name)
                 try:
                     if os.path.isfile(existing) or os.path.islink(existing):
                         os.remove(existing)
@@ -3168,9 +3169,10 @@ class DTEConfigDialog(QDialog):
                         shutil.rmtree(existing)
                 except Exception as cleanup_exc:
                     logger.warning("No se pudo eliminar %s: %s", existing, cleanup_exc)
-            dest = os.path.join(CERT_UPLOAD_DIR, f"{nit}.crt")
+            dest = os.path.join(dest_dir, f"{nit}.crt")
             shutil.copy(file_path, dest)
             os.chmod(dest, 0o644)
+            jws.set_cert_upload_dir(dest_dir)
             self.cert_path.setText(dest)
             QMessageBox.information(self, "Éxito", "Certificado copiado correctamente.")
         except Exception as exc:

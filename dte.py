@@ -1059,7 +1059,6 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
     headers = {"Content-Type": "application/json"}
     token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
     if token:
-        token = re.sub(r"^Bearer\s+", "", token, flags=re.I)
         logger.debug("Token: %s...%s", token[:5], token[-5:])
         headers["Authorization"] = f"Bearer {token}"
     else:

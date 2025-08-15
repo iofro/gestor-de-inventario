@@ -1,3 +1,5 @@
+import pytest
+
 from db import DB
 from dte import generar_dte_json
 
@@ -131,3 +133,26 @@ def test_dte_comision_sin_advertencia_total(capsys):
     generar_dte_json(db, venta_id)
     out = capsys.readouterr().out.lower()
     assert out.strip() == "" and "total a pagar" not in out
+
+
+def test_generar_dte_json_condicion_operacion_invalida():
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        10,
+        "123",
+        "nit1",
+        "giro",
+        condicion_pago="Invalida",
+    )
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    with pytest.raises(ValueError):
+        generar_dte_json(db, venta_id)

@@ -1105,6 +1105,16 @@ def _decode_jws_payload(token: str) -> dict:
 def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None) -> dict:
     token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
     token = re.sub(r"^(?:Bearer\s+)+", "", token, flags=re.I)
+    used_len = len(f"Bearer {token}".split()[1]) if token else 0
+    saved_len = auth.get_token_length()
+    if saved_len and used_len != saved_len:
+        logger.warning(
+            "Longitud de token usada (%s) difiere de la guardada (%s)",
+            used_len,
+            saved_len,
+        )
+    if used_len and not 350 <= used_len <= 800:
+        logger.warning("Longitud de token fuera de rango (%s)", used_len)
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:

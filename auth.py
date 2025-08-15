@@ -20,6 +20,8 @@ _access_token: Optional[str] = None
 _expires_at: float = 0.0
 _obtained_at: float = 0.0
 _token_type: str = ""
+# Longitud del token (sin el prefijo 'Bearer') medido al obtenerlo
+_token_length: int = 0
 # Credenciales actualmente asociadas al token en caché
 _current_user: Optional[str] = None
 _current_pwd: Optional[str] = None
@@ -284,6 +286,15 @@ def get_token(
     except Exception as exc:
         print(f"No se pudo obtener token: {exc}")
         raise
+    full_token = f"{token_type} {token}".strip()
+    parts = full_token.split()
+    measured_len = len(parts[1]) if len(parts) > 1 else len(parts[0])
+    global _token_length
+    _token_length = measured_len
+    if not 350 <= measured_len <= 800:
+        logger.warning(
+            "Longitud de token fuera de rango (%s)", measured_len
+        )
     obtained_at = time.time()
     _access_token = token
     _token_type = token_type
@@ -291,3 +302,8 @@ def get_token(
     _expires_at = obtained_at + expires_in
     _save_token(token, expires_in, obtained_at)
     return token
+
+
+def get_token_length() -> int:
+    """Devuelve la longitud del token medido al obtenerse."""
+    return _token_length

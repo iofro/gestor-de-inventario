@@ -1055,7 +1055,7 @@ def _format_validation_errors(exc: Exception) -> list:
     return [msg]
 
 
-def _post_dte(url: str, token: str, jws_token: str) -> dict:
+def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None) -> dict:
     token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
     token = re.sub(r"^(?:Bearer\s+)+", "", token, flags=re.I)
     if token:
@@ -1066,17 +1066,30 @@ def _post_dte(url: str, token: str, jws_token: str) -> dict:
         "Content-Type": "application/json",
         "Authorization": f"Bearer {token}",
     }
-    payload = {"dte": jws_token}
+    ident = {}
+    if isinstance(dte_data, dict):
+        ident = dte_data.get("identificacion") or dte_data.get("identificador") or {}
+    body = {
+        "ambiente": ident.get("ambiente"),
+        "idEnvio": uuid.uuid4().hex,
+        "version": ident.get("version"),
+        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "documento": jws_token,
+    }
+    codigo = ident.get("codigoGeneracion")
+    if codigo:
+        body["codigoGeneracion"] = codigo
     auth_header = headers.get("Authorization")
-    print(repr(auth_header))
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
-    resp = requests.post(url, json=payload, headers=headers, timeout=20)
+    resp = requests.post(url, headers=headers, json=body, timeout=20)
+    resp_text = getattr(resp, "text", "")
+    logger.debug("Respuesta de Hacienda: %s", resp_text)
     resp.raise_for_status()
     try:
         return resp.json()
     except Exception:
-        return {"estado": "Error", "detalle": resp.text}
+        return {"estado": "Error", "detalle": resp_text}
 
 
 def transmitir_dte(
@@ -1115,7 +1128,7 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
     token = auth.get_token()
-    respuesta = _post_dte(url, token, jws_token)
+    respuesta = _post_dte(url, token, jws_token, {})
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -1158,7 +1171,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     token = auth.get_token()
 
     try:
-        respuesta = _post_dte(url, token, signed)
+        respuesta = _post_dte(url, token, signed, data)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")
@@ -1229,7 +1242,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     token = auth.get_token()
 
     try:
-        respuesta = _post_dte(url, token, signed)
+        respuesta = _post_dte(url, token, signed, data)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")

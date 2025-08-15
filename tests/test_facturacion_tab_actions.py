@@ -134,12 +134,12 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     monkeypatch.setattr(facturacion_tab, "EmailSender", FakeSender)
 
     captured_post = {}
-    def fake_post(url, token, jws):
+    def fake_post(url, token, jws, data):
         captured_post["args"] = (url, token, jws)
         return {"estado": "Transmitido"}
     monkeypatch.setattr("dte._post_dte", fake_post)
     def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
-        fake_post("http://example.com", "TOKEN", "SIGNED")
+        fake_post("http://example.com", "TOKEN", "SIGNED", {})
         return {"estado": "Transmitido"}
     monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
 

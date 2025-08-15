@@ -462,6 +462,64 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     return resumen
 
 
+def recalcular_totales(data: dict) -> list[str]:
+    """Recalcula y corrige los totales del resumen en ``data``.
+
+    La función vuelve a calcular los valores de la sección ``resumen`` a partir
+    de los ítems del ``cuerpoDocumento``.  Si alguno de los totales declarados
+    difiere del valor esperado por más de un centavo, el valor se corrige en el
+    lugar.  Devuelve una lista con los nombres de los campos ajustados.
+    """
+
+    ident = data.get("identificacion", {})
+    cuerpo = data.get("cuerpoDocumento", [])
+    resumen = data.get("resumen", {})
+
+    items_total = Decimal("0")
+    for item in cuerpo:
+        cant = Decimal(str(item.get("cantidad") or 0))
+        precio = Decimal(
+            str(item.get("precioUnitario") or item.get("precioUni") or 0)
+        )
+        items_total += cant * precio
+
+    # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
+    # calculado internamente y así podamos comparar contra el declarado.
+    venta = {"total_letras": resumen.get("totalLetras", "")}
+    fiscal = {
+        "descuentos": resumen.get("totalDescu", 0),
+        "iva": resumen.get("totalIva", resumen.get("ivaPerci1", 0)),
+        "ventas_no_sujetas": resumen.get("totalNoSuj", 0),
+        "ventas_exentas": resumen.get("totalExenta", 0),
+    }
+    extra = {
+        "pagos": resumen.get("pagos"),
+        "tributos": resumen.get("tributos"),
+        "numPagoElectronico": resumen.get("numPagoElectronico"),
+    }
+
+    esperado = calcular_resumen(
+        items_total,
+        venta,
+        fiscal=fiscal,
+        extra=extra,
+        tipo_dte=ident.get("tipoDte", "01"),
+    )
+
+    modificados: list[str] = []
+    for k, v in esperado.items():
+        if not isinstance(v, (int, float, Decimal)):
+            continue
+        ref = Decimal(str(resumen.get(k, 0)))
+        nuevo = Decimal(str(v))
+        if abs(ref - nuevo) > Decimal("0.01"):
+            resumen[k] = float(nuevo) if isinstance(v, Decimal) else v
+            modificados.append(k)
+
+    data["resumen"] = resumen
+    return modificados
+
+
 def generar_numero_control(prefijo: str = "DTE-01-S001P001") -> str:
     """Crea un número de control único siguiendo el formato de Hacienda."""
     secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
@@ -763,7 +821,6 @@ def validate_dte_json(payload: dict) -> None:
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
-    items_total = Decimal("0")
     for item in cuerpo:
         if "precioUnitario" in item:
             item["precioUni"] = item.pop("precioUnitario")
@@ -788,7 +845,6 @@ def validate_dte_json(payload: dict) -> None:
             "ventaGravada",
             float(importe.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)),
         )
-        items_total += importe
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})
@@ -802,34 +858,11 @@ def validate_dte_json(payload: dict) -> None:
                 pass
     payload["resumen"] = resumen
 
-    total_grav = Decimal(str(resumen.get("totalGravada", 0)))
-    total_exenta = Decimal(str(resumen.get("totalExenta", 0)))
-    total_no_suj = Decimal(str(resumen.get("totalNoSuj", 0)))
-    sub_total_ventas = Decimal(
-        str(resumen.get("subTotalVentas", total_grav + total_exenta + total_no_suj))
-    )
-    total_descu = Decimal(str(resumen.get("totalDescu", 0)))
-    total_iva = Decimal(str(resumen.get("totalIva", resumen.get("ivaPerci1", 0))))
-    sub_total = Decimal(str(resumen.get("subTotal", 0)))
-    total = Decimal(str(resumen.get("totalPagar", resumen.get("montoTotalOperacion", 0))))
-
-    items_total_2 = Decimal(str(_round(items_total, 2)))
-    if abs(items_total_2 - sub_total_ventas) > Decimal("0.01"):
+    # Recalcular totales y ajustar discrepancias
+    cambios = recalcular_totales(payload)
+    if cambios:
         print(
-            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {sub_total_ventas:.2f}"
-        )
-
-    calc_sub = sub_total_ventas - total_descu
-    calc_sub = Decimal(str(_round(calc_sub, 2)))
-    if abs(calc_sub - sub_total) > Decimal("0.01"):
-        print(
-            f"Advertencia: el subtotal calculado {calc_sub:.2f} difiere del resumen {sub_total:.2f}"
-        )
-    calc_total = calc_sub + total_iva
-    calc_total = Decimal(str(_round(calc_total, 2)))
-    if abs(calc_total - total) > Decimal("0.01"):
-        print(
-            f"Advertencia: el total a pagar {total:.2f} difiere del calculado {calc_total:.2f}"
+            "Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios)
         )
 
     # --- Catálogo validations ---

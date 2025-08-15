@@ -103,3 +103,19 @@ def test_schema_reports_multiple_errors(dte_metadata_factory):
     messages = {e["message"] for e in exc.value.errors}
     assert "'descripcion' is a required property" in messages
     assert "0.0 is less than or equal to the minimum of 0" in messages
+
+
+def test_recalcula_totales(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    # Manipulamos totales para que sean incorrectos
+    dte["resumen"]["totalGravada"] = 20.0
+    dte["resumen"]["subTotalVentas"] = 20.0
+    dte["resumen"]["montoTotalOperacion"] = 20.0
+    dte["resumen"]["totalPagar"] = 20.0
+
+    validate_dte_json(dte)
+
+    assert dte["resumen"]["totalGravada"] == pytest.approx(10.0)
+    assert dte["resumen"]["subTotalVentas"] == pytest.approx(10.0)
+    assert dte["resumen"]["montoTotalOperacion"] == pytest.approx(10.0)
+    assert dte["resumen"]["totalPagar"] == pytest.approx(10.0)

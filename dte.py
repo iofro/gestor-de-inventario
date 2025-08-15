@@ -1117,37 +1117,33 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     ident = {}
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
-    ambiente = ident.get("ambiente")
-    tipo_dte = ident.get("tipoDte") or ident.get("tipoDocumento")
-    version = ident.get("version")
-    codigo = ident.get("codigoGeneracion")
 
-    # Ensure the JWS payload matches the provided metadata
+    # Valores obtenidos del JWS
     payload = _decode_jws_payload(jws_token)
     pident = payload.get("identificacion") or payload.get("identificador") or {}
-    if codigo and pident.get("codigoGeneracion") != codigo:
-        raise ValueError("documento no coincide con codigoGeneracion")
-    if tipo_dte and (pident.get("tipoDte") or pident.get("tipoDocumento")) != tipo_dte:
-        raise ValueError("documento no coincide con tipoDte")
-    if ambiente and pident.get("ambiente") != ambiente:
+    amb_jws = pident.get("ambiente")
+    tipo_jws = pident.get("tipoDte") or pident.get("tipoDocumento")
+    version_jws = pident.get("version")
+    codigo_jws = pident.get("codigoGeneracion")
+
+    # Validar discrepancias contra los metadatos proporcionados
+    ambiente_meta = ident.get("ambiente")
+    tipo_meta = ident.get("tipoDte") or ident.get("tipoDocumento")
+    codigo_meta = ident.get("codigoGeneracion")
+    if ambiente_meta is not None and str(ambiente_meta) != str(amb_jws):
         raise ValueError("documento no coincide con ambiente")
+    if tipo_meta is not None and str(tipo_meta) != str(tipo_jws):
+        raise ValueError("documento no coincide con tipoDte")
+    if codigo_meta is not None and str(codigo_meta) != str(codigo_jws):
+        raise ValueError("documento no coincide con codigoGeneracion")
 
-    if not ambiente:
-        ambiente = pident.get("ambiente")
-    if not tipo_dte:
-        tipo_dte = pident.get("tipoDte") or pident.get("tipoDocumento")
-    if not version:
-        version = pident.get("version")
-    if not codigo:
-        codigo = pident.get("codigoGeneracion")
-
-    ambiente = str(ambiente)
-    tipo_dte = str(tipo_dte)
-    version = 2
+    # Construir el cuerpo usando exactamente los valores del JWS
+    ambiente = str(amb_jws)
+    tipo_dte = str(tipo_jws)
+    version = version_jws if isinstance(version_jws, int) else 2
     id_envio = int(uuid.uuid4()) & 0x7FFFFFFF or 1
     documento = str(jws_token)
-    if codigo:
-        codigo = str(codigo)
+    codigo = str(codigo_jws) if codigo_jws is not None else None
 
     body = {
         "ambiente": ambiente,
@@ -1156,7 +1152,7 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         "tipoDte": tipo_dte,
         "documento": documento,
     }
-    if codigo:
+    if codigo is not None:
         body["codigoGeneracion"] = codigo
 
     print({k: type(v).__name__ for k, v in body.items()})
@@ -1279,6 +1275,19 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
+    # Normalizar y asegurar que los valores de identificación coincidan antes de firmar
+    if meta["ambiente"] is not None:
+        meta["ambiente"] = str(meta["ambiente"])
+        ident["ambiente"] = meta["ambiente"]
+    if meta["tipoDte"] is not None:
+        meta["tipoDte"] = str(meta["tipoDte"])
+        if "tipoDte" in ident:
+            ident["tipoDte"] = meta["tipoDte"]
+        elif "tipoDocumento" in ident:
+            ident["tipoDocumento"] = meta["tipoDte"]
+    if meta["codigoGeneracion"] is not None:
+        meta["codigoGeneracion"] = str(meta["codigoGeneracion"])
+        ident["codigoGeneracion"] = meta["codigoGeneracion"]
     token = auth.get_token()
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
@@ -1287,6 +1296,22 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
             f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
         )
     signed = jws.sign_json(data)
+
+    # Verificar que el JWS contenga los mismos datos identificadores
+    payload = _decode_jws_payload(signed)
+    pident = payload.get("identificacion") or payload.get("identificador") or {}
+    for key, meta_key in (
+        ("ambiente", "ambiente"),
+        ("tipoDte", "tipoDte"),
+        ("codigoGeneracion", "codigoGeneracion"),
+    ):
+        meta_val = meta.get(meta_key)
+        if key == "tipoDte":
+            payload_val = pident.get("tipoDte") or pident.get("tipoDocumento")
+        else:
+            payload_val = pident.get(key)
+        if meta_val is not None and str(meta_val) != str(payload_val):
+            raise ValueError(f"documento no coincide con {meta_key}")
 
     try:
         respuesta = _post_dte(url, token, signed, meta)

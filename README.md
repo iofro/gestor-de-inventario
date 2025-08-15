@@ -152,10 +152,10 @@ por lo que cada uno debe contar con su propio bloque `firma_electronica`.
 Coloca el certificado correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`. La carpeta
 `uploads/` está incluida en `.gitignore`, por lo que los certificados no se versionan en el
 repositorio. Si deseas utilizar otra ubicación, define la variable de entorno
-`CERT_UPLOAD_DIR`; la aplicación eliminará espacios ocultos al leerla. Cuando se carga
-un certificado desde la interfaz de configuración, la carpeta `uploads/` se vacía antes de
-copiar el nuevo archivo, asegurando que solo el certificado vigente permanezca en ese
-directorio.
+`CERT_UPLOAD_DIR`; tanto la aplicación como el servicio de firmado la utilizan (los espacios
+ocultos se eliminan al leerla). Cuando se carga un certificado desde la interfaz de
+configuración, la carpeta `uploads/` se vacía antes de copiar el nuevo archivo, asegurando
+que solo el certificado vigente permanezca en ese directorio.
 
 El servicio de firmado debe ejecutarse con:
 

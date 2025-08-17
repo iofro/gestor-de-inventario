@@ -549,14 +549,21 @@ def recalcular_totales(data: dict) -> list[str]:
 
     items_total = Decimal("0")
     iva_total = Decimal("0")
+    iva_from_items = False
     for item in cuerpo:
         cant = Decimal(str(item.get("cantidad") or 0))
         precio = Decimal(
             str(item.get("precioUnitario") or item.get("precioUni") or 0)
         )
         items_total += cant * precio
-        iva_item = Decimal(str(item.get("montoIva") or item.get("iva") or 0))
-        iva_total += iva_item
+        iva_val = item.get("montoIva") or item.get("iva") or item.get("ivaItem")
+        if iva_val:
+            iva_total += Decimal(str(iva_val))
+            iva_from_items = True
+    if not iva_from_items:
+        iva_total = Decimal(
+            str(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
+        )
 
     # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
     # calculado internamente y así podamos comparar contra el declarado.
@@ -718,6 +725,7 @@ def generar_dte_json(
     cuerpo = []
     items_total = D("0")
     commission_total = D("0")
+    iva_total = D("0")
     for idx, d in enumerate(detalles, 1):
         try:
             cant = D(str(d.get("cantidad") or 0))
@@ -740,6 +748,7 @@ def generar_dte_json(
         iva_item = D(str(d.get("iva") or 0))
         monto_iva = d8(venta_item * iva_item) if iva_item and iva_item < 1 else d8(iva_item)
         items_total += venta_item
+        iva_total += monto_iva
         try:
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
@@ -751,15 +760,12 @@ def generar_dte_json(
             "precioUnitario": float(precio_q),
             "ventaGravada": float(d8(venta_item)),
         }
-        if monto_iva:
-            item_data["montoIva"] = float(monto_iva)
-            item_data["ivaItem"] = float(monto_iva)
         cuerpo.append(item_data)
 
     resumen = calcular_resumen(
         items_total,
         venta,
-        fiscal=fiscal,
+        fiscal={**(fiscal or {}), "iva": iva_total},
         extra=extra,
         tipo_dte=tipo_dte,
     )
@@ -934,9 +940,6 @@ def validate_dte_json(payload: dict) -> None:
         item.setdefault("tributos", None)
         item.setdefault("psv", 0.0)
         item.setdefault("noGravado", 0.0)
-        iva_item = D(str(item.get("montoIva", item.get("ivaItem", 0))))
-        item["montoIva"] = float(d8(iva_item))
-        item["ivaItem"] = float(d8(iva_item))
         cantidad = D(str(item.get("cantidad", 0)))
         precio = D(str(item.get("precioUni", 0)))
         cantidad_q = d8(cantidad)

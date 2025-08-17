@@ -436,10 +436,13 @@ def armar_tributos(tributos_raw, tipo_dte):
     """Construye la lista de tributos o retorna ``None``."""
     if not tributos_raw:
         return None
+    # Los códigos válidos se obtienen tanto del catálogo local como del
+    # esquema oficial del tipo de documento.  Esto permite extender el catálogo
+    # sin depender de que el esquema se encuentre actualizado.
+    allowed = set(catalogos.TRIBUTOS.keys())
     schema = catalogos.get_dte_schema(tipo_dte)
-    allowed = set()
     if schema:
-        allowed = set(
+        allowed.update(
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
@@ -453,11 +456,13 @@ def armar_tributos(tributos_raw, tipo_dte):
     for t in tributos_raw or []:
         codigo = str(t.get("codigo", "")).upper()
         if allowed and codigo not in allowed:
-            continue
+            raise ValueError(f"Código de tributo inválido: {codigo}")
         result.append(
             {
                 "codigo": codigo,
-                "descripcion": t.get("descripcion"),
+                # Si no se proporciona descripción, intentar obtenerla del catálogo
+                "descripcion": t.get("descripcion")
+                or catalogos.TRIBUTOS.get(codigo),
                 "valor": d2(t.get("valor", 0)),
             }
         )
@@ -948,6 +953,34 @@ def validate_dte_json(payload: dict) -> None:
         item["precioUni"] = float(precio_q)
         importe = cantidad_q * precio_q
         item.setdefault("ventaGravada", float(d8(importe)))
+
+        # --- Manejo y validación de tributos ---
+        venta_gravada = D(str(item.get("ventaGravada") or 0))
+        tributos = item.get("tributos")
+        if venta_gravada > 0:
+            # Si la venta es gravada y no se especifican tributos, se asigna un
+            # código por defecto (IVA "20").
+            if not tributos:
+                tributos = ["20"]
+            elif isinstance(tributos, str):
+                tributos = [tributos]
+            item["tributos"] = [str(t).upper() for t in tributos]
+
+            # ``codTributo`` toma el primer código de la lista si no fue
+            # proporcionado explícitamente.
+            cod = item.get("codTributo") or item["tributos"][0]
+            item["codTributo"] = str(cod).upper()
+
+            allowed = set(catalogos.TRIBUTOS.keys())
+            if item["codTributo"] not in allowed:
+                raise ValueError(f"codTributo inválido: {item['codTributo']}")
+            invalid = [t for t in item["tributos"] if t not in allowed]
+            if invalid:
+                raise ValueError(f"Código(s) de tributo inválido(s): {', '.join(invalid)}")
+        else:
+            # Si no hay venta gravada, no deben declararse tributos
+            item["tributos"] = None
+            item["codTributo"] = None
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})

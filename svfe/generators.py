@@ -223,11 +223,43 @@ def generar_nota_remision() -> Dict[str, Any]:
 
 
 def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
+    """Valida ``data`` contra el *schema* oficial del DTE ``tipo``.
+
+    Parameters
+    ----------
+    data:
+        Estructura del documento a validar.
+    tipo:
+        Tipo del DTE. Debe existir en ``SCHEMA_MAP``.
+
+    Raises
+    ------
+    ValueError
+        Cuando el tipo es desconocido o el documento no cumple con el schema.
+    """
+
     if tipo not in SCHEMA_MAP:
         raise ValueError(f"Tipo de DTE desconocido: {tipo}")
+
     schema_file, _ = SCHEMA_MAP[tipo]
-    # Load the schema to ensure it exists. Real validation is not implemented.
-    _load_schema(schema_file)
+    schema = _load_schema(schema_file)
+
+    # Resolver para que jsonschema pueda manejar referencias relativas ($ref).
+    base_uri = f"file://{SCHEMAS_DIR.resolve()}/"
+    resolver = RefResolver(base_uri=base_uri, referrer=schema)
+
+    validator = Draft202012Validator(
+        schema, resolver=resolver, format_checker=FormatChecker()
+    )
+
+    errors = sorted(validator.iter_errors(data), key=lambda e: e.path)
+    if errors:
+        mensajes = []
+        for error in errors:
+            path = ".".join(str(p) for p in error.path) or "<root>"
+            mensajes.append(f"{path}: {error.message}")
+        raise ValueError("Errores de validación del schema:\n" + "\n".join(mensajes))
+    return None
 
 
 __all__ = [

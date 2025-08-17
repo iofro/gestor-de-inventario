@@ -931,9 +931,60 @@ def validate_dte_json(payload: dict) -> None:
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
+    tipo_dte = str(payload.get("identificacion", {}).get("tipoDte", ""))
+    schema = catalogos.get_dte_schema(tipo_dte)
+    if schema:
+        item_props = (
+            schema.get("properties", {})
+            .get("cuerpoDocumento", {})
+            .get("items", {})
+            .get("properties", {})
+        )
+        allowed_item_keys = set(item_props.keys())
+    else:
+        allowed_item_keys = {
+            "numItem",
+            "tipoItem",
+            "numeroDocumento",
+            "cantidad",
+            "codigo",
+            "codTributo",
+            "uniMedida",
+            "descripcion",
+            "precioUni",
+            "montoDescu",
+            "ventaNoSuj",
+            "ventaExenta",
+            "ventaGravada",
+            "tributos",
+            "psv",
+            "noGravado",
+            "ivaItem",
+        }
+    precio_key = "precioUni" if "precioUni" in allowed_item_keys else "precioUnitario"
+    iva_key = "ivaItem" if "ivaItem" in allowed_item_keys else None
+
     for item in cuerpo:
-        if "precioUnitario" in item:
-            item["precioUni"] = item.pop("precioUnitario")
+        # --- Normalización de nombres ---
+        if "precioUnitario" in item and precio_key != "precioUnitario":
+            item[precio_key] = item.pop("precioUnitario")
+        if "precioUni" in item and precio_key != "precioUni":
+            item[precio_key] = item.pop("precioUni")
+
+        iva_val = None
+        for k in ("montoIva", "iva", "ivaItem"):
+            if k in item:
+                iva_val = item.pop(k)
+                break
+        if iva_key and iva_val is not None:
+            item[iva_key] = iva_val
+
+        # --- Filtrar claves no permitidas ---
+        for key in list(item.keys()):
+            if key not in allowed_item_keys:
+                item.pop(key)
+
+        # --- Valores por defecto ---
         item.setdefault("tipoItem", 1)
         item.setdefault("numeroDocumento", None)
         item.setdefault("codigo", None)
@@ -945,12 +996,15 @@ def validate_dte_json(payload: dict) -> None:
         item.setdefault("tributos", None)
         item.setdefault("psv", 0.0)
         item.setdefault("noGravado", 0.0)
+        if iva_key:
+            item.setdefault(iva_key, 0.0)
+
         cantidad = D(str(item.get("cantidad", 0)))
-        precio = D(str(item.get("precioUni", 0)))
+        precio = D(str(item.get(precio_key, 0)))
         cantidad_q = d8(cantidad)
         precio_q = d8(precio)
         item["cantidad"] = float(cantidad_q)
-        item["precioUni"] = float(precio_q)
+        item[precio_key] = float(precio_q)
         importe = cantidad_q * precio_q
         item.setdefault("ventaGravada", float(d8(importe)))
 

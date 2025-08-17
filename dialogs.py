@@ -2821,7 +2821,7 @@ class DatosNegocioDialog(QDialog):
         self.nrc = QLineEdit()
         self.nombre = QLineEdit()
         self.nombre_comercial = QLineEdit()
-        self.cod_actividad = QLineEdit()
+        self.cod_giro = QLineEdit()
         self.desc_actividad = QLineEdit()
         self.tipo_contribuyente = QLineEdit()
         self.telefono = QLineEdit()
@@ -2833,7 +2833,7 @@ class DatosNegocioDialog(QDialog):
         form.addRow("NRC:", self.nrc)
         form.addRow("Nombre:", self.nombre)
         form.addRow("Nombre comercial:", self.nombre_comercial)
-        form.addRow("Código actividad:", self.cod_actividad)
+        form.addRow("Código giro:", self.cod_giro)
         form.addRow("Descripción actividad:", self.desc_actividad)
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
         form.addRow("Teléfono:", self.telefono)
@@ -2861,7 +2861,8 @@ class DatosNegocioDialog(QDialog):
             "nrc": self.nrc.text(),
             "nombre": self.nombre.text(),
             "nombreComercial": self.nombre_comercial.text(),
-            "codActividad": self.cod_actividad.text(),
+            "cod_giro": self.cod_giro.text(),
+            "codActividad": self.cod_giro.text(),
             "descActividad": self.desc_actividad.text(),
             "tipoContribuyente": self.tipo_contribuyente.text(),
             "telefono": self.telefono.text(),
@@ -2878,7 +2879,7 @@ class DatosNegocioDialog(QDialog):
         self.nrc.setText(datos.get("nrc", ""))
         self.nombre.setText(datos.get("nombre", ""))
         self.nombre_comercial.setText(datos.get("nombreComercial", ""))
-        self.cod_actividad.setText(datos.get("codActividad", ""))
+        self.cod_giro.setText(datos.get("cod_giro") or datos.get("codActividad", ""))
         self.desc_actividad.setText(datos.get("descActividad", ""))
         self.tipo_contribuyente.setText(datos.get("tipoContribuyente", ""))
         self.telefono.setText(datos.get("telefono", ""))

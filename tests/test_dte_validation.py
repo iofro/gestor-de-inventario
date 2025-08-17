@@ -119,3 +119,27 @@ def test_recalcula_totales(dte_metadata_factory):
     assert dte["resumen"]["subTotalVentas"] == pytest.approx(10.0)
     assert dte["resumen"]["montoTotalOperacion"] == pytest.approx(10.0)
     assert dte["resumen"]["totalPagar"] == pytest.approx(10.0)
+
+
+def test_autocompleta_tributos(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    item = dte["cuerpoDocumento"][0]
+    # Eliminamos tributos para forzar el valor por defecto
+    item.pop("tributos", None)
+    item.pop("codTributo", None)
+    validate_dte_json(dte)
+    item = dte["cuerpoDocumento"][0]
+    assert item["tributos"] == ["20"]
+    assert item["codTributo"] == "20"
+
+
+def test_tributos_invalidos_rechazados(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["cuerpoDocumento"][0]["tributos"] = ["ZZ"]
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["cuerpoDocumento"][0]["codTributo"] = "ZZ"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)

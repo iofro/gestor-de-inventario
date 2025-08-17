@@ -18,6 +18,25 @@ MODELOS_FACTURACION = {
     2: "Facturación posterior",
 }
 
+# Catálogo simplificado de tributos aplicables a los ítems del DTE
+#
+# Las claves corresponden a los códigos oficiales de tributo definidos por
+# el Ministerio de Hacienda.  Los valores son meramente descriptivos y no se
+# utilizan actualmente en la lógica; se mantienen para referencia humana.
+#
+# Este catálogo se utiliza para validar los campos ``codTributo`` y
+# ``tributos`` dentro del ``cuerpoDocumento``.
+TRIBUTOS = {
+    "20": "IVA 13%",
+    "A8": "Percepción a sujetos excluidos",
+    "57": "Renta",
+    "90": "IVA retenido",
+    "D4": "IEPES",
+    "D5": "IVA",
+    "25": "Fovial",
+    "A6": "CESC",
+}
+
 # Mapa de esquemas oficiales por tipo de documento
 ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
 SCHEMAS_DIR = os.path.join(ROOT_DIR, "svfe-json-schemas")

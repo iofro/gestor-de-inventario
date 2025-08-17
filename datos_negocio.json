@@ -13,17 +13,17 @@
   },
   "nit": "09061712791014",
   "nrc": "2301408",
-  "nombre": "INVERSIONES",
-  "nombreComercial": "InverTech",
-  "cod_giro": "62010",
-  "codActividad": "62010",
-  "descActividad": "Desarrollo ",
+  "nombre": "Karol Yamileth Cruz Escobar",
+  "nombreComercial": "Farmacia Santa Catalina",
+  "codActividad": "46484",
+  "descActividad": "Venta de productos farmaceuticos",
   "tipoContribuyente": "Persona Natural",
   "telefono": "2222-3456",
   "correo": "farmaciasantacatalina7@gmail.com",
   "direccion": {
-    "departamento": "San Salvador",
-    "municipio": "San Salvador",
-    "complemento": "Edificio Plaza Centro, Nivel 5, Oficina"
-  }
+    "departamento": "La Libertad",
+    "municipio": "Santa Tecla",
+    "complemento": "Local.3 #4-6 B, Paseo Concepcion"
+  },
+  "cod_giro": "46484"
 }

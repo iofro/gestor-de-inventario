@@ -42,18 +42,21 @@ def check_document(data: dict, expected_ambiente: str | None = None) -> List[str
 
     cuerpo = data.get("cuerpoDocumento", [])
     items_total = Decimal("0")
+    iva_total = Decimal("0")
     for item in cuerpo:
         cant = Decimal(str(item.get("cantidad") or 0))
         precio = Decimal(
             str(item.get("precioUnitario") or item.get("precioUni") or 0)
         )
         items_total += cant * precio
+        iva_item = Decimal(str(item.get("montoIva") or item.get("iva") or 0))
+        iva_total += iva_item
 
     resumen = data.get("resumen", {})
     venta = {"total": resumen.get("totalPagar"), "total_letras": resumen.get("totalLetras", "")}
     fiscal = {
         "descuentos": resumen.get("totalDescu", 0),
-        "iva": resumen.get("totalIva", 0),
+        "iva": iva_total,
         "ventas_no_sujetas": resumen.get("totalNoSuj", 0),
         "ventas_exentas": resumen.get("totalExenta", 0),
     }

@@ -13,7 +13,7 @@ from jsonschema import Draft7Validator, ValidationError
 from utils import catalogos
 import logging
 import re
-from utils.monto import monto_a_texto_sv
+from utils.monto import monto_a_texto_sv, d2
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 
 logger = logging.getLogger(__name__)
@@ -86,14 +86,6 @@ def numero_a_letras(monto):
         partes = texto.split(" ", 1)
         return f"{partes[0]} CON {partes[1]}"
     return texto
-
-
-def _round(value, digits):
-    """Round ``value`` to ``digits`` decimal places using HALF_UP."""
-    if value is None:
-        value = 0
-    fmt = "0." + "0" * digits
-    return float(Decimal(str(value)).quantize(Decimal(fmt), rounding=ROUND_HALF_UP))
 
 
 def _normalize_payload(value):
@@ -416,7 +408,7 @@ def normalizar_pagos(pagos_raw, total):
         codigo = str(p.get("codigo", "")).zfill(2)
         if not pattern.match(codigo):
             continue
-        monto = _round(p.get("montoPago", 0), 2)
+        monto = d2(p.get("montoPago", 0))
         pagos.append(
             {
                 "codigo": codigo,
@@ -430,7 +422,7 @@ def normalizar_pagos(pagos_raw, total):
         pagos = [
             {
                 "codigo": "01",
-                "montoPago": _round(total, 2),
+                "montoPago": d2(total),
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
@@ -465,7 +457,7 @@ def armar_tributos(tributos_raw, tipo_dte):
             {
                 "codigo": codigo,
                 "descripcion": t.get("descripcion"),
-                "valor": _round(t.get("valor", 0), 2),
+                "valor": d2(t.get("valor", 0)),
             }
         )
     return result or None
@@ -529,10 +521,14 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
+    # Ejemplo de referencia:
+    # Base ítem: 23.85000000 (8 dec)
+    # IVA ítem: 3.10050000 (8 dec)
+    # En resumen: base → 23.85, IVA → 3.10, totalPagar → 26.95 (2 dec)
     # Redondeamos valores numéricos
     for k, v in resumen.items():
         if isinstance(v, (int, float, Decimal)):
-            resumen[k] = _round(v, 2)
+            resumen[k] = d2(v)
 
     return resumen
 
@@ -551,19 +547,22 @@ def recalcular_totales(data: dict) -> list[str]:
     resumen = data.get("resumen", {})
 
     items_total = Decimal("0")
+    iva_total = Decimal("0")
     for item in cuerpo:
         cant = Decimal(str(item.get("cantidad") or 0))
         precio = Decimal(
             str(item.get("precioUnitario") or item.get("precioUni") or 0)
         )
         items_total += cant * precio
+        iva_item = Decimal(str(item.get("montoIva") or item.get("iva") or 0))
+        iva_total += iva_item
 
     # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
     # calculado internamente y así podamos comparar contra el declarado.
     venta = {"total_letras": resumen.get("totalLetras", "")}
     fiscal = {
         "descuentos": resumen.get("totalDescu", 0),
-        "iva": resumen.get("totalIva", resumen.get("ivaPerci1", 0)),
+        "iva": iva_total,
         "ventas_no_sujetas": resumen.get("totalNoSuj", 0),
         "ventas_exentas": resumen.get("totalExenta", 0),
     }
@@ -771,14 +770,14 @@ def generar_dte_json(
     )
 
     # Validaciones básicas de consistencia
-    items_total_2 = _round(items_total, 2)
+    items_total_2 = d2(items_total)
     if abs(items_total_2 - resumen.get("subTotalVentas", 0)) > 0.01:
         print(
             f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen.get('subTotalVentas',0):.2f}"
         )
 
-    calc_sub_total = _round(
-        resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0), 2
+    calc_sub_total = d2(
+        resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0)
     )
     if abs(calc_sub_total - resumen.get("subTotal", 0)) > 0.01:
         print(
@@ -788,12 +787,12 @@ def generar_dte_json(
     iva_ref = resumen.get("totalIva")
     if iva_ref is None:
         iva_ref = resumen.get("ivaPerci1", 0)
-    calc_total = _round(calc_sub_total + (iva_ref or 0), 2)
+    calc_total = d2(calc_sub_total + (iva_ref or 0))
     if abs(calc_total - resumen.get("montoTotalOperacion", 0)) > 0.01:
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
-    calc_total_commission = _round(calc_total + float(commission_total), 2)
+    calc_total_commission = d2(calc_total + float(commission_total))
     if "totalPagar" in resumen and abs(calc_total_commission - resumen.get("totalPagar", 0)) > 0.01:
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
@@ -956,10 +955,10 @@ def validate_dte_json(payload: dict) -> None:
     resumen = payload.get("resumen", {})
     for k, v in resumen.items():
         if isinstance(v, (int, float)):
-            resumen[k] = _round(v, 2)
+            resumen[k] = d2(v)
         elif isinstance(v, str):
             try:
-                resumen[k] = _round(float(v), 2)
+                resumen[k] = d2(float(v))
             except Exception:
                 pass
     payload["resumen"] = resumen

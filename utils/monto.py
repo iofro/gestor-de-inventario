@@ -1,3 +1,4 @@
+
 """Utilities for monetary calculations and text conversions."""
 
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -38,4 +39,12 @@ def monto_a_texto_sv(monto):
     centavos = int(round((monto - entero) * 100))
     palabras = num2words(entero, lang="es").upper()
     return f"{palabras} {centavos:02d}/100 DÓLARES"
+
+
+
+def d2(value):
+    """Redondea ``value`` a 2 decimales usando ``ROUND_HALF_UP``."""
+    if value is None:
+        value = 0
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 

@@ -28,6 +28,16 @@ def test_longitud_num_documento_invalida(dte_metadata_factory):
         validate_dte_json(dte)
 
 
+def test_codigo_generacion_debe_ser_uuid_v4(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["codigoGeneracion"] = "not-a-uuid"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+    dte["identificacion"]["codigoGeneracion"] = "12345678-1234-1234-1234-1234567890AB"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
 def test_estructura_invalida(dte_metadata_factory, monkeypatch):
     dte = dte_metadata_factory()
     del dte["emisor"]["nit"]

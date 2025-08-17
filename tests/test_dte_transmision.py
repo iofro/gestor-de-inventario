@@ -68,29 +68,29 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
                 "correo": None,
             },
             "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-            "resumen": {
-                "totalNoSuj": 0,
-                "totalExenta": 0,
-                "totalGravada": 10,
-                "subTotalVentas": 10,
-                "descuNoSuj": 0,
-                "descuExenta": 0,
-                "descuGravada": 0,
-                "porcentajeDescuento": 0,
-                "totalDescu": 0,
-                "tributos": None,
-                "subTotal": 10,
-                "ivaRete1": 0,
-                "reteRenta": 0,
-                "montoTotalOperacion": 10,
-                "totalNoGravado": 0,
-                "totalPagar": 10,
-                "totalLetras": "",
-                "totalIva": 0,
-                "saldoFavor": 0,
-                "condicionOperacion": 1,
-                "pagos": None,
-                "numPagoElectronico": None,
+                "resumen": {
+                    "totalNoSuj": 0,
+                    "totalExenta": 0,
+                    "totalGravada": 10,
+                    "subTotalVentas": 10,
+                    "descuNoSuj": 0,
+                    "descuExenta": 0,
+                    "descuGravada": 0,
+                    "porcentajeDescuento": 0,
+                    "totalDescu": 0,
+                    "tributos": None,
+                    "subTotal": 10,
+                    "ivaRete1": 0,
+                    "reteRenta": 0,
+                    "montoTotalOperacion": 10,
+                    "totalNoGravado": 0,
+                    "totalPagar": 10,
+                    "totalLetras": "DIEZ",
+                    "totalIva": 0,
+                    "saldoFavor": 0,
+                    "condicionOperacion": 1,
+                    "pagos": None,
+                    "numPagoElectronico": None,
             },
             "identificacion": {
                 "tipoDte": "01",
@@ -230,6 +230,27 @@ def test_post_dte_missing_fields(monkeypatch):
     with pytest.raises(AssertionError):
         _post_dte("http://example.com", "TOKEN", token, {})
     assert calls["count"] == 0
+
+
+def test_post_dte_invalid_tipo(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=20):
+        class R:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "99", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    with pytest.raises(AssertionError):
+        _post_dte("http://example.com", "TOKEN", token, meta)
 
 
 def test_consultar_envio_dte():

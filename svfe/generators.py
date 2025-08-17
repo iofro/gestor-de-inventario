@@ -9,7 +9,13 @@ from uuid import uuid4
 from zoneinfo import ZoneInfo
 
 # NOTE: jsonschema imports retained for potential future validation logic.
-from jsonschema import Draft202012Validator, RefResolver, FormatChecker  # pragma: no cover
+from jsonschema import (
+    Draft202012Validator,
+    RefResolver,
+    FormatChecker,
+    ValidationError,
+    validators,
+)  # pragma: no cover
 
 # All arithmetic must follow the tax authority's rounding rules
 getcontext().rounding = ROUND_HALF_UP
@@ -217,7 +223,6 @@ def _generar(tipo: str) -> Dict[str, Any]:
         "extension": None,
         "apendice": None,
     }
-    validar_contra_schema(data, tipo)
     return data
 
 
@@ -242,27 +247,21 @@ def generar_nota_remision() -> Dict[str, Any]:
 
 
 def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
-
-    """Realiza una validación mínima contra el *schema* oficial.
-
-    El objetivo de esta utilidad en el contexto del proyecto es garantizar que el
-    schema oficial correspondiente al tipo de DTE exista y que la versión
-    indicada en la sección ``identificacion`` coincida con la declarada por el
-    schema.  No se realiza una validación exhaustiva de todas las reglas del
-    schema, lo cual mantiene la función liviana y suficiente para las pruebas de
-    ejemplo incluidas en el repositorio.
+    """Valida ``data`` contra el *schema* oficial para ``tipo``.
 
     Parameters
     ----------
     data:
         Estructura del documento a validar.
     tipo:
-        Tipo del DTE. Debe existir en ``SCHEMA_MAP``.
+        Clave de ``SCHEMA_MAP`` que indica el tipo de DTE.
 
     Raises
     ------
     ValueError
-        Si el tipo de DTE es desconocido o la versión no coincide.
+        Si ``tipo`` es desconocido.
+    jsonschema.exceptions.ValidationError
+        Si ``data`` no cumple con el schema correspondiente.
     """
 
     if tipo not in SCHEMA_MAP:
@@ -271,16 +270,35 @@ def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
     schema_file, _ = SCHEMA_MAP[tipo]
     schema = _load_schema(schema_file)
 
-    version_prop = schema["properties"]["identificacion"]["properties"]["version"]
-    version_schema = version_prop.get("const") or version_prop.get("enum")[0]
-    if data.get("identificacion", {}).get("version") != version_schema:
-        raise ValueError(
-            "Version de identificacion no coincide con schema"
-        )
+    base_uri = SCHEMAS_DIR.as_uri() + "/"
+    resolver = RefResolver(base_uri=base_uri, referrer=schema)
 
-    # Si la versión coincide y el schema se cargó correctamente consideramos
-    # la validación exitosa.
-    return None
+    type_checker = Draft202012Validator.TYPE_CHECKER.redefine(
+        "number", lambda checker, instance: isinstance(instance, (int, float, Decimal))
+    )
+
+    def decimal_multiple_of(validator, dB, instance, schema):
+        if isinstance(instance, Decimal):
+            dB_dec = Decimal(str(dB))
+            if instance % dB_dec != 0:
+                yield ValidationError(
+                    f"{instance!r} is not a multiple of {dB_dec!r}"
+                )
+        else:
+            yield from Draft202012Validator.VALIDATORS["multipleOf"](
+                validator, dB, instance, schema
+            )
+
+    DecimalValidator = validators.extend(
+        Draft202012Validator,
+        {"multipleOf": decimal_multiple_of},
+        type_checker=type_checker,
+    )
+
+    validator = DecimalValidator(
+        schema, format_checker=FormatChecker(), resolver=resolver
+    )
+    validator.validate(data)
 
 
 __all__ = [

@@ -1261,24 +1261,29 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
             "Faltan campos requeridos: " + ", ".join(missing)
         )
 
-    ambiente = str(ambiente)
-    tipo_dte = str(tipo_dte)
-    version = int(version)
+    ambiente = "00"
+    version = 2
     id_envio = int(uuid.uuid4()) & 0x7FFFFFFF or 1
     documento = str(jws_token)
+    assert documento.count(".") == 2, "documento JWS malformado"
     codigo = str(codigo)
 
-    body = {
+    tipo_dte = str(tipo_dte)
+    assert re.fullmatch(r"\d{2}", tipo_dte), "tipoDte debe ser dos dígitos"
+    assert tipo_dte in catalogos.TIPOS_DTE, "tipoDte inválido"
+
+    payload = {
         "ambiente": ambiente,
-        "idEnvio": id_envio,
         "version": version,
+        "idEnvio": int(id_envio),
         "tipoDte": tipo_dte,
         "documento": documento,
     }
     if codigo:
-        body["codigoGeneracion"] = codigo
+        payload["codigoGeneracion"] = codigo
+    assert payload.get("codigoGeneracion") == codigo, "codigoGeneracion no coincide"
 
-    print({k: type(v).__name__ for k, v in body.items()})
+    print({k: type(v).__name__ for k, v in payload.items()})
 
     required = {
         "ambiente": str,
@@ -1287,18 +1292,18 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         "idEnvio": int,
         "documento": str,
     }
-    if "codigoGeneracion" in body:
+    if "codigoGeneracion" in payload:
         required["codigoGeneracion"] = str
 
     for field, expected in required.items():
-        assert field in body, f"{field} requerido"
-        assert isinstance(body[field], expected), f"{field} debe ser {expected.__name__}"
+        assert field in payload, f"{field} requerido"
+        assert isinstance(payload[field], expected), f"{field} debe ser {expected.__name__}"
 
-    assert body["idEnvio"] > 0
+    assert payload["idEnvio"] > 0
     auth_header = headers.get("Authorization")
     if token:
         assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
-    resp = requests.post(url, headers=headers, json=body, timeout=20)
+    resp = requests.post(url, headers=headers, json=payload, timeout=20)
     resp_text = getattr(resp, "text", "")
     status_code = getattr(resp, "status_code", "N/A")
     print(status_code)

@@ -436,10 +436,13 @@ def armar_tributos(tributos_raw, tipo_dte):
     """Construye la lista de tributos o retorna ``None``."""
     if not tributos_raw:
         return None
+    # Los códigos válidos se obtienen tanto del catálogo local como del
+    # esquema oficial del tipo de documento.  Esto permite extender el catálogo
+    # sin depender de que el esquema se encuentre actualizado.
+    allowed = set(catalogos.TRIBUTOS.keys())
     schema = catalogos.get_dte_schema(tipo_dte)
-    allowed = set()
     if schema:
-        allowed = set(
+        allowed.update(
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
@@ -453,11 +456,13 @@ def armar_tributos(tributos_raw, tipo_dte):
     for t in tributos_raw or []:
         codigo = str(t.get("codigo", "")).upper()
         if allowed and codigo not in allowed:
-            continue
+            raise ValueError(f"Código de tributo inválido: {codigo}")
         result.append(
             {
                 "codigo": codigo,
-                "descripcion": t.get("descripcion"),
+                # Si no se proporciona descripción, intentar obtenerla del catálogo
+                "descripcion": t.get("descripcion")
+                or catalogos.TRIBUTOS.get(codigo),
                 "valor": d2(t.get("valor", 0)),
             }
         )
@@ -549,14 +554,21 @@ def recalcular_totales(data: dict) -> list[str]:
 
     items_total = Decimal("0")
     iva_total = Decimal("0")
+    iva_from_items = False
     for item in cuerpo:
         cant = Decimal(str(item.get("cantidad") or 0))
         precio = Decimal(
             str(item.get("precioUnitario") or item.get("precioUni") or 0)
         )
         items_total += cant * precio
-        iva_item = Decimal(str(item.get("montoIva") or item.get("iva") or 0))
-        iva_total += iva_item
+        iva_val = item.get("montoIva") or item.get("iva") or item.get("ivaItem")
+        if iva_val:
+            iva_total += Decimal(str(iva_val))
+            iva_from_items = True
+    if not iva_from_items:
+        iva_total = Decimal(
+            str(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
+        )
 
     # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
     # calculado internamente y así podamos comparar contra el declarado.
@@ -718,6 +730,7 @@ def generar_dte_json(
     cuerpo = []
     items_total = D("0")
     commission_total = D("0")
+    iva_total = D("0")
     for idx, d in enumerate(detalles, 1):
         try:
             cant = D(str(d.get("cantidad") or 0))
@@ -740,6 +753,7 @@ def generar_dte_json(
         iva_item = D(str(d.get("iva") or 0))
         monto_iva = d8(venta_item * iva_item) if iva_item and iva_item < 1 else d8(iva_item)
         items_total += venta_item
+        iva_total += monto_iva
         try:
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
@@ -751,15 +765,12 @@ def generar_dte_json(
             "precioUnitario": float(precio_q),
             "ventaGravada": float(d8(venta_item)),
         }
-        if monto_iva:
-            item_data["montoIva"] = float(monto_iva)
-            item_data["ivaItem"] = float(monto_iva)
         cuerpo.append(item_data)
 
     resumen = calcular_resumen(
         items_total,
         venta,
-        fiscal=fiscal,
+        fiscal={**(fiscal or {}), "iva": iva_total},
         extra=extra,
         tipo_dte=tipo_dte,
     )
@@ -920,9 +931,60 @@ def validate_dte_json(payload: dict) -> None:
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
+    tipo_dte = str(payload.get("identificacion", {}).get("tipoDte", ""))
+    schema = catalogos.get_dte_schema(tipo_dte)
+    if schema:
+        item_props = (
+            schema.get("properties", {})
+            .get("cuerpoDocumento", {})
+            .get("items", {})
+            .get("properties", {})
+        )
+        allowed_item_keys = set(item_props.keys())
+    else:
+        allowed_item_keys = {
+            "numItem",
+            "tipoItem",
+            "numeroDocumento",
+            "cantidad",
+            "codigo",
+            "codTributo",
+            "uniMedida",
+            "descripcion",
+            "precioUni",
+            "montoDescu",
+            "ventaNoSuj",
+            "ventaExenta",
+            "ventaGravada",
+            "tributos",
+            "psv",
+            "noGravado",
+            "ivaItem",
+        }
+    precio_key = "precioUni" if "precioUni" in allowed_item_keys else "precioUnitario"
+    iva_key = "ivaItem" if "ivaItem" in allowed_item_keys else None
+
     for item in cuerpo:
-        if "precioUnitario" in item:
-            item["precioUni"] = item.pop("precioUnitario")
+        # --- Normalización de nombres ---
+        if "precioUnitario" in item and precio_key != "precioUnitario":
+            item[precio_key] = item.pop("precioUnitario")
+        if "precioUni" in item and precio_key != "precioUni":
+            item[precio_key] = item.pop("precioUni")
+
+        iva_val = None
+        for k in ("montoIva", "iva", "ivaItem"):
+            if k in item:
+                iva_val = item.pop(k)
+                break
+        if iva_key and iva_val is not None:
+            item[iva_key] = iva_val
+
+        # --- Filtrar claves no permitidas ---
+        for key in list(item.keys()):
+            if key not in allowed_item_keys:
+                item.pop(key)
+
+        # --- Valores por defecto ---
         item.setdefault("tipoItem", 1)
         item.setdefault("numeroDocumento", None)
         item.setdefault("codigo", None)
@@ -934,17 +996,45 @@ def validate_dte_json(payload: dict) -> None:
         item.setdefault("tributos", None)
         item.setdefault("psv", 0.0)
         item.setdefault("noGravado", 0.0)
-        iva_item = D(str(item.get("montoIva", item.get("ivaItem", 0))))
-        item["montoIva"] = float(d8(iva_item))
-        item["ivaItem"] = float(d8(iva_item))
+        if iva_key:
+            item.setdefault(iva_key, 0.0)
+
         cantidad = D(str(item.get("cantidad", 0)))
-        precio = D(str(item.get("precioUni", 0)))
+        precio = D(str(item.get(precio_key, 0)))
         cantidad_q = d8(cantidad)
         precio_q = d8(precio)
         item["cantidad"] = float(cantidad_q)
-        item["precioUni"] = float(precio_q)
+        item[precio_key] = float(precio_q)
         importe = cantidad_q * precio_q
         item.setdefault("ventaGravada", float(d8(importe)))
+
+        # --- Manejo y validación de tributos ---
+        venta_gravada = D(str(item.get("ventaGravada") or 0))
+        tributos = item.get("tributos")
+        if venta_gravada > 0:
+            # Si la venta es gravada y no se especifican tributos, se asigna un
+            # código por defecto (IVA "20").
+            if not tributos:
+                tributos = ["20"]
+            elif isinstance(tributos, str):
+                tributos = [tributos]
+            item["tributos"] = [str(t).upper() for t in tributos]
+
+            # ``codTributo`` toma el primer código de la lista si no fue
+            # proporcionado explícitamente.
+            cod = item.get("codTributo") or item["tributos"][0]
+            item["codTributo"] = str(cod).upper()
+
+            allowed = set(catalogos.TRIBUTOS.keys())
+            if item["codTributo"] not in allowed:
+                raise ValueError(f"codTributo inválido: {item['codTributo']}")
+            invalid = [t for t in item["tributos"] if t not in allowed]
+            if invalid:
+                raise ValueError(f"Código(s) de tributo inválido(s): {', '.join(invalid)}")
+        else:
+            # Si no hay venta gravada, no deben declararse tributos
+            item["tributos"] = None
+            item["codTributo"] = None
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})

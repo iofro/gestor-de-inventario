@@ -1013,9 +1013,9 @@ def validate_dte_json(payload: dict) -> None:
         tributos = item.get("tributos")
         if venta_gravada > 0:
             # Si la venta es gravada y no se especifican tributos, se asigna un
-            # código por defecto (IVA "20").
+            # código por defecto (IVA "A8").
             if not tributos:
-                tributos = ["20"]
+                tributos = ["A8"]
             elif isinstance(tributos, str):
                 tributos = [tributos]
             item["tributos"] = [str(t).upper() for t in tributos]

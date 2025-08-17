@@ -1329,7 +1329,7 @@
                         "else": {
                             "properties": {
                                 "codTributo": {
-                                    "type": "null"
+                                    "type": "string"
                                 },
                                 "tributos": {
                                     "items": {
@@ -1375,6 +1375,7 @@
                                             "A1",
                                             "A5",
                                             "A7",
+                                            "A8",
                                             "A9"
                                         ]
                                     }

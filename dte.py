@@ -1301,13 +1301,14 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     resp = requests.post(url, headers=headers, json=body, timeout=20)
     resp_text = getattr(resp, "text", "")
     status_code = getattr(resp, "status_code", "N/A")
-    print(status_code)
-    print(resp_text)
     if isinstance(status_code, int) and status_code >= 400:
-        logger.error("Respuesta de Hacienda %s: %s", status_code, resp_text)
+        try:
+            logger.error("Hacienda %s: %s", status_code, resp_text)
+        finally:
+            resp.raise_for_status()
     else:
-        logger.debug("Respuesta de Hacienda %s: %s", status_code, resp_text)
-    resp.raise_for_status()
+        logger.debug("Hacienda %s: %s", status_code, resp_text)
+
     try:
         return resp.json()
     except Exception:

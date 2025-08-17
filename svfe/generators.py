@@ -223,6 +223,7 @@ def generar_nota_remision() -> Dict[str, Any]:
 
 
 def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
+
     """Valida ``data`` contra el *schema* oficial del DTE ``tipo``.
 
     Parameters

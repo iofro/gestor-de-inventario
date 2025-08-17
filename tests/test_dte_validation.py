@@ -129,8 +129,8 @@ def test_autocompleta_tributos(dte_metadata_factory):
     item.pop("codTributo", None)
     validate_dte_json(dte)
     item = dte["cuerpoDocumento"][0]
-    assert item["tributos"] == ["20"]
-    assert item["codTributo"] == "20"
+    assert item["tributos"] == ["A8"]
+    assert item["codTributo"] == "A8"
 
 
 def test_tributos_invalidos_rechazados(dte_metadata_factory):

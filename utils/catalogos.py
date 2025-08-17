@@ -27,8 +27,7 @@ MODELOS_FACTURACION = {
 # Este catálogo se utiliza para validar los campos ``codTributo`` y
 # ``tributos`` dentro del ``cuerpoDocumento``.
 TRIBUTOS = {
-    "20": "IVA 13%",
-    "A8": "Percepción a sujetos excluidos",
+    "A8": "IVA 13%",
     "57": "Renta",
     "90": "IVA retenido",
     "D4": "IEPES",

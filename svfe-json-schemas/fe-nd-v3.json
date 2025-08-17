@@ -1017,7 +1017,7 @@
                                 "tributos" : {
                                     "type" : "array",
                                     "items" : {
-                                        "const" : "20"
+                                        "const" : "A8"
                                     }
                                 }
                             }
@@ -1025,12 +1025,12 @@
                         "else" : {
                             "properties" : {
                                 "codTributo" : {
-                                    "type" : "null"
+                                    "type" : "string"
                                 },
                                 "tributos" : {
                                     "items" : {
                                         "enum" : [
-                                            "20",
+                                            "A8",
                                             "C3",
                                             "59",
                                             "71",

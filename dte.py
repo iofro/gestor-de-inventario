@@ -67,6 +67,14 @@ def sanitize_dte_payload(data: dict) -> dict:
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
 
+# Helper aliases for precise Decimal arithmetic
+D = Decimal
+
+
+def d8(value: "object") -> D:
+    """Return ``value`` as :class:`Decimal` with 8 decimal places."""
+    return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
+
 
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
@@ -714,30 +722,45 @@ def generar_dte_json(
             receptor["ordenNo"] = fiscal.get("orden_no")
 
     cuerpo = []
-    items_total = Decimal("0")
-    commission_total = Decimal("0")
+    items_total = D("0")
+    commission_total = D("0")
     for idx, d in enumerate(detalles, 1):
         try:
-            cant = Decimal(str(d.get("cantidad") or 0))
+            cant = D(str(d.get("cantidad") or 0))
         except Exception:
-            cant = Decimal(0)
+            cant = D(0)
         try:
-            price = Decimal(str(d.get("precio_unitario") or 0))
+            precio = D(str(d.get("precio_unitario") or 0))
         except Exception:
-            price = Decimal(0)
-        cant_r = cant.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
-        price_r = price.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)
-        items_total += cant_r * price_r
+            precio = D(0)
+
+        # Ejemplo para auto-chequeo (no ejecutar):
+        # cantidad = 2.5 -> D('2.5')
+        # precio = 9.54 -> D('9.54')
+        # venta = 2.5 * 9.54 = 23.85 -> d8 = '23.85000000'
+        # IVA (13%) = 23.85 * 0.13 = 3.1005 -> d8 = '3.10050000'
+
+        cant_q = d8(cant)
+        precio_q = d8(precio)
+        venta_item = cant_q * precio_q
+        iva_item = D(str(d.get("iva") or 0))
+        monto_iva = d8(venta_item * iva_item) if iva_item and iva_item < 1 else d8(iva_item)
+        items_total += venta_item
         try:
-            commission_total += Decimal(str(d.get("comision") or 0))
+            commission_total += D(str(d.get("comision") or 0))
         except Exception:
             pass
-        cuerpo.append({
+        item_data = {
             "numItem": idx,
             "descripcion": d.get("descripcion"),
-            "cantidad": float(cant_r),
-            "precioUnitario": float(price_r),
-        })
+            "cantidad": float(cant_q),
+            "precioUnitario": float(precio_q),
+            "ventaGravada": float(d8(venta_item)),
+        }
+        if monto_iva:
+            item_data["montoIva"] = float(monto_iva)
+            item_data["ivaItem"] = float(monto_iva)
+        cuerpo.append(item_data)
 
     resumen = calcular_resumen(
         items_total,
@@ -917,16 +940,17 @@ def validate_dte_json(payload: dict) -> None:
         item.setdefault("tributos", None)
         item.setdefault("psv", 0.0)
         item.setdefault("noGravado", 0.0)
-        item.setdefault("ivaItem", 0.0)
-        cantidad = Decimal(str(item.get("cantidad", 0)))
-        precio = Decimal(str(item.get("precioUni", 0)))
-        item["cantidad"] = float(cantidad.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
-        item["precioUni"] = float(precio.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP))
-        importe = cantidad * precio
-        item.setdefault(
-            "ventaGravada",
-            float(importe.quantize(Decimal("0.00000000"), rounding=ROUND_HALF_UP)),
-        )
+        iva_item = D(str(item.get("montoIva", item.get("ivaItem", 0))))
+        item["montoIva"] = float(d8(iva_item))
+        item["ivaItem"] = float(d8(iva_item))
+        cantidad = D(str(item.get("cantidad", 0)))
+        precio = D(str(item.get("precioUni", 0)))
+        cantidad_q = d8(cantidad)
+        precio_q = d8(precio)
+        item["cantidad"] = float(cantidad_q)
+        item["precioUni"] = float(precio_q)
+        importe = cantidad_q * precio_q
+        item.setdefault("ventaGravada", float(d8(importe)))
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})

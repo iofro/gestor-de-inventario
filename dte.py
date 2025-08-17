@@ -15,6 +15,7 @@ import logging
 import re
 from utils.monto import monto_a_texto_sv, d2
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
+from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 
 logger = logging.getLogger(__name__)
 
@@ -659,15 +660,9 @@ def generar_dte_json(
     codigo_generacion = str(uuid.uuid4()).upper()
     numero_control = generar_numero_control()
 
-    raw_fecha = venta.get("fecha")
-    if raw_fecha:
-        try:
-            fecha = datetime.fromisoformat(str(raw_fecha)).strftime("%Y-%m-%d")
-        except ValueError:
-            fecha = str(raw_fecha)[:10]
-    else:
-        fecha = datetime.now().strftime("%Y-%m-%d")
-    hora = datetime.now().strftime("%H:%M:%S")
+    now = datetime.now(TZ_EL_SALVADOR)
+    fecha = fecha_emision_hoy_str(now)
+    hora = now.strftime("%H:%M:%S")
 
     identificacion = {
         "version": "1",
@@ -1133,7 +1128,7 @@ def _load_dte_api_config():
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
     """Guarda el JSON original y el JWS en ``/dtes/{anio}/``."""
     try:
-        fecha = dte_data.get("identificacion", {}).get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
+        fecha = dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
         year = str(fecha)[:4]
         base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
         os.makedirs(base_dir, exist_ok=True)
@@ -1160,7 +1155,7 @@ class DTEValidationError(Exception):
 def save_dte_json(dte_data: dict) -> str:
     """Guarda ``dte_data`` en ``/dtes/{anio}/`` y devuelve la ruta."""
     try:
-        fecha = dte_data.get("identificacion", {}).get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
+        fecha = dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
         year = str(fecha)[:4]
         base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
         os.makedirs(base_dir, exist_ok=True)
@@ -1407,6 +1402,12 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
+    ident["fecEmi"] = fecha_emision_hoy_str()
+    ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
+    if "identificacion" in data:
+        data["identificacion"] = ident
+    elif "identificador" in data:
+        data["identificador"] = ident
     token = auth.get_token()
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc

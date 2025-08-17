@@ -1,5 +1,6 @@
 {
   "ambiente": "pruebas",
+  "cod_giro": "62010",
   "pruebas": {
     "recepcion_url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte",
     "firma_electronica": {

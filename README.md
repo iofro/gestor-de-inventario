@@ -112,6 +112,9 @@ especificar la contraseña directamente en `email_contrasena` o definir la
 variable de entorno `INVENTARIO_EMAIL_PASSWORD` antes de ejecutar la aplicación;
 la variable de entorno tiene prioridad si se define.
 
+El campo `cod_giro` identifica el giro del negocio y se usa al generar el DTE
+como `emisor.codActividad`.
+
 Si estás ejecutando pruebas automatizadas o no planeas enviar correos, puedes
 evitar la advertencia sobre credenciales incompletas estableciendo la variable
 de entorno `INVENTARIO_SUPPRESS_SMTP_WARNING=1` o iniciando `SalesTab` con

@@ -158,6 +158,22 @@ def _load_datos_negocio():
                 url = dte_api.get("url", "")
                 if url and "/fesv/recepciondte" not in url:
                     dte_api["url"] = url.rstrip("/") + "/fesv/recepciondte"
+
+            # Ensure cod_giro is available and mirrors codActividad
+            cod_giro = data.get("cod_giro")
+            if not cod_giro:
+                try:
+                    with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                        cfg = json.load(fh)
+                    cod_giro = cfg.get("cod_giro")
+                except Exception:
+                    cod_giro = None
+            if cod_giro:
+                data.setdefault("cod_giro", cod_giro)
+                data.setdefault("codActividad", cod_giro)
+            elif "codActividad" in data:
+                data.setdefault("cod_giro", data.get("codActividad"))
+
             return data
         except Exception:
             return {}
@@ -662,7 +678,7 @@ def generar_dte_json(
         "nombreComercial": datos.get("nombreComercial"),
         "nit": datos.get("nit"),
         "nrc": datos.get("nrc"),
-        "codActividad": datos.get("codActividad"),
+        "codActividad": datos.get("cod_giro") or datos.get("codActividad"),
         "descActividad": datos.get("descActividad"),
         "tipoContribuyente": datos.get("tipoContribuyente"),
         "direccion": datos.get("direccion"),
@@ -830,7 +846,7 @@ def validate_dte_json(payload: dict) -> None:
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
     emisor.setdefault("nombre", negocio.get("nombre"))
     emisor.setdefault("nombreComercial", negocio.get("nombreComercial"))
-    emisor.setdefault("codActividad", negocio.get("codActividad"))
+    emisor.setdefault("codActividad", negocio.get("cod_giro") or negocio.get("codActividad"))
     emisor.setdefault("descActividad", negocio.get("descActividad"))
     emisor.setdefault("tipoEstablecimiento", "01")
     direccion = emisor.get("direccion")

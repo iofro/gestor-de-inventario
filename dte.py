@@ -864,9 +864,12 @@ def validate_dte_json(payload: dict) -> None:
     ident["version"] = int(ident.get("version", 1))
     cg = ident.get("codigoGeneracion")
     try:
-        ident["codigoGeneracion"] = str(uuid.UUID(str(cg))).upper()
+        uuid_obj = uuid.UUID(str(cg))
     except Exception:
-        ident["codigoGeneracion"] = str(uuid.uuid4()).upper()
+        raise ValueError("codigoGeneracion debe ser un UUID v4 válido") from None
+    if uuid_obj.version != 4:
+        raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
+    ident["codigoGeneracion"] = str(uuid_obj).upper()
     payload["identificacion"] = ident
 
     emisor = payload.get("emisor", {})

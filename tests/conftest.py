@@ -139,11 +139,11 @@ def dte_metadata_factory():
     def factory(**overrides):
         base = {
             "identificacion": {
-                "version": 2,
+                "version": 1,
                 "ambiente": "00",
                 "tipoDte": "01",
                 "numeroControl": "DTE-01-AB12CD34-000000000000001",
-                "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+                "codigoGeneracion": "13C694DE-DDA1-499A-B265-4BD5B01CF323",
                 "tipoModelo": 1,
                 "tipoOperacion": 1,
                 "fecEmi": "2024-01-01",

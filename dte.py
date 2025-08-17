@@ -9,7 +9,7 @@ from db import DB
 import requests
 from utils import jws
 import auth
-from jsonschema import Draft7Validator, ValidationError
+from jsonschema import Draft7Validator, ValidationError, FormatChecker
 from utils import catalogos
 import logging
 import re
@@ -126,7 +126,7 @@ def _validate_schema(instance: dict, schema: dict) -> None:
     Prints a full report of all schema validation issues found and raises
     ``ValidationError`` with the combined message if any problems exist.
     """
-    validator = Draft7Validator(schema)
+    validator = Draft7Validator(schema, format_checker=FormatChecker())
     errs = []
     for err in sorted(validator.iter_errors(instance), key=lambda e: e.path):
         errs.append(

@@ -218,9 +218,18 @@ class InventoryManager:
             write_array("vendedores", (dict(v) for v in self._vendedores))
             write_array("Distribuidores", (dict(v) for v in self._Distribuidores))
             write_array("clientes", (dict(c) for c in self._clientes))
+            # Export only synchronized sales.  Older installations might lack the
+            # ``sincronizada`` column, so ensure it exists with a sensible
+            # default before querying.
+            self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
             write_array(
                 "ventas",
-                (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas")),
+                (
+                    dict(v)
+                    for v in self.db.cursor.execute(
+                        "SELECT * FROM ventas WHERE sincronizada=1"
+                    )
+                ),
             )
             write_array(
                 "compras",
@@ -331,6 +340,7 @@ class InventoryManager:
         compra_id_map = {}
         trabajador_id_map = {}
 
+        self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.db.conn.execute("BEGIN")
         try:
             # --- Distribuidores primero ---
@@ -477,6 +487,9 @@ class InventoryManager:
 
             # Ventas
             for v in data.get("ventas", []):
+                # Only import synchronized sales
+                if int(v.get("sincronizada", 1)) != 1:
+                    continue
                 cliente_id = cliente_id_map.get(v.get("cliente_id"))
                 Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
                 old_vend_id = v.get("vendedor_id")
@@ -496,9 +509,10 @@ class InventoryManager:
                 extra_json = json.dumps(extra) if extra is not None else None
 
                 estado = v.get("estado", "Pagada")
+                sincronizada = int(v.get("sincronizada", 1))
                 self.db.cursor.execute(
-                    "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado, sincronizada) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         v.get("id"),
                         v.get("fecha", ""),
@@ -508,6 +522,7 @@ class InventoryManager:
                         vendedor_id,
                         extra_json,
                         estado,
+                        sincronizada,
                     ),
                 )
                 venta_id_map[v["id"]] = v.get("id")
@@ -713,6 +728,9 @@ class InventoryManager:
         except Exception:
             self.db.conn.rollback()
             raise
+
+        # Remove orphan sales that have no related records
+        self.db.limpiar_ventas_huerfanas()
 
         self.refresh_data()
 

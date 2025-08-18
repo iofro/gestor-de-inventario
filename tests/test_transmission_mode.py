@@ -40,16 +40,15 @@ def test_build_json_includes_transmission(tmp_path):
         "numero_control": "NC",
         "codigo_generacion": "CG",
         "fecha": "2024-01-01",
-        "modelo_facturacion": "1 - Facturación previo",
-        "tipo_transmision": "2 - Contingencia",
+        "tipo_operacion": 2,
     }
     data = build_invoice_json(venta, {}, [], template_path=str(template))
-    assert data["identificacion"]["tipoTransmision"] == "2 - Contingencia"
+    assert data["identificacion"]["tipoOperacion"] == 2
 
 
 def test_generate_invoice_registers_pending(tmp_path, monkeypatch):
     db = FakeDB()
-    venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "tipo_transmision": "2 - Contingencia"}
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 10, "tipo_operacion": 2}
     db._ventas.append(venta)
     db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
     man = Manager(db)

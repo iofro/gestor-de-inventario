@@ -62,8 +62,8 @@ def test_header_boxes_and_qr(tmp_path):
     assert 'Código Generación:' in text
     assert 'Número Control:' in text
     assert 'Sello Recepción:' in text
-    assert 'Modelo Facturación:' in text
-    assert 'Tipo Transmisión:' in text
+    assert 'Tipo Modelo:' in text
+    assert 'Tipo Operación:' in text
     assert 'Fecha Generación:' in text
 
 
@@ -102,7 +102,7 @@ def test_contingencia_draws_message(tmp_path):
         'Consumidor Final',
         archivo=str(out),
         datos_negocio={},
-        tipo_transmision='2 - Contingencia',
+        tipo_operacion=2,
     )
     with fitz.open(out) as doc:
         text = ''.join(p.get_text() for p in doc)

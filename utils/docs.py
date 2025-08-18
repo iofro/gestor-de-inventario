@@ -81,10 +81,16 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
             ident['fecEmi'] = datetime.fromisoformat(venta['fecha']).strftime('%Y-%m-%d')
         except ValueError:
             ident['fecEmi'] = str(venta['fecha'])[:10]
-    if venta.get('modelo_facturacion'):
-        ident['modeloFacturacion'] = venta['modelo_facturacion']
-    if venta.get('tipo_transmision'):
-        ident['tipoTransmision'] = venta['tipo_transmision']
+    ident.setdefault('version', 1)
+    ident.setdefault('ambiente', venta.get('ambiente', '00'))
+    ident.setdefault('tipoMoneda', 'USD')
+    if venta.get('tipo_operacion') is not None:
+        ident['tipoOperacion'] = venta['tipo_operacion']
+        ident['tipoModelo'] = 2 if venta['tipo_operacion'] == 2 else 1
+    if venta.get('tipo_contingencia') is not None:
+        ident['tipoContingencia'] = venta['tipo_contingencia']
+    if venta.get('motivo_contin') is not None:
+        ident['motivoContin'] = venta['motivo_contin']
     data['identificacion'] = ident
 
     rec = data.get('receptor', {})

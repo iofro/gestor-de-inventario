@@ -25,9 +25,8 @@ def _sanitize(data, tipo):
     if tipo == "fc":
         data["receptor"].pop("nit", None)
         data["receptor"].pop("nombreComercial", None)
-        data["receptor"]["tipoDocumento"] = "03"
-        data["receptor"]["nrc"] = None
-        data["receptor"]["numDocumento"] = "12345678901234"
+        data["receptor"]["tipoDocumento"] = "36"
+        data["receptor"]["numDocumento"] = "06141990011019"
     elif tipo in {"nd", "nc"}:
         for key in ("codEstable", "codEstableMH", "codPuntoVenta", "codPuntoVentaMH"):
             data["emisor"].pop(key, None)

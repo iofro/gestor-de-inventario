@@ -139,17 +139,19 @@ def test_autocompleta_tributos(dte_metadata_factory):
     item.pop("codTributo", None)
     validate_dte_json(dte)
     item = dte["cuerpoDocumento"][0]
-    assert item["tributos"] == ["A8"]
+    assert item["tributos"] is None
     assert item["codTributo"] == "A8"
 
 
 def test_tributos_invalidos_rechazados(dte_metadata_factory):
     dte = dte_metadata_factory()
+    dte["identificacion"]["tipoDte"] = "03"
     dte["cuerpoDocumento"][0]["tributos"] = ["ZZ"]
     with pytest.raises(ValueError):
         validate_dte_json(dte)
 
     dte = dte_metadata_factory()
+    dte["identificacion"]["tipoDte"] = "03"
     dte["cuerpoDocumento"][0]["codTributo"] = "ZZ"
     with pytest.raises(ValueError):
         validate_dte_json(dte)

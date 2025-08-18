@@ -4,6 +4,7 @@ import json
 from pathlib import Path
 
 import jsonschema
+from jsonschema import ValidationError
 
 from db import DB
 from dte import generar_dte_json
@@ -13,13 +14,25 @@ def create_db():
     return DB(":memory:")
 
 
-def test_generar_dte_json_basic():
+def test_generar_dte_json_basic(monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "nit1",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "nit1", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
@@ -50,13 +63,25 @@ def test_generar_dte_json_basic():
     jsonschema.validate(data["identificacion"], ident_schema)
 
 
-def test_dte_rounding_and_validation(capsys):
+def test_dte_rounding_and_validation(capsys, monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "nit1",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     precio = 1.123456789
     venta_id = db.add_venta_credito_fiscal(
@@ -81,13 +106,25 @@ def test_dte_rounding_and_validation(capsys):
     assert out.strip() == ""
 
 
-def test_dte_sum_mismatch_warning(capsys):
+def test_dte_sum_mismatch_warning(capsys, monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "nit1",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
@@ -107,26 +144,52 @@ def test_dte_sum_mismatch_warning(capsys):
     assert "Advertencia" in out
 
 
-def test_generar_ticket_json_tipo():
+def test_generar_ticket_json_tipo(monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 5)
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "nit1",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
+    cid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 5, cliente_id=cid)
     db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
 
     data = generar_dte_json(db, venta_id, tipo_dte="03")
     assert data["identificacion"]["tipoDte"] == "03"
 
 
-def test_dte_comision_sin_advertencia_total(capsys):
+def test_dte_comision_sin_advertencia_total(capsys, monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "nit1",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
@@ -145,13 +208,25 @@ def test_dte_comision_sin_advertencia_total(capsys):
     assert out.strip() == "" and "total a pagar" not in out
 
 
-def test_generar_dte_json_condicion_operacion_invalida():
+def test_generar_dte_json_condicion_operacion_invalida(monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "nit1",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
@@ -166,3 +241,23 @@ def test_generar_dte_json_condicion_operacion_invalida():
 
     with pytest.raises(ValueError):
         generar_dte_json(db, venta_id)
+
+
+def test_generar_dte_json_validation_error(monkeypatch):
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 5)
+    db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
+
+    def fake_validate(data):
+        raise ValidationError("faltante", path=["emisor", "correo"])
+
+    monkeypatch.setattr("dte.validate_dte_json", fake_validate)
+
+    with pytest.raises(ValidationError) as exc:
+        generar_dte_json(db, venta_id)
+
+    assert "emisor.correo: faltante" in str(exc.value)

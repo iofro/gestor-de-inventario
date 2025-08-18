@@ -8,6 +8,8 @@ from typing import Any, Dict, List
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
+from .config import get_emisor_direccion
+
 # NOTE: jsonschema imports retained for potential future validation logic.
 from jsonschema import (
     Draft202012Validator,
@@ -184,11 +186,6 @@ def _emisor() -> Dict[str, Any]:
         "descActividad": "Venta de productos",
         "nombreComercial": "Demo Comercial",
         "tipoEstablecimiento": "01",
-        "direccion": {
-            "departamento": "05",
-            "municipio": "01",
-            "complemento": "Centro Comercial 1",
-        },
         "telefono": "22222222",
         "correo": "demo@example.com",
         "codEstableMH": "0001",
@@ -203,7 +200,7 @@ def _receptor(tipo: str | None = None) -> Dict[str, Any]:
         "nit": "06141990011019",
         "nrc": "0000011",
         "nombre": "Consumidor Final",
-        "codActividad": "62010",
+        "codActividad": "62010" if tipo == "fc" else "6201",
         "descActividad": "Servicios de software",
         "nombreComercial": "Cliente Ejemplo",
         "direccion": {
@@ -222,6 +219,15 @@ def _receptor(tipo: str | None = None) -> Dict[str, Any]:
     return data
 
 
+def _validate_direccion(d: Dict[str, Any], quien: str) -> None:
+    dep = d.get("departamento")
+    mun = d.get("municipio")
+    if not (isinstance(dep, str) and len(dep) == 2):
+        raise ValueError(f"Departamento de {quien} inválido")
+    if not (isinstance(mun, str) and len(mun) == 2):
+        raise ValueError(f"Municipio de {quien} inválido")
+
+
 def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     cantidad = Decimal("2.5")
     precio = Decimal("9.54")
@@ -229,15 +235,12 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     iva_item = d8(venta * Decimal("0.13"))
     numero_documento = "NA" if tipo == "fc" else None
     tipo_item = 4 if tipo == "fc" else 1
-    cod_tributo = "A8"
     uni_medida = 99 if tipo == "fc" else 59
     item = {
         "numItem": 1,
         "tipoItem": tipo_item,
         "numeroDocumento": numero_documento,
         "codigo": "SKU001",
-        # Para un ítem gravado con IVA debe indicarse el tributo aplicado.
-        "codTributo": cod_tributo,
         "descripcion": "Producto de prueba",
         "cantidad": d8(cantidad),
         "uniMedida": uni_medida,
@@ -250,10 +253,13 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "noGravado": d8(Decimal("0")),
     }
     if tipo == "fc":
+        # Para un ítem gravado con IVA debe indicarse el tributo aplicado.
+        item["codTributo"] = "A8"
         item["ivaItem"] = iva_item
         item["tributos"] = None
     else:
-        item["tributos"] = [cod_tributo]
+        item["codTributo"] = None
+        item["tributos"] = ["20"]
     return [item]
 
 
@@ -332,6 +338,9 @@ def _generar(tipo: str) -> Dict[str, Any]:
         "extension": None,
         "apendice": None,
     }
+    data["emisor"]["direccion"] = get_emisor_direccion()
+    _validate_direccion(data["emisor"]["direccion"], "emisor")
+    _validate_direccion(data["receptor"].get("direccion", {}), "receptor")
     return data
 
 

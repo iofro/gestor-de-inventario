@@ -31,9 +31,9 @@
     "correo": "demo@example.com",
     "descActividad": "Venta de productos",
     "direccion": {
-      "complemento": "Centro Comercial 1",
-      "departamento": "05",
-      "municipio": "01"
+      "complemento": "Calle X #123",
+      "departamento": "06",
+      "municipio": "15"
     },
     "nit": "06142512891020",
     "nombre": "Compañía Demo S.A. de C.V.",

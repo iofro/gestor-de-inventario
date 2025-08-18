@@ -129,16 +129,17 @@ class DB:
                     Distribuidor_id INTEGER,
                     vendedor_id INTEGER,
                     extra TEXT,
-                    FOREIGN KEY (cliente_id) REFERENCES clientes(id),
-                    FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
-                    FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE RESTRICT
-                )
-                """
+                    sincronizada BOOLEAN DEFAULT 0,
+                FOREIGN KEY (cliente_id) REFERENCES clientes(id),
+                FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
+                FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE RESTRICT
+            )
+        """
             )
             self.cursor.execute(
                 """
-                INSERT INTO ventas_temp (id, fecha, total, estado, cliente_id, Distribuidor_id, vendedor_id, extra)
-                SELECT id, fecha, total, estado, cliente_id, Distribuidor_id, vendedor_id, extra FROM ventas
+                INSERT INTO ventas_temp (id, fecha, total, estado, cliente_id, Distribuidor_id, vendedor_id, extra, sincronizada)
+                SELECT id, fecha, total, estado, cliente_id, Distribuidor_id, vendedor_id, extra, sincronizada FROM ventas
                 """
             )
             self.cursor.execute("DROP TABLE ventas")
@@ -294,6 +295,7 @@ class DB:
                 Distribuidor_id INTEGER,
                 vendedor_id INTEGER,
                 extra TEXT,
+                sincronizada BOOLEAN DEFAULT 0,
                 FOREIGN KEY (cliente_id) REFERENCES clientes(id),
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE RESTRICT,
                 FOREIGN KEY (vendedor_id) REFERENCES trabajadores(id) ON DELETE RESTRICT
@@ -557,6 +559,7 @@ class DB:
             ("ventas_credito_fiscal", "descuentos REAL DEFAULT 0"),
             ("ventas", "extra TEXT"),
             ("ventas", "estado TEXT DEFAULT 'Pagada'"),
+            ("ventas", "sincronizada BOOLEAN DEFAULT 0"),
             ("detalles_venta", "extra TEXT"),
             ("ventas_credito_fiscal", "extra TEXT"),
             ("ventas_credito_fiscal", "ventas_exentas REAL DEFAULT 0"),
@@ -589,6 +592,7 @@ class DB:
 
         # Verifica que la columna estado exista en ventas
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
+        self.ensure_column("ventas", "sincronizada", "BOOLEAN DEFAULT 0")
 
     # CRUD Distribuidores
     def add_Distribuidor(self, nombre, commit: bool = True):
@@ -845,8 +849,8 @@ class DB:
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
         self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         extra_json = json.dumps(extra) if extra is not None else None
-        columns = ["fecha", "total", "estado"]
-        values = [fecha, total, estado]
+        columns = ["fecha", "total", "estado", "sincronizada"]
+        values = [fecha, total, estado, 1]
         if cliente_id is not None:
             columns.append("cliente_id")
             values.append(cliente_id)
@@ -897,8 +901,8 @@ class DB:
         self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         try:
-            cols = ["fecha", "total", "cliente_id", "estado"]
-            vals = [fecha, total, cliente_id, estado]
+            cols = ["fecha", "total", "cliente_id", "estado", "sincronizada"]
+            vals = [fecha, total, cliente_id, estado, 1]
             if Distribuidor_id is not None:
                 cols.append("Distribuidor_id")
                 vals.append(Distribuidor_id)
@@ -958,8 +962,14 @@ class DB:
             raise
 
 
-    def get_ventas(self):
-        self.cursor.execute("SELECT * FROM ventas")
+    def get_ventas(self, sincronizada: int | None = None):
+        """Return sales, optionally filtered by ``sincronizada`` flag."""
+        if sincronizada is None:
+            self.cursor.execute("SELECT * FROM ventas")
+        else:
+            self.cursor.execute(
+                "SELECT * FROM ventas WHERE sincronizada=?", (sincronizada,)
+            )
         return [dict(row) for row in self.cursor.fetchall()]
 
     def get_venta_by_id(self, venta_id: int):
@@ -1693,8 +1703,8 @@ class DB:
         cliente_id = data.get("cliente_id")
         Distribuidor_id = data.get("Distribuidor_id")
         estado = data.get("estado", "Pagada")
-        cols = ["fecha", "total", "estado"]
-        vals = [fecha, total, estado]
+        cols = ["fecha", "total", "estado", "sincronizada"]
+        vals = [fecha, total, estado, 1]
         if cliente_id is not None:
             cols.append("cliente_id")
             vals.append(cliente_id)

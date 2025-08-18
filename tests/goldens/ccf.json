@@ -3,7 +3,7 @@
   "cuerpoDocumento": [
     {
       "cantidad": "2.50000000",
-      "codTributo": null,
+      "codTributo": "19",
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
       "montoDescu": "0E-8",
@@ -14,7 +14,7 @@
       "psv": "0E-8",
       "tipoItem": 1,
       "tributos": [
-        "20"
+        "19"
       ],
       "uniMedida": 59,
       "ventaExenta": "0E-8",

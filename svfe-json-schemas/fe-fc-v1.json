@@ -1193,6 +1193,7 @@
                         ],
                         "enum": [
                             null,
+                            "19",
                             "A8",
                             "57",
                             "90",
@@ -1251,16 +1252,13 @@
                     },
                     "tributos": {
                         "description": "Código del Tributo",
-                        "type": [
-                            "array",
-                            "null"
-                        ],
+                        "type": "array",
                         "items": {
                             "type": "string",
                             "maxLength": 2,
                             "minLength": 2
                         },
-                        "minItems": 1,
+                        "minItems": 0,
                         "uniqueItems": true
                     },
                     "psv": {
@@ -1285,104 +1283,7 @@
                         "multipleOf": 0.00000001
                     }
                 },
-                "allOf": [
-                    {
-                        "if": {
-                            "properties": {
-                                "ventaGravada": {
-                                    "maximum": 0
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "tributos": {
-                                    "type": "null"
-                                },
-                                "ivaItem": {
-                                    "maximum": 0
-                                }
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "properties": {
-                                "tipoItem": {
-                                    "const": 4
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "uniMedida": {
-                                    "const": 99
-                                },
-                                "codTributo": {
-                                    "type": "string"
-                                },
-                                "tributos": {
-                                    "type": "null"
-                                }
-                            }
-                        },
-                        "else": {
-                            "properties": {
-                                "codTributo": {
-                                    "type": "null"
-                                },
-                                "tributos": {
-                                    "items": {
-                                        "enum": [
-                                            "C3",
-                                            "59",
-                                            "71",
-                                            "D1",
-                                            "C5",
-                                            "C6",
-                                            "C7",
-                                            "C8",
-                                            "D5",
-                                            "D4",
-                                            "19",
-                                            "28",
-                                            "31",
-                                            "32",
-                                            "33",
-                                            "34",
-                                            "35",
-                                            "36",
-                                            "37",
-                                            "38",
-                                            "39",
-                                            "42",
-                                            "43",
-                                            "44",
-                                            "50",
-                                            "51",
-                                            "52",
-                                            "53",
-                                            "54",
-                                            "55",
-                                            "58",
-                                            "77",
-                                            "78",
-                                            "79",
-                                            "85",
-                                            "86",
-                                            "91",
-                                            "92",
-                                            "A1",
-                                            "A5",
-                                            "A7",
-                                            "A9"
-                                        ]
-                                    }
-                                }
-                            }
-                        }
-                    }
-                ],
+                "allOf": [],
                 "additionalProperties": false,
                 "required": [
                     "numItem",

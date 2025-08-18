@@ -27,7 +27,7 @@
     "tipoEstablecimiento": "02",
     "direccion": {
       "departamento": "06",
-      "municipio": "21",
+      "municipio": "02",
       "complemento": "CALLE MARIONA A.V 4 POLIGONO B. RES. PASEO DEL PRADO, CALLE DE ACCESO 2, #221, APOPA, SAN SALVADOR"
     },
     "codEstableMH": "M001",
@@ -35,17 +35,21 @@
     "codPuntoVentaMH": "P001",
     "codPuntoVenta": "P001"
   },
-  "receptor": {
-    "nit": "0614-199001-101-9",
-    "nrc": "3220328",
-    "nombre": "ariel",
-    "codActividad": "46599",
-    "descActividad": "Venta al por mayor de otro tipo de maquinaria y equipo con sus accesorios y partes",
-    "nombreComercial": null,
-    "direccion": "Calle Falsa 1, San Salvador",
-    "telefono": "78834340",
-    "correo": "facturacion@contecindustrial.sv"
-  },
+    "receptor": {
+      "nit": "0614-199001-101-9",
+      "nrc": "3220328",
+      "nombre": "ariel",
+      "codActividad": "46599",
+      "descActividad": "Venta al por mayor de otro tipo de maquinaria y equipo con sus accesorios y partes",
+      "nombreComercial": null,
+      "direccion": {
+        "departamento": "06",
+        "municipio": "15",
+        "complemento": "Calle Falsa 1, San Salvador"
+      },
+      "telefono": "78834340",
+      "correo": "facturacion@contecindustrial.sv"
+    },
   "otrosDocumentos": null,
   "ventaTercero": null,
   "cuerpoDocumento": [

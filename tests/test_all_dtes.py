@@ -15,6 +15,7 @@ from svfe.generators import (
     generar_nota_debito,
     generar_nota_remision,
     validar_contra_schema,
+    strip_extras,
 )
 from svfe.json_compare import normalize_for_schema, similarity, deep_diff
 
@@ -46,12 +47,7 @@ def _sanitize(data: dict, tipo: str) -> dict:
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
     if tipo == "fc":
-        data["receptor"].pop("nit", None)
-        data["receptor"].pop("nombreComercial", None)
-        data["receptor"]["tipoDocumento"] = "36"
-        data["receptor"]["numDocumento"] = "06141990011019"
         item["ivaItem"] = _q8(item["ventaGravada"] * Decimal("0.13"))
-        resumen.pop("ivaPerci1", None)
         resumen["totalIva"] = _q2(resumen["montoTotalOperacion"] - resumen["totalGravada"])
     elif tipo in {"nd", "nc"}:
         data.pop("otrosDocumentos", None)
@@ -106,7 +102,7 @@ def _assert_base(data: dict) -> None:
 def test_all_dtes(tipo):
     gen = GEN_MAP[tipo]
     data = _sanitize(gen(), tipo)
-    validar_contra_schema(data, tipo)
+    validar_contra_schema(strip_extras(data), tipo)
     _assert_base(data)
     norm = normalize_for_schema(copy.deepcopy(data))
     golden_path = Path(__file__).resolve().parent / "goldens" / f"{tipo}.json"

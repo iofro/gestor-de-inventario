@@ -42,6 +42,11 @@ def _load_schema(filename: str) -> Dict[str, Any]:
         return json.load(fh)
 
 
+def strip_extras(dte: Dict[str, Any]) -> Dict[str, Any]:
+    extras = {"responseMH", "token", "firmaElectronica", "selloRecibido"}
+    return {k: v for k, v in dte.items() if k not in extras}
+
+
 def _numero_control(tipo: str) -> str:
     return f"DTE-{tipo}-{uuid4().hex[:8].upper()}-000000000000001"
 
@@ -113,7 +118,7 @@ def _receptor(tipo: str | None = None) -> Dict[str, Any]:
         "nit": "06141990011019",
         "nrc": "0000011",
         "nombre": "Consumidor Final",
-        "codActividad": "6201",
+        "codActividad": "62010",
         "descActividad": "Servicios de software",
         "nombreComercial": "Cliente Ejemplo",
         "direccion": {
@@ -132,42 +137,48 @@ def _receptor(tipo: str | None = None) -> Dict[str, Any]:
     return data
 
 
-def _cuerpo_documento() -> List[Dict[str, Any]]:
+def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     cantidad = Decimal("2.5")
     precio = Decimal("9.54")
     venta = d8(cantidad * precio)
-    return [
-        {
-            "numItem": 1,
-            "tipoItem": 1,
-            "numeroDocumento": None,
-            "codigo": "SKU001",
-            # Para un ítem gravado con IVA debe indicarse el tributo aplicado.
-            "codTributo": "A8",
-            "descripcion": "Producto de prueba",
-            "cantidad": d8(cantidad),
-            "uniMedida": 59,
-            "precioUni": d8(precio),
-            "montoDescu": d8(Decimal("0")),
-            "ventaNoSuj": d8(Decimal("0")),
-            "ventaExenta": d8(Decimal("0")),
-            "ventaGravada": venta,
-            # El schema exige al menos un código de tributo cuando la venta es
-            # gravada.
-            "tributos": ["A8"],
-            "psv": d8(Decimal("0")),
-            "noGravado": d8(Decimal("0")),
-        }
-    ]
+    iva_item = d8(venta * Decimal("0.13"))
+    numero_documento = "NA" if tipo == "fc" else None
+    tipo_item = 4 if tipo == "fc" else 1
+    cod_tributo = "A8"
+    uni_medida = 99 if tipo == "fc" else 59
+    item = {
+        "numItem": 1,
+        "tipoItem": tipo_item,
+        "numeroDocumento": numero_documento,
+        "codigo": "SKU001",
+        # Para un ítem gravado con IVA debe indicarse el tributo aplicado.
+        "codTributo": cod_tributo,
+        "descripcion": "Producto de prueba",
+        "cantidad": d8(cantidad),
+        "uniMedida": uni_medida,
+        "precioUni": d8(precio),
+        "montoDescu": d8(Decimal("0")),
+        "ventaNoSuj": d8(Decimal("0")),
+        "ventaExenta": d8(Decimal("0")),
+        "ventaGravada": venta,
+        "psv": d8(Decimal("0")),
+        "noGravado": d8(Decimal("0")),
+    }
+    if tipo == "fc":
+        item["ivaItem"] = iva_item
+        item["tributos"] = None
+    else:
+        item["tributos"] = [cod_tributo]
+    return [item]
 
 
-def _resumen() -> Dict[str, Any]:
+def _resumen(tipo: str) -> Dict[str, Any]:
     cantidad = Decimal("2.5")
     precio = Decimal("9.54")
     venta = d2(cantidad * precio)
     iva = d2(venta * Decimal("0.13"))
     total = d2(venta + iva)
-    return {
+    data = {
         "totalNoSuj": d2(Decimal("0")),
         "totalExenta": d2(Decimal("0")),
         "totalGravada": d2(venta),
@@ -177,9 +188,7 @@ def _resumen() -> Dict[str, Any]:
         "descuGravada": d2(Decimal("0")),
         "porcentajeDescuento": d2(Decimal("0")),
         "totalDescu": d2(Decimal("0")),
-        "tributos": None,
         "subTotal": d2(venta),
-        "ivaPerci1": d2(Decimal("0")),
         "ivaRete1": d2(Decimal("0")),
         "reteRenta": d2(Decimal("0")),
         "montoTotalOperacion": d2(total),
@@ -199,6 +208,15 @@ def _resumen() -> Dict[str, Any]:
         ],
         "numPagoElectronico": None,
     }
+    if tipo == "fc":
+        data["totalIva"] = iva
+        data["tributos"] = [
+            {"codigo": "19", "descripcion": "IVA", "valor": iva}
+        ]
+    else:
+        data["ivaPerci1"] = d2(Decimal("0"))
+        data["tributos"] = None
+    return data
 
 
 def _documento_relacionado(tipo: str) -> Any:
@@ -224,8 +242,8 @@ def _generar(tipo: str) -> Dict[str, Any]:
         "receptor": _receptor(tipo),
         "otrosDocumentos": None,
         "ventaTercero": None,
-        "cuerpoDocumento": _cuerpo_documento(),
-        "resumen": _resumen(),
+        "cuerpoDocumento": _cuerpo_documento(tipo),
+        "resumen": _resumen(tipo),
         "extension": None,
         "apendice": None,
     }
@@ -321,4 +339,5 @@ __all__ = [
     "generar_nota_credito",
     "generar_nota_remision",
     "validar_contra_schema",
+    "strip_extras",
 ]

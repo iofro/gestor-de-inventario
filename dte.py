@@ -982,12 +982,22 @@ def generar_dte_json(
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
-        # Campos obligatorios que pueden no tener información
-        "documentoRelacionado": None,
-        "otrosDocumentos": None,
-        "ventaTercero": None,
-        "extension": None,
-        "apendice": None,
+        # Secciones opcionales inicializadas según los esquemas oficiales
+        "documentoRelacionado": [],  # Referencias a otros DTE relacionados
+        "otrosDocumentos": [],  # Documentos de soporte asociados al DTE
+        "ventaTercero": {  # Datos cuando se factura por cuenta de un tercero
+            "nit": None,
+            "nombre": None,
+        },
+        "extension": {  # Información de entrega, recepción y observaciones
+            "nombEntrega": None,
+            "docuEntrega": None,
+            "nombRecibe": None,
+            "docuRecibe": None,
+            "observaciones": None,
+            "placaVehiculo": None,
+        },
+        "apendice": [],  # Datos adicionales definidos por el contribuyente
         "firmaElectronica": None,
         "selloRecibido": None,
     }
@@ -1005,12 +1015,14 @@ def generar_dte_json(
         if extra.get("documento_venta_a_cuenta"):
             result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
 
+
     try:
         validate_dte_json(result)
     except ValidationError as exc:
         path = ".".join(str(p) for p in exc.path)
         msg = f"{path}: {exc.message}" if path else exc.message
         raise ValidationError(msg) from exc
+
 
     return result
 

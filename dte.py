@@ -435,6 +435,8 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         )
         allowed.update(str(c).zfill(2) for c in enum_codes)
 
+    total_q = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+
     pagos: list[dict] = []
     for p in pagos_raw or []:
         codigo = str(p.get("codigo", "")).zfill(2)
@@ -457,7 +459,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         pagos = [
             {
                 "codigo": "01",
-                "montoPago": D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP),
+                "montoPago": total_q,
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
@@ -465,12 +467,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         ]
     else:
         suma = sum(p["montoPago"] for p in pagos)
-        diff = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP) - suma
+        diff = total_q - suma
         if diff:
             nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
             pagos[-1]["montoPago"] = nuevo.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        suma = sum(p["montoPago"] for p in pagos)
+        if suma != total_q:
+            raise ValidationError("La suma de pagos no coincide con totalPagar")
 
     if condicion == 2:
         first = pagos[0]
@@ -485,6 +490,8 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
     # Convertir a ``float`` para compatibilidad con JSON
     for p in pagos:
         p["montoPago"] = float(p["montoPago"])
+
+    validate_pagos_basico({"pagos": pagos, "totalPagar": float(total_q)}, condicion)
 
     return pagos
 
@@ -533,6 +540,11 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     sumas_val = Decimal(str(fiscal.get("sumas", items_total)))
     descuentos_val = Decimal(str(fiscal.get("descuentos", 0)))
     iva_val = Decimal(str(fiscal.get("iva", 0)))
+    if not iva_val:
+        iva_items = extra.get("iva_items")
+        if iva_items:
+            iva_val = sum(Decimal(str(v)) for v in iva_items)
+    iva_val = iva_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     total_no_suj = Decimal(str(fiscal.get("ventas_no_sujetas", 0)))
     total_exenta = Decimal(str(fiscal.get("ventas_exentas", 0)))
 
@@ -570,8 +582,10 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     if tipo_dte == "01":
         resumen["totalIva"] = iva_val
+        iva_field = "totalIva"
     else:
-        resumen["ivaPerci1"] = resumen.get("ivaPerci1", 0)
+        resumen["ivaPerci1"] = Decimal(str(resumen.get("ivaPerci1", 0)))
+        iva_field = "ivaPerci1"
 
     if "totalPagar" in resumen:
         resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
@@ -604,6 +618,19 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     for k, v in resumen.items():
         if isinstance(v, (int, float, Decimal)):
             resumen[k] = d2(v)
+
+    # Recalcular totales clave con Decimal para evitar discrepancias de redondeo
+    sub_total_dec = Decimal(str(resumen.get("subTotal", 0)))
+    iva_total_dec = Decimal(str(resumen.get(iva_field, 0)))
+    resumen["montoTotalOperacion"] = d2(sub_total_dec + iva_total_dec)
+    if "totalPagar" in resumen:
+        total_val = venta.get("total")
+        if total_val is None:
+            total_val = resumen["montoTotalOperacion"]
+        resumen["totalPagar"] = d2(total_val)
+        # Revalidar pagos con total definitivo
+        if resumen.get("pagos"):
+            validate_pagos_basico(resumen, resumen.get("condicionOperacion", 1))
 
     return resumen
 

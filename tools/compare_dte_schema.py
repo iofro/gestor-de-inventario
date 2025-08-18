@@ -1,25 +1,29 @@
 #!/usr/bin/env python3
-"""Compare a DTE against its JSON schema and generate a patch.
+"""Compare DTE documents against their JSON schemas.
 
-The script validates the provided DTE JSON against the official schema
-and reports the similarity percentage.  If discrepancies are found it
-outputs a JSON Patch describing the changes required to conform to the
-schema.  When the patched document validates without errors the patch is
-stored under ``schema_patches/<tipoDte>.json`` so it can be applied
-automatically during future DTE generation.
+The script can validate a single DTE JSON file or, when pointed at a
+directory, locate the most recent DTE for each ``tipoDte`` and compare it
+against the official schema.  For every comparison it reports the
+similarity percentage.  If discrepancies are found it outputs a JSON Patch
+describing the changes required to conform to the schema.  When the patched
+document validates without errors the patch is stored under
+``schema_patches/<tipoDte>.json`` so it can be applied automatically during
+future DTE generation.
 """
 
 import argparse
 import json
+import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterable, List
 
 import jsonpatch
 from jsonschema import ValidationError
 
-import dte
-
 BASE_DIR = Path(__file__).resolve().parents[1]
+sys.path.append(str(BASE_DIR))
+
+import dte
 SCHEMAS_DIR = BASE_DIR / "svfe-json-schemas"
 PATCHES_DIR = BASE_DIR / "schema_patches"
 
@@ -56,7 +60,7 @@ def _flatten(obj: Any, prefix: List[str] | None = None, result: List[str] | None
 def _build_patch(errors: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     patch: List[Dict[str, Any]] = []
     for err in errors:
-        path = list(err["path"])
+        path = [str(p) for p in err["path"]]
         if err["validator"] == "required":
             # message: "'foo' is a required property"
             missing = err["message"].split("'")[1]
@@ -117,8 +121,56 @@ def compare(dte_path: Path) -> None:
     print(f"Patch stored in {patch_file}")
 
 
+def _iter_dte_files(root: Path) -> Iterable[Path]:
+    """Yield all JSON files under ``root`` that look like DTEs."""
+    for path in root.rglob("*.json"):
+        # Skip known directories that do not contain DTEs
+        if any(part in {"svfe-json-schemas", "schema_patches", "tests"} for part in path.parts):
+            continue
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        if "identificacion" in data and "tipoDte" in data.get("identificacion", {}):
+            yield path
+
+
+def compare_latest(root: Path) -> None:
+    """Find and compare the latest DTE for each tipoDte under ``root``."""
+    latest: Dict[str, Path] = {}
+    for path in _iter_dte_files(root):
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            continue
+        tipo = str(data.get("identificacion", {}).get("tipoDte"))
+        mtime = path.stat().st_mtime
+        if tipo and (tipo not in latest or mtime > latest[tipo].stat().st_mtime):
+            latest[tipo] = path
+
+    if not latest:
+        print("No DTE files found.")
+        return
+
+    for tipo, path in sorted(latest.items()):
+        print(f"\nComparing latest DTE tipo {tipo}: {path}")
+        compare(path)
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Compare DTE with schema")
-    parser.add_argument("dte_path", type=Path, help="Path to DTE JSON file")
+    parser.add_argument(
+        "path",
+        type=Path,
+        nargs="?",
+        default=Path.cwd(),
+        help="Path to DTE JSON file or directory",
+    )
     args = parser.parse_args()
-    compare(args.dte_path)
+
+    if args.path.is_dir():
+        compare_latest(args.path)
+    else:
+        compare(args.path)

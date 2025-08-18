@@ -1,6 +1,6 @@
 import pytest
 from utils.monto import D, d8, d2, iva_item
-from dte import calcular_resumen
+from dte import calcular_resumen, normalizar_pagos
 
 
 def decimal_places(value):
@@ -28,3 +28,15 @@ def test_item_and_total_rounding():
 
     for key in ['totalGravada', 'totalIva', 'totalPagar']:
         assert decimal_places(resumen[key]) <= 2
+
+
+def test_pagos_rounding_adjusts_last_payment():
+    pagos = [
+        {"codigo": "01", "montoPago": 5.005},
+        {"codigo": "02", "montoPago": 5.005},
+    ]
+    total = D("10.01")
+    norm = normalizar_pagos(pagos, total)
+    suma = sum(D(str(p["montoPago"])) for p in norm)
+    assert suma == total
+    assert norm[-1]["montoPago"] == 5.0

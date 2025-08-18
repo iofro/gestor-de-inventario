@@ -59,7 +59,6 @@ class SalesTab(QWidget):
         self.email_thread = None
         self._setup_ui()
         self._load_email_config()
-        self.load_sales()
         if check_smtp:
             self._check_smtp_credentials()
 
@@ -274,10 +273,8 @@ class SalesTab(QWidget):
             self.sales_table.setItem(row, 3, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
             estado = venta.get("estado", "Pendiente")
             self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
-        if rows:
-            self.sales_table.selectRow(0)
-        else:
-            self.show_sale(clear=True)
+        self.sales_table.clearSelection()
+        self.show_sale(clear=True)
 
     def show_sale(self, clear=False):
         if clear or self.sales_table.currentRow() < 0:
@@ -477,14 +474,10 @@ class SalesTab(QWidget):
         is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
         if is_ticket:
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
-            if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_ticket_pdf(venta_id)
         else:
             pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
-            self.preview_label.setText("No se pudo generar previsualización")
+            self.preview_label.setText("Documento no guardado")
             return
 
         prefix = tempfile.mktemp()
@@ -637,7 +630,7 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Ticket", "No se pudo generar el ticket.")
 
     def preview_pdf(self):
-        """Generate a temporary PDF and open it with the default viewer."""
+        """Open the saved PDF for the selected sale."""
         if self.sales_table.currentRow() < 0:
             QMessageBox.warning(self, "Previsualizar", "Seleccione una factura primero.")
 
@@ -654,23 +647,21 @@ class SalesTab(QWidget):
         is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
         if is_ticket:
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
-            if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_ticket_pdf(venta_id)
         else:
             pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
-            QMessageBox.warning(self, "Previsualizar", "No se pudo generar el PDF.")
+            QMessageBox.warning(
+                self, "Previsualizar", "No hay PDF guardado para esta venta."
+            )
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(pdf_path)))
 
     def print_pdf(self):
-        """Print the selected sale by first generating a temporary PDF."""
+        """Print the selected sale using the saved PDF."""
         if self.sales_table.currentRow() < 0:
             QMessageBox.warning(self, "Imprimir", "Seleccione una factura primero.")
             return
-        # Reuse preview_pdf to generate the file
+        # Reuse preview_pdf to open the file
         self.preview_pdf()
 
     def send_email(self):

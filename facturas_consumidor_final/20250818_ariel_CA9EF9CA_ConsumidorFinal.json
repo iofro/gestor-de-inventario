@@ -1,0 +1,32 @@
+{
+  "identificacion": {
+    "fecEmi": "2025-08-18",
+    "version": 1,
+    "ambiente": "00",
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "tipoModelo": 1,
+    "codigoGeneracion": "4f39cdd2686846359ea3a5c4cd9a324d",
+    "numeroControl": "CA9EF9CA"
+  },
+  "emisor": {},
+  "receptor": {
+    "nombre": "ariel",
+    "direccion": "Calle Falsa 1, San Salvador",
+    "nit": "0614-199001-101-9"
+  },
+  "cuerpoDocumento": [
+    {
+      "numItem": 1,
+      "descripcion": "Producto Demo 8",
+      "cantidad": 1,
+      "precioUnitario": 14.0
+    }
+  ],
+  "resumen": {
+    "totalPagar": 14.0,
+    "subTotalVentas": 14.0,
+    "subTotal": 14.0,
+    "totalLetras": "CATORCE 00/100 DÓLARES"
+  }
+}

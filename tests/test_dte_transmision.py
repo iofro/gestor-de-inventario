@@ -78,7 +78,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
                     "descuGravada": 0,
                     "porcentajeDescuento": 0,
                     "totalDescu": 0,
-                    "tributos": None,
+                    "tributos": [],
                     "subTotal": 10,
                     "ivaRete1": 0,
                     "reteRenta": 0,

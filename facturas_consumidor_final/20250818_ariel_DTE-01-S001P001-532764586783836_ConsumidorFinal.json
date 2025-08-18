@@ -2,10 +2,10 @@
   "identificacion": {
     "version": "1",
     "tipoDte": "01",
-    "codigoGeneracion": "4E6D0301-314B-4432-919A-48149B5C2E2F",
-    "numeroControl": "DTE-01-S001P001-451162574016564",
+    "codigoGeneracion": "744887C3-09F3-426F-9EE2-12E852F1A77D",
+    "numeroControl": "DTE-01-S001P001-532764586783836",
     "fecEmi": "2025-08-18",
-    "horEmi": "07:39:03",
+    "horEmi": "10:49:20",
     "modeloFacturacion": "1 - Facturación previo",
     "tipoTransmision": "1 - Transmisión normal"
   },
@@ -18,8 +18,8 @@
     "descActividad": "Venta de productos farmaceuticos",
     "tipoContribuyente": "Persona Natural",
     "direccion": {
-      "departamento": "La Libertad",
-      "municipio": "Santa Tecla",
+      "departamento": "04",
+      "municipio": "25",
       "complemento": "Local.3 #4-6 B, Paseo Concepcion"
     },
     "telefono": "2222-3456",
@@ -39,36 +39,36 @@
   "cuerpoDocumento": [
     {
       "numItem": 1,
-      "descripcion": "Producto Demo 7",
+      "descripcion": "Producto Demo 6",
       "cantidad": 1.0,
-      "precioUnitario": 13.0,
-      "ventaGravada": 13.0
+      "precioUnitario": 12.0,
+      "ventaGravada": 12.0
     }
   ],
   "resumen": {
     "totalNoSuj": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 13.0,
-    "subTotalVentas": 13.0,
+    "totalGravada": 12.0,
+    "subTotalVentas": 12.0,
     "descuNoSuj": 0.0,
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "porcentajeDescuento": 0.0,
     "totalDescu": 0.0,
     "tributos": null,
-    "subTotal": 13.0,
+    "subTotal": 12.0,
     "ivaRete1": 0.0,
     "reteRenta": 0.0,
-    "montoTotalOperacion": 13.0,
+    "montoTotalOperacion": 12.0,
     "totalNoGravado": 0.0,
-    "totalPagar": 13.0,
-    "totalLetras": "TRECE CON 00/100 DÓLARES",
+    "totalPagar": 12.0,
+    "totalLetras": "DOCE CON 00/100 DÓLARES",
     "totalIva": 0.0,
     "saldoFavor": 0.0,
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 13.0,
+        "montoPago": 12.0,
         "referencia": null,
         "periodo": null,
         "plazo": null

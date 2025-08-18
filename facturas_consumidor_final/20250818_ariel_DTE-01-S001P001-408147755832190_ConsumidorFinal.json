@@ -1,0 +1,87 @@
+{
+  "identificacion": {
+    "version": "1",
+    "tipoDte": "01",
+    "codigoGeneracion": "87FDE21A-849B-404A-A51E-8F81DBEA8106",
+    "numeroControl": "DTE-01-S001P001-408147755832190",
+    "fecEmi": "2025-08-18",
+    "horEmi": "02:21:01",
+    "modeloFacturacion": "1 - Facturación previo",
+    "tipoTransmision": "1 - Transmisión normal"
+  },
+  "emisor": {
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nit": "09061712791014",
+    "nrc": "2301408",
+    "codActividad": "46484",
+    "descActividad": "Venta de productos farmaceuticos",
+    "tipoContribuyente": "Persona Natural",
+    "direccion": {
+      "departamento": "La Libertad",
+      "municipio": "Santa Tecla",
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion"
+    },
+    "telefono": "2222-3456",
+    "correo": "farmaciasantacatalina7@gmail.com"
+  },
+  "receptor": {
+    "tipoDocumento": "36",
+    "numDocumento": "06141990011019",
+    "nrc": "000001-1",
+    "nombre": "ariel",
+    "codActividad": null,
+    "descActividad": null,
+    "direccion": null,
+    "telefono": "7000-0001",
+    "correo": null
+  },
+  "cuerpoDocumento": [
+    {
+      "numItem": 1,
+      "descripcion": "Producto Demo 2",
+      "cantidad": 1.0,
+      "precioUnitario": 8.0,
+      "ventaGravada": 8.0
+    }
+  ],
+  "resumen": {
+    "totalNoSuj": 0.0,
+    "totalExenta": 0.0,
+    "totalGravada": 8.0,
+    "subTotalVentas": 8.0,
+    "descuNoSuj": 0.0,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "porcentajeDescuento": 0.0,
+    "totalDescu": 0.0,
+    "tributos": null,
+    "subTotal": 8.0,
+    "ivaRete1": 0.0,
+    "reteRenta": 0.0,
+    "montoTotalOperacion": 8.0,
+    "totalNoGravado": 0.0,
+    "totalPagar": 8.0,
+    "totalLetras": "OCHO CON 00/100 DÓLARES",
+    "totalIva": 0.0,
+    "saldoFavor": 0.0,
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 8.0,
+        "referencia": null,
+        "periodo": null,
+        "plazo": null
+      }
+    ],
+    "numPagoElectronico": null,
+    "condicionOperacion": 1.0
+  },
+  "documentoRelacionado": null,
+  "otrosDocumentos": null,
+  "ventaTercero": null,
+  "extension": null,
+  "apendice": null,
+  "firmaElectronica": null,
+  "selloRecibido": null
+}

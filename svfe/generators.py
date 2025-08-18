@@ -252,14 +252,10 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "psv": d8(Decimal("0")),
         "noGravado": d8(Decimal("0")),
     }
-    if tipo == "fc":
-        # Para un ítem gravado con IVA debe indicarse el tributo aplicado.
-        item["codTributo"] = "A8"
-        item["ivaItem"] = iva_item
-        item["tributos"] = None
-    else:
-        item["codTributo"] = None
-        item["tributos"] = ["20"]
+    # Todos los ítems gravados deben declarar el tributo IVA.
+    item["codTributo"] = "19"
+    item["ivaItem"] = iva_item
+    item["tributos"] = ["19"]
     return [item]
 
 

@@ -845,8 +845,9 @@ class DB:
         extra=None,
         estado="Pagada",
     ):
-        # Asegura que la columna estado exista antes de insertar
+        # Asegura que las columnas requeridas existan antes de insertar
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
+        self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         extra_json = json.dumps(extra) if extra is not None else None
         columns = ["fecha", "total", "estado", "sincronizada"]
         values = [fecha, total, estado, 1]
@@ -895,8 +896,9 @@ class DB:
         extra=None,
         estado="Pagada",
     ):
-        # Asegura que la columna estado exista antes de insertar
+        # Asegura que las columnas requeridas existan antes de insertar
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
+        self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         try:
             cols = ["fecha", "total", "cliente_id", "estado", "sincronizada"]
@@ -1575,6 +1577,21 @@ class DB:
 
     def limpiar_ventas_credito_fiscal(self):
         self.cursor.execute("DELETE FROM ventas_credito_fiscal")
+        self.conn.commit()
+
+    def limpiar_ventas_huerfanas(self):
+        """Remove sales that have no related records in dependent tables."""
+        self.cursor.execute(
+            """
+            DELETE FROM ventas
+            WHERE id NOT IN (SELECT DISTINCT venta_id FROM detalles_venta)
+              AND id NOT IN (SELECT DISTINCT venta_id FROM ventas_credito_fiscal)
+              AND id NOT IN (SELECT DISTINCT venta_id FROM dte_envios)
+              AND id NOT IN (SELECT DISTINCT venta_id FROM notas)
+              AND id NOT IN (SELECT DISTINCT venta_id FROM facturas_pdf)
+              AND id NOT IN (SELECT DISTINCT venta_id FROM tickets_pdf)
+            """
+        )
         self.conn.commit()
 
     def add_Distribuidor_detallado(self, data, commit: bool = True):

@@ -34,8 +34,8 @@ def datos_negocio_completo(tmp_path):
         "telefono": "12345678",
         "correo": "test@example.com",
         "direccion": {
-            "departamento": "San Salvador",
-            "municipio": "San Salvador",
+            "departamento": "06",
+            "municipio": "01",
             "complemento": "Calle Falsa 123",
         },
     }
@@ -46,6 +46,7 @@ def datos_negocio_completo(tmp_path):
 
 def test_reporta_campos_emisor_faltantes(run_validacion, datos_negocio_incompleto, monkeypatch, capsys):
     monkeypatch.setattr(validar_todo, "DATOS_NEGOCIO_PATH", datos_negocio_incompleto)
+    monkeypatch.setattr("svfe.config.get_emisor_direccion", lambda: (_ for _ in ()).throw(ValueError()))
     exit_code = run_validacion()
     captured = capsys.readouterr().out
     assert exit_code != 0

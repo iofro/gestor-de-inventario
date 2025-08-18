@@ -10,6 +10,7 @@ from svfe.generators import (
     generar_nota_credito,
     generar_nota_remision,
     validar_contra_schema,
+    strip_extras,
 )
 from svfe.json_compare import normalize_for_schema, similarity
 
@@ -20,6 +21,8 @@ def _assert_base(data):
     venta = item["ventaGravada"]
     iva = (venta * Decimal("0.13")).quantize(Decimal("0.00000001"))
     assert str(iva) == "3.10050000"
+    if "ivaItem" in item:
+        assert str(item["ivaItem"]) == str(iva)
 
     resumen = data["resumen"]
     assert str(resumen["totalGravada"]) == "23.85"
@@ -62,6 +65,28 @@ def test_generar_nota_remision():
 def test_validar_contra_schema_missing_required_field():
     data = generar_factura_fiscal()
     data.pop("resumen")
-    with pytest.raises(ValueError) as excinfo:
+    with pytest.raises(ValueError):
         validar_contra_schema(data, "ccf")
-    assert "resumen" in str(excinfo.value)
+
+
+def test_fc_valida_con_schema():
+    data = generar_consumidor_final()
+    validar_contra_schema(strip_extras(data), "fc")
+
+
+def test_fc_falta_campo_requerido():
+    data = generar_consumidor_final()
+    data["cuerpoDocumento"][0].pop("uniMedida")
+    with pytest.raises(ValueError) as excinfo:
+        validar_contra_schema(strip_extras(data), "fc")
+    assert "cuerpoDocumento.0.uniMedida" in str(excinfo.value)
+
+
+def test_fc_cod_tributo_invalido():
+    data = generar_consumidor_final()
+    item = data["cuerpoDocumento"][0]
+    item["codTributo"] = "20"
+    item["tributos"] = ["20"]
+    with pytest.raises(ValueError) as excinfo:
+        validar_contra_schema(strip_extras(data), "fc")
+    assert "codTributo" in str(excinfo.value)

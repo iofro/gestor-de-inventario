@@ -3,7 +3,7 @@
   "cuerpoDocumento": [
     {
       "cantidad": "2.50000000",
-      "codTributo": "A8",
+      "codTributo": null,
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
       "montoDescu": "0E-8",
@@ -12,7 +12,7 @@
       "precioUni": "9.54000000",
       "tipoItem": 1,
       "tributos": [
-        "A8"
+        "20"
       ],
       "uniMedida": 59,
       "ventaExenta": "0E-8",
@@ -37,9 +37,9 @@
     "correo": "demo@example.com",
     "descActividad": "Venta de productos",
     "direccion": {
-      "complemento": "Centro Comercial 1",
-      "departamento": "05",
-      "municipio": "01"
+      "complemento": "Calle X #123",
+      "departamento": "06",
+      "municipio": "15"
     },
     "nit": "06142512891020",
     "nombre": "Compañía Demo S.A. de C.V.",

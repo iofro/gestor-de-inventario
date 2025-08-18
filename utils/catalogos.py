@@ -177,3 +177,46 @@ def get_dte_schema(tipo: str) -> dict | None:
     with open(path, "r", encoding="utf-8") as fh:
         return json.load(fh)
 
+
+def validate_tributo(codigo: str, extras: set[str] | None = None) -> str:
+    """Validate that ``codigo`` is a known tributo code.
+
+    Parameters
+    ----------
+    codigo:
+        Código a verificar.
+    extras:
+        Conjunto opcional de códigos adicionales permitidos, por ejemplo,
+        los declarados en esquemas oficiales.
+
+    Returns
+    -------
+    str
+        Código normalizado en mayúsculas.
+
+    Raises
+    ------
+    ValueError
+        Si ``codigo`` no está reconocido.
+    """
+
+    codigo = str(codigo).upper()
+    allowed = set(TRIBUTOS.keys())
+    if extras:
+        allowed.update(str(e).upper() for e in extras)
+    if codigo not in allowed:
+        raise ValueError(f"Código de tributo inválido: {codigo}")
+    return codigo
+
+
+def validate_tipo_item(tipo: int) -> int:
+    """Validate ``tipoItem`` against the ``TIPO_ITEM`` catalog."""
+
+    try:
+        tipo_int = int(tipo)
+    except (TypeError, ValueError):  # pragma: no cover - defensive
+        raise ValueError("tipoItem inválido")
+    if tipo_int not in TIPO_ITEM:
+        raise ValueError("tipoItem inválido")
+    return tipo_int
+

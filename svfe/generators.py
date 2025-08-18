@@ -108,8 +108,8 @@ def _emisor() -> Dict[str, Any]:
     }
 
 
-def _receptor() -> Dict[str, Any]:
-    return {
+def _receptor(tipo: str | None = None) -> Dict[str, Any]:
+    data = {
         "nit": "06141990011019",
         "nrc": "0000011",
         "nombre": "Consumidor Final",
@@ -124,6 +124,12 @@ def _receptor() -> Dict[str, Any]:
         "telefono": "70000001",
         "correo": "cliente@example.com",
     }
+    if tipo == "fc":
+        nit = data.pop("nit")
+        data.pop("nombreComercial", None)
+        data["tipoDocumento"] = "36"
+        data["numDocumento"] = nit
+    return data
 
 
 def _cuerpo_documento() -> List[Dict[str, Any]]:
@@ -215,7 +221,7 @@ def _generar(tipo: str) -> Dict[str, Any]:
         "identificacion": _identificacion(schema, tipo_dte),
         "documentoRelacionado": _documento_relacionado(tipo),
         "emisor": _emisor(),
-        "receptor": _receptor(),
+        "receptor": _receptor(tipo),
         "otrosDocumentos": None,
         "ventaTercero": None,
         "cuerpoDocumento": _cuerpo_documento(),

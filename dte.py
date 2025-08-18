@@ -241,19 +241,49 @@ def _map_departamento(nombre: str | None) -> str:
     return DEPARTAMENTO_CODES.get(nombre, "01")
 
 
+MUNICIPIO_RANGES = {
+    # Departamento: (primer código, último código)
+    "05": ("01", "22"),  # La Libertad
+    "06": ("01", "19"),  # San Salvador
+}
+
 MUNICIPIO_CODES = {
-    # Only a minimal mapping is required by the tests.  Unknown values fall
-    # back to "01" to keep the payload valid according to the schema.
-    "San Salvador": "01",
+    "05": {
+        "Antiguo Cuscatlán": "01",
+        "Chiltiupán": "02",
+        "Ciudad Arce": "03",
+        "Colón": "04",
+        "Comasagua": "05",
+        "Huizúcar": "06",
+        "Jayaque": "07",
+        "Jicalapa": "08",
+        "La Libertad": "09",
+        "Nuevo Cuscatlán": "10",
+        "San Juan Opico": "11",
+        "Quezaltepeque": "12",
+        "Santa Tecla": "13",
+        "Nueva San Salvador": "13",
+        "Sacacoyo": "14",
+        "San José Villanueva": "15",
+        "San Matías": "16",
+        "San Pablo Tacachico": "17",
+        "Talnique": "18",
+        "Tamanique": "19",
+        "Teotepeque": "20",
+        "Tepecoyo": "21",
+        "Zaragoza": "22",
+    },
+    "06": {"San Salvador": "01"},
 }
 
 
-def _map_municipio(nombre: str | None) -> str:
+def _map_municipio(nombre: str | None, departamento: str | None = None) -> str:
     """Return a two digit municipio code for ``nombre``.
 
-    The function accepts numeric strings, integers or municipio names.
-    Any unknown value defaults to ``"01"`` which represents the capital
-    municipality for most departments.
+    Accepts numeric strings, integers or municipio names.  When
+    ``departamento`` is provided, numeric codes are validated against the
+    permitted range for that department.  Any unknown value defaults to
+    ``"01"`` which usually represents the cabecera departamental.
     """
 
     if nombre is None:
@@ -261,9 +291,23 @@ def _map_municipio(nombre: str | None) -> str:
 
     nombre = str(nombre)
     if nombre.isdigit():
-        return nombre.zfill(2)
+        code = nombre.zfill(2)
+        if departamento:
+            dep_code = _map_departamento(departamento)
+            start, end = MUNICIPIO_RANGES.get(dep_code, ("01", "99"))
+            if code < start or code > end:
+                return start
+        return code
 
-    return MUNICIPIO_CODES.get(nombre, "01")
+    dep_code = _map_departamento(departamento) if departamento else None
+    if dep_code:
+        return MUNICIPIO_CODES.get(dep_code, {}).get(nombre, "01")
+
+    for mapping in MUNICIPIO_CODES.values():
+        if nombre in mapping:
+            return mapping[nombre]
+
+    return "01"
 
 
 def _clean_nit(nit):
@@ -909,12 +953,16 @@ def validate_dte_json(payload: dict) -> None:
         dir_neg = negocio.get("direccion") or {}
         direccion = {
             "departamento": _map_departamento(dir_neg.get("departamento")),
-            "municipio": _map_municipio(dir_neg.get("municipio")),
+            "municipio": _map_municipio(
+                dir_neg.get("municipio"), dir_neg.get("departamento")
+            ),
             "complemento": dir_neg.get("complemento") if direccion is None else direccion,
         }
     else:
         direccion["departamento"] = _map_departamento(direccion.get("departamento"))
-        direccion["municipio"] = _map_municipio(direccion.get("municipio"))
+        direccion["municipio"] = _map_municipio(
+            direccion.get("municipio"), direccion.get("departamento")
+        )
     emisor["direccion"] = direccion
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))

@@ -137,25 +137,24 @@ def _iter_dte_files(root: Path) -> Iterable[Path]:
 
 
 def compare_latest(root: Path) -> None:
-    """Find and compare the latest DTE for each tipoDte under ``root``."""
-    latest: Dict[str, Path] = {}
+    """Find and compare the latest DTE JSON file in each directory under ``root``."""
+    latest: Dict[Path, Path] = {}
     for path in _iter_dte_files(root):
-        try:
-            with path.open("r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except Exception:
-            continue
-        tipo = str(data.get("identificacion", {}).get("tipoDte"))
+        dir_path = path.parent
         mtime = path.stat().st_mtime
-        if tipo and (tipo not in latest or mtime > latest[tipo].stat().st_mtime):
-            latest[tipo] = path
+        if dir_path not in latest or mtime > latest[dir_path].stat().st_mtime:
+            latest[dir_path] = path
 
     if not latest:
         print("No DTE files found.")
         return
 
-    for tipo, path in sorted(latest.items()):
-        print(f"\nComparing latest DTE tipo {tipo}: {path}")
+    for dir_path, path in sorted(latest.items()):
+        try:
+            rel = dir_path.relative_to(root)
+        except ValueError:
+            rel = dir_path
+        print(f"\nComparing latest DTE in {rel}: {path}")
         compare(path)
 
 

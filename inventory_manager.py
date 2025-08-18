@@ -523,6 +523,7 @@ class InventoryManager:
                         extra_json,
                         estado,
                         sincronizada,
+
                     ),
                 )
                 venta_id_map[v["id"]] = v.get("id")

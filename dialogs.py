@@ -242,6 +242,25 @@ def cargar_departamentos_municipios():
         ]
     }
 
+
+def _build_municipios_codigos():
+    """Genera un catálogo de municipios con códigos únicos."""
+    catalogo = [{"codigo": "0000", "nombre": "Otro (Para extranjeros)"}]
+    dep_mun = cargar_departamentos_municipios()
+    for dep in DEPARTAMENTOS:
+        dep_codigo = dep["codigo"]
+        dep_nombre = dep["nombre"]
+        if dep_codigo == "00":
+            continue
+        for idx, mun_nombre in enumerate(dep_mun.get(dep_nombre, []), start=1):
+            codigo = f"{dep_codigo}{idx:02d}"
+            catalogo.append({"codigo": codigo, "nombre": f"{dep_nombre} — {mun_nombre}"})
+    return catalogo
+
+
+MUNICIPIOS_CODIGOS = _build_municipios_codigos()
+MUNICIPIOS_CODIGOS_SET = {m["codigo"] for m in MUNICIPIOS_CODIGOS}
+
 class ClienteSelectorDialog(QDialog):
     def __init__(self, db, parent=None):
         super().__init__(parent)
@@ -2950,7 +2969,6 @@ class DatosNegocioDialog(QDialog):
         self.tipo_contribuyente = QLineEdit()
         self.telefono = QLineEdit()
         self.correo = QLineEdit()
-        self.departamento = QComboBox()
         self.municipio = QComboBox()
         # Limitar el alto del listado de municipios y mostrar scroll sin marcos en blanco
         municipio_view = QListView()
@@ -2960,12 +2978,7 @@ class DatosNegocioDialog(QDialog):
         self.municipio.setView(municipio_view)
         self.municipio.setMaxVisibleItems(8)
         self.complemento = QLineEdit()
-        _populate_combo(self.departamento, DEPARTAMENTOS)
-        _populate_combo(self.municipio, MUNICIPIOS)
-        self.municipio.setEnabled(False)
-        self.departamento.currentIndexChanged.connect(
-            lambda *_: self.municipio.setEnabled(bool(self.departamento.currentData()))
-        )
+        _populate_combo(self.municipio, MUNICIPIOS_CODIGOS)
         form.addRow("NIT:", self.nit)
         form.addRow("NRC:", self.nrc)
         form.addRow("Nombre:", self.nombre)
@@ -2975,7 +2988,6 @@ class DatosNegocioDialog(QDialog):
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
         form.addRow("Teléfono:", self.telefono)
         form.addRow("Correo:", self.correo)
-        form.addRow("Departamento:", self.departamento)
         form.addRow("Municipio:", self.municipio)
         form.addRow("Dirección:", self.complemento)
         btns = QHBoxLayout()
@@ -3005,8 +3017,9 @@ class DatosNegocioDialog(QDialog):
             "telefono": self.telefono.text(),
             "correo": self.correo.text(),
             "direccion": {
-                "departamento": self.departamento.currentData(),
-                "municipio": self.municipio.currentData(),
+                "municipio": self.municipio.currentData()
+                if self.municipio.currentData() in MUNICIPIOS_CODIGOS_SET
+                else "",
                 "complemento": self.complemento.text(),
             },
         }
@@ -3022,9 +3035,12 @@ class DatosNegocioDialog(QDialog):
         self.telefono.setText(datos.get("telefono", ""))
         self.correo.setText(datos.get("correo", ""))
         dir_info = datos.get("direccion", {}) or {}
-        _set_combo_value(self.departamento, DEPARTAMENTOS, dir_info.get("departamento"))
-        _set_combo_value(self.municipio, MUNICIPIOS, dir_info.get("municipio"))
-        self.municipio.setEnabled(bool(self.departamento.currentData()))
+        municipio = dir_info.get("municipio")
+        _set_combo_value(
+            self.municipio,
+            MUNICIPIOS_CODIGOS,
+            str(municipio) if municipio else "",
+        )
         self.complemento.setText(dir_info.get("complemento", ""))
 
 

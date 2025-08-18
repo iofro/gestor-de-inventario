@@ -225,7 +225,7 @@ class SalesTab(QWidget):
         self.load_sales()
 
     def load_sales(self):
-        ventas = self.manager.db.get_ventas()
+        ventas = self.manager.db.get_ventas(sincronizada=1)
         search = self.search_bar.text().lower()
         cliente_filter = self.client_filter.text().lower()
         if self.date_filter_cb.isChecked():

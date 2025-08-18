@@ -142,6 +142,8 @@ def _populate_combo(combo, items):
     for item in items:
         combo.addItem(f"{item['codigo']} — {item['nombre']}", item["codigo"])
     combo.setEditable(False)
+    combo.setMaxVisibleItems(8)
+    combo.view().setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
 
 
 def _set_combo_value(combo, items, value):

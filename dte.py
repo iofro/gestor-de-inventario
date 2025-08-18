@@ -435,6 +435,8 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         )
         allowed.update(str(c).zfill(2) for c in enum_codes)
 
+    total_q = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+
     pagos: list[dict] = []
     for p in pagos_raw or []:
         codigo = str(p.get("codigo", "")).zfill(2)
@@ -457,7 +459,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         pagos = [
             {
                 "codigo": "01",
-                "montoPago": D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP),
+                "montoPago": total_q,
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
@@ -465,12 +467,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         ]
     else:
         suma = sum(p["montoPago"] for p in pagos)
-        diff = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP) - suma
+        diff = total_q - suma
         if diff:
             nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
             pagos[-1]["montoPago"] = nuevo.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        suma = sum(p["montoPago"] for p in pagos)
+        if suma != total_q:
+            raise ValidationError("La suma de pagos no coincide con totalPagar")
 
     if condicion == 2:
         first = pagos[0]
@@ -486,6 +491,8 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
     for p in pagos:
         p["montoPago"] = float(p["montoPago"])
 
+    validate_pagos_basico({"pagos": pagos, "totalPagar": float(total_q)}, condicion)
+
     return pagos
 
 
@@ -496,10 +503,10 @@ def armar_tributos(tributos_raw, tipo_dte):
     # Los códigos válidos se obtienen tanto del catálogo local como del
     # esquema oficial del tipo de documento.  Esto permite extender el catálogo
     # sin depender de que el esquema se encuentre actualizado.
-    allowed = set(catalogos.TRIBUTOS.keys())
+    extras: set[str] = set()
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
-        allowed.update(
+        extras.update(
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
@@ -511,9 +518,7 @@ def armar_tributos(tributos_raw, tipo_dte):
         )
     result = []
     for t in tributos_raw or []:
-        codigo = str(t.get("codigo", "")).upper()
-        if allowed and codigo not in allowed:
-            raise ValueError(f"Código de tributo inválido: {codigo}")
+        codigo = catalogos.validate_tributo(t.get("codigo", ""), extras)
         result.append(
             {
                 "codigo": codigo,
@@ -535,6 +540,11 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     sumas_val = Decimal(str(fiscal.get("sumas", items_total)))
     descuentos_val = Decimal(str(fiscal.get("descuentos", 0)))
     iva_val = Decimal(str(fiscal.get("iva", 0)))
+    if not iva_val:
+        iva_items = extra.get("iva_items")
+        if iva_items:
+            iva_val = sum(Decimal(str(v)) for v in iva_items)
+    iva_val = iva_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     total_no_suj = Decimal(str(fiscal.get("ventas_no_sujetas", 0)))
     total_exenta = Decimal(str(fiscal.get("ventas_exentas", 0)))
 
@@ -572,8 +582,10 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     if tipo_dte == "01":
         resumen["totalIva"] = iva_val
+        iva_field = "totalIva"
     else:
-        resumen["ivaPerci1"] = resumen.get("ivaPerci1", 0)
+        resumen["ivaPerci1"] = Decimal(str(resumen.get("ivaPerci1", 0)))
+        iva_field = "ivaPerci1"
 
     if "totalPagar" in resumen:
         resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
@@ -606,6 +618,19 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     for k, v in resumen.items():
         if isinstance(v, (int, float, Decimal)):
             resumen[k] = d2(v)
+
+    # Recalcular totales clave con Decimal para evitar discrepancias de redondeo
+    sub_total_dec = Decimal(str(resumen.get("subTotal", 0)))
+    iva_total_dec = Decimal(str(resumen.get(iva_field, 0)))
+    resumen["montoTotalOperacion"] = d2(sub_total_dec + iva_total_dec)
+    if "totalPagar" in resumen:
+        total_val = venta.get("total")
+        if total_val is None:
+            total_val = resumen["montoTotalOperacion"]
+        resumen["totalPagar"] = d2(total_val)
+        # Revalidar pagos con total definitivo
+        if resumen.get("pagos"):
+            validate_pagos_basico(resumen, resumen.get("condicionOperacion", 1))
 
     return resumen
 
@@ -814,26 +839,60 @@ def generar_dte_json(
     emisor["direccion"] = svfe_config.get_emisor_direccion()
 
     rec = cliente or {}
-    def _clean_nit(nit):
-        if nit:
-            return "".join(c for c in str(nit) if c.isdigit())
-        return None
+    fiscal = fiscal or {}
 
-    nit = rec.get("nit")
-    if fiscal:
-        nit = fiscal.get("nit") or nit
+    nit = fiscal.get("nit") or rec.get("nit")
+    nrc = fiscal.get("nrc") or rec.get("nrc")
+    nombre = fiscal.get("nombre") or rec.get("nombre")
+    telefono = fiscal.get("telefono") or rec.get("telefono")
+    correo = fiscal.get("correo") or rec.get("email") or rec.get("correo")
+
+    dir_src = {
+        "departamento": fiscal.get("departamento"),
+        "municipio": fiscal.get("municipio"),
+        "complemento": fiscal.get("direccion"),
+    }
+    fiscal_extra = fiscal.get("extra")
+    if isinstance(fiscal_extra, dict):
+        dir_src["departamento"] = fiscal_extra.get("departamento") or dir_src["departamento"]
+        dir_src["municipio"] = fiscal_extra.get("municipio") or dir_src["municipio"]
+        dir_src["complemento"] = (
+            fiscal_extra.get("direccion")
+            or fiscal_extra.get("complemento")
+            or dir_src["complemento"]
+        )
+
+    if not dir_src["departamento"]:
+        dir_src["departamento"] = rec.get("departamento")
+    if not dir_src["municipio"]:
+        dir_src["municipio"] = rec.get("municipio")
+    if not dir_src["complemento"]:
+        dir_src["complemento"] = rec.get("direccion")
+
+    depto = _map_departamento(dir_src.get("departamento"))
+    municipio = _map_municipio(dir_src.get("municipio"), depto)
+    complemento = dir_src.get("complemento")
+    if not complemento:
+        raise ValueError("Complemento de dirección requerido")
 
     receptor = {
         "tipoDocumento": "36" if nit else None,
         "numDocumento": _clean_nit(nit),
-        "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
-        "nombre": rec.get("nombre"),
+        "nrc": _clean_nrc(nrc),
+        "nombre": nombre,
         "codActividad": None,
         "descActividad": None,
-        "direccion": None,
-        "telefono": rec.get("telefono"),
-        "correo": rec.get("correo"),
+        "direccion": {
+            "departamento": depto,
+            "municipio": municipio,
+            "complemento": complemento,
+        },
+        "telefono": telefono,
+        "correo": correo,
     }
+    for campo in ["tipoDocumento", "numDocumento", "nrc", "nombre", "telefono", "correo"]:
+        if not receptor.get(campo):
+            raise ValueError(f"Campo receptor {campo} requerido")
     if fiscal:
         if fiscal.get("no_remision"):
             receptor["noRemision"] = fiscal.get("no_remision")
@@ -845,6 +904,15 @@ def generar_dte_json(
     commission_total = D("0")
     iva_total = D("0")
     for idx, d in enumerate(detalles, 1):
+        # Unpack extra JSON fields if present
+        raw_extra = d.get("extra")
+        if raw_extra:
+            try:
+                extra_data = json.loads(raw_extra)
+                d.update(extra_data)
+            except Exception:
+                pass
+
         try:
             cant = D(str(d.get("cantidad") or 0))
         except Exception:
@@ -871,12 +939,74 @@ def generar_dte_json(
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
             pass
+
+        # --- Nuevos campos del cuerpo del DTE ---
+        tipo_item = d.get("tipoItem") or d.get("tipo_item")
+        if tipo_item is None:
+            tipo_item = 4 if tipo_dte == "01" else 1
+        if tipo_item not in catalogos.TIPO_ITEM:
+            raise ValueError("tipoItem inválido")
+
+        numero_doc = d.get("numeroDocumento") or d.get("numero_documento")
+        codigo = d.get("codigo")
+        uni_medida = d.get("uniMedida") or (99 if tipo_dte == "01" else 59)
+
+        try:
+            monto_descu = D(str(d.get("montoDescu") or d.get("descuento") or 0))
+        except Exception:
+            monto_descu = D(0)
+        monto_descu_q = d8(monto_descu)
+
+        try:
+            psv = D(str(d.get("psv") or 0))
+        except Exception:
+            psv = D(0)
+        psv_q = d8(psv)
+
+        try:
+            no_gravado = D(str(d.get("noGravado") or 0))
+        except Exception:
+            no_gravado = D(0)
+        no_gravado_q = d8(no_gravado)
+
+        tributos = d.get("tributos") or []
+        if isinstance(tributos, str):
+            tributos = [tributos]
+        tributos = [str(t).upper() for t in tributos if t]
+        allowed_trib = set(catalogos.TRIBUTOS.keys())
+        invalid = [t for t in tributos if t not in allowed_trib]
+        if invalid:
+            raise ValueError(
+                f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+            )
+        if venta_item > 0 and not tributos:
+            tributos = ["19"]
+
+        cod_trib = d.get("codTributo")
+        cod_trib = str(cod_trib).upper() if cod_trib else None
+        if cod_trib and cod_trib not in allowed_trib:
+            raise ValueError("Código de tributo inválido")
+        if not cod_trib and tributos:
+            cod_trib = tributos[0]
+        if tributos and cod_trib != tributos[0]:
+            cod_trib = tributos[0]
+
         item_data = {
             "numItem": idx,
             "descripcion": d.get("descripcion"),
             "cantidad": float(cant_q),
             "precioUnitario": float(precio_q),
             "ventaGravada": float(d8(venta_item)),
+            "tipoItem": tipo_item,
+            "numeroDocumento": numero_doc,
+            "codigo": codigo,
+            "uniMedida": uni_medida,
+            "montoDescu": float(monto_descu_q),
+            "psv": float(psv_q),
+            "noGravado": float(no_gravado_q),
+            "ivaItem": float(monto_iva),
+            "codTributo": cod_trib,
+            "tributos": tributos,
         }
         cuerpo.append(item_data)
 
@@ -923,12 +1053,22 @@ def generar_dte_json(
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
-        # Campos obligatorios que pueden no tener información
-        "documentoRelacionado": None,
-        "otrosDocumentos": None,
-        "ventaTercero": None,
-        "extension": None,
-        "apendice": None,
+        # Secciones opcionales inicializadas según los esquemas oficiales
+        "documentoRelacionado": [],  # Referencias a otros DTE relacionados
+        "otrosDocumentos": [],  # Documentos de soporte asociados al DTE
+        "ventaTercero": {  # Datos cuando se factura por cuenta de un tercero
+            "nit": None,
+            "nombre": None,
+        },
+        "extension": {  # Información de entrega, recepción y observaciones
+            "nombEntrega": None,
+            "docuEntrega": None,
+            "nombRecibe": None,
+            "docuRecibe": None,
+            "observaciones": None,
+            "placaVehiculo": None,
+        },
+        "apendice": [],  # Datos adicionales definidos por el contribuyente
         "firmaElectronica": None,
         "selloRecibido": None,
     }
@@ -945,6 +1085,15 @@ def generar_dte_json(
             result["ventaACuentaDe"] = extra.get("venta_a_cuenta_de")
         if extra.get("documento_venta_a_cuenta"):
             result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
+
+
+    try:
+        validate_dte_json(result)
+    except ValidationError as exc:
+        path = ".".join(str(p) for p in exc.path)
+        msg = f"{path}: {exc.message}" if path else exc.message
+        raise ValidationError(msg) from exc
+
 
     return result
 
@@ -1127,11 +1276,12 @@ def validate_dte_json(payload: dict) -> None:
             item.setdefault("tipoItem", 1)
             item.setdefault("uniMedida", 59)
 
-        if item.get("tipoItem") not in catalogos.TIPO_ITEM:
-            raise ValueError("tipoItem inválido")
+        item["tipoItem"] = catalogos.validate_tipo_item(item.get("tipoItem"))
 
         item.setdefault("numeroDocumento", "NA")
         item.setdefault("codigo", None)
+        if item.get("codTributo"):
+            catalogos.validate_tributo(item["codTributo"])
         item.setdefault("codTributo", None)
         item.setdefault("montoDescu", 0.0)
         item.setdefault("ventaNoSuj", 0.0)
@@ -1168,7 +1318,6 @@ def validate_dte_json(payload: dict) -> None:
 
         # --- Manejo y validación de tributos ---
         venta_gravada = D(str(item.get("ventaGravada") or 0))
-        allowed = set(catalogos.TRIBUTOS.keys())
         if venta_gravada > 0:
             tributos = item.get("tributos") or []
             if isinstance(tributos, str):
@@ -1176,13 +1325,19 @@ def validate_dte_json(payload: dict) -> None:
             tributos = [str(t).upper() for t in tributos if t]
             if "19" not in tributos:
                 tributos.insert(0, "19")
-            item["tributos"] = tributos
-            item["codTributo"] = "19"
-            invalid = [t for t in tributos if t not in allowed]
-            if invalid:
+            normalizados = []
+            invalidos = []
+            for t in tributos:
+                try:
+                    normalizados.append(catalogos.validate_tributo(t))
+                except ValueError:
+                    invalidos.append(str(t).upper())
+            if invalidos:
                 raise ValueError(
-                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+                    f"Código(s) de tributo inválido(s): {', '.join(invalidos)}"
                 )
+            item["tributos"] = normalizados
+            item["codTributo"] = "19"
             if iva_key:
                 item[iva_key] = float(d8(venta_gravada * D("0.13")))
         else:

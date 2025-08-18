@@ -1,0 +1,97 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": "2.50000000",
+      "codTributo": "A8",
+      "codigo": "SKU001",
+      "descripcion": "Producto de prueba",
+      "montoDescu": "0E-8",
+      "numItem": 1,
+      "numeroDocumento": "123",
+      "precioUni": "9.54000000",
+      "tipoItem": 1,
+      "tributos": [
+        "A8"
+      ],
+      "uniMedida": 59,
+      "ventaExenta": "0E-8",
+      "ventaGravada": "23.85000000",
+      "ventaNoSuj": "0E-8"
+    }
+  ],
+  "documentoRelacionado": [
+    {
+      "fechaEmision": "2024-01-01",
+      "numeroDocumento": "DTE-03-00000000-000000000000001",
+      "tipoDocumento": "03",
+      "tipoGeneracion": 1
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "correo": "demo@example.com",
+    "descActividad": "Venta de productos",
+    "direccion": {
+      "complemento": "Centro Comercial 1",
+      "departamento": "05",
+      "municipio": "01"
+    },
+    "nit": "06142512891020",
+    "nombre": "Compañía Demo S.A. de C.V.",
+    "nombreComercial": "Demo Comercial",
+    "nrc": "1234567",
+    "telefono": "22222222",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "00000000-0000-4000-8000-000000000000",
+    "fecEmi": "2000-01-01",
+    "horEmi": "00:00:00",
+    "motivoContin": null,
+    "numeroControl": "DTE-06-00000000-000000000000001",
+    "tipoContingencia": null,
+    "tipoDte": "06",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "receptor": {
+    "codActividad": "6201",
+    "correo": "cliente@example.com",
+    "descActividad": "Servicios de software",
+    "direccion": {
+      "complemento": "San Salvador",
+      "departamento": "05",
+      "municipio": "01"
+    },
+    "nit": "06141990011019",
+    "nombre": "Consumidor Final",
+    "nombreComercial": "Cliente Ejemplo",
+    "nrc": "0000011",
+    "telefono": "70000001"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": "0.00",
+    "descuGravada": "0.00",
+    "descuNoSuj": "0.00",
+    "ivaPerci1": "0.00",
+    "ivaRete1": "0.00",
+    "montoTotalOperacion": "26.95",
+    "numPagoElectronico": null,
+    "reteRenta": "0.00",
+    "subTotal": "23.85",
+    "subTotalVentas": "23.85",
+    "totalDescu": "0.00",
+    "totalExenta": "0.00",
+    "totalGravada": "23.85",
+    "totalLetras": "VEINTISEIS CON 95/100 USD",
+    "totalNoSuj": "0.00",
+    "tributos": null
+  },
+  "ventaTercero": null
+}

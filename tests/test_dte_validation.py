@@ -77,6 +77,9 @@ def test_missing_emisor_fields_listed(dte_metadata_factory, monkeypatch):
     dte = dte_metadata_factory()
     dte["emisor"] = {}
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {})
+    monkeypatch.setattr(
+        "svfe.config.get_emisor_direccion", lambda: (_ for _ in ()).throw(ValueError())
+    )
     with pytest.raises(ValueError) as exc:
         validate_dte_json(dte)
     msg = str(exc.value)

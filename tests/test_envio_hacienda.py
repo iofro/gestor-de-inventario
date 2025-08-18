@@ -34,8 +34,8 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
             "telefono": "",
             "correo": "",
             "direccion": {
-                "departamento": "San Salvador",
-                "municipio": "San Salvador",
+                "departamento": "06",
+                "municipio": "01",
                 "complemento": "Calle 1",
             },
         },

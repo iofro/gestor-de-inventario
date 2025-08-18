@@ -16,6 +16,7 @@ import re
 from utils.monto import monto_a_texto_sv, d2
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
+from svfe.config import get_emisor_direccion
 from pathlib import Path
 import jsonpatch
 
@@ -205,40 +206,21 @@ def _load_datos_negocio():
     return {}
 
 
-DEPARTAMENTO_CODES = {
-    "Ahuachapán": "01",
-    "Santa Ana": "02",
-    "Sonsonate": "03",
-    "Chalatenango": "04",
-    "La Libertad": "05",
-    "San Salvador": "06",
-    "Cuscatlán": "07",
-    "La Paz": "08",
-    "Cabañas": "09",
-    "San Vicente": "10",
-    "Usulután": "11",
-    "San Miguel": "12",
-    "Morazán": "13",
-    "La Unión": "14",
-}
+DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(15)}
 
 
 def _map_departamento(nombre: str | None) -> str:
-    """Return the departamento code for ``nombre``.
-
-    Accepts either the departamento name or its numeric code and always
-    returns a zero padded two digit string.  If ``nombre`` is not
-    recognised, ``"01"`` (Ahuachapán) is used as a sensible default.
-    """
+    """Validate and return a departamento code."""
 
     if nombre is None:
-        return "01"
+        raise ValueError("Departamento requerido")
 
     nombre = str(nombre)
     if nombre.isdigit():
-        return nombre.zfill(2)
-
-    return DEPARTAMENTO_CODES.get(nombre, "01")
+        nombre = nombre.zfill(2)
+    if nombre not in DEPARTAMENTO_CODES:
+        raise ValueError("Departamento inválido")
+    return nombre
 
 
 MUNICIPIO_RANGES = {
@@ -247,67 +229,23 @@ MUNICIPIO_RANGES = {
     "06": ("01", "19"),  # San Salvador
 }
 
-MUNICIPIO_CODES = {
-    "05": {
-        "Antiguo Cuscatlán": "01",
-        "Chiltiupán": "02",
-        "Ciudad Arce": "03",
-        "Colón": "04",
-        "Comasagua": "05",
-        "Huizúcar": "06",
-        "Jayaque": "07",
-        "Jicalapa": "08",
-        "La Libertad": "09",
-        "Nuevo Cuscatlán": "10",
-        "San Juan Opico": "11",
-        "Quezaltepeque": "12",
-        "Santa Tecla": "13",
-        "Nueva San Salvador": "13",
-        "Sacacoyo": "14",
-        "San José Villanueva": "15",
-        "San Matías": "16",
-        "San Pablo Tacachico": "17",
-        "Talnique": "18",
-        "Tamanique": "19",
-        "Teotepeque": "20",
-        "Tepecoyo": "21",
-        "Zaragoza": "22",
-    },
-    "06": {"San Salvador": "01"},
-}
-
 
 def _map_municipio(nombre: str | None, departamento: str | None = None) -> str:
-    """Return a two digit municipio code for ``nombre``.
-
-    Accepts numeric strings, integers or municipio names.  When
-    ``departamento`` is provided, numeric codes are validated against the
-    permitted range for that department.  Any unknown value defaults to
-    ``"01"`` which usually represents the cabecera departamental.
-    """
+    """Validate and return a municipio code."""
 
     if nombre is None:
-        return "01"
+        raise ValueError("Municipio requerido")
 
     nombre = str(nombre)
-    if nombre.isdigit():
-        code = nombre.zfill(2)
-        if departamento:
-            dep_code = _map_departamento(departamento)
-            start, end = MUNICIPIO_RANGES.get(dep_code, ("01", "99"))
-            if code < start or code > end:
-                return start
-        return code
+    if not nombre.isdigit() or len(nombre) != 2:
+        raise ValueError("Municipio inválido")
 
-    dep_code = _map_departamento(departamento) if departamento else None
-    if dep_code:
-        return MUNICIPIO_CODES.get(dep_code, {}).get(nombre, "01")
-
-    for mapping in MUNICIPIO_CODES.values():
-        if nombre in mapping:
-            return mapping[nombre]
-
-    return "01"
+    if departamento:
+        dep_code = _map_departamento(departamento)
+        start, end = MUNICIPIO_RANGES.get(dep_code, ("00", "99"))
+        if nombre < start or nombre > end:
+            raise ValueError("Municipio inválido para el departamento")
+    return nombre
 
 
 def _clean_nit(nit):
@@ -763,10 +701,10 @@ def generar_dte_json(
         "codActividad": datos.get("cod_giro") or datos.get("codActividad"),
         "descActividad": datos.get("descActividad"),
         "tipoContribuyente": datos.get("tipoContribuyente"),
-        "direccion": datos.get("direccion"),
         "telefono": datos.get("telefono"),
         "correo": datos.get("correo"),
     }
+    emisor["direccion"] = get_emisor_direccion()
 
     rec = cliente or {}
     def _clean_nit(nit):
@@ -950,19 +888,13 @@ def validate_dte_json(payload: dict) -> None:
     emisor.setdefault("tipoEstablecimiento", "01")
     direccion = emisor.get("direccion")
     if not isinstance(direccion, dict):
-        dir_neg = negocio.get("direccion") or {}
-        direccion = {
-            "departamento": _map_departamento(dir_neg.get("departamento")),
-            "municipio": _map_municipio(
-                dir_neg.get("municipio"), dir_neg.get("departamento")
-            ),
-            "complemento": dir_neg.get("complemento") if direccion is None else direccion,
-        }
-    else:
-        direccion["departamento"] = _map_departamento(direccion.get("departamento"))
-        direccion["municipio"] = _map_municipio(
-            direccion.get("municipio"), direccion.get("departamento")
-        )
+        direccion = get_emisor_direccion()
+    direccion["departamento"] = _map_departamento(direccion.get("departamento"))
+    direccion["municipio"] = _map_municipio(
+        direccion.get("municipio"), direccion.get("departamento")
+    )
+    if not direccion.get("complemento"):
+        raise ValueError("Faltan campos obligatorios en emisor: direccion.complemento")
     emisor["direccion"] = direccion
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))
@@ -1003,6 +935,19 @@ def validate_dte_json(payload: dict) -> None:
     else:
         receptor["numDocumento"] = _clean_nit(receptor.get("numDocumento"))
     receptor.pop("giro", None)
+    dir_rec = receptor.get("direccion")
+    if dir_rec is not None:
+        if not isinstance(dir_rec, dict):
+            raise ValueError("direccion de receptor inválida")
+        dir_rec["departamento"] = _map_departamento(dir_rec.get("departamento"))
+        dir_rec["municipio"] = _map_municipio(
+            dir_rec.get("municipio"), dir_rec.get("departamento")
+        )
+        if not dir_rec.get("complemento"):
+            raise ValueError(
+                "Faltan campos obligatorios en receptor: direccion.complemento"
+            )
+        receptor["direccion"] = dir_rec
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])

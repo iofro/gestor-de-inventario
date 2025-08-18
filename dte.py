@@ -435,12 +435,12 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         )
         allowed.update(str(c).zfill(2) for c in enum_codes)
 
-    pagos = []
+    pagos: list[dict] = []
     for p in pagos_raw or []:
         codigo = str(p.get("codigo", "")).zfill(2)
         if allowed and codigo not in allowed:
             continue
-        monto = d2(p.get("montoPago", 0))
+        monto = D(str(p.get("montoPago", 0))).quantize(D("0.01"), rounding=ROUND_HALF_UP)
         periodo = p.get("periodo")
         periodo = str(periodo).zfill(2) if periodo else None
         pagos.append(
@@ -457,20 +457,20 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         pagos = [
             {
                 "codigo": "01",
-                "montoPago": d2(total),
+                "montoPago": D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP),
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
             }
         ]
     else:
-        suma = sum(D(str(p["montoPago"])) for p in pagos)
-        diff = (D(str(total)) - suma).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        suma = sum(p["montoPago"] for p in pagos)
+        diff = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP) - suma
         if diff:
-            nuevo = D(str(pagos[-1]["montoPago"])) + diff
+            nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
-            pagos[-1]["montoPago"] = d2(nuevo)
+            pagos[-1]["montoPago"] = nuevo.quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
     if condicion == 2:
         first = pagos[0]
@@ -481,6 +481,10 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
                 "condicionOperacion=2 requiere pago con plazo>0 y periodo válido"
             )
         first["periodo"] = periodo
+
+    # Convertir a ``float`` para compatibilidad con JSON
+    for p in pagos:
+        p["montoPago"] = float(p["montoPago"])
 
     return pagos
 
@@ -632,7 +636,9 @@ def recalcular_totales(data: dict) -> list[str]:
         if iva_val:
             iva_total += Decimal(str(iva_val))
             iva_from_items = True
-    if not iva_from_items:
+    if iva_from_items:
+        iva_total = iva_total.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+    else:
         iva_total = Decimal(
             str(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
         )

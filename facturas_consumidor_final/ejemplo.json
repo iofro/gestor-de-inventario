@@ -13,6 +13,7 @@
     "horEmi": "16:32:13",
     "tipoMoneda": "USD"
   },
+  "documentoRelacionado": [],
   "emisor": {
     "nombre": "Karol Yamileth Cruz Escobar",
     "nombreComercial": "Farmacia Santa Catalina",
@@ -36,21 +37,29 @@
   "receptor": {
     "tipoDocumento": "36",
     "numDocumento": "06141990011019",
-    "nrc": "000001-1",
     "nombre": "ariel",
     "codActividad": null,
     "descActividad": null,
-    "direccion": null,
+    "direccion": {
+      "departamento": "00",
+      "municipio": "00",
+      "complemento": "NA"
+    },
     "telefono": "7000-0001",
     "correo": null
+  },
+  "otrosDocumentos": [],
+  "ventaTercero": {
+    "nit": null,
+    "nombre": null
   },
   "cuerpoDocumento": [
     {
       "numItem": 1,
       "tipoItem": 1,
-      "numeroDocumento": null,
+      "numeroDocumento": "NA",
       "cantidad": 1.0,
-      "codigo": null,
+      "codigo": "SKU-NA",
       "codTributo": "19",
       "uniMedida": 59,
       "descripcion": "Producto Demo 2",
@@ -105,9 +114,13 @@
     "numPagoElectronico": null,
     "condicionOperacion": 1
   },
-  "documentoRelacionado": null,
-  "otrosDocumentos": null,
-  "ventaTercero": null,
-  "extension": null,
-  "apendice": null
+  "extension": {
+    "nombEntrega": null,
+    "docuEntrega": null,
+    "nombRecibe": null,
+    "docuRecibe": null,
+    "observaciones": null,
+    "placaVehiculo": null
+  },
+  "apendice": []
 }

@@ -16,12 +16,15 @@ import re
 from utils.monto import monto_a_texto_sv, d2
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
+from pathlib import Path
+import jsonpatch
 
 logger = logging.getLogger(__name__)
 
 DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
 
 ALLOWED_TOP_KEYS = {
     "identificacion",
@@ -64,6 +67,27 @@ def _sanitize(data, allowed_keys=None):
 def sanitize_dte_payload(data: dict) -> dict:
     """Return ``data`` excluding properties not allowed by the DTE schema."""
     return _sanitize(data, ALLOWED_TOP_KEYS)
+
+
+def apply_schema_patch(data: dict) -> dict:
+    """Apply stored JSON patches for the given DTE ``data``.
+
+    If a patch file matching ``identificacion.tipoDte`` exists in
+    ``schema_patches`` it will be applied and the resulting dictionary is
+    returned.  When no patch is found ``data`` is returned unchanged.
+    """
+    tipo = str(data.get("identificacion", {}).get("tipoDte"))
+    if not tipo:
+        return data
+    patch_file = PATCHES_DIR / f"{tipo}.json"
+    if not patch_file.exists():
+        return data
+    try:
+        with patch_file.open("r", encoding="utf-8") as fh:
+            ops = json.load(fh)
+        return jsonpatch.JsonPatch(ops).apply(data, in_place=False)
+    except Exception:  # pragma: no cover - best effort
+        return data
 
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
@@ -1427,6 +1451,7 @@ def transmitir_dte(
         data = generar_dte_json(db, venta_id)
 
     data = sanitize_dte_payload(data)
+    data = apply_schema_patch(data)
     try:
         validate_dte_json(data)
     except Exception as exc:
@@ -1577,6 +1602,7 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una factura electrónica."""
     data = generar_dte_json(db, venta_id)
     data = sanitize_dte_payload(data)
+    data = apply_schema_patch(data)
     try:
         validate_dte_json(data)
     except Exception as exc:
@@ -1593,6 +1619,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de crédito."""
     data = generar_nota_credito_json(db, nota_id)
     data = sanitize_dte_payload(data)
+    data = apply_schema_patch(data)
     try:
         validate_dte_json(data)
     except Exception as exc:
@@ -1606,6 +1633,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de débito."""
     data = generar_nota_debito_json(db, nota_id)
     data = sanitize_dte_payload(data)
+    data = apply_schema_patch(data)
     try:
         validate_dte_json(data)
     except Exception as exc:
@@ -1619,6 +1647,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de remisión."""
     data = generar_nota_remision_json(db, nota_id)
     data = sanitize_dte_payload(data)
+    data = apply_schema_patch(data)
     try:
         validate_dte_json(data)
     except Exception as exc:

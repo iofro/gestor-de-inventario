@@ -845,6 +845,15 @@ def generar_dte_json(
     commission_total = D("0")
     iva_total = D("0")
     for idx, d in enumerate(detalles, 1):
+        # Unpack extra JSON fields if present
+        raw_extra = d.get("extra")
+        if raw_extra:
+            try:
+                extra_data = json.loads(raw_extra)
+                d.update(extra_data)
+            except Exception:
+                pass
+
         try:
             cant = D(str(d.get("cantidad") or 0))
         except Exception:
@@ -871,12 +880,74 @@ def generar_dte_json(
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
             pass
+
+        # --- Nuevos campos del cuerpo del DTE ---
+        tipo_item = d.get("tipoItem") or d.get("tipo_item")
+        if tipo_item is None:
+            tipo_item = 4 if tipo_dte == "01" else 1
+        if tipo_item not in catalogos.TIPO_ITEM:
+            raise ValueError("tipoItem inválido")
+
+        numero_doc = d.get("numeroDocumento") or d.get("numero_documento")
+        codigo = d.get("codigo")
+        uni_medida = d.get("uniMedida") or (99 if tipo_dte == "01" else 59)
+
+        try:
+            monto_descu = D(str(d.get("montoDescu") or d.get("descuento") or 0))
+        except Exception:
+            monto_descu = D(0)
+        monto_descu_q = d8(monto_descu)
+
+        try:
+            psv = D(str(d.get("psv") or 0))
+        except Exception:
+            psv = D(0)
+        psv_q = d8(psv)
+
+        try:
+            no_gravado = D(str(d.get("noGravado") or 0))
+        except Exception:
+            no_gravado = D(0)
+        no_gravado_q = d8(no_gravado)
+
+        tributos = d.get("tributos") or []
+        if isinstance(tributos, str):
+            tributos = [tributos]
+        tributos = [str(t).upper() for t in tributos if t]
+        allowed_trib = set(catalogos.TRIBUTOS.keys())
+        invalid = [t for t in tributos if t not in allowed_trib]
+        if invalid:
+            raise ValueError(
+                f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+            )
+        if venta_item > 0 and not tributos:
+            tributos = ["19"]
+
+        cod_trib = d.get("codTributo")
+        cod_trib = str(cod_trib).upper() if cod_trib else None
+        if cod_trib and cod_trib not in allowed_trib:
+            raise ValueError("Código de tributo inválido")
+        if not cod_trib and tributos:
+            cod_trib = tributos[0]
+        if tributos and cod_trib != tributos[0]:
+            cod_trib = tributos[0]
+
         item_data = {
             "numItem": idx,
             "descripcion": d.get("descripcion"),
             "cantidad": float(cant_q),
             "precioUnitario": float(precio_q),
             "ventaGravada": float(d8(venta_item)),
+            "tipoItem": tipo_item,
+            "numeroDocumento": numero_doc,
+            "codigo": codigo,
+            "uniMedida": uni_medida,
+            "montoDescu": float(monto_descu_q),
+            "psv": float(psv_q),
+            "noGravado": float(no_gravado_q),
+            "ivaItem": float(monto_iva),
+            "codTributo": cod_trib,
+            "tributos": tributos,
         }
         cuerpo.append(item_data)
 

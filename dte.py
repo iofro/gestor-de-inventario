@@ -839,26 +839,60 @@ def generar_dte_json(
     emisor["direccion"] = svfe_config.get_emisor_direccion()
 
     rec = cliente or {}
-    def _clean_nit(nit):
-        if nit:
-            return "".join(c for c in str(nit) if c.isdigit())
-        return None
+    fiscal = fiscal or {}
 
-    nit = rec.get("nit")
-    if fiscal:
-        nit = fiscal.get("nit") or nit
+    nit = fiscal.get("nit") or rec.get("nit")
+    nrc = fiscal.get("nrc") or rec.get("nrc")
+    nombre = fiscal.get("nombre") or rec.get("nombre")
+    telefono = fiscal.get("telefono") or rec.get("telefono")
+    correo = fiscal.get("correo") or rec.get("email") or rec.get("correo")
+
+    dir_src = {
+        "departamento": fiscal.get("departamento"),
+        "municipio": fiscal.get("municipio"),
+        "complemento": fiscal.get("direccion"),
+    }
+    fiscal_extra = fiscal.get("extra")
+    if isinstance(fiscal_extra, dict):
+        dir_src["departamento"] = fiscal_extra.get("departamento") or dir_src["departamento"]
+        dir_src["municipio"] = fiscal_extra.get("municipio") or dir_src["municipio"]
+        dir_src["complemento"] = (
+            fiscal_extra.get("direccion")
+            or fiscal_extra.get("complemento")
+            or dir_src["complemento"]
+        )
+
+    if not dir_src["departamento"]:
+        dir_src["departamento"] = rec.get("departamento")
+    if not dir_src["municipio"]:
+        dir_src["municipio"] = rec.get("municipio")
+    if not dir_src["complemento"]:
+        dir_src["complemento"] = rec.get("direccion")
+
+    depto = _map_departamento(dir_src.get("departamento"))
+    municipio = _map_municipio(dir_src.get("municipio"), depto)
+    complemento = dir_src.get("complemento")
+    if not complemento:
+        raise ValueError("Complemento de dirección requerido")
 
     receptor = {
         "tipoDocumento": "36" if nit else None,
         "numDocumento": _clean_nit(nit),
-        "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
-        "nombre": rec.get("nombre"),
+        "nrc": _clean_nrc(nrc),
+        "nombre": nombre,
         "codActividad": None,
         "descActividad": None,
-        "direccion": None,
-        "telefono": rec.get("telefono"),
-        "correo": rec.get("correo"),
+        "direccion": {
+            "departamento": depto,
+            "municipio": municipio,
+            "complemento": complemento,
+        },
+        "telefono": telefono,
+        "correo": correo,
     }
+    for campo in ["tipoDocumento", "numDocumento", "nrc", "nombre", "telefono", "correo"]:
+        if not receptor.get(campo):
+            raise ValueError(f"Campo receptor {campo} requerido")
     if fiscal:
         if fiscal.get("no_remision"):
             receptor["noRemision"] = fiscal.get("no_remision")

@@ -10,7 +10,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView
+    QFileDialog, QDialogButtonBox, QListView, QFrame
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices
@@ -2940,10 +2940,11 @@ class DatosNegocioDialog(QDialog):
         self.correo = QLineEdit()
         self.departamento = QComboBox()
         self.municipio = QComboBox()
-        # Limitar el alto del listado de municipios y mostrar scroll
+        # Limitar el alto del listado de municipios y mostrar scroll sin marcos en blanco
         municipio_view = QListView()
         municipio_view.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        municipio_view.setMaximumHeight(200)
+        municipio_view.setFrameShape(QFrame.NoFrame)
+        municipio_view.setStyleSheet("border: none;")
         self.municipio.setView(municipio_view)
         self.municipio.setMaxVisibleItems(8)
         self.complemento = QLineEdit()

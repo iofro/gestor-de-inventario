@@ -14,13 +14,14 @@ def generar_cabecera_dte(
     codigo_generacion: str,
     numero_control: str,
     sello_recepcion: str,
-    modelo_facturacion: str,
-    tipo_transmision: str,
+    tipo_modelo: int,
+    tipo_operacion: int,
     fecha_generacion: str,
+    tipo_contingencia: int | None = None,
     nit_emisor: str = "",
     fecha_emision: str | None = None,
     tipo_dte: str = "01",
-    ambiente: str = "pruebas",
+    ambiente: str = "00",
     tipo_documento: str = "CONSUMIDOR FINAL",
     archivo: str = "cabecera_dte.pdf",
 ):
@@ -82,8 +83,9 @@ def generar_cabecera_dte(
     # QR en el centro
     qr_x = 40 + box_w + col_margin + 3
     qr_y = box_y + (box_h - qr_size) / 2
+    qr_env = 1 if ambiente in ("00", "produccion") else 2
     qr_value = build_qr_value(
-        1 if ambiente == "produccion" else 2,
+        qr_env,
         codigo_generacion,
         tipo_dte,
         numero_control,
@@ -105,7 +107,7 @@ def generar_cabecera_dte(
     max_w = box_w - 10
     text_y = draw_wrapped_text(
         c,
-        f"Modelo Facturación: {modelo_facturacion}",
+        f"Tipo Modelo: {tipo_modelo}",
         right_x + 5,
         text_y,
         max_w,
@@ -113,12 +115,21 @@ def generar_cabecera_dte(
     )
     text_y = draw_wrapped_text(
         c,
-        f"Tipo Transmisión: {tipo_transmision}",
+        f"Tipo Operación: {tipo_operacion}",
         right_x + 5,
         text_y,
         max_w,
         10,
     )
+    if tipo_contingencia is not None:
+        text_y = draw_wrapped_text(
+            c,
+            f"Contingencia: {tipo_contingencia}",
+            right_x + 5,
+            text_y,
+            max_w,
+            10,
+        )
     text_y = draw_wrapped_text(
         c,
         f"Fecha Generación: {fecha_generacion}",
@@ -136,8 +147,8 @@ if __name__ == "__main__":
         codigo_generacion="ABCDEF1234567890",
         numero_control="DTE-001",
         sello_recepcion="SELLO1234567890",
-        modelo_facturacion="1 - Facturación previo",
-        tipo_transmision="1 - Transmisión normal",
+        tipo_modelo=1,
+        tipo_operacion=1,
         fecha_generacion="01/07/2025, 11:15 AM",
         nit_emisor="06140020001001",
         fecha_emision="2025-07-30",
@@ -148,8 +159,8 @@ if __name__ == "__main__":
         codigo_generacion="ABCDEF1234567890",
         numero_control="DTE-001",
         sello_recepcion="SELLO1234567890",
-        modelo_facturacion="1 - Facturación previo",
-        tipo_transmision="1 - Transmisión normal",
+        tipo_modelo=1,
+        tipo_operacion=1,
         fecha_generacion="01/07/2025, 11:15 AM",
         nit_emisor="06140020001001",
         fecha_emision="2025-07-30",

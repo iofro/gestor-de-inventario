@@ -1030,18 +1030,17 @@ class FacturacionTab(QWidget):
         codigo_generacion = venta_data.get("codigo_generacion") or ident.get("codigoGeneracion", "")
         numero_control = venta_data.get("numero_control") or dte_json.get("numeroControl", "")
         sello_recepcion = venta_data.get("sello_recepcion") or extra.get("selloRecibido", "")
-        modelo_facturacion = venta_data.get("modelo_facturacion") or ident.get("modeloFacturacion", "")
-        if not modelo_facturacion:
-            modelo_facturacion = "1 - Facturación previo"
-        tipo_transmision = venta_data.get("tipo_transmision") or ident.get("tipoTransmision", "")
-        if not tipo_transmision:
-            tipo_transmision = "1 - Transmisión normal"
+        tipo_operacion = venta_data.get("tipo_operacion") or ident.get("tipoOperacion")
+        if tipo_operacion is None:
+            tipo_operacion = 1
+        tipo_contingencia = venta_data.get("tipo_contingencia") or ident.get("tipoContingencia")
         fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
 
-        if tipo_transmision.startswith("1") and not sello_recepcion:
+        if tipo_operacion == 1 and not sello_recepcion:
             sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"
             venta_data["sello_recepcion"] = sello_recepcion
-        venta_data["tipo_transmision"] = tipo_transmision
+        venta_data["tipo_operacion"] = tipo_operacion
+        tipo_modelo = 2 if tipo_operacion == 2 else 1
         
         tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
         doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
@@ -1060,15 +1059,17 @@ class FacturacionTab(QWidget):
             codigo_generacion=codigo_generacion,
             numero_control=numero_control,
             sello_recepcion=sello_recepcion,
-            modelo_facturacion=modelo_facturacion,
-            tipo_transmision=tipo_transmision,
+            tipo_modelo=tipo_modelo,
+            tipo_operacion=tipo_operacion,
             fecha_generacion=fecha_generacion,
+            tipo_contingencia=tipo_contingencia,
+            ambiente=ident.get("ambiente", "00"),
         )
         json_data = build_invoice_json(venta_data, cliente or {}, detalles)
         with open(json_path, 'w', encoding='utf-8') as fh:
             json.dump(json_data, fh, ensure_ascii=False, indent=2)
-        if tipo_transmision.startswith("2"):
-            self.manager.db.add_dte_pendiente(venta_id, json_data, tipo_transmision)
+        if tipo_operacion == 2:
+            self.manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
         self.manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
         return file_path
 

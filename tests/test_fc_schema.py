@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import pytest
 from svfe.generators import (
     generar_consumidor_final as generar_fc_ejemplo,
     strip_extras,
@@ -24,13 +25,12 @@ def test_fc_min_valido():
 
 def test_fc_cod_tributo_invalido(tmp_path, monkeypatch):
     dte = generar_fc_ejemplo()
-    dte["cuerpoDocumento"][0]["codTributo"] = "A8"
-    # Crear una copia del esquema excluyendo el código "A8".
+    # Crear una copia del esquema excluyendo el código "19".
     with open(SCHEMA_FC, "r", encoding="utf-8") as fh:
         schema = json.load(fh)
     enum = schema["properties"]["cuerpoDocumento"]["items"]["properties"]["codTributo"]["enum"]
-    if "A8" in enum:
-        enum.remove("A8")
+    if "19" in enum:
+        enum.remove("19")
     patched_path = tmp_path / "fe-fc-v1.json"
     with open(patched_path, "w", encoding="utf-8") as fh:
         json.dump(schema, fh)
@@ -40,9 +40,7 @@ def test_fc_cod_tributo_invalido(tmp_path, monkeypatch):
     monkeypatch.setattr(gen_mod, "SCHEMAS_DIR", tmp_path)
     monkeypatch.setitem(gen_mod.SCHEMA_MAP, "fc", (patched_path.name, "01"))
 
-    try:
+    with pytest.raises(ValueError) as e:
         validate_against_schema(strip_extras(dte), "fc")
-        assert False, "Debió fallar por codTributo inválido"
-    except ValueError as e:
-        msg = str(e)
-        assert "cuerpoDocumento.0.codTributo" in msg
+    msg = str(e.value)
+    assert "cuerpoDocumento.0.codTributo" in msg

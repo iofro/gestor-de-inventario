@@ -16,7 +16,7 @@ import re
 from utils.monto import monto_a_texto_sv, d2
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
-from svfe.config import get_emisor_direccion
+from svfe import config as svfe_config
 from pathlib import Path
 import jsonpatch
 
@@ -407,24 +407,52 @@ RESUMEN_DEFAULTS = {
 import re
 
 
-def normalizar_pagos(pagos_raw, total):
-    """Normaliza la lista de pagos al formato del esquema."""
-    pattern = re.compile(r"^(0[1-9]|1[0-4]|99)$")
+def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
+    """Normaliza la lista de pagos al formato del esquema.
+
+    ``pagos_raw`` es una lista de pagos proporcionada por el usuario.  Los
+    códigos de pago se validan contra el catálogo local ``FORMA_PAGO`` y, si
+    está disponible, contra el esquema oficial del DTE correspondiente.  Los
+    montos se redondean a dos decimales y se garantiza que la suma de todos los
+    pagos coincida con ``total``.
+
+    Cuando ``condicion`` es 2 (crédito) el primer pago debe incluir un ``plazo``
+    mayor a cero y un ``periodo`` válido del catálogo ``PLAZO``.
+    """
+
+    allowed = set(catalogos.FORMA_PAGO.keys())
+    schema = catalogos.get_dte_schema(tipo_dte)
+    if schema:
+        enum_codes = (
+            schema.get("properties", {})
+            .get("resumen", {})
+            .get("properties", {})
+            .get("pagos", {})
+            .get("items", {})
+            .get("properties", {})
+            .get("codigo", {})
+            .get("enum", [])
+        )
+        allowed.update(str(c).zfill(2) for c in enum_codes)
+
     pagos = []
     for p in pagos_raw or []:
         codigo = str(p.get("codigo", "")).zfill(2)
-        if not pattern.match(codigo):
+        if allowed and codigo not in allowed:
             continue
         monto = d2(p.get("montoPago", 0))
+        periodo = p.get("periodo")
+        periodo = str(periodo).zfill(2) if periodo else None
         pagos.append(
             {
                 "codigo": codigo,
                 "montoPago": monto,
                 "referencia": p.get("referencia"),
-                "periodo": p.get("periodo"),
+                "periodo": periodo,
                 "plazo": p.get("plazo"),
             }
         )
+
     if not pagos:
         pagos = [
             {
@@ -435,6 +463,25 @@ def normalizar_pagos(pagos_raw, total):
                 "plazo": None,
             }
         ]
+    else:
+        suma = sum(D(str(p["montoPago"])) for p in pagos)
+        diff = (D(str(total)) - suma).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        if diff:
+            nuevo = D(str(pagos[-1]["montoPago"])) + diff
+            if nuevo < 0:
+                raise ValidationError("La suma de pagos excede el total a pagar")
+            pagos[-1]["montoPago"] = d2(nuevo)
+
+    if condicion == 2:
+        first = pagos[0]
+        plazo = first.get("plazo") or 0
+        periodo = str(first.get("periodo") or "").zfill(2)
+        if not plazo or periodo not in catalogos.PLAZO:
+            raise ValidationError(
+                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido"
+            )
+        first["periodo"] = periodo
+
     return pagos
 
 
@@ -527,9 +574,23 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "totalPagar" in resumen:
         resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
     if "pagos" in resumen:
-        resumen["pagos"] = normalizar_pagos(extra.get("pagos"), resumen["totalPagar"])
+        resumen["pagos"] = normalizar_pagos(
+            extra.get("pagos"),
+            resumen["totalPagar"],
+            tipo_dte=tipo_dte,
+            condicion=resumen.get("condicionOperacion", 1),
+        )
     if "tributos" in resumen:
-        resumen["tributos"] = armar_tributos(extra.get("tributos"), tipo_dte)
+        trib = armar_tributos(extra.get("tributos"), tipo_dte)
+        if trib is None and sumas_val > 0:
+            trib = [
+                {
+                    "codigo": "19",
+                    "descripcion": catalogos.TRIBUTOS.get("19"),
+                    "valor": d2(iva_val),
+                }
+            ]
+        resumen["tributos"] = trib
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
@@ -744,7 +805,7 @@ def generar_dte_json(
         "telefono": datos.get("telefono"),
         "correo": datos.get("correo"),
     }
-    emisor["direccion"] = get_emisor_direccion()
+    emisor["direccion"] = svfe_config.get_emisor_direccion()
 
     rec = cliente or {}
     def _clean_nit(nit):
@@ -928,13 +989,21 @@ def validate_dte_json(payload: dict) -> None:
     emisor.setdefault("tipoEstablecimiento", "01")
     direccion = emisor.get("direccion")
     if not isinstance(direccion, dict):
-        direccion = get_emisor_direccion()
-    direccion["departamento"] = _map_departamento(direccion.get("departamento"))
-    direccion["municipio"] = _map_municipio(
-        direccion.get("municipio"), direccion.get("departamento")
-    )
-    if not direccion.get("complemento"):
-        raise ValueError("Faltan campos obligatorios en emisor: direccion.complemento")
+        try:
+            direccion = svfe_config.get_emisor_direccion()
+        except Exception:
+            direccion = {}
+    depto = direccion.get("departamento")
+    if depto is not None:
+        depto = _map_departamento(depto)
+    municipio = direccion.get("municipio")
+    if municipio is not None:
+        municipio = _map_municipio(municipio, depto)
+    direccion = {
+        "departamento": depto,
+        "municipio": municipio,
+        "complemento": direccion.get("complemento"),
+    }
     emisor["direccion"] = direccion
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))
@@ -1046,23 +1115,22 @@ def validate_dte_json(payload: dict) -> None:
 
         # --- Valores por defecto ---
         if tipo_dte == "01":
-            # En la factura de consumidor final los ítems deben declararse con
-            # ``tipoItem`` 4 y unidad de medida 99 (no aplica).  Los tributos se
-            # reportan únicamente por medio de ``codTributo`` y el arreglo
-            # ``tributos`` debe ser ``null``.
             item["tipoItem"] = 4
             item["uniMedida"] = 99
         else:
             item.setdefault("tipoItem", 1)
             item.setdefault("uniMedida", 59)
 
-        item.setdefault("numeroDocumento", None)
+        if item.get("tipoItem") not in catalogos.TIPO_ITEM:
+            raise ValueError("tipoItem inválido")
+
+        item.setdefault("numeroDocumento", "NA")
         item.setdefault("codigo", None)
         item.setdefault("codTributo", None)
         item.setdefault("montoDescu", 0.0)
         item.setdefault("ventaNoSuj", 0.0)
         item.setdefault("ventaExenta", 0.0)
-        item.setdefault("tributos", None)
+        item.setdefault("tributos", [])
         item.setdefault("psv", 0.0)
         item.setdefault("noGravado", 0.0)
         if iva_key:
@@ -1075,54 +1143,47 @@ def validate_dte_json(payload: dict) -> None:
         item["cantidad"] = float(cantidad_q)
         item[precio_key] = float(precio_q)
         importe = cantidad_q * precio_q
-        item.setdefault("ventaGravada", float(d8(importe)))
+
+        monto_descu = d8(D(str(item.get("montoDescu") or 0)))
+        item["montoDescu"] = float(monto_descu)
+        base = d8(max(importe - monto_descu, D("0")))
+
+        venta_gravada = D(str(item.get("ventaGravada") or 0))
+        venta_exenta = D(str(item.get("ventaExenta") or 0))
+        venta_no_suj = D(str(item.get("ventaNoSuj") or 0))
+        if venta_exenta > 0:
+            item["ventaExenta"] = float(base)
+            item.setdefault("ventaGravada", 0.0)
+        elif venta_no_suj > 0:
+            item["ventaNoSuj"] = float(base)
+            item.setdefault("ventaGravada", 0.0)
+        else:
+            item["ventaGravada"] = float(base)
 
         # --- Manejo y validación de tributos ---
         venta_gravada = D(str(item.get("ventaGravada") or 0))
-        if tipo_dte == "01":
-            # Para consumidor final no se reporta el arreglo ``tributos``.  Si
-            # el ítem es gravado se utiliza por defecto el código "A8".
-            allowed = set(catalogos.TRIBUTOS.keys())
-            if venta_gravada > 0:
-                cod = item.get("codTributo") or "A8"
-                item["codTributo"] = str(cod).upper()
-                if item["codTributo"] not in allowed:
-                    raise ValueError(
-                        f"codTributo inválido: {item['codTributo']}"
-                    )
-            else:
-                item["codTributo"] = None
-            item["tributos"] = None
+        allowed = set(catalogos.TRIBUTOS.keys())
+        if venta_gravada > 0:
+            tributos = item.get("tributos") or []
+            if isinstance(tributos, str):
+                tributos = [tributos]
+            tributos = [str(t).upper() for t in tributos if t]
+            if "19" not in tributos:
+                tributos.insert(0, "19")
+            item["tributos"] = tributos
+            item["codTributo"] = "19"
+            invalid = [t for t in tributos if t not in allowed]
+            if invalid:
+                raise ValueError(
+                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+                )
+            if iva_key:
+                item[iva_key] = float(d8(venta_gravada * D("0.13")))
         else:
-            tributos = item.get("tributos")
-            if venta_gravada > 0:
-                # Si la venta es gravada y no se especifican tributos, se
-                # asigna un código por defecto (IVA "A8").
-                if not tributos:
-                    tributos = ["A8"]
-                elif isinstance(tributos, str):
-                    tributos = [tributos]
-                item["tributos"] = [str(t).upper() for t in tributos]
-
-                # ``codTributo`` toma el primer código de la lista si no fue
-                # proporcionado explícitamente.
-                cod = item.get("codTributo") or item["tributos"][0]
-                item["codTributo"] = str(cod).upper()
-
-                allowed = set(catalogos.TRIBUTOS.keys())
-                if item["codTributo"] not in allowed:
-                    raise ValueError(
-                        f"codTributo inválido: {item['codTributo']}"
-                    )
-                invalid = [t for t in item["tributos"] if t not in allowed]
-                if invalid:
-                    raise ValueError(
-                        f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
-                    )
-            else:
-                # Si no hay venta gravada, no deben declararse tributos
-                item["tributos"] = None
-                item["codTributo"] = None
+            item["tributos"] = []
+            item["codTributo"] = None
+            if iva_key:
+                item[iva_key] = 0.0
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})

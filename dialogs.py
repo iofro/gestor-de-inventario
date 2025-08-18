@@ -69,6 +69,94 @@ def validar_telefono(telefono):
     digits = re.sub(r"\D", "", telefono)
     return len(digits) == 8 or (len(digits) == 11 and digits.startswith("503"))
 
+DEPARTAMENTOS = [
+    {"codigo": "00", "nombre": "Otro (Para extranjeros)"},
+    {"codigo": "01", "nombre": "Ahuachapán"},
+    {"codigo": "02", "nombre": "Santa Ana"},
+    {"codigo": "03", "nombre": "Sonsonate"},
+    {"codigo": "04", "nombre": "Chalatenango"},
+    {"codigo": "05", "nombre": "La Libertad"},
+    {"codigo": "06", "nombre": "San Salvador"},
+    {"codigo": "07", "nombre": "Cuscatlán"},
+    {"codigo": "08", "nombre": "La Paz"},
+    {"codigo": "09", "nombre": "Cabañas"},
+    {"codigo": "10", "nombre": "San Vicente"},
+    {"codigo": "11", "nombre": "Usulután"},
+    {"codigo": "12", "nombre": "San Miguel"},
+    {"codigo": "13", "nombre": "Morazán"},
+    {"codigo": "14", "nombre": "La Unión"},
+]
+
+MUNICIPIOS = [
+    {"codigo": "00", "nombre": "Otro (Para extranjeros)"},
+    {"codigo": "13", "nombre": "AHUACHAPAN NORTE"},
+    {"codigo": "14", "nombre": "AHUACHAPAN CENTRO"},
+    {"codigo": "15", "nombre": "AHUACHAPAN SUR"},
+    {"codigo": "14", "nombre": "SANTA ANA NORTE"},
+    {"codigo": "15", "nombre": "SANTA ANA CENTRO"},
+    {"codigo": "16", "nombre": "SANTA ANA ESTE"},
+    {"codigo": "17", "nombre": "SANTA ANA OESTE"},
+    {"codigo": "17", "nombre": "SONSONATE NORTE"},
+    {"codigo": "18", "nombre": "SONSONATE CENTRO"},
+    {"codigo": "19", "nombre": "SONSONATE ESTE"},
+    {"codigo": "20", "nombre": "SONSONATE OESTE"},
+    {"codigo": "34", "nombre": "CHALATENANGO NORTE"},
+    {"codigo": "35", "nombre": "CHALATENANGO CENTRO"},
+    {"codigo": "36", "nombre": "CHALATENANGO SUR"},
+    {"codigo": "23", "nombre": "LA LIBERTAD NORTE"},
+    {"codigo": "24", "nombre": "LA LIBERTAD CENTRO"},
+    {"codigo": "25", "nombre": "LA LIBERTAD OESTE"},
+    {"codigo": "26", "nombre": "LA LIBERTAD ESTE"},
+    {"codigo": "27", "nombre": "LA LIBERTAD COSTA"},
+    {"codigo": "28", "nombre": "LA LIBERTAD SUR"},
+    {"codigo": "20", "nombre": "SAN SALVADOR NORTE"},
+    {"codigo": "21", "nombre": "SAN SALVADOR OESTE"},
+    {"codigo": "22", "nombre": "SAN SALVADOR ESTE"},
+    {"codigo": "23", "nombre": "SAN SALVADOR CENTRO"},
+    {"codigo": "24", "nombre": "SAN SALVADOR SUR"},
+    {"codigo": "17", "nombre": "CUSCATLAN NORTE"},
+    {"codigo": "18", "nombre": "CUSCATLAN SUR"},
+    {"codigo": "23", "nombre": "LA PAZ OESTE"},
+    {"codigo": "24", "nombre": "LA PAZ CENTRO"},
+    {"codigo": "25", "nombre": "LA PAZ ESTE"},
+    {"codigo": "10", "nombre": "CABANAS OESTE"},
+    {"codigo": "11", "nombre": "CABANAS ESTE"},
+    {"codigo": "14", "nombre": "SAN VICENTE NORTE"},
+    {"codigo": "15", "nombre": "SAN VICENTE SUR"},
+    {"codigo": "24", "nombre": "USULUTAN NORTE"},
+    {"codigo": "25", "nombre": "USULUTAN ESTE"},
+    {"codigo": "26", "nombre": "USULUTAN OESTE"},
+    {"codigo": "21", "nombre": "SAN MIGUEL NORTE"},
+    {"codigo": "22", "nombre": "SAN MIGUEL CENTRO"},
+    {"codigo": "23", "nombre": "SAN MIGUEL OESTE"},
+    {"codigo": "27", "nombre": "MORAZAN NORTE"},
+    {"codigo": "28", "nombre": "MORAZAN SUR"},
+    {"codigo": "19", "nombre": "LA UNION NORTE"},
+    {"codigo": "20", "nombre": "LA UNION SUR"},
+]
+
+
+def _populate_combo(combo, items):
+    combo.clear()
+    combo.addItem("Seleccione...", "")
+    for item in items:
+        combo.addItem(f"{item['codigo']} — {item['nombre']}", item["codigo"])
+    combo.setEditable(False)
+
+
+def _set_combo_value(combo, items, value):
+    if not value:
+        combo.setCurrentIndex(0)
+        return
+    idx = combo.findData(value)
+    if idx == -1:
+        for item in items:
+            if item["nombre"] == value:
+                idx = combo.findData(item["codigo"])
+                break
+    if idx >= 0:
+        combo.setCurrentIndex(idx)
+
 def cargar_departamentos_municipios():
     # Lista completa de departamentos y municipios de El Salvador
     return {
@@ -2346,8 +2434,14 @@ class DistribuidorDialog(QDialog):
         detalles = QGroupBox("Detalles adicionales (opcional)")
         form2 = QFormLayout()
         self.direccion_edit = QLineEdit()
-        self.departamento_edit = QLineEdit()
-        self.municipio_edit = QLineEdit()
+        self.departamento_edit = QComboBox()
+        self.municipio_edit = QComboBox()
+        _populate_combo(self.departamento_edit, DEPARTAMENTOS)
+        _populate_combo(self.municipio_edit, MUNICIPIOS)
+        self.municipio_edit.setEnabled(False)
+        self.departamento_edit.currentIndexChanged.connect(
+            lambda *_: self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
+        )
         self.tipo_contrato_edit = QLineEdit()
         self.comisiones_especificas_edit = QLineEdit()
         self.metodo_pago_edit = QLineEdit()
@@ -2397,8 +2491,17 @@ class DistribuidorDialog(QDialog):
             if "fecha_inicio" in Distribuidor.keys() and Distribuidor["fecha_inicio"]:
                 self.fecha_inicio_edit.setDate(QDate.fromString(Distribuidor["fecha_inicio"], "yyyy-MM-dd"))
             self.direccion_edit.setText(Distribuidor["direccion"] if "direccion" in Distribuidor.keys() else "")
-            self.departamento_edit.setText(Distribuidor["departamento"] if "departamento" in Distribuidor.keys() else "")
-            self.municipio_edit.setText(Distribuidor["municipio"] if "municipio" in Distribuidor.keys() else "")
+            _set_combo_value(
+                self.departamento_edit,
+                DEPARTAMENTOS,
+                Distribuidor.get("departamento"),
+            )
+            _set_combo_value(
+                self.municipio_edit,
+                MUNICIPIOS,
+                Distribuidor.get("municipio"),
+            )
+            self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
             self.tipo_contrato_edit.setText(Distribuidor["tipo_contrato"] if "tipo_contrato" in Distribuidor.keys() else "")
             self.comisiones_especificas_edit.setText(Distribuidor["comisiones_especificas"] if "comisiones_especificas" in Distribuidor.keys() else "")
             self.metodo_pago_edit.setText(Distribuidor["metodo_pago"] if "metodo_pago" in Distribuidor.keys() else "")
@@ -2437,8 +2540,8 @@ class DistribuidorDialog(QDialog):
             "sucursal": self.sucursal_edit.text(),
             "fecha_inicio": self.fecha_inicio_edit.date().toString("yyyy-MM-dd"),
             "direccion": self.direccion_edit.text(),
-            "departamento": self.departamento_edit.text(),
-            "municipio": self.municipio_edit.text(),
+            "departamento": self.departamento_edit.currentData(),
+            "municipio": self.municipio_edit.currentData(),
             "tipo_contrato": self.tipo_contrato_edit.text(),
             "comisiones_especificas": self.comisiones_especificas_edit.text(),
             "metodo_pago": self.metodo_pago_edit.text(),
@@ -2530,8 +2633,14 @@ class ClienteDialog(QDialog):
         self.telefono_edit = QLineEdit()
         self.email_edit = QLineEdit()
         self.direccion_edit = QLineEdit()
-        self.departamento_edit = QLineEdit()
-        self.municipio_edit = QLineEdit()
+        self.departamento_edit = QComboBox()
+        self.municipio_edit = QComboBox()
+        _populate_combo(self.departamento_edit, DEPARTAMENTOS)
+        _populate_combo(self.municipio_edit, MUNICIPIOS)
+        self.municipio_edit.setEnabled(False)
+        self.departamento_edit.currentIndexChanged.connect(
+            lambda *_: self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
+        )
         self._cliente_id = cliente.get("id") if cliente else None
 
         form = [
@@ -2577,8 +2686,9 @@ class ClienteDialog(QDialog):
             self.telefono_edit.setText(cliente.get("telefono", ""))
             self.email_edit.setText(cliente.get("email", ""))
             self.direccion_edit.setText(cliente.get("direccion", ""))
-            self.departamento_edit.setText(cliente.get("departamento", ""))
-            self.municipio_edit.setText(cliente.get("municipio", ""))
+            _set_combo_value(self.departamento_edit, DEPARTAMENTOS, cliente.get("departamento"))
+            _set_combo_value(self.municipio_edit, MUNICIPIOS, cliente.get("municipio"))
+            self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
 
 
     def _validar_y_accept(self):
@@ -2639,8 +2749,8 @@ class ClienteDialog(QDialog):
             "telefono": self.telefono_edit.text().strip(),
             "email": self.email_edit.text().strip(),
             "direccion": self.direccion_edit.text().strip(),
-            "departamento": self.departamento_edit.text().strip(),
-            "municipio": self.municipio_edit.text().strip(),
+            "departamento": self.departamento_edit.currentData(),
+            "municipio": self.municipio_edit.currentData(),
         }
 
 class VendedorDialog(QDialog):
@@ -2826,9 +2936,15 @@ class DatosNegocioDialog(QDialog):
         self.tipo_contribuyente = QLineEdit()
         self.telefono = QLineEdit()
         self.correo = QLineEdit()
-        self.departamento = QLineEdit()
-        self.municipio = QLineEdit()
+        self.departamento = QComboBox()
+        self.municipio = QComboBox()
         self.complemento = QLineEdit()
+        _populate_combo(self.departamento, DEPARTAMENTOS)
+        _populate_combo(self.municipio, MUNICIPIOS)
+        self.municipio.setEnabled(False)
+        self.departamento.currentIndexChanged.connect(
+            lambda *_: self.municipio.setEnabled(bool(self.departamento.currentData()))
+        )
         form.addRow("NIT:", self.nit)
         form.addRow("NRC:", self.nrc)
         form.addRow("Nombre:", self.nombre)
@@ -2868,8 +2984,8 @@ class DatosNegocioDialog(QDialog):
             "telefono": self.telefono.text(),
             "correo": self.correo.text(),
             "direccion": {
-                "departamento": self.departamento.text(),
-                "municipio": self.municipio.text(),
+                "departamento": self.departamento.currentData(),
+                "municipio": self.municipio.currentData(),
                 "complemento": self.complemento.text(),
             },
         }
@@ -2885,8 +3001,9 @@ class DatosNegocioDialog(QDialog):
         self.telefono.setText(datos.get("telefono", ""))
         self.correo.setText(datos.get("correo", ""))
         dir_info = datos.get("direccion", {}) or {}
-        self.departamento.setText(dir_info.get("departamento", ""))
-        self.municipio.setText(dir_info.get("municipio", ""))
+        _set_combo_value(self.departamento, DEPARTAMENTOS, dir_info.get("departamento"))
+        _set_combo_value(self.municipio, MUNICIPIOS, dir_info.get("municipio"))
+        self.municipio.setEnabled(bool(self.departamento.currentData()))
         self.complemento.setText(dir_info.get("complemento", ""))
 
 

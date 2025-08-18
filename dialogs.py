@@ -3022,8 +3022,18 @@ class DatosNegocioDialog(QDialog):
         self.telefono.setText(datos.get("telefono", ""))
         self.correo.setText(datos.get("correo", ""))
         dir_info = datos.get("direccion", {}) or {}
-        _set_combo_value(self.departamento, DEPARTAMENTOS, dir_info.get("departamento"))
-        _set_combo_value(self.municipio, MUNICIPIOS, dir_info.get("municipio"))
+        departamento = dir_info.get("departamento")
+        municipio = dir_info.get("municipio")
+        _set_combo_value(
+            self.departamento,
+            DEPARTAMENTOS,
+            str(departamento) if departamento else "",
+        )
+        _set_combo_value(
+            self.municipio,
+            MUNICIPIOS,
+            str(municipio) if municipio else "",
+        )
         self.municipio.setEnabled(bool(self.departamento.currentData()))
         self.complemento.setText(dir_info.get("complemento", ""))
 

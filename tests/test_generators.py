@@ -2,7 +2,6 @@ import copy
 from decimal import Decimal
 
 import pytest
-from jsonschema.exceptions import ValidationError
 
 from svfe.generators import (
     generar_factura_fiscal,
@@ -63,5 +62,6 @@ def test_generar_nota_remision():
 def test_validar_contra_schema_missing_required_field():
     data = generar_factura_fiscal()
     data.pop("resumen")
-    with pytest.raises(ValidationError):
+    with pytest.raises(ValueError) as excinfo:
         validar_contra_schema(data, "ccf")
+    assert "resumen" in str(excinfo.value)

@@ -287,9 +287,9 @@
                 "codActividad": {
                     "type": "string",
                     "description": "Código de Actividad Económica (Emisor)",
-                    "pattern": "^[0-9]{4,6}$",
+                    "pattern": "^[0-9]{2,6}$",
                     "maxLength": 6,
-                    "minLength": 4
+                    "minLength": 5
                 },
                 "descActividad": {
                     "type": "string",
@@ -649,9 +649,9 @@
                         "null"
                     ],
                     "description": "Código de Actividad Económica (Receptor)",
-                    "pattern": "^[0-9]{4,6}$",
+                    "pattern": "^[0-9]{2,6}$",
                     "maxLength": 6,
-                    "minLength": 4
+                    "minLength": 5
                 },
                 "descActividad": {
                     "type": [
@@ -1329,7 +1329,7 @@
                         "else": {
                             "properties": {
                                 "codTributo": {
-                                    "type": "string"
+                                    "type": "null"
                                 },
                                 "tributos": {
                                     "items": {
@@ -1375,7 +1375,6 @@
                                             "A1",
                                             "A5",
                                             "A7",
-                                            "A8",
                                             "A9"
                                         ]
                                     }

@@ -1,5 +1,10 @@
 import pytest
 
+import json
+from pathlib import Path
+
+import jsonschema
+
 from db import DB
 from dte import generar_dte_json
 
@@ -38,6 +43,11 @@ def test_generar_dte_json_basic():
     assert data["identificacion"].get("codigoGeneracion")
     assert data["receptor"].get("noRemision") is None
     assert data["receptor"].get("ordenNo") is None
+
+    schema_path = Path(__file__).resolve().parents[1] / "svfe-json-schemas" / "fe-fc-v1.json"
+    with open(schema_path, "r", encoding="utf-8") as fh:
+        ident_schema = json.load(fh)["properties"]["identificacion"]
+    jsonschema.validate(data["identificacion"], ident_schema)
 
 
 def test_dte_rounding_and_validation(capsys):

@@ -682,13 +682,26 @@ def generar_numero_control(prefijo: str = "DTE-01-S001P001") -> str:
     return f"{prefijo}-{secuencia}"
 
 
-def generar_cabecera_dte_data(modelo_facturacion: str, tipo_transmision: str) -> dict:
+def generar_cabecera_dte_data(
+    tipo_modelo: int,
+    tipo_operacion: int,
+    tipo_contingencia: int | None = None,
+    motivo_contin: str | None = None,
+    ambiente: str = "00",
+) -> dict:
     """Genera los datos para la cabecera de un DTE.
 
     Los campos de código de generación y número de control se crean antes de
     enviar la factura. Los valores que envía Hacienda posteriormente (código de
     generación y sello recibido) se dejan en ``None``.
     """
+    if tipo_operacion == 1:
+        tipo_modelo = 1
+        tipo_contingencia = None
+        motivo_contin = None
+    else:
+        tipo_modelo = 2
+
     codigo_generacion = str(uuid.uuid4()).upper()
     numero_control = generar_numero_control()
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
@@ -696,19 +709,31 @@ def generar_cabecera_dte_data(modelo_facturacion: str, tipo_transmision: str) ->
         "codigo_generacion": codigo_generacion,
         "numero_control": numero_control,
         "sello_recepcion": None,
-        "modelo_facturacion": modelo_facturacion,
-        "tipo_transmision": tipo_transmision,
+        "tipo_modelo": tipo_modelo,
+        "tipo_operacion": tipo_operacion,
+        "tipo_contingencia": tipo_contingencia,
+        "motivo_contin": motivo_contin,
         "fecha_generacion": fecha_generacion,
+        "ambiente": ambiente,
     }
 
 def generar_dte_json(
     db: DB,
     venta_id: int,
-    modelo_facturacion: str = "1 - Facturación previo",
-    tipo_transmision: str = "1 - Transmisión normal",
     tipo_dte: str = "01",
+    *,
+    ambiente: str = "00",
+    tipo_operacion: int = 1,
+    tipo_contingencia: int | None = None,
+    motivo_contin: str | None = None,
+    tipo_modelo: int | None = None,
+    tipo_moneda: str = "USD",
+    **kwargs,
 ) -> dict:
-    """Genera un diccionario DTE básico para una venta."""
+    """Genera un diccionario DTE básico para una venta.
+
+    ``kwargs`` se acepta para compatibilidad con parámetros obsoletos.
+    """
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if not row:
         raise ValueError("Venta no encontrada")
@@ -744,15 +769,30 @@ def generar_dte_json(
     fecha = fecha_emision_hoy_str(now)
     hora = now.strftime("%H:%M:%S")
 
+    if tipo_operacion == 1:
+        tipo_modelo = 1
+        tipo_contingencia = None
+        motivo_contin = None
+    else:
+        tipo_modelo = 2
+        if tipo_contingencia is None:
+            raise ValueError("tipoContingencia requerido cuando tipoOperacion=2")
+        if tipo_contingencia != 5:
+            motivo_contin = None
+
     identificacion = {
-        "version": "1",
+        "version": 1,
+        "ambiente": ambiente,
         "tipoDte": tipo_dte,
-        "codigoGeneracion": codigo_generacion,
         "numeroControl": numero_control,
+        "codigoGeneracion": codigo_generacion,
+        "tipoModelo": tipo_modelo,
+        "tipoOperacion": tipo_operacion,
+        "tipoContingencia": tipo_contingencia,
+        "motivoContin": motivo_contin,
         "fecEmi": fecha,
         "horEmi": hora,
-        "modeloFacturacion": modelo_facturacion,
-        "tipoTransmision": tipo_transmision,
+        "tipoMoneda": tipo_moneda,
     }
 
     emisor = {
@@ -1199,16 +1239,23 @@ def validate_dte_json(payload: dict) -> None:
 def generar_ticket_json(
     db: DB,
     venta_id: int,
-    modelo_facturacion: str = "1 - Facturación previo",
-    tipo_transmision: str = "1 - Transmisión normal",
+    *,
+    ambiente: str = "00",
+    tipo_operacion: int = 1,
+    tipo_contingencia: int | None = None,
+    motivo_contin: str | None = None,
+    **kwargs,
 ) -> dict:
     """Genera la estructura JSON para un Ticket Electrónico."""
     return generar_dte_json(
         db,
         venta_id,
-        modelo_facturacion=modelo_facturacion,
-        tipo_transmision=tipo_transmision,
         tipo_dte="03",
+        ambiente=ambiente,
+        tipo_operacion=tipo_operacion,
+        tipo_contingencia=tipo_contingencia,
+        motivo_contin=motivo_contin,
+        **kwargs,
     )
 
 

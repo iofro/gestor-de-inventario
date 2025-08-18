@@ -86,8 +86,8 @@ def test_nota_debito_pdf(tmp_path):
     assert "Código Generación:" in text
     assert "Número Control:" in text
     assert "Sello Recepción:" in text
-    assert "Modelo Facturación:" in text
-    assert "Tipo Transmisión:" in text
+    assert "Tipo Modelo:" in text
+    assert "Tipo Operación:" in text
     assert "Fecha Generación:" in text
 
 

@@ -106,8 +106,8 @@ def test_factura_pdf_contains_header(tmp_path):
         codigo_generacion="ABC123",
         numero_control="NC-42",
         sello_recepcion="SELLO1",
-        modelo_facturacion="1 - Facturaci\u00f3n previo",
-        tipo_transmision="1 - Transmisi\u00f3n normal",
+        tipo_modelo=1,
+        tipo_operacion=1,
         fecha_generacion="01/07/2025",
     )
 

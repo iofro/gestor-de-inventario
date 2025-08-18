@@ -94,18 +94,19 @@ def generate_invoice_pdf(manager, venta_id):
     if not venta_data.get("documento_venta_a_cuenta"):
         venta_data["documento_venta_a_cuenta"] = extra.get("documento_venta_a_cuenta", "")
     sello_recepcion = venta_data.get("sello_recepcion") or extra.get("selloRecibido", "")
-    modelo_facturacion = venta_data.get("modelo_facturacion") or extra.get("modeloFacturacion", "")
-    if not modelo_facturacion:
-        modelo_facturacion = "1 - Facturación previo"
-    tipo_transmision = venta_data.get("tipo_transmision") or extra.get("tipoTransmision", "")
-    if not tipo_transmision:
-        tipo_transmision = "1 - Transmisión normal"
+    tipo_operacion = venta_data.get("tipo_operacion") or extra.get("tipoOperacion") or 1
+    tipo_contingencia = (
+        venta_data.get("tipo_contingencia") or extra.get("tipoContingencia")
+    )
+    motivo_contin = venta_data.get("motivo_contin") or extra.get("motivoContin")
+    ambiente = venta_data.get("ambiente") or extra.get("ambiente") or "00"
     fecha_generacion = venta_data.get("fecha_generacion") or extra.get("fechaGeneracion", "")
 
-    if tipo_transmision.startswith("1") and not sello_recepcion:
+    if tipo_operacion == 1 and not sello_recepcion:
         sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"
         venta_data["sello_recepcion"] = sello_recepcion
-    venta_data["tipo_transmision"] = tipo_transmision
+    venta_data["tipo_operacion"] = tipo_operacion
+    tipo_modelo = 2 if tipo_operacion == 2 else 1
 
     tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
@@ -114,9 +115,11 @@ def generate_invoice_pdf(manager, venta_id):
         json_data = generar_dte_json(
             manager.db,
             venta_id,
-            modelo_facturacion=modelo_facturacion,
-            tipo_transmision=tipo_transmision,
             tipo_dte="03" if credito_info else "01",
+            ambiente=ambiente,
+            tipo_operacion=tipo_operacion,
+            tipo_contingencia=tipo_contingencia,
+            motivo_contin=motivo_contin,
         )
     except Exception:
         json_data = build_invoice_json(venta_data, cliente or {}, detalles)
@@ -143,14 +146,17 @@ def generate_invoice_pdf(manager, venta_id):
         codigo_generacion=codigo_generacion,
         numero_control=numero_control,
         sello_recepcion=sello_recepcion,
-        modelo_facturacion=modelo_facturacion,
-        tipo_transmision=tipo_transmision,
+        tipo_modelo=tipo_modelo,
+        tipo_operacion=tipo_operacion,
         fecha_generacion=fecha_generacion,
+        ambiente=ambiente,
+        tipo_contingencia=tipo_contingencia,
+        motivo_contin=motivo_contin,
     )
     with open(json_path, 'w', encoding='utf-8') as fh:
         json.dump(json_data, fh, ensure_ascii=False, indent=2)
-    if tipo_transmision.startswith("2"):
-        manager.db.add_dte_pendiente(venta_id, json_data, tipo_transmision)
+    if tipo_operacion == 2:
+        manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     try:

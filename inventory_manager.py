@@ -497,8 +497,8 @@ class InventoryManager:
 
                 estado = v.get("estado", "Pagada")
                 self.db.cursor.execute(
-                    "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado) "
-                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO ventas (id, fecha, total, cliente_id, Distribuidor_id, vendedor_id, extra, estado, sincronizada) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         v.get("id"),
                         v.get("fecha", ""),
@@ -508,6 +508,7 @@ class InventoryManager:
                         vendedor_id,
                         extra_json,
                         estado,
+                        1,
                     ),
                 )
                 venta_id_map[v["id"]] = v.get("id")

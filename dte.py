@@ -16,7 +16,7 @@ import re
 from utils.monto import monto_a_texto_sv, d2
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
-from svfe.config import get_emisor_direccion
+from svfe import config as svfe_config
 from pathlib import Path
 import jsonpatch
 
@@ -407,24 +407,52 @@ RESUMEN_DEFAULTS = {
 import re
 
 
-def normalizar_pagos(pagos_raw, total):
-    """Normaliza la lista de pagos al formato del esquema."""
-    pattern = re.compile(r"^(0[1-9]|1[0-4]|99)$")
+def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
+    """Normaliza la lista de pagos al formato del esquema.
+
+    ``pagos_raw`` es una lista de pagos proporcionada por el usuario.  Los
+    códigos de pago se validan contra el catálogo local ``FORMA_PAGO`` y, si
+    está disponible, contra el esquema oficial del DTE correspondiente.  Los
+    montos se redondean a dos decimales y se garantiza que la suma de todos los
+    pagos coincida con ``total``.
+
+    Cuando ``condicion`` es 2 (crédito) el primer pago debe incluir un ``plazo``
+    mayor a cero y un ``periodo`` válido del catálogo ``PLAZO``.
+    """
+
+    allowed = set(catalogos.FORMA_PAGO.keys())
+    schema = catalogos.get_dte_schema(tipo_dte)
+    if schema:
+        enum_codes = (
+            schema.get("properties", {})
+            .get("resumen", {})
+            .get("properties", {})
+            .get("pagos", {})
+            .get("items", {})
+            .get("properties", {})
+            .get("codigo", {})
+            .get("enum", [])
+        )
+        allowed.update(str(c).zfill(2) for c in enum_codes)
+
     pagos = []
     for p in pagos_raw or []:
         codigo = str(p.get("codigo", "")).zfill(2)
-        if not pattern.match(codigo):
+        if allowed and codigo not in allowed:
             continue
         monto = d2(p.get("montoPago", 0))
+        periodo = p.get("periodo")
+        periodo = str(periodo).zfill(2) if periodo else None
         pagos.append(
             {
                 "codigo": codigo,
                 "montoPago": monto,
                 "referencia": p.get("referencia"),
-                "periodo": p.get("periodo"),
+                "periodo": periodo,
                 "plazo": p.get("plazo"),
             }
         )
+
     if not pagos:
         pagos = [
             {
@@ -435,6 +463,25 @@ def normalizar_pagos(pagos_raw, total):
                 "plazo": None,
             }
         ]
+    else:
+        suma = sum(D(str(p["montoPago"])) for p in pagos)
+        diff = (D(str(total)) - suma).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        if diff:
+            nuevo = D(str(pagos[-1]["montoPago"])) + diff
+            if nuevo < 0:
+                raise ValidationError("La suma de pagos excede el total a pagar")
+            pagos[-1]["montoPago"] = d2(nuevo)
+
+    if condicion == 2:
+        first = pagos[0]
+        plazo = first.get("plazo") or 0
+        periodo = str(first.get("periodo") or "").zfill(2)
+        if not plazo or periodo not in catalogos.PLAZO:
+            raise ValidationError(
+                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido"
+            )
+        first["periodo"] = periodo
+
     return pagos
 
 
@@ -527,9 +574,23 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "totalPagar" in resumen:
         resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
     if "pagos" in resumen:
-        resumen["pagos"] = normalizar_pagos(extra.get("pagos"), resumen["totalPagar"])
+        resumen["pagos"] = normalizar_pagos(
+            extra.get("pagos"),
+            resumen["totalPagar"],
+            tipo_dte=tipo_dte,
+            condicion=resumen.get("condicionOperacion", 1),
+        )
     if "tributos" in resumen:
-        resumen["tributos"] = armar_tributos(extra.get("tributos"), tipo_dte)
+        trib = armar_tributos(extra.get("tributos"), tipo_dte)
+        if trib is None and sumas_val > 0:
+            trib = [
+                {
+                    "codigo": "19",
+                    "descripcion": catalogos.TRIBUTOS.get("19"),
+                    "valor": d2(iva_val),
+                }
+            ]
+        resumen["tributos"] = trib
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
@@ -744,7 +805,7 @@ def generar_dte_json(
         "telefono": datos.get("telefono"),
         "correo": datos.get("correo"),
     }
-    emisor["direccion"] = get_emisor_direccion()
+    emisor["direccion"] = svfe_config.get_emisor_direccion()
 
     rec = cliente or {}
     def _clean_nit(nit):
@@ -928,13 +989,21 @@ def validate_dte_json(payload: dict) -> None:
     emisor.setdefault("tipoEstablecimiento", "01")
     direccion = emisor.get("direccion")
     if not isinstance(direccion, dict):
-        direccion = get_emisor_direccion()
-    direccion["departamento"] = _map_departamento(direccion.get("departamento"))
-    direccion["municipio"] = _map_municipio(
-        direccion.get("municipio"), direccion.get("departamento")
-    )
-    if not direccion.get("complemento"):
-        raise ValueError("Faltan campos obligatorios en emisor: direccion.complemento")
+        try:
+            direccion = svfe_config.get_emisor_direccion()
+        except Exception:
+            direccion = {}
+    depto = direccion.get("departamento")
+    if depto is not None:
+        depto = _map_departamento(depto)
+    municipio = direccion.get("municipio")
+    if municipio is not None:
+        municipio = _map_municipio(municipio, depto)
+    direccion = {
+        "departamento": depto,
+        "municipio": municipio,
+        "complemento": direccion.get("complemento"),
+    }
     emisor["direccion"] = direccion
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))

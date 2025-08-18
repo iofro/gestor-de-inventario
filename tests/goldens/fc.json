@@ -10,14 +10,12 @@
       "montoDescu": "0E-8",
       "noGravado": "0E-8",
       "numItem": 1,
-      "numeroDocumento": null,
+      "numeroDocumento": "NA",
       "precioUni": "9.54000000",
       "psv": "0E-8",
-      "tipoItem": 1,
-      "tributos": [
-        "A8"
-      ],
-      "uniMedida": 59,
+      "tipoItem": 4,
+      "tributos": null,
+      "uniMedida": 99,
       "ventaExenta": "0E-8",
       "ventaGravada": "23.85000000",
       "ventaNoSuj": "0E-8"
@@ -61,7 +59,7 @@
   },
   "otrosDocumentos": null,
   "receptor": {
-    "codActividad": "6201",
+    "codActividad": "62010",
     "correo": "cliente@example.com",
     "descActividad": "Servicios de software",
     "direccion": {
@@ -75,7 +73,7 @@
     "telefono": "70000001",
     "tipoDocumento": "36"
   },
-  "resumen": {
+    "resumen": {
     "condicionOperacion": 1,
     "descuExenta": "0.00",
     "descuGravada": "0.00",
@@ -105,7 +103,13 @@
     "totalNoGravado": "0.00",
     "totalNoSuj": "0.00",
     "totalPagar": "26.95",
-    "tributos": null
+    "tributos": [
+      {
+        "codigo": "19",
+        "descripcion": "IVA",
+        "valor": "3.10"
+      }
+    ]
   },
   "ventaTercero": null
 }

@@ -5,7 +5,7 @@ import logging
 
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
-from dte import generar_ticket_json
+from dte import generar_ticket_json, generar_dte_json
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
@@ -93,18 +93,14 @@ def generate_invoice_pdf(manager, venta_id):
         venta_data["venta_a_cuenta_de"] = extra.get("venta_a_cuenta_de", "")
     if not venta_data.get("documento_venta_a_cuenta"):
         venta_data["documento_venta_a_cuenta"] = extra.get("documento_venta_a_cuenta", "")
-    dte_json = extra.get("dteJson") or extra.get("dte_json") or {}
-    ident = dte_json.get("identificacion", {})
-    codigo_generacion = venta_data.get("codigo_generacion") or ident.get("codigoGeneracion", "")
-    numero_control = venta_data.get("numero_control") or dte_json.get("numeroControl", "")
     sello_recepcion = venta_data.get("sello_recepcion") or extra.get("selloRecibido", "")
-    modelo_facturacion = venta_data.get("modelo_facturacion") or ident.get("modeloFacturacion", "")
+    modelo_facturacion = venta_data.get("modelo_facturacion") or extra.get("modeloFacturacion", "")
     if not modelo_facturacion:
         modelo_facturacion = "1 - Facturación previo"
-    tipo_transmision = venta_data.get("tipo_transmision") or ident.get("tipoTransmision", "")
+    tipo_transmision = venta_data.get("tipo_transmision") or extra.get("tipoTransmision", "")
     if not tipo_transmision:
         tipo_transmision = "1 - Transmisión normal"
-    fecha_generacion = venta_data.get("fecha_generacion") or ident.get("fecGeneracion", "")
+    fecha_generacion = venta_data.get("fecha_generacion") or extra.get("fechaGeneracion", "")
 
     if tipo_transmision.startswith("1") and not sello_recepcion:
         sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"
@@ -114,6 +110,25 @@ def generate_invoice_pdf(manager, venta_id):
     tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
     cliente_nombre = cliente.get("nombre") if cliente else ""
+    try:
+        json_data = generar_dte_json(
+            manager.db,
+            venta_id,
+            modelo_facturacion=modelo_facturacion,
+            tipo_transmision=tipo_transmision,
+            tipo_dte="03" if credito_info else "01",
+        )
+    except Exception:
+        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
+        ident = json_data.setdefault("identificacion", {})
+        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
+        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+    ident = json_data.get("identificacion", {})
+    codigo_generacion = ident.get("codigoGeneracion")
+    numero_control = ident.get("numeroControl")
+    venta_data["codigo_generacion"] = codigo_generacion
+    venta_data["numero_control"] = numero_control
+
     file_path, json_path = get_document_paths(
         venta_data.get("fecha"), cliente_nombre, numero_control or venta_id, doc_key
     )
@@ -132,7 +147,6 @@ def generate_invoice_pdf(manager, venta_id):
         tipo_transmision=tipo_transmision,
         fecha_generacion=fecha_generacion,
     )
-    json_data = build_invoice_json(venta_data, cliente or {}, detalles)
     with open(json_path, 'w', encoding='utf-8') as fh:
         json.dump(json_data, fh, ensure_ascii=False, indent=2)
     if tipo_transmision.startswith("2"):

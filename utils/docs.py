@@ -58,8 +58,16 @@ def get_document_paths(date, cliente, identifier, doc_type, root=None):
 
 def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
     """Create an invoice JSON following the template structure."""
-    with open(template_path, 'r', encoding='utf-8') as fh:
-        data = json.load(fh)
+    try:
+        with open(template_path, 'r', encoding='utf-8') as fh:
+            data = json.load(fh)
+    except FileNotFoundError:
+        data = {
+            'identificacion': {},
+            'receptor': {},
+            'cuerpoDocumento': [],
+            'resumen': {},
+        }
 
     ident = data.get('identificacion', {})
     if venta.get('numero_control'):

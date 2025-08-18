@@ -496,10 +496,10 @@ def armar_tributos(tributos_raw, tipo_dte):
     # Los códigos válidos se obtienen tanto del catálogo local como del
     # esquema oficial del tipo de documento.  Esto permite extender el catálogo
     # sin depender de que el esquema se encuentre actualizado.
-    allowed = set(catalogos.TRIBUTOS.keys())
+    extras: set[str] = set()
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
-        allowed.update(
+        extras.update(
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
@@ -511,9 +511,7 @@ def armar_tributos(tributos_raw, tipo_dte):
         )
     result = []
     for t in tributos_raw or []:
-        codigo = str(t.get("codigo", "")).upper()
-        if allowed and codigo not in allowed:
-            raise ValueError(f"Código de tributo inválido: {codigo}")
+        codigo = catalogos.validate_tributo(t.get("codigo", ""), extras)
         result.append(
             {
                 "codigo": codigo,
@@ -1127,11 +1125,12 @@ def validate_dte_json(payload: dict) -> None:
             item.setdefault("tipoItem", 1)
             item.setdefault("uniMedida", 59)
 
-        if item.get("tipoItem") not in catalogos.TIPO_ITEM:
-            raise ValueError("tipoItem inválido")
+        item["tipoItem"] = catalogos.validate_tipo_item(item.get("tipoItem"))
 
         item.setdefault("numeroDocumento", "NA")
         item.setdefault("codigo", None)
+        if item.get("codTributo"):
+            catalogos.validate_tributo(item["codTributo"])
         item.setdefault("codTributo", None)
         item.setdefault("montoDescu", 0.0)
         item.setdefault("ventaNoSuj", 0.0)
@@ -1168,7 +1167,6 @@ def validate_dte_json(payload: dict) -> None:
 
         # --- Manejo y validación de tributos ---
         venta_gravada = D(str(item.get("ventaGravada") or 0))
-        allowed = set(catalogos.TRIBUTOS.keys())
         if venta_gravada > 0:
             tributos = item.get("tributos") or []
             if isinstance(tributos, str):
@@ -1176,13 +1174,19 @@ def validate_dte_json(payload: dict) -> None:
             tributos = [str(t).upper() for t in tributos if t]
             if "19" not in tributos:
                 tributos.insert(0, "19")
-            item["tributos"] = tributos
-            item["codTributo"] = "19"
-            invalid = [t for t in tributos if t not in allowed]
-            if invalid:
+            normalizados = []
+            invalidos = []
+            for t in tributos:
+                try:
+                    normalizados.append(catalogos.validate_tributo(t))
+                except ValueError:
+                    invalidos.append(str(t).upper())
+            if invalidos:
                 raise ValueError(
-                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+                    f"Código(s) de tributo inválido(s): {', '.join(invalidos)}"
                 )
+            item["tributos"] = normalizados
+            item["codTributo"] = "19"
             if iva_key:
                 item[iva_key] = float(d8(venta_gravada * D("0.13")))
         else:

@@ -1139,20 +1139,20 @@
                 "tributos": {
                   "type": "array",
                   "items": {
-                    "const": "A8"
+                    "const": "20"
                   }
                 }
               }
             },
             "else": {
-                "properties": {
-                  "codTributo": {
-                    "type": "string"
-                  },
-                  "tributos": {
-                    "items": {
-                      "enum": [
-                        "A8",
+              "properties": {
+                "codTributo": {
+                  "type": "null"
+                },
+                "tributos": {
+                  "items": {
+                    "enum": [
+                      "20",
                       "C3",
                       "59",
                       "71",

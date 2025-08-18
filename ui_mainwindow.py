@@ -1450,6 +1450,10 @@ class MainWindow(QMainWindow):
             try:
                 with open(datos_path, "r", encoding="utf-8") as f:
                     datos = json.load(f)
+                    dir_info = datos.get("direccion") or {}
+                    dir_info.setdefault("departamento", "")
+                    dir_info.setdefault("municipio", "")
+                    datos["direccion"] = dir_info
             except Exception:
                 datos = {}
         from dialogs import DatosNegocioDialog
@@ -1457,6 +1461,10 @@ class MainWindow(QMainWindow):
         if dlg.exec_():
             datos_nuevos = dlg.get_data()
             datos.update(datos_nuevos)
+            dir_info = datos.get("direccion") or {}
+            dir_info.setdefault("departamento", "")
+            dir_info.setdefault("municipio", "")
+            datos["direccion"] = dir_info
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Datos del negocio", "Datos guardados correctamente.")

@@ -3,6 +3,8 @@ import os
 import re
 from datetime import datetime
 
+from dte import _map_departamento, _map_municipio
+
 # Base path is repository root two levels up from this file
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
@@ -114,6 +116,19 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
     if venta.get('total_letras'):
         resumen['totalLetras'] = venta['total_letras']
     data['resumen'] = resumen
+
+    # Normalise emisor address codes if present
+    emisor = data.get('emisor')
+    if isinstance(emisor, dict):
+        dir_emi = emisor.get('direccion')
+        if isinstance(dir_emi, dict):
+            dep = dir_emi.get('departamento')
+            dir_emi['departamento'] = _map_departamento(dep)
+            dir_emi['municipio'] = _map_municipio(
+                dir_emi.get('municipio'), dep
+            )
+            emisor['direccion'] = dir_emi
+        data['emisor'] = emisor
 
     return data
 

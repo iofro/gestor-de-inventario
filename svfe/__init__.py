@@ -8,7 +8,7 @@ from .generators import (
     generar_nota_remision,
     validar_contra_schema,
 )
-from .prevalidate import prevalidate
+from .prevalidate import prevalidate, prevalidate_envelope
 
 __all__ = [
     "generar_factura_fiscal",
@@ -18,4 +18,5 @@ __all__ = [
     "generar_nota_remision",
     "validar_contra_schema",
     "prevalidate",
+    "prevalidate_envelope",
 ]

@@ -135,6 +135,9 @@ MUNICIPIOS = [
     {"codigo": "20", "nombre": "LA UNION SUR"},
 ]
 
+DEPARTAMENTOS_SET = {d["codigo"] for d in DEPARTAMENTOS}
+MUNICIPIOS_SET = {m["codigo"] for m in MUNICIPIOS}
+
 
 def _populate_combo(combo, items):
     combo.clear()
@@ -159,107 +162,6 @@ def _set_combo_value(combo, items, value):
     if idx >= 0:
         combo.setCurrentIndex(idx)
 
-def cargar_departamentos_municipios():
-    # Lista completa de departamentos y municipios de El Salvador
-    return {
-        "Ahuachapán": [
-            "Ahuachapán", "Apaneca", "Atiquizaya", "Concepción de Ataco", "El Refugio", "Guaymango", "Jujutla",
-            "San Francisco Menéndez", "San Lorenzo", "San Pedro Puxtla", "Tacuba", "Turín"
-        ],
-        "Cabañas": [
-            "Cinquera", "Dolores", "Guacotecti", "Ilobasco", "Jutiapa", "San Isidro", "Sensuntepeque",
-            "Tejutepeque", "Victoria"
-        ],
-        "Chalatenango": [
-            "Agua Caliente", "Arcatao", "Azacualpa", "Citalá", "Comalapa", "Concepción Quezaltepeque",
-            "Dulce Nombre de María", "El Carrizal", "El Paraíso", "La Laguna", "La Palma", "La Reina",
-            "Las Vueltas", "Nombre de Jesús", "Nueva Concepción", "Nueva Trinidad", "Ojos de Agua", "Potonico",
-            "San Antonio de la Cruz", "San Antonio Los Ranchos", "San Fernando", "San Francisco Lempa",
-            "San Francisco Morazán", "San Ignacio", "San Isidro Labrador", "San Luis del Carmen",
-            "San Miguel de Mercedes", "San Rafael", "Santa Rita", "Tejutla"
-        ],
-        "Cuscatlán": [
-            "Candelaria", "Cojutepeque", "El Carmen", "El Rosario", "Monte San Juan", "Oratorio de Concepción",
-            "San Bartolomé Perulapía", "San Cristóbal", "San José Guayabal", "San Pedro Perulapán",
-            "San Rafael Cedros", "San Ramón", "Santa Cruz Analquito", "Santa Cruz Michapa", "Suchitoto",
-            "Tenancingo"
-        ],
-        "La Libertad": [
-            "Antiguo Cuscatlán", "Chiltiupán", "Ciudad Arce", "Colón", "Comasagua", "Huizúcar", "Jayaque",
-            "Jicalapa", "La Libertad", "Nueva San Salvador (Santa Tecla)", "Nuevo Cuscatlán", "San Juan Opico",
-            "Quezaltepeque", "Sacacoyo", "San José Villanueva", "San Matías", "San Pablo Tacachico", "Talnique",
-            "Tamanique", "Teotepeque", "Tepecoyo", "Zaragoza"
-        ],
-        "La Paz": [
-            "Cuyultitán", "El Rosario", "Jerusalén", "Mercedes La Ceiba", "Olocuilta", "Paraíso de Osorio",
-            "San Antonio Masahuat", "San Emigdio", "San Francisco Chinameca", "San Juan Nonualco",
-            "San Juan Talpa", "San Juan Tepezontes", "San Luis La Herradura", "San Luis Talpa",
-            "San Miguel Tepezontes", "San Pedro Masahuat", "San Pedro Nonualco", "San Rafael Obrajuelo",
-            "Santa María Ostuma", "Santiago Nonualco", "Tapalhuaca", "Zacatecoluca"
-        ],
-        "La Unión": [
-            "Anamorós", "Bolívar", "Concepción de Oriente", "Conchagua", "El Carmen", "El Sauce", "Intipucá",
-            "La Unión", "Lislique", "Meanguera del Golfo", "Nueva Esparta", "Pasaquina", "Polorós", "San Alejo",
-            "San José", "Santa Rosa de Lima", "Yayantique", "Yucuaiquín"
-        ],
-        "Morazán": [
-            "Arambala", "Cacaopera", "Chilanga", "Corinto", "Delicias de Concepción", "El Divisadero",
-            "El Rosario", "Gualococti", "Guatajiagua", "Joateca", "Jocoaitique", "Jocoro", "Lolotiquillo",
-            "Meanguera", "Osicala", "Perquín", "San Carlos", "San Fernando", "San Francisco Gotera",
-            "San Isidro", "San Simón", "Sensembra", "Sociedad", "Torola", "Yamabal", "Yoloaiquín"
-        ],
-        "San Miguel": [
-            "Carolina", "Chapeltique", "Chinameca", "Chirilagua", "Ciudad Barrios", "Comacarán", "El Tránsito",
-            "Lolotique", "Moncagua", "Nueva Guadalupe", "Nuevo Edén de San Juan", "Quelepa", "San Antonio",
-            "San Gerardo", "San Jorge", "San Luis de la Reina", "San Miguel", "San Rafael Oriente", "Sesori",
-            "Uluazapa"
-        ],
-        "San Salvador": [
-            "Aguilares", "Apopa", "Ayutuxtepeque", "Cuscatancingo", "Delgado", "El Paisnal", "Guazapa",
-            "Ilopango", "Mejicanos", "Nejapa", "Panchimalco", "Rosario de Mora", "San Marcos", "San Martín",
-            "San Salvador", "Santiago Texacuangos", "Santo Tomás", "Soyapango", "Tonacatepeque"
-        ],
-        "San Vicente": [
-            "Apastepeque", "Guadalupe", "San Cayetano Istepeque", "San Esteban Catarina", "San Ildefonso",
-            "San Lorenzo", "San Sebastián", "San Vicente", "Santa Clara", "Santo Domingo", "Tecoluca",
-            "Tepetitán", "Verapaz"
-        ],
-        "Santa Ana": [
-            "Candelaria de la Frontera", "Chalchuapa", "Coatepeque", "El Congo", "El Porvenir", "Masahuat",
-            "Metapán", "San Antonio Pajonal", "San Sebastián Salitrillo", "Santa Ana", "Santa Rosa Guachipilín",
-            "Santiago de la Frontera", "Texistepeque"
-        ],
-        "Sonsonate": [
-            "Acajutla", "Armenia", "Caluco", "Cuisnahuat", "Izalco", "Juayúa", "Nahuizalco", "Nahulingo",
-            "Salcoatitán", "San Antonio del Monte", "San Julián", "Santa Catarina Masahuat",
-            "Santa Isabel Ishuatán", "Santo Domingo de Guzmán", "Sonsonate", "Sonzacate"
-        ],
-        "Usulután": [
-            "Alegría", "Berlín", "California", "Concepción Batres", "El Triunfo", "Ereguayquín", "Estanzuelas",
-            "Jiquilisco", "Jucuapa", "Jucuarán", "Mercedes Umaña", "Nueva Granada", "Ozatlán",
-            "Puerto El Triunfo", "San Agustín", "San Buenaventura", "San Dionisio", "San Francisco Javier",
-            "Santa Elena", "Santa María", "Santiago de María", "Tecapán", "Usulután"
-        ]
-    }
-
-
-def _build_municipios_codigos():
-    """Genera un catálogo de municipios con códigos únicos."""
-    catalogo = [{"codigo": "0000", "nombre": "Otro (Para extranjeros)"}]
-    dep_mun = cargar_departamentos_municipios()
-    for dep in DEPARTAMENTOS:
-        dep_codigo = dep["codigo"]
-        dep_nombre = dep["nombre"]
-        if dep_codigo == "00":
-            continue
-        for idx, mun_nombre in enumerate(dep_mun.get(dep_nombre, []), start=1):
-            codigo = f"{dep_codigo}{idx:02d}"
-            catalogo.append({"codigo": codigo, "nombre": f"{dep_nombre} — {mun_nombre}"})
-    return catalogo
-
-
-MUNICIPIOS_CODIGOS = _build_municipios_codigos()
-MUNICIPIOS_CODIGOS_SET = {m["codigo"] for m in MUNICIPIOS_CODIGOS}
 
 class ClienteSelectorDialog(QDialog):
     def __init__(self, db, parent=None):
@@ -2969,6 +2871,7 @@ class DatosNegocioDialog(QDialog):
         self.tipo_contribuyente = QLineEdit()
         self.telefono = QLineEdit()
         self.correo = QLineEdit()
+        self.departamento = QComboBox()
         self.municipio = QComboBox()
         # Limitar el alto del listado de municipios y mostrar scroll sin marcos en blanco
         municipio_view = QListView()
@@ -2978,7 +2881,12 @@ class DatosNegocioDialog(QDialog):
         self.municipio.setView(municipio_view)
         self.municipio.setMaxVisibleItems(8)
         self.complemento = QLineEdit()
-        _populate_combo(self.municipio, MUNICIPIOS_CODIGOS)
+        _populate_combo(self.departamento, DEPARTAMENTOS)
+        _populate_combo(self.municipio, MUNICIPIOS)
+        self.municipio.setEnabled(False)
+        self.departamento.currentIndexChanged.connect(
+            lambda *_: self.municipio.setEnabled(bool(self.departamento.currentData()))
+        )
         form.addRow("NIT:", self.nit)
         form.addRow("NRC:", self.nrc)
         form.addRow("Nombre:", self.nombre)
@@ -2988,6 +2896,7 @@ class DatosNegocioDialog(QDialog):
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
         form.addRow("Teléfono:", self.telefono)
         form.addRow("Correo:", self.correo)
+        form.addRow("Departamento:", self.departamento)
         form.addRow("Municipio:", self.municipio)
         form.addRow("Dirección:", self.complemento)
         btns = QHBoxLayout()
@@ -3017,8 +2926,11 @@ class DatosNegocioDialog(QDialog):
             "telefono": self.telefono.text(),
             "correo": self.correo.text(),
             "direccion": {
+                "departamento": self.departamento.currentData()
+                if self.departamento.currentData() in DEPARTAMENTOS_SET
+                else "",
                 "municipio": self.municipio.currentData()
-                if self.municipio.currentData() in MUNICIPIOS_CODIGOS_SET
+                if self.municipio.currentData() in MUNICIPIOS_SET
                 else "",
                 "complemento": self.complemento.text(),
             },
@@ -3035,12 +2947,19 @@ class DatosNegocioDialog(QDialog):
         self.telefono.setText(datos.get("telefono", ""))
         self.correo.setText(datos.get("correo", ""))
         dir_info = datos.get("direccion", {}) or {}
+        departamento = dir_info.get("departamento")
         municipio = dir_info.get("municipio")
         _set_combo_value(
+            self.departamento,
+            DEPARTAMENTOS,
+            str(departamento) if departamento else "",
+        )
+        _set_combo_value(
             self.municipio,
-            MUNICIPIOS_CODIGOS,
+            MUNICIPIOS,
             str(municipio) if municipio else "",
         )
+        self.municipio.setEnabled(bool(self.departamento.currentData()))
         self.complemento.setText(dir_info.get("complemento", ""))
 
 

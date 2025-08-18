@@ -255,6 +255,10 @@ Además, la pestaña **Facturación** buscará archivos también en las rutas
 las facturas almacenadas manualmente en esas carpetas se muestren incluso si no
 están vinculadas a una venta.
 
+Cuando alguna herramienta requiera la ruta de un `dte.json`, apunta al archivo
+JSON ubicado en estas mismas carpetas. En Windows la ruta luce similar a:
+`C:\Users\usuario\Desktop\repositorio de github\facturas_consumidor_final\20250817_ariel_15_ConsumidorFinal.json`.
+
 ### Firmado y pruebas
 
 Para iniciar el servicio de firmado:

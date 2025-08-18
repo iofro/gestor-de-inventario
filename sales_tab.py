@@ -580,7 +580,7 @@ class SalesTab(QWidget):
         QMessageBox.information(self, "Guardar y enviar", f"{doc_type} guardado en {file_path}")
         envio_ok = False
         try:
-            modo = "contingencia" if venta.get("tipo_transmision", "").startswith("2") else "normal"
+            modo = "contingencia" if str(venta.get("tipo_operacion", 1)) == "2" else "normal"
             resp = transmitir_dte(self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte)
             estado = (resp or {}).get("estado", "")
             if estado.lower() in ("rechazado", "error"):

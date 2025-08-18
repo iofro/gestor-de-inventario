@@ -49,10 +49,12 @@ def generar_factura_electronica_pdf(
     codigo_generacion="",
     numero_control="",
     sello_recepcion="",
-    modelo_facturacion="1 - Facturación previo",
-    tipo_transmision="1 - Transmisión normal",
+    tipo_modelo: int = 1,
+    tipo_operacion: int = 1,
     fecha_generacion="",
-    ambiente="pruebas",
+    ambiente: str = "00",
+    tipo_contingencia: int | None = None,
+    motivo_contin: str | None = None,
 ):
 
     if datos_negocio is None:
@@ -63,11 +65,17 @@ def generar_factura_electronica_pdf(
                     datos_negocio = json.load(f)
             except Exception:
                 datos_negocio = {}
-    if ambiente == "pruebas" and datos_negocio.get("dte_api", {}).get("ambiente"):
+    if datos_negocio.get("dte_api", {}).get("ambiente") and ambiente not in ("00", "01"):
         ambiente = datos_negocio["dte_api"].get("ambiente")
 
     if not codigo_generacion or not numero_control or not fecha_generacion:
-        cab = generar_cabecera_dte_data(modelo_facturacion, tipo_transmision)
+        cab = generar_cabecera_dte_data(
+            tipo_modelo,
+            tipo_operacion,
+            tipo_contingencia=tipo_contingencia,
+            motivo_contin=motivo_contin,
+            ambiente=ambiente,
+        )
         codigo_generacion = codigo_generacion or cab["codigo_generacion"]
         numero_control = numero_control or cab["numero_control"]
         fecha_generacion = fecha_generacion or cab["fecha_generacion"]
@@ -137,8 +145,9 @@ def generar_factura_electronica_pdf(
     # --- Código QR ---
     qr_x = x_margin + box_w + col_margin + 5
     qr_y = box_y + (box_h - qr_size) / 2
+    qr_env = 1 if ambiente in ("00", "produccion") else 2
     qr_value = build_qr_value(
-        1 if ambiente == "produccion" else 2,
+        qr_env,
         codigo_generacion,
         "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03",
         numero_control,
@@ -151,7 +160,7 @@ def generar_factura_electronica_pdf(
     d.add(qr_code)
     renderPDF.draw(d, c, qr_x, qr_y)
 
-    # --- Caja derecha con modelo de facturación ---
+    # --- Caja derecha con datos de operación ---
     right_x = x_margin + box_w + col_margin + qr_size + col_margin
     c.setStrokeColor(colors.white)
     c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
@@ -160,7 +169,7 @@ def generar_factura_electronica_pdf(
     max_w = box_w - 10
     text_y = draw_wrapped_text(
         c,
-        f"Modelo Facturación: {modelo_facturacion}",
+        f"Tipo Modelo: {tipo_modelo}",
         right_x + 5,
         text_y,
         max_w,
@@ -168,12 +177,21 @@ def generar_factura_electronica_pdf(
     )
     text_y = draw_wrapped_text(
         c,
-        f"Tipo Transmisión: {tipo_transmision}",
+        f"Tipo Operación: {tipo_operacion}",
         right_x + 5,
         text_y,
         max_w,
         12,
     )
+    if tipo_contingencia is not None:
+        text_y = draw_wrapped_text(
+            c,
+            f"Contingencia: {tipo_contingencia}",
+            right_x + 5,
+            text_y,
+            max_w,
+            12,
+        )
     text_y = draw_wrapped_text(
         c,
         f"Fecha Generación: {fecha_generacion}",
@@ -183,7 +201,7 @@ def generar_factura_electronica_pdf(
         12,
     )
 
-    if tipo_transmision and "contingencia" in tipo_transmision.lower():
+    if tipo_operacion == 2:
         c.setFont("Helvetica-Bold", 12)
         c.setFillColor(colors.red)
         c.drawCentredString(width / 2, box_y - 15, "TRANSMISIÓN DIFERIDA")

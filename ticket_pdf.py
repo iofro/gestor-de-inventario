@@ -168,9 +168,9 @@ def generar_ticket_personalizado(
     y -= 3 * mm
     c.drawCentredString(width / 2, y, "Número de control:")
     y -= 4 * mm
-    c.drawCentredString(width / 2, y, "Módelo de Facturación: Modelo Facturación Previo")
+    c.drawCentredString(width / 2, y, "Tipo Modelo: 1")
     y -= 3 * mm
-    c.drawCentredString(width / 2, y, "Tipo de Transmisión: Transmisión Normal")
+    c.drawCentredString(width / 2, y, "Tipo Operación: 1")
     y -= 3 * mm
     c.drawCentredString(width / 2, y, f"Fecha y hora de Generación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     y -= 5 * mm

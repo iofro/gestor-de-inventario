@@ -18,7 +18,18 @@ def _create_basic_sale(descuento=0, tributos=None, pagos=None):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "0614-000000-102-5", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "0614-000000-102-5",
+        "",
+        "giro",
+        "7000-0000",
+        "c@x.com",
+        "Dir",
+        "06",
+        "01",
+    )
     cid = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cid,
@@ -54,7 +65,7 @@ def test_resumen_matches_schema_keys():
 
 
 def test_resumen_with_descuentos_tributos_pagos():
-    tributos = [{"codigo": "59", "descripcion": "FOVIAL", "valor": 1.0}]
+    tributos = [{"codigo": "25", "descripcion": "FOVIAL", "valor": 1.0}]
     pagos = [{"codigo": "02", "montoPago": 9.0, "referencia": "ref", "periodo": None, "plazo": None}]
     db, venta_id = _create_basic_sale(descuento=1.0, tributos=tributos, pagos=pagos)
     data = generar_dte_json(db, venta_id, tipo_dte="03")
@@ -63,7 +74,7 @@ def test_resumen_with_descuentos_tributos_pagos():
     js_validate(resumen, schema)
     assert resumen["totalDescu"] == 1.0
     assert resumen["porcentajeDescuento"] == 10.0
-    assert resumen["tributos"][0]["codigo"] == "59"
+    assert resumen["tributos"][0]["codigo"] == "25"
     assert resumen["pagos"][0]["codigo"] == "02"
     # ensure mapping of iva
     assert "iva" not in resumen

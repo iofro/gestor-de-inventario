@@ -2,10 +2,10 @@
   "identificacion": {
     "version": "1",
     "tipoDte": "01",
-    "codigoGeneracion": "9F09C0CF-C390-46F0-BE12-3E1B94BB712F",
-    "numeroControl": "DTE-01-S001P001-942930367580334",
-    "fecEmi": "2025-08-17",
-    "horEmi": "23:54:29",
+    "codigoGeneracion": "B5A2FA66-7D7D-4D4A-9484-5DC5C9D290CD",
+    "numeroControl": "DTE-01-S001P001-653463417934440",
+    "fecEmi": "2025-08-18",
+    "horEmi": "00:05:49",
     "modeloFacturacion": "1 - Facturación previo",
     "tipoTransmision": "1 - Transmisión normal"
   },
@@ -39,13 +39,6 @@
   "cuerpoDocumento": [
     {
       "numItem": 1,
-      "descripcion": "Producto Demo 8",
-      "cantidad": 1.0,
-      "precioUnitario": 14.0,
-      "ventaGravada": 14.0
-    },
-    {
-      "numItem": 2,
       "descripcion": "Producto Demo 3",
       "cantidad": 1.0,
       "precioUnitario": 9.0,
@@ -55,27 +48,27 @@
   "resumen": {
     "totalNoSuj": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 23.0,
-    "subTotalVentas": 23.0,
+    "totalGravada": 9.0,
+    "subTotalVentas": 9.0,
     "descuNoSuj": 0.0,
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "porcentajeDescuento": 0.0,
     "totalDescu": 0.0,
     "tributos": null,
-    "subTotal": 23.0,
+    "subTotal": 9.0,
     "ivaRete1": 0.0,
     "reteRenta": 0.0,
-    "montoTotalOperacion": 23.0,
+    "montoTotalOperacion": 9.0,
     "totalNoGravado": 0.0,
-    "totalPagar": 23.0,
-    "totalLetras": "VEINTITRÉS CON 00/100 DÓLARES",
+    "totalPagar": 9.0,
+    "totalLetras": "NUEVE CON 00/100 DÓLARES",
     "totalIva": 0.0,
     "saldoFavor": 0.0,
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 23.0,
+        "montoPago": 9.0,
         "referencia": null,
         "periodo": null,
         "plazo": null

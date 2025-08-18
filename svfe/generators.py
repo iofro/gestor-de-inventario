@@ -35,6 +35,8 @@ SCHEMA_MAP: Dict[str, tuple[str, str]] = {
 
 D8 = Decimal("0.00000001")
 D2 = Decimal("0.01")
+D = Decimal
+IVA = D("0.13")
 
 
 def _load_schema(filename: str) -> Dict[str, Any]:
@@ -59,6 +61,89 @@ def d8(value: Decimal) -> Decimal:
 def d2(value: Decimal) -> Decimal:
     """Quantize ``value`` to two decimal places using ``ROUND_HALF_UP``."""
     return value.quantize(D2, rounding=ROUND_HALF_UP)
+
+
+def hoy_sv() -> str:
+    tz = ZoneInfo("America/El_Salvador")
+    return datetime.now(tz).strftime("%Y-%m-%d")
+
+
+def generar_fc_ejemplo(
+    cantidad: Decimal = D("2.5"),
+    precio: Decimal = D("9.54"),
+    gravado: bool = True,
+) -> dict:
+    venta = d8(cantidad * precio)
+    iva8 = d8(venta * IVA) if gravado else d8(D("0"))
+    total_base = d2(venta)
+    total_iva = d2(iva8)
+    total_pagar = d2(total_base + total_iva)
+
+    item = {
+        "numItem": 1,
+        "tipoItem": 1,
+        "numeroDocumento": "NA",
+        "codigo": "SKU001",
+        "descripcion": "Producto X",
+        "cantidad": d8(cantidad),
+        "uniMedida": 59,
+        "precioUni": d8(precio),
+        "montoDescu": D("0.00000000"),
+        "ventaNoSuj": D("0.00000000"),
+        "ventaExenta": D("0.00000000"),
+        "ventaGravada": D("0.00000000"),
+        "tributos": [],
+        "psv": D("0.00000000"),
+        "noGravado": D("0.00000000"),
+    }
+    if gravado:
+        item["codTributo"] = "19"
+        item["tributos"] = ["19"]
+        item["ventaGravada"] = venta
+        item["ivaItem"] = iva8
+    else:
+        item["ventaExenta"] = venta
+
+    dte = {
+        "identificacion": {
+            "version": 1,
+            "ambiente": "00",
+            "tipoDte": "01",
+            "numeroControl": "DTE-01-00000001",
+            "tipoMoneda": "USD",
+            "fecEmi": hoy_sv(),
+            "codigoGeneracion": "00000000-0000-4000-8000-000000000001",
+        },
+        "emisor": {
+            "nombre": "Mi Empresa",
+            "correo": "soporte@miempresa.com",
+            "telefono": "22223333",
+            "direccion": {
+                "departamento": "01",
+                "municipio": "01",
+                "complemento": "Calle 1 #123",
+            },
+        },
+        "receptor": {
+            "tipoDocumento": "36",
+            "numDocumento": "01234567-8",
+            "nombre": "Consumidor Final",
+            "direccion": {
+                "departamento": "01",
+                "municipio": "01",
+                "complemento": "SN",
+            },
+        },
+        "cuerpoDocumento": [item],
+        "resumen": {
+            "totalNoSuj": d2(D("0")),
+            "totalExenta": total_base if not gravado else d2(D("0")),
+            "totalGravada": total_base if gravado else d2(D("0")),
+            "montoIva": total_iva,
+            "totalPagar": total_pagar,
+        },
+    }
+    return dte
 
 
 def _identificacion(schema: Dict[str, Any], tipo_dte: str) -> Dict[str, Any]:
@@ -332,12 +417,4 @@ def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
         raise ValueError(f"{path}: {exc.message}") from None
 
 
-__all__ = [
-    "generar_factura_fiscal",
-    "generar_consumidor_final",
-    "generar_nota_debito",
-    "generar_nota_credito",
-    "generar_nota_remision",
-    "validar_contra_schema",
-    "strip_extras",
-]
+__all__ = ["generar_fc_ejemplo"]

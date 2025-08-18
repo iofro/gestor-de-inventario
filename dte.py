@@ -1005,6 +1005,13 @@ def generar_dte_json(
         if extra.get("documento_venta_a_cuenta"):
             result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
 
+    try:
+        validate_dte_json(result)
+    except ValidationError as exc:
+        path = ".".join(str(p) for p in exc.path)
+        msg = f"{path}: {exc.message}" if path else exc.message
+        raise ValidationError(msg) from exc
+
     return result
 
 

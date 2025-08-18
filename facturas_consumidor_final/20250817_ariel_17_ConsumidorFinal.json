@@ -51,16 +51,22 @@
   "cuerpoDocumento": [
     {
       "numItem": 1,
-      "descripcion": "Producto Demo 2",
+      "descripcion": "Producto Demo 8",
       "cantidad": 1,
-      "precioUnitario": 8.0
+      "precioUnitario": 14.0
+    },
+    {
+      "numItem": 2,
+      "descripcion": "Producto Demo 3",
+      "cantidad": 1,
+      "precioUnitario": 9.0
     }
   ],
   "resumen": {
     "totalNoSuj": 0.0,
     "totalExenta": 0.0,
     "totalGravada": 145.63,
-    "subTotalVentas": 8.0,
+    "subTotalVentas": 23.0,
     "descuNoSuj": 0.0,
     "descuExenta": 0.0,
     "descuGravada": 0.0,
@@ -73,13 +79,13 @@
         "valor": 18.93
       }
     ],
-    "subTotal": 8.0,
+    "subTotal": 23.0,
     "ivaRete1": 0.0,
     "reteRenta": 0.0,
     "montoTotalOperacion": 164.56,
     "totalNoGravado": 0.0,
-    "totalPagar": 8.0,
-    "totalLetras": "OCHO 00/100 DÓLARES",
+    "totalPagar": 23.0,
+    "totalLetras": "VEINTITRÉS 00/100 DÓLARES",
     "saldoFavor": 0,
     "condicionOperacion": 2,
     "pagos": null,

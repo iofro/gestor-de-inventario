@@ -259,9 +259,8 @@ def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
     Raises
     ------
     ValueError
-        Si ``tipo`` es desconocido.
-    jsonschema.exceptions.ValidationError
-        Si ``data`` no cumple con el schema correspondiente.
+        Si ``tipo`` es desconocido o ``data`` no cumple con el schema
+        correspondiente.
     """
 
     if tipo not in SCHEMA_MAP:
@@ -298,7 +297,15 @@ def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
     validator = DecimalValidator(
         schema, format_checker=FormatChecker(), resolver=resolver
     )
-    validator.validate(data)
+    try:
+        validator.validate(data)
+    except ValidationError as exc:
+        path_parts = list(exc.absolute_path)
+        if exc.validator == "required" and exc.message.startswith("'"):
+            missing = exc.message.split("'")[1]
+            path_parts.append(missing)
+        path = ".".join(str(part) for part in path_parts)
+        raise ValueError(f"{path}: {exc.message}") from None
 
 
 __all__ = [

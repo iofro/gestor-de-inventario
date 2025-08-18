@@ -1012,11 +1012,20 @@ def validate_dte_json(payload: dict) -> None:
                 item.pop(key)
 
         # --- Valores por defecto ---
-        item.setdefault("tipoItem", 1)
+        if tipo_dte == "01":
+            # En la factura de consumidor final los ítems deben declararse con
+            # ``tipoItem`` 4 y unidad de medida 99 (no aplica).  Los tributos se
+            # reportan únicamente por medio de ``codTributo`` y el arreglo
+            # ``tributos`` debe ser ``null``.
+            item["tipoItem"] = 4
+            item["uniMedida"] = 99
+        else:
+            item.setdefault("tipoItem", 1)
+            item.setdefault("uniMedida", 59)
+
         item.setdefault("numeroDocumento", None)
         item.setdefault("codigo", None)
         item.setdefault("codTributo", None)
-        item.setdefault("uniMedida", 59)
         item.setdefault("montoDescu", 0.0)
         item.setdefault("ventaNoSuj", 0.0)
         item.setdefault("ventaExenta", 0.0)
@@ -1037,31 +1046,50 @@ def validate_dte_json(payload: dict) -> None:
 
         # --- Manejo y validación de tributos ---
         venta_gravada = D(str(item.get("ventaGravada") or 0))
-        tributos = item.get("tributos")
-        if venta_gravada > 0:
-            # Si la venta es gravada y no se especifican tributos, se asigna un
-            # código por defecto (IVA "A8").
-            if not tributos:
-                tributos = ["A8"]
-            elif isinstance(tributos, str):
-                tributos = [tributos]
-            item["tributos"] = [str(t).upper() for t in tributos]
-
-            # ``codTributo`` toma el primer código de la lista si no fue
-            # proporcionado explícitamente.
-            cod = item.get("codTributo") or item["tributos"][0]
-            item["codTributo"] = str(cod).upper()
-
+        if tipo_dte == "01":
+            # Para consumidor final no se reporta el arreglo ``tributos``.  Si
+            # el ítem es gravado se utiliza por defecto el código "A8".
             allowed = set(catalogos.TRIBUTOS.keys())
-            if item["codTributo"] not in allowed:
-                raise ValueError(f"codTributo inválido: {item['codTributo']}")
-            invalid = [t for t in item["tributos"] if t not in allowed]
-            if invalid:
-                raise ValueError(f"Código(s) de tributo inválido(s): {', '.join(invalid)}")
-        else:
-            # Si no hay venta gravada, no deben declararse tributos
+            if venta_gravada > 0:
+                cod = item.get("codTributo") or "A8"
+                item["codTributo"] = str(cod).upper()
+                if item["codTributo"] not in allowed:
+                    raise ValueError(
+                        f"codTributo inválido: {item['codTributo']}"
+                    )
+            else:
+                item["codTributo"] = None
             item["tributos"] = None
-            item["codTributo"] = None
+        else:
+            tributos = item.get("tributos")
+            if venta_gravada > 0:
+                # Si la venta es gravada y no se especifican tributos, se
+                # asigna un código por defecto (IVA "A8").
+                if not tributos:
+                    tributos = ["A8"]
+                elif isinstance(tributos, str):
+                    tributos = [tributos]
+                item["tributos"] = [str(t).upper() for t in tributos]
+
+                # ``codTributo`` toma el primer código de la lista si no fue
+                # proporcionado explícitamente.
+                cod = item.get("codTributo") or item["tributos"][0]
+                item["codTributo"] = str(cod).upper()
+
+                allowed = set(catalogos.TRIBUTOS.keys())
+                if item["codTributo"] not in allowed:
+                    raise ValueError(
+                        f"codTributo inválido: {item['codTributo']}"
+                    )
+                invalid = [t for t in item["tributos"] if t not in allowed]
+                if invalid:
+                    raise ValueError(
+                        f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+                    )
+            else:
+                # Si no hay venta gravada, no deben declararse tributos
+                item["tributos"] = None
+                item["codTributo"] = None
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})

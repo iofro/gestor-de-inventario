@@ -38,8 +38,7 @@ import shutil
 import os
 import json
 import warnings
-
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+from paths import DATOS_NEGOCIO_PATH
 
 CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
 CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")

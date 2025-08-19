@@ -13,8 +13,9 @@ from jsonschema import Draft7Validator, ValidationError
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+from paths import DATOS_NEGOCIO_PATH as _DATOS_NEGOCIO_PATH
 BASE_DIR = Path(__file__).resolve().parents[1]
-DATOS_NEGOCIO_PATH = BASE_DIR / "datos_negocio.json"
+DATOS_NEGOCIO_PATH = Path(_DATOS_NEGOCIO_PATH)
 SCHEMAS_DIR = BASE_DIR / "svfe-json-schemas"
 
 TIPOS_DTE = [

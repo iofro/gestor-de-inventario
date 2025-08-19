@@ -13,8 +13,7 @@ from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from datetime import datetime
 import json
 import os
-
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+from paths import DATOS_NEGOCIO_PATH
 
 
 def generar_reporte_vendedor_pdf(

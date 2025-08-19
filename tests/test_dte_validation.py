@@ -1,4 +1,5 @@
 import pytest
+import uuid
 from dte import sanitize_dte_payload, validate_dte_json
 
 
@@ -34,6 +35,16 @@ def test_codigo_generacion_debe_ser_uuid_v4(dte_metadata_factory):
     with pytest.raises(ValueError):
         validate_dte_json(dte)
     dte["identificacion"]["codigoGeneracion"] = "12345678-1234-1234-1234-1234567890AB"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
+def test_codigo_generacion_rechaza_uuids_no_v4(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["codigoGeneracion"] = str(uuid.uuid1()).upper()
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+    dte["identificacion"]["codigoGeneracion"] = str(uuid.uuid3(uuid.NAMESPACE_DNS, "test")).upper()
     with pytest.raises(ValueError):
         validate_dte_json(dte)
 
@@ -156,5 +167,106 @@ def test_tributos_invalidos_rechazados(dte_metadata_factory):
     dte = dte_metadata_factory()
     dte["identificacion"]["tipoDte"] = "03"
     dte["cuerpoDocumento"][0]["codTributo"] = "ZZ"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
+def test_numero_control_regex(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["numeroControl"] = "INVALID"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
+@pytest.mark.parametrize(
+    "numero",
+    [
+        "DTE-01-ABCDEFGH-123456789012345",
+        "DTE-01-12345678-000000000000000",
+    ],
+)
+def test_numero_control_validos(dte_metadata_factory, numero):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["numeroControl"] = numero
+    validate_dte_json(dte)
+
+
+@pytest.mark.parametrize(
+    "numero",
+    [
+        "DTE-02-ABCDEFGH-123456789012345",
+        "DTE-01-ABC-123456789012345",
+        "DTE-01-ABCDEFGH-12345",
+        "dte-01-ABCDEFGH-123456789012345",
+    ],
+)
+def test_numero_control_invalidos(dte_metadata_factory, numero):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["numeroControl"] = numero
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
+def test_tipo_operacion_rules(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoModelo"] = 2
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoContingencia"] = 1
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["motivoContin"] = "Razón"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
+    dte["identificacion"]["tipoModelo"] = 1
+    dte["identificacion"]["tipoContingencia"] = 1
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
+    dte["identificacion"]["tipoModelo"] = 2
+    dte["identificacion"]["tipoContingencia"] = 6
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
+    dte["identificacion"]["tipoModelo"] = 2
+    dte["identificacion"]["tipoContingencia"] = 5
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
+    dte["identificacion"]["tipoModelo"] = 2
+    dte["identificacion"]["tipoContingencia"] = 5
+    dte["identificacion"]["motivoContin"] = "bad"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
+def test_no_motivo_contin_si_operacion_1(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["motivoContin"] = " Justificacion "
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+
+def test_fecha_hora_format(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["fecEmi"] = "01-01-2024"
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["horEmi"] = "25:00:00"
     with pytest.raises(ValueError):
         validate_dte_json(dte)

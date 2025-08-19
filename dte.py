@@ -9,7 +9,12 @@ from db import DB
 import requests
 from utils import jws
 import auth
-from jsonschema import Draft7Validator, ValidationError, FormatChecker
+from jsonschema import (
+    Draft202012Validator,
+    ValidationError,
+    FormatChecker,
+    RefResolver,
+)
 from utils import catalogos
 import logging
 import re
@@ -27,47 +32,63 @@ CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.js
 DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
 
-ALLOWED_TOP_KEYS = {
-    "identificacion",
-    "emisor",
-    "receptor",
-    "cuerpoDocumento",
-    "resumen",
-    "documentoRelacionado",
-    "otrosDocumentos",
-    "ventaTercero",
-    "extension",
-    "apendice",
-}
-
-DISALLOWED_KEYS = {"firmaElectronica", "selloRecibido"}
+SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
+FC_SCHEMA_PATH = SCHEMAS_DIR / "fe-fc-v1.json"
+with FC_SCHEMA_PATH.open("r", encoding="utf-8") as fh:
+    FC_SCHEMA = json.load(fh)
+RESOLVER = RefResolver(base_uri=f"{SCHEMAS_DIR.as_uri()}/", referrer=FC_SCHEMA)
 
 
-def _sanitize(data, allowed_keys=None):
-    """Recursively remove keys not allowed by ``allowed_keys`` or present in
-    ``DISALLOWED_KEYS``."""
-    if isinstance(data, dict):
+def _strip_additional_properties(value, schema):
+    """Remove keys not defined in ``schema`` when ``additionalProperties`` is ``false``."""
+    if "$ref" in schema:
+        with RESOLVER.resolving(schema["$ref"]) as resolved:
+            return _strip_additional_properties(value, resolved)
+
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        patterns = {re.compile(p): s for p, s in schema.get("patternProperties", {}).items()}
+        addl = schema.get("additionalProperties", True)
         clean = {}
-        for k, v in data.items():
-            if k in DISALLOWED_KEYS:
+        for key, val in value.items():
+            if key in props:
+                clean[key] = _strip_additional_properties(val, props[key])
                 continue
-            if allowed_keys is not None and k not in allowed_keys:
+            matched = False
+            for pat, subschema in patterns.items():
+                if pat.fullmatch(key):
+                    clean[key] = _strip_additional_properties(val, subschema)
+                    matched = True
+                    break
+            if matched:
                 continue
-            if isinstance(v, dict):
-                clean[k] = _sanitize(v)
-            elif isinstance(v, list):
-                clean[k] = [_sanitize(x) for x in v]
-            else:
-                clean[k] = v
+            if addl is not False:
+                clean[key] = val
         return clean
-    if isinstance(data, list):
-        return [_sanitize(x) for x in data]
-    return data
+
+    if isinstance(value, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            return [_strip_additional_properties(v, item_schema) for v in value]
+        elif isinstance(item_schema, list):
+            result = []
+            for i, v in enumerate(value):
+                if i < len(item_schema):
+                    result.append(_strip_additional_properties(v, item_schema[i]))
+                else:
+                    result.append(v)
+            return result
+    return value
 
 
-def sanitize_dte_payload(data: dict) -> dict:
-    """Return ``data`` excluding properties not allowed by the DTE schema."""
-    return _sanitize(data, ALLOWED_TOP_KEYS)
+def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
+    """Return ``data`` excluding properties not allowed by ``schema``.
+
+    When ``schema`` is ``None`` the FC v1 schema is used.
+    """
+    if schema is None:
+        schema = FC_SCHEMA
+    return _strip_additional_properties(data, schema)
 
 
 def apply_schema_patch(data: dict) -> dict:
@@ -92,6 +113,7 @@ def apply_schema_patch(data: dict) -> dict:
 
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
+getcontext().rounding = ROUND_HALF_UP
 
 # Helper aliases for precise Decimal arithmetic
 D = Decimal
@@ -101,14 +123,20 @@ def d8(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 8 decimal places."""
     return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
 
+def money(value) -> D:
+    """
+    Convierte `value` a Decimal con 2 decimales (multipleOf 0.01) usando ROUND_HALF_UP.
+    Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
+    """
+    return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
 def normalize_uuid_v4_upper(value: str) -> str:
-    """Return ``value`` as a normalized uppercase UUID v4 string."""
-    u = uuid.UUID(str(value))
-    if u.version != 4:
-        raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
+    """
+    Normaliza `value` como UUID v4 con guiones en MAYÚSCULAS.
+    Lanza ValueError si no es un UUID v4 válido.
+    """
+    u = uuid.UUID(str(value), version=4)  # garantiza versión 4 real
     return str(u).upper()
-
 
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
@@ -159,7 +187,7 @@ def _validate_schema(instance: dict, schema: dict) -> None:
     Prints a full report of all schema validation issues found and raises
     ``ValidationError`` with the combined message if any problems exist.
     """
-    validator = Draft7Validator(schema, format_checker=FormatChecker())
+    validator = Draft202012Validator(schema, format_checker=FormatChecker(), resolver=RESOLVER)
     errs = []
     for err in sorted(validator.iter_errors(instance), key=lambda e: e.path):
         errs.append(
@@ -448,7 +476,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         codigo = str(p.get("codigo", "")).zfill(2)
         if allowed and codigo not in allowed:
             continue
-        monto = D(str(p.get("montoPago", 0))).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        monto = money(p.get("montoPago", 0))
         periodo = p.get("periodo")
         periodo = str(periodo).zfill(2) if periodo else None
         pagos.append(
@@ -465,7 +493,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         pagos = [
             {
                 "codigo": "01",
-                "montoPago": D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP),
+                "montoPago": money(total),
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
@@ -473,12 +501,12 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         ]
     else:
         suma = sum(p["montoPago"] for p in pagos)
-        diff = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP) - suma
+        diff = money(total) - suma
         if diff:
             nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
-            pagos[-1]["montoPago"] = nuevo.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+            pagos[-1]["montoPago"] = money(nuevo)
 
     if condicion == 2:
         first = pagos[0]
@@ -528,7 +556,7 @@ def armar_tributos(tributos_raw, tipo_dte):
                 # Si no se proporciona descripción, intentar obtenerla del catálogo
                 "descripcion": t.get("descripcion")
                 or catalogos.TRIBUTOS.get(codigo),
-                "valor": d2(t.get("valor", 0)),
+                "valor": float(money(t.get("valor", 0))),
             }
         )
     return result or None
@@ -599,7 +627,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
                 {
                     "codigo": "19",
                     "descripcion": catalogos.TRIBUTOS.get("19"),
-                    "valor": d2(iva_val),
+                    "valor": float(money(iva_val)),
                 }
             ]
         resumen["tributos"] = trib
@@ -613,7 +641,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     # Redondeamos valores numéricos
     for k, v in resumen.items():
         if isinstance(v, (int, float, Decimal)):
-            resumen[k] = d2(v)
+            resumen[k] = float(money(v))
 
     return resumen
 
@@ -645,11 +673,9 @@ def recalcular_totales(data: dict) -> list[str]:
             iva_total += Decimal(str(iva_val))
             iva_from_items = True
     if iva_from_items:
-        iva_total = iva_total.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        iva_total = money(iva_total)
     else:
-        iva_total = Decimal(
-            str(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
-        )
+        iva_total = money(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
 
     # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
     # calculado internamente y así podamos comparar contra el declarado.
@@ -682,7 +708,7 @@ def recalcular_totales(data: dict) -> list[str]:
         ref = Decimal(str(resumen.get(k, 0)))
         nuevo = Decimal(str(v))
         if abs(ref - nuevo) > Decimal("0.01"):
-            resumen[k] = float(nuevo) if isinstance(v, Decimal) else v
+            resumen[k] = float(money(nuevo)) if isinstance(v, Decimal) else v
             modificados.append(k)
 
     data["resumen"] = resumen
@@ -793,6 +819,7 @@ def generar_dte_json(
         if tipo_contingencia != 5:
             motivo_contin = None
 
+    tipo_dte = "01"
     identificacion = {
         "version": 1,
         "ambiente": ambiente,
@@ -884,7 +911,7 @@ def generar_dte_json(
             "descripcion": d.get("descripcion"),
             "cantidad": float(cant_q),
             "precioUnitario": float(precio_q),
-            "ventaGravada": float(d8(venta_item)),
+            "ventaGravada": float(money(venta_item)),
         }
         cuerpo.append(item_data)
 
@@ -931,29 +958,21 @@ def generar_dte_json(
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
-        # Campos obligatorios que pueden no tener información
         "documentoRelacionado": None,
         "otrosDocumentos": None,
-        "ventaTercero": None,
-        "extension": None,
         "apendice": None,
-        "firmaElectronica": None,
-        "selloRecibido": None,
+        "ventaTercero": None,
+        "extension": {
+            "nombEntrega": None,
+            "docuEntrega": None,
+            "nombRecibe": None,
+            "docuRecibe": None,
+            "observaciones": None,
+            "placaVehiculo": None,
+        },
     }
-    if fiscal:
-        result["condicionPago"] = fiscal.get("condicion_pago")
 
-    if fiscal:
-        if fiscal.get("venta_a_cuenta_de"):
-            result["ventaACuentaDe"] = fiscal.get("venta_a_cuenta_de")
-        if fiscal.get("documento_venta_a_cuenta"):
-            result["documentoVentaACuenta"] = fiscal.get("documento_venta_a_cuenta")
-    else:
-        if extra.get("venta_a_cuenta_de"):
-            result["ventaACuentaDe"] = extra.get("venta_a_cuenta_de")
-        if extra.get("documento_venta_a_cuenta"):
-            result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
-
+    validate_dte_json(result)
     return result
 
 
@@ -1213,9 +1232,9 @@ def validate_dte_json(payload: dict) -> None:
         item[precio_key] = float(precio_q)
         importe = cantidad_q * precio_q
 
-        monto_descu = d8(D(str(item.get("montoDescu") or 0)))
+        monto_descu = money(D(str(item.get("montoDescu") or 0)))
         item["montoDescu"] = float(monto_descu)
-        base = d8(max(importe - monto_descu, D("0")))
+        base = money(max(importe - monto_descu, D("0")))
 
         venta_gravada = D(str(item.get("ventaGravada") or 0))
         venta_exenta = D(str(item.get("ventaExenta") or 0))
@@ -1258,10 +1277,10 @@ def validate_dte_json(payload: dict) -> None:
     resumen = payload.get("resumen", {})
     for k, v in resumen.items():
         if isinstance(v, (int, float)):
-            resumen[k] = d2(v)
+            resumen[k] = float(money(v))
         elif isinstance(v, str):
             try:
-                resumen[k] = d2(float(v))
+                resumen[k] = float(money(float(v)))
             except Exception:
                 pass
     payload["resumen"] = resumen
@@ -1308,6 +1327,7 @@ def validate_dte_json(payload: dict) -> None:
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
+        payload = sanitize_dte_payload(payload, schema)
         _validate_schema(payload, schema)
 
 
@@ -1440,6 +1460,20 @@ def _load_dte_api_config():
         return {"ambiente": "pruebas", "url": DEFAULT_RECEPCION_URL}
 
 
+def _assert_no_ejemplo(path: str) -> None:
+    banned = os.path.join("facturas_consumidor_final", "ejemplo.json")
+    assert not str(path).endswith(banned), "writing to ejemplo.json is forbidden"
+
+
+def _write_json(path: str, data):
+    _assert_no_ejemplo(path)
+    with open(path, "w", encoding="utf-8") as fh:
+        if isinstance(data, str):
+            fh.write(data)
+        else:
+            json.dump(data, fh, ensure_ascii=False)
+
+
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
     """Guarda el JSON original y el JWS en ``/dtes/{anio}/``."""
     try:
@@ -1449,11 +1483,9 @@ def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
         os.makedirs(base_dir, exist_ok=True)
         nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
         json_path = os.path.join(base_dir, f"{nombre}.json")
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(dte_data, fh, ensure_ascii=False)
+        _write_json(json_path, dte_data)
         jws_path = os.path.join(base_dir, f"{nombre}.jws")
-        with open(jws_path, "w", encoding="utf-8") as fh:
-            fh.write(jws_token)
+        _write_json(jws_path, jws_token)
     except Exception:
         pass
 
@@ -1476,8 +1508,7 @@ def save_dte_json(dte_data: dict) -> str:
         os.makedirs(base_dir, exist_ok=True)
         nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
         json_path = os.path.join(base_dir, f"{nombre}.json")
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(dte_data, fh, ensure_ascii=False)
+        _write_json(json_path, dte_data)
         return json_path
     except Exception:
         return ""

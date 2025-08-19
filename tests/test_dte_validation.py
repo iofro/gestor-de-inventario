@@ -207,55 +207,53 @@ def test_numero_control_invalidos(dte_metadata_factory, numero):
         validate_dte_json(dte)
 
 
-def test_tipo_operacion_rules(dte_metadata_factory):
+def test_ident_contingencia_modelo(dte_metadata_factory):
     dte = dte_metadata_factory()
     dte["identificacion"]["tipoModelo"] = 2
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
-
-    dte = dte_metadata_factory()
     dte["identificacion"]["tipoContingencia"] = 1
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
-
-    dte = dte_metadata_factory()
-    dte["identificacion"]["motivoContin"] = "Razón"
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
+    dte["identificacion"]["motivoContin"] = "  EXTRA  "
+    validate_dte_json(dte)
+    ident = dte["identificacion"]
+    assert ident["tipoModelo"] == 1
+    assert ident["tipoContingencia"] is None
+    assert ident["motivoContin"] is None
 
     dte = dte_metadata_factory()
     dte["identificacion"]["tipoOperacion"] = 2
-    dte["identificacion"]["tipoModelo"] = 1
     dte["identificacion"]["tipoContingencia"] = 1
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
+    validate_dte_json(dte)
+    ident = dte["identificacion"]
+    assert ident["tipoModelo"] == 2
+    assert ident["motivoContin"] is None
 
     dte = dte_metadata_factory()
     dte["identificacion"]["tipoOperacion"] = 2
-    dte["identificacion"]["tipoModelo"] = 2
-    dte["identificacion"]["tipoContingencia"] = 6
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
-
-    dte = dte_metadata_factory()
-    dte["identificacion"]["tipoOperacion"] = 2
-    dte["identificacion"]["tipoModelo"] = 2
     dte["identificacion"]["tipoContingencia"] = 5
+    dte["identificacion"]["motivoContin"] = " FALLA PROVEEDOR "
+    validate_dte_json(dte)
+    ident = dte["identificacion"]
+    assert ident["tipoModelo"] == 2
+    assert ident["motivoContin"] == "FALLA PROVEEDOR"
+
+
+def test_ident_contingencia_rechazos(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
+    dte["identificacion"]["tipoContingencia"] = 9
     with pytest.raises(ValueError):
         validate_dte_json(dte)
 
     dte = dte_metadata_factory()
     dte["identificacion"]["tipoOperacion"] = 2
-    dte["identificacion"]["tipoModelo"] = 2
+    dte["identificacion"]["tipoContingencia"] = 5
+    dte["identificacion"]["motivoContin"] = ""
+    with pytest.raises(ValueError):
+        validate_dte_json(dte)
+
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
     dte["identificacion"]["tipoContingencia"] = 5
     dte["identificacion"]["motivoContin"] = "bad"
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
-
-
-def test_no_motivo_contin_si_operacion_1(dte_metadata_factory):
-    dte = dte_metadata_factory()
-    dte["identificacion"]["motivoContin"] = " Justificacion "
     with pytest.raises(ValueError):
         validate_dte_json(dte)
 

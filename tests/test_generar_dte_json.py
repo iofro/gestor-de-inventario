@@ -22,7 +22,7 @@ def test_generar_dte_json_basic(tmp_path):
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
         "descActividad": "Comercio",
-        "telefono": "2222-2222",
+        "telefono": "22222222",
         "correo": "test@example.com",
     }
     tmp_file = tmp_path / "datos_negocio.json"
@@ -34,7 +34,7 @@ def test_generar_dte_json_basic(tmp_path):
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "7000-0001", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "70000001", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 11.3, cliente_id=cliente_id)
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
@@ -67,6 +67,50 @@ def test_generar_dte_json_basic(tmp_path):
         "extension",
     }
     assert set(data.keys()) == expected
+
+
+@pytest.mark.parametrize("cfg, expected", [("pruebas", "00"), ("produccion", "01")])
+def test_generar_dte_json_normaliza_ambiente_config(tmp_path, cfg, expected, monkeypatch):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
+
+    cfg_file = tmp_path / "config_negocio.json"
+    cfg_file.write_text(json.dumps({"ambiente": cfg}))
+    dte_module.CONFIG_NEGOCIO_PATH = str(cfg_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "70000001", "", "", "", "")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id)
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    orig_validate = dte_module.validate_dte_json
+    orig_norm = dte_module._normalize_payload
+    monkeypatch.setattr(dte_module, "validate_dte_json", lambda payload: None)
+    monkeypatch.setattr(dte_module, "_normalize_payload", lambda x: x)
+    data = dte_module.generar_dte_json(db, venta_id, ambiente="00")
+    monkeypatch.setattr(dte_module, "validate_dte_json", orig_validate)
+    data["identificacion"].pop("ambiente", None)
+    dte_module.validate_dte_json(data)
+    monkeypatch.setattr(dte_module, "_normalize_payload", orig_norm)
+    assert data["identificacion"]["ambiente"] == expected
 
 
 def test_dte_rounding_and_validation(capsys):

@@ -863,6 +863,10 @@ def generar_dte_json(
         raise ValueError("Venta no encontrada")
     venta = dict(row)
 
+    if ambiente not in ("00", "01"):
+        ambiente_cfg = str(ambiente).lower()
+        ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
+
     if not venta.get("total_letras"):
         total = venta.get("total")
         if total is not None:
@@ -1671,6 +1675,9 @@ def generar_ticket_json(
     **kwargs,
 ) -> dict:
     """Genera la estructura JSON para un Ticket Electrónico."""
+    if ambiente not in ("00", "01"):
+        ambiente_cfg = str(ambiente).lower()
+        ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
     return generar_dte_json(
         db,
         venta_id,

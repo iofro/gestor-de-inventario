@@ -1,13 +1,13 @@
 {
   "identificacion": {
-    "fecEmi": "2025-08-18",
+    "fecEmi": "2025-08-19",
     "version": 1,
     "ambiente": "00",
     "tipoMoneda": "USD",
     "tipoOperacion": 1,
     "tipoModelo": 1,
-    "codigoGeneracion": "759b63bd06594a678f4683a41794d699",
-    "numeroControl": "09B29B5E"
+    "codigoGeneracion": "b3317e1130754b99941448f9ab120d9e",
+    "numeroControl": "006A7AD6"
   },
   "emisor": {},
   "receptor": {
@@ -18,15 +18,15 @@
   "cuerpoDocumento": [
     {
       "numItem": 1,
-      "descripcion": "Producto Demo 6",
+      "descripcion": "Producto Demo 10",
       "cantidad": 1,
-      "precioUni": 14.0
+      "precioUni": 16.0
     }
   ],
   "resumen": {
-    "totalPagar": 12.0,
-    "subTotalVentas": 12.0,
-    "subTotal": 12.0,
-    "totalLetras": "DOCE 00/100 DÓLARES"
+    "totalPagar": 16.0,
+    "subTotalVentas": 16.0,
+    "subTotal": 16.0,
+    "totalLetras": "DIECISÉIS 00/100 DÓLARES"
   }
 }

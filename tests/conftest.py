@@ -6,6 +6,7 @@ import copy
 import sqlite3
 import json
 import base64
+from decimal import Decimal
 
 
 import pytest
@@ -26,8 +27,16 @@ from db import DB
 
 def make_jws(payload: dict) -> str:
     """Return a simple unsigned JWS token for ``payload``."""
+
+    def _default(obj):
+        if isinstance(obj, Decimal):
+            return float(obj)
+        raise TypeError
+
     header = base64.urlsafe_b64encode(b"{}" ).decode().rstrip("=")
-    body = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip("=")
+    body = base64.urlsafe_b64encode(
+        json.dumps(payload, default=_default).encode()
+    ).decode().rstrip("=")
     return f"{header}.{body}.sig"
 
 

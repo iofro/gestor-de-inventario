@@ -165,6 +165,8 @@ def _normalize_payload(value):
         for i, v in enumerate(value):
             value[i] = _normalize_payload(v)
         return value
+    if isinstance(value, float):
+        return D(str(value))
     if isinstance(value, str):
         v = value.strip()
         lower = v.lower()
@@ -172,14 +174,14 @@ def _normalize_payload(value):
             return True
         if lower == "false":
             return False
-        if v.startswith("-") and v[1:].isdigit():
+        if re.fullmatch(r"-?\d+", v):
             try:
                 return int(v)
             except Exception:
                 return v
-        if "." in v:
+        if re.fullmatch(r"-?\d+\.\d+", v):
             try:
-                return float(v)
+                return D(v)
             except Exception:
                 return v
         return v
@@ -557,9 +559,9 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         first["periodo"] = periodo_val if periodo_is_str else int(periodo_val)
 
     for p in pagos:
-        p["montoPago"] = float(money(p["montoPago"]))
-        if p["montoPago"] == -0.0:
-            p["montoPago"] = 0.0
+        p["montoPago"] = money(p["montoPago"])
+        if p["montoPago"] == D("0"):
+            p["montoPago"] = D("0")
 
     return pagos
 
@@ -589,13 +591,16 @@ def armar_tributos(tributos_raw, tipo_dte):
         codigo = str(t.get("codigo", "")).upper()
         if allowed and codigo not in allowed:
             raise ValueError(f"Código de tributo inválido: {codigo}")
+        valor = money(t.get("valor", 0))
+        if valor == D("0"):
+            valor = D("0")
         result.append(
             {
                 "codigo": codigo,
                 # Si no se proporciona descripción, intentar obtenerla del catálogo
                 "descripcion": t.get("descripcion")
                 or catalogos.TRIBUTOS.get(codigo),
-                "valor": float(money(t.get("valor", 0))),
+                "valor": valor,
             }
         )
     return result or None
@@ -690,20 +695,20 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             "tributos",
         }:
             continue
-        resumen[key] = float(money(val))
-        if resumen[key] == -0.0:
-            resumen[key] = 0.0
+        resumen[key] = money(val)
+        if resumen[key] == D("0"):
+            resumen[key] = D("0")
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            t["valor"] = float(money(t["valor"]))
-            if t["valor"] == -0.0:
-                t["valor"] = 0.0
+            t["valor"] = money(t["valor"])
+            if t["valor"] == D("0"):
+                t["valor"] = D("0")
 
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            if p.get("montoPago") == -0.0:
-                p["montoPago"] = 0.0
+            if p.get("montoPago") == D("0"):
+                p["montoPago"] = D("0")
 
     return resumen
 
@@ -1160,14 +1165,22 @@ def generar_dte_json(
     for k, v in resumen.items():
         if isinstance(v, float) and v == -0.0:
             resumen[k] = 0.0
+        elif isinstance(v, Decimal) and v == D("0") and v.as_tuple().sign == 1:
+            resumen[k] = D("0")
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            if p.get("montoPago") == -0.0:
+            mp = p.get("montoPago")
+            if isinstance(mp, float) and mp == -0.0:
                 p["montoPago"] = 0.0
+            elif isinstance(mp, Decimal) and mp == D("0") and mp.as_tuple().sign == 1:
+                p["montoPago"] = D("0")
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            if t.get("valor") == -0.0:
+            val = t.get("valor")
+            if isinstance(val, float) and val == -0.0:
                 t["valor"] = 0.0
+            elif isinstance(val, Decimal) and val == D("0") and val.as_tuple().sign == 1:
+                t["valor"] = D("0")
 
     extension = None
 

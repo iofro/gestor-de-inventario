@@ -1,5 +1,7 @@
 import pytest
 import fitz
+from urllib.parse import urlparse, parse_qs
+import factura_sv
 from factura_sv import generar_factura_electronica_pdf, build_qr_value
 
 
@@ -89,6 +91,42 @@ def test_qr_value_contains_params():
     assert 'numeroDocumento=NC-1' in url
     assert 'tipoDte=01' in url
     assert 'ambiente=2' in url
+
+
+def test_qr_url_matches_environment(tmp_path, monkeypatch):
+    venta, detalles = _sample_data('Crédito Fiscal')
+    captured = []
+
+    def fake_build_qr_value(ambiente, codigo_generacion, tipo_dte, numero_documento):
+        url = build_qr_value(ambiente, codigo_generacion, tipo_dte, numero_documento)
+        captured.append(url)
+        return url
+
+    monkeypatch.setattr(factura_sv, 'build_qr_value', fake_build_qr_value)
+
+    scenarios = [
+        ('01', 'https://www.mh.gob.sv/consulta-dte', '1'),
+        ('00', 'https://sandbox.mh.gob.sv/consulta-dte', '2'),
+    ]
+
+    for env, expected_base, expected_param in scenarios:
+        captured.clear()
+        out = tmp_path / f'fact_{env}.pdf'
+        generar_factura_electronica_pdf(
+            venta,
+            detalles,
+            {},
+            {},
+            'Crédito Fiscal',
+            archivo=str(out),
+            datos_negocio={},
+            ambiente=env,
+        )
+        assert captured, 'QR value not generated'
+        url = captured[0]
+        assert url.startswith(expected_base)
+        qs = parse_qs(urlparse(url).query)
+        assert qs.get('ambiente') == [expected_param]
 
 
 def test_contingencia_draws_message(tmp_path):

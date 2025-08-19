@@ -6,6 +6,7 @@ from datetime import datetime, timedelta
 import os
 import logging
 import sqlite3
+from paths import DATOS_NEGOCIO_PATH
 
 logger = logging.getLogger(__name__)
 
@@ -14,7 +15,6 @@ class InventoryManagerError(Exception):
     """Errores de dominio del administrador de inventario."""
 
 
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 
 
 class InventoryManager:

@@ -11,3 +11,4 @@ msal
 
 jsonschema
 jsonpatch
+appdirs

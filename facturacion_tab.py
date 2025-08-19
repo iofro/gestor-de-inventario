@@ -40,7 +40,7 @@ from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 import uuid
 from utils.email_sender import EmailSender
-from sales_tab import DATOS_NEGOCIO_PATH
+from paths import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
 import shutil

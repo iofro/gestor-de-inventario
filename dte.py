@@ -536,14 +536,11 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         ]
     else:
         suma = sum((p["montoPago"] for p in pagos), D("0.00"))
-        diff = total - suma
-        if diff:
-            if len(pagos) > 1 and abs(diff) > D("0.01"):
-                raise ValidationError("La suma de pagos excede el total a pagar")
-            nuevo = pagos[-1]["montoPago"] + diff
-            if nuevo < 0:
-                raise ValidationError("La suma de pagos excede el total a pagar")
-            pagos[-1]["montoPago"] = money(nuevo)
+        diff = money(total - suma)
+        nuevo = money(pagos[-1]["montoPago"] + diff)
+        if nuevo < 0:
+            raise ValidationError("La suma de pagos excede el total a pagar")
+        pagos[-1]["montoPago"] = nuevo
 
     if condicion == 2:
         first = pagos[0]
@@ -557,7 +554,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         first["periodo"] = periodo_val if periodo_is_str else int(periodo_val)
 
     for p in pagos:
-        p["montoPago"] = float(money(p["montoPago"]))
+        p["montoPago"] = money(p["montoPago"])
+        if (p["montoPago"] * 100) % 1:
+            raise ValidationError("Los montos de pago deben ser múltiplos de 0.01")
+
+    if money(sum(p["montoPago"] for p in pagos)) != total:
+        raise ValidationError("La suma de pagos no coincide con el total a pagar")
+
+    for p in pagos:
+        p["montoPago"] = float(p["montoPago"])
         if p["montoPago"] == -0.0:
             p["montoPago"] = 0.0
 
@@ -673,7 +678,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
             extra.get("pagos"),
-            total_pagar,
+            resumen["totalPagar"],
             tipo_dte=tipo_dte,
             condicion=resumen.get("condicionOperacion", 1),
         )

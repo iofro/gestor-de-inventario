@@ -41,7 +41,7 @@
       "numItem": 1,
       "descripcion": "Producto Demo 1",
       "cantidad": 1.0,
-      "precioUnitario": 7.0
+      "precioUni": 7.0
     }
   ],
   "resumen": {

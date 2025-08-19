@@ -45,7 +45,7 @@
       "numItem": 1,
       "descripcion": "Producto Demo 2",
       "cantidad": 1.0,
-      "precioUnitario": 8.0,
+      "precioUni": 8.0,
       "ventaGravada": 8.0
     }
   ],

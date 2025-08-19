@@ -9,7 +9,12 @@ from db import DB
 import requests
 from utils import jws
 import auth
-from jsonschema import Draft7Validator, ValidationError, FormatChecker
+from jsonschema import (
+    Draft202012Validator,
+    ValidationError,
+    FormatChecker,
+    RefResolver,
+)
 from utils import catalogos
 import logging
 import re
@@ -27,47 +32,63 @@ CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.js
 DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
 
-ALLOWED_TOP_KEYS = {
-    "identificacion",
-    "emisor",
-    "receptor",
-    "cuerpoDocumento",
-    "resumen",
-    "documentoRelacionado",
-    "otrosDocumentos",
-    "ventaTercero",
-    "extension",
-    "apendice",
-}
-
-DISALLOWED_KEYS = {"firmaElectronica", "selloRecibido"}
+SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
+FC_SCHEMA_PATH = SCHEMAS_DIR / "fe-fc-v1.json"
+with FC_SCHEMA_PATH.open("r", encoding="utf-8") as fh:
+    FC_SCHEMA = json.load(fh)
+RESOLVER = RefResolver(base_uri=f"{SCHEMAS_DIR.as_uri()}/", referrer=FC_SCHEMA)
 
 
-def _sanitize(data, allowed_keys=None):
-    """Recursively remove keys not allowed by ``allowed_keys`` or present in
-    ``DISALLOWED_KEYS``."""
-    if isinstance(data, dict):
+def _strip_additional_properties(value, schema):
+    """Remove keys not defined in ``schema`` when ``additionalProperties`` is ``false``."""
+    if "$ref" in schema:
+        with RESOLVER.resolving(schema["$ref"]) as resolved:
+            return _strip_additional_properties(value, resolved)
+
+    if isinstance(value, dict):
+        props = schema.get("properties", {})
+        patterns = {re.compile(p): s for p, s in schema.get("patternProperties", {}).items()}
+        addl = schema.get("additionalProperties", True)
         clean = {}
-        for k, v in data.items():
-            if k in DISALLOWED_KEYS:
+        for key, val in value.items():
+            if key in props:
+                clean[key] = _strip_additional_properties(val, props[key])
                 continue
-            if allowed_keys is not None and k not in allowed_keys:
+            matched = False
+            for pat, subschema in patterns.items():
+                if pat.fullmatch(key):
+                    clean[key] = _strip_additional_properties(val, subschema)
+                    matched = True
+                    break
+            if matched:
                 continue
-            if isinstance(v, dict):
-                clean[k] = _sanitize(v)
-            elif isinstance(v, list):
-                clean[k] = [_sanitize(x) for x in v]
-            else:
-                clean[k] = v
+            if addl is not False:
+                clean[key] = val
         return clean
-    if isinstance(data, list):
-        return [_sanitize(x) for x in data]
-    return data
+
+    if isinstance(value, list):
+        item_schema = schema.get("items")
+        if isinstance(item_schema, dict):
+            return [_strip_additional_properties(v, item_schema) for v in value]
+        elif isinstance(item_schema, list):
+            result = []
+            for i, v in enumerate(value):
+                if i < len(item_schema):
+                    result.append(_strip_additional_properties(v, item_schema[i]))
+                else:
+                    result.append(v)
+            return result
+    return value
 
 
-def sanitize_dte_payload(data: dict) -> dict:
-    """Return ``data`` excluding properties not allowed by the DTE schema."""
-    return _sanitize(data, ALLOWED_TOP_KEYS)
+def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
+    """Return ``data`` excluding properties not allowed by ``schema``.
+
+    When ``schema`` is ``None`` the FC v1 schema is used.
+    """
+    if schema is None:
+        schema = FC_SCHEMA
+    return _strip_additional_properties(data, schema)
 
 
 def apply_schema_patch(data: dict) -> dict:
@@ -92,6 +113,7 @@ def apply_schema_patch(data: dict) -> dict:
 
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
+getcontext().rounding = ROUND_HALF_UP
 
 # Helper aliases for precise Decimal arithmetic
 D = Decimal
@@ -106,6 +128,20 @@ def d8(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 8 decimal places."""
     return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
 
+def money(value) -> D:
+    """
+    Convierte `value` a Decimal con 2 decimales (multipleOf 0.01) usando ROUND_HALF_UP.
+    Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
+    """
+    return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+
+def normalize_uuid_v4_upper(value: str) -> str:
+    """
+    Normaliza `value` como UUID v4 con guiones en MAYÚSCULAS.
+    Lanza ValueError si no es un UUID v4 válido.
+    """
+    u = uuid.UUID(str(value), version=4)  # garantiza versión 4 real
+    return str(u).upper()
 
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
@@ -156,7 +192,7 @@ def _validate_schema(instance: dict, schema: dict) -> None:
     Prints a full report of all schema validation issues found and raises
     ``ValidationError`` with the combined message if any problems exist.
     """
-    validator = Draft7Validator(schema, format_checker=FormatChecker())
+    validator = Draft202012Validator(schema, format_checker=FormatChecker(), resolver=RESOLVER)
     errs = []
     for err in sorted(validator.iter_errors(instance), key=lambda e: e.path):
         errs.append(
@@ -211,7 +247,10 @@ def _load_datos_negocio():
     return {}
 
 
-DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(15)}
+DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(1, 15)}
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PHONE_RE = re.compile(r"^\+?\d{8,15}$")
 
 
 def _map_departamento(nombre: str | None) -> str:
@@ -445,7 +484,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         codigo = str(p.get("codigo", "")).zfill(2)
         if allowed and codigo not in allowed:
             continue
-        monto = D(str(p.get("montoPago", 0))).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        monto = money(p.get("montoPago", 0))
         periodo = p.get("periodo")
         periodo = str(periodo).zfill(2) if periodo else None
         pagos.append(
@@ -462,7 +501,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         pagos = [
             {
                 "codigo": "01",
-                "montoPago": D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP),
+                "montoPago": money(total),
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
@@ -470,12 +509,12 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         ]
     else:
         suma = sum(p["montoPago"] for p in pagos)
-        diff = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP) - suma
+        diff = money(total) - suma
         if diff:
             nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
-            pagos[-1]["montoPago"] = nuevo.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+            pagos[-1]["montoPago"] = money(nuevo)
 
     if condicion == 2:
         first = pagos[0]
@@ -525,7 +564,7 @@ def armar_tributos(tributos_raw, tipo_dte):
                 # Si no se proporciona descripción, intentar obtenerla del catálogo
                 "descripcion": t.get("descripcion")
                 or catalogos.TRIBUTOS.get(codigo),
-                "valor": d2(t.get("valor", 0)),
+                "valor": float(money(t.get("valor", 0))),
             }
         )
     return result or None
@@ -596,7 +635,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
                 {
                     "codigo": "19",
                     "descripcion": catalogos.TRIBUTOS.get("19"),
-                    "valor": d2(iva_val),
+                    "valor": float(money(iva_val)),
                 }
             ]
         resumen["tributos"] = trib
@@ -610,7 +649,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     # Redondeamos valores numéricos
     for k, v in resumen.items():
         if isinstance(v, (int, float, Decimal)):
-            resumen[k] = d2(v)
+            resumen[k] = float(money(v))
 
     return resumen
 
@@ -643,11 +682,9 @@ def recalcular_totales(data: dict) -> list[str]:
             iva_from_items = True
     venta_gravada_sum = venta_gravada_sum.quantize(D("0.01"), rounding=ROUND_HALF_UP)
     if iva_from_items:
-        iva_total = iva_total.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        iva_total = money(iva_total)
     else:
-        iva_total = Decimal(
-            str(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
-        )
+        iva_total = money(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
 
     # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
     # calculado internamente y así podamos comparar contra el declarado.
@@ -681,6 +718,7 @@ def recalcular_totales(data: dict) -> list[str]:
         nuevo = Decimal(str(v))
         if abs(ref - nuevo) > Decimal("0.01"):
             resumen[k] = nuevo
+
             modificados.append(k)
 
     # Coherencia con sumas de ítems
@@ -801,6 +839,7 @@ def generar_dte_json(
         if tipo_contingencia != 5:
             motivo_contin = None
 
+    tipo_dte = "01"
     identificacion = {
         "version": 1,
         "ambiente": ambiente,
@@ -828,20 +867,41 @@ def generar_dte_json(
         "correo": datos.get("correo"),
     }
     emisor["direccion"] = svfe_config.get_emisor_direccion()
+    if emisor.get("correo") and not EMAIL_RE.fullmatch(emisor["correo"]):
+        raise ValueError("Correo de emisor inválido")
+    if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
+        raise ValueError("Teléfono de emisor inválido")
 
     rec = cliente or {}
-    def _clean_nit(nit):
-        if nit:
-            return "".join(c for c in str(nit) if c.isdigit())
-        return None
 
+    def _clean_nit(nit):
+        return "".join(c for c in str(nit) if c.isdigit()) if nit else None
+
+    tipo_doc = rec.get("tipoDocumento")
+    if tipo_doc is not None:
+        tipo_doc = int(tipo_doc)
+    num_doc = rec.get("numDocumento")
     nit = rec.get("nit")
     if fiscal:
+        tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
+        num_doc = fiscal.get("numDocumento") or num_doc
         nit = fiscal.get("nit") or nit
+    if nit and not num_doc:
+        num_doc = nit
+    if nit and not tipo_doc:
+        tipo_doc = 36
+
+    if tipo_doc == 36:
+        num_doc = _clean_nit(num_doc)
+        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+            raise ValueError("NIT inválido")
+    elif tipo_doc == 13:
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido")
 
     receptor = {
-        "tipoDocumento": "36" if nit else None,
-        "numDocumento": _clean_nit(nit),
+        "tipoDocumento": str(tipo_doc) if tipo_doc is not None else None,
+        "numDocumento": num_doc,
         "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
         "nombre": rec.get("nombre"),
         "codActividad": None,
@@ -850,6 +910,10 @@ def generar_dte_json(
         "telefono": rec.get("telefono"),
         "correo": rec.get("correo"),
     }
+    if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
+        raise ValueError("Correo de receptor inválido")
+    if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
+        raise ValueError("Teléfono de receptor inválido")
     if fiscal:
         if fiscal.get("no_remision"):
             receptor["noRemision"] = fiscal.get("no_remision")
@@ -900,6 +964,7 @@ def generar_dte_json(
             "noGravado": 0.0,
             "ivaItem": float(iva_val),
             "tributos": ["19"] if venta_gravada > 0 else [],
+
         }
         if venta_gravada > 0:
             item_data["codTributo"] = "19"
@@ -955,29 +1020,21 @@ def generar_dte_json(
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
-        # Campos obligatorios que pueden no tener información
         "documentoRelacionado": None,
         "otrosDocumentos": None,
-        "ventaTercero": None,
-        "extension": None,
         "apendice": None,
-        "firmaElectronica": None,
-        "selloRecibido": None,
+        "ventaTercero": None,
+        "extension": {
+            "nombEntrega": None,
+            "docuEntrega": None,
+            "nombRecibe": None,
+            "docuRecibe": None,
+            "observaciones": None,
+            "placaVehiculo": None,
+        },
     }
-    if fiscal:
-        result["condicionPago"] = fiscal.get("condicion_pago")
 
-    if fiscal:
-        if fiscal.get("venta_a_cuenta_de"):
-            result["ventaACuentaDe"] = fiscal.get("venta_a_cuenta_de")
-        if fiscal.get("documento_venta_a_cuenta"):
-            result["documentoVentaACuenta"] = fiscal.get("documento_venta_a_cuenta")
-    else:
-        if extra.get("venta_a_cuenta_de"):
-            result["ventaACuentaDe"] = extra.get("venta_a_cuenta_de")
-        if extra.get("documento_venta_a_cuenta"):
-            result["documentoVentaACuenta"] = extra.get("documento_venta_a_cuenta")
-
+    validate_dte_json(result)
     return result
 
 
@@ -1003,19 +1060,75 @@ def validate_dte_json(payload: dict) -> None:
     if "modeloFacturacion" in ident:
         ident["tipoModelo"] = int(str(ident.pop("modeloFacturacion")).split()[0])
     ident.setdefault("tipoModelo", 1)
+    ident["tipoModelo"] = int(ident.get("tipoModelo"))
     if "tipoTransmision" in ident:
         ident["tipoOperacion"] = int(str(ident.pop("tipoTransmision")).split()[0])
     ident.setdefault("tipoOperacion", 1)
+    ident["tipoOperacion"] = int(ident.get("tipoOperacion"))
+    if ident.get("tipoContingencia") is not None:
+        ident["tipoContingencia"] = int(ident.get("tipoContingencia"))
     ident["version"] = int(ident.get("version", 1))
-    cg = ident.get("codigoGeneracion")
     try:
-        uuid_obj = uuid.UUID(str(cg))
+        ident["codigoGeneracion"] = normalize_uuid_v4_upper(ident["codigoGeneracion"])
     except Exception:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido") from None
-    if uuid_obj.version != 4:
+    if len(ident["codigoGeneracion"]) != 36 or "-" not in ident["codigoGeneracion"]:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
-    ident["codigoGeneracion"] = str(uuid_obj).upper()
+    ident["tipoDte"] = str(ident.get("tipoDte")).strip().upper()
+    ident["tipoMoneda"] = "USD"
+    # Validaciones de campos de identificacion
+    if ident["version"] != 1:
+        raise ValueError("identificacion.version debe ser 1")
+    if ident.get("ambiente") not in {"00", "01"}:
+        raise ValueError("ambiente debe ser '00' o '01'")
+    if ident.get("tipoDte") != "01":
+        raise ValueError("tipoDte debe ser '01'")
+    if ident.get("tipoMoneda") != "USD":
+        raise ValueError("tipoMoneda debe ser 'USD'")
+    numero_control = ident.get("numeroControl")
+    if not (isinstance(numero_control, str) and len(numero_control) == 31 and numero_control.startswith("DTE-01-")):
+        raise ValueError("numeroControl inválido")
+    if not re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", numero_control):
+        raise ValueError("numeroControl inválido")
+    tipo_operacion = ident.get("tipoOperacion")
+    tipo_modelo = ident.get("tipoModelo")
+    tipo_cont = ident.get("tipoContingencia")
+    motivo = ident.get("motivoContin")
+    if tipo_operacion == 1:
+        if tipo_modelo != 1 or tipo_cont is not None or motivo is not None:
+            raise ValueError("tipoOperacion=1 requiere tipoModelo=1 y sin contingencia")
+    elif tipo_operacion == 2:
+        if tipo_modelo != 2:
+            raise ValueError("tipoOperacion=2 requiere tipoModelo=2")
+        if tipo_cont is None or tipo_cont not in {1, 2, 3, 4, 5}:
+            raise ValueError("tipoContingencia debe estar entre 1 y 5")
+        if tipo_cont == 5:
+            motivo = (motivo or "").strip()
+            if not (5 <= len(motivo) <= 150):
+                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
+            ident["motivoContin"] = motivo
+        else:
+            if motivo not in (None, ""):
+                raise ValueError("motivoContin debe ser null si tipoContingencia != 5")
+    else:
+        raise ValueError("tipoOperacion debe ser 1 o 2")
+    try:
+        fec = datetime.strptime(str(ident.get("fecEmi")), "%Y-%m-%d").date()
+    except Exception:
+        raise ValueError("fecEmi debe tener formato YYYY-MM-DD") from None
+    try:
+        hora_dt = datetime.strptime(str(ident.get("horEmi")), "%H:%M:%S")
+        hora = hora_dt.time()
+        if hora_dt.strftime("%H:%M:%S") != ident.get("horEmi"):
+            raise ValueError
+    except Exception:
+        raise ValueError("horEmi debe tener formato HH:MM:SS") from None
+    now = datetime.now(TZ_EL_SALVADOR)
+    emision_dt = datetime.combine(fec, hora, tzinfo=TZ_EL_SALVADOR)
+    if fec > now.date() or emision_dt > now:
+        raise ValueError("fecEmi/horEmi no pueden ser futuras")
     payload["identificacion"] = ident
+    tipo_dte = str(ident.get("tipoDte", ""))
 
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
@@ -1073,14 +1186,34 @@ def validate_dte_json(payload: dict) -> None:
         raise ValueError(
             "Faltan campos obligatorios en emisor: " + ", ".join(missing)
         )
+    if emisor.get("correo") and not EMAIL_RE.fullmatch(emisor["correo"]):
+        raise ValueError("Correo de emisor inválido")
+    if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
+        raise ValueError("Teléfono de emisor inválido")
     payload["emisor"] = emisor
 
     receptor = payload.get("receptor", {})
     receptor["nrc"] = _clean_nrc(receptor.get("nrc"))
-    if "nit" in receptor:
-        receptor["numDocumento"] = _clean_nit(receptor.pop("nit"))
-    else:
-        receptor["numDocumento"] = _clean_nit(receptor.get("numDocumento"))
+    if tipo_dte == "01":
+        receptor.pop("nrc", None)
+    nit_field = receptor.pop("nit", None)
+    tipo_doc = receptor.get("tipoDocumento")
+    if tipo_doc is not None:
+        tipo_doc = int(tipo_doc)
+    if nit_field is not None:
+        receptor["numDocumento"] = _clean_nit(nit_field)
+        if tipo_doc is None:
+            tipo_doc = 36
+    num_doc = receptor.get("numDocumento")
+    if tipo_doc == 36:
+        num_doc = _clean_nit(num_doc)
+        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+            raise ValueError("NIT inválido en receptor")
+    elif tipo_doc == 13:
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido en receptor")
+    receptor["tipoDocumento"] = str(tipo_doc) if tipo_doc is not None else None
+    receptor["numDocumento"] = num_doc
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
     if dir_rec is not None:
@@ -1095,10 +1228,13 @@ def validate_dte_json(payload: dict) -> None:
                 "Faltan campos obligatorios en receptor: direccion.complemento"
             )
         receptor["direccion"] = dir_rec
+    if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
+        raise ValueError("Correo de receptor inválido")
+    if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
+        raise ValueError("Teléfono de receptor inválido")
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
-    tipo_dte = str(payload.get("identificacion", {}).get("tipoDte", ""))
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
         item_props = (
@@ -1152,6 +1288,9 @@ def validate_dte_json(payload: dict) -> None:
         # --- Valores por defecto ---
         item.setdefault("tipoItem", 4 if tipo_dte == "01" else 1)
         item.setdefault("uniMedida", 59)
+        item["tipoItem"] = int(item["tipoItem"])
+        item["uniMedida"] = int(item["uniMedida"])
+
 
         try:
             item["tipoItem"] = int(item.get("tipoItem") or 0)
@@ -1201,6 +1340,7 @@ def validate_dte_json(payload: dict) -> None:
             item["noGravado"] = d2(base)
             item["ventaGravada"] = cero
             item["ventaNoSuj"] = cero
+
         else:
             item["ventaGravada"] = d2(base)
             item["ventaExenta"] = cero
@@ -1256,6 +1396,7 @@ def validate_dte_json(payload: dict) -> None:
             try:
                 val = d2(float(v))
                 resumen[k] = D("0") if val == 0 else val
+
             except Exception:
                 pass
     payload["resumen"] = resumen
@@ -1322,9 +1463,11 @@ def validate_dte_json(payload: dict) -> None:
 
     payload["resumen"] = resumen
 
+
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
+        payload = sanitize_dte_payload(payload, schema)
         _validate_schema(payload, schema)
 
 
@@ -1458,6 +1601,20 @@ def _load_dte_api_config():
         return {"ambiente": "pruebas", "url": DEFAULT_RECEPCION_URL}
 
 
+def _assert_no_ejemplo(path: str) -> None:
+    banned = os.path.join("facturas_consumidor_final", "ejemplo.json")
+    assert not str(path).endswith(banned), "writing to ejemplo.json is forbidden"
+
+
+def _write_json(path: str, data):
+    _assert_no_ejemplo(path)
+    with open(path, "w", encoding="utf-8") as fh:
+        if isinstance(data, str):
+            fh.write(data)
+        else:
+            json.dump(data, fh, ensure_ascii=False)
+
+
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
     """Guarda el JSON original y el JWS en ``/dtes/{anio}/``."""
     try:
@@ -1467,11 +1624,9 @@ def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
         os.makedirs(base_dir, exist_ok=True)
         nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
         json_path = os.path.join(base_dir, f"{nombre}.json")
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(dte_data, fh, ensure_ascii=False)
+        _write_json(json_path, dte_data)
         jws_path = os.path.join(base_dir, f"{nombre}.jws")
-        with open(jws_path, "w", encoding="utf-8") as fh:
-            fh.write(jws_token)
+        _write_json(jws_path, jws_token)
     except Exception:
         pass
 
@@ -1494,8 +1649,7 @@ def save_dte_json(dte_data: dict) -> str:
         os.makedirs(base_dir, exist_ok=True)
         nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
         json_path = os.path.join(base_dir, f"{nombre}.json")
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(dte_data, fh, ensure_ascii=False)
+        _write_json(json_path, dte_data)
         return json_path
     except Exception:
         return ""

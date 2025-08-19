@@ -65,8 +65,10 @@ def generar_factura_electronica_pdf(
                     datos_negocio = json.load(f)
             except Exception:
                 datos_negocio = {}
-    if datos_negocio.get("dte_api", {}).get("ambiente") and ambiente not in ("00", "01"):
-        ambiente = datos_negocio["dte_api"].get("ambiente")
+    ambiente_cfg = datos_negocio.get("dte_api", {}).get("ambiente")
+    if ambiente not in ("00", "01") and ambiente_cfg:
+        ambiente_cfg = ambiente_cfg.lower()
+        ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
 
     if not codigo_generacion or not numero_control or not fecha_generacion:
         cab = generar_cabecera_dte_data(

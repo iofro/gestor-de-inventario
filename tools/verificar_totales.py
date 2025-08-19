@@ -45,11 +45,9 @@ def check_document(data: dict, expected_ambiente: str | None = None) -> List[str
     iva_total = Decimal("0")
     for item in cuerpo:
         cant = Decimal(str(item.get("cantidad") or 0))
-        precio = Decimal(
-            str(item.get("precioUnitario") or item.get("precioUni") or 0)
-        )
+        precio = Decimal(str(item.get("precioUni") or 0))
         items_total += cant * precio
-        iva_item = Decimal(str(item.get("montoIva") or item.get("iva") or 0))
+        iva_item = Decimal(str(item.get("ivaItem") or item.get("montoIva") or item.get("iva") or 0))
         iva_total += iva_item
 
     resumen = data.get("resumen", {})

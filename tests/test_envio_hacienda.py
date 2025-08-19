@@ -81,7 +81,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
                 "telefono": None,
                 "correo": None,
             },
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+            "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
             "resumen": {
                 "totalNoSuj": 0,
                 "totalExenta": 0,
@@ -161,7 +161,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     assert payload["cuerpoDocumento"][0]["cantidad"] == 1
 
     items_total = sum(
-        i["cantidad"] * i.get("precioUnitario", i.get("precioUni", 0))
+        i["cantidad"] * i.get("precioUni", 0)
         for i in payload["cuerpoDocumento"]
     )
     assert payload["resumen"]["subTotalVentas"] == pytest.approx(items_total)

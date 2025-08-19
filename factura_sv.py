@@ -12,8 +12,7 @@ from dte import generar_cabecera_dte_data
 from urllib.parse import urlencode
 import json
 import os
-
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+from paths import DATOS_NEGOCIO_PATH
 
 
 def build_qr_value(

@@ -24,10 +24,10 @@ from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
 from pathlib import Path
 import jsonpatch
+from paths import DATOS_NEGOCIO_PATH
 
 logger = logging.getLogger(__name__)
 
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"

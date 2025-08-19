@@ -100,6 +100,9 @@ def generate_invoice_pdf(manager, venta_id):
     )
     motivo_contin = venta_data.get("motivo_contin") or extra.get("motivoContin")
     ambiente = venta_data.get("ambiente") or extra.get("ambiente") or "00"
+    if ambiente not in ("00", "01"):
+        amb_cfg = str(ambiente).lower()
+        ambiente = "01" if amb_cfg.startswith("produc") else "00"
     fecha_generacion = venta_data.get("fecha_generacion") or extra.get("fechaGeneracion", "")
 
     if tipo_operacion == 1 and not sello_recepcion:

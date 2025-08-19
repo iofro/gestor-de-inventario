@@ -452,22 +452,12 @@ import re
 
 
 def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
-    """Normaliza la lista de pagos al formato del esquema.
-
-    ``pagos_raw`` es una lista de pagos proporcionada por el usuario.  Los
-    códigos de pago se validan contra el catálogo local ``FORMA_PAGO`` y, si
-    está disponible, contra el esquema oficial del DTE correspondiente.  Los
-    montos se redondean a dos decimales y se garantiza que la suma de todos los
-    pagos coincida con ``total``.
-
-    Cuando ``condicion`` es 2 (crédito) el primer pago debe incluir un ``plazo``
-    mayor a cero y un ``periodo`` válido del catálogo ``PLAZO``.
-    """
+    """Normaliza la lista de pagos al formato del esquema."""
 
     allowed = set(catalogos.FORMA_PAGO.keys())
     schema = catalogos.get_dte_schema(tipo_dte)
-    props = {}
-    enum_codes = []
+    props: dict = {}
+    enum_codes: list = []
     if schema:
         props = (
             schema.get("properties", {})
@@ -493,6 +483,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         isinstance(plazo_type, list) and "string" in plazo_type
     )
 
+    total = money(total)
     pagos: list[dict] = []
     for p in pagos_raw or []:
         codigo_raw = p.get("codigo", "")
@@ -537,15 +528,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         pagos = [
             {
                 "codigo": int(default_code) if code_is_int else default_code,
-                "montoPago": money(total),
+                "montoPago": total,
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
             }
         ]
     else:
-        suma = sum(p["montoPago"] for p in pagos)
-        diff = money(total) - suma
+        suma = sum((p["montoPago"] for p in pagos), D("0.00"))
+        diff = total - suma
         if diff:
             if len(pagos) > 1 and abs(diff) > D("0.01"):
                 raise ValidationError("La suma de pagos excede el total a pagar")
@@ -564,6 +555,11 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
             )
         first["plazo"] = plazo_val if not plazo_is_str else str(plazo_val).zfill(2)
         first["periodo"] = periodo_val if periodo_is_str else int(periodo_val)
+
+    for p in pagos:
+        p["montoPago"] = float(money(p["montoPago"]))
+        if p["montoPago"] == -0.0:
+            p["montoPago"] = 0.0
 
     return pagos
 
@@ -607,6 +603,7 @@ def armar_tributos(tributos_raw, tipo_dte):
 
 def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01"):
     """Calcula la sección resumen acorde al esquema oficial."""
+
     fiscal = fiscal or {}
     extra = extra or {}
 
@@ -622,29 +619,34 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
     total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
     sub_total = money(sub_total_ventas - total_descu)
+
+    total_iva = money(fiscal.get("iva", 0))
+    monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
+    total_pagar = monto_total_operacion
+
     porcentaje_desc = money(
         (total_descu * D("100") / sub_total_ventas) if sub_total_ventas else D("0")
     )
 
-    total_iva = money(fiscal.get("iva", 0))
-    monto_total = money(sub_total + total_no_gravado + total_iva)
-
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
-    resumen.update({
-        "totalNoSuj": total_no_suj,
-        "totalExenta": total_exenta,
-        "totalGravada": total_gravada,
-        "subTotalVentas": sub_total_ventas,
-        "descuNoSuj": descu_no_suj,
-        "descuExenta": descu_exenta,
-        "descuGravada": descu_gravada,
-        "totalDescu": total_descu,
-        "subTotal": sub_total,
-        "porcentajeDescuento": porcentaje_desc,
-        "totalNoGravado": total_no_gravado,
-        "montoTotalOperacion": monto_total,
-        "totalLetras": venta.get("total_letras", ""),
-    })
+    resumen.update(
+        {
+            "totalNoSuj": total_no_suj,
+            "totalExenta": total_exenta,
+            "totalGravada": total_gravada,
+            "subTotalVentas": sub_total_ventas,
+            "descuNoSuj": descu_no_suj,
+            "descuExenta": descu_exenta,
+            "descuGravada": descu_gravada,
+            "totalDescu": total_descu,
+            "subTotal": sub_total,
+            "porcentajeDescuento": porcentaje_desc,
+            "totalNoGravado": total_no_gravado,
+            "montoTotalOperacion": monto_total_operacion,
+            "totalPagar": total_pagar,
+            "totalLetras": venta.get("total_letras", ""),
+        }
+    )
 
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
@@ -654,11 +656,6 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     else:
         resumen["ivaPerci1"] = resumen.get("ivaPerci1", money(0))
 
-    if tipo_dte == "01":
-        resumen["totalPagar"] = monto_total
-    elif "totalPagar" in resumen:
-        resumen["totalPagar"] = monto_total
-
     if tipo_dte in {"01", "03", "05", "06"}:
         condicion = extra.get("condicion_operacion")
         if condicion is None:
@@ -666,7 +663,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
 
     if total_gravada > 0:
-        resumen["tributos"] = [{"codigo": "19", "descripcion": "IVA 13%", "valor": total_iva}]
+        resumen["tributos"] = [
+            {"codigo": "19", "descripcion": "IVA 13%", "valor": total_iva}
+        ]
     else:
         resumen["tributos"] = None
         resumen["totalIva"] = money(0)
@@ -674,7 +673,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
             extra.get("pagos"),
-            resumen.get("totalPagar", monto_total),
+            total_pagar,
             tipo_dte=tipo_dte,
             condicion=resumen.get("condicionOperacion", 1),
         )
@@ -691,13 +690,20 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             "tributos",
         }:
             continue
-        if not isinstance(val, Decimal):
-            try:
-                resumen[key] = money(val)
-            except Exception:
-                continue
-        elif val == 0:
-            resumen[key] = money(0)
+        resumen[key] = float(money(val))
+        if resumen[key] == -0.0:
+            resumen[key] = 0.0
+
+    if resumen.get("tributos"):
+        for t in resumen["tributos"]:
+            t["valor"] = float(money(t["valor"]))
+            if t["valor"] == -0.0:
+                t["valor"] = 0.0
+
+    if resumen.get("pagos"):
+        for p in resumen["pagos"]:
+            if p.get("montoPago") == -0.0:
+                p["montoPago"] = 0.0
 
     return resumen
 
@@ -927,7 +933,7 @@ def generar_dte_json(
 
     tipo_doc = rec.get("tipoDocumento")
     if tipo_doc is not None:
-        tipo_doc = int(tipo_doc)
+        tipo_doc = str(tipo_doc)
     num_doc = rec.get("numDocumento")
     nit = rec.get("nit")
     if fiscal:
@@ -937,24 +943,39 @@ def generar_dte_json(
     if nit and not num_doc:
         num_doc = nit
     if nit and not tipo_doc:
-        tipo_doc = 36
+        tipo_doc = "36"
 
-    if tipo_doc == 36:
+    if tipo_doc == "36":
         num_doc = _clean_nit(num_doc)
         if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
             raise ValueError("NIT inválido")
-    elif tipo_doc == 13:
+    elif tipo_doc == "13":
         if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
             raise ValueError("DUI inválido")
 
+    dir_rec = rec.get("direccion")
+    if (
+        isinstance(dir_rec, dict)
+        and dir_rec.get("departamento")
+        and dir_rec.get("municipio")
+        and dir_rec.get("complemento")
+    ):
+        dir_rec = {
+            "departamento": dir_rec.get("departamento"),
+            "municipio": dir_rec.get("municipio"),
+            "complemento": dir_rec.get("complemento"),
+        }
+    else:
+        dir_rec = None
+
     receptor = {
-        "tipoDocumento": str(tipo_doc) if tipo_doc is not None else None,
+        "tipoDocumento": tipo_doc if tipo_doc is not None else None,
         "numDocumento": num_doc,
         "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
         "nombre": rec.get("nombre"),
         "codActividad": None,
         "descActividad": None,
-        "direccion": None,
+        "direccion": dir_rec,
         "telefono": rec.get("telefono"),
         "correo": rec.get("correo"),
     }
@@ -985,6 +1006,14 @@ def generar_dte_json(
             precio = d8(D(str(d.get("precio_unitario") or 0)))
         except Exception:
             precio = d8(D(0))
+        try:
+            tipo_item = int(d.get("tipoItem", 1))
+        except Exception:
+            tipo_item = 1
+        try:
+            uni_medida = int(d.get("uniMedida", 59))
+        except Exception:
+            uni_medida = 59
         monto_descu = d8(D(str(d.get("descuento") or 0)))
         if monto_descu < 0:
             monto_descu = D("0")
@@ -1001,12 +1030,12 @@ def generar_dte_json(
             pass
         item_data = {
             "numItem": idx,
-            "tipoItem": 4 if tipo_dte == "01" else 1,
+            "tipoItem": tipo_item,
             "numeroDocumento": "NA",
             "codigo": d.get("codigo") or "SKU-NA",
             "descripcion": d.get("descripcion"),
             "cantidad": float(cant),
-            "uniMedida": 59,
+            "uniMedida": uni_medida,
             "precioUni": float(precio),
             "montoDescu": float(d2(monto_descu)),
             "ventaNoSuj": 0.0,
@@ -1025,9 +1054,16 @@ def generar_dte_json(
         total_gravada_sum += D(str(item_data["ventaGravada"]))
         total_no_gravado_sum += D(str(item_data["noGravado"]))
         cuerpo.append(item_data)
-    total_iva_sum = iva_total
+
+    items_total = money(items_total)
+    total_no_suj_sum = money(total_no_suj_sum)
+    total_exenta_sum = money(total_exenta_sum)
+    total_gravada_sum = money(total_gravada_sum)
+    total_no_gravado_sum = money(total_no_gravado_sum)
+    total_iva_sum = money(iva_total)
+
     resumen = calcular_resumen(
-        total_gravada_sum,
+        items_total,
         venta,
         fiscal={
             **(fiscal or {}),
@@ -1042,41 +1078,67 @@ def generar_dte_json(
     )
 
     assert money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) == money(
-        resumen.get("totalGravada", 0)
+        D(str(resumen.get("totalGravada", 0)))
     )
     assert money(sum(D(str(i["ivaItem"])) for i in cuerpo)) == money(
-        resumen.get("totalIva", 0)
+        D(str(resumen.get("totalIva", 0)))
+    )
+
+    total_no_suj = D(str(resumen.get("totalNoSuj", 0)))
+    total_exenta = D(str(resumen.get("totalExenta", 0)))
+    total_gravada = D(str(resumen.get("totalGravada", 0)))
+    sub_total_ventas = D(str(resumen.get("subTotalVentas", 0)))
+    descu_no_suj = D(str(resumen.get("descuNoSuj", 0)))
+    descu_exenta = D(str(resumen.get("descuExenta", 0)))
+    descu_gravada = D(str(resumen.get("descuGravada", 0)))
+    sub_total = D(str(resumen.get("subTotal", 0)))
+    total_no_gravado = D(str(resumen.get("totalNoGravado", 0)))
+    total_iva = D(str(resumen.get("totalIva", 0)))
+    monto_total_operacion = D(str(resumen.get("montoTotalOperacion", 0)))
+    total_pagar = D(str(resumen.get("totalPagar", 0)))
+
+    assert money(total_no_suj + total_exenta + total_gravada) == money(
+        sub_total_ventas
     )
     assert money(
-        resumen["totalNoSuj"] + resumen["totalExenta"] + resumen["totalGravada"]
-    ) == money(resumen["subTotalVentas"])
-    assert money(
-        resumen["subTotalVentas"]
-        - (resumen["descuNoSuj"] + resumen["descuExenta"] + resumen["descuGravada"])
-    ) == money(resumen["subTotal"])
-    assert money(
-        resumen["subTotal"] + resumen["totalNoGravado"] + resumen["totalIva"]
-    ) == money(resumen["montoTotalOperacion"])
-    assert money(resumen["montoTotalOperacion"]) == money(resumen["totalPagar"])
+        sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)
+    ) == money(sub_total)
+    assert money(sub_total + total_no_gravado + total_iva) == money(
+        monto_total_operacion
+    )
+    assert money(monto_total_operacion) == money(total_pagar)
+
     pagos_resumen = resumen.get("pagos") or []
     assert money(sum(D(str(p["montoPago"])) for p in pagos_resumen)) == money(
-        resumen["totalPagar"]
+        total_pagar
     )
-    if money(resumen["totalGravada"]) == D("0.00"):
+    if money(total_gravada) == D("0.00"):
         assert not resumen.get("tributos")
-        assert money(resumen.get("totalIva", 0)) == D("0.00")
+        assert money(total_iva) == D("0.00")
+
+    for k in (
+        "montoTotalOperacion",
+        "totalPagar",
+        "totalIva",
+        "totalGravada",
+        "totalExenta",
+        "totalNoSuj",
+        "totalNoGravado",
+    ):
+        v = D(str(resumen.get(k, 0)))
+        assert (v * 100) % 1 == 0
 
     # Validaciones básicas de consistencia
     items_total_2 = d2(items_total)
-    if abs(items_total_2 - resumen.get("subTotalVentas", 0)) > D("0.01"):
+    if abs(items_total_2 - D(str(resumen.get("subTotalVentas", 0)))) > D("0.01"):
         print(
             f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen.get('subTotalVentas',0):.2f}"
         )
 
     calc_sub_total = d2(
-        resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0)
+        D(str(resumen.get("subTotalVentas", 0))) - D(str(resumen.get("totalDescu", 0)))
     )
-    if abs(calc_sub_total - resumen.get("subTotal", 0)) > D("0.01"):
+    if abs(calc_sub_total - D(str(resumen.get("subTotal", 0)))) > D("0.01"):
         print(
             f"Advertencia: el subtotal calculado {calc_sub_total:.2f} difiere del resumen {resumen.get('subTotal',0):.2f}"
         )
@@ -1084,61 +1146,30 @@ def generar_dte_json(
     iva_ref = resumen.get("totalIva")
     if iva_ref is None:
         iva_ref = resumen.get("ivaPerci1", 0)
-    calc_total = d2(calc_sub_total + (iva_ref or 0))
-    if abs(calc_total - resumen.get("montoTotalOperacion", 0)) > D("0.01"):
+    iva_ref = D(str(iva_ref or 0))
+    calc_total = d2(calc_sub_total + iva_ref)
+    if abs(calc_total - D(str(resumen.get("montoTotalOperacion", 0)))) > D("0.01"):
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
     calc_total_commission = d2(calc_total + commission_total)
-    if "totalPagar" in resumen and abs(calc_total_commission - resumen.get("totalPagar", 0)) > D("0.01"):
+    if "totalPagar" in resumen and abs(calc_total_commission - D(str(resumen.get("totalPagar", 0)))) > D("0.01"):
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
     for k, v in resumen.items():
-        if isinstance(v, Decimal):
-            v = d2(v)
-            resumen[k] = float(v)
-        if isinstance(resumen[k], float) and resumen[k] == -0.0:
+        if isinstance(v, float) and v == -0.0:
             resumen[k] = 0.0
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            val = p.get("montoPago")
-            if isinstance(val, Decimal):
-                val = d2(val)
-                val = float(val)
-            else:
-                val = float(d2(D(str(val))))
-            if val == -0.0:
-                val = 0.0
-            p["montoPago"] = val
+            if p.get("montoPago") == -0.0:
+                p["montoPago"] = 0.0
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            val = t.get("valor")
-            if isinstance(val, Decimal):
-                val = d2(val)
-                val = float(val)
-            else:
-                val = float(d2(D(str(val))))
-            if val == -0.0:
-                val = 0.0
-            t["valor"] = val
+            if t.get("valor") == -0.0:
+                t["valor"] = 0.0
 
-    ext_schema = catalogos.get_dte_schema(tipo_dte)
     extension = None
-    if ext_schema:
-        ext_prop = ext_schema.get("properties", {}).get("extension", {})
-        ext_type = ext_prop.get("type")
-        if ext_type == "object" or (
-            isinstance(ext_type, list) and "object" in ext_type and "null" not in ext_type
-        ):
-            extension = {
-                "nombEntrega": None,
-                "docuEntrega": None,
-                "nombRecibe": None,
-                "docuRecibe": None,
-                "observaciones": None,
-                "placaVehiculo": None,
-            }
 
     result = {
         "identificacion": identificacion,
@@ -1312,27 +1343,46 @@ def validate_dte_json(payload: dict) -> None:
     payload["emisor"] = emisor
 
     receptor = payload.get("receptor", {})
-    receptor["nrc"] = _clean_nrc(receptor.get("nrc"))
-    if tipo_dte == "01":
-        receptor.pop("nrc", None)
     nit_field = receptor.pop("nit", None)
     tipo_doc = receptor.get("tipoDocumento")
     if tipo_doc is not None:
-        tipo_doc = int(tipo_doc)
+        tipo_doc = str(tipo_doc)
     if nit_field is not None:
         receptor["numDocumento"] = _clean_nit(nit_field)
         if tipo_doc is None:
-            tipo_doc = 36
+            tipo_doc = "36"
     num_doc = receptor.get("numDocumento")
-    if tipo_doc == 36:
+    if tipo_doc == "36":
         num_doc = _clean_nit(num_doc)
         if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
             raise ValueError("NIT inválido en receptor")
-    elif tipo_doc == 13:
+    elif tipo_doc == "13":
         if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
             raise ValueError("DUI inválido en receptor")
-    receptor["tipoDocumento"] = str(tipo_doc) if tipo_doc is not None else None
+    receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
     receptor["numDocumento"] = num_doc
+
+    nrc_schema = (
+        FC_SCHEMA.get("properties", {})
+        .get("receptor", {})
+        .get("properties", {})
+        .get("nrc", {})
+    )
+    # ``nrc`` must always be present: if schema allows null we keep ``None``;
+    # otherwise we strip non-digits and pad with zeros to the minimum length.
+    nrc_types = nrc_schema.get("type", [])
+    if not isinstance(nrc_types, list):
+        nrc_types = [nrc_types]
+    if "null" in nrc_types:
+        nrc_val = _clean_nrc(receptor.get("nrc"))
+        receptor["nrc"] = nrc_val if nrc_val is not None else None
+    else:
+        nrc_val = _clean_nrc(receptor.get("nrc")) or ""
+        if not nrc_val:
+            min_len = nrc_schema.get("minLength", 1)
+            nrc_val = "0" * min_len
+        receptor["nrc"] = nrc_val
+
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
     if dir_rec is not None:
@@ -1405,7 +1455,7 @@ def validate_dte_json(payload: dict) -> None:
                 item.pop(key)
 
         # --- Valores por defecto ---
-        item.setdefault("tipoItem", 4 if tipo_dte == "01" else 1)
+        item.setdefault("tipoItem", 1)
         item.setdefault("uniMedida", 59)
         item["tipoItem"] = int(item["tipoItem"])
         item["uniMedida"] = int(item["uniMedida"])

@@ -183,6 +183,23 @@ def test_generar_ticket_json_tipo():
     assert data["identificacion"]["tipoDte"] == "03"
 
 
+@pytest.mark.parametrize("ambiente, expected", [("pruebas", "00"), ("produccion", "01")])
+def test_generar_dte_json_normaliza_ambiente_param(ambiente, expected, monkeypatch):
+    import dte as dte_module
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 5)
+    db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
+
+    monkeypatch.setattr(dte_module, "validate_dte_json", lambda payload: None)
+    data = dte_module.generar_dte_json(db, venta_id, ambiente=ambiente)
+    assert data["identificacion"]["ambiente"] == expected
+
+
 def test_dte_comision_sin_advertencia_total(capsys):
     db = create_db()
     db.add_vendedor("V1")

@@ -1,1 +1,16 @@
-{"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://other.example"}}
+{
+  "ambiente": "pruebas",
+  "pruebas": {
+    "recepcion_url": "http://other.example",
+    "firma_electronica": {
+      "nit": "",
+      "passwordPri": "",
+      "activo": true
+    },
+    "auth_url": "",
+    "auth": {
+      "nitUsuario": "",
+      "pwd": ""
+    }
+  }
+}

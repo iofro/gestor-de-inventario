@@ -147,7 +147,7 @@ def generar_factura_electronica_pdf(
     # --- Código QR ---
     qr_x = x_margin + box_w + col_margin + 5
     qr_y = box_y + (box_h - qr_size) / 2
-    qr_env = 1 if ambiente in ("00", "produccion") else 2
+    qr_env = 1 if ambiente == "01" else 2
     qr_value = build_qr_value(
         qr_env,
         codigo_generacion,

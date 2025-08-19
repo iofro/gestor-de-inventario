@@ -536,29 +536,50 @@ class FacturacionTab(QWidget):
         if dialog.exec_() != QDialog.Accepted:
             return
 
-        if dialog.email_cb.isChecked():
-            if entry.get("row_type") == "venta":
-                self._send_invoice_email(venta_id)
-            elif entry.get("row_type") == "ticket":
-                self._send_ticket_email(venta_id)
+        send_email = dialog.email_cb.isChecked()
+
         if dialog.hacienda_cb.isChecked():
             tipo = "03" if entry.get("row_type") == "ticket" else "01"
             try:
                 resp = transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
                 if resp.get("estado") == "Error":
                     QMessageBox.critical(
-                        self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                        self,
+                        "Enviar a Hacienda",
+                        f"{resp.get('detalle', 'Error')}\nLa factura será eliminada",
                     )
-                else:
-                    QMessageBox.information(
-                        self, "Enviar a Hacienda", "Documento enviado"
-                    )
+                    self.manager.db.delete_venta(venta_id)
+                    self.delete_files()
+                    self.load_invoices()
+                    return
+                QMessageBox.information(
+                    self, "Enviar a Hacienda", "Documento enviado"
+                )
             except dte.DTEValidationError as exc:
                 self._show_validation_errors(exc.errors, exc.json_path)
+                QMessageBox.critical(
+                    self, "Enviar a Hacienda", "Error al validar. La factura será eliminada"
+                )
+                self.manager.db.delete_venta(venta_id)
+                self.delete_files()
+                self.load_invoices()
+                return
             except Exception as exc:
                 QMessageBox.critical(
-                    self, "Enviar a Hacienda", str(exc)
+                    self,
+                    "Enviar a Hacienda",
+                    f"{str(exc)}\nLa factura será eliminada",
                 )
+                self.manager.db.delete_venta(venta_id)
+                self.delete_files()
+                self.load_invoices()
+                return
+
+        if send_email:
+            if entry.get("row_type") == "venta":
+                self._send_invoice_email(venta_id)
+            elif entry.get("row_type") == "ticket":
+                self._send_ticket_email(venta_id)
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
@@ -789,7 +810,7 @@ class FacturacionTab(QWidget):
         if row_type in ("venta", "ticket"):
             venta_id = data.get("id")
             if row_type == "venta":
-                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                pdf_path = self.manager.db.get_factura_pdf(venta_id) or data.get("pdf")
                 if pdf_path:
                     paths.append(pdf_path)
                     paths.append(os.path.splitext(pdf_path)[0] + ".json")

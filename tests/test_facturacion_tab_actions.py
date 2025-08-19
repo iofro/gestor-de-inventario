@@ -153,6 +153,69 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     assert captured_post["args"] == ("http://example.com", "TOKEN", "SIGNED")
 
 
+def test_send_selected_invoice_deletes_on_failure(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+        def setChecked(self, v):
+            self._checked = v
+        def isChecked(self):
+            return self._checked
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+            self.email_cb.setChecked(True)
+            self.hacienda_cb.setChecked(True)
+        def exec_(self):
+            return QDialog.Accepted
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    called = {"email": False}
+    class FakeSender:
+        def __init__(self, *a, **k):
+            called["email"] = True
+            self.finished = SimpleNamespace(connect=lambda fn: setattr(self, "_fn", fn))
+        def start(self):
+            if hasattr(self, "_fn"):
+                self._fn(True, "ok")
+    monkeypatch.setattr(facturacion_tab, "EmailSender", FakeSender)
+
+    def fake_transmitir(db_, vid, tipo_dte="01"):
+        return {"estado": "Error", "detalle": "fail"}
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(
+        facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes
+    )
+
+    tab.send_selected_invoice()
+
+    assert not called["email"]
+    assert not pdf_path.exists()
+    assert not json_path.exists()
+    assert (
+        db.cursor.execute("SELECT id FROM ventas WHERE id=?", (venta_id,)).fetchone()
+        is None
+    )
+    ids = [tab.table.item(r, 0).text() for r in range(tab.table.rowCount())]
+    assert str(venta_id) not in ids
+
+
 def test_delete_files_removes(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

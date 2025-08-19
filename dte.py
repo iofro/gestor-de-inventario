@@ -283,6 +283,8 @@ def _map_municipio(nombre: str | None, departamento: str | None = None) -> str:
         raise ValueError("Municipio requerido")
 
     nombre = str(nombre)
+    if nombre.isdigit():
+        nombre = nombre.zfill(2)
     if not nombre.isdigit() or len(nombre) != 2:
         raise ValueError("Municipio inválido")
 
@@ -897,16 +899,48 @@ def generar_dte_json(
     fecha = fecha_emision_hoy_str(now)
     hora = now.strftime("%H:%M:%S")
 
+    # Permitir valores desde ``extra`` o ``kwargs``
+    tipo_operacion = extra.get("tipoOperacion", tipo_operacion)
+    tipo_contingencia = extra.get("tipoContingencia", tipo_contingencia)
+    motivo_contin = extra.get("motivoContin", motivo_contin)
+    tipo_operacion = kwargs.get("tipoOperacion", kwargs.get("tipo_operacion", tipo_operacion))
+    tipo_contingencia = kwargs.get(
+        "tipoContingencia", kwargs.get("tipo_contingencia", tipo_contingencia)
+    )
+    motivo_contin = kwargs.get("motivoContin", kwargs.get("motivo_contin", motivo_contin))
+
+    # Normalización de tipos
+    try:
+        tipo_operacion = int(tipo_operacion or 1)
+    except Exception:
+        tipo_operacion = 1
+    if tipo_contingencia in ("", None):
+        tipo_contingencia = None
+    else:
+        tipo_contingencia = int(tipo_contingencia)
+    if isinstance(motivo_contin, str):
+        motivo_contin = motivo_contin.strip() or None
+
+    # Reglas de operación / modelo / contingencia
     if tipo_operacion == 1:
         tipo_modelo = 1
         tipo_contingencia = None
         motivo_contin = None
-    else:
+    elif tipo_operacion == 2:
         tipo_modelo = 2
         if tipo_contingencia is None:
             raise ValueError("tipoContingencia requerido cuando tipoOperacion=2")
-        if tipo_contingencia != 5:
+        if tipo_contingencia not in catalogos.CONTINGENCIA:
+            raise ValueError("tipoContingencia debe estar entre 1 y 5")
+        if tipo_contingencia == 5:
+            if not (motivo_contin and 5 <= len(motivo_contin) <= 150):
+                raise ValueError(
+                    "motivoContin requerido cuando tipoContingencia=5"
+                )
+        else:
             motivo_contin = None
+    else:
+        raise ValueError("tipoOperacion debe ser 1 o 2")
 
     tipo_dte = "01"
     identificacion = {
@@ -1213,7 +1247,8 @@ def generar_dte_json(
 
 def validate_dte_json(payload: dict) -> None:
     """Basic validation and normalization for DTE payload before signing."""
-    _normalize_payload(payload)
+    # Normalización omitida para preservar códigos con ceros a la izquierda
+    # ("01", etc.) que ``_normalize_payload`` convertiría a enteros.
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
     missing = [key for key in required if key not in payload]
     if missing:
@@ -1231,18 +1266,46 @@ def validate_dte_json(payload: dict) -> None:
     if amb_val not in {"00", "01"}:
         ident["ambiente"] = "01" if amb_val.startswith("produc") else "00"
     ident.setdefault("tipoMoneda", "USD")
-    ident.setdefault("tipoContingencia", None)
-    ident.setdefault("motivoContin", None)
     if "modeloFacturacion" in ident:
         ident["tipoModelo"] = int(str(ident.pop("modeloFacturacion")).split()[0])
-    ident.setdefault("tipoModelo", 1)
-    ident["tipoModelo"] = int(ident.get("tipoModelo"))
     if "tipoTransmision" in ident:
         ident["tipoOperacion"] = int(str(ident.pop("tipoTransmision")).split()[0])
-    ident.setdefault("tipoOperacion", 1)
-    ident["tipoOperacion"] = int(ident.get("tipoOperacion"))
-    if ident.get("tipoContingencia") is not None:
-        ident["tipoContingencia"] = int(ident.get("tipoContingencia"))
+
+    # Normalización de operación y contingencia
+    try:
+        ident["tipoOperacion"] = int(ident.get("tipoOperacion", 1) or 1)
+    except Exception:
+        ident["tipoOperacion"] = 1
+    tipo_operacion = ident["tipoOperacion"]
+    tipo_cont = ident.get("tipoContingencia")
+    if tipo_cont in ("", None):
+        tipo_cont = None
+    else:
+        tipo_cont = int(tipo_cont)
+    motivo = ident.get("motivoContin")
+    if isinstance(motivo, str):
+        motivo = motivo.strip() or None
+
+    if tipo_operacion == 1:
+        ident["tipoModelo"] = 1
+        ident["tipoContingencia"] = None
+        ident["motivoContin"] = None
+    elif tipo_operacion == 2:
+        ident["tipoModelo"] = 2
+        if tipo_cont is None:
+            raise ValueError("tipoContingencia requerido cuando tipoOperacion=2")
+        if tipo_cont not in catalogos.CONTINGENCIA:
+            raise ValueError("tipoContingencia debe estar entre 1 y 5")
+        ident["tipoContingencia"] = tipo_cont
+        if tipo_cont == 5:
+            if not (motivo and 5 <= len(motivo) <= 150):
+                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
+            ident["motivoContin"] = motivo
+        else:
+            ident["motivoContin"] = None
+    else:
+        raise ValueError("tipoOperacion debe ser 1 o 2")
+
     ident["version"] = int(ident.get("version", 1))
     try:
         ident["codigoGeneracion"] = normalize_uuid_v4_upper(ident["codigoGeneracion"])
@@ -1250,7 +1313,7 @@ def validate_dte_json(payload: dict) -> None:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido") from None
     if len(ident["codigoGeneracion"]) != 36 or "-" not in ident["codigoGeneracion"]:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
-    ident["tipoDte"] = str(ident.get("tipoDte")).strip().upper()
+    ident["tipoDte"] = str(ident.get("tipoDte")).zfill(2).strip().upper()
     ident["tipoMoneda"] = "USD"
     # Validaciones de campos de identificacion
     if ident["version"] != 1:
@@ -1266,28 +1329,7 @@ def validate_dte_json(payload: dict) -> None:
         raise ValueError("numeroControl inválido")
     if not re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", numero_control):
         raise ValueError("numeroControl inválido")
-    tipo_operacion = ident.get("tipoOperacion")
-    tipo_modelo = ident.get("tipoModelo")
-    tipo_cont = ident.get("tipoContingencia")
-    motivo = ident.get("motivoContin")
-    if tipo_operacion == 1:
-        if tipo_modelo != 1 or tipo_cont is not None or motivo is not None:
-            raise ValueError("tipoOperacion=1 requiere tipoModelo=1 y sin contingencia")
-    elif tipo_operacion == 2:
-        if tipo_modelo != 2:
-            raise ValueError("tipoOperacion=2 requiere tipoModelo=2")
-        if tipo_cont is None or tipo_cont not in {1, 2, 3, 4, 5}:
-            raise ValueError("tipoContingencia debe estar entre 1 y 5")
-        if tipo_cont == 5:
-            motivo = (motivo or "").strip()
-            if not (5 <= len(motivo) <= 150):
-                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
-            ident["motivoContin"] = motivo
-        else:
-            if motivo not in (None, ""):
-                raise ValueError("motivoContin debe ser null si tipoContingencia != 5")
-    else:
-        raise ValueError("tipoOperacion debe ser 1 o 2")
+    # Las reglas de operación/modelo/contingencia ya fueron normalizadas arriba.
     try:
         fec = datetime.strptime(str(ident.get("fecEmi")), "%Y-%m-%d").date()
     except Exception:

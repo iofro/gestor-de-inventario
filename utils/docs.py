@@ -109,7 +109,7 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
             'numItem': idx,
             'descripcion': det.get('descripcion'),
             'cantidad': det.get('cantidad'),
-            'precioUnitario': det.get('precio_unitario'),
+            'precioUni': det.get('precio_unitario'),
         })
     data['cuerpoDocumento'] = cuerpo
 

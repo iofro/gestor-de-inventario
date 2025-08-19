@@ -75,7 +75,7 @@ def test_dte_rounding_and_validation(capsys):
     data = generar_dte_json(db, venta_id)
     out = capsys.readouterr().out
     # Values rounded
-    assert data["cuerpoDocumento"][0]["precioUnitario"] == 1.12345679
+    assert data["cuerpoDocumento"][0]["precioUni"] == 1.12345679
     assert data["resumen"]["totalGravada"] == 2.25
     # No warnings printed
     assert out.strip() == ""

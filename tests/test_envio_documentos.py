@@ -45,7 +45,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         "dte.generar_dte_json",
         lambda db_obj, vid: {
             "receptor": {"nombre": "Cliente"},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+            "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
             "resumen": {
                 "totalNoSuj": 0,
                 "totalExenta": 0,
@@ -187,7 +187,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
         "dte.generar_nota_credito_json",
         lambda db_obj, nid: {
             "receptor": {"nombre": "Cliente"},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+            "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
             "resumen": {
                 "totalNoSuj": 0,
                 "totalExenta": 0,

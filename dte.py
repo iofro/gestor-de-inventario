@@ -242,7 +242,10 @@ def _load_datos_negocio():
     return {}
 
 
-DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(15)}
+DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(1, 15)}
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+PHONE_RE = re.compile(r"^\+?\d{8,15}$")
 
 
 def _map_departamento(nombre: str | None) -> str:
@@ -847,20 +850,41 @@ def generar_dte_json(
         "correo": datos.get("correo"),
     }
     emisor["direccion"] = svfe_config.get_emisor_direccion()
+    if emisor.get("correo") and not EMAIL_RE.fullmatch(emisor["correo"]):
+        raise ValueError("Correo de emisor inválido")
+    if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
+        raise ValueError("Teléfono de emisor inválido")
 
     rec = cliente or {}
-    def _clean_nit(nit):
-        if nit:
-            return "".join(c for c in str(nit) if c.isdigit())
-        return None
 
+    def _clean_nit(nit):
+        return "".join(c for c in str(nit) if c.isdigit()) if nit else None
+
+    tipo_doc = rec.get("tipoDocumento")
+    if tipo_doc is not None:
+        tipo_doc = int(tipo_doc)
+    num_doc = rec.get("numDocumento")
     nit = rec.get("nit")
     if fiscal:
+        tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
+        num_doc = fiscal.get("numDocumento") or num_doc
         nit = fiscal.get("nit") or nit
+    if nit and not num_doc:
+        num_doc = nit
+    if nit and not tipo_doc:
+        tipo_doc = 36
+
+    if tipo_doc == 36:
+        num_doc = _clean_nit(num_doc)
+        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+            raise ValueError("NIT inválido")
+    elif tipo_doc == 13:
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido")
 
     receptor = {
-        "tipoDocumento": "36" if nit else None,
-        "numDocumento": _clean_nit(nit),
+        "tipoDocumento": str(tipo_doc) if tipo_doc is not None else None,
+        "numDocumento": num_doc,
         "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
         "nombre": rec.get("nombre"),
         "codActividad": None,
@@ -869,6 +893,10 @@ def generar_dte_json(
         "telefono": rec.get("telefono"),
         "correo": rec.get("correo"),
     }
+    if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
+        raise ValueError("Correo de receptor inválido")
+    if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
+        raise ValueError("Teléfono de receptor inválido")
     if fiscal:
         if fiscal.get("no_remision"):
             receptor["noRemision"] = fiscal.get("no_remision")
@@ -1066,6 +1094,7 @@ def validate_dte_json(payload: dict) -> None:
     if fec > now.date() or emision_dt > now:
         raise ValueError("fecEmi/horEmi no pueden ser futuras")
     payload["identificacion"] = ident
+    tipo_dte = str(ident.get("tipoDte", ""))
 
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
@@ -1123,14 +1152,34 @@ def validate_dte_json(payload: dict) -> None:
         raise ValueError(
             "Faltan campos obligatorios en emisor: " + ", ".join(missing)
         )
+    if emisor.get("correo") and not EMAIL_RE.fullmatch(emisor["correo"]):
+        raise ValueError("Correo de emisor inválido")
+    if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
+        raise ValueError("Teléfono de emisor inválido")
     payload["emisor"] = emisor
 
     receptor = payload.get("receptor", {})
     receptor["nrc"] = _clean_nrc(receptor.get("nrc"))
-    if "nit" in receptor:
-        receptor["numDocumento"] = _clean_nit(receptor.pop("nit"))
-    else:
-        receptor["numDocumento"] = _clean_nit(receptor.get("numDocumento"))
+    if tipo_dte == "01":
+        receptor.pop("nrc", None)
+    nit_field = receptor.pop("nit", None)
+    tipo_doc = receptor.get("tipoDocumento")
+    if tipo_doc is not None:
+        tipo_doc = int(tipo_doc)
+    if nit_field is not None:
+        receptor["numDocumento"] = _clean_nit(nit_field)
+        if tipo_doc is None:
+            tipo_doc = 36
+    num_doc = receptor.get("numDocumento")
+    if tipo_doc == 36:
+        num_doc = _clean_nit(num_doc)
+        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+            raise ValueError("NIT inválido en receptor")
+    elif tipo_doc == 13:
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido en receptor")
+    receptor["tipoDocumento"] = str(tipo_doc) if tipo_doc is not None else None
+    receptor["numDocumento"] = num_doc
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
     if dir_rec is not None:
@@ -1145,10 +1194,13 @@ def validate_dte_json(payload: dict) -> None:
                 "Faltan campos obligatorios en receptor: direccion.complemento"
             )
         receptor["direccion"] = dir_rec
+    if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
+        raise ValueError("Correo de receptor inválido")
+    if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
+        raise ValueError("Teléfono de receptor inválido")
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
-    tipo_dte = str(payload.get("identificacion", {}).get("tipoDte", ""))
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
         item_props = (
@@ -1208,6 +1260,8 @@ def validate_dte_json(payload: dict) -> None:
         else:
             item.setdefault("tipoItem", 1)
             item.setdefault("uniMedida", 59)
+        item["tipoItem"] = int(item["tipoItem"])
+        item["uniMedida"] = int(item["uniMedida"])
 
         if item.get("tipoItem") not in catalogos.TIPO_ITEM:
             raise ValueError("tipoItem inválido")
@@ -1320,9 +1374,6 @@ def validate_dte_json(payload: dict) -> None:
     if emisor_nit and len(emisor_nit.replace("-", "")) != catalogos.NIT_LENGTH:
         raise ValueError("NIT inválido en emisor")
 
-    receptor_doc = payload.get("receptor", {}).get("numDocumento")
-    if receptor_doc and len(receptor_doc) not in (9, catalogos.NIT_LENGTH):
-        raise ValueError("Número de documento inválido en receptor")
 
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)

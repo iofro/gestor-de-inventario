@@ -60,7 +60,7 @@
     "version": 1
   },
   "otrosDocumentos": null,
-  "receptor": {
+    "receptor": {
     "codActividad": "62010",
     "correo": "cliente@example.com",
     "descActividad": "Servicios de software",
@@ -70,7 +70,6 @@
       "municipio": "01"
     },
     "nombre": "Consumidor Final",
-    "nrc": "0000011",
     "numDocumento": "06141990011019",
     "telefono": "70000001",
     "tipoDocumento": "36"

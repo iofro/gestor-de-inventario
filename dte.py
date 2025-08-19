@@ -13,7 +13,7 @@ from jsonschema import Draft7Validator, ValidationError, FormatChecker
 from utils import catalogos
 import logging
 import re
-from utils.monto import monto_a_texto_sv, d2
+from utils.monto import monto_a_texto_sv
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
@@ -95,6 +95,11 @@ getcontext().prec = 28
 
 # Helper aliases for precise Decimal arithmetic
 D = Decimal
+
+
+def d2(value: "object") -> D:
+    """Return ``value`` as :class:`Decimal` with 2 decimal places."""
+    return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
 
 def d8(value: "object") -> D:
@@ -625,17 +630,18 @@ def recalcular_totales(data: dict) -> list[str]:
 
     items_total = Decimal("0")
     iva_total = Decimal("0")
+    venta_gravada_sum = Decimal("0")
     iva_from_items = False
     for item in cuerpo:
         cant = Decimal(str(item.get("cantidad") or 0))
-        precio = Decimal(
-            str(item.get("precioUnitario") or item.get("precioUni") or 0)
-        )
+        precio = Decimal(str(item.get("precioUni") or 0))
         items_total += cant * precio
-        iva_val = item.get("montoIva") or item.get("iva") or item.get("ivaItem")
+        venta_gravada_sum += Decimal(str(item.get("ventaGravada") or 0))
+        iva_val = item.get("ivaItem") or item.get("montoIva") or item.get("iva")
         if iva_val:
             iva_total += Decimal(str(iva_val))
             iva_from_items = True
+    venta_gravada_sum = venta_gravada_sum.quantize(D("0.01"), rounding=ROUND_HALF_UP)
     if iva_from_items:
         iva_total = iva_total.quantize(D("0.01"), rounding=ROUND_HALF_UP)
     else:
@@ -674,8 +680,18 @@ def recalcular_totales(data: dict) -> list[str]:
         ref = Decimal(str(resumen.get(k, 0)))
         nuevo = Decimal(str(v))
         if abs(ref - nuevo) > Decimal("0.01"):
-            resumen[k] = float(nuevo) if isinstance(v, Decimal) else v
+            resumen[k] = nuevo
             modificados.append(k)
+
+    # Coherencia con sumas de ítems
+    ref_gravada = Decimal(str(resumen.get("totalGravada", 0)))
+    if abs(ref_gravada - venta_gravada_sum) > Decimal("0.01"):
+        resumen["totalGravada"] = venta_gravada_sum
+        modificados.append("totalGravada")
+    ref_iva = Decimal(str(resumen.get("totalIva", 0)))
+    if abs(ref_iva - iva_total) > Decimal("0.01"):
+        resumen["totalIva"] = iva_total
+        modificados.append("totalIva")
 
     data["resumen"] = resumen
     return modificados
@@ -846,38 +862,47 @@ def generar_dte_json(
     iva_total = D("0")
     for idx, d in enumerate(detalles, 1):
         try:
-            cant = D(str(d.get("cantidad") or 0))
+            cant = d8(D(str(d.get("cantidad") or 0)))
         except Exception:
-            cant = D(0)
+            cant = d8(D(0))
         try:
-            precio = D(str(d.get("precio_unitario") or 0))
+            precio = d8(D(str(d.get("precio_unitario") or 0)))
         except Exception:
-            precio = D(0)
-
-        # Ejemplo para auto-chequeo (no ejecutar):
-        # cantidad = 2.5 -> D('2.5')
-        # precio = 9.54 -> D('9.54')
-        # venta = 2.5 * 9.54 = 23.85 -> d8 = '23.85000000'
-        # IVA (13%) = 23.85 * 0.13 = 3.1005 -> d8 = '3.10050000'
-
-        cant_q = d8(cant)
-        precio_q = d8(precio)
-        venta_item = cant_q * precio_q
-        iva_item = D(str(d.get("iva") or 0))
-        monto_iva = d8(venta_item * iva_item) if iva_item and iva_item < 1 else d8(iva_item)
-        items_total += venta_item
-        iva_total += monto_iva
+            precio = d8(D(0))
+        monto_descu = d8(D(str(d.get("descuento") or 0)))
+        if monto_descu < 0:
+            monto_descu = D("0")
+        base = d8(cant * precio - monto_descu)
+        if base < 0:
+            base = D("0")
+        venta_gravada = d2(base)
+        items_total += base
+        iva_val = d8(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
+        iva_total += iva_val
         try:
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
             pass
         item_data = {
             "numItem": idx,
+            "tipoItem": 4 if tipo_dte == "01" else 1,
+            "numeroDocumento": "NA",
+            "codigo": d.get("codigo") or "SKU-NA",
             "descripcion": d.get("descripcion"),
-            "cantidad": float(cant_q),
-            "precioUnitario": float(precio_q),
-            "ventaGravada": float(d8(venta_item)),
+            "cantidad": float(cant),
+            "uniMedida": 59,
+            "precioUni": float(precio),
+            "montoDescu": float(d2(monto_descu)),
+            "ventaNoSuj": 0.0,
+            "ventaExenta": 0.0,
+            "ventaGravada": float(venta_gravada),
+            "psv": 0.0,
+            "noGravado": 0.0,
+            "ivaItem": float(iva_val),
+            "tributos": ["19"] if venta_gravada > 0 else [],
         }
+        if venta_gravada > 0:
+            item_data["codTributo"] = "19"
         cuerpo.append(item_data)
 
     resumen = calcular_resumen(
@@ -890,7 +915,7 @@ def generar_dte_json(
 
     # Validaciones básicas de consistencia
     items_total_2 = d2(items_total)
-    if abs(items_total_2 - resumen.get("subTotalVentas", 0)) > 0.01:
+    if abs(items_total_2 - resumen.get("subTotalVentas", 0)) > D("0.01"):
         print(
             f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen.get('subTotalVentas',0):.2f}"
         )
@@ -898,7 +923,7 @@ def generar_dte_json(
     calc_sub_total = d2(
         resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0)
     )
-    if abs(calc_sub_total - resumen.get("subTotal", 0)) > 0.01:
+    if abs(calc_sub_total - resumen.get("subTotal", 0)) > D("0.01"):
         print(
             f"Advertencia: el subtotal calculado {calc_sub_total:.2f} difiere del resumen {resumen.get('subTotal',0):.2f}"
         )
@@ -907,15 +932,22 @@ def generar_dte_json(
     if iva_ref is None:
         iva_ref = resumen.get("ivaPerci1", 0)
     calc_total = d2(calc_sub_total + (iva_ref or 0))
-    if abs(calc_total - resumen.get("montoTotalOperacion", 0)) > 0.01:
+    if abs(calc_total - resumen.get("montoTotalOperacion", 0)) > D("0.01"):
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
-    calc_total_commission = d2(calc_total + float(commission_total))
-    if "totalPagar" in resumen and abs(calc_total_commission - resumen.get("totalPagar", 0)) > 0.01:
+    calc_total_commission = d2(calc_total + commission_total)
+    if "totalPagar" in resumen and abs(calc_total_commission - resumen.get("totalPagar", 0)) > D("0.01"):
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
+    for k, v in resumen.items():
+        if isinstance(v, Decimal):
+            resumen[k] = float(d2(v))
+    if resumen.get("tributos"):
+        for t in resumen["tributos"]:
+            if isinstance(t.get("valor"), Decimal):
+                t["valor"] = float(d2(t["valor"]))
 
     result = {
         "identificacion": identificacion,
@@ -1096,15 +1128,13 @@ def validate_dte_json(payload: dict) -> None:
             "noGravado",
             "ivaItem",
         }
-    precio_key = "precioUni" if "precioUni" in allowed_item_keys else "precioUnitario"
+    precio_key = "precioUni"
     iva_key = "ivaItem" if "ivaItem" in allowed_item_keys else None
 
     for item in cuerpo:
         # --- Normalización de nombres ---
-        if "precioUnitario" in item and precio_key != "precioUnitario":
-            item[precio_key] = item.pop("precioUnitario")
-        if "precioUni" in item and precio_key != "precioUni":
-            item[precio_key] = item.pop("precioUni")
+        if "precioUnitario" in item:
+            raise ValueError("Usar 'precioUni' en lugar de 'precioUnitario'")
 
         iva_val = None
         for k in ("montoIva", "iva", "ivaItem"):
@@ -1120,56 +1150,67 @@ def validate_dte_json(payload: dict) -> None:
                 item.pop(key)
 
         # --- Valores por defecto ---
-        if tipo_dte == "01":
-            item["tipoItem"] = 4
-            item["uniMedida"] = 99
-        else:
-            item.setdefault("tipoItem", 1)
-            item.setdefault("uniMedida", 59)
+        item.setdefault("tipoItem", 4 if tipo_dte == "01" else 1)
+        item.setdefault("uniMedida", 59)
 
-        if item.get("tipoItem") not in catalogos.TIPO_ITEM:
+        try:
+            item["tipoItem"] = int(item.get("tipoItem") or 0)
+            item["uniMedida"] = int(item.get("uniMedida") or 0)
+        except Exception:
+            raise ValueError("tipoItem y uniMedida deben ser enteros")
+
+        if item["tipoItem"] not in catalogos.TIPO_ITEM:
             raise ValueError("tipoItem inválido")
 
-        item.setdefault("numeroDocumento", "NA")
-        item.setdefault("codigo", None)
-        item.setdefault("codTributo", None)
-        item.setdefault("montoDescu", 0.0)
-        item.setdefault("ventaNoSuj", 0.0)
-        item.setdefault("ventaExenta", 0.0)
+        item["numeroDocumento"] = item.get("numeroDocumento") or "NA"
+        item["codigo"] = item.get("codigo") or "SKU-NA"
+        cero = D("0")
+        item.setdefault("montoDescu", cero)
+        item.setdefault("ventaNoSuj", cero)
+        item.setdefault("ventaExenta", cero)
+        item.setdefault("ventaGravada", cero)
+        item.setdefault("noGravado", cero)
+        item.setdefault("psv", cero)
         item.setdefault("tributos", [])
-        item.setdefault("psv", 0.0)
-        item.setdefault("noGravado", 0.0)
         if iva_key:
-            item.setdefault(iva_key, 0.0)
+            item.setdefault(iva_key, cero)
 
-        cantidad = D(str(item.get("cantidad", 0)))
-        precio = D(str(item.get(precio_key, 0)))
-        cantidad_q = d8(cantidad)
-        precio_q = d8(precio)
-        item["cantidad"] = float(cantidad_q)
-        item[precio_key] = float(precio_q)
-        importe = cantidad_q * precio_q
-
+        # --- Cálculo de base ---
+        cantidad = d8(D(str(item.get("cantidad") or 0)))
+        precio = d8(D(str(item.get(precio_key) or 0)))
+        item["cantidad"] = cantidad
+        item[precio_key] = precio
         monto_descu = d8(D(str(item.get("montoDescu") or 0)))
-        item["montoDescu"] = float(monto_descu)
-        base = d8(max(importe - monto_descu, D("0")))
+        if monto_descu < 0:
+            monto_descu = cero
+        base = d8(cantidad * precio - monto_descu)
+        if base < 0:
+            base = cero
 
-        venta_gravada = D(str(item.get("ventaGravada") or 0))
-        venta_exenta = D(str(item.get("ventaExenta") or 0))
-        venta_no_suj = D(str(item.get("ventaNoSuj") or 0))
-        if venta_exenta > 0:
-            item["ventaExenta"] = float(base)
-            item.setdefault("ventaGravada", 0.0)
-        elif venta_no_suj > 0:
-            item["ventaNoSuj"] = float(base)
-            item.setdefault("ventaGravada", 0.0)
+        # Determinar tipo de venta
+        if D(str(item.get("ventaExenta") or 0)) > 0:
+            item["ventaExenta"] = d2(base)
+            item["ventaGravada"] = cero
+            item["ventaNoSuj"] = cero
+            item["noGravado"] = cero
+        elif D(str(item.get("ventaNoSuj") or 0)) > 0:
+            item["ventaNoSuj"] = d2(base)
+            item["ventaGravada"] = cero
+            item["noGravado"] = cero
+        elif D(str(item.get("noGravado") or 0)) > 0:
+            item["noGravado"] = d2(base)
+            item["ventaGravada"] = cero
+            item["ventaNoSuj"] = cero
         else:
-            item["ventaGravada"] = float(base)
+            item["ventaGravada"] = d2(base)
+            item["ventaExenta"] = cero
+            item["ventaNoSuj"] = cero
+            item["noGravado"] = cero
 
         # --- Manejo y validación de tributos ---
-        venta_gravada = D(str(item.get("ventaGravada") or 0))
+        venta_gravada_val = D(str(item.get("ventaGravada") or 0))
         allowed = set(catalogos.TRIBUTOS.keys())
-        if venta_gravada > 0:
+        if venta_gravada_val > 0:
             tributos = item.get("tributos") or []
             if isinstance(tributos, str):
                 tributos = [tributos]
@@ -1177,28 +1218,44 @@ def validate_dte_json(payload: dict) -> None:
             if "19" not in tributos:
                 tributos.insert(0, "19")
             item["tributos"] = tributos
-            item["codTributo"] = "19"
+            if "codTributo" in allowed_item_keys:
+                item["codTributo"] = "19"
+            else:
+                item.pop("codTributo", None)
             invalid = [t for t in tributos if t not in allowed]
             if invalid:
                 raise ValueError(
                     f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
                 )
             if iva_key:
-                item[iva_key] = float(d8(venta_gravada * D("0.13")))
+                item[iva_key] = d8(venta_gravada_val * D("0.13"))
         else:
             item["tributos"] = []
-            item["codTributo"] = None
+            item.pop("codTributo", None)
             if iva_key:
-                item[iva_key] = 0.0
+                item[iva_key] = cero
+
+        # Totales a 2 decimales y normalizar -0.00
+        for k in ("ventaGravada", "ventaExenta", "ventaNoSuj", "psv", "noGravado"):
+            val = d2(item.get(k, cero))
+            item[k] = cero if val == 0 else val
+        item["montoDescu"] = d2(monto_descu)
+        if iva_key:
+            iva_val_q8 = d8(D(str(item.get(iva_key) or 0)))
+            item[iva_key] = cero if iva_val_q8 == 0 else iva_val_q8
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})
     for k, v in resumen.items():
-        if isinstance(v, (int, float)):
-            resumen[k] = d2(v)
+        if k == "condicionOperacion":
+            continue
+        if isinstance(v, (int, float, Decimal)):
+            val = d2(v)
+            resumen[k] = D("0") if val == 0 else val
         elif isinstance(v, str):
             try:
-                resumen[k] = d2(float(v))
+                val = d2(float(v))
+                resumen[k] = D("0") if val == 0 else val
             except Exception:
                 pass
     payload["resumen"] = resumen
@@ -1241,11 +1298,35 @@ def validate_dte_json(payload: dict) -> None:
     receptor_doc = payload.get("receptor", {}).get("numDocumento")
     if receptor_doc and len(receptor_doc) not in (9, catalogos.NIT_LENGTH):
         raise ValueError("Número de documento inválido en receptor")
+    # Conversión final de Decimals a float para el JSON
+    for item in payload.get("cuerpoDocumento", []):
+        item["cantidad"] = float(d8(item.get("cantidad", D("0"))))
+        item[precio_key] = float(d8(item.get(precio_key, D("0"))))
+        if iva_key and iva_key in item:
+            item[iva_key] = float(d8(item.get(iva_key, D("0"))))
+        for k in ("montoDescu", "ventaNoSuj", "ventaExenta", "ventaGravada", "psv", "noGravado"):
+            val = d2(item.get(k, D("0")))
+            item[k] = 0.0 if val == 0 else float(val)
+
+    resumen = payload.get("resumen", {})
+    for k, v in resumen.items():
+        if isinstance(v, Decimal):
+            val = d2(v)
+            resumen[k] = 0.0 if val == 0 else float(val)
+    tribs = resumen.get("tributos")
+    if isinstance(tribs, list):
+        for t in tribs:
+            if isinstance(t.get("valor"), Decimal):
+                val = d2(t["valor"])
+                t["valor"] = 0.0 if val == 0 else float(val)
+
+    payload["resumen"] = resumen
 
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
         _validate_schema(payload, schema)
+
 
 
 def generar_ticket_json(
@@ -1299,8 +1380,8 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
     for item in data.get("cuerpoDocumento", []):
         if isinstance(item.get("cantidad"), (int, float)):
             item["cantidad"] = -abs(item["cantidad"])
-        if isinstance(item.get("precioUnitario"), (int, float)):
-            item["precioUnitario"] = -abs(item["precioUnitario"])
+        if isinstance(item.get("precioUni"), (int, float)):
+            item["precioUni"] = -abs(item["precioUni"])
 
     resumen = data.get("resumen", {})
     for k, v in resumen.items():

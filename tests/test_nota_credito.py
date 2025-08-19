@@ -27,7 +27,7 @@ def test_generar_nota_credito_json_ticket(tmp_path):
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
     assert data["documentoRelacionado"]["tipoDoc"] == "03"
-    assert data["cuerpoDocumento"][0]["precioUnitario"] < 0
+    assert data["cuerpoDocumento"][0]["precioUni"] < 0
     assert data["resumen"]["totalPagar"] < 0
 
 

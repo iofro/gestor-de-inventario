@@ -67,7 +67,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
                 "telefono": None,
                 "correo": None,
             },
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+            "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
                 "resumen": {
                     "totalNoSuj": 0,
                     "totalExenta": 0,

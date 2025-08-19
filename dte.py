@@ -13,7 +13,7 @@ from jsonschema import Draft7Validator, ValidationError, FormatChecker
 from utils import catalogos
 import logging
 import re
-from utils.monto import monto_a_texto_sv, d2
+from utils.monto import monto_a_texto_sv
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
@@ -97,10 +97,14 @@ getcontext().prec = 28
 D = Decimal
 
 
-def d8(value: "object") -> D:
-    """Return ``value`` as :class:`Decimal` with 8 decimal places."""
-    return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
+def q2(x: "object") -> D:
+    d = D(str(x)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+    return D("0.00") if d == 0 else d
 
+
+def q8(x: "object") -> D:
+    d = D(str(x)).quantize(D("0.00000001"), rounding=ROUND_HALF_UP)
+    return D("0.00000000") if d == 0 else d
 
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
@@ -420,10 +424,11 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
     mayor a cero y un ``periodo`` válido del catálogo ``PLAZO``.
     """
 
-    allowed = set(catalogos.FORMA_PAGO.keys())
+    code_is_str = True
+    allowed: set = set(catalogos.FORMA_PAGO.keys())
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
-        enum_codes = (
+        code_schema = (
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
@@ -431,33 +436,51 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
             .get("items", {})
             .get("properties", {})
             .get("codigo", {})
-            .get("enum", [])
         )
-        allowed.update(str(c).zfill(2) for c in enum_codes)
+        enum_codes = code_schema.get("enum", [])
+        code_type = code_schema.get("type")
+        if isinstance(code_type, list):
+            code_is_str = "string" in code_type
+        elif code_type and code_type != "string":
+            code_is_str = False
+        if code_is_str:
+            allowed.update(str(c).zfill(2) for c in enum_codes)
+        else:
+            allowed = {int(k) for k in allowed if str(k).isdigit()}
+            allowed.update(int(c) for c in enum_codes)
 
     pagos: list[dict] = []
     for p in pagos_raw or []:
-        codigo = str(p.get("codigo", "")).zfill(2)
+        raw_code = p.get("codigo", "")
+        if code_is_str:
+            codigo = str(raw_code).zfill(2)
+        else:
+            try:
+                codigo = int(raw_code)
+            except Exception:
+                continue
         if allowed and codigo not in allowed:
             continue
-        monto = D(str(p.get("montoPago", 0))).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        monto = q2(p.get("montoPago", 0))
         periodo = p.get("periodo")
         periodo = str(periodo).zfill(2) if periodo else None
         pagos.append(
             {
                 "codigo": codigo,
                 "montoPago": monto,
-                "referencia": p.get("referencia"),
+                "referencia": p.get("referencia") or None,
                 "periodo": periodo,
-                "plazo": p.get("plazo"),
+                "plazo": p.get("plazo") or None,
             }
         )
 
+    total_q = q2(total)
     if not pagos:
+        default_code = "01" if code_is_str else 1
         pagos = [
             {
-                "codigo": "01",
-                "montoPago": D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP),
+                "codigo": default_code,
+                "montoPago": total_q,
                 "referencia": None,
                 "periodo": None,
                 "plazo": None,
@@ -465,12 +488,12 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         ]
     else:
         suma = sum(p["montoPago"] for p in pagos)
-        diff = D(str(total)).quantize(D("0.01"), rounding=ROUND_HALF_UP) - suma
+        diff = total_q - suma
         if diff:
             nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
-            pagos[-1]["montoPago"] = nuevo.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+            pagos[-1]["montoPago"] = q2(nuevo)
 
     if condicion == 2:
         first = pagos[0]
@@ -478,13 +501,22 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         periodo = str(first.get("periodo") or "").zfill(2)
         if not plazo or periodo not in catalogos.PLAZO:
             raise ValidationError(
-                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido"
+                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido",
             )
         first["periodo"] = periodo
 
-    # Convertir a ``float`` para compatibilidad con JSON
+    suma_check = sum(p["montoPago"] for p in pagos)
+    if suma_check != total_q:
+        raise ValidationError("La suma de pagos no coincide con totalPagar")
+
     for p in pagos:
-        p["montoPago"] = float(p["montoPago"])
+        p["montoPago"] = float(q2(p["montoPago"]))
+        if not p.get("referencia"):
+            p["referencia"] = None
+        if not p.get("periodo"):
+            p["periodo"] = None
+        if not p.get("plazo"):
+            p["plazo"] = None
 
     return pagos
 
@@ -496,10 +528,11 @@ def armar_tributos(tributos_raw, tipo_dte):
     # Los códigos válidos se obtienen tanto del catálogo local como del
     # esquema oficial del tipo de documento.  Esto permite extender el catálogo
     # sin depender de que el esquema se encuentre actualizado.
-    allowed = set(catalogos.TRIBUTOS.keys())
+    code_is_str = True
+    allowed: set = set(catalogos.TRIBUTOS.keys())
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
-        allowed.update(
+        code_schema = (
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
@@ -507,11 +540,28 @@ def armar_tributos(tributos_raw, tipo_dte):
             .get("items", {})
             .get("properties", {})
             .get("codigo", {})
-            .get("enum", [])
         )
+        enum_codes = code_schema.get("enum", [])
+        code_type = code_schema.get("type")
+        if isinstance(code_type, list):
+            code_is_str = "string" in code_type
+        elif code_type and code_type != "string":
+            code_is_str = False
+        if code_is_str:
+            allowed.update(str(c).upper() for c in enum_codes)
+        else:
+            allowed = {int(k) for k in allowed if str(k).isdigit()}
+            allowed.update(int(c) for c in enum_codes)
     result = []
     for t in tributos_raw or []:
-        codigo = str(t.get("codigo", "")).upper()
+        raw_code = t.get("codigo", "")
+        if code_is_str:
+            codigo = str(raw_code).upper()
+        else:
+            try:
+                codigo = int(raw_code)
+            except Exception:
+                raise ValueError(f"Código de tributo inválido: {raw_code}")
         if allowed and codigo not in allowed:
             raise ValueError(f"Código de tributo inválido: {codigo}")
         result.append(
@@ -519,8 +569,8 @@ def armar_tributos(tributos_raw, tipo_dte):
                 "codigo": codigo,
                 # Si no se proporciona descripción, intentar obtenerla del catálogo
                 "descripcion": t.get("descripcion")
-                or catalogos.TRIBUTOS.get(codigo),
-                "valor": d2(t.get("valor", 0)),
+                or catalogos.TRIBUTOS.get(str(codigo)),
+                "valor": float(q2(t.get("valor", 0))),
             }
         )
     return result or None
@@ -531,52 +581,68 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     fiscal = fiscal or {}
     extra = extra or {}
 
-    items_total = Decimal(str(items_total))
-    sumas_val = Decimal(str(fiscal.get("sumas", items_total)))
-    descuentos_val = Decimal(str(fiscal.get("descuentos", 0)))
-    iva_val = Decimal(str(fiscal.get("iva", 0)))
-    total_no_suj = Decimal(str(fiscal.get("ventas_no_sujetas", 0)))
-    total_exenta = Decimal(str(fiscal.get("ventas_exentas", 0)))
+    total_gravada = q2(fiscal.get("sumas", items_total))
+    total_no_suj = q2(fiscal.get("ventas_no_sujetas", 0))
+    total_exenta = q2(fiscal.get("ventas_exentas", 0))
 
-    sub_total_ventas = total_no_suj + total_exenta + sumas_val
-    total_descu = descuentos_val
-    porcentaje_desc = (
-        (total_descu * Decimal("100") / sub_total_ventas) if sub_total_ventas else Decimal("0")
-    )
-    sub_total = sub_total_ventas - total_descu
-    monto_total = sub_total + iva_val
+    descu_no_suj = q2(fiscal.get("descu_no_suj", 0))
+    descu_exenta = q2(fiscal.get("descu_exenta", 0))
+    descu_gravada = q2(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
+    total_descu = q2(descu_no_suj + descu_exenta + descu_gravada)
+
+    sub_total_ventas = q2(total_no_suj + total_exenta + total_gravada)
+    sub_total = q2(sub_total_ventas - total_descu)
+
+    total_no_gravado = q2(fiscal.get("total_no_gravado", 0))
+    iva_val = q2(fiscal.get("iva", 0))
+    if total_gravada == 0:
+        iva_val = D("0.00")
+
+    iva_rete1 = q2(fiscal.get("iva_rete1", 0))
+    rete_renta = q2(fiscal.get("rete_renta", 0))
+
+    monto_total = q2(sub_total + total_no_gravado + iva_val - (iva_rete1 + rete_renta))
+    total_pagar = q2(monto_total)
+
+    porcentaje_desc = q2(total_descu * D("100") / sub_total_ventas) if sub_total_ventas else D("0.00")
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
     resumen.update(
         {
             "totalNoSuj": total_no_suj,
             "totalExenta": total_exenta,
-            "totalGravada": sumas_val,
+            "totalGravada": total_gravada,
             "subTotalVentas": sub_total_ventas,
-            "descuNoSuj": Decimal("0"),
-            "descuExenta": Decimal("0"),
-            "descuGravada": descuentos_val,
+            "descuNoSuj": descu_no_suj,
+            "descuExenta": descu_exenta,
+            "descuGravada": descu_gravada,
             "totalDescu": total_descu,
             "subTotal": sub_total,
+            "totalNoGravado": total_no_gravado,
+            "ivaRete1": iva_rete1,
+            "reteRenta": rete_renta,
             "montoTotalOperacion": monto_total,
             "totalLetras": venta.get("total_letras", ""),
         }
     )
+
     if tipo_dte in {"01", "03", "05", "06"}:
         condicion = extra.get("condicion_operacion")
         if condicion is None:
             condicion = fiscal.get("condicion_pago")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
+
     if "porcentajeDescuento" in resumen:
         resumen["porcentajeDescuento"] = porcentaje_desc
 
     if tipo_dte == "01":
         resumen["totalIva"] = iva_val
     else:
-        resumen["ivaPerci1"] = resumen.get("ivaPerci1", 0)
+        resumen["ivaPerci1"] = iva_val
 
     if "totalPagar" in resumen:
-        resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
+        resumen["totalPagar"] = total_pagar
+
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
             extra.get("pagos"),
@@ -584,28 +650,49 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             tipo_dte=tipo_dte,
             condicion=resumen.get("condicionOperacion", 1),
         )
+
     if "tributos" in resumen:
         trib = armar_tributos(extra.get("tributos"), tipo_dte)
-        if trib is None and sumas_val > 0:
+        if trib is None and total_gravada > 0:
             trib = [
                 {
                     "codigo": "19",
                     "descripcion": catalogos.TRIBUTOS.get("19"),
-                    "valor": d2(iva_val),
+                    "valor": float(q2(iva_val)),
                 }
             ]
         resumen["tributos"] = trib
+
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
-    # Ejemplo de referencia:
-    # Base ítem: 23.85000000 (8 dec)
-    # IVA ítem: 3.10050000 (8 dec)
-    # En resumen: base → 23.85, IVA → 3.10, totalPagar → 26.95 (2 dec)
-    # Redondeamos valores numéricos
+    required_zero = [
+        "totalNoSuj",
+        "totalExenta",
+        "totalGravada",
+        "subTotalVentas",
+        "descuNoSuj",
+        "descuExenta",
+        "descuGravada",
+        "totalDescu",
+        "subTotal",
+        "totalNoGravado",
+        "ivaRete1",
+        "reteRenta",
+        "montoTotalOperacion",
+        "totalPagar",
+    ]
+    if tipo_dte == "01":
+        required_zero.append("totalIva")
+    else:
+        required_zero.append("ivaPerci1")
+    for k in required_zero:
+        if resumen.get(k) is None:
+            resumen[k] = D("0.00")
+
     for k, v in resumen.items():
         if isinstance(v, (int, float, Decimal)):
-            resumen[k] = d2(v)
+            resumen[k] = float(q2(v))
 
     return resumen
 
@@ -623,34 +710,45 @@ def recalcular_totales(data: dict) -> list[str]:
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
-    items_total = Decimal("0")
-    iva_total = Decimal("0")
+    total_gravada = D("0")
+    total_exenta = D("0")
+    total_no_suj = D("0")
+    iva_total = D("0")
     iva_from_items = False
     for item in cuerpo:
-        cant = Decimal(str(item.get("cantidad") or 0))
-        precio = Decimal(
-            str(item.get("precioUnitario") or item.get("precioUni") or 0)
-        )
-        items_total += cant * precio
+        gravada = item.get("ventaGravada")
+        exenta = item.get("ventaExenta")
+        no_suj = item.get("ventaNoSuj")
+        if gravada is None and exenta is None and no_suj is None:
+            cant = D(str(item.get("cantidad") or 0))
+            precio = D(str(item.get("precioUnitario") or item.get("precioUni") or 0))
+            gravada = cant * precio
+        total_gravada += q8(gravada or 0)
+        total_exenta += q8(exenta or 0)
+        total_no_suj += q8(no_suj or 0)
         iva_val = item.get("montoIva") or item.get("iva") or item.get("ivaItem")
         if iva_val:
-            iva_total += Decimal(str(iva_val))
+            iva_total += q8(iva_val)
             iva_from_items = True
+
+    items_total = q2(total_gravada)
+    total_exenta = q2(total_exenta)
+    total_no_suj = q2(total_no_suj)
     if iva_from_items:
-        iva_total = iva_total.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+        iva_total = q2(iva_total)
     else:
-        iva_total = Decimal(
-            str(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
-        )
+        iva_total = q2(resumen.get("totalIva") or resumen.get("ivaPerci1") or 0)
 
     # Omitimos ``total`` para que ``calcular_resumen`` utilice el monto
     # calculado internamente y así podamos comparar contra el declarado.
     venta = {"total_letras": resumen.get("totalLetras", "")}
     fiscal = {
-        "descuentos": resumen.get("totalDescu", 0),
+        "descu_gravada": resumen.get("descuGravada", resumen.get("totalDescu", 0)),
+        "descu_no_suj": resumen.get("descuNoSuj", 0),
+        "descu_exenta": resumen.get("descuExenta", 0),
         "iva": iva_total,
-        "ventas_no_sujetas": resumen.get("totalNoSuj", 0),
-        "ventas_exentas": resumen.get("totalExenta", 0),
+        "ventas_no_sujetas": total_no_suj,
+        "ventas_exentas": total_exenta,
     }
     extra = {
         "pagos": resumen.get("pagos"),
@@ -857,14 +955,14 @@ def generar_dte_json(
         # Ejemplo para auto-chequeo (no ejecutar):
         # cantidad = 2.5 -> D('2.5')
         # precio = 9.54 -> D('9.54')
-        # venta = 2.5 * 9.54 = 23.85 -> d8 = '23.85000000'
-        # IVA (13%) = 23.85 * 0.13 = 3.1005 -> d8 = '3.10050000'
+        # venta = 2.5 * 9.54 = 23.85 -> q8 = '23.85000000'
+        # IVA (13%) = 23.85 * 0.13 = 3.1005 -> q8 = '3.10050000'
 
-        cant_q = d8(cant)
-        precio_q = d8(precio)
-        venta_item = cant_q * precio_q
+        cant_q = q8(cant)
+        precio_q = q8(precio)
+        venta_item = q8(cant_q * precio_q)
         iva_item = D(str(d.get("iva") or 0))
-        monto_iva = d8(venta_item * iva_item) if iva_item and iva_item < 1 else d8(iva_item)
+        monto_iva = q8(venta_item * iva_item) if iva_item and iva_item < 1 else q8(iva_item)
         items_total += venta_item
         iva_total += monto_iva
         try:
@@ -876,7 +974,7 @@ def generar_dte_json(
             "descripcion": d.get("descripcion"),
             "cantidad": float(cant_q),
             "precioUnitario": float(precio_q),
-            "ventaGravada": float(d8(venta_item)),
+            "ventaGravada": float(q8(venta_item)),
         }
         cuerpo.append(item_data)
 
@@ -889,14 +987,14 @@ def generar_dte_json(
     )
 
     # Validaciones básicas de consistencia
-    items_total_2 = d2(items_total)
+    items_total_2 = float(q2(items_total))
     if abs(items_total_2 - resumen.get("subTotalVentas", 0)) > 0.01:
         print(
             f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen.get('subTotalVentas',0):.2f}"
         )
 
-    calc_sub_total = d2(
-        resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0)
+    calc_sub_total = float(
+        q2(resumen.get("subTotalVentas", 0) - resumen.get("totalDescu", 0))
     )
     if abs(calc_sub_total - resumen.get("subTotal", 0)) > 0.01:
         print(
@@ -906,12 +1004,12 @@ def generar_dte_json(
     iva_ref = resumen.get("totalIva")
     if iva_ref is None:
         iva_ref = resumen.get("ivaPerci1", 0)
-    calc_total = d2(calc_sub_total + (iva_ref or 0))
+    calc_total = float(q2(calc_sub_total + (iva_ref or 0)))
     if abs(calc_total - resumen.get("montoTotalOperacion", 0)) > 0.01:
         print(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
-    calc_total_commission = d2(calc_total + float(commission_total))
+    calc_total_commission = float(q2(calc_total + float(commission_total)))
     if "totalPagar" in resumen and abs(calc_total_commission - resumen.get("totalPagar", 0)) > 0.01:
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
@@ -1144,15 +1242,15 @@ def validate_dte_json(payload: dict) -> None:
 
         cantidad = D(str(item.get("cantidad", 0)))
         precio = D(str(item.get(precio_key, 0)))
-        cantidad_q = d8(cantidad)
-        precio_q = d8(precio)
+        cantidad_q = q8(cantidad)
+        precio_q = q8(precio)
         item["cantidad"] = float(cantidad_q)
         item[precio_key] = float(precio_q)
         importe = cantidad_q * precio_q
 
-        monto_descu = d8(D(str(item.get("montoDescu") or 0)))
+        monto_descu = q8(D(str(item.get("montoDescu") or 0)))
         item["montoDescu"] = float(monto_descu)
-        base = d8(max(importe - monto_descu, D("0")))
+        base = q8(max(importe - monto_descu, D("0")))
 
         venta_gravada = D(str(item.get("ventaGravada") or 0))
         venta_exenta = D(str(item.get("ventaExenta") or 0))
@@ -1184,7 +1282,7 @@ def validate_dte_json(payload: dict) -> None:
                     f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
                 )
             if iva_key:
-                item[iva_key] = float(d8(venta_gravada * D("0.13")))
+                item[iva_key] = float(q8(venta_gravada * D("0.13")))
         else:
             item["tributos"] = []
             item["codTributo"] = None
@@ -1195,10 +1293,10 @@ def validate_dte_json(payload: dict) -> None:
     resumen = payload.get("resumen", {})
     for k, v in resumen.items():
         if isinstance(v, (int, float)):
-            resumen[k] = d2(v)
+            resumen[k] = float(q2(v))
         elif isinstance(v, str):
             try:
-                resumen[k] = d2(float(v))
+                resumen[k] = float(q2(float(v)))
             except Exception:
                 pass
     payload["resumen"] = resumen

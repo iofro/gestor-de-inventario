@@ -466,41 +466,77 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
 
     allowed = set(catalogos.FORMA_PAGO.keys())
     schema = catalogos.get_dte_schema(tipo_dte)
+    props = {}
+    enum_codes = []
     if schema:
-        enum_codes = (
+        props = (
             schema.get("properties", {})
             .get("resumen", {})
             .get("properties", {})
             .get("pagos", {})
             .get("items", {})
             .get("properties", {})
-            .get("codigo", {})
-            .get("enum", [])
         )
+        enum_codes = props.get("codigo", {}).get("enum", [])
         allowed.update(str(c).zfill(2) for c in enum_codes)
+
+    code_type = props.get("codigo", {}).get("type", "string")
+    periodo_type = props.get("periodo", {}).get("type", ["number", "null"])
+    plazo_type = props.get("plazo", {}).get("type", ["string", "null"])
+    code_is_int = code_type == "integer" or (
+        isinstance(code_type, list) and "integer" in code_type
+    )
+    periodo_is_str = periodo_type == "string" or (
+        isinstance(periodo_type, list) and "string" in periodo_type
+    )
+    plazo_is_str = plazo_type == "string" or (
+        isinstance(plazo_type, list) and "string" in plazo_type
+    )
 
     pagos: list[dict] = []
     for p in pagos_raw or []:
-        codigo = str(p.get("codigo", "")).zfill(2)
-        if allowed and codigo not in allowed:
+        codigo_raw = p.get("codigo", "")
+        codigo_str = str(codigo_raw).zfill(2)
+        if allowed and codigo_str not in allowed:
             continue
+        codigo = int(codigo_raw) if code_is_int else codigo_str
         monto = money(p.get("montoPago", 0))
-        periodo = p.get("periodo")
-        periodo = str(periodo).zfill(2) if periodo else None
+        referencia = p.get("referencia") or None
+        periodo_raw = p.get("periodo")
+        if periodo_raw in ("", None):
+            periodo = None
+        else:
+            periodo = str(periodo_raw).zfill(2) if periodo_is_str else int(periodo_raw)
+        plazo_raw = p.get("plazo")
+        if plazo_raw in ("", None):
+            plazo = None
+        else:
+            plazo = str(plazo_raw).zfill(2) if plazo_is_str else int(plazo_raw)
         pagos.append(
             {
                 "codigo": codigo,
                 "montoPago": monto,
-                "referencia": p.get("referencia"),
+                "referencia": referencia,
                 "periodo": periodo,
-                "plazo": p.get("plazo"),
+                "plazo": plazo,
             }
         )
 
     if not pagos:
+        if condicion == 2:
+            raise ValidationError("condicionOperacion=2 requiere detallar pagos")
+        if enum_codes:
+            if code_is_int:
+                default_code = enum_codes[0] if 1 not in enum_codes else 1
+            else:
+                default_code = (
+                    "01" if "01" in enum_codes else str(enum_codes[0]).zfill(2)
+                )
+        else:
+            default_code = 1 if code_is_int else "01"
         pagos = [
             {
-                "codigo": "01",
+                "codigo": int(default_code) if code_is_int else default_code,
                 "montoPago": money(total),
                 "referencia": None,
                 "periodo": None,
@@ -511,6 +547,8 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         suma = sum(p["montoPago"] for p in pagos)
         diff = money(total) - suma
         if diff:
+            if len(pagos) > 1 and abs(diff) > D("0.01"):
+                raise ValidationError("La suma de pagos excede el total a pagar")
             nuevo = pagos[-1]["montoPago"] + diff
             if nuevo < 0:
                 raise ValidationError("La suma de pagos excede el total a pagar")
@@ -518,17 +556,14 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
 
     if condicion == 2:
         first = pagos[0]
-        plazo = first.get("plazo") or 0
-        periodo = str(first.get("periodo") or "").zfill(2)
-        if not plazo or periodo not in catalogos.PLAZO:
+        plazo_val = int(first.get("plazo") or 0)
+        periodo_val = str(first.get("periodo") or "").zfill(2)
+        if not plazo_val or periodo_val not in catalogos.PLAZO:
             raise ValidationError(
-                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido"
+                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido",
             )
-        first["periodo"] = periodo
-
-    # Convertir a ``float`` para compatibilidad con JSON
-    for p in pagos:
-        p["montoPago"] = float(p["montoPago"])
+        first["plazo"] = plazo_val if not plazo_is_str else str(plazo_val).zfill(2)
+        first["periodo"] = periodo_val if periodo_is_str else int(periodo_val)
 
     return pagos
 
@@ -575,81 +610,94 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     fiscal = fiscal or {}
     extra = extra or {}
 
-    items_total = Decimal(str(items_total))
-    sumas_val = Decimal(str(fiscal.get("sumas", items_total)))
-    descuentos_val = Decimal(str(fiscal.get("descuentos", 0)))
-    iva_val = Decimal(str(fiscal.get("iva", 0)))
-    total_no_suj = Decimal(str(fiscal.get("ventas_no_sujetas", 0)))
-    total_exenta = Decimal(str(fiscal.get("ventas_exentas", 0)))
+    total_gravada = money(fiscal.get("sumas", items_total))
+    total_exenta = money(fiscal.get("ventas_exentas", 0))
+    total_no_suj = money(fiscal.get("ventas_no_sujetas", 0))
+    total_no_gravado = money(fiscal.get("no_gravado", 0))
 
-    sub_total_ventas = total_no_suj + total_exenta + sumas_val
-    total_descu = descuentos_val
-    porcentaje_desc = (
-        (total_descu * Decimal("100") / sub_total_ventas) if sub_total_ventas else Decimal("0")
+    descu_no_suj = money(fiscal.get("descu_no_suj", 0))
+    descu_exenta = money(fiscal.get("descu_exenta", 0))
+    descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
+
+    sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
+    total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
+    sub_total = money(sub_total_ventas - total_descu)
+    porcentaje_desc = money(
+        (total_descu * D("100") / sub_total_ventas) if sub_total_ventas else D("0")
     )
-    sub_total = sub_total_ventas - total_descu
-    monto_total = sub_total + iva_val
+
+    total_iva = money(fiscal.get("iva", 0))
+    monto_total = money(sub_total + total_no_gravado + total_iva)
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
-    resumen.update(
-        {
-            "totalNoSuj": total_no_suj,
-            "totalExenta": total_exenta,
-            "totalGravada": sumas_val,
-            "subTotalVentas": sub_total_ventas,
-            "descuNoSuj": Decimal("0"),
-            "descuExenta": Decimal("0"),
-            "descuGravada": descuentos_val,
-            "totalDescu": total_descu,
-            "subTotal": sub_total,
-            "montoTotalOperacion": monto_total,
-            "totalLetras": venta.get("total_letras", ""),
-        }
-    )
+    resumen.update({
+        "totalNoSuj": total_no_suj,
+        "totalExenta": total_exenta,
+        "totalGravada": total_gravada,
+        "subTotalVentas": sub_total_ventas,
+        "descuNoSuj": descu_no_suj,
+        "descuExenta": descu_exenta,
+        "descuGravada": descu_gravada,
+        "totalDescu": total_descu,
+        "subTotal": sub_total,
+        "porcentajeDescuento": porcentaje_desc,
+        "totalNoGravado": total_no_gravado,
+        "montoTotalOperacion": monto_total,
+        "totalLetras": venta.get("total_letras", ""),
+    })
+
+    resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
+    resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
+
+    if tipo_dte == "01":
+        resumen["totalIva"] = total_iva
+    else:
+        resumen["ivaPerci1"] = resumen.get("ivaPerci1", money(0))
+
+    if tipo_dte == "01":
+        resumen["totalPagar"] = monto_total
+    elif "totalPagar" in resumen:
+        resumen["totalPagar"] = monto_total
+
     if tipo_dte in {"01", "03", "05", "06"}:
         condicion = extra.get("condicion_operacion")
         if condicion is None:
             condicion = fiscal.get("condicion_pago")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
-    if "porcentajeDescuento" in resumen:
-        resumen["porcentajeDescuento"] = porcentaje_desc
 
-    if tipo_dte == "01":
-        resumen["totalIva"] = iva_val
+    if total_gravada > 0:
+        resumen["tributos"] = [{"codigo": "19", "descripcion": "IVA 13%", "valor": total_iva}]
     else:
-        resumen["ivaPerci1"] = resumen.get("ivaPerci1", 0)
+        resumen["tributos"] = None
+        resumen["totalIva"] = money(0)
 
-    if "totalPagar" in resumen:
-        resumen["totalPagar"] = Decimal(str(venta.get("total", monto_total)))
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
             extra.get("pagos"),
-            resumen["totalPagar"],
+            resumen.get("totalPagar", monto_total),
             tipo_dte=tipo_dte,
             condicion=resumen.get("condicionOperacion", 1),
         )
-    if "tributos" in resumen:
-        trib = armar_tributos(extra.get("tributos"), tipo_dte)
-        if trib is None and sumas_val > 0:
-            trib = [
-                {
-                    "codigo": "19",
-                    "descripcion": catalogos.TRIBUTOS.get("19"),
-                    "valor": float(money(iva_val)),
-                }
-            ]
-        resumen["tributos"] = trib
+
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
-    # Ejemplo de referencia:
-    # Base ítem: 23.85000000 (8 dec)
-    # IVA ítem: 3.10050000 (8 dec)
-    # En resumen: base → 23.85, IVA → 3.10, totalPagar → 26.95 (2 dec)
-    # Redondeamos valores numéricos
-    for k, v in resumen.items():
-        if isinstance(v, (int, float, Decimal)):
-            resumen[k] = float(money(v))
+    for key, val in list(resumen.items()):
+        if key in {
+            "totalLetras",
+            "condicionOperacion",
+            "pagos",
+            "numPagoElectronico",
+            "tributos",
+        }:
+            continue
+        if not isinstance(val, Decimal):
+            try:
+                resumen[key] = money(val)
+            except Exception:
+                continue
+        elif val == 0:
+            resumen[key] = money(0)
 
     return resumen
 
@@ -924,6 +972,10 @@ def generar_dte_json(
     items_total = D("0")
     commission_total = D("0")
     iva_total = D("0")
+    total_gravada_sum = D("0")
+    total_exenta_sum = D("0")
+    total_no_suj_sum = D("0")
+    total_no_gravado_sum = D("0")
     for idx, d in enumerate(detalles, 1):
         try:
             cant = d8(D(str(d.get("cantidad") or 0)))
@@ -968,15 +1020,51 @@ def generar_dte_json(
         }
         if venta_gravada > 0:
             item_data["codTributo"] = "19"
+        total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
+        total_exenta_sum += D(str(item_data["ventaExenta"]))
+        total_gravada_sum += D(str(item_data["ventaGravada"]))
+        total_no_gravado_sum += D(str(item_data["noGravado"]))
         cuerpo.append(item_data)
-
+    total_iva_sum = iva_total
     resumen = calcular_resumen(
-        items_total,
+        total_gravada_sum,
         venta,
-        fiscal={**(fiscal or {}), "iva": iva_total},
+        fiscal={
+            **(fiscal or {}),
+            "sumas": total_gravada_sum,
+            "ventas_exentas": total_exenta_sum,
+            "ventas_no_sujetas": total_no_suj_sum,
+            "no_gravado": total_no_gravado_sum,
+            "iva": total_iva_sum,
+        },
         extra=extra,
         tipo_dte=tipo_dte,
     )
+
+    assert money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) == money(
+        resumen.get("totalGravada", 0)
+    )
+    assert money(sum(D(str(i["ivaItem"])) for i in cuerpo)) == money(
+        resumen.get("totalIva", 0)
+    )
+    assert money(
+        resumen["totalNoSuj"] + resumen["totalExenta"] + resumen["totalGravada"]
+    ) == money(resumen["subTotalVentas"])
+    assert money(
+        resumen["subTotalVentas"]
+        - (resumen["descuNoSuj"] + resumen["descuExenta"] + resumen["descuGravada"])
+    ) == money(resumen["subTotal"])
+    assert money(
+        resumen["subTotal"] + resumen["totalNoGravado"] + resumen["totalIva"]
+    ) == money(resumen["montoTotalOperacion"])
+    assert money(resumen["montoTotalOperacion"]) == money(resumen["totalPagar"])
+    pagos_resumen = resumen.get("pagos") or []
+    assert money(sum(D(str(p["montoPago"])) for p in pagos_resumen)) == money(
+        resumen["totalPagar"]
+    )
+    if money(resumen["totalGravada"]) == D("0.00"):
+        assert not resumen.get("tributos")
+        assert money(resumen.get("totalIva", 0)) == D("0.00")
 
     # Validaciones básicas de consistencia
     items_total_2 = d2(items_total)
@@ -1008,11 +1096,49 @@ def generar_dte_json(
         )
     for k, v in resumen.items():
         if isinstance(v, Decimal):
-            resumen[k] = float(d2(v))
+            v = d2(v)
+            resumen[k] = float(v)
+        if isinstance(resumen[k], float) and resumen[k] == -0.0:
+            resumen[k] = 0.0
+    if resumen.get("pagos"):
+        for p in resumen["pagos"]:
+            val = p.get("montoPago")
+            if isinstance(val, Decimal):
+                val = d2(val)
+                val = float(val)
+            else:
+                val = float(d2(D(str(val))))
+            if val == -0.0:
+                val = 0.0
+            p["montoPago"] = val
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            if isinstance(t.get("valor"), Decimal):
-                t["valor"] = float(d2(t["valor"]))
+            val = t.get("valor")
+            if isinstance(val, Decimal):
+                val = d2(val)
+                val = float(val)
+            else:
+                val = float(d2(D(str(val))))
+            if val == -0.0:
+                val = 0.0
+            t["valor"] = val
+
+    ext_schema = catalogos.get_dte_schema(tipo_dte)
+    extension = None
+    if ext_schema:
+        ext_prop = ext_schema.get("properties", {}).get("extension", {})
+        ext_type = ext_prop.get("type")
+        if ext_type == "object" or (
+            isinstance(ext_type, list) and "object" in ext_type and "null" not in ext_type
+        ):
+            extension = {
+                "nombEntrega": None,
+                "docuEntrega": None,
+                "nombRecibe": None,
+                "docuRecibe": None,
+                "observaciones": None,
+                "placaVehiculo": None,
+            }
 
     result = {
         "identificacion": identificacion,
@@ -1024,14 +1150,7 @@ def generar_dte_json(
         "otrosDocumentos": None,
         "apendice": None,
         "ventaTercero": None,
-        "extension": {
-            "nombEntrega": None,
-            "docuEntrega": None,
-            "nombRecibe": None,
-            "docuRecibe": None,
-            "observaciones": None,
-            "placaVehiculo": None,
-        },
+        "extension": extension,
     }
 
     validate_dte_json(result)

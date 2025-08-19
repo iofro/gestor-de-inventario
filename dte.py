@@ -123,11 +123,20 @@ def d8(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 8 decimal places."""
     return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
 
-
-def money(value: "object") -> D:
-    """Return ``value`` as :class:`Decimal` with 2 decimal places."""
+def money(value) -> D:
+    """
+    Convierte `value` a Decimal con 2 decimales (multipleOf 0.01) usando ROUND_HALF_UP.
+    Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
+    """
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
+def normalize_uuid_v4_upper(value: str) -> str:
+    """
+    Normaliza `value` como UUID v4 con guiones en MAYÚSCULAS.
+    Lanza ValueError si no es un UUID v4 válido.
+    """
+    u = uuid.UUID(str(value), version=4)  # garantiza versión 4 real
+    return str(u).upper()
 
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
@@ -989,18 +998,73 @@ def validate_dte_json(payload: dict) -> None:
     if "modeloFacturacion" in ident:
         ident["tipoModelo"] = int(str(ident.pop("modeloFacturacion")).split()[0])
     ident.setdefault("tipoModelo", 1)
+    ident["tipoModelo"] = int(ident.get("tipoModelo"))
     if "tipoTransmision" in ident:
         ident["tipoOperacion"] = int(str(ident.pop("tipoTransmision")).split()[0])
     ident.setdefault("tipoOperacion", 1)
+    ident["tipoOperacion"] = int(ident.get("tipoOperacion"))
+    if ident.get("tipoContingencia") is not None:
+        ident["tipoContingencia"] = int(ident.get("tipoContingencia"))
     ident["version"] = int(ident.get("version", 1))
-    cg = ident.get("codigoGeneracion")
     try:
-        uuid_obj = uuid.UUID(str(cg))
+        ident["codigoGeneracion"] = normalize_uuid_v4_upper(ident["codigoGeneracion"])
     except Exception:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido") from None
-    if uuid_obj.version != 4:
+    if len(ident["codigoGeneracion"]) != 36 or "-" not in ident["codigoGeneracion"]:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
-    ident["codigoGeneracion"] = str(uuid_obj).upper()
+    ident["tipoDte"] = str(ident.get("tipoDte")).strip().upper()
+    ident["tipoMoneda"] = "USD"
+    # Validaciones de campos de identificacion
+    if ident["version"] != 1:
+        raise ValueError("identificacion.version debe ser 1")
+    if ident.get("ambiente") not in {"00", "01"}:
+        raise ValueError("ambiente debe ser '00' o '01'")
+    if ident.get("tipoDte") != "01":
+        raise ValueError("tipoDte debe ser '01'")
+    if ident.get("tipoMoneda") != "USD":
+        raise ValueError("tipoMoneda debe ser 'USD'")
+    numero_control = ident.get("numeroControl")
+    if not (isinstance(numero_control, str) and len(numero_control) == 31 and numero_control.startswith("DTE-01-")):
+        raise ValueError("numeroControl inválido")
+    if not re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", numero_control):
+        raise ValueError("numeroControl inválido")
+    tipo_operacion = ident.get("tipoOperacion")
+    tipo_modelo = ident.get("tipoModelo")
+    tipo_cont = ident.get("tipoContingencia")
+    motivo = ident.get("motivoContin")
+    if tipo_operacion == 1:
+        if tipo_modelo != 1 or tipo_cont is not None or motivo is not None:
+            raise ValueError("tipoOperacion=1 requiere tipoModelo=1 y sin contingencia")
+    elif tipo_operacion == 2:
+        if tipo_modelo != 2:
+            raise ValueError("tipoOperacion=2 requiere tipoModelo=2")
+        if tipo_cont is None or tipo_cont not in {1, 2, 3, 4, 5}:
+            raise ValueError("tipoContingencia debe estar entre 1 y 5")
+        if tipo_cont == 5:
+            motivo = (motivo or "").strip()
+            if not (5 <= len(motivo) <= 150):
+                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
+            ident["motivoContin"] = motivo
+        else:
+            if motivo not in (None, ""):
+                raise ValueError("motivoContin debe ser null si tipoContingencia != 5")
+    else:
+        raise ValueError("tipoOperacion debe ser 1 o 2")
+    try:
+        fec = datetime.strptime(str(ident.get("fecEmi")), "%Y-%m-%d").date()
+    except Exception:
+        raise ValueError("fecEmi debe tener formato YYYY-MM-DD") from None
+    try:
+        hora_dt = datetime.strptime(str(ident.get("horEmi")), "%H:%M:%S")
+        hora = hora_dt.time()
+        if hora_dt.strftime("%H:%M:%S") != ident.get("horEmi"):
+            raise ValueError
+    except Exception:
+        raise ValueError("horEmi debe tener formato HH:MM:SS") from None
+    now = datetime.now(TZ_EL_SALVADOR)
+    emision_dt = datetime.combine(fec, hora, tzinfo=TZ_EL_SALVADOR)
+    if fec > now.date() or emision_dt > now:
+        raise ValueError("fecEmi/horEmi no pueden ser futuras")
     payload["identificacion"] = ident
 
     emisor = payload.get("emisor", {})

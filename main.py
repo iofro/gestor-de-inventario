@@ -25,6 +25,7 @@ from ui_mainwindow import MainWindow
 from user_picker_dialog import UserPickerDialog
 from db import DB
 from utils import resource_path
+from paths import migrate_datos_negocio
 
 LAST_FILE_PATH = resource_path("ultimo_inventario.json")
 DEFAULT_INVENTORY = resource_path("inventario.json")
@@ -46,6 +47,7 @@ def cargar_ultimo_archivo():
     return ""
 
 if __name__ == "__main__":
+    migrate_datos_negocio()
     app = QApplication(sys.argv)
     style_path = resource_path("style.qss")
     if style_path.exists():

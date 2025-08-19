@@ -11,6 +11,7 @@ import os
 import json
 import sys
 from inventory_manager import InventoryManager
+from paths import DATOS_NEGOCIO_PATH
 from dialogs import (
     RegisterSaleDialog,
     ProductDialog,
@@ -22,7 +23,6 @@ from dialogs import (
     UserConfigDialog,
 )
 
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab

@@ -10,8 +10,7 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfbase import pdfmetrics
 import json
 import os
-
-DATOS_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "datos_negocio.json")
+from paths import DATOS_NEGOCIO_PATH
 
 # Puedes registrar Arial si tienes el archivo, si no, Helvetica es suficiente
 # pdfmetrics.registerFont(TTFont('Arial', 'arial.ttf'))

@@ -3,14 +3,14 @@
     "version": 1,
     "ambiente": "00",
     "tipoDte": "01",
-    "numeroControl": "DTE-01-S001P001-177519782879098",
-    "codigoGeneracion": "32E19086-01FB-4EFB-965B-218EEAF5F7EC",
+    "numeroControl": "DTE-01-S001P001-089195132346097",
+    "codigoGeneracion": "A50E872D-7E7E-4FCE-92E9-775E1F2E9BD1",
     "tipoModelo": 1,
     "tipoOperacion": 1,
     "tipoContingencia": null,
     "motivoContin": null,
     "fecEmi": "2025-08-20",
-    "horEmi": "16:27:04",
+    "horEmi": "16:53:04",
     "tipoMoneda": "USD"
   },
   "emisor": {

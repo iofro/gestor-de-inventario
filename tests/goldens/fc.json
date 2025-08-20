@@ -35,7 +35,7 @@
     "direccion": {
       "complemento": "Calle X #123",
       "departamento": "06",
-      "municipio": "15"
+      "municipio": "23"
     },
     "nit": "06142512891020",
     "nombre": "Compañía Demo S.A. de C.V.",
@@ -67,7 +67,7 @@
     "direccion": {
       "complemento": "San Salvador",
       "departamento": "05",
-      "municipio": "01"
+      "municipio": "23"
     },
     "nombre": "Consumidor Final",
     "numDocumento": "06141990011019",

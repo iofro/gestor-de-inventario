@@ -47,7 +47,9 @@ def _strip_additional_properties(value, schema):
 
     if isinstance(value, dict):
         props = schema.get("properties", {})
-        patterns = {re.compile(p): s for p, s in schema.get("patternProperties", {}).items()}
+        patterns = {
+            re.compile(p): s for p, s in schema.get("patternProperties", {}).items()
+        }
         addl = schema.get("additionalProperties", True)
         clean = {}
         for key, val in value.items():
@@ -111,6 +113,7 @@ def apply_schema_patch(data: dict) -> dict:
     except Exception:  # pragma: no cover - best effort
         return data
 
+
 # Ensure enough precision when other modules modify the global decimal context
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_UP
@@ -128,12 +131,14 @@ def d8(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 8 decimal places."""
     return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
 
+
 def money(value) -> D:
     """
     Convierte `value` a Decimal con 2 decimales (multipleOf 0.01) usando ROUND_HALF_UP.
     Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
     """
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+
 
 def normalize_uuid_v4_upper(value: str) -> str:
     """
@@ -142,6 +147,7 @@ def normalize_uuid_v4_upper(value: str) -> str:
     """
     u = uuid.UUID(str(value), version=4)  # garantiza versión 4 real
     return str(u).upper()
+
 
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
@@ -194,7 +200,9 @@ def _validate_schema(instance: dict, schema: dict) -> None:
     Prints a full report of all schema validation issues found and raises
     ``ValidationError`` with the combined message if any problems exist.
     """
-    validator = Draft202012Validator(schema, format_checker=FormatChecker(), resolver=RESOLVER)
+    validator = Draft202012Validator(
+        schema, format_checker=FormatChecker(), resolver=RESOLVER
+    )
     errs = []
     for err in sorted(validator.iter_errors(instance), key=lambda e: e.path):
         errs.append(
@@ -439,9 +447,7 @@ def _build_receptor_direccion(src: dict) -> dict:
     raw_dep = src.get("departamento")
     raw_muni = src.get("municipio")
     complemento = (
-        src.get("complemento")
-        or src.get("direccionDetalle")
-        or src.get("direccion")
+        src.get("complemento") or src.get("direccionDetalle") or src.get("direccion")
     )
     if isinstance(complemento, str):
         complemento = complemento.strip() or None
@@ -496,6 +502,7 @@ def _parse_condicion_operacion(value):
     if code not in CONDICION_OPERACION_CATALOG:
         code = 1
     return code
+
 
 # Valores por defecto del resumen según el tipo de DTE
 RESUMEN_DEFAULTS = {
@@ -763,8 +770,7 @@ def armar_tributos(tributos_raw, tipo_dte):
             {
                 "codigo": codigo,
                 # Si no se proporciona descripción, intentar obtenerla del catálogo
-                "descripcion": t.get("descripcion")
-                or catalogos.TRIBUTOS.get(codigo),
+                "descripcion": t.get("descripcion") or catalogos.TRIBUTOS.get(codigo),
                 "valor": valor,
             }
         )
@@ -859,7 +865,13 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
-    excl = {"totalLetras", "condicionOperacion", "pagos", "numPagoElectronico", "tributos"}
+    excl = {
+        "totalLetras",
+        "condicionOperacion",
+        "pagos",
+        "numPagoElectronico",
+        "tributos",
+    }
     for key, val in list(resumen.items()):
         if key in excl:
             continue
@@ -1026,6 +1038,7 @@ def generar_cabecera_dte_data(
         "ambiente": ambiente,
     }
 
+
 def generar_dte_json(
     db: DB,
     venta_id: int,
@@ -1086,11 +1099,15 @@ def generar_dte_json(
     tipo_operacion = extra.get("tipoOperacion", tipo_operacion)
     tipo_contingencia = extra.get("tipoContingencia", tipo_contingencia)
     motivo_contin = extra.get("motivoContin", motivo_contin)
-    tipo_operacion = kwargs.get("tipoOperacion", kwargs.get("tipo_operacion", tipo_operacion))
+    tipo_operacion = kwargs.get(
+        "tipoOperacion", kwargs.get("tipo_operacion", tipo_operacion)
+    )
     tipo_contingencia = kwargs.get(
         "tipoContingencia", kwargs.get("tipo_contingencia", tipo_contingencia)
     )
-    motivo_contin = kwargs.get("motivoContin", kwargs.get("motivo_contin", motivo_contin))
+    motivo_contin = kwargs.get(
+        "motivoContin", kwargs.get("motivo_contin", motivo_contin)
+    )
 
     # Normalización de tipos
     try:
@@ -1117,9 +1134,7 @@ def generar_dte_json(
             raise ValueError("tipoContingencia debe estar entre 1 y 5")
         if tipo_contingencia == 5:
             if not (motivo_contin and 5 <= len(motivo_contin) <= 150):
-                raise ValueError(
-                    "motivoContin requerido cuando tipoContingencia=5"
-                )
+                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
         else:
             motivo_contin = None
     else:
@@ -1158,7 +1173,11 @@ def generar_dte_json(
     if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
         raise ValueError("Teléfono de emisor inválido")
 
-    rec = cliente or {}
+    rec = dict(cliente or {})
+    rec_extra = extra.get("receptor") or {}
+    for k, v in rec_extra.items():
+        if v not in (None, "", []):
+            rec[k] = v
 
     def _clean_nit(nit):
         return "".join(c for c in str(nit) if c.isdigit()) if nit else None
@@ -1185,8 +1204,6 @@ def generar_dte_json(
         if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
             raise ValueError("DUI inválido")
 
-    dir_rec = _build_receptor_direccion(rec.get("direccion") or rec)
-
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
         "numDocumento": num_doc,
@@ -1194,10 +1211,16 @@ def generar_dte_json(
         "nombre": rec.get("nombre"),
         "codActividad": None,
         "descActividad": None,
-        "direccion": dir_rec,
         "telefono": rec.get("telefono"),
         "correo": rec.get("correo"),
     }
+    direccion_src = rec.get("direccion")
+    if not isinstance(direccion_src, dict):
+        direccion_src = rec
+    receptor["direccion"] = _build_receptor_direccion(direccion_src)
+    compl = receptor["direccion"].get("complemento")
+    if not compl or len(str(compl)) < 5:
+        receptor["direccion"]["complemento"] = "SIN DIRECCION"
     if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
@@ -1277,7 +1300,6 @@ def generar_dte_json(
             "noGravado": D("0"),
             "ivaItem": iva_val,
             "tributos": ["19"] if venta_gravada > 0 else [],
-
         }
         if venta_gravada > 0:
             item_data["codTributo"] = "19"
@@ -1331,17 +1353,13 @@ def generar_dte_json(
     monto_total_operacion = D(str(resumen.get("montoTotalOperacion", 0)))
     total_pagar = D(str(resumen.get("totalPagar", 0)))
 
-    if money(total_no_suj + total_exenta + total_gravada) != money(
-        sub_total_ventas
-    ):
+    if money(total_no_suj + total_exenta + total_gravada) != money(sub_total_ventas):
         raise ValidationError("subTotalVentas inconsistente")
-    if money(
-        sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)
-    ) != money(sub_total):
-        raise ValidationError("subTotal inconsistente")
-    if money(sub_total + total_no_gravado + total_iva) != money(
-        monto_total_operacion
+    if money(sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)) != money(
+        sub_total
     ):
+        raise ValidationError("subTotal inconsistente")
+    if money(sub_total + total_no_gravado + total_iva) != money(monto_total_operacion):
         raise ValidationError("montoTotalOperacion inconsistente")
     if money(monto_total_operacion) != money(total_pagar):
         raise ValidationError("totalPagar debe igualar montoTotalOperacion")
@@ -1384,7 +1402,9 @@ def generar_dte_json(
             f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
         )
     calc_total_commission = d2(calc_total + commission_total)
-    if "totalPagar" in resumen and abs(calc_total_commission - D(str(resumen.get("totalPagar", 0)))) > D("0.01"):
+    if "totalPagar" in resumen and abs(
+        calc_total_commission - D(str(resumen.get("totalPagar", 0)))
+    ) > D("0.01"):
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
@@ -1455,9 +1475,7 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
     missing = [key for key in required if key not in payload]
     if missing:
-        raise ValueError(
-            "Faltan campos obligatorios: " + ", ".join(missing)
-        )
+        raise ValueError("Faltan campos obligatorios: " + ", ".join(missing))
 
     negocio = _load_datos_negocio()
 
@@ -1528,7 +1546,11 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     if ident.get("tipoMoneda") != "USD":
         raise ValueError("tipoMoneda debe ser 'USD'")
     numero_control = ident.get("numeroControl")
-    if not (isinstance(numero_control, str) and len(numero_control) == 31 and numero_control.startswith("DTE-01-")):
+    if not (
+        isinstance(numero_control, str)
+        and len(numero_control) == 31
+        and numero_control.startswith("DTE-01-")
+    ):
         raise ValueError("numeroControl inválido")
     if not re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", numero_control):
         raise ValueError("numeroControl inválido")
@@ -1557,7 +1579,9 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
     emisor.setdefault("nombre", negocio.get("nombre"))
     emisor.setdefault("nombreComercial", negocio.get("nombreComercial"))
-    emisor.setdefault("codActividad", negocio.get("cod_giro") or negocio.get("codActividad"))
+    emisor.setdefault(
+        "codActividad", negocio.get("cod_giro") or negocio.get("codActividad")
+    )
     emisor.setdefault("descActividad", negocio.get("descActividad"))
     emisor.setdefault("tipoEstablecimiento", "01")
     direccion = emisor.get("direccion")
@@ -1605,9 +1629,7 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         if value is None or (isinstance(value, str) and not value.strip())
     ]
     if missing:
-        raise ValueError(
-            "Faltan campos obligatorios en emisor: " + ", ".join(missing)
-        )
+        raise ValueError("Faltan campos obligatorios en emisor: " + ", ".join(missing))
     if emisor.get("correo") and not EMAIL_RE.fullmatch(emisor["correo"]):
         raise ValueError("Correo de emisor inválido")
     if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
@@ -1722,7 +1744,6 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         item.setdefault("uniMedida", 59)
         item["tipoItem"] = int(item["tipoItem"])
         item["uniMedida"] = int(item["uniMedida"])
-
 
         try:
             item["tipoItem"] = int(item.get("tipoItem") or 0)
@@ -1839,9 +1860,7 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     # Recalcular totales y ajustar discrepancias
     cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
     if cambios:
-        print(
-            "Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios)
-        )
+        print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 
     # Verificación de centavos exactos en totales clave
     for k in (
@@ -1856,7 +1875,9 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         if k in resumen:
             val = D(str(resumen[k]))
             if val != money(val):
-                raise ValidationError(f"{k} debe ser múltiplo de 0.01 (recibido={resumen[k]})")
+                raise ValidationError(
+                    f"{k} debe ser múltiplo de 0.01 (recibido={resumen[k]})"
+                )
             if val == D("0") and val.as_tuple().sign:
                 resumen[k] = D("0")
 
@@ -1919,13 +1940,26 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         item[precio_key] = float(d8(item.get(precio_key, D("0"))))
         if iva_key and iva_key in item:
             item[iva_key] = float(d8(item.get(iva_key, D("0"))))
-        for k in ("montoDescu", "ventaNoSuj", "ventaExenta", "ventaGravada", "psv", "noGravado"):
+        for k in (
+            "montoDescu",
+            "ventaNoSuj",
+            "ventaExenta",
+            "ventaGravada",
+            "psv",
+            "noGravado",
+        ):
             val = d2(item.get(k, D("0")))
             item[k] = 0.0 if val == 0 else float(val)
 
     resumen = payload.get("resumen", {})
     for k, v in list(resumen.items()):
-        if k in {"totalLetras", "condicionOperacion", "pagos", "numPagoElectronico", "tributos"}:
+        if k in {
+            "totalLetras",
+            "condicionOperacion",
+            "pagos",
+            "numPagoElectronico",
+            "tributos",
+        }:
             continue
         if isinstance(v, Decimal):
             resumen[k] = _float_money(v)
@@ -1940,13 +1974,11 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
 
     payload["resumen"] = resumen
 
-
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
         payload = sanitize_dte_payload(payload, schema)
         _validate_schema(payload, schema)
-
 
 
 def generar_ticket_json(
@@ -2098,11 +2130,15 @@ def _write_json(path: str, data):
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
     """Guarda el JSON original y el JWS en ``/dtes/{anio}/``."""
     try:
-        fecha = dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
+        fecha = (
+            dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
+        )
         year = str(fecha)[:4]
         base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
         os.makedirs(base_dir, exist_ok=True)
-        nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        nombre = (
+            dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        )
         json_path = os.path.join(base_dir, f"{nombre}.json")
         _write_json(json_path, dte_data)
         jws_path = os.path.join(base_dir, f"{nombre}.jws")
@@ -2123,11 +2159,15 @@ class DTEValidationError(Exception):
 def save_dte_json(dte_data: dict) -> str:
     """Guarda ``dte_data`` en ``/dtes/{anio}/`` y devuelve la ruta."""
     try:
-        fecha = dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
+        fecha = (
+            dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
+        )
         year = str(fecha)[:4]
         base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
         os.makedirs(base_dir, exist_ok=True)
-        nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        nombre = (
+            dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        )
         json_path = os.path.join(base_dir, f"{nombre}.json")
         _write_json(json_path, dte_data)
         return json_path
@@ -2170,7 +2210,9 @@ def _decode_jws_payload(token: str) -> dict:
         raise ValueError("documento inválido") from exc
 
 
-def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None) -> dict:
+def _post_dte(
+    url: str, token: str, jws_token: str, dte_data: dict | None = None
+) -> dict:
     token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
     token = re.sub(r"^(?:Bearer\s+)+", "", token, flags=re.I)
     if token:
@@ -2183,7 +2225,9 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     }
     ident = {}
     if isinstance(dte_data, dict):
-        ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
+        ident = (
+            dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
+        )
 
     # Always extract identification fields from the signed JWS payload
     payload = _decode_jws_payload(jws_token)
@@ -2219,9 +2263,7 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         if value is None
     ]
     if missing:
-        raise AssertionError(
-            "Faltan campos requeridos: " + ", ".join(missing)
-        )
+        raise AssertionError("Faltan campos requeridos: " + ", ".join(missing))
 
     ambiente = "00"
     version = str(version)
@@ -2259,7 +2301,9 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
 
     for field, expected in required.items():
         assert field in payload, f"{field} requerido"
-        assert isinstance(payload[field], expected), f"{field} debe ser {expected.__name__}"
+        assert isinstance(
+            payload[field], expected
+        ), f"{field} debe ser {expected.__name__}"
 
     assert "tipoDte" in payload, "tipoDte requerido"
     assert isinstance(payload["tipoDte"], (int, str)), "tipoDte debe ser int o str"
@@ -2267,7 +2311,9 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     assert payload["idEnvio"] > 0
     auth_header = headers.get("Authorization")
     if token:
-        assert re.fullmatch(r"Bearer [^\s]+", auth_header), "Authorization header malformado"
+        assert re.fullmatch(
+            r"Bearer [^\s]+", auth_header
+        ), "Authorization header malformado"
     resp = requests.post(url, headers=headers, json=payload, timeout=20)
     resp_text = getattr(resp, "text", "")
     status_code = getattr(resp, "status_code", "N/A")
@@ -2315,7 +2361,6 @@ def transmitir_dte(
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
     return resp
-
 
 
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
@@ -2394,9 +2439,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         )
     try:
         resumen = data.get("resumen", {})
-        condicion = normalize_condicion_operacion(
-            resumen.get("condicionOperacion")
-        )
+        condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
         resumen["condicionOperacion"] = condicion
         validate_pagos_basico(resumen, condicion)
         data["resumen"] = resumen
@@ -2554,4 +2597,3 @@ def enviar_evento_contingencia(db: DB, evento_id: int, data: dict) -> dict:
 def enviar_evento_anulacion(db: DB, evento_id: int, data: dict) -> dict:
     """Envía un evento de anulación."""
     return _enviar_evento(db, evento_id, data)
-

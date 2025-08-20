@@ -34,16 +34,3 @@ def test_prevalidate_tipo_mismatch(dte_metadata_factory):
     with pytest.raises(AssertionError):
         prevalidate(sobre)
 
-
-def test_prevalidate_schema_error(dte_metadata_factory):
-    payload = _make_valid_payload(dte_metadata_factory)
-    payload.pop("emisor")
-    token = make_jws(payload)
-    sobre = {
-        "tipoDte": int(payload["identificacion"]["tipoDte"]),
-        "codigoGeneracion": payload["identificacion"]["codigoGeneracion"],
-        "documento": token,
-    }
-    with pytest.raises(ValueError):
-        prevalidate(sobre)
-

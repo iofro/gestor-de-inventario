@@ -100,7 +100,7 @@ def test_receptor_direccion(monkeypatch):
     data = _load_fc()
     data["receptor"]["direccion"] = {
         "departamento": "05",
-        "municipio": "01",
+        "municipio": "23",
         "complemento": "C",
     }
     validate_dte_json(data)
@@ -116,32 +116,48 @@ def test_receptor_direccion(monkeypatch):
 
 def test_direccion_normaliza_por_nombre():
     out = _build_receptor_direccion(
-        {"departamento": "San Salvador", "municipio": "San Salvador"}
+        {"departamento": "San Salvador", "municipio": "San Salvador Centro"}
     )
-    assert out == {"departamento": "06", "municipio": "01", "complemento": None}
+    assert out == {"departamento": "06", "municipio": "23", "complemento": None}
 
 
 def test_direccion_normaliza_por_codigo():
-    out = _build_receptor_direccion({"departamento": 6, "municipio": 1})
+    out = _build_receptor_direccion({"departamento": 6, "municipio": 23})
     assert out["departamento"] == "06"
-    assert out["municipio"] == "01"
+    assert out["municipio"] == "23"
 
 
 def test_infiere_departamento():
-    out = _build_receptor_direccion({"municipio": "Santa Tecla"})
-    assert out["departamento"] == "05"
-    assert out["municipio"] == "01"
+    out = _build_receptor_direccion({"municipio": "San Salvador Centro"})
+    assert out["departamento"] == "06"
+    assert out["municipio"] == "23"
 
 
 def test_municipio_fuera_depto():
     with pytest.raises(ValidationError):
         _build_receptor_direccion(
-            {"departamento": "06", "municipio": "Santa Ana"}
+            {"departamento": "06", "municipio": "Santa Ana Centro"}
         )
+
+
+def test_receptor_direccion_municipio_nombre_fuera_depto(monkeypatch):
+    monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
+    data = _load_fc()
+    data["receptor"]["direccion"] = {
+        "departamento": "06",
+        "municipio": "Santa Ana Centro",
+        "complemento": "C",
+    }
+    with pytest.raises(ValidationError):
+        validate_dte_json(data)
 
 
 def test_complemento_opcional():
     out = _build_receptor_direccion(
-        {"departamento": "06", "municipio": "San Salvador", "complemento": ""}
+        {
+            "departamento": "06",
+            "municipio": "San Salvador Centro",
+            "complemento": "",
+        }
     )
     assert out["complemento"] is None

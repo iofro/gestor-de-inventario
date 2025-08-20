@@ -1110,6 +1110,10 @@ def generar_dte_json(
     motivo_contin: str | None = None,
     tipo_modelo: int | None = None,
     tipo_moneda: str = "USD",
+    documento_relacionado: list | None = None,
+    otros_documentos: list | None = None,
+    extension: dict | None = None,
+    apendice: dict | None = None,
     **kwargs,
 ) -> dict:
     """Genera un diccionario DTE básico para una venta.
@@ -1509,17 +1513,15 @@ def generar_dte_json(
         for p in resumen["pagos"]:
             p["montoPago"] = _float_money(p["montoPago"])
 
-    extension = None
-
     result = {
         "identificacion": identificacion,
         "emisor": emisor,
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
-        "documentoRelacionado": None,
-        "otrosDocumentos": None,
-        "apendice": None,
+        "documentoRelacionado": documento_relacionado,
+        "otrosDocumentos": otros_documentos,
+        "apendice": apendice,
         "ventaTercero": None,
         "extension": extension,
     }
@@ -2034,6 +2036,25 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
 
     payload["resumen"] = resumen
 
+    # Validación de documentoRelacionado y otrosDocumentos
+    relacionados = payload.get("documentoRelacionado") or []
+    if isinstance(relacionados, dict):
+        relacionados = [relacionados]
+        payload["documentoRelacionado"] = relacionados
+    for rel in relacionados:
+        tipo = str(rel.get("tipoDocumento"))
+        if tipo and tipo not in catalogos.TIPO_DTE:
+            raise ValueError(f"Tipo de DTE relacionado inválido: {tipo}")
+
+    otros = payload.get("otrosDocumentos") or []
+    if isinstance(otros, dict):
+        otros = [otros]
+        payload["otrosDocumentos"] = otros
+    for od in otros:
+        cod = od.get("codDocAsociado")
+        if cod is not None and cod not in catalogos.OTROS_DOCUMENTOS:
+            raise ValueError(f"Código de documento asociado inválido: {cod}")
+
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
@@ -2079,18 +2100,24 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
     venta_id = nota.get("venta_id")
     # Determine document type of the original sale
     venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id, fecha FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     tipo_doc = "01"
+    fecha_venta = None
     if venta_row:
         venta = dict(venta_row)
+        fecha_venta = venta.get("fecha")
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="05")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
+    data["documentoRelacionado"] = [
+        {
+            "tipoDocumento": tipo_doc,
+            "tipoGeneracion": 1,
+            "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+            "fechaEmision": fecha_venta or data["identificacion"].get("fecEmi"),
+        }
+    ]
 
     for item in data.get("cuerpoDocumento", []):
         if isinstance(item.get("cantidad"), (int, float)):
@@ -2117,18 +2144,24 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
 
     venta_id = nota.get("venta_id")
     venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id, fecha FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     tipo_doc = "01"
+    fecha_venta = None
     if venta_row:
         venta = dict(venta_row)
+        fecha_venta = venta.get("fecha")
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="06")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
+    data["documentoRelacionado"] = [
+        {
+            "tipoDocumento": tipo_doc,
+            "tipoGeneracion": 1,
+            "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+            "fechaEmision": fecha_venta or data["identificacion"].get("fecEmi"),
+        }
+    ]
     return data
 
 
@@ -2143,18 +2176,24 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
 
     venta_id = nota.get("venta_id")
     venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id, fecha FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     tipo_doc = "01"
+    fecha_venta = None
     if venta_row:
         venta = dict(venta_row)
+        fecha_venta = venta.get("fecha")
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="04")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
+    data["documentoRelacionado"] = [
+        {
+            "tipoDocumento": tipo_doc,
+            "tipoGeneracion": 1,
+            "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+            "fechaEmision": fecha_venta or data["identificacion"].get("fecEmi"),
+        }
+    ]
     return data
 
 

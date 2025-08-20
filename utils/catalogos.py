@@ -132,6 +132,14 @@ FORMA_PAGO = {
     "04": "Tarjeta",
 }
 
+# Otros Documentos Asociados (CAT-021)
+OTROS_DOCUMENTOS = {
+    1: "Orden de compra",
+    2: "Contrato",
+    3: "Receta médica",
+    4: "Otros",
+}
+
 # Catálogos incompletos: para estos códigos el sistema solicita ingreso manual
 # del usuario en las secciones correspondientes.
 CATALOGOS_INCOMPLETOS = {
@@ -140,7 +148,6 @@ CATALOGOS_INCOMPLETOS = {
     "CAT-014": "Unidad de Medida",
     "CAT-019": "Actividad Económica",
     "CAT-020": "País",
-    "CAT-021": "Otros Documentos Asociados",
     "CAT-023": "Tipo de Documento en Contingencia",
     "CAT-024": "Tipo de Invalidación",
     "CAT-025": "Título de remisión de bienes",

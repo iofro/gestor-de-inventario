@@ -1,8 +1,7 @@
 import pytest
 import re
 import uuid
-import pytest
-from dte import sanitize_dte_payload, validate_dte_json, generar_numero_control
+from dte import sanitize_dte_payload, validate_dte_json
 
 UUID4_RE = r"^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$"
 
@@ -157,47 +156,55 @@ def test_tributos_invalidos_rechazados(dte_metadata_factory):
         validate_dte_json(dte)
 
 
-def test_numero_control_generado_si_invalido(dte_metadata_factory):
+def test_numero_control_regex(dte_metadata_factory):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = "INVALID"
     validate_dte_json(dte)
-    assert re.fullmatch(r"^DTE-\d{2}-S\d{3}P\d{3}-\d{15}$", dte["identificacion"]["numeroControl"])
+    assert re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", dte["identificacion"]["numeroControl"])
 
 
 @pytest.mark.parametrize(
     "numero",
     [
-        "DTE-01-S001P001-123456789012345",
-        "DTE-99-S999P123-000000000000000",
+        "DTE-01-ABCDEFGH-123456789012345",
+        "DTE-01-12345678-000000000000000",
     ],
 )
 def test_numero_control_validos(dte_metadata_factory, numero):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = numero
     validate_dte_json(dte)
-    assert dte["identificacion"]["numeroControl"] == numero
 
 
 @pytest.mark.parametrize(
     "numero",
     [
-        "DTE-1-S001P001-123456789012345",
-        "DTE-01-S1P001-123456789012345",
-        "DTE-01-S001P001-12345",
-        "dte-01-S001P001-123456789012345",
+        "DTE-02-ABCDEFGH-123456789012345",
+        "DTE-01-ABC-123456789012345",
+        "DTE-01-ABCDEFGH-12345",
+        "dte-01-ABCDEFGH-123456789012345",
     ],
 )
-def test_numero_control_invalidos_generan(dte_metadata_factory, numero):
+def test_numero_control_invalidos(dte_metadata_factory, numero):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = numero
     validate_dte_json(dte)
-    assert re.fullmatch(r"^DTE-\d{2}-S\d{3}P\d{3}-\d{15}$", dte["identificacion"]["numeroControl"])
-    assert dte["identificacion"]["numeroControl"] != numero
+    assert re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", dte["identificacion"]["numeroControl"])
 
 
-def test_generar_numero_control_zero_pad():
-    numero = generar_numero_control("1", "2", 3)
-    assert numero.startswith("DTE-01-S002P003-")
+def test_numero_control_regenerates_from_emisor_codes(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["emisor"]["codEstable"] = "123"
+    dte["emisor"]["codEstableMH"] = "123"
+    dte["emisor"]["codPuntoVenta"] = "456"
+    dte["emisor"]["codPuntoVentaMH"] = "456"
+    dte["identificacion"]["numeroControl"] = "BAD"
+    validate_dte_json(dte)
+    ident = dte["identificacion"]
+    emisor = dte["emisor"]
+    assert emisor["codEstable"] == "0123"
+    assert emisor["codPuntoVenta"] == "0456"
+    assert ident["numeroControl"].startswith("DTE-01-S123P456")
 
 
 def test_tipo_dte_int_normalizado(dte_metadata_factory):

@@ -261,6 +261,17 @@ def _load_datos_negocio():
                 if url and "/fesv/recepciondte" not in url:
                     dte_api["url"] = url.rstrip("/") + "/fesv/recepciondte"
 
+                # Extract branch and point-of-sale codes from the control prefix
+                prefijo = dte_api.get("prefijo_control")
+                if isinstance(prefijo, str):
+                    m = re.search(r"S([A-Za-z0-9]{3})P([A-Za-z0-9]{3})", prefijo)
+                    if m:
+                        suc, punto = m.groups()
+                        data.setdefault("codEstable", suc.zfill(4))
+                        data.setdefault("codEstableMH", suc.zfill(4))
+                        data.setdefault("codPuntoVenta", punto.zfill(4))
+                        data.setdefault("codPuntoVentaMH", punto.zfill(4))
+
             # Ensure cod_giro is available and mirrors codActividad
             cod_giro = data.get("cod_giro")
             if not cod_giro:
@@ -626,6 +637,7 @@ RESUMEN_DEFAULTS = {
         "totalDescu": 0,
         "tributos": None,
         "subTotal": 0,
+        "totalIva": 0,
         "ivaPerci1": 0,
         "ivaRete1": 0,
         "reteRenta": 0,
@@ -915,6 +927,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             "subTotal": sub_total,
             "porcentajeDescuento": porcentaje_desc,
             "totalNoGravado": total_no_gravado,
+            "totalIva": total_iva,
             "montoTotalOperacion": monto_total_operacion,
             "totalPagar": total_pagar,
             "totalLetras": numero_a_letras(total_pagar),
@@ -1136,20 +1149,20 @@ def recalcular_totales(
 
 
 
-def generar_numero_control(
-    tipo_dte: str = "01", sucursal: str = "001", punto: str = "001"
-) -> str:
-    """Crea un número de control siguiendo el formato oficial.
+def generar_numero_control(prefijo: str | None = None) -> str:
+    """Crea un número de control único siguiendo el formato de Hacienda.
 
-    ``tipo_dte`` siempre se convierte a dos dígitos y ``sucursal``/``punto``
-    a tres para evitar prefijos inválidos como ``DTE-1``.
+    When ``prefijo`` is ``None`` it is read from ``datos_negocio`` and falls
+    back to ``DTE-01-S001P001``.
     """
-    tipo = str(tipo_dte).zfill(2)
-    suc = re.sub(r"\D", "", str(sucursal))[-3:].zfill(3)
-    pt = re.sub(r"\D", "", str(punto))[-3:].zfill(3)
-
+    if prefijo is None:
+        datos = _load_datos_negocio()
+        prefijo = (
+            (datos.get("dte_api") or {}).get("prefijo_control")
+            or "DTE-01-S001P001"
+        )
     secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
-    return f"DTE-{tipo}-S{suc}P{pt}-{secuencia}"
+    return f"{prefijo}-{secuencia}"
 
 
 def identificacion_a_xml(ident: dict) -> str:
@@ -1266,10 +1279,11 @@ def generar_dte_json(
     cod_estable_raw = re.sub(r"\D", "", str(datos.get("codEstable", "")))
     cod_punto_raw = re.sub(r"\D", "", str(datos.get("codPuntoVenta", "")))
     cod_estable = (cod_estable_raw or suc_pref.rjust(4, "0"))[-4:].zfill(4)
-    cod_punto   = (cod_punto_raw  or punto_pref.rjust(4, "0"))[-4:].zfill(4)
+    cod_punto = (cod_punto_raw or punto_pref.rjust(4, "0"))[-4:].zfill(4)
+    prefijo_nc = f"DTE-{tipo_dte}-S{cod_estable[-3:]}P{cod_punto[-3:]}"
     # Generar identificadores con formatos oficiales
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(tipo_dte, cod_estable[-3:], cod_punto[-3:])
+    numero_control = generar_numero_control(prefijo_nc)
 
 
     now = datetime.now(TZ_EL_SALVADOR)
@@ -1321,7 +1335,7 @@ def generar_dte_json(
     else:
         raise ValueError("tipoOperacion debe ser 1 o 2")
 
-    tipo_dte = "01"
+    tipo_dte = str(tipo_dte or "01").zfill(2)
     identificacion = {
         "version": 1,
         "ambiente": ambiente,
@@ -1687,11 +1701,11 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    validate_dte_json(result, precios_incluyen_iva=precios_incluyen_iva)
+    validate_dte_json(result, precios_incluyen_iva=False)
     return result
 
 
-def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> None:
+def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool | None = None) -> None:
     """Basic validation and normalization for DTE payload antes de firmar."""
     # Normalización omitida para preservar códigos con ceros a la izquierda
     # ("01", etc.) que ``_normalize_payload`` convertiría a enteros.
@@ -1775,15 +1789,21 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         raise ValueError("ambiente debe ser '00' o '01'")
     if ident.get("tipoMoneda") != "USD":
         raise ValueError("tipoMoneda debe ser 'USD'")
+    emisor_nc = payload.get("emisor", {})
+    cod_est_nc = str(emisor_nc.get("codEstable") or negocio.get("codEstable") or "0000")
+    cod_pto_nc = str(emisor_nc.get("codPuntoVenta") or negocio.get("codPuntoVenta") or "0000")
+    prefijo_nc = f"DTE-{ident['tipoDte']}-S{cod_est_nc[-3:]}P{cod_pto_nc[-3:]}"
     numero_control = ident.get("numeroControl")
-    pattern = r"^DTE-\d{2}-S\d{3}P\d{3}-\d{15}$"
-    if not (isinstance(numero_control, str) and re.fullmatch(pattern, numero_control)):
-        em_raw = payload.get("emisor", {})
-        suc = re.sub(r"\D", "", str(em_raw.get("codEstable", "001")))[-3:].zfill(3)
-        punto = re.sub(r"\D", "", str(em_raw.get("codPuntoVenta", "001")))[-3:].zfill(3)
-        ident["numeroControl"] = generar_numero_control(tipo_dte_val, suc, punto)
-    else:
+    if not (
+        isinstance(numero_control, str)
+        and numero_control.startswith(prefijo_nc + "-")
+        and re.fullmatch(rf"^DTE-{ident['tipoDte']}-[A-Z0-9]{{8}}-[0-9]{{15}}$", numero_control)
+    ):
+        numero_control = generar_numero_control(prefijo_nc)
         ident["numeroControl"] = numero_control
+
+    if not re.fullmatch(rf"^DTE-{ident['tipoDte']}-[A-Z0-9]{{8}}-[0-9]{{15}}$", numero_control):
+        raise ValueError("numeroControl inválido")
     # Las reglas de operación/modelo/contingencia ya fueron normalizadas arriba.
     try:
         fec = datetime.strptime(str(ident.get("fecEmi")), "%Y-%m-%d").date()
@@ -1802,7 +1822,13 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         raise ValueError("fecEmi/horEmi no pueden ser futuras")
     payload["identificacion"] = ident
     tipo_dte = str(ident.get("tipoDte", ""))
-    precios_flag = precios_incluyen_iva if tipo_dte == "01" else False
+    extra_conf = payload.get("extra")
+    if precios_incluyen_iva is not None:
+        precios_flag = precios_incluyen_iva
+    elif isinstance(extra_conf, dict) and "precios_incluyen_iva" in extra_conf:
+        precios_flag = bool(extra_conf["precios_incluyen_iva"])
+    else:
+        precios_flag = tipo_dte == "01"
 
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
@@ -1834,10 +1860,16 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     emisor["direccion"] = direccion
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))
-    emisor.setdefault("codEstableMH", "0000")
-    emisor.setdefault("codEstable", "0000")
-    emisor.setdefault("codPuntoVentaMH", "0000")
-    emisor.setdefault("codPuntoVenta", "0000")
+    cod_est = str(emisor.get("codEstable") or negocio.get("codEstable") or "0000")
+    emisor["codEstable"] = cod_est.zfill(4)
+    emisor["codEstableMH"] = str(
+        emisor.get("codEstableMH") or negocio.get("codEstableMH") or cod_est
+    ).zfill(4)
+    cod_pto = str(emisor.get("codPuntoVenta") or negocio.get("codPuntoVenta") or "0000")
+    emisor["codPuntoVenta"] = cod_pto.zfill(4)
+    emisor["codPuntoVentaMH"] = str(
+        emisor.get("codPuntoVentaMH") or negocio.get("codPuntoVentaMH") or cod_pto
+    ).zfill(4)
     emisor.pop("giro", None)
     emisor.pop("tipoContribuyente", None)
     required_emisor = {
@@ -2088,7 +2120,7 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     payload["resumen"] = resumen
 
     # Recalcular totales y ajustar discrepancias
-    cambios = recalcular_totales(payload)
+    cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
     if cambios:
         print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 

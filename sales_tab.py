@@ -577,13 +577,27 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Guardar y enviar", "No se pudo generar el documento.")
             return
         QMessageBox.information(self, "Guardar y enviar", f"{doc_type} guardado en {file_path}")
+        modo = venta.get("modo_transmision")
+        if modo is None:
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                    cfg = json.load(fh)
+                modo = cfg.get("dte_api", {}).get("modo_transmision")
+            except Exception:
+                modo = None
+        modo = (
+            "contingencia"
+            if isinstance(modo, str) and "contingencia" in modo.lower()
+            else "normal"
+        )
+        if modo == "contingencia":
+            QMessageBox.information(
+                self,
+                "Guardar y enviar",
+                "Modo contingencia: el DTE no se enviará a Hacienda.",
+            )
         envio_ok = False
         try:
-            modo = (
-                "contingencia"
-                if venta.get("modo_transmision") == "contingencia"
-                else "normal"
-            )
             resp = transmitir_dte(
                 self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte
             )

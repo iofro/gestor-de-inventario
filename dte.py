@@ -257,7 +257,7 @@ def _load_datos_negocio():
     return {}
 
 
-DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(1, 15)}
+DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(0, 15)}
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_RE = re.compile(r"^\+?\d{8,15}$")
@@ -279,8 +279,21 @@ def _map_departamento(nombre: str | None) -> str:
 
 MUNICIPIO_RANGES = {
     # Departamento: (primer código, último código)
-    "05": ("01", "22"),  # La Libertad
-    "06": ("01", "19"),  # San Salvador
+    "00": ("00", "00"),  # Otro
+    "01": ("13", "15"),  # Ahuachapán
+    "02": ("14", "17"),  # Santa Ana
+    "03": ("17", "20"),  # Sonsonate
+    "04": ("34", "36"),  # Chalatenango
+    "05": ("23", "28"),  # La Libertad
+    "06": ("20", "24"),  # San Salvador
+    "07": ("17", "18"),  # Cuscatlán
+    "08": ("23", "25"),  # La Paz
+    "09": ("10", "11"),  # Cabañas
+    "10": ("14", "15"),  # San Vicente
+    "11": ("24", "26"),  # Usulután
+    "12": ("21", "23"),  # San Miguel
+    "13": ("27", "28"),  # Morazán
+    "14": ("19", "20"),  # La Unión
 }
 
 
@@ -324,6 +337,7 @@ def _clean_nrc(nrc):
 # normalizados.
 
 _DEPARTAMENTOS = {
+    "00": "Otro (Para extranjeros)",
     "01": "Ahuachapán",
     "02": "Santa Ana",
     "03": "Sonsonate",
@@ -352,9 +366,79 @@ def _normalize_text(value: str) -> str:
 _DEPARTAMENTO_BY_NAME = {_normalize_text(v): k for k, v in _DEPARTAMENTOS.items()}
 
 _MUNICIPIOS_POR_DEPTO = {
-    "02": {"01": "Santa Ana"},
-    "05": {"01": "Santa Tecla"},
-    "06": {"01": "San Salvador"},
+    "00": {"00": "Otro (Para extranjeros)"},
+    "01": {
+        "13": "Ahuachapán Norte",
+        "14": "Ahuachapán Centro",
+        "15": "Ahuachapán Sur",
+    },
+    "02": {
+        "14": "Santa Ana Norte",
+        "15": "Santa Ana Centro",
+        "16": "Santa Ana Este",
+        "17": "Santa Ana Oeste",
+    },
+    "03": {
+        "17": "Sonsonate Norte",
+        "18": "Sonsonate Centro",
+        "19": "Sonsonate Este",
+        "20": "Sonsonate Oeste",
+    },
+    "04": {
+        "34": "Chalatenango Norte",
+        "35": "Chalatenango Centro",
+        "36": "Chalatenango Sur",
+    },
+    "05": {
+        "23": "La Libertad Norte",
+        "24": "La Libertad Centro",
+        "25": "La Libertad Oeste",
+        "26": "La Libertad Este",
+        "27": "La Libertad Costa",
+        "28": "La Libertad Sur",
+    },
+    "06": {
+        "20": "San Salvador Norte",
+        "21": "San Salvador Oeste",
+        "22": "San Salvador Este",
+        "23": "San Salvador Centro",
+        "24": "San Salvador Sur",
+    },
+    "07": {
+        "17": "Cuscatlán Norte",
+        "18": "Cuscatlán Sur",
+    },
+    "08": {
+        "23": "La Paz Oeste",
+        "24": "La Paz Centro",
+        "25": "La Paz Este",
+    },
+    "09": {
+        "10": "Cabañas Oeste",
+        "11": "Cabañas Este",
+    },
+    "10": {
+        "14": "San Vicente Norte",
+        "15": "San Vicente Sur",
+    },
+    "11": {
+        "24": "Usulután Norte",
+        "25": "Usulután Este",
+        "26": "Usulután Oeste",
+    },
+    "12": {
+        "21": "San Miguel Norte",
+        "22": "San Miguel Centro",
+        "23": "San Miguel Oeste",
+    },
+    "13": {
+        "27": "Morazán Norte",
+        "28": "Morazán Sur",
+    },
+    "14": {
+        "19": "La Unión Norte",
+        "20": "La Unión Sur",
+    },
 }
 
 _MUNI_NAME_MAP: dict[str, list[tuple[str, str]]] = {}

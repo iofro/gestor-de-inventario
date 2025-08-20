@@ -122,7 +122,7 @@ def generar_fc_ejemplo(
             "telefono": "22223333",
             "direccion": {
                 "departamento": "01",
-                "municipio": "01",
+                "municipio": "13",
                 "complemento": "Calle 1 #123",
             },
         },
@@ -132,7 +132,7 @@ def generar_fc_ejemplo(
             "nombre": "Consumidor Final",
             "direccion": {
                 "departamento": "01",
-                "municipio": "01",
+                "municipio": "13",
                 "complemento": "SN",
             },
         },
@@ -205,7 +205,7 @@ def _receptor(tipo: str | None = None) -> Dict[str, Any]:
         "nombreComercial": "Cliente Ejemplo",
         "direccion": {
             "departamento": "05",
-            "municipio": "01",
+            "municipio": "13",
             "complemento": "San Salvador",
         },
         "telefono": "70000001",

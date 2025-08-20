@@ -33,11 +33,11 @@ def datos_negocio_completo(tmp_path):
         "descActividad": "Comercio",
         "telefono": "12345678",
         "correo": "test@example.com",
-        "direccion": {
-            "departamento": "06",
-            "municipio": "01",
-            "complemento": "Calle Falsa 123",
-        },
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "Calle Falsa 123",
+            },
     }
     path = tmp_path / "datos_negocio.json"
     path.write_text(json.dumps(data), encoding="utf-8")

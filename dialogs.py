@@ -1028,8 +1028,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         iva_tipo = "ninguno"
         if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked() and self.iva_desglosado_radio.isChecked():
             iva_tipo = "desglosado"
-            subtotal = subtotal / 1.13  # El precio ingresado incluye IVA
-            precio = round(subtotal / cantidad, 6) if cantidad > 0 else 0
+            # Mantener precio unitario y subtotal brutos; el DTE calculará base e IVA
 
         if descuento_tipo == "%":
             descuento_monto = subtotal * (descuento_valor / 100)
@@ -1073,7 +1072,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "producto_id": lote["producto_id"],
             "producto": lote["nombre"],
             "cantidad": cantidad,
-            "precio": precio,  # Siempre el precio unitario sin IVA si es desglosado
+            "precio": precio,  # Precio unitario con IVA; neto se calcula en DTE
             "descuento": descuento_valor,
             "descuento_tipo": descuento_tipo,
             "descuento_monto": descuento_monto,

@@ -639,9 +639,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
     sub_total = money(sub_total_ventas - total_descu)
 
-    total_iva = money(fiscal.get("iva", 0))
+    total_iva = money(fiscal.get("iva", 0)) if total_gravada > D("0") else money(0)
     monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
-    total_pagar = monto_total_operacion
+    total_pagar = money(monto_total_operacion)
 
     porcentaje_desc = money(
         (total_descu * D("100") / sub_total_ventas) if sub_total_ventas else D("0")
@@ -672,8 +672,6 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     if tipo_dte == "01":
         resumen["totalIva"] = total_iva
-    else:
-        resumen["ivaPerci1"] = resumen.get("ivaPerci1", money(0))
 
     if tipo_dte in {"01", "03", "05", "06"}:
         condicion = extra.get("condicion_operacion")
@@ -681,7 +679,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             condicion = fiscal.get("condicion_pago")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
 
-    if total_gravada > 0:
+    if total_gravada > D("0"):
         resumen["tributos"] = [
             {"codigo": "19", "descripcion": "IVA 13%", "valor": total_iva}
         ]
@@ -1133,12 +1131,14 @@ def generar_dte_json(
         tipo_dte=tipo_dte,
     )
 
-    assert money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) == money(
+    if money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) != money(
         D(str(resumen.get("totalGravada", 0)))
-    )
-    assert money(sum(D(str(i["ivaItem"])) for i in cuerpo)) == money(
+    ):
+        raise ValidationError("totalGravada inconsistente con cuerpoDocumento")
+    if money(sum(D(str(i["ivaItem"])) for i in cuerpo)) != money(
         D(str(resumen.get("totalIva", 0)))
-    )
+    ):
+        raise ValidationError("totalIva inconsistente con cuerpoDocumento")
 
     total_no_suj = D(str(resumen.get("totalNoSuj", 0)))
     total_exenta = D(str(resumen.get("totalExenta", 0)))
@@ -1153,36 +1153,33 @@ def generar_dte_json(
     monto_total_operacion = D(str(resumen.get("montoTotalOperacion", 0)))
     total_pagar = D(str(resumen.get("totalPagar", 0)))
 
-    assert money(total_no_suj + total_exenta + total_gravada) == money(
+    if money(total_no_suj + total_exenta + total_gravada) != money(
         sub_total_ventas
-    )
-    assert money(
+    ):
+        raise ValidationError("subTotalVentas inconsistente")
+    if money(
         sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)
-    ) == money(sub_total)
-    assert money(sub_total + total_no_gravado + total_iva) == money(
+    ) != money(sub_total):
+        raise ValidationError("subTotal inconsistente")
+    if money(sub_total + total_no_gravado + total_iva) != money(
         monto_total_operacion
-    )
-    assert money(monto_total_operacion) == money(total_pagar)
+    ):
+        raise ValidationError("montoTotalOperacion inconsistente")
+    if money(monto_total_operacion) != money(total_pagar):
+        raise ValidationError("totalPagar debe igualar montoTotalOperacion")
 
     pagos_resumen = resumen.get("pagos") or []
-    assert money(sum(D(str(p["montoPago"])) for p in pagos_resumen)) == money(
-        total_pagar
-    )
+    suma = money(sum(D(str(p["montoPago"])) for p in pagos_resumen))
+    diff = money(total_pagar - suma)
+    if diff != 0:
+        raise ValidationError(
+            f"La suma de pagos {suma} difiere del total {total_pagar} (dif {diff})"
+        )
     if money(total_gravada) == D("0.00"):
-        assert not resumen.get("tributos")
-        assert money(total_iva) == D("0.00")
-
-    for k in (
-        "montoTotalOperacion",
-        "totalPagar",
-        "totalIva",
-        "totalGravada",
-        "totalExenta",
-        "totalNoSuj",
-        "totalNoGravado",
-    ):
-        v = D(str(resumen.get(k, 0)))
-        assert (v * 100) % 1 == 0
+        if resumen.get("tributos"):
+            raise ValidationError("No debe haber tributos sin venta gravada")
+        if money(total_iva) != D("0.00"):
+            raise ValidationError("totalIva debe ser 0 sin venta gravada")
 
     # Validaciones básicas de consistencia
     items_total_2 = d2(items_total)
@@ -1230,6 +1227,10 @@ def generar_dte_json(
                     f"{k} debe ser múltiplo de 0.01 (recibido={resumen[k]})"
                 )
 
+    def _float_money(value: D) -> float:
+        val = float(money(value))
+        return 0.0 if val == -0.0 else val
+
     # Serialización preliminar: convertir montos a float y limpiar -0.0
     for k, v in list(resumen.items()):
         if k in {
@@ -1240,24 +1241,15 @@ def generar_dte_json(
             "tributos",
         }:
             continue
-        val_float = float(money(v))
-        if val_float == -0.0:
-            val_float = 0.0
-        resumen[k] = val_float
+        resumen[k] = _float_money(v)
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            val = float(money(t["valor"]))
-            if val == -0.0:
-                val = 0.0
-            t["valor"] = val
+            t["valor"] = _float_money(t["valor"])
 
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            mp = float(money(p["montoPago"]))
-            if mp == -0.0:
-                mp = 0.0
-            p["montoPago"] = mp
+            p["montoPago"] = _float_money(p["montoPago"])
 
     extension = None
 

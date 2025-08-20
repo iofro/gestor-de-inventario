@@ -61,10 +61,9 @@ def validate_pagos_basico(resumen: dict, condicion: int) -> None:
         if d2(suma) != d2(total):
             raise ValueError("La suma de pagos no coincide con totalPagar")
 
-    allowed = set(catalogos.FORMA_PAGO.keys())
     for pago in pagos:
         codigo = str(pago.get("codigo", "")).zfill(2)
-        if allowed and codigo not in allowed:
+        if not catalogos.is_valid_code("CAT-017", codigo):
             raise ValueError(f"Código de pago inválido: {codigo}")
 
     if condicion == 2:

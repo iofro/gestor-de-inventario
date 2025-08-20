@@ -44,4 +44,12 @@ describe('FacturaForm', () => {
     await dialog.vm.$emit('cancel');
     expect(api.guardarEnContingencia).not.toHaveBeenCalled();
   });
+
+  it('renderiza 32 selectores de catálogo', () => {
+    const wrapper = mount(FacturaForm, {
+      props: { facturaId: '4', config: { modoContingencia: false } }
+    });
+    const selectors = wrapper.findAllComponents({ name: 'CatalogSelector' });
+    expect(selectors).toHaveLength(32);
+  });
 });

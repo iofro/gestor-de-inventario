@@ -12,6 +12,7 @@ sección del aplicativo donde aplique.
 
 import os
 import json
+import re
 
 # Longitud estándar del NIT sin guiones
 NIT_LENGTH = 14
@@ -131,6 +132,55 @@ FORMA_PAGO = {
     "03": "Transferencia",
     "04": "Tarjeta",
 }
+
+# Catálogos oficiales disponibles. Los catálogos faltantes se inicializan
+# como diccionarios vacíos para que puedan ser manejados de forma uniforme en
+# la UI y las validaciones.
+CATALOGS: dict[str, dict] = {
+    "CAT-001": AMBIENTE,
+    "CAT-002": TIPO_DTE,
+    "CAT-003": MODELO,
+    "CAT-004": OPERACION,
+    "CAT-005": CONTINGENCIA,
+    "CAT-006": TRIBUTOS,
+    "CAT-007": TIPO_ESTABLEC,
+    "CAT-008": TIPO_ITEM,
+    "CAT-009": PLAZO,
+    "CAT-010": TIPO_DOC_REC,
+    "CAT-016": CONDICION_OPERACION,
+    "CAT-017": FORMA_PAGO,
+}
+
+# Aseguramos que todos los catálogos CAT-001 a CAT-032 existan aunque estén
+# vacíos para que la UI pueda iterarlos sin lógica adicional.
+for _n in range(1, 33):
+    CATALOGS.setdefault(f"CAT-{_n:03d}", {})
+
+# Catálogos que permiten ingreso manual temporalmente
+MANUAL_CATALOGS = {f"CAT-{i:03d}" for i in range(12, 18)}
+
+# Reglas simples de validación para catálogos con ingreso manual
+CATALOG_PATTERNS = {
+    "CAT-012": r"^\d{2}$",
+    "CAT-013": r"^\d{3}$",
+    "CAT-014": r"^[A-Z0-9]{1,5}$",
+    "CAT-015": r"^\d{2}$",
+    "CAT-016": r"^[1-3]$",
+    "CAT-017": r"^\d{2}$",
+}
+
+
+def is_valid_code(catalog: str, code: str) -> bool:
+    """Return True if ``code`` is valid for ``catalog``."""
+
+    code = str(code)
+    options = CATALOGS.get(catalog, {})
+    if options and code in {str(k) for k in options.keys()}:
+        return True
+    if catalog in MANUAL_CATALOGS:
+        pattern = CATALOG_PATTERNS.get(catalog)
+        return bool(pattern and re.fullmatch(pattern, code))
+    return False
 
 # Catálogos incompletos: para estos códigos el sistema solicita ingreso manual
 # del usuario en las secciones correspondientes.

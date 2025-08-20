@@ -75,6 +75,11 @@ def _load_fc():
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+def _load_nc():
+    path = Path(__file__).resolve().parent / "goldens" / "nc.json"
+    return json.loads(path.read_text(encoding="utf-8"))
+
+
 def test_receptor_documentos(monkeypatch):
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
     data = _load_fc()
@@ -161,3 +166,31 @@ def test_complemento_opcional():
         }
     )
     assert out["complemento"] is None
+
+
+def test_validar_documento_relacionado(monkeypatch):
+    monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
+    data = _load_nc()
+    data["identificacion"]["version"] = 1
+    data["identificacion"]["tipoDte"] = "01"
+    validate_dte_json(data)
+    data["documentoRelacionado"][0]["tipoDocumento"] = "99"
+    with pytest.raises(ValueError):
+        validate_dte_json(data)
+
+
+def test_validar_otros_documentos(monkeypatch):
+    monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
+    data = _load_fc()
+    data["otrosDocumentos"] = [
+        {
+            "codDocAsociado": 1,
+            "descDocumento": "REF",
+            "detalleDocumento": "DET",
+            "medico": None,
+        }
+    ]
+    validate_dte_json(data)
+    data["otrosDocumentos"][0]["codDocAsociado"] = 99
+    with pytest.raises(ValueError):
+        validate_dte_json(data)

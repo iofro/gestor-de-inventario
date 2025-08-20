@@ -19,7 +19,8 @@ except Exception:  # pragma: no cover - missing UI deps
 else:  # pragma: no cover
     _dialog_import_error = False
 
-from dte import validate_dte_json
+from dte import validate_dte_json, _build_receptor_direccion
+from jsonschema import ValidationError
 from utils import catalogos
 
 
@@ -105,8 +106,42 @@ def test_receptor_direccion(monkeypatch):
     validate_dte_json(data)
 
     data["receptor"]["direccion"]["municipio"] = "99"
-    with pytest.raises(ValueError):
+    with pytest.raises(ValidationError):
         validate_dte_json(data)
 
     data["receptor"]["direccion"] = None
-    validate_dte_json(data)
+    with pytest.raises(ValidationError):
+        validate_dte_json(data)
+
+
+def test_direccion_normaliza_por_nombre():
+    out = _build_receptor_direccion(
+        {"departamento": "San Salvador", "municipio": "San Salvador"}
+    )
+    assert out == {"departamento": "06", "municipio": "01", "complemento": None}
+
+
+def test_direccion_normaliza_por_codigo():
+    out = _build_receptor_direccion({"departamento": 6, "municipio": 1})
+    assert out["departamento"] == "06"
+    assert out["municipio"] == "01"
+
+
+def test_infiere_departamento():
+    out = _build_receptor_direccion({"municipio": "Santa Tecla"})
+    assert out["departamento"] == "05"
+    assert out["municipio"] == "01"
+
+
+def test_municipio_fuera_depto():
+    with pytest.raises(ValidationError):
+        _build_receptor_direccion(
+            {"departamento": "06", "municipio": "Santa Ana"}
+        )
+
+
+def test_complemento_opcional():
+    out = _build_receptor_direccion(
+        {"departamento": "06", "municipio": "San Salvador", "complemento": ""}
+    )
+    assert out["complemento"] is None

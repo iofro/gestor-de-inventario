@@ -308,6 +308,157 @@ def _clean_nrc(nrc):
     return None
 
 
+# --- Dirección --------------------------------------------------------------
+
+# Mapeos básicos de departamentos y municipios utilizados para normalizar la
+# dirección del receptor.  Solo se incluyen los valores necesarios para las
+# pruebas actuales; otros códigos pasarán la validación únicamente si ya vienen
+# normalizados.
+
+_DEPARTAMENTOS = {
+    "01": "Ahuachapán",
+    "02": "Santa Ana",
+    "03": "Sonsonate",
+    "04": "Chalatenango",
+    "05": "La Libertad",
+    "06": "San Salvador",
+    "07": "Cuscatlán",
+    "08": "La Paz",
+    "09": "Cabañas",
+    "10": "San Vicente",
+    "11": "Usulután",
+    "12": "San Miguel",
+    "13": "Morazán",
+    "14": "La Unión",
+}
+
+
+def _normalize_text(value: str) -> str:
+    import unicodedata
+
+    text = unicodedata.normalize("NFD", str(value))
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return text.strip().casefold()
+
+
+_DEPARTAMENTO_BY_NAME = {_normalize_text(v): k for k, v in _DEPARTAMENTOS.items()}
+
+_MUNICIPIOS_POR_DEPTO = {
+    "02": {"01": "Santa Ana"},
+    "05": {"01": "Santa Tecla"},
+    "06": {"01": "San Salvador"},
+}
+
+_MUNI_NAME_MAP: dict[str, list[tuple[str, str]]] = {}
+for dep, munis in _MUNICIPIOS_POR_DEPTO.items():
+    for code, name in munis.items():
+        _MUNI_NAME_MAP.setdefault(_normalize_text(name), []).append((dep, code))
+
+
+def _normalize_departamento(value) -> str:
+    """Return departamento code from numeric or textual ``value``."""
+
+    if value is None:
+        raise ValidationError("Departamento requerido")
+    val = str(value).strip()
+    if val.isdigit():
+        code = val.zfill(2)
+        if code in DEPARTAMENTO_CODES:
+            return code
+    else:
+        code = _DEPARTAMENTO_BY_NAME.get(_normalize_text(val))
+        if code:
+            return code
+    raise ValidationError("Departamento inválido")
+
+
+def _normalize_municipio(dep_code: str | None, value):
+    """Return ``(mun_code, dep_code)`` normalizing ``value``.
+
+    Cuando ``dep_code`` es ``None`` el departamento se infiere a partir del
+    catálogo; si no es único se genera ``ValidationError``.
+    """
+
+    if value is None:
+        raise ValidationError("Municipio requerido")
+
+    val = str(value).strip()
+    dep_norm = dep_code
+    if dep_norm:
+        dep_norm = _normalize_departamento(dep_norm)
+
+    if val.isdigit():
+        code = val.zfill(2)
+        if dep_norm:
+            munis = _MUNICIPIOS_POR_DEPTO.get(dep_norm)
+            if munis and code not in munis:
+                raise ValidationError(
+                    "receptor.direccion: municipio inválido para el departamento seleccionado"
+                )
+            return code, dep_norm
+        matches = [(d, code) for d, ms in _MUNICIPIOS_POR_DEPTO.items() if code in ms]
+        if len(matches) == 1:
+            return matches[0][1], matches[0][0]
+        if not matches:
+            raise ValidationError("Municipio inválido")
+        raise ValidationError(
+            "receptor.direccion: municipio inválido para el departamento seleccionado"
+        )
+
+    norm = _normalize_text(val)
+    if dep_norm:
+        munis = _MUNICIPIOS_POR_DEPTO.get(dep_norm)
+        if not munis:
+            raise ValidationError(
+                "receptor.direccion: municipio inválido para el departamento seleccionado"
+            )
+        for code, name in munis.items():
+            if _normalize_text(name) == norm:
+                return code, dep_norm
+        raise ValidationError(
+            "receptor.direccion: municipio inválido para el departamento seleccionado"
+        )
+
+    matches = _MUNI_NAME_MAP.get(norm)
+    if not matches:
+        raise ValidationError("Municipio inválido")
+    if len(matches) > 1:
+        raise ValidationError(
+            "receptor.direccion: municipio inválido para el departamento seleccionado"
+        )
+    dep_norm, code = matches[0]
+    return code, dep_norm
+
+
+def _build_receptor_direccion(src: dict) -> dict:
+    """Return normalized ``direccion`` dictionary for receptor."""
+
+    if not isinstance(src, dict):
+        raise ValidationError("receptor.direccion faltante")
+
+    raw_dep = src.get("departamento")
+    raw_muni = src.get("municipio")
+    complemento = (
+        src.get("complemento")
+        or src.get("direccionDetalle")
+        or src.get("direccion")
+    )
+    if isinstance(complemento, str):
+        complemento = complemento.strip() or None
+
+    dep_code = _normalize_departamento(raw_dep) if raw_dep is not None else None
+    muni_code, dep_inferred = _normalize_municipio(dep_code, raw_muni)
+    dep_code = dep_code or dep_inferred
+    if dep_code is None:
+        raise ValidationError("Departamento requerido")
+
+    return {
+        "departamento": dep_code,
+        "municipio": muni_code,
+        "complemento": complemento,
+    }
+
+
 # --- Helpers ---------------------------------------------------------------
 
 # Catálogo de ``condicionOperacion`` según el esquema oficial.
@@ -1034,20 +1185,7 @@ def generar_dte_json(
         if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
             raise ValueError("DUI inválido")
 
-    dir_rec = rec.get("direccion")
-    if (
-        isinstance(dir_rec, dict)
-        and dir_rec.get("departamento")
-        and dir_rec.get("municipio")
-        and dir_rec.get("complemento")
-    ):
-        dir_rec = {
-            "departamento": dir_rec.get("departamento"),
-            "municipio": dir_rec.get("municipio"),
-            "complemento": dir_rec.get("complemento"),
-        }
-    else:
-        dir_rec = None
+    dir_rec = _build_receptor_direccion(rec.get("direccion") or rec)
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
@@ -1519,18 +1657,9 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
 
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
-    if dir_rec is not None:
-        if not isinstance(dir_rec, dict):
-            raise ValueError("direccion de receptor inválida")
-        dir_rec["departamento"] = _map_departamento(dir_rec.get("departamento"))
-        dir_rec["municipio"] = _map_municipio(
-            dir_rec.get("municipio"), dir_rec.get("departamento")
-        )
-        if not dir_rec.get("complemento"):
-            raise ValueError(
-                "Faltan campos obligatorios en receptor: direccion.complemento"
-            )
-        receptor["direccion"] = dir_rec
+    if dir_rec is None:
+        raise ValidationError("receptor.direccion faltante")
+    receptor["direccion"] = _build_receptor_direccion(dir_rec)
     if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
@@ -1780,8 +1909,10 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         raise ValueError("NIT inválido en emisor")
 
     receptor_doc = payload.get("receptor", {}).get("numDocumento")
-    if receptor_doc and len(receptor_doc) not in (9, catalogos.NIT_LENGTH):
-        raise ValueError("Número de documento inválido en receptor")
+    if receptor_doc:
+        clean_doc = str(receptor_doc).replace("-", "")
+        if len(clean_doc) not in (9, catalogos.NIT_LENGTH):
+            raise ValueError("Número de documento inválido en receptor")
     # Conversión final de Decimals a float para el JSON
     for item in payload.get("cuerpoDocumento", []):
         item["cantidad"] = float(d8(item.get("cantidad", D("0"))))

@@ -99,6 +99,30 @@ def test_receptor_documentos(monkeypatch):
     with pytest.raises(ValueError):
         validate_dte_json(data)
 
+    data = _load_fc()
+    data["receptor"]["tipoDocumento"] = 3
+    data["receptor"]["numDocumento"] = "AB123456"
+    validate_dte_json(data)
+    data["receptor"]["numDocumento"] = "A1"
+    with pytest.raises(ValueError):
+        validate_dte_json(data)
+
+    data = _load_fc()
+    data["receptor"]["tipoDocumento"] = 2
+    data["receptor"]["numDocumento"] = "CR123456"
+    validate_dte_json(data)
+    data["receptor"]["numDocumento"] = "CR12!"
+    with pytest.raises(ValueError):
+        validate_dte_json(data)
+
+    data = _load_fc()
+    data["receptor"]["tipoDocumento"] = 37
+    data["receptor"]["numDocumento"] = "DOC123"
+    validate_dte_json(data)
+    data["receptor"]["numDocumento"] = "D@"
+    with pytest.raises(ValueError):
+        validate_dte_json(data)
+
 
 def test_receptor_direccion(monkeypatch):
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)

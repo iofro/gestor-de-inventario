@@ -1527,6 +1527,20 @@ def generar_dte_json(
                 val = D("0")
             p["montoPago"] = val
 
+    # --- SINCRONIZAR SUMA DE PAGOS CON totalPagar (ajuste máx. 0.01) ---
+    total_pagar_dec = money(D(str(resumen.get("totalPagar") or 0)))
+    if resumen.get("pagos"):
+        suma_pagos = D("0")
+        for p in resumen["pagos"]:
+            suma_pagos += D(str(p.get("montoPago") or 0))
+        suma_pagos = money(suma_pagos)
+
+        delta = money(total_pagar_dec - suma_pagos)
+        if delta != D("0") and abs(delta) <= D("0.01"):
+            ultimo = resumen["pagos"][-1]
+            ult_m = D(str(ultimo.get("montoPago") or 0))
+            ultimo["montoPago"] = money(ult_m + delta)
+
     def _float_money(value: D) -> float:
         val = float(money(value))
         return 0.0 if val == -0.0 else val

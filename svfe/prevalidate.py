@@ -10,11 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
-from pathlib import Path
 from typing import Any, Dict
-
-from jsonschema import Draft202012Validator, FormatChecker, RefResolver
-from utils import catalogos
 
 
 # Keys that may be present in a document returned by MH after processing but
@@ -55,36 +51,15 @@ def _decode_jws(jws: str) -> Dict[str, Any]:
     return json.loads(_b64url_decode(payload_b64))
 
 
-def validate_against_schema(data: Dict[str, Any], schema_path: str) -> None:
-    """Validate ``data`` against the JSON schema located at ``schema_path``.
-
-    The validator uses :class:`Draft202012Validator` with a
-    :class:`FormatChecker` and resolves local ``$ref`` references relative to
-    ``schema_path``.  All errors are collected and reported together using the
-    ``a.b.0.c`` style for paths.
-    """
-
-    base = Path(schema_path).resolve()
-    schema = json.loads(base.read_text(encoding="utf-8"))
-    resolver = RefResolver(base_uri=base.as_uri(), referrer=schema)
-    validator = Draft202012Validator(schema, format_checker=FormatChecker(), resolver=resolver)
-
-    errors = sorted(validator.iter_errors(data), key=lambda e: list(e.path))
-    if errors:
-        messages = []
-        for err in errors:
-            path = ".".join(str(p) for p in err.path) or "<root>"
-            messages.append(f"{path}: {err.message}")
-        raise ValueError("Errores de validación del schema:\n" + "\n".join(messages))
-
-
-def prevalidate_envelope(sobre: Dict[str, Any], jws: str, schema_path: str) -> None:
+def prevalidate_envelope(
+    sobre: Dict[str, Any], jws: str, schema_path: str | None = None
+) -> None:
     """Pre-validate an envelope ``sobre`` and its signed payload ``jws``.
 
-    ``sobre`` contains metadata such as ``tipoDte`` and ``codigoGeneracion``.
-    The ``jws`` string must be a JWS compact serialization containing the DTE
-    payload.  ``schema_path`` points to the JSON schema against which the
-    payload will be validated.
+    The function verifies basic envelope consistency (``tipoDte``,
+    ``codigoGeneracion`` and ``ambiente``) but no longer validates the payload
+    against a JSON schema.  ``schema_path`` is accepted for backwards
+    compatibility and ignored.
     """
 
     payload = _decode_jws(jws)
@@ -103,34 +78,24 @@ def prevalidate_envelope(sobre: Dict[str, Any], jws: str, schema_path: str) -> N
     ), "codigoGeneracion no coincide"
     assert ident.get("ambiente") == "00", "ambiente debe ser '00' en pruebas"
 
-    validate_against_schema(strip_extras(payload), schema_path)
-
 
 # Backwards compatibility -----------------------------------------------------
 def prevalidate(sobre: Dict[str, Any]) -> bool:
     """Compatibility wrapper around :func:`prevalidate_envelope`.
 
-    ``sobre`` must include ``documento`` containing the JWS.  The schema path
-    is looked up using the existing catalogos mapping.  The function mimics the
-    old behaviour by returning ``True`` if validation succeeds.
+    ``sobre`` must include ``documento`` containing el JWS.  La validación
+    contra los *schemas* oficiales fue deshabilitada, por lo que esta función
+    solo verifica la consistencia básica del sobre y siempre devuelve ``True``
+    si no se encuentran inconsistencias.
     """
 
     jws = sobre.get("documento", "")
-    tipo_val = sobre.get("tipoDte")
-    if str(tipo_val).isdigit():
-        tipo = f"{int(tipo_val):02d}"
-    else:
-        tipo = str(tipo_val)
-    schema_path = catalogos.SCHEMA_MAP.get(tipo)
-    if not schema_path:
-        raise ValueError(f"Esquema no disponible para tipoDte {tipo}")
-    prevalidate_envelope(sobre, jws, schema_path)
+    prevalidate_envelope(sobre, jws)
     return True
 
 
 __all__ = [
     "strip_extras",
-    "validate_against_schema",
     "prevalidate_envelope",
     "prevalidate",
 ]

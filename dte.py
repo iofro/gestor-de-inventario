@@ -2093,15 +2093,18 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         )
 
     ambiente = "00"
-    version = 2
+    version = str(version)
     id_envio = int(uuid.uuid4()) & 0x7FFFFFFF or 1
     documento = str(jws_token)
     assert documento.count(".") == 2, "documento JWS malformado"
-    codigo = str(codigo)
+    codigo = "" if codigo is None else str(codigo)
 
-    tipo_dte = str(tipo_dte)
-    assert re.fullmatch(r"\d{2}", tipo_dte), "tipoDte debe ser dos dígitos"
-    assert tipo_dte in catalogos.TIPOS_DTE, "tipoDte inválido"
+    try:
+        tipo_dte = int(tipo_dte)
+    except (TypeError, ValueError):
+        tipo_dte = str(tipo_dte)
+    else:
+        assert tipo_dte in {1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15}, "tipoDte inválido"
 
     payload = {
         "ambiente": ambiente,
@@ -2114,12 +2117,9 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
         payload["codigoGeneracion"] = codigo
     assert payload.get("codigoGeneracion") == codigo, "codigoGeneracion no coincide"
 
-    print({k: type(v).__name__ for k, v in payload.items()})
-
     required = {
         "ambiente": str,
-        "tipoDte": str,
-        "version": int,
+        "version": str,
         "idEnvio": int,
         "documento": str,
     }
@@ -2129,6 +2129,9 @@ def _post_dte(url: str, token: str, jws_token: str, dte_data: dict | None = None
     for field, expected in required.items():
         assert field in payload, f"{field} requerido"
         assert isinstance(payload[field], expected), f"{field} debe ser {expected.__name__}"
+
+    assert "tipoDte" in payload, "tipoDte requerido"
+    assert isinstance(payload["tipoDte"], (int, str)), "tipoDte debe ser int o str"
 
     assert payload["idEnvio"] > 0
     auth_header = headers.get("Authorization")

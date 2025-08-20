@@ -136,8 +136,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert url == f"http://{ambiente}.example.com"
     assert headers["Authorization"] == "Bearer JWT"
     assert payload["documento"] in sign_calls["tokens"]
-    assert payload["tipoDte"] == "01"
-    assert payload["version"] == 2
+    assert payload["tipoDte"] == 1
+    assert payload["version"] == "2"
     assert payload["ambiente"] == "00"
     assert payload["codigoGeneracion"] == "ABC"
     assert "idEnvio" in payload

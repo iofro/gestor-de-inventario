@@ -90,7 +90,14 @@ def prevalidate_envelope(sobre: Dict[str, Any], jws: str, schema_path: str) -> N
     payload = _decode_jws(jws)
     ident = payload.get("identificacion", {})
 
-    assert sobre["tipoDte"] == ident.get("tipoDte"), "tipoDte (sobre vs payload) no coincide"
+    tipo_sobre = sobre.get("tipoDte")
+    tipo_ident = ident.get("tipoDte")
+    try:
+        tipo_sobre = int(tipo_sobre)
+        tipo_ident = int(tipo_ident)
+    except (TypeError, ValueError):
+        pass
+    assert tipo_sobre == tipo_ident, "tipoDte (sobre vs payload) no coincide"
     assert (
         sobre["codigoGeneracion"] == ident.get("codigoGeneracion")
     ), "codigoGeneracion no coincide"
@@ -109,7 +116,11 @@ def prevalidate(sobre: Dict[str, Any]) -> bool:
     """
 
     jws = sobre.get("documento", "")
-    tipo = str(sobre.get("tipoDte"))
+    tipo_val = sobre.get("tipoDte")
+    if str(tipo_val).isdigit():
+        tipo = f"{int(tipo_val):02d}"
+    else:
+        tipo = str(tipo_val)
     schema_path = catalogos.SCHEMA_MAP.get(tipo)
     if not schema_path:
         raise ValueError(f"Esquema no disponible para tipoDte {tipo}")

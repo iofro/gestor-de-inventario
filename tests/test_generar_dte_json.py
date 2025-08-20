@@ -52,7 +52,7 @@ def test_generar_dte_json_basic(tmp_path):
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
-    data = generar_dte_json(db, venta_id)
+    data = dte_module.generar_dte_json(db, venta_id)
 
     idf = data["identificacion"]
     res = data["resumen"]
@@ -81,6 +81,55 @@ def test_generar_dte_json_basic(tmp_path):
     }
     assert set(data.keys()) == expected
 
+
+def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "codEstable": "2",
+        "codPuntoVenta": 5,
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01", 10, cliente_id=cliente_id, extra={"precios_incluyen_iva": False}
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = generar_dte_json(db, venta_id)
+    numero = data["identificacion"]["numeroControl"]
+    assert numero.startswith("DTE-01-S002P005-")
+    emisor = data["emisor"]
+    assert emisor["codEstable"] == "0002"
+    assert emisor["codPuntoVenta"] == "0005"
 
 def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
     import dte as dte_module

@@ -43,7 +43,8 @@ def strip_extras(dte: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _numero_control(tipo: str) -> str:
-    return f"DTE-{tipo}-{uuid4().hex[:8].upper()}-000000000000001"
+    secuencia = str(uuid4().int % 10**15).zfill(15)
+    return f"DTE-{tipo}-{uuid4().hex[:8].upper()}-{secuencia}"
 
 
 def d8(value: Decimal) -> Decimal:

@@ -1,4 +1,5 @@
 import pytest
+import re
 import uuid
 from dte import sanitize_dte_payload, validate_dte_json
 
@@ -156,8 +157,8 @@ def test_tributos_invalidos_rechazados(dte_metadata_factory):
 def test_numero_control_regex(dte_metadata_factory):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = "INVALID"
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
+    validate_dte_json(dte)
+    assert re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", dte["identificacion"]["numeroControl"])
 
 
 @pytest.mark.parametrize(
@@ -185,8 +186,23 @@ def test_numero_control_validos(dte_metadata_factory, numero):
 def test_numero_control_invalidos(dte_metadata_factory, numero):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = numero
-    with pytest.raises(ValueError):
-        validate_dte_json(dte)
+    validate_dte_json(dte)
+    assert re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", dte["identificacion"]["numeroControl"])
+
+
+def test_numero_control_regenerates_from_emisor_codes(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["emisor"]["codEstable"] = "123"
+    dte["emisor"]["codEstableMH"] = "123"
+    dte["emisor"]["codPuntoVenta"] = "456"
+    dte["emisor"]["codPuntoVentaMH"] = "456"
+    dte["identificacion"]["numeroControl"] = "BAD"
+    validate_dte_json(dte)
+    ident = dte["identificacion"]
+    emisor = dte["emisor"]
+    assert emisor["codEstable"] == "0123"
+    assert emisor["codPuntoVenta"] == "0456"
+    assert ident["numeroControl"].startswith("DTE-01-S123P456")
 
 
 def test_ident_contingencia_modelo(dte_metadata_factory):

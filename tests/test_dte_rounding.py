@@ -37,6 +37,6 @@ def test_pagos_rounding_adjusts_last_payment():
     ]
     total = D("10.01")
     norm = normalizar_pagos(pagos, total)
-    suma = sum(D(str(p["montoPago"])) for p in norm)
+    suma = sum(p["montoPago"] for p in norm)
     assert suma == total
-    assert norm[-1]["montoPago"] == 5.0
+    assert norm[-1]["montoPago"] == D("5.00")

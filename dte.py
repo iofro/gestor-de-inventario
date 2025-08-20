@@ -326,8 +326,8 @@ def _parse_condicion_operacion(value):
     """Return ``condicionOperacion`` code ensuring it is valid.
 
     ``value`` may be ``None``/empty, a numeric code or a textual description.
-    Defaults to ``1`` (Contado) when no value is provided.
-    Raises ``ValueError`` if the value is not part of the catalog.
+    Defaults to ``1`` (Contado) when no value is provided.  Any value outside
+    the catalog is normalized to ``1`` without raising an exception.
     """
 
     if value in (None, ""):
@@ -339,9 +339,9 @@ def _parse_condicion_operacion(value):
         if val.isdigit():
             code = int(val)
         else:
-            code = _CONDICION_OPERACION_BY_NAME.get(val)
+            code = _CONDICION_OPERACION_BY_NAME.get(val, 1)
     if code not in CONDICION_OPERACION_CATALOG:
-        raise ValueError(f"condicionOperacion inválida: {value}")
+        code = 1
     return code
 
 # Valores por defecto del resumen según el tipo de DTE
@@ -526,6 +526,7 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
                     "01" if "01" in enum_codes else str(enum_codes[0]).zfill(2)
                 )
         else:
+            # schema tipa integer sin enum -> código 1 explícito
             default_code = 1 if code_is_int else "01"
         pagos = [
             {
@@ -541,8 +542,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         diff = money(total - suma)
         nuevo = money(pagos[-1]["montoPago"] + diff)
         if nuevo < 0:
-            raise ValidationError("La suma de pagos excede el total a pagar")
-        pagos[-1]["montoPago"] = nuevo
+            raise ValidationError(
+                f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
+            )
+        if diff != 0 and (len(pagos) == 1 or abs(diff) > D("0.01")):
+            raise ValidationError(
+                f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
+            )
+        if diff != 0:
+            pagos[-1]["montoPago"] = nuevo
 
     if condicion == 2:
         first = pagos[0]
@@ -560,14 +568,12 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         if (p["montoPago"] * 100) % 1:
             raise ValidationError("Los montos de pago deben ser múltiplos de 0.01")
 
-    if money(sum(p["montoPago"] for p in pagos)) != total:
-        raise ValidationError("La suma de pagos no coincide con el total a pagar")
-
-    for p in pagos:
-        p["montoPago"] = float(p["montoPago"])
-        if p["montoPago"] == -0.00:
-            p["montoPago"] = 0.00
-
+    suma_final = sum((p["montoPago"] for p in pagos), D("0.00"))
+    diff_final = money(total - suma_final)
+    if diff_final != 0:
+        raise ValidationError(
+            f"La suma de pagos {money(suma_final)} difiere del total {total} (dif {diff_final})"
+        )
 
     return pagos
 
@@ -692,6 +698,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
 
+    # Normaliza posibles -0.00 manteniendo Decimal hasta la serialización final
     for key, val in list(resumen.items()):
         if key in {
             "totalLetras",
@@ -701,19 +708,19 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             "tributos",
         }:
             continue
-        resumen[key] = money(val)
-        if resumen[key] == D("0"):
+        if isinstance(val, Decimal) and val == D("0") and val.as_tuple().sign:
             resumen[key] = D("0")
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            t["valor"] = money(t["valor"])
-            if t["valor"] == D("0"):
+            val = t.get("valor")
+            if isinstance(val, Decimal) and val == D("0") and val.as_tuple().sign:
                 t["valor"] = D("0")
 
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            if p.get("montoPago") == D("0"):
+            mp = p.get("montoPago")
+            if isinstance(mp, Decimal) and mp == D("0") and mp.as_tuple().sign:
                 p["montoPago"] = D("0")
 
     return resumen
@@ -1172,25 +1179,51 @@ def generar_dte_json(
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
-    for k, v in resumen.items():
-        if isinstance(v, float) and v == -0.0:
-            resumen[k] = 0.0
-        elif isinstance(v, Decimal) and v == D("0") and v.as_tuple().sign == 1:
-            resumen[k] = D("0")
-    if resumen.get("pagos"):
-        for p in resumen["pagos"]:
-            mp = p.get("montoPago")
-            if isinstance(mp, float) and mp == -0.0:
-                p["montoPago"] = 0.0
-            elif isinstance(mp, Decimal) and mp == D("0") and mp.as_tuple().sign == 1:
-                p["montoPago"] = D("0")
+    # Verificación de centavos exactos en totales clave
+    for k in (
+        "totalIva",
+        "montoTotalOperacion",
+        "totalPagar",
+        "totalGravada",
+        "totalExenta",
+        "totalNoSuj",
+        "totalNoGravado",
+    ):
+        if k in resumen:
+            val = D(str(resumen[k]))
+            if val != money(val):
+                raise ValidationError(
+                    f"{k} debe ser múltiplo de 0.01 (recibido={resumen[k]})"
+                )
+
+    # Serialización preliminar: convertir montos a float y limpiar -0.0
+    for k, v in list(resumen.items()):
+        if k in {
+            "totalLetras",
+            "condicionOperacion",
+            "pagos",
+            "numPagoElectronico",
+            "tributos",
+        }:
+            continue
+        val_float = float(money(v))
+        if val_float == -0.0:
+            val_float = 0.0
+        resumen[k] = val_float
+
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            val = t.get("valor")
-            if isinstance(val, float) and val == -0.0:
-                t["valor"] = 0.0
-            elif isinstance(val, Decimal) and val == D("0") and val.as_tuple().sign == 1:
-                t["valor"] = D("0")
+            val = float(money(t["valor"]))
+            if val == -0.0:
+                val = 0.0
+            t["valor"] = val
+
+    if resumen.get("pagos"):
+        for p in resumen["pagos"]:
+            mp = float(money(p["montoPago"]))
+            if mp == -0.0:
+                mp = 0.0
+            p["montoPago"] = mp
 
     extension = None
 

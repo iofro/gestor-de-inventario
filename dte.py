@@ -309,11 +309,8 @@ def _map_municipio(nombre: str | None, departamento: str | None = None) -> str:
     if not nombre.isdigit() or len(nombre) != 2:
         raise ValueError("Municipio inválido")
 
-    if departamento:
-        dep_code = _map_departamento(departamento)
-        start, end = MUNICIPIO_RANGES.get(dep_code, ("00", "99"))
-        if nombre < start or nombre > end:
-            raise ValueError("Municipio inválido para el departamento")
+    # No se valida que el municipio pertenezca al departamento indicado,
+    # solo se asegura que el código sea numérico de dos dígitos.
     return nombre
 
 
@@ -481,39 +478,18 @@ def _normalize_municipio(dep_code: str | None, value):
 
     if val.isdigit():
         code = val.zfill(2)
-        if dep_norm:
-            munis = _MUNICIPIOS_POR_DEPTO.get(dep_norm)
-            if munis and code not in munis:
-                raise ValidationError(
-                    "receptor.direccion: municipio inválido para el departamento seleccionado"
-                )
-            return code, dep_norm
-        matches = [(d, code) for d, ms in _MUNICIPIOS_POR_DEPTO.items() if code in ms]
-        if len(matches) == 1:
-            return matches[0][1], matches[0][0]
-        if not matches:
-            raise ValidationError("Municipio inválido")
-        raise ValidationError(
-            "receptor.direccion: municipio inválido para el departamento seleccionado"
-        )
+        return code, dep_norm
 
     norm = _normalize_text(val)
-    if dep_norm:
-        munis = _MUNICIPIOS_POR_DEPTO.get(dep_norm)
-        if not munis:
-            raise ValidationError(
-                "receptor.direccion: municipio inválido para el departamento seleccionado"
-            )
-        for code, name in munis.items():
-            if _normalize_text(name) == norm:
-                return code, dep_norm
-        raise ValidationError(
-            "receptor.direccion: municipio inválido para el departamento seleccionado"
-        )
-
     matches = _MUNI_NAME_MAP.get(norm)
     if not matches:
         raise ValidationError("Municipio inválido")
+    if dep_norm:
+        for dep, code in matches:
+            if dep == dep_norm:
+                return code, dep_norm
+        # Departamento no coincide; retornar código de municipio encontrado
+        return matches[0][1], dep_norm
     if len(matches) > 1:
         raise ValidationError(
             "receptor.direccion: municipio inválido para el departamento seleccionado"

@@ -420,3 +420,52 @@ def test_generar_dte_json_receptor_extra_preserva_direccion(tmp_path):
     assert direccion["departamento"] == "06"
     assert direccion["municipio"] == "01"
     assert direccion["complemento"] == "Calle"
+
+
+def test_generar_dte_json_municipio_fuera_depto(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "15",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01",
+        11.3,
+        cliente_id=cliente_id,
+        extra={"precios_incluyen_iva": False},
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = generar_dte_json(db, venta_id)
+    direccion = data["receptor"]["direccion"]
+    assert direccion["departamento"] == "06"
+    assert direccion["municipio"] == "15"

@@ -1978,6 +1978,35 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     if cambios:
         print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 
+    ident = payload.get("identificacion", {})
+    resumen["pagos"] = normalizar_pagos(
+        resumen.get("pagos"),
+        resumen["totalPagar"],
+        tipo_dte=ident.get("tipoDte"),
+        condicion=resumen.get("condicionOperacion", 1),
+    )
+    cond = int(resumen.get("condicionOperacion", 1))
+    if cond == 1 and not resumen.get("pagos"):
+        resumen["pagos"] = [
+            {
+                "codigo": "01",
+                "montoPago": money(D(str(resumen["totalPagar"]))),
+            }
+        ]
+    delta = money(
+        D(str(resumen["totalPagar"]))
+        - sum(D(str(p["montoPago"])) for p in resumen.get("pagos", []))
+    )
+    if resumen.get("pagos") and D("0") < abs(delta) <= D("0.01"):
+        ultimo = resumen["pagos"][-1]
+        ult_monto = D(str(ultimo["montoPago"]))
+        ultimo["montoPago"] = money(ult_monto + delta)
+    elif abs(delta) > D("0.01"):
+        logger.warning(
+            "Pagos no cuadran con totalPagar (|delta|=%s). Se deja que el validador falle.",
+            delta,
+        )
+
     # Verificación de centavos exactos en totales clave
     for k in (
         "totalIva",

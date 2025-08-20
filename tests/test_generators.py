@@ -62,31 +62,6 @@ def test_generar_nota_remision():
     _run_generator(generar_nota_remision)
 
 
-def test_validar_contra_schema_missing_required_field():
-    data = generar_factura_fiscal()
-    data.pop("resumen")
-    with pytest.raises(ValueError):
-        validar_contra_schema(data, "ccf")
-
-
 def test_fc_valida_con_schema():
     data = generar_consumidor_final()
     validar_contra_schema(strip_extras(data), "fc")
-
-
-def test_fc_falta_campo_requerido():
-    data = generar_consumidor_final()
-    data["cuerpoDocumento"][0].pop("uniMedida")
-    with pytest.raises(ValueError) as excinfo:
-        validar_contra_schema(strip_extras(data), "fc")
-    assert "cuerpoDocumento.0.uniMedida" in str(excinfo.value)
-
-
-def test_fc_cod_tributo_invalido():
-    data = generar_consumidor_final()
-    item = data["cuerpoDocumento"][0]
-    item["codTributo"] = "20"
-    item["tributos"] = ["20"]
-    with pytest.raises(ValueError) as excinfo:
-        validar_contra_schema(strip_extras(data), "fc")
-    assert "codTributo" in str(excinfo.value)

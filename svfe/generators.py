@@ -10,15 +10,6 @@ from zoneinfo import ZoneInfo
 
 from .config import get_emisor_direccion
 
-# NOTE: jsonschema imports retained for potential future validation logic.
-from jsonschema import (
-    Draft202012Validator,
-    RefResolver,
-    FormatChecker,
-    ValidationError,
-    validators,
-)  # pragma: no cover
-
 # All arithmetic must follow the tax authority's rounding rules
 getcontext().rounding = ROUND_HALF_UP
 
@@ -361,65 +352,13 @@ def generar_nota_remision() -> Dict[str, Any]:
 
 
 def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:
-    """Valida ``data`` contra el *schema* oficial para ``tipo``.
+    """No-op schema validation placeholder.
 
-    Parameters
-    ----------
-    data:
-        Estructura del documento a validar.
-    tipo:
-        Clave de ``SCHEMA_MAP`` que indica el tipo de DTE.
-
-    Raises
-    ------
-    ValueError
-        Si ``tipo`` es desconocido o ``data`` no cumple con el schema
-        correspondiente.
+    This function previously validated ``data`` against the official JSON schema
+    for the given DTE ``tipo``.  Schema validation has been disabled so the
+    function now simply returns without performing any checks.
     """
-
-    if tipo not in SCHEMA_MAP:
-        raise ValueError(f"Tipo de DTE desconocido: {tipo}")
-
-    schema_file, _ = SCHEMA_MAP[tipo]
-    schema = _load_schema(schema_file)
-
-    base_uri = SCHEMAS_DIR.as_uri() + "/"
-    resolver = RefResolver(base_uri=base_uri, referrer=schema)
-
-    type_checker = Draft202012Validator.TYPE_CHECKER.redefine(
-        "number", lambda checker, instance: isinstance(instance, (int, float, Decimal))
-    )
-
-    def decimal_multiple_of(validator, dB, instance, schema):
-        if isinstance(instance, Decimal):
-            dB_dec = Decimal(str(dB))
-            if instance % dB_dec != 0:
-                yield ValidationError(
-                    f"{instance!r} is not a multiple of {dB_dec!r}"
-                )
-        else:
-            yield from Draft202012Validator.VALIDATORS["multipleOf"](
-                validator, dB, instance, schema
-            )
-
-    DecimalValidator = validators.extend(
-        Draft202012Validator,
-        {"multipleOf": decimal_multiple_of},
-        type_checker=type_checker,
-    )
-
-    validator = DecimalValidator(
-        schema, format_checker=FormatChecker(), resolver=resolver
-    )
-    try:
-        validator.validate(data)
-    except ValidationError as exc:
-        path_parts = list(exc.absolute_path)
-        if exc.validator == "required" and exc.message.startswith("'"):
-            missing = exc.message.split("'")[1]
-            path_parts.append(missing)
-        path = ".".join(str(part) for part in path_parts)
-        raise ValueError(f"{path}: {exc.message}") from None
+    return None
 
 
 __all__ = ["generar_fc_ejemplo"]

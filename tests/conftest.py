@@ -172,7 +172,7 @@ def dte_metadata_factory():
                 "tipoEstablecimiento": "01",
                 "direccion": {
                     "departamento": "01",
-                    "municipio": "01",
+                    "municipio": "13",
                     "complemento": "Calle 1",
                 },
                 "telefono": "22223333",
@@ -191,7 +191,7 @@ def dte_metadata_factory():
                 "descActividad": "Compra de productos",
                 "direccion": {
                     "departamento": "01",
-                    "municipio": "01",
+                    "municipio": "13",
                     "complemento": "Calle 2",
                 },
                 "telefono": "22223333",

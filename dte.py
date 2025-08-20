@@ -13,6 +13,7 @@ from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 import logging
 import re
+import xml.etree.ElementTree as ET
 from utils.monto import monto_a_texto_sv
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
@@ -140,7 +141,9 @@ def normalize_uuid_v4_upper(value: str) -> str:
     Normaliza `value` como UUID v4 con guiones en MAYÚSCULAS.
     Lanza ValueError si no es un UUID v4 válido.
     """
-    u = uuid.UUID(str(value), version=4)  # garantiza versión 4 real
+    u = uuid.UUID(str(value))
+    if u.version != 4:
+        raise ValueError
     return str(u).upper()
 
 
@@ -1075,10 +1078,33 @@ def recalcular_totales(
     # IVA-FIX END
 
 
-def generar_numero_control(prefijo: str = "DTE-01-S001P001") -> str:
-    """Crea un número de control único siguiendo el formato de Hacienda."""
+def generar_numero_control(
+    tipo_dte: str = "01", sucursal: str = "001", punto: str = "001"
+) -> str:
+    """Crea un número de control siguiendo el formato oficial.
+
+    ``tipo_dte`` siempre se convierte a dos dígitos y ``sucursal``/``punto``
+    a tres para evitar prefijos inválidos como ``DTE-1``.
+    """
+    tipo = str(tipo_dte).zfill(2)
+    suc = re.sub(r"\D", "", str(sucursal))[-3:].zfill(3)
+    pt = re.sub(r"\D", "", str(punto))[-3:].zfill(3)
     secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
-    return f"{prefijo}-{secuencia}"
+    return f"DTE-{tipo}-S{suc}P{pt}-{secuencia}"
+
+
+def identificacion_a_xml(ident: dict) -> str:
+    """Convierte el bloque ``identificacion`` a una cadena XML simple."""
+    root = ET.Element("Identificacion")
+    ET.SubElement(root, "TipoDte").text = ident.get("tipoDte", "")
+    ET.SubElement(root, "NumeroControl").text = ident.get("numeroControl", "")
+    ET.SubElement(root, "CodigoGeneracion").text = ident.get("codigoGeneracion", "")
+    ET.SubElement(root, "TipoModelo").text = str(ident.get("tipoModelo", ""))
+    ET.SubElement(root, "TipoOperacion").text = str(ident.get("tipoOperacion", ""))
+    ET.SubElement(root, "FecEmi").text = ident.get("fecEmi", "")
+    ET.SubElement(root, "HorEmi").text = ident.get("horEmi", "")
+    ET.SubElement(root, "Ambiente").text = ident.get("ambiente", "")
+    return ET.tostring(root, encoding="unicode")
 
 
 def generar_cabecera_dte_data(
@@ -1166,8 +1192,16 @@ def generar_dte_json(
 
     datos = _load_datos_negocio()
 
+    prefijo = str(datos.get("dte_api", {}).get("prefijo_control", ""))
+    m = re.match(r"^DTE-\d{2}-S(\d{3})P(\d{3})$", prefijo)
+    suc_pref, punto_pref = m.groups() if m else ("001", "001")
+    cod_estable = re.sub(r"\D", "", str(datos.get("codEstable", ""))) or suc_pref.rjust(4, "0")
+    cod_punto = re.sub(r"\D", "", str(datos.get("codPuntoVenta", ""))) or punto_pref.rjust(4, "0")
+    cod_estable = cod_estable[-4:].zfill(4)
+    cod_punto = cod_punto[-4:].zfill(4)
+
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control()
+    numero_control = generar_numero_control(tipo_dte, cod_estable[-3:], cod_punto[-3:])
 
     now = datetime.now(TZ_EL_SALVADOR)
     fecha = fecha_emision_hoy_str(now)
@@ -1246,6 +1280,10 @@ def generar_dte_json(
         "correo": datos.get("correo"),
     }
     emisor["direccion"] = svfe_config.get_emisor_direccion()
+    emisor.setdefault("codEstableMH", cod_estable)
+    emisor.setdefault("codEstable", cod_estable)
+    emisor.setdefault("codPuntoVentaMH", cod_punto)
+    emisor.setdefault("codPuntoVenta", cod_punto)
     if emisor.get("correo") and not EMAIL_RE.fullmatch(emisor["correo"]):
         raise ValueError("Correo de emisor inválido")
     if emisor.get("telefono") and not PHONE_RE.fullmatch(emisor["telefono"]):
@@ -1608,6 +1646,15 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
     if "tipoTransmision" in ident:
         ident["tipoOperacion"] = int(str(ident.pop("tipoTransmision")).split()[0])
 
+    tipo_dte_val = ident.get("tipoDte")
+    if isinstance(tipo_dte_val, int):
+        tipo_dte_val = f"{tipo_dte_val:02d}"
+    else:
+        tipo_dte_val = str(tipo_dte_val).zfill(2)
+    ident["tipoDte"] = tipo_dte_val
+    if tipo_dte_val not in catalogos.DTE_TIPOS:
+        raise ValueError("tipoDte inválido")
+
     # Normalización de operación y contingencia
     try:
         ident["tipoOperacion"] = int(ident.get("tipoOperacion", 1) or 1)
@@ -1644,32 +1691,30 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         raise ValueError("tipoOperacion debe ser 1 o 2")
 
     ident["version"] = int(ident.get("version", 1))
+    ident.setdefault("codigoGeneracion", str(uuid.uuid4()).upper())
     try:
         ident["codigoGeneracion"] = normalize_uuid_v4_upper(ident["codigoGeneracion"])
     except Exception:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido") from None
     if len(ident["codigoGeneracion"]) != 36 or "-" not in ident["codigoGeneracion"]:
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
-    ident["tipoDte"] = str(ident.get("tipoDte")).zfill(2).strip().upper()
     ident["tipoMoneda"] = "USD"
     # Validaciones de campos de identificacion
     if ident["version"] != 1:
         raise ValueError("identificacion.version debe ser 1")
     if ident.get("ambiente") not in {"00", "01"}:
         raise ValueError("ambiente debe ser '00' o '01'")
-    if ident.get("tipoDte") != "01":
-        raise ValueError("tipoDte debe ser '01'")
     if ident.get("tipoMoneda") != "USD":
         raise ValueError("tipoMoneda debe ser 'USD'")
     numero_control = ident.get("numeroControl")
-    if not (
-        isinstance(numero_control, str)
-        and len(numero_control) == 31
-        and numero_control.startswith("DTE-01-")
-    ):
-        raise ValueError("numeroControl inválido")
-    if not re.fullmatch(r"^DTE-01-[A-Z0-9]{8}-[0-9]{15}$", numero_control):
-        raise ValueError("numeroControl inválido")
+    pattern = r"^DTE-\d{2}-S\d{3}P\d{3}-\d{15}$"
+    if not (isinstance(numero_control, str) and re.fullmatch(pattern, numero_control)):
+        em_raw = payload.get("emisor", {})
+        suc = re.sub(r"\D", "", str(em_raw.get("codEstable", "001")))[-3:].zfill(3)
+        punto = re.sub(r"\D", "", str(em_raw.get("codPuntoVenta", "001")))[-3:].zfill(3)
+        ident["numeroControl"] = generar_numero_control(tipo_dte_val, suc, punto)
+    else:
+        ident["numeroControl"] = numero_control
     # Las reglas de operación/modelo/contingencia ya fueron normalizadas arriba.
     try:
         fec = datetime.strptime(str(ident.get("fecEmi")), "%Y-%m-%d").date()

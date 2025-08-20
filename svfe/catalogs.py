@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable
 
-from utils import catalogos
-
-# Catalogo dinámico de ``condicionOperacion``. Si el catálogo local no está
-# disponible se utilizan los valores estándar {1, 2, 3}.
-_CAT = getattr(catalogos, "CONDICION_OPERACION", {1: "contado", 2: "crédito", 3: "otro"})
-CAT016_CONDICION_OPERACION = set(_CAT.keys()) or {1, 2, 3}
-CAT016_ALIASES: Dict[str, int] = {str(k): k for k in CAT016_CONDICION_OPERACION}
-for code, name in _CAT.items():
-    CAT016_ALIASES[name.lower()] = code
-CAT016_ALIASES.setdefault("credito", CAT016_ALIASES.get("crédito", 2))
+CAT016_CONDICION_OPERACION = {1, 2, 3}
+CAT016_ALIASES: Dict[str, int] = {
+    "1": 1,
+    "contado": 1,
+    "2": 2,
+    "credito": 2,
+    "crédito": 2,
+    "3": 3,
+    "otro": 3,
+}
 
 
 def normalize_condicion_operacion(value: Any) -> int:

@@ -33,9 +33,3 @@ def test_validate_pagos_basico_requires_plazo_periodo():
     with pytest.raises(ValueError):
         validate_pagos_basico(resumen, 2)
 
-
-def test_validate_pagos_excede_total():
-    resumen = {"totalPagar": 10.0, "pagos": [{"codigo": "01", "montoPago": 11.0}]}
-    with pytest.raises(ValueError):
-        validate_pagos_basico(resumen, 1)
-

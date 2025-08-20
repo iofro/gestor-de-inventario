@@ -87,88 +87,56 @@ DEPARTAMENTOS = [
     {"codigo": "14", "nombre": "La Unión"},
 ]
 
-MUNICIPIOS_POR_DEPTO = {
-    "00": [{"codigo": "00", "nombre": "Otro (Para extranjeros)"}],
-    "01": [
-        {"codigo": "13", "nombre": "Ahuachapán Norte"},
-        {"codigo": "14", "nombre": "Ahuachapán Centro"},
-        {"codigo": "15", "nombre": "Ahuachapán Sur"},
-    ],
-    "02": [
-        {"codigo": "14", "nombre": "Santa Ana Norte"},
-        {"codigo": "15", "nombre": "Santa Ana Centro"},
-        {"codigo": "16", "nombre": "Santa Ana Este"},
-        {"codigo": "17", "nombre": "Santa Ana Oeste"},
-    ],
-    "03": [
-        {"codigo": "17", "nombre": "Sonsonate Norte"},
-        {"codigo": "18", "nombre": "Sonsonate Centro"},
-        {"codigo": "19", "nombre": "Sonsonate Este"},
-        {"codigo": "20", "nombre": "Sonsonate Oeste"},
-    ],
-    "04": [
-        {"codigo": "34", "nombre": "Chalatenango Norte"},
-        {"codigo": "35", "nombre": "Chalatenango Centro"},
-        {"codigo": "36", "nombre": "Chalatenango Sur"},
-    ],
-    "05": [
-        {"codigo": "23", "nombre": "La Libertad Norte"},
-        {"codigo": "24", "nombre": "La Libertad Centro"},
-        {"codigo": "25", "nombre": "La Libertad Oeste"},
-        {"codigo": "26", "nombre": "La Libertad Este"},
-        {"codigo": "27", "nombre": "La Libertad Costa"},
-        {"codigo": "28", "nombre": "La Libertad Sur"},
-    ],
-    "06": [
-        {"codigo": "20", "nombre": "San Salvador Norte"},
-        {"codigo": "21", "nombre": "San Salvador Oeste"},
-        {"codigo": "22", "nombre": "San Salvador Este"},
-        {"codigo": "23", "nombre": "San Salvador Centro"},
-        {"codigo": "24", "nombre": "San Salvador Sur"},
-    ],
-    "07": [
-        {"codigo": "17", "nombre": "Cuscatlán Norte"},
-        {"codigo": "18", "nombre": "Cuscatlán Sur"},
-    ],
-    "08": [
-        {"codigo": "23", "nombre": "La Paz Oeste"},
-        {"codigo": "24", "nombre": "La Paz Centro"},
-        {"codigo": "25", "nombre": "La Paz Este"},
-    ],
-    "09": [
-        {"codigo": "10", "nombre": "Cabañas Oeste"},
-        {"codigo": "11", "nombre": "Cabañas Este"},
-    ],
-    "10": [
-        {"codigo": "14", "nombre": "San Vicente Norte"},
-        {"codigo": "15", "nombre": "San Vicente Sur"},
-    ],
-    "11": [
-        {"codigo": "24", "nombre": "Usulután Norte"},
-        {"codigo": "25", "nombre": "Usulután Este"},
-        {"codigo": "26", "nombre": "Usulután Oeste"},
-    ],
-    "12": [
-        {"codigo": "21", "nombre": "San Miguel Norte"},
-        {"codigo": "22", "nombre": "San Miguel Centro"},
-        {"codigo": "23", "nombre": "San Miguel Oeste"},
-    ],
-    "13": [
-        {"codigo": "27", "nombre": "Morazán Norte"},
-        {"codigo": "28", "nombre": "Morazán Sur"},
-    ],
-    "14": [
-        {"codigo": "19", "nombre": "La Unión Norte"},
-        {"codigo": "20", "nombre": "La Unión Sur"},
-    ],
-}
+MUNICIPIOS = [
+    {"codigo": "00", "nombre": "Otro (Para extranjeros)"},
+    {"codigo": "13", "nombre": "AHUACHAPAN NORTE"},
+    {"codigo": "14", "nombre": "AHUACHAPAN CENTRO"},
+    {"codigo": "15", "nombre": "AHUACHAPAN SUR"},
+    {"codigo": "14", "nombre": "SANTA ANA NORTE"},
+    {"codigo": "15", "nombre": "SANTA ANA CENTRO"},
+    {"codigo": "16", "nombre": "SANTA ANA ESTE"},
+    {"codigo": "17", "nombre": "SANTA ANA OESTE"},
+    {"codigo": "17", "nombre": "SONSONATE NORTE"},
+    {"codigo": "18", "nombre": "SONSONATE CENTRO"},
+    {"codigo": "19", "nombre": "SONSONATE ESTE"},
+    {"codigo": "20", "nombre": "SONSONATE OESTE"},
+    {"codigo": "34", "nombre": "CHALATENANGO NORTE"},
+    {"codigo": "35", "nombre": "CHALATENANGO CENTRO"},
+    {"codigo": "36", "nombre": "CHALATENANGO SUR"},
+    {"codigo": "23", "nombre": "LA LIBERTAD NORTE"},
+    {"codigo": "24", "nombre": "LA LIBERTAD CENTRO"},
+    {"codigo": "25", "nombre": "LA LIBERTAD OESTE"},
+    {"codigo": "26", "nombre": "LA LIBERTAD ESTE"},
+    {"codigo": "27", "nombre": "LA LIBERTAD COSTA"},
+    {"codigo": "28", "nombre": "LA LIBERTAD SUR"},
+    {"codigo": "20", "nombre": "SAN SALVADOR NORTE"},
+    {"codigo": "21", "nombre": "SAN SALVADOR OESTE"},
+    {"codigo": "22", "nombre": "SAN SALVADOR ESTE"},
+    {"codigo": "23", "nombre": "SAN SALVADOR CENTRO"},
+    {"codigo": "24", "nombre": "SAN SALVADOR SUR"},
+    {"codigo": "17", "nombre": "CUSCATLAN NORTE"},
+    {"codigo": "18", "nombre": "CUSCATLAN SUR"},
+    {"codigo": "23", "nombre": "LA PAZ OESTE"},
+    {"codigo": "24", "nombre": "LA PAZ CENTRO"},
+    {"codigo": "25", "nombre": "LA PAZ ESTE"},
+    {"codigo": "10", "nombre": "CABANAS OESTE"},
+    {"codigo": "11", "nombre": "CABANAS ESTE"},
+    {"codigo": "14", "nombre": "SAN VICENTE NORTE"},
+    {"codigo": "15", "nombre": "SAN VICENTE SUR"},
+    {"codigo": "24", "nombre": "USULUTAN NORTE"},
+    {"codigo": "25", "nombre": "USULUTAN ESTE"},
+    {"codigo": "26", "nombre": "USULUTAN OESTE"},
+    {"codigo": "21", "nombre": "SAN MIGUEL NORTE"},
+    {"codigo": "22", "nombre": "SAN MIGUEL CENTRO"},
+    {"codigo": "23", "nombre": "SAN MIGUEL OESTE"},
+    {"codigo": "27", "nombre": "MORAZAN NORTE"},
+    {"codigo": "28", "nombre": "MORAZAN SUR"},
+    {"codigo": "19", "nombre": "LA UNION NORTE"},
+    {"codigo": "20", "nombre": "LA UNION SUR"},
+]
 
-MUNICIPIOS = [m for munis in MUNICIPIOS_POR_DEPTO.values() for m in munis]
 DEPARTAMENTOS_SET = {d["codigo"] for d in DEPARTAMENTOS}
 MUNICIPIOS_SET = {m["codigo"] for m in MUNICIPIOS}
-MUNICIPIOS_POR_DEPTO_SET = {
-    dep: {m["codigo"] for m in munis} for dep, munis in MUNICIPIOS_POR_DEPTO.items()
-}
 
 
 def _populate_combo(combo, items):
@@ -193,11 +161,6 @@ def _set_combo_value(combo, items, value):
                 break
     if idx >= 0:
         combo.setCurrentIndex(idx)
-
-
-def _populate_municipios(combo, dep_code):
-    _populate_combo(combo, MUNICIPIOS_POR_DEPTO.get(dep_code, []))
-    combo.setEnabled(bool(dep_code))
 
 
 class ClienteSelectorDialog(QDialog):
@@ -2403,11 +2366,10 @@ class DistribuidorDialog(QDialog):
         self.municipio_edit.setView(municipio_view)
         self.municipio_edit.setMaxVisibleItems(8)
         _populate_combo(self.departamento_edit, DEPARTAMENTOS)
-        _populate_municipios(self.municipio_edit, None)
+        _populate_combo(self.municipio_edit, MUNICIPIOS)
+        self.municipio_edit.setEnabled(False)
         self.departamento_edit.currentIndexChanged.connect(
-            lambda *_: _populate_municipios(
-                self.municipio_edit, self.departamento_edit.currentData()
-            )
+            lambda *_: self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
         )
         self.tipo_contrato_edit = QLineEdit()
         self.comisiones_especificas_edit = QLineEdit()
@@ -2463,12 +2425,12 @@ class DistribuidorDialog(QDialog):
                 DEPARTAMENTOS,
                 Distribuidor.get("departamento"),
             )
-            _populate_municipios(self.municipio_edit, self.departamento_edit.currentData())
             _set_combo_value(
                 self.municipio_edit,
-                MUNICIPIOS_POR_DEPTO.get(self.departamento_edit.currentData(), []),
+                MUNICIPIOS,
                 Distribuidor.get("municipio"),
             )
+            self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
             self.tipo_contrato_edit.setText(Distribuidor["tipo_contrato"] if "tipo_contrato" in Distribuidor.keys() else "")
             self.comisiones_especificas_edit.setText(Distribuidor["comisiones_especificas"] if "comisiones_especificas" in Distribuidor.keys() else "")
             self.metodo_pago_edit.setText(Distribuidor["metodo_pago"] if "metodo_pago" in Distribuidor.keys() else "")
@@ -2498,10 +2460,6 @@ class DistribuidorDialog(QDialog):
         self.accept()
 
     def get_data(self):
-        dep = self.departamento_edit.currentData()
-        dep = dep if dep in DEPARTAMENTOS_SET else ""
-        mun = self.municipio_edit.currentData()
-        mun = mun if mun in MUNICIPIOS_POR_DEPTO_SET.get(dep, set()) else ""
         return {
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
@@ -2511,15 +2469,15 @@ class DistribuidorDialog(QDialog):
             "sucursal": self.sucursal_edit.text(),
             "fecha_inicio": self.fecha_inicio_edit.date().toString("yyyy-MM-dd"),
             "direccion": self.direccion_edit.text(),
-            "departamento": dep,
-            "municipio": mun,
+            "departamento": self.departamento_edit.currentData(),
+            "municipio": self.municipio_edit.currentData(),
             "tipo_contrato": self.tipo_contrato_edit.text(),
             "comisiones_especificas": self.comisiones_especificas_edit.text(),
             "metodo_pago": self.metodo_pago_edit.text(),
             "nit": self.nit_edit.text(),
             "nrc": self.nrc_edit.text(),
             "cuenta_bancaria": self.cuenta_bancaria_edit.text(),
-            "notas": self.notas_edit.text(),
+            "notas": self.notas_edit.text()
         }
 
     def accept(self):
@@ -2613,11 +2571,10 @@ class ClienteDialog(QDialog):
         self.municipio_edit.setView(municipio_view)
         self.municipio_edit.setMaxVisibleItems(8)
         _populate_combo(self.departamento_edit, DEPARTAMENTOS)
-        _populate_municipios(self.municipio_edit, None)
+        _populate_combo(self.municipio_edit, MUNICIPIOS)
+        self.municipio_edit.setEnabled(False)
         self.departamento_edit.currentIndexChanged.connect(
-            lambda *_: _populate_municipios(
-                self.municipio_edit, self.departamento_edit.currentData()
-            )
+            lambda *_: self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
         )
         self._cliente_id = cliente.get("id") if cliente else None
 
@@ -2664,17 +2621,9 @@ class ClienteDialog(QDialog):
             self.telefono_edit.setText(cliente.get("telefono", ""))
             self.email_edit.setText(cliente.get("email", ""))
             self.direccion_edit.setText(cliente.get("direccion", ""))
-            _set_combo_value(
-                self.departamento_edit,
-                DEPARTAMENTOS,
-                cliente.get("departamento"),
-            )
-            _populate_municipios(self.municipio_edit, self.departamento_edit.currentData())
-            _set_combo_value(
-                self.municipio_edit,
-                MUNICIPIOS_POR_DEPTO.get(self.departamento_edit.currentData(), []),
-                cliente.get("municipio"),
-            )
+            _set_combo_value(self.departamento_edit, DEPARTAMENTOS, cliente.get("departamento"))
+            _set_combo_value(self.municipio_edit, MUNICIPIOS, cliente.get("municipio"))
+            self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
 
 
     def _validar_y_accept(self):
@@ -2725,10 +2674,6 @@ class ClienteDialog(QDialog):
         self.accept()
 
     def get_data(self):
-        dep = self.departamento_edit.currentData()
-        dep = dep if dep in DEPARTAMENTOS_SET else ""
-        mun = self.municipio_edit.currentData()
-        mun = mun if mun in MUNICIPIOS_POR_DEPTO_SET.get(dep, set()) else ""
         return {
             "codigo": self.codigo_edit.text().strip(),
             "nombre": self.nombre_edit.text().strip(),
@@ -2739,8 +2684,8 @@ class ClienteDialog(QDialog):
             "telefono": self.telefono_edit.text().strip(),
             "email": self.email_edit.text().strip(),
             "direccion": self.direccion_edit.text().strip(),
-            "departamento": dep,
-            "municipio": mun,
+            "departamento": self.departamento_edit.currentData(),
+            "municipio": self.municipio_edit.currentData(),
         }
 
 class VendedorDialog(QDialog):
@@ -2937,11 +2882,10 @@ class DatosNegocioDialog(QDialog):
         self.municipio.setMaxVisibleItems(8)
         self.complemento = QLineEdit()
         _populate_combo(self.departamento, DEPARTAMENTOS)
-        _populate_municipios(self.municipio, None)
+        _populate_combo(self.municipio, MUNICIPIOS)
+        self.municipio.setEnabled(False)
         self.departamento.currentIndexChanged.connect(
-            lambda *_: _populate_municipios(
-                self.municipio, self.departamento.currentData()
-            )
+            lambda *_: self.municipio.setEnabled(bool(self.departamento.currentData()))
         )
         form.addRow("NIT:", self.nit)
         form.addRow("NRC:", self.nrc)
@@ -2970,10 +2914,6 @@ class DatosNegocioDialog(QDialog):
             self.set_data(datos)
 
     def get_data(self):
-        dep = self.departamento.currentData()
-        dep = dep if dep in DEPARTAMENTOS_SET else ""
-        mun = self.municipio.currentData()
-        mun = mun if mun in MUNICIPIOS_POR_DEPTO_SET.get(dep, set()) else ""
         return {
             "nit": self.nit.text(),
             "nrc": self.nrc.text(),
@@ -2986,8 +2926,12 @@ class DatosNegocioDialog(QDialog):
             "telefono": self.telefono.text(),
             "correo": self.correo.text(),
             "direccion": {
-                "departamento": dep,
-                "municipio": mun,
+                "departamento": self.departamento.currentData()
+                if self.departamento.currentData() in DEPARTAMENTOS_SET
+                else "",
+                "municipio": self.municipio.currentData()
+                if self.municipio.currentData() in MUNICIPIOS_SET
+                else "",
                 "complemento": self.complemento.text(),
             },
         }
@@ -3010,12 +2954,12 @@ class DatosNegocioDialog(QDialog):
             DEPARTAMENTOS,
             str(departamento) if departamento else "",
         )
-        _populate_municipios(self.municipio, self.departamento.currentData())
         _set_combo_value(
             self.municipio,
-            MUNICIPIOS_POR_DEPTO.get(self.departamento.currentData(), []),
+            MUNICIPIOS,
             str(municipio) if municipio else "",
         )
+        self.municipio.setEnabled(bool(self.departamento.currentData()))
         self.complemento.setText(dir_info.get("complemento", ""))
 
 

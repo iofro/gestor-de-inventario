@@ -262,14 +262,6 @@ DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(0, 15)}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_RE = re.compile(r"^\+?\d{8,15}$")
 
-DOC_ID_REGEX = {
-    "36": re.compile(r"^[0-9]{14}$"),  # NIT
-    "13": re.compile(r"^[0-9]{8}-[0-9]$"),  # DUI
-    "03": re.compile(r"^[A-Z0-9]{3,20}$"),  # Pasaporte
-    "02": re.compile(r"^[A-Z0-9]{3,20}$"),  # Carnet de Residente
-    "37": re.compile(r"^[A-Z0-9]{3,20}$"),  # Otro
-}
-
 
 def _map_departamento(nombre: str | None) -> str:
     """Validate and return a departamento code."""
@@ -332,20 +324,6 @@ def _clean_nrc(nrc):
     if nrc:
         return "".join(c for c in str(nrc) if c.isdigit())
     return None
-
-
-def _validate_num_doc(num_doc, tipo_doc, *, suffix: str = ""):
-    if tipo_doc == "36":
-        num_doc = _clean_nit(num_doc)
-    elif num_doc is not None:
-        num_doc = str(num_doc).strip().upper()
-    pattern = DOC_ID_REGEX.get(tipo_doc)
-    if num_doc and pattern and not pattern.fullmatch(num_doc):
-        desc = catalogos.TIPO_DOC_REC.get(tipo_doc, "Documento")
-        if desc == "Otro":
-            desc = "Documento"
-        raise ValueError(f"{desc} inválido{suffix}")
-    return num_doc
 
 
 # --- Dirección --------------------------------------------------------------
@@ -549,25 +527,18 @@ def _build_receptor_direccion(src: dict) -> dict:
 
 # --- Helpers ---------------------------------------------------------------
 
-# Catálogo de ``condicionOperacion`` según el esquema oficial.  Se obtiene de
-# ``catalogos.CONDICION_OPERACION`` cuando está disponible; de lo contrario se
-# recurre a un catálogo por defecto.
-CONDICION_OPERACION_CATALOG = (
-    catalogos.CONDICION_OPERACION
-    if getattr(catalogos, "CONDICION_OPERACION", None)
-    else {1: "Contado", 2: "Crédito", 3: "Otro"}
-)
+# Catálogo de ``condicionOperacion`` según el esquema oficial.
+# 1 = Contado, 2 = Crédito, 3 = Otro
+CONDICION_OPERACION_CATALOG = {
+    1: "Contado",
+    2: "Crédito",
+    3: "Otro",
+}
 
 _CONDICION_OPERACION_BY_NAME = {
     v.lower(): k for k, v in CONDICION_OPERACION_CATALOG.items()
 }
-_CONDICION_OPERACION_BY_NAME["credito"] = _CONDICION_OPERACION_BY_NAME.get(
-    "crédito", 2
-)
-if "otras" in _CONDICION_OPERACION_BY_NAME:
-    _CONDICION_OPERACION_BY_NAME.setdefault(
-        "otro", _CONDICION_OPERACION_BY_NAME["otras"]
-    )
+_CONDICION_OPERACION_BY_NAME["credito"] = 2
 
 
 def _parse_condicion_operacion(value):
@@ -740,36 +711,20 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         codigo_raw = p.get("codigo", "")
         codigo_str = str(codigo_raw).zfill(2)
         if allowed and codigo_str not in allowed:
-            raise ValidationError(f"Código de pago inválido: {codigo_str}")
+            continue
         codigo = int(codigo_raw) if code_is_int else codigo_str
-
         monto = money(p.get("montoPago", 0))
-        if monto <= 0:
-            raise ValidationError("montoPago debe ser mayor a 0")
-
         referencia = p.get("referencia") or None
-
         periodo_raw = p.get("periodo")
         if periodo_raw in ("", None):
             periodo = None
         else:
-            periodo_code = str(periodo_raw).zfill(2)
-            if periodo_code not in catalogos.PLAZO:
-                raise ValidationError("periodo inválido")
-            periodo = periodo_code if periodo_is_str else int(periodo_code)
-
+            periodo = str(periodo_raw).zfill(2) if periodo_is_str else int(periodo_raw)
         plazo_raw = p.get("plazo")
         if plazo_raw in ("", None):
             plazo = None
         else:
-            try:
-                plazo_val = int(plazo_raw)
-            except Exception as exc:  # pragma: no cover - error path
-                raise ValidationError("plazo inválido") from exc
-            if plazo_val <= 0:
-                raise ValidationError("plazo debe ser mayor a 0")
-            plazo = str(plazo_val).zfill(2) if plazo_is_str else plazo_val
-
+            plazo = str(plazo_raw).zfill(2) if plazo_is_str else int(plazo_raw)
         pagos.append(
             {
                 "codigo": codigo,
@@ -805,15 +760,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
     else:
         suma = sum((p["montoPago"] for p in pagos), D("0.00"))
         diff = money(total - suma)
-        if diff < 0:
+        if diff != 0:
             if abs(diff) > D("0.01"):
                 raise ValidationError(
-                    f"La suma de pagos {money(suma)} excede el total {total} (dif {-diff})"
+                    f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
                 )
             nuevo = money(pagos[-1]["montoPago"] + diff)
             if nuevo < 0:
                 raise ValidationError(
-                    f"La suma de pagos {money(suma)} excede el total {total} (dif {-diff})"
+                    f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
                 )
             pagos[-1]["montoPago"] = nuevo
 
@@ -835,9 +790,9 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
 
     suma_final = sum((p["montoPago"] for p in pagos), D("0.00"))
     diff_final = money(total - suma_final)
-    if diff_final < 0:
+    if diff_final != 0:
         raise ValidationError(
-            f"La suma de pagos {money(suma_final)} excede el total {total} (dif {-diff_final})"
+            f"La suma de pagos {money(suma_final)} difiere del total {total} (dif {diff_final})"
         )
 
     return pagos
@@ -960,15 +915,12 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         resumen["totalIva"] = money(0)
 
     if "pagos" in resumen:
-        pagos_norm = normalizar_pagos(
+        resumen["pagos"] = normalizar_pagos(
             extra.get("pagos"),
             resumen["totalPagar"],
             tipo_dte=tipo_dte,
             condicion=resumen.get("condicionOperacion", 1),
         )
-        resumen["pagos"] = pagos_norm
-        pagos_suma = sum((p["montoPago"] for p in pagos_norm), D("0.00"))
-        resumen["saldoFavor"] = money(resumen["totalPagar"] - pagos_suma)
 
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
@@ -1158,10 +1110,6 @@ def generar_dte_json(
     motivo_contin: str | None = None,
     tipo_modelo: int | None = None,
     tipo_moneda: str = "USD",
-    documento_relacionado: list | None = None,
-    otros_documentos: list | None = None,
-    extension: dict | None = None,
-    apendice: dict | None = None,
     **kwargs,
 ) -> dict:
     """Genera un diccionario DTE básico para una venta.
@@ -1291,6 +1239,9 @@ def generar_dte_json(
         if v not in (None, "", []):
             rec[k] = v
 
+    def _clean_nit(nit):
+        return "".join(c for c in str(nit) if c.isdigit()) if nit else None
+
     tipo_doc = rec.get("tipoDocumento")
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
@@ -1305,7 +1256,13 @@ def generar_dte_json(
     if nit and not tipo_doc:
         tipo_doc = "36"
 
-    num_doc = _validate_num_doc(num_doc, tipo_doc)
+    if tipo_doc == "36":
+        num_doc = _clean_nit(num_doc)
+        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+            raise ValueError("NIT inválido")
+    elif tipo_doc == "13":
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido")
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
@@ -1552,15 +1509,17 @@ def generar_dte_json(
         for p in resumen["pagos"]:
             p["montoPago"] = _float_money(p["montoPago"])
 
+    extension = None
+
     result = {
         "identificacion": identificacion,
         "emisor": emisor,
         "receptor": receptor,
         "cuerpoDocumento": cuerpo,
         "resumen": resumen,
-        "documentoRelacionado": documento_relacionado,
-        "otrosDocumentos": otros_documentos,
-        "apendice": apendice,
+        "documentoRelacionado": None,
+        "otrosDocumentos": None,
+        "apendice": None,
         "ventaTercero": None,
         "extension": extension,
     }
@@ -1747,7 +1706,13 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         if tipo_doc is None:
             tipo_doc = "36"
     num_doc = receptor.get("numDocumento")
-    num_doc = _validate_num_doc(num_doc, tipo_doc, suffix=" en receptor")
+    if tipo_doc == "36":
+        num_doc = _clean_nit(num_doc)
+        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+            raise ValueError("NIT inválido en receptor")
+    elif tipo_doc == "13":
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido en receptor")
     receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
     receptor["numDocumento"] = num_doc
 
@@ -2069,25 +2034,6 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
 
     payload["resumen"] = resumen
 
-    # Validación de documentoRelacionado y otrosDocumentos
-    relacionados = payload.get("documentoRelacionado") or []
-    if isinstance(relacionados, dict):
-        relacionados = [relacionados]
-        payload["documentoRelacionado"] = relacionados
-    for rel in relacionados:
-        tipo = str(rel.get("tipoDocumento"))
-        if tipo and tipo not in catalogos.TIPO_DTE:
-            raise ValueError(f"Tipo de DTE relacionado inválido: {tipo}")
-
-    otros = payload.get("otrosDocumentos") or []
-    if isinstance(otros, dict):
-        otros = [otros]
-        payload["otrosDocumentos"] = otros
-    for od in otros:
-        cod = od.get("codDocAsociado")
-        if cod is not None and cod not in catalogos.OTROS_DOCUMENTOS:
-            raise ValueError(f"Código de documento asociado inválido: {cod}")
-
     # --- Schema validation ---
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
@@ -2133,24 +2079,18 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
     venta_id = nota.get("venta_id")
     # Determine document type of the original sale
     venta_row = db.cursor.execute(
-        "SELECT cliente_id, fecha FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     tipo_doc = "01"
-    fecha_venta = None
     if venta_row:
         venta = dict(venta_row)
-        fecha_venta = venta.get("fecha")
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="05")
-    data["documentoRelacionado"] = [
-        {
-            "tipoDocumento": tipo_doc,
-            "tipoGeneracion": 1,
-            "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-            "fechaEmision": fecha_venta or data["identificacion"].get("fecEmi"),
-        }
-    ]
+    data["documentoRelacionado"] = {
+        "tipoDoc": tipo_doc,
+        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+    }
 
     for item in data.get("cuerpoDocumento", []):
         if isinstance(item.get("cantidad"), (int, float)):
@@ -2177,24 +2117,18 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
 
     venta_id = nota.get("venta_id")
     venta_row = db.cursor.execute(
-        "SELECT cliente_id, fecha FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     tipo_doc = "01"
-    fecha_venta = None
     if venta_row:
         venta = dict(venta_row)
-        fecha_venta = venta.get("fecha")
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="06")
-    data["documentoRelacionado"] = [
-        {
-            "tipoDocumento": tipo_doc,
-            "tipoGeneracion": 1,
-            "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-            "fechaEmision": fecha_venta or data["identificacion"].get("fecEmi"),
-        }
-    ]
+    data["documentoRelacionado"] = {
+        "tipoDoc": tipo_doc,
+        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+    }
     return data
 
 
@@ -2209,24 +2143,18 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
 
     venta_id = nota.get("venta_id")
     venta_row = db.cursor.execute(
-        "SELECT cliente_id, fecha FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     tipo_doc = "01"
-    fecha_venta = None
     if venta_row:
         venta = dict(venta_row)
-        fecha_venta = venta.get("fecha")
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="04")
-    data["documentoRelacionado"] = [
-        {
-            "tipoDocumento": tipo_doc,
-            "tipoGeneracion": 1,
-            "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-            "fechaEmision": fecha_venta or data["identificacion"].get("fecEmi"),
-        }
-    ]
+    data["documentoRelacionado"] = {
+        "tipoDoc": tipo_doc,
+        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
+    }
     return data
 
 

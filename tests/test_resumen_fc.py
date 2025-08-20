@@ -100,6 +100,24 @@ def test_pagos_unico_ajuste():
     assert sum(p['montoPago'] for p in norm) == total
 
 
+def test_pagos_diferencia_grande_reajuste():
+    pagos = [{'codigo': '01', 'montoPago': 13}]
+    total = D('11.50')
+    norm = normalizar_pagos(pagos, total)
+    assert norm[0]['montoPago'] == D('11.50')
+    assert sum(p['montoPago'] for p in norm) == total
+
+
+def test_pagos_exceso_previo_error():
+    pagos = [
+        {'codigo': '01', 'montoPago': 12},
+        {'codigo': '02', 'montoPago': 5},
+    ]
+    total = D('10')
+    with pytest.raises(ValidationError):
+        normalizar_pagos(pagos, total)
+
+
 def test_credito_requiere_plazo_periodo():
     pagos = [{'codigo': '01', 'montoPago': 5}]
     with pytest.raises(Exception):

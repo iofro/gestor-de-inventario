@@ -31,3 +31,5 @@ inventario.db
 tests/__pycache__/
 /.out/
 .coverage
+.coverage*
+node_modules/

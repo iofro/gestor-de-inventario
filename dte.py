@@ -527,18 +527,25 @@ def _build_receptor_direccion(src: dict) -> dict:
 
 # --- Helpers ---------------------------------------------------------------
 
-# Catálogo de ``condicionOperacion`` según el esquema oficial.
-# 1 = Contado, 2 = Crédito, 3 = Otro
-CONDICION_OPERACION_CATALOG = {
-    1: "Contado",
-    2: "Crédito",
-    3: "Otro",
-}
+# Catálogo de ``condicionOperacion`` según el esquema oficial.  Se obtiene de
+# ``catalogos.CONDICION_OPERACION`` cuando está disponible; de lo contrario se
+# recurre a un catálogo por defecto.
+CONDICION_OPERACION_CATALOG = (
+    catalogos.CONDICION_OPERACION
+    if getattr(catalogos, "CONDICION_OPERACION", None)
+    else {1: "Contado", 2: "Crédito", 3: "Otro"}
+)
 
 _CONDICION_OPERACION_BY_NAME = {
     v.lower(): k for k, v in CONDICION_OPERACION_CATALOG.items()
 }
-_CONDICION_OPERACION_BY_NAME["credito"] = 2
+_CONDICION_OPERACION_BY_NAME["credito"] = _CONDICION_OPERACION_BY_NAME.get(
+    "crédito", 2
+)
+if "otras" in _CONDICION_OPERACION_BY_NAME:
+    _CONDICION_OPERACION_BY_NAME.setdefault(
+        "otro", _CONDICION_OPERACION_BY_NAME["otras"]
+    )
 
 
 def _parse_condicion_operacion(value):
@@ -711,20 +718,36 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
         codigo_raw = p.get("codigo", "")
         codigo_str = str(codigo_raw).zfill(2)
         if allowed and codigo_str not in allowed:
-            continue
+            raise ValidationError(f"Código de pago inválido: {codigo_str}")
         codigo = int(codigo_raw) if code_is_int else codigo_str
+
         monto = money(p.get("montoPago", 0))
+        if monto <= 0:
+            raise ValidationError("montoPago debe ser mayor a 0")
+
         referencia = p.get("referencia") or None
+
         periodo_raw = p.get("periodo")
         if periodo_raw in ("", None):
             periodo = None
         else:
-            periodo = str(periodo_raw).zfill(2) if periodo_is_str else int(periodo_raw)
+            periodo_code = str(periodo_raw).zfill(2)
+            if periodo_code not in catalogos.PLAZO:
+                raise ValidationError("periodo inválido")
+            periodo = periodo_code if periodo_is_str else int(periodo_code)
+
         plazo_raw = p.get("plazo")
         if plazo_raw in ("", None):
             plazo = None
         else:
-            plazo = str(plazo_raw).zfill(2) if plazo_is_str else int(plazo_raw)
+            try:
+                plazo_val = int(plazo_raw)
+            except Exception as exc:  # pragma: no cover - error path
+                raise ValidationError("plazo inválido") from exc
+            if plazo_val <= 0:
+                raise ValidationError("plazo debe ser mayor a 0")
+            plazo = str(plazo_val).zfill(2) if plazo_is_str else plazo_val
+
         pagos.append(
             {
                 "codigo": codigo,
@@ -760,15 +783,15 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
     else:
         suma = sum((p["montoPago"] for p in pagos), D("0.00"))
         diff = money(total - suma)
-        if diff != 0:
+        if diff < 0:
             if abs(diff) > D("0.01"):
                 raise ValidationError(
-                    f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
+                    f"La suma de pagos {money(suma)} excede el total {total} (dif {-diff})"
                 )
             nuevo = money(pagos[-1]["montoPago"] + diff)
             if nuevo < 0:
                 raise ValidationError(
-                    f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
+                    f"La suma de pagos {money(suma)} excede el total {total} (dif {-diff})"
                 )
             pagos[-1]["montoPago"] = nuevo
 
@@ -790,9 +813,9 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
 
     suma_final = sum((p["montoPago"] for p in pagos), D("0.00"))
     diff_final = money(total - suma_final)
-    if diff_final != 0:
+    if diff_final < 0:
         raise ValidationError(
-            f"La suma de pagos {money(suma_final)} difiere del total {total} (dif {diff_final})"
+            f"La suma de pagos {money(suma_final)} excede el total {total} (dif {-diff_final})"
         )
 
     return pagos
@@ -915,12 +938,15 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         resumen["totalIva"] = money(0)
 
     if "pagos" in resumen:
-        resumen["pagos"] = normalizar_pagos(
+        pagos_norm = normalizar_pagos(
             extra.get("pagos"),
             resumen["totalPagar"],
             tipo_dte=tipo_dte,
             condicion=resumen.get("condicionOperacion", 1),
         )
+        resumen["pagos"] = pagos_norm
+        pagos_suma = sum((p["montoPago"] for p in pagos_norm), D("0.00"))
+        resumen["saldoFavor"] = money(resumen["totalPagar"] - pagos_suma)
 
     if "numPagoElectronico" in resumen:
         resumen["numPagoElectronico"] = extra.get("numPagoElectronico")

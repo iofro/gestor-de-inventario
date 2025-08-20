@@ -262,6 +262,14 @@ DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(0, 15)}
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_RE = re.compile(r"^\+?\d{8,15}$")
 
+DOC_ID_REGEX = {
+    "36": re.compile(r"^[0-9]{14}$"),  # NIT
+    "13": re.compile(r"^[0-9]{8}-[0-9]$"),  # DUI
+    "03": re.compile(r"^[A-Z0-9]{3,20}$"),  # Pasaporte
+    "02": re.compile(r"^[A-Z0-9]{3,20}$"),  # Carnet de Residente
+    "37": re.compile(r"^[A-Z0-9]{3,20}$"),  # Otro
+}
+
 
 def _map_departamento(nombre: str | None) -> str:
     """Validate and return a departamento code."""
@@ -327,6 +335,20 @@ def _clean_nrc(nrc):
     if nrc:
         return "".join(c for c in str(nrc) if c.isdigit())
     return None
+
+
+def _validate_num_doc(num_doc, tipo_doc, *, suffix: str = ""):
+    if tipo_doc == "36":
+        num_doc = _clean_nit(num_doc)
+    elif num_doc is not None:
+        num_doc = str(num_doc).strip().upper()
+    pattern = DOC_ID_REGEX.get(tipo_doc)
+    if num_doc and pattern and not pattern.fullmatch(num_doc):
+        desc = catalogos.TIPO_DOC_REC.get(tipo_doc, "Documento")
+        if desc == "Otro":
+            desc = "Documento"
+        raise ValueError(f"{desc} inválido{suffix}")
+    return num_doc
 
 
 # --- Dirección --------------------------------------------------------------
@@ -1263,9 +1285,6 @@ def generar_dte_json(
         if v not in (None, "", []):
             rec[k] = v
 
-    def _clean_nit(nit):
-        return "".join(c for c in str(nit) if c.isdigit()) if nit else None
-
     tipo_doc = rec.get("tipoDocumento")
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
@@ -1280,13 +1299,7 @@ def generar_dte_json(
     if nit and not tipo_doc:
         tipo_doc = "36"
 
-    if tipo_doc == "36":
-        num_doc = _clean_nit(num_doc)
-        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
-            raise ValueError("NIT inválido")
-    elif tipo_doc == "13":
-        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-            raise ValueError("DUI inválido")
+    num_doc = _validate_num_doc(num_doc, tipo_doc)
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
@@ -1730,13 +1743,7 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         if tipo_doc is None:
             tipo_doc = "36"
     num_doc = receptor.get("numDocumento")
-    if tipo_doc == "36":
-        num_doc = _clean_nit(num_doc)
-        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
-            raise ValueError("NIT inválido en receptor")
-    elif tipo_doc == "13":
-        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-            raise ValueError("DUI inválido en receptor")
+    num_doc = _validate_num_doc(num_doc, tipo_doc, suffix=" en receptor")
     receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
     receptor["numDocumento"] = num_doc
 

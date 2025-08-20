@@ -21,6 +21,7 @@ from svfe import config as svfe_config
 from pathlib import Path
 import jsonpatch
 from paths import DATOS_NEGOCIO_PATH
+from xml.etree.ElementTree import Element, SubElement
 
 logger = logging.getLogger(__name__)
 
@@ -157,6 +158,62 @@ def numero_a_letras(monto):
         partes = texto.split(" ", 1)
         return f"{partes[0]} CON {partes[1]}"
     return texto
+
+
+def identificacion_a_xml(ident: dict) -> Element:
+    """Return an XML ``Element`` for ``ident``.
+
+    Optional values are retrieved into variables and only assigned to the
+    corresponding tag when not ``None``; otherwise the tag text is an empty
+    string.
+    """
+    root = Element("identificacion")
+
+    version = ident.get("version")
+    SubElement(root, "version").text = "" if version is None else str(version)
+
+    ambiente = ident.get("ambiente")
+    SubElement(root, "ambiente").text = ambiente or ""
+
+    tipo_dte = ident.get("tipoDte")
+    SubElement(root, "tipoDte").text = "" if tipo_dte is None else str(tipo_dte)
+
+    numero_control = ident.get("numeroControl")
+    SubElement(root, "numeroControl").text = numero_control or ""
+
+    codigo_generacion = ident.get("codigoGeneracion")
+    SubElement(root, "codigoGeneracion").text = codigo_generacion or ""
+
+    tipo_modelo = ident.get("tipoModelo")
+    SubElement(root, "tipoModelo").text = (
+        "" if tipo_modelo is None else str(tipo_modelo)
+    )
+
+    tipo_operacion = ident.get("tipoOperacion")
+    SubElement(root, "tipoOperacion").text = (
+        "" if tipo_operacion is None else str(tipo_operacion)
+    )
+
+    tipo_contingencia = ident.get("tipoContingencia")
+    SubElement(root, "tipoContingencia").text = (
+        "" if tipo_contingencia is None else str(tipo_contingencia)
+    )
+
+    motivo_contin = ident.get("motivoContin")
+    SubElement(root, "motivoContin").text = (
+        "" if motivo_contin is None else str(motivo_contin)
+    )
+
+    fec_emi = ident.get("fecEmi")
+    SubElement(root, "fecEmi").text = fec_emi or ""
+
+    hor_emi = ident.get("horEmi")
+    SubElement(root, "horEmi").text = hor_emi or ""
+
+    tipo_moneda = ident.get("tipoMoneda")
+    SubElement(root, "tipoMoneda").text = tipo_moneda or ""
+
+    return root
 
 
 def _normalize_payload(value):

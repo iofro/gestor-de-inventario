@@ -83,11 +83,22 @@ def _strip_additional_properties(value, schema):
 def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
     """Return ``data`` excluding properties not allowed by ``schema``.
 
-    When ``schema`` is ``None`` the FC v1 schema is used.
+    Además, de forma recursiva se eliminan las claves cuyo valor sea ``None``.
+    Cuando ``schema`` es ``None`` se usa el esquema ``FC_SCHEMA``.
     """
+
+    def _remove_nulls(value):
+        """Recursively drop keys or items with ``None`` values."""
+        if isinstance(value, dict):
+            return {k: _remove_nulls(v) for k, v in value.items() if v is not None}
+        if isinstance(value, list):
+            return [_remove_nulls(v) for v in value if v is not None]
+        return value
+
     if schema is None:
         schema = FC_SCHEMA
-    return _strip_additional_properties(data, schema)
+    cleaned = _strip_additional_properties(data, schema)
+    return _remove_nulls(cleaned)
 
 
 def apply_schema_patch(data: dict) -> dict:
@@ -2724,6 +2735,8 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
+    # Ensure the payload is sanitized and free of ``None`` values before signing
+    data = sanitize_dte_payload(data)
 
     signed = jws.sign_json(data)
 

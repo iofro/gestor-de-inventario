@@ -1208,7 +1208,8 @@ def generar_cabecera_dte_data(
     if m:
         sucursal, punto = m.groups()
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(tipo_dte, sucursal, punto)
+    prefijo_nc = f"DTE-{tipo_dte}-S{sucursal}P{punto}"
+    numero_control = generar_numero_control(prefijo_nc)
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     return {
         "codigo_generacion": codigo_generacion,

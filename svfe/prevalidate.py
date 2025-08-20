@@ -15,6 +15,10 @@ from typing import Any, Dict
 
 from jsonschema import Draft202012Validator, FormatChecker, RefResolver
 from utils import catalogos
+from .catalogs import (
+    normalize_condicion_operacion,
+    validate_pagos_basico,
+)
 
 
 # Keys that may be present in a document returned by MH after processing but
@@ -101,7 +105,46 @@ def prevalidate_envelope(sobre: Dict[str, Any], jws: str, schema_path: str) -> N
     assert (
         sobre["codigoGeneracion"] == ident.get("codigoGeneracion")
     ), "codigoGeneracion no coincide"
-    assert ident.get("ambiente") == "00", "ambiente debe ser '00' en pruebas"
+
+    ambiente = ident.get("ambiente")
+    assert ambiente in {"00", "01"}, "ambiente debe ser '00' o '01'"
+
+    # Rules for tipoOperacion, tipoModelo and tipoContingencia
+    tipo_oper = int(ident.get("tipoOperacion", 1) or 1)
+    tipo_modelo = ident.get("tipoModelo")
+    tipo_cont = ident.get("tipoContingencia")
+    motivo = ident.get("motivoContin")
+    if isinstance(motivo, str):
+        motivo = motivo.strip() or None
+    if tipo_oper == 1:
+        assert tipo_modelo in (None, 1), "tipoModelo debe ser 1 cuando tipoOperacion=1"
+        assert not tipo_cont, "tipoContingencia debe ser nulo cuando tipoOperacion=1"
+        assert not motivo, "motivoContin debe ser nulo cuando tipoOperacion=1"
+    elif tipo_oper == 2:
+        assert tipo_modelo in (None, 2), "tipoModelo debe ser 2 cuando tipoOperacion=2"
+        assert tipo_cont is not None, "tipoContingencia requerido cuando tipoOperacion=2"
+        tipo_cont = int(tipo_cont)
+        assert tipo_cont in catalogos.CONTINGENCIA, "tipoContingencia inválido"
+        if tipo_cont == 5:
+            assert (
+                motivo and 5 <= len(motivo) <= 150
+            ), "motivoContin requerido cuando tipoContingencia=5"
+        else:
+            assert not motivo, "motivoContin sólo permitido cuando tipoContingencia=5"
+    else:
+        raise AssertionError("tipoOperacion debe ser 1 o 2")
+
+    resumen = payload.get("resumen", {})
+    condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
+    validate_pagos_basico(resumen, condicion)
+
+    if ambiente == "01":
+        firma = payload.get("firmaElectronica")
+        assert isinstance(firma, str) and firma.strip(), "firmaElectronica requerida"
+        try:
+            base64.b64decode(firma, validate=True)
+        except Exception:
+            raise AssertionError("firmaElectronica inválida") from None
 
     validate_against_schema(strip_extras(payload), schema_path)
 

@@ -723,19 +723,19 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
             }
         ]
     else:
-        suma = sum((p["montoPago"] for p in pagos), D("0.00"))
-        diff = money(total - suma)
-        if diff != 0:
-            if abs(diff) > D("0.01"):
-                raise ValidationError(
-                    f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
-                )
-            nuevo = money(pagos[-1]["montoPago"] + diff)
-            if nuevo < 0:
-                raise ValidationError(
-                    f"La suma de pagos {money(suma)} difiere del total {total} (dif {diff})"
-                )
-            pagos[-1]["montoPago"] = nuevo
+        # Fijar todos los pagos excepto el último y recalcularlo para que el
+        # total coincida. Esta estrategia permite corregir discrepancias
+        # superiores a un centavo de forma determinista, tal como se describe en
+        # la documentación del proyecto.
+        suma_parcial = sum((p["montoPago"] for p in pagos[:-1]), D("0.00"))
+        nuevo = money(total - suma_parcial)
+        if nuevo < 0:
+            suma_total = suma_parcial + pagos[-1]["montoPago"]
+            diff = money(total - suma_total)
+            raise ValidationError(
+                f"La suma de pagos {money(suma_total)} difiere del total {total} (dif {diff})"
+            )
+        pagos[-1]["montoPago"] = nuevo
 
     if condicion == 2:
         first = pagos[0]
@@ -1985,21 +1985,13 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
         tipo_dte=ident.get("tipoDte"),
         condicion=resumen.get("condicionOperacion", 1),
     )
-    cond = int(resumen.get("condicionOperacion", 1))
-    if cond == 1 and not resumen.get("pagos"):
-        resumen["pagos"] = [
-            {
-                "codigo": "01",
-                "montoPago": money(D(str(resumen["totalPagar"]))),
-            }
-        ]
     delta = money(
         D(str(resumen["totalPagar"]))
-        - sum(D(str(p["montoPago"])) for p in resumen.get("pagos", []))
+        - sum(D(str(p.get("montoPago") or 0)) for p in resumen.get("pagos", []))
     )
     if resumen.get("pagos") and D("0") < abs(delta) <= D("0.01"):
         ultimo = resumen["pagos"][-1]
-        ult_monto = D(str(ultimo["montoPago"]))
+        ult_monto = D(str(ultimo.get("montoPago") or 0))
         ultimo["montoPago"] = money(ult_monto + delta)
     elif abs(delta) > D("0.01"):
         logger.warning(

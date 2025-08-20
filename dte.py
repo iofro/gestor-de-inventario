@@ -1078,6 +1078,7 @@ def recalcular_totales(
     # IVA-FIX END
 
 
+
 def generar_numero_control(
     tipo_dte: str = "01", sucursal: str = "001", punto: str = "001"
 ) -> str:
@@ -1089,6 +1090,7 @@ def generar_numero_control(
     tipo = str(tipo_dte).zfill(2)
     suc = re.sub(r"\D", "", str(sucursal))[-3:].zfill(3)
     pt = re.sub(r"\D", "", str(punto))[-3:].zfill(3)
+
     secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
     return f"DTE-{tipo}-S{suc}P{pt}-{secuencia}"
 
@@ -1110,6 +1112,7 @@ def identificacion_a_xml(ident: dict) -> str:
 def generar_cabecera_dte_data(
     tipo_modelo: int,
     tipo_operacion: int,
+    tipo_dte: str,
     tipo_contingencia: int | None = None,
     motivo_contin: str | None = None,
     ambiente: str = "00",
@@ -1127,8 +1130,15 @@ def generar_cabecera_dte_data(
     else:
         tipo_modelo = 2
 
+    datos = _load_datos_negocio()
+    prefijo = datos.get("dte_api", {}).get("prefijo_control", "")
+    sucursal = "001"
+    punto = "001"
+    m = re.search(r"S(\d{3})P(\d{3})", prefijo)
+    if m:
+        sucursal, punto = m.groups()
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control()
+    numero_control = generar_numero_control(tipo_dte, sucursal, punto)
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     return {
         "codigo_generacion": codigo_generacion,
@@ -1192,16 +1202,18 @@ def generar_dte_json(
 
     datos = _load_datos_negocio()
 
+
     prefijo = str(datos.get("dte_api", {}).get("prefijo_control", ""))
     m = re.match(r"^DTE-\d{2}-S(\d{3})P(\d{3})$", prefijo)
     suc_pref, punto_pref = m.groups() if m else ("001", "001")
-    cod_estable = re.sub(r"\D", "", str(datos.get("codEstable", ""))) or suc_pref.rjust(4, "0")
-    cod_punto = re.sub(r"\D", "", str(datos.get("codPuntoVenta", ""))) or punto_pref.rjust(4, "0")
-    cod_estable = cod_estable[-4:].zfill(4)
-    cod_punto = cod_punto[-4:].zfill(4)
-
+    cod_estable_raw = re.sub(r"\D", "", str(datos.get("codEstable", "")))
+    cod_punto_raw = re.sub(r"\D", "", str(datos.get("codPuntoVenta", "")))
+    cod_estable = (cod_estable_raw or suc_pref.rjust(4, "0"))[-4:].zfill(4)
+    cod_punto   = (cod_punto_raw  or punto_pref.rjust(4, "0"))[-4:].zfill(4)
+    # Generar identificadores con formatos oficiales
     codigo_generacion = str(uuid.uuid4()).upper()
     numero_control = generar_numero_control(tipo_dte, cod_estable[-3:], cod_punto[-3:])
+
 
     now = datetime.now(TZ_EL_SALVADOR)
     fecha = fecha_emision_hoy_str(now)

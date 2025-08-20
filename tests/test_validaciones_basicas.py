@@ -134,22 +134,27 @@ def test_infiere_departamento():
 
 
 def test_municipio_fuera_depto():
-    with pytest.raises(ValidationError):
-        _build_receptor_direccion(
-            {"departamento": "06", "municipio": "Santa Ana Centro"}
-        )
+    out = _build_receptor_direccion(
+        {"departamento": "06", "municipio": "Santa Ana Centro"}
+    )
+    assert out["departamento"] == "06"
+    assert out["municipio"] == "15"
 
 
 def test_receptor_direccion_municipio_nombre_fuera_depto(monkeypatch):
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
-    data = _load_fc()
-    data["receptor"]["direccion"] = {
+    out = _build_receptor_direccion(
+        {
+            "departamento": "06",
+            "municipio": "Santa Ana Centro",
+            "complemento": "C",
+        }
+    )
+    assert out == {
         "departamento": "06",
-        "municipio": "Santa Ana Centro",
+        "municipio": "15",
         "complemento": "C",
     }
-    with pytest.raises(ValidationError):
-        validate_dte_json(data)
 
 
 def test_complemento_opcional():

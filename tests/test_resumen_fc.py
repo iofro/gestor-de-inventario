@@ -81,15 +81,15 @@ def test_pagos_contado_default_int(monkeypatch):
     ]
 
 
-def test_pagos_varios_cuadre():
+def test_pagos_varios_parciales():
     pagos = [
         {'codigo': '01', 'montoPago': 5},
         {'codigo': '02', 'montoPago': 5},
     ]
     total = D('10.01')
     norm = normalizar_pagos(pagos, total)
-    assert norm[-1]['montoPago'] == D('5.01')
-    assert sum(p['montoPago'] for p in norm) == total
+    assert norm[-1]['montoPago'] == D('5.00')
+    assert sum(p['montoPago'] for p in norm) == D('10.00')
 
 
 def test_pagos_unico_ajuste():
@@ -104,6 +104,18 @@ def test_credito_requiere_plazo_periodo():
     pagos = [{'codigo': '01', 'montoPago': 5}]
     with pytest.raises(Exception):
         normalizar_pagos(pagos, D('5'), condicion=2)
+
+
+def test_calcular_resumen_saldo_parcial():
+    pagos = [{'codigo': '01', 'montoPago': 5}]
+    items_total = D('10.00')
+    resumen = calcular_resumen(
+        items_total,
+        {'total': items_total},
+        fiscal={'iva': D('0')},
+        extra={'pagos': pagos, 'precios_incluyen_iva': False},
+    )
+    assert resumen['saldoFavor'] == D('5.00')
 
 
 def test_codigo_pago_tipo_schema(monkeypatch):

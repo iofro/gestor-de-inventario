@@ -1,5 +1,6 @@
 import os
 import warnings
+import json
 import pytest
 from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
@@ -220,3 +221,69 @@ def test_save_and_send_contingencia_no_http(
         title == "Guardar y enviar" and text.startswith("Factura guardado")
         for title, text in mensajes
     )
+
+
+def test_save_and_send_contingencia_from_config(
+    qt_app,
+    tmp_path,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    import dte
+
+    pdf, json_path = pdf_json_files
+    venta = venta_factory()  # sin modo_transmision
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
+
+    def fake_gen(manager, vid):
+        pdf.write_bytes(b"%PDF")
+        json_path.write_text("{}", encoding="utf-8")
+        manager.db.add_factura_pdf(vid, "Factura", str(pdf))
+        return str(pdf)
+
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr(SalesTab, "send_email", lambda self: None)
+    monkeypatch.setattr("dte._load_dte_api_config", lambda: {})
+
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(
+        json.dumps({"dte_api": {"modo_transmision": "2 - Contingencia"}}),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("sales_tab.DATOS_NEGOCIO_PATH", str(datos_file))
+
+    post_called = {"count": 0}
+
+    def fake_post(*a, **k):
+        post_called["count"] += 1
+        return {}
+
+    monkeypatch.setattr("dte._post_dte", fake_post)
+
+    transmit_args = {}
+
+    def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
+        transmit_args["modo"] = modo
+        return dte.transmitir_dte(db_, vid, modo=modo, tipo_dte=tipo_dte)
+
+    monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
+
+    mensajes = []
+
+    def fake_info(parent, title, text):
+        mensajes.append((title, text))
+
+    monkeypatch.setattr(QMessageBox, "information", fake_info)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+
+    tab.sales_table.selectRow(0)
+    tab.save_and_send()
+
+    assert transmit_args["modo"] == "contingencia"
+    assert post_called["count"] == 0
+    assert any("contingencia" in text.lower() for _, text in mensajes)

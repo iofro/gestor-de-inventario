@@ -35,7 +35,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
             "correo": "",
             "direccion": {
                 "departamento": "06",
-                "municipio": "01",
+                "municipio": "23",
                 "complemento": "Calle 1",
             },
         },
@@ -99,14 +99,19 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
                 "montoTotalOperacion": 10,
                 "totalNoGravado": 0,
                 "totalPagar": 10,
-                "totalLetras": "",
+                "totalLetras": "diez",
                 "totalIva": 0,
                 "saldoFavor": 0,
                 "condicionOperacion": 1,
                 "pagos": None,
                 "numPagoElectronico": None,
             },
-            "identificacion": {"tipoDte": "01"},
+                "identificacion": {
+                    "tipoDte": "01",
+                    "codigoGeneracion": "00000000-0000-4000-8000-000000000001",
+                    "version": 1,
+                    "ambiente": "00",
+                },
         },
     )
 

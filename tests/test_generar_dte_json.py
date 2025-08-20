@@ -36,7 +36,7 @@ def test_generar_dte_json_basic(tmp_path):
     prod_id = db.cursor.lastrowid
     db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "70000001", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 11.3, cliente_id=cliente_id)
+    venta_id = db.add_venta("2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False})
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
     data = generar_dte_json(db, venta_id)
@@ -69,6 +69,42 @@ def test_generar_dte_json_basic(tmp_path):
     assert set(data.keys()) == expected
 
 
+def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 13)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 13)
+    db.add_detalle_venta(venta_id, pid, 1, 13, vendedor_id=vid)
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    D = Decimal
+    assert D(str(item["ventaGravada"])) == D("11.50")
+    assert D(str(item["ivaItem"])) == D("1.50")
+    assert D(str(res["totalGravada"])) == D("11.50")
+    assert D(str(res["totalIva"])) == D("1.50")
+    assert D(str(res["totalPagar"])) == D("13.00")
+    assert res["totalLetras"].startswith("TRECE")
+
+
 @pytest.mark.parametrize("cfg, expected", [("pruebas", "00"), ("produccion", "01")])
 def test_generar_dte_json_normaliza_ambiente_config(tmp_path, cfg, expected, monkeypatch):
     import dte as dte_module
@@ -98,12 +134,12 @@ def test_generar_dte_json_normaliza_ambiente_config(tmp_path, cfg, expected, mon
     prod_id = db.cursor.lastrowid
     db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "70000001", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id)
+    venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id, extra={"precios_incluyen_iva": False})
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
     orig_validate = dte_module.validate_dte_json
     orig_norm = dte_module._normalize_payload
-    monkeypatch.setattr(dte_module, "validate_dte_json", lambda payload: None)
+    monkeypatch.setattr(dte_module, "validate_dte_json", lambda payload, **kwargs: None)
     monkeypatch.setattr(dte_module, "_normalize_payload", lambda x: x)
     data = dte_module.generar_dte_json(db, venta_id, ambiente="00")
     monkeypatch.setattr(dte_module, "validate_dte_json", orig_validate)
@@ -119,7 +155,7 @@ def test_dte_rounding_and_validation(capsys):
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     precio = 1.123456789
     venta_id = db.add_venta_credito_fiscal(
@@ -127,11 +163,12 @@ def test_dte_rounding_and_validation(capsys):
         "2024-01-01",
         precio * 2,
         "123",
-        "nit1",
+        "06141990011019",
         "giro",
         sumas=precio * 2,
         descuentos=0,
         iva=0,
+        extra={"precios_incluyen_iva": False},
     )
     db.add_detalle_venta(venta_id, prod_id, 2, precio, vendedor_id=vend_id)
 
@@ -150,18 +187,19 @@ def test_dte_sum_mismatch_warning(capsys):
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
         "2024-01-01",
         10,
         "123",
-        "nit1",
+        "06141990011019",
         "giro",
         sumas=10,
         descuentos=0,
         iva=0,
+        extra={"precios_incluyen_iva": False},
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 5, vendedor_id=vend_id)
 
@@ -176,7 +214,7 @@ def test_generar_ticket_json_tipo():
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 5)
+    venta_id = db.add_venta("2024-01-01", 5, extra={"precios_incluyen_iva": False})
     db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
 
     data = generar_dte_json(db, venta_id, tipo_dte="03")
@@ -192,10 +230,10 @@ def test_generar_dte_json_normaliza_ambiente_param(ambiente, expected, monkeypat
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 5)
+    venta_id = db.add_venta("2024-01-01", 5, extra={"precios_incluyen_iva": False})
     db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
 
-    monkeypatch.setattr(dte_module, "validate_dte_json", lambda payload: None)
+    monkeypatch.setattr(dte_module, "validate_dte_json", lambda payload, **kwargs: None)
     data = dte_module.generar_dte_json(db, venta_id, ambiente=ambiente)
     assert data["identificacion"]["ambiente"] == expected
 
@@ -206,18 +244,19 @@ def test_dte_comision_sin_advertencia_total(capsys):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
         "2024-01-01",
         12,
         "123",
-        "nit1",
+        "06141990011019",
         "giro",
         sumas=10,
         descuentos=0,
         iva=0,
+        extra={"precios_incluyen_iva": False},
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, comision=2, vendedor_id=vid)
     generar_dte_json(db, venta_id)
@@ -231,16 +270,17 @@ def test_generar_dte_json_condicion_operacion_invalida():
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
         "2024-01-01",
         10,
         "123",
-        "nit1",
+        "06141990011019",
         "giro",
         condicion_pago="Invalida",
+        extra={"precios_incluyen_iva": False},
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 

@@ -19,7 +19,7 @@ def test_resumen_formulas_fc():
         'descu_gravada': D('0.33333333'),
         'iva': D('3.10444444'),
     }
-    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, extra={})
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, extra={"precios_incluyen_iva": False})
     assert D(str(resumen['totalNoSuj'])) == D('2.33')
     assert D(str(resumen['totalExenta'])) == D('1.22')
     assert D(str(resumen['totalGravada'])) == D('23.85')
@@ -35,7 +35,7 @@ def test_resumen_formulas_fc():
 def test_resumen_sin_gravada_sin_tributos():
     items_total = D('0')
     fiscal = {'sumas': D('0'), 'ventas_exentas': D('5'), 'iva': D('0')}
-    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, extra={})
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, extra={"precios_incluyen_iva": False})
     assert D(str(resumen['totalGravada'])) == D('0.00')
     assert D(str(resumen['totalIva'])) == D('0.00')
     assert resumen['tributos'] is None
@@ -89,6 +89,14 @@ def test_pagos_varios_cuadre():
     total = D('10.01')
     norm = normalizar_pagos(pagos, total)
     assert norm[-1]['montoPago'] == D('5.01')
+    assert sum(p['montoPago'] for p in norm) == total
+
+
+def test_pagos_unico_ajuste():
+    pagos = [{'codigo': '01', 'montoPago': 10.01}]
+    total = D('10.00')
+    norm = normalizar_pagos(pagos, total)
+    assert norm[0]['montoPago'] == D('10.00')
     assert sum(p['montoPago'] for p in norm) == total
 
 

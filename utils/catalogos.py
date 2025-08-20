@@ -24,7 +24,7 @@ AMBIENTE = {
 }
 
 # Tipo de documento electrónico
-TIPO_DTE = {
+DTE_TIPOS = {
     "01": "Factura",
     "03": "Comprobante de crédito fiscal",
     "04": "Nota de remisión",
@@ -39,7 +39,8 @@ TIPO_DTE = {
 }
 
 # Compatibilidad retroactiva
-TIPOS_DTE = TIPO_DTE
+TIPO_DTE = DTE_TIPOS
+TIPOS_DTE = DTE_TIPOS
 
 # Modelo de facturación
 MODELO = {

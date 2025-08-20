@@ -18,7 +18,18 @@ def _create_basic_sale(descuento=0, tributos=None, pagos=None):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "0614-000000-102-5", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "0614-000000-102-5",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cid = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cid,

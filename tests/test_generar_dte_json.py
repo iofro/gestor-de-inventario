@@ -34,7 +34,18 @@ def test_generar_dte_json_basic(tmp_path):
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "70000001", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False})
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
@@ -132,7 +143,18 @@ def test_generar_dte_json_normaliza_ambiente_config(tmp_path, cfg, expected, mon
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "70000001", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id, extra={"precios_incluyen_iva": False})
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
@@ -155,7 +177,18 @@ def test_dte_rounding_and_validation(capsys):
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     precio = 1.123456789
     venta_id = db.add_venta_credito_fiscal(
@@ -187,7 +220,18 @@ def test_dte_sum_mismatch_warning(capsys):
     vend_id = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
@@ -244,7 +288,18 @@ def test_dte_comision_sin_advertencia_total(capsys):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,
@@ -270,7 +325,18 @@ def test_generar_dte_json_condicion_operacion_invalida():
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141990011019", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "01",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
         cliente_id,

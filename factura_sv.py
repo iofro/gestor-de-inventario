@@ -69,10 +69,13 @@ def generar_factura_electronica_pdf(
         ambiente_cfg = ambiente_cfg.lower()
         ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
 
+    tipo_dte = "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03"
+
     if not codigo_generacion or not numero_control or not fecha_generacion:
         cab = generar_cabecera_dte_data(
             tipo_modelo,
             tipo_operacion,
+            tipo_dte,
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
             ambiente=ambiente,
@@ -150,7 +153,7 @@ def generar_factura_electronica_pdf(
     qr_value = build_qr_value(
         qr_env,
         codigo_generacion,
-        "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03",
+        tipo_dte,
         numero_control,
     )
     qr_code = qr.QrCodeWidget(qr_value)

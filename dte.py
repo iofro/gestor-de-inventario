@@ -739,16 +739,24 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     return resumen
 
 
-def recalcular_totales(data: dict, *, precios_incluyen_iva: bool = False) -> list[str]:
+def recalcular_totales(
+    data: dict, *, precios_incluyen_iva: bool | None = None
+) -> list[str]:
     """Recalcula y corrige los totales del resumen en ``data``.
 
     La función vuelve a calcular los valores de la sección ``resumen`` a partir
     de los ítems del ``cuerpoDocumento``.  Si alguno de los totales declarados
     difiere del valor esperado por más de un centavo, el valor se corrige en el
     lugar.  Devuelve una lista con los nombres de los campos ajustados.
+
+    ``precios_incluyen_iva`` indica si los precios de los ítems incluyen IVA.
+    Cuando se omite (``None``), el valor se infiere del ``tipoDte`` del payload,
+    asumiendo ``True`` para facturas de consumidor final ("01").
     """
 
     ident = data.get("identificacion", {})
+    if precios_incluyen_iva is None:
+        precios_incluyen_iva = str(ident.get("tipoDte")) == "01"
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 

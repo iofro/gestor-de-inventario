@@ -9,12 +9,7 @@ from db import DB
 import requests
 from utils import jws
 import auth
-from jsonschema import (
-    Draft202012Validator,
-    ValidationError,
-    FormatChecker,
-    RefResolver,
-)
+from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 import logging
 import re
@@ -193,36 +188,6 @@ def _normalize_payload(value):
         return v
     return value
 
-
-def _validate_schema(instance: dict, schema: dict) -> None:
-    """Validate ``instance`` against ``schema`` reporting all errors.
-
-    Prints a full report of all schema validation issues found and raises
-    ``ValidationError`` with the combined message if any problems exist.
-    """
-    validator = Draft202012Validator(
-        schema, format_checker=FormatChecker(), resolver=RESOLVER
-    )
-    errs = []
-    for err in sorted(validator.iter_errors(instance), key=lambda e: e.path):
-        errs.append(
-            {
-                "path": list(err.path),
-                "message": err.message,
-                "validator": err.validator,
-                "validator_value": err.validator_value,
-            }
-        )
-    if errs:
-        lines = ["Errores de esquema encontrados:"]
-        for info in errs:
-            path = ".".join(str(p) for p in info["path"]) or "<root>"
-            lines.append(f"- {path}: {info['message']}")
-        report = "\n".join(lines)
-        print(report)
-        exc = ValidationError(report)
-        exc.errors = errs
-        raise exc
 
 
 def _load_datos_negocio():
@@ -2033,12 +1998,6 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool = False) -> N
             p["montoPago"] = _float_money(p["montoPago"])
 
     payload["resumen"] = resumen
-
-    # --- Schema validation ---
-    schema = catalogos.get_dte_schema(tipo_dte)
-    if schema:
-        payload = sanitize_dte_payload(payload, schema)
-        _validate_schema(payload, schema)
 
 
 def generar_ticket_json(

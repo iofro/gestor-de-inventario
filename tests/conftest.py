@@ -151,7 +151,7 @@ def dte_metadata_factory():
                 "version": 1,
                 "ambiente": "00",
                 "tipoDte": "01",
-                "numeroControl": "DTE-01-AB12CD34-000000000000001",
+                "numeroControl": "DTE-01-S001P001-000000000000001",
                 "codigoGeneracion": "13C694DE-DDA1-499A-B265-4BD5B01CF323",
                 "tipoModelo": 1,
                 "tipoOperacion": 1,

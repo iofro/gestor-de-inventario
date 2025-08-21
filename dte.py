@@ -2652,6 +2652,91 @@ def transmitir_dte(
     return resp
 
 
+def _is_jws_token(data) -> bool:
+    """Devuelve ``True`` si ``data`` parece ser un JWS firmado."""
+    if isinstance(data, str):
+        return data.count(".") >= 2
+    if isinstance(data, dict):
+        return all(k in data for k in ("payload", "signature"))
+    return False
+
+
+def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
+    """Transmite un DTE desde ``json_path`` registrando el resultado."""
+    with open(json_path, "r", encoding="utf-8") as fh:
+        raw = json.load(fh)
+
+    if _is_jws_token(raw):
+        if isinstance(raw, dict):
+            jws_token = ".".join(
+                [raw.get("protected", ""), raw.get("payload", ""), raw.get("signature", "")]
+            )
+        else:
+            jws_token = raw
+        payload = _decode_jws_payload(jws_token)
+    else:
+        data = sanitize_dte_payload(raw)
+        data = apply_schema_patch(data)
+        try:
+            validate_dte_json(data)
+        except Exception as exc:
+            errors = _format_validation_errors(exc)
+            raise DTEValidationError(errors, json_path) from exc
+        ident = data.get("identificacion") or data.get("identificador") or {}
+        ident["fecEmi"] = fecha_emision_hoy_str()
+        ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
+        if "identificacion" in data:
+            data["identificacion"] = ident
+        elif "identificador" in data:
+            data["identificador"] = ident
+        payload = data
+        jws_token = jws.sign_json(data)
+
+    ident = payload.get("identificacion") or payload.get("identificador") or {}
+    meta = {
+        "ambiente": ident.get("ambiente"),
+        "version": ident.get("version"),
+        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "codigoGeneracion": ident.get("codigoGeneracion"),
+    }
+    config = _load_dte_api_config()
+    url = config.get("url") or DEFAULT_RECEPCION_URL
+    token = auth.get_token()
+    auth_host = auth.get_last_auth_host()
+    recep_host = urlparse(url).netloc
+    if auth_host and recep_host != auth_host:
+        raise ValueError(
+            f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
+        )
+    try:
+        respuesta = _post_dte(url, token, jws_token, meta)
+        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+        estado = (
+            respuesta.get("estado")
+            or respuesta.get("estadoDte")
+            or respuesta.get("descripcionEstado")
+            or "Transmitido"
+        )
+        detalle = respuesta.get("detalle")
+    except Exception:
+        db.registrar_envio_dte(None, "orphan", "Rechazado", "")
+        raise
+
+    db.registrar_envio_dte(
+        None,
+        "orphan",
+        estado,
+        sello,
+        json.dumps(respuesta, ensure_ascii=False),
+    )
+    if estado == "Rechazado":
+        respuesta["errores"] = _parse_error_response(respuesta)
+    res = {"estado": estado, "sello": sello}
+    if detalle:
+        res["detalle"] = detalle
+    return res
+
+
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"

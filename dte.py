@@ -37,6 +37,21 @@ with FC_SCHEMA_PATH.open("r", encoding="utf-8") as fh:
 RESOLVER = RefResolver(base_uri=f"{SCHEMAS_DIR.as_uri()}/", referrer=FC_SCHEMA)
 
 
+def _normalize_recepcion_url(url: str) -> str:
+    """Return a normalized recepción ``url`` or the default when missing."""
+    url = (url or "").strip()
+    if not url:
+        return DEFAULT_RECEPCION_URL
+    pu = urlparse(url)
+    if (
+        pu.netloc in {"apitest.dtes.mh.gob.sv", "api.dtes.mh.gob.sv"}
+        and pu.path.rstrip("/") in {"", "/"}
+    ):
+        scheme = pu.scheme or "https"
+        return f"{scheme}://{pu.netloc}/fesv/recepciondte"
+    return url
+
+
 def _strip_additional_properties(value, schema):
     """Remove keys not defined in ``schema`` when ``additionalProperties`` is ``false``."""
     if "$ref" in schema:
@@ -269,10 +284,6 @@ def _load_datos_negocio():
                 data = json.load(fh)
             dte_api = data.get("dte_api")
             if isinstance(dte_api, dict):
-                url = dte_api.get("url", "")
-                if url and "/fesv/recepciondte" not in url:
-                    dte_api["url"] = url.rstrip("/") + "/fesv/recepciondte"
-
                 # Extract branch and point-of-sale codes from the control prefix
                 prefijo = dte_api.get("prefijo_control")
                 if isinstance(prefijo, str):
@@ -2391,8 +2402,13 @@ def _load_dte_api_config():
         with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             data = json.load(fh)
         dte_api = data.get("dte_api") or {}
+        recep = (
+            dte_api.get("recepcion_url")
+            or dte_api.get("url")
+            or dte_api.get("endpoint")
+        )
+        url = _normalize_recepcion_url(recep)
         ambiente = dte_api.get("ambiente") or data.get("ambiente") or "pruebas"
-        url = (dte_api.get("url") or "").strip() or DEFAULT_RECEPCION_URL
         logger.info("Recepción configurada → %s", url)
         return {"ambiente": ambiente, "url": url}
     except Exception:
@@ -2568,8 +2584,11 @@ def _post_dte(
         ), "Authorization header malformado"
 
     pu = urlparse(url)
-    assert pu.netloc == "apitest.dtes.mh.gob.sv", f"Host inválido: {url}"
-    assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
+    ALLOWED = {
+        ("apitest.dtes.mh.gob.sv", "/fesv/recepciondte"),
+        ("api.dtes.mh.gob.sv", "/fesv/recepciondte"),
+    }
+    assert (pu.netloc, pu.path.rstrip("/")) in ALLOWED, f"URL de recepción inválida: {url}"
     logger.info("POST recepcion → %s", url)
     body = str(jws_token).strip().encode("utf-8")
     resp = requests.post(url, headers=headers, data=body, timeout=20)

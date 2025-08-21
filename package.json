@@ -2,7 +2,8 @@
   "name": "gestor-de-inventario-ui",
   "type": "module",
   "scripts": {
-    "test": "vitest run"
+    "test": "vitest run",
+    "send:dte": "node DTE.js ./ejemplos/dte.json ./ejemplos/dte.jws CLIENTE_A 00 \"$DTE_TOKEN\""
   },
   "devDependencies": {
     "@vitejs/plugin-vue": "^5.0.4",
@@ -10,5 +11,8 @@
     "jsdom": "^26.1.0",
     "vitest": "^0.34.6",
     "vue": "^3.3.4"
+  },
+  "dependencies": {
+    "axios": "^1.11.0"
   }
 }

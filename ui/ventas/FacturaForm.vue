@@ -1,5 +1,8 @@
 <template>
   <div>
+    <div v-for="cat in catalogIds" :key="cat">
+      <CatalogSelector :catalog-id="cat" />
+    </div>
     <button @click="onSave">Guardar y Enviar</button>
     <ConfirmDialog
       v-model="confirmVisible"
@@ -23,12 +26,14 @@
 <script setup lang="ts">
 import { ref } from 'vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import CatalogSelector from '../components/CatalogSelector.vue';
 import { guardarEnContingencia } from '../services/facturasApi';
 
 const props = defineProps<{ facturaId: string; config: { modoContingencia: boolean } }>();
 
 const confirmVisible = ref(false);
 const errorVisible = ref(false);
+const catalogIds = Array.from({ length: 32 }, (_, i) => `CAT-${String(i + 1).padStart(3, '0')}`);
 
 async function onSave() {
   if (props.config?.modoContingencia) {

@@ -1,5 +1,6 @@
 from db import DB
 from dte import transmitir_dte, _post_dte
+import dte
 import json
 from datetime import datetime
 from pathlib import Path
@@ -51,7 +52,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
         return "Bearer JWT"
 
     monkeypatch.setattr(auth, "get_token", fake_get_token)
-    monkeypatch.setattr(auth, "get_last_auth_host", lambda: f"{ambiente}.example.com")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
@@ -119,13 +120,11 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {
-        "ambiente": ambiente,
-        ambiente: {"recepcion_url": f"http://{ambiente}.example.com"},
-    }
-    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
+    datos = {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": ambiente}}
+    cfg_path = tmp_path / "datos_negocio.json"
     with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+        json.dump(datos, fh)
+    monkeypatch.setattr("dte.DATOS_NEGOCIO_PATH", str(cfg_path))
 
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Transmitido"
@@ -133,10 +132,11 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == f"http://{ambiente}.example.com"
+    assert url == dte.DEFAULT_RECEPCION_URL
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/json"
-    assert body in sign_calls["tokens"]
+    assert headers["Content-Type"] == "application/jose"
+    assert headers["Accept"] == "application/json"
+    assert body in [t.encode() for t in sign_calls["tokens"]]
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -149,6 +149,8 @@ def test_post_dte_uses_bearer(monkeypatch):
 
     def fake_post(url, data=None, headers=None, timeout=20):
         captured["headers"] = headers
+        captured["url"] = url
+        captured["data"] = data
         class R:
             status_code = 200
             text = ""
@@ -161,8 +163,34 @@ def test_post_dte_uses_bearer(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
-    _post_dte("http://example.com", "Bearer TOKEN", token, meta)
+    _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
+    assert captured["headers"]["Content-Type"] == "application/jose"
+    assert captured["headers"]["Accept"] == "application/json"
+    assert captured["url"] == dte.DEFAULT_RECEPCION_URL
+    assert captured["data"] == token.encode()
+    assert captured["data"].count(b".") >= 2
+
+
+def test_post_dte_rejects_invalid_path(monkeypatch):
+    def fake_post(url, data=None, headers=None, timeout=20):
+        class R:
+            status_code = 200
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    bad_url = "https://apitest.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    with pytest.raises(AssertionError):
+        _post_dte(bad_url, "Bearer TOKEN", token, meta)
 
 
 def test_post_dte_handles_non_json(monkeypatch):
@@ -182,7 +210,7 @@ def test_post_dte_handles_non_json(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
-    res = _post_dte("http://example.com", "", token, meta)
+    res = _post_dte(dte.DEFAULT_RECEPCION_URL, "", token, meta)
     assert res == {"estado": "Error", "detalle": "error"}
 
 
@@ -229,7 +257,7 @@ def test_post_dte_missing_fields(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     token = make_jws({})
     with pytest.raises(AssertionError):
-        _post_dte("http://example.com", "Bearer TOKEN", token, {})
+        _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, {})
     assert calls["count"] == 0
 
 
@@ -251,7 +279,7 @@ def test_post_dte_invalid_tipo(monkeypatch):
     meta = {"ambiente": "00", "version": 2, "tipoDte": "99", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
     with pytest.raises(AssertionError):
-        _post_dte("http://example.com", "Bearer TOKEN", token, meta)
+        _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
 
 
 def test_consultar_envio_dte():

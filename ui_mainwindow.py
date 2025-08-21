@@ -1768,3 +1768,19 @@ class MainWindow(QMainWindow):
                 return i
         return -1
 
+    def closeEvent(self, event):
+        reply = QMessageBox.question(
+            self,
+            "Salir",
+            "¿Desea guardar el inventario antes de salir?",
+            QMessageBox.Yes | QMessageBox.No | QMessageBox.Cancel,
+            QMessageBox.Yes,
+        )
+        if reply == QMessageBox.Yes:
+            self.guardar_rapido()
+            event.accept()
+        elif reply == QMessageBox.No:
+            event.accept()
+        else:
+            event.ignore()
+

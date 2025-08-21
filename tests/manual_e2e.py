@@ -1,4 +1,4 @@
-"""Manual end-to-end test against Hacienda sandbox.
+"""Manual end-to-end test against the Hacienda API.
 
 This script builds a minimal DTE, signs it and sends it to the URL
 specified in the ``HACIENDA_URL`` environment variable. The request
@@ -36,7 +36,7 @@ def _build_sample_dte() -> dict:
 def main() -> None:
     url = os.getenv("HACIENDA_URL")
     if not url:
-        print("E2E_SANDBOX_FAIL")
+        print("E2E_API_FAIL")
         return
 
     dte = _build_sample_dte()
@@ -70,9 +70,9 @@ def main() -> None:
     if resp and resp.status_code == 200 and (
         "RECIB" in estado or "ACEPT" in estado or "PROCES" in estado
     ):
-        print("E2E_SANDBOX_OK")
+        print("E2E_API_OK")
     else:
-        print("E2E_SANDBOX_FAIL")
+        print("E2E_API_FAIL")
 
 
 if __name__ == "__main__":  # pragma: no cover - manual execution

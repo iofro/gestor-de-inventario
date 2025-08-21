@@ -24,7 +24,7 @@ def build_qr_value(
     """Return the URL used for the DTE QR code."""
 
     base_url = (
-        "https://www.mh.gob.sv/consulta-dte" if ambiente == 1 else "https://sandbox.mh.gob.sv/consulta-dte"
+        "https://www.mh.gob.sv/consulta-dte" if ambiente == 1 else "https://apitest.mh.gob.sv/consulta-dte"
     )
 
     params = {

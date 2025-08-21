@@ -2,6 +2,7 @@ import json
 import pytest
 import requests
 import auth
+import dte
 
 from db import DB
 from dte import transmitir_dte
@@ -38,6 +39,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
                 "municipio": "23",
                 "complemento": "Calle 1",
             },
+            "dte_api": {"url": recepcion_url, "ambiente": "pruebas"},
         },
     )
     db.add_vendedor("V1")
@@ -65,7 +67,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         return "Bearer JWT"
 
     monkeypatch.setattr(auth, "get_token", fake_token)
-    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "recepcion.test")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
@@ -116,7 +118,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     )
 
     auth_url = "http://auth.test"
-    recepcion_url = "http://recepcion.test"
+    recepcion_url = dte.DEFAULT_RECEPCION_URL
     calls = []
 
     class Resp:
@@ -150,11 +152,6 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         raise AssertionError(f"unexpected url {url}")
 
     monkeypatch.setattr("requests.post", fake_post)
-
-    cfg = {"ambiente": "pruebas", "pruebas": {"recepcion_url": recepcion_url}}
-    config_path = tmp_path / "cfg.json"
-    config_path.write_text(json.dumps(cfg), encoding="utf-8")
-    monkeypatch.setattr("dte.CONFIG_NEGOCIO_PATH", str(config_path))
 
     transmitir_dte(db, venta)
 
@@ -207,10 +204,11 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
             raise requests.HTTPError(self.text)
 
     monkeypatch.setattr("dte.requests.post", lambda *a, **k: Resp())
-
-    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    monkeypatch.setattr(
+        "dte._load_datos_negocio",
+        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
+    )
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     with pytest.raises(requests.HTTPError) as excinfo:
         transmitir_dte(db, venta)
@@ -243,9 +241,11 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "recepcion_url": {"pruebas": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    monkeypatch.setattr(
+        "dte._load_datos_negocio",
+        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
+    )
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     with pytest.raises(RuntimeError):
         transmitir_dte(db, venta)
@@ -310,15 +310,11 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
     monkeypatch.setattr("dte.requests.post", fake_post)
     monkeypatch.setattr("auth.requests.post", fake_post)
 
-    config = {
-        "ambiente": "pruebas",
-        "pruebas": {
-            "auth_url": "http://example.com/auth",
-            "recepcion_url": "http://example.com/recepcion",
-        },
-    }
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    monkeypatch.setattr(
+        "dte._load_datos_negocio",
+        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
+    )
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     with pytest.raises(requests.HTTPError) as excinfo:
         transmitir_dte(db, venta)
@@ -348,9 +344,11 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    monkeypatch.setattr(
+        "dte._load_datos_negocio",
+        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
+    )
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     with pytest.raises(requests.Timeout):
         transmitir_dte(db, venta)
@@ -371,8 +369,9 @@ def test_recepcion_url_host_mismatch(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "auth.example")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://other.example"}}
-    with open("config_negocio.json", "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    monkeypatch.setattr(
+        "dte._load_datos_negocio",
+        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
+    )
     with pytest.raises(ValueError):
         transmitir_dte(db, venta)

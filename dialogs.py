@@ -3267,7 +3267,7 @@ class DTEConfigDialog(QDialog):
 
     def get_data(self):
         dte_api = {
-            "url": self.endpoint_hacienda.text(),
+            "url": self.endpoint_hacienda.text().strip(),
             "ambiente": self.ambiente_hacienda.currentText().lower(),
             "token": self.token_hacienda.text(),
             "prefijo_control": self.prefijo_control.text(),
@@ -3284,8 +3284,7 @@ class DTEConfigDialog(QDialog):
             "activo": self.dte_activo.isChecked(),
         }
         urls = {
-            "auth_url": self.auth_url.text(),
-            "recepcion_url": self.recepcion_url.text(),
+            "auth_url": self.auth_url.text().strip(),
             "auth": {
                 "nitUsuario": self.api_user.text().strip(),
                 "pwd": base64.b64encode(self.api_pwd.text().encode()).decode()
@@ -3293,6 +3292,9 @@ class DTEConfigDialog(QDialog):
                 else "",
             },
         }
+        recep = self.recepcion_url.text().strip()
+        if recep:
+            urls["recepcion_url"] = recep
         return dte_api, fe_config, urls
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):

@@ -20,6 +20,8 @@ else:  # pragma: no cover
     _dialog_import_error = False
 
 from dte import validate_dte_json, _build_receptor_direccion
+from db import DB
+from tests.test_dte_validation import _patch_datos_negocio
 from jsonschema import ValidationError
 from utils import catalogos
 
@@ -75,27 +77,35 @@ def _load_fc():
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def test_receptor_documentos(monkeypatch):
+@pytest.fixture
+def db_fixture(tmp_path, monkeypatch):
+    _patch_datos_negocio(tmp_path, monkeypatch)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    db = DB()
+    yield db
+
+
+def test_receptor_documentos(monkeypatch, db_fixture):
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
     data = _load_fc()
     data["receptor"]["tipoDocumento"] = 36
     data["receptor"]["numDocumento"] = "06141990011019"
-    validate_dte_json(data)
+    validate_dte_json(data, db=db_fixture)
 
     data["receptor"]["numDocumento"] = "123"
     with pytest.raises(ValueError):
-        validate_dte_json(data)
+        validate_dte_json(data, db=db_fixture)
 
     data = _load_fc()
     data["receptor"]["tipoDocumento"] = 13
     data["receptor"]["numDocumento"] = "12345678-9"
-    validate_dte_json(data)
+    validate_dte_json(data, db=db_fixture)
     data["receptor"]["numDocumento"] = "123456789"
     with pytest.raises(ValueError):
-        validate_dte_json(data)
+        validate_dte_json(data, db=db_fixture)
 
 
-def test_receptor_direccion(monkeypatch):
+def test_receptor_direccion(monkeypatch, db_fixture):
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
     data = _load_fc()
     data["receptor"]["direccion"] = {
@@ -103,15 +113,15 @@ def test_receptor_direccion(monkeypatch):
         "municipio": "23",
         "complemento": "C",
     }
-    validate_dte_json(data)
+    validate_dte_json(data, db=db_fixture)
 
     data["receptor"]["direccion"]["municipio"] = "99"
     with pytest.raises(ValidationError):
-        validate_dte_json(data)
+        validate_dte_json(data, db=db_fixture)
 
     data["receptor"]["direccion"] = None
     with pytest.raises(ValidationError):
-        validate_dte_json(data)
+        validate_dte_json(data, db=db_fixture)
 
 
 def test_direccion_normaliza_por_nombre():

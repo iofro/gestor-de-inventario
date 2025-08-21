@@ -9,6 +9,7 @@ from reportlab.lib.units import mm
 
 from utils.pdf_utils import draw_wrapped_text
 from dte import generar_cabecera_dte_data
+from db import DB
 from urllib.parse import urlencode
 import json
 import os
@@ -76,6 +77,7 @@ def generar_factura_electronica_pdf(
             tipo_modelo,
             tipo_operacion,
             tipo_dte,
+            DB(),
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
             ambiente=ambiente,

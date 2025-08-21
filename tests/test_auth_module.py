@@ -7,7 +7,7 @@ import requests
 import auth
 import sqlite3
 
-LONG_TOKEN = "t" * 400
+LONG_TOKEN = "a" * 120 + "." + "b" * 120 + "." + "c" * 120
 
 
 def write_config(tmp_path, nit="123", pwd="pwd"):
@@ -35,16 +35,16 @@ def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
 
     def fake_request(nit, pwd, url):
         calls["n"] += 1
-        return f"{LONG_TOKEN}{calls['n']}", 120, "Bearer"
+        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     t1 = auth.get_token(refresh=True)
-    assert t1 == f"{LONG_TOKEN}1"
+    assert t1 == f"Bearer {LONG_TOKEN}1"
     t2 = auth.get_token()
-    assert t2 == f"{LONG_TOKEN}1"
+    assert t2 == f"Bearer {LONG_TOKEN}1"
     assert calls["n"] == 1
     t3 = auth.get_token(refresh=True)
-    assert t3 == f"{LONG_TOKEN}2"
+    assert t3 == f"Bearer {LONG_TOKEN}2"
     assert calls["n"] == 2
 
 
@@ -52,7 +52,7 @@ def test_get_token_expired(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 
     def fake_request(nit, pwd, url):
-        return f"{LONG_TOKEN}x", 1, "Bearer"
+        return f"Bearer {LONG_TOKEN}x", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     auth.get_token(refresh=True)
@@ -61,11 +61,11 @@ def test_get_token_expired(monkeypatch, tmp_path):
 
     def fake_request2(nit, pwd, url):
         calls["n"] += 1
-        return f"{LONG_TOKEN}{calls['n']}", 1, "Bearer"
+        return f"Bearer {LONG_TOKEN}{calls['n']}", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request2)
     token2 = auth.get_token()
-    assert token2 == f"{LONG_TOKEN}1"
+    assert token2 == f"Bearer {LONG_TOKEN}1"
     assert calls["n"] == 1
 
 
@@ -103,8 +103,8 @@ def test_missing_token_includes_response(monkeypatch):
     assert "Respuesta de autenticación sin token" in msg
 
 
-def test_request_new_token_strips_bearer(monkeypatch):
-    """Se obtiene solo el JWT cuando la respuesta incluye el prefijo Bearer."""
+def test_request_new_token_preserves_bearer(monkeypatch):
+    """El token devuelto mantiene el prefijo Bearer cuando está presente."""
 
     def fake_post(url, data, headers, timeout):
         class Resp:
@@ -128,7 +128,7 @@ def test_request_new_token_strips_bearer(monkeypatch):
     monkeypatch.setattr(auth.requests, "post", fake_post)
     monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake")
     token, expires_in, token_type = auth._request_new_token("nit", "pwd")
-    assert token == "ABC.DEF.GHI"
+    assert token == "Bearer ABC.DEF.GHI"
     assert token_type == "Bearer"
     assert expires_in == 60
 
@@ -168,14 +168,14 @@ def test_get_token_with_explicit_credentials(monkeypatch):
 
     def fake_request(nit, pwd, url):
         calls["n"] += 1
-        return f"{LONG_TOKEN}{calls['n']}", 120, "Bearer"
+        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     monkeypatch.setattr(auth, "_get_config_nit_and_url", lambda: (None, None))
     t1 = auth.get_token(refresh=True, nit="u", pwd="p")
-    assert t1 == f"{LONG_TOKEN}1"
+    assert t1 == f"Bearer {LONG_TOKEN}1"
     t2 = auth.get_token(nit="u", pwd="p")
-    assert t2 == f"{LONG_TOKEN}1"
+    assert t2 == f"Bearer {LONG_TOKEN}1"
     assert calls["n"] == 1
     auth.get_token(nit="u2", pwd="p2")
     assert calls["n"] == 2
@@ -187,7 +187,7 @@ def test_delete_token(monkeypatch, tmp_path):
 
     def fake_request(nit, pwd, url):
         calls["n"] += 1
-        return f"{LONG_TOKEN}{calls['n']}", 120, "Bearer"
+        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     auth.get_token(refresh=True)
@@ -197,7 +197,7 @@ def test_delete_token(monkeypatch, tmp_path):
         cur.execute("SELECT value FROM tokens WHERE key='access_token'")
         assert cur.fetchone() is None
     t2 = auth.get_token()
-    assert t2 == f"{LONG_TOKEN}2"
+    assert t2 == f"Bearer {LONG_TOKEN}2"
     assert calls["n"] == 2
 
 
@@ -218,11 +218,11 @@ def test_reauth_logs_nit_and_url(monkeypatch, tmp_path, caplog):
     def fake_request(nit, pwd, url):
         assert nit == "123"
         assert url == "http://auth.example"
-        return f"{LONG_TOKEN}1", 120, "Bearer"
+        return f"Bearer {LONG_TOKEN}1", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     token = auth.get_token(refresh=True)
-    assert token == f"{LONG_TOKEN}1"
+    assert token == f"Bearer {LONG_TOKEN}1"
     assert "Reautenticando con NIT 123 y URL http://auth.example" in caplog.text
 
 
@@ -240,7 +240,7 @@ def test_reauth_mismatch_nit(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
 
     def fake_request(nit, pwd, url):
-        return f"{LONG_TOKEN}1", 120, "Bearer"
+        return f"Bearer {LONG_TOKEN}1", 120, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
     with pytest.raises(ValueError):
@@ -254,7 +254,7 @@ def test_records_last_auth_host(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
     monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
     monkeypatch.setattr(
-        auth, "_request_new_token", lambda nit, pwd, url: (f"{LONG_TOKEN}1", 120, "Bearer")
+        auth, "_request_new_token", lambda nit, pwd, url: (f"Bearer {LONG_TOKEN}1", 120, "Bearer")
     )
     auth.get_token(refresh=True, nit="user", pwd="pwd")
     assert auth.get_last_auth_host() == "auth.example"

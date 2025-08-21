@@ -38,7 +38,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
     monkeypatch.setattr(
@@ -144,7 +144,7 @@ def test_no_envia_si_validacion_falla(monkeypatch):
         sent.append(True)
 
     monkeypatch.setattr("dte.requests.post", fake_post)
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
 
     sign_calls = {"count": 0}
 
@@ -180,7 +180,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
         return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
     monkeypatch.setattr(
@@ -274,7 +274,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
         return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
 
     calls = []
@@ -345,7 +345,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
         return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
 
     calls = []

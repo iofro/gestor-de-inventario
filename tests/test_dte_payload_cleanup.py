@@ -35,7 +35,7 @@ def test_enviar_documento_uses_clean_payload(monkeypatch, dte_metadata_factory):
         return make_jws(data)
 
     monkeypatch.setattr(dte.jws, "sign_json", fake_sign)
-    monkeypatch.setattr(dte.auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(dte.auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(dte, "_post_dte", lambda url, token, jws, meta: {"estado": "Transmitido"})
     monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: None)
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {})

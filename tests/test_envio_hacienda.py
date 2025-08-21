@@ -62,7 +62,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     def fake_token():
         tokens["count"] += 1
-        return "JWT"
+        return "Bearer JWT"
 
     monkeypatch.setattr(auth, "get_token", fake_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "recepcion.test")
@@ -139,7 +139,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
                 {
                     "status": "OK",
                     "body": {
-                        "token": "JWT",
+                        "token": "Bearer JWT",
                         "tokenType": "bearer",
                         "expiresIn": 3600,
                     },
@@ -192,7 +192,7 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
     venta = create_sale(db)
 
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
@@ -226,7 +226,7 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
 
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
@@ -267,7 +267,7 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
 
     def fake_get_token(refresh: bool = False):
         token_calls.append(refresh)
-        return "JWT_VALIDO"
+        return "Bearer JWT_VALIDO"
 
     monkeypatch.setattr(auth, "get_token", fake_get_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
@@ -281,7 +281,7 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
             return {
                 "status": "OK",
                 "body": {
-                    "token": "JWT_VALIDO",
+                    "token": "Bearer JWT_VALIDO",
                     "tokenType": "bearer",
                     "expiresIn": 3600,
                 },
@@ -339,7 +339,7 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
     venta = create_sale(db)
 
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
 
@@ -368,7 +368,7 @@ def test_recepcion_url_host_mismatch(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
-    monkeypatch.setattr(auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "auth.example")
     monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
     config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://other.example"}}

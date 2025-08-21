@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP, getcontext
 from pathlib import Path
 from typing import Any, Dict, List
 from uuid import uuid4
+from db import DB
 from zoneinfo import ZoneInfo
 
 from .config import get_emisor_direccion
@@ -42,9 +43,10 @@ def strip_extras(dte: Dict[str, Any]) -> Dict[str, Any]:
     return {k: v for k, v in dte.items() if k not in extras}
 
 
-def _numero_control(tipo: str) -> str:
-    secuencia = str(uuid4().int % 10**15).zfill(15)
-    return f"DTE-{tipo}-{uuid4().hex[:8].upper()}-{secuencia}"
+def _numero_control(db: DB, tipo: str, sucursal: str = "001", punto: str = "001") -> str:
+    correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
+    secuencia = str(correlativo).zfill(15)
+    return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
 
 
 def d8(value: Decimal) -> Decimal:
@@ -140,7 +142,7 @@ def generar_fc_ejemplo(
     return dte
 
 
-def _identificacion(schema: Dict[str, Any], tipo_dte: str) -> Dict[str, Any]:
+def _identificacion(db: DB, schema: Dict[str, Any], tipo_dte: str) -> Dict[str, Any]:
     # ``version`` is defined in the schema and must be surfaced in the
     # generated document instead of being hard coded.  Some schemas expose it
     # via ``const`` and others via an ``enum`` with a single option, so handle
@@ -155,7 +157,7 @@ def _identificacion(schema: Dict[str, Any], tipo_dte: str) -> Dict[str, Any]:
         "version": version,
         "ambiente": "00",
         "tipoDte": tipo_dte,
-        "numeroControl": _numero_control(tipo_dte),
+        "numeroControl": _numero_control(db, tipo_dte),
         # ``codigoGeneracion`` must be a valid UUID v4.  ``uuid4`` guarantees
         # the correct version and the schema expects uppercase letters.
         "codigoGeneracion": str(uuid4()).upper(),
@@ -311,11 +313,11 @@ def _documento_relacionado(tipo: str) -> Any:
     return None
 
 
-def _generar(tipo: str) -> Dict[str, Any]:
+def _generar(db: DB, tipo: str) -> Dict[str, Any]:
     schema_file, tipo_dte = SCHEMA_MAP[tipo]
     schema = _load_schema(schema_file)
     data = {
-        "identificacion": _identificacion(schema, tipo_dte),
+        "identificacion": _identificacion(db, schema, tipo_dte),
         "documentoRelacionado": _documento_relacionado(tipo),
         "emisor": _emisor(),
         "receptor": _receptor(tipo),
@@ -332,24 +334,29 @@ def _generar(tipo: str) -> Dict[str, Any]:
     return data
 
 
-def generar_factura_fiscal() -> Dict[str, Any]:
-    return _generar("ccf")
+def generar_factura_fiscal(db: DB | None = None) -> Dict[str, Any]:
+    db = db or DB()
+    return _generar(db, "ccf")
 
 
-def generar_consumidor_final() -> Dict[str, Any]:
-    return _generar("fc")
+def generar_consumidor_final(db: DB | None = None) -> Dict[str, Any]:
+    db = db or DB()
+    return _generar(db, "fc")
 
 
-def generar_nota_debito() -> Dict[str, Any]:
-    return _generar("nd")
+def generar_nota_debito(db: DB | None = None) -> Dict[str, Any]:
+    db = db or DB()
+    return _generar(db, "nd")
 
 
-def generar_nota_credito() -> Dict[str, Any]:
-    return _generar("nc")
+def generar_nota_credito(db: DB | None = None) -> Dict[str, Any]:
+    db = db or DB()
+    return _generar(db, "nc")
 
 
-def generar_nota_remision() -> Dict[str, Any]:
-    return _generar("nr")
+def generar_nota_remision(db: DB | None = None) -> Dict[str, Any]:
+    db = db or DB()
+    return _generar(db, "nr")
 
 
 def validar_contra_schema(data: Dict[str, Any], tipo: str) -> None:

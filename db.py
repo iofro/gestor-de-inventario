@@ -486,6 +486,18 @@ class DB:
 
         self.cursor.execute(
             """
+            CREATE TABLE IF NOT EXISTS dte_correlativos (
+                tipo TEXT NOT NULL,
+                sucursal TEXT NOT NULL,
+                punto TEXT NOT NULL,
+                correlativo INTEGER NOT NULL,
+                PRIMARY KEY (tipo, sucursal, punto)
+            )
+            """
+        )
+
+        self.cursor.execute(
+            """
             CREATE TABLE IF NOT EXISTS dte_envios (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 venta_id INTEGER,
@@ -1441,6 +1453,29 @@ class DB:
         """Elimina registros de tickets PDF asociados a una venta."""
         self.cursor.execute("DELETE FROM tickets_pdf WHERE venta_id=?", (venta_id,))
         self.conn.commit()
+
+    def next_dte_correlativo(self, tipo: str, sucursal: str, punto: str) -> int:
+        """Obtiene y actualiza el correlativo para la combinación dada."""
+        with self.lock:
+            with self.conn:
+                self.cursor.execute(
+                    "SELECT correlativo FROM dte_correlativos WHERE tipo=? AND sucursal=? AND punto=?",
+                    (tipo, sucursal, punto),
+                )
+                row = self.cursor.fetchone()
+                if row:
+                    correlativo = int(row["correlativo"]) + 1
+                    self.cursor.execute(
+                        "UPDATE dte_correlativos SET correlativo=? WHERE tipo=? AND sucursal=? AND punto=?",
+                        (correlativo, tipo, sucursal, punto),
+                    )
+                else:
+                    correlativo = 1
+                    self.cursor.execute(
+                        "INSERT INTO dte_correlativos (tipo, sucursal, punto, correlativo) VALUES (?, ?, ?, ?)",
+                        (tipo, sucursal, punto, correlativo),
+                    )
+            return correlativo
 
     def add_dte_pendiente(self, venta_id, dte_json, modo):
         """Registra un DTE pendiente de transmisión a Hacienda."""

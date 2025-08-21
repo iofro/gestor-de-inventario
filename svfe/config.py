@@ -4,79 +4,81 @@ import json
 from pathlib import Path
 from typing import Dict
 
-DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(1, 15)}
-MUNICIPIO_RANGES = {
-    "05": ("01", "22"),
-    "06": ("01", "19"),
+from paths import DATOS_NEGOCIO_PATH as _DATOS_NEGOCIO_PATH
+
+# CAT-012 Departamento (strings de 2 dígitos)
+CAT012_DEPARTAMENTOS = {
+    "00","01","02","03","04","05","06","07","08","09","10","11","12","13","14"
 }
 
+# CAT-013 Municipio (tal como lo entrega Hacienda; mantener códigos numéricos tal cual)
+CAT013_MUNICIPIOS = {
+    "00","10","11","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","34","35","36"
+}
 
-def _map_departamento(nombre: str | None) -> str:
-    if nombre is None:
-        raise ValueError("Departamento requerido")
-    nombre = str(nombre)
-    if nombre.isdigit():
-        nombre = nombre.zfill(2)
-    if nombre not in DEPARTAMENTO_CODES:
-        raise ValueError("Departamento inválido")
-    return nombre
+# Exposed path for monkeypatching in tests
+DATOS_NEGOCIO_PATH = _DATOS_NEGOCIO_PATH
 
 
-def _map_municipio(nombre: str | None, departamento: str | None = None) -> str:
-    if nombre is None:
-        raise ValueError("Municipio requerido")
-    nombre = str(nombre)
-    if not nombre.isdigit() or len(nombre) != 2:
-        raise ValueError("Municipio inválido")
-    if departamento:
-        dep_code = _map_departamento(departamento)
-        start, end = MUNICIPIO_RANGES.get(dep_code, ("00", "99"))
-        if nombre < start or nombre > end:
-            raise ValueError("Municipio inválido para el departamento")
-    return nombre
-
-# Path to company configuration holding the emitter address codes
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "company.json"
-
-
-def get_emisor_direccion() -> Dict[str, str]:
-    """Return the emitter address configuration.
-
-    The configuration must provide ``departamento`` and ``municipio`` as
-    two-digit strings plus a ``complemento``. If the file is missing or the
-    values do not meet these requirements, ``ValueError`` is raised.
+def load_datos_negocio() -> dict:
+    """
+    Lee paths.DATOS_NEGOCIO_PATH (UTF-8) y retorna el JSON completo.
+    Exige data["direccion"] con:
+      - "departamento": str de 2 dígitos en CAT-012 (incluye "00")
+      - "municipio":   str en CAT-013 (incluye "00"); conservar tal cual (2 o 3 dígitos según catálogo)
+      - "complemento": str no vacío
+    Normaliza:
+      - departamento: str -> zfill(2)
+      - municipio: str -> si es numérico, sin perder dígitos (NO castear a int; NO quitar ceros válidos)
+    Valida contra los catálogos provistos abajo.
+    Si falta algo o es inválido, lanzar ValueError con mensaje claro.
     """
 
+    path = Path(DATOS_NEGOCIO_PATH)
     try:
-        data = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
-    except Exception as exc:  # pragma: no cover - defensive
-        raise ValueError("Config de dirección del emisor inválida") from exc
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as exc:
+        raise ValueError("datos_negocio.json inválido") from exc
 
-    emisor = data.get("emisor", {})
-    departamento = emisor.get("departamento")
-    municipio = emisor.get("municipio")
-    complemento = emisor.get("complemento")
+    direccion = data.get("direccion")
+    if not isinstance(direccion, dict):
+        raise ValueError("Falta dirección del negocio")
 
-    if (
-        not isinstance(departamento, str)
-        or not isinstance(municipio, str)
-        or not isinstance(complemento, str)
-        or len(departamento) != 2
-        or len(municipio) != 2
-    ):
-        raise ValueError("Config de dirección del emisor inválida")
+    departamento = str(direccion.get("departamento"))
+    municipio = str(direccion.get("municipio"))
+    complemento = direccion.get("complemento")
 
-    try:
-        departamento = _map_departamento(departamento)
-        municipio = _map_municipio(municipio, departamento)
-    except Exception as exc:  # pragma: no cover - invalid codes
-        raise ValueError("Config de dirección del emisor inválida") from exc
+    departamento = departamento.zfill(2)
+    if departamento not in CAT012_DEPARTAMENTOS:
+        raise ValueError("Departamento inválido")
 
-    return {
+    if municipio not in CAT013_MUNICIPIOS:
+        raise ValueError("Municipio inválido")
+
+    if not isinstance(complemento, str) or not complemento:
+        raise ValueError("Complemento inválido")
+
+    data["direccion"] = {
         "departamento": departamento,
         "municipio": municipio,
         "complemento": complemento,
     }
+    return data
 
 
-__all__ = ["get_emisor_direccion", "CONFIG_PATH", "MUNICIPIO_RANGES"]
+def get_emisor_direccion() -> Dict[str, str]:
+    """
+    Wrapper de compatibilidad:
+    return load_datos_negocio()["direccion"]
+    """
+
+    return load_datos_negocio()["direccion"]
+
+
+__all__ = [
+    "load_datos_negocio",
+    "get_emisor_direccion",
+    "CAT012_DEPARTAMENTOS",
+    "CAT013_MUNICIPIOS",
+    "DATOS_NEGOCIO_PATH",
+]

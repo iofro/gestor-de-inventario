@@ -3176,9 +3176,13 @@ class DTEConfigDialog(QDialog):
         ambiente = dte_api.get("ambiente", "pruebas")
         self.ambiente_hacienda.setCurrentText("Producción" if ambiente.lower() in ["producción", "produccion"] else "Pruebas")
         self.token_hacienda.setText(dte_api.get("token", ""))
-        self.endpoint_hacienda.setText(dte_api.get("url", ""))
+        self.endpoint_hacienda.setText(
+            dte_api.get("endpoint") or dte_api.get("url", "")
+        )
         self.auth_url.setText(env_config.get("auth_url", ""))
-        self.recepcion_url.setText(env_config.get("recepcion_url", ""))
+        self.recepcion_url.setText(
+            dte_api.get("recepcion_url") or env_config.get("recepcion_url", "")
+        )
         self.envio_automatico.setChecked(dte_api.get("envio_automatico", False))
         self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
@@ -3268,6 +3272,8 @@ class DTEConfigDialog(QDialog):
     def get_data(self):
         dte_api = {
             "url": self.endpoint_hacienda.text(),
+            "endpoint": self.endpoint_hacienda.text(),
+            "recepcion_url": self.recepcion_url.text(),
             "ambiente": self.ambiente_hacienda.currentText().lower(),
             "token": self.token_hacienda.text(),
             "prefijo_control": self.prefijo_control.text(),

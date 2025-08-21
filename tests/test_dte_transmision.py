@@ -144,7 +144,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert row["sello"] == "ABC123"
 
 
-def test_post_dte_uses_bearer(monkeypatch):
+def test_post_dte_valid_url_headers(monkeypatch):
     captured = {}
 
     def fake_post(url, data=None, headers=None, timeout=20):
@@ -168,6 +168,9 @@ def test_post_dte_uses_bearer(monkeypatch):
     assert captured["headers"]["Content-Type"] == "application/jose"
     assert captured["headers"]["Accept"] == "application/json"
     assert captured["url"] == dte.DEFAULT_RECEPCION_URL
+    from urllib.parse import urlparse
+    pu = urlparse(captured["url"])
+    assert pu.path.rstrip("/") == "/fesv/recepciondte"
     assert captured["data"] == token.encode()
     assert captured["data"].count(b".") >= 2
 

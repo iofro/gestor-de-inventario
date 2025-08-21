@@ -503,7 +503,13 @@ class FacturacionTab(QWidget):
 
     def _update_send_btn(self):
         entry = self._selected_entry()
-        enabled = bool(entry and entry.get("row_type") in ("venta", "ticket"))
+        enabled = False
+        if entry:
+            rtype = entry.get("row_type")
+            if rtype in ("venta", "ticket"):
+                enabled = True
+            elif rtype == "orphan" and entry.get("json") and entry.get("estado") != "Incompleta":
+                enabled = True
         self.btn_enviar.setEnabled(enabled)
 
     def _show_validation_errors(self, errors, json_path):
@@ -541,24 +547,45 @@ class FacturacionTab(QWidget):
                 self._send_invoice_email(venta_id)
             elif entry.get("row_type") == "ticket":
                 self._send_ticket_email(venta_id)
+            elif entry.get("row_type") == "orphan":
+                self._send_orphan_email(entry)
         if dialog.hacienda_cb.isChecked():
-            tipo = "03" if entry.get("row_type") == "ticket" else "01"
-            try:
-                resp = transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
-                if resp.get("estado") == "Error":
+            if entry.get("row_type") == "orphan":
+                json_path = entry.get("json")
+                try:
+                    resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
+                    if resp.get("estado") == "Error":
+                        QMessageBox.critical(
+                            self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                        )
+                    else:
+                        QMessageBox.information(
+                            self, "Enviar a Hacienda", "Documento enviado"
+                        )
+                except dte.DTEValidationError as exc:
+                    self._show_validation_errors(exc.errors, exc.json_path)
+                except Exception as exc:
                     QMessageBox.critical(
-                        self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                        self, "Enviar a Hacienda", str(exc)
                     )
-                else:
-                    QMessageBox.information(
-                        self, "Enviar a Hacienda", "Documento enviado"
+            else:
+                tipo = "03" if entry.get("row_type") == "ticket" else "01"
+                try:
+                    resp = transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
+                    if resp.get("estado") == "Error":
+                        QMessageBox.critical(
+                            self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                        )
+                    else:
+                        QMessageBox.information(
+                            self, "Enviar a Hacienda", "Documento enviado"
+                        )
+                except dte.DTEValidationError as exc:
+                    self._show_validation_errors(exc.errors, exc.json_path)
+                except Exception as exc:
+                    QMessageBox.critical(
+                        self, "Enviar a Hacienda", str(exc)
                     )
-            except dte.DTEValidationError as exc:
-                self._show_validation_errors(exc.errors, exc.json_path)
-            except Exception as exc:
-                QMessageBox.critical(
-                    self, "Enviar a Hacienda", str(exc)
-                )
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
@@ -619,6 +646,55 @@ class FacturacionTab(QWidget):
             subject,
             body,
             [pdf_path, json_path],
+        )
+        self.email_thread.finished.connect(self._on_email_sent)
+        self.email_thread.start()
+
+    def _send_orphan_email(self, entry):
+        json_path = entry.get("json")
+        pdf_path = entry.get("pdf")
+        dest, ok = QInputDialog.getText(
+            self, "Enviar por correo", "Correo del destinatario:")
+        if not ok or not dest:
+            return
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON.")
+            return
+        attachments = [json_path]
+        if pdf_path and os.path.exists(pdf_path):
+            attachments.insert(0, pdf_path)
+        else:
+            QMessageBox.warning(
+                self, "Enviar por correo", "No se encontró PDF. Solo se adjuntará el JSON."
+            )
+        creds = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                creds = {}
+        server = creds.get("smtp_server")
+        port = creds.get("smtp_port")
+        user = creds.get("email_usuario")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD") or creds.get("email_contrasena")
+        if not all([server, port, user, password]):
+            QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
+            return
+        subject = "Factura"
+        body = (
+            "Adjunto se envía la representación gráfica en PDF y el documento firmado en formato JSON"
+        )
+        self.btn_enviar.setEnabled(False)
+        self.email_thread = EmailSender(
+            server,
+            port,
+            user,
+            password,
+            dest,
+            subject,
+            body,
+            attachments,
         )
         self.email_thread.finished.connect(self._on_email_sent)
         self.email_thread.start()

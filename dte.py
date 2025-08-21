@@ -27,7 +27,7 @@ from xml.etree.ElementTree import Element, SubElement
 logger = logging.getLogger(__name__)
 
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
-DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
 
 SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
@@ -2386,17 +2386,17 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
 
 
 def _load_dte_api_config():
-    """Lee configuración de URLs y ambiente desde ``config_negocio.json``."""
+    """Lee configuración de URLs y ambiente desde ``datos_negocio.json``."""
     try:
-        with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+        with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             data = json.load(fh)
-        ambiente = data.get("ambiente", "pruebas")
-        env_conf = data.get(ambiente, {})
-        url = env_conf.get("recepcion_url") or data.get("recepcion_url")
-        if url:
-            url = url.strip()
-        return {"ambiente": ambiente, "url": url or DEFAULT_RECEPCION_URL}
+        dte_api = data.get("dte_api") or {}
+        ambiente = dte_api.get("ambiente") or data.get("ambiente") or "pruebas"
+        url = (dte_api.get("url") or "").strip() or DEFAULT_RECEPCION_URL
+        logger.info("Recepción configurada → %s", url)
+        return {"ambiente": ambiente, "url": url}
     except Exception:
+        logger.info("Recepción configurada → %s", DEFAULT_RECEPCION_URL)
         return {"ambiente": "pruebas", "url": DEFAULT_RECEPCION_URL}
 
 
@@ -2499,13 +2499,14 @@ def _decode_jws_payload(token: str) -> dict:
 def _post_dte(
     url: str, token: str, jws_token: str, dte_data: dict | None = None
 ) -> dict:
-    token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
+    token = token or ""
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:
         logger.debug("Token: <empty>")
     headers = {
-        "Content-Type": "application/json",
+        "Content-Type": "application/jose",
+        "Accept": "application/json",
         "Authorization": token,
     }
     ident = {}
@@ -2550,8 +2551,7 @@ def _post_dte(
     if missing:
         raise AssertionError("Faltan campos requeridos: " + ", ".join(missing))
 
-    documento = str(jws_token)
-    assert documento.count(".") == 2, "documento JWS malformado"
+    assert str(jws_token).count(".") == 2, "documento JWS malformado"
     codigo = "" if codigo is None else str(codigo)
 
     try:
@@ -2567,7 +2567,12 @@ def _post_dte(
             r"Bearer [^\s]+", auth_header
         ), "Authorization header malformado"
 
-    resp = requests.post(url, headers=headers, data=documento, timeout=20)
+    pu = urlparse(url)
+    assert pu.netloc == "apitest.dtes.mh.gob.sv", f"Host inválido: {url}"
+    assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
+    logger.info("POST recepcion → %s", url)
+    body = str(jws_token).strip().encode("utf-8")
+    resp = requests.post(url, headers=headers, data=body, timeout=20)
     resp_text = getattr(resp, "text", "")
     status_code = getattr(resp, "status_code", "N/A")
     if isinstance(status_code, int) and status_code >= 400:
@@ -2703,7 +2708,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
 
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
-    url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    config = _load_dte_api_config()
+    url = config.get("url") or DEFAULT_RECEPCION_URL
     payload = _decode_jws_payload(jws_token)
     ident = payload.get("identificacion") or payload.get("identificador") or {}
     meta = {

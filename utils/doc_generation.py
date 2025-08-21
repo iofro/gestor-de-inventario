@@ -156,12 +156,8 @@ def generate_invoice_pdf(manager, venta_id):
         tipo_contingencia=tipo_contingencia,
         motivo_contin=motivo_contin,
     )
-    with open(json_path, 'w', encoding='utf-8') as fh:
-        json.dump(json_data, fh, ensure_ascii=False, indent=2)
     if tipo_operacion == 2:
         manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
-    if not os.path.exists(json_path):
-        raise IOError(f"No se pudo guardar JSON en {json_path}")
     try:
         resumen = json_data.get("resumen", {})
         condicion = normalize_condicion_operacion(
@@ -177,6 +173,8 @@ def generate_invoice_pdf(manager, venta_id):
         sign_and_save(json_data, json_path)
     except Exception:
         pass
+    if not os.path.exists(json_path):
+        raise IOError(f"No se pudo guardar JSON en {json_path}")
     manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
     return file_path
 
@@ -215,10 +213,6 @@ def generate_ticket_pdf(manager, venta_id):
         if not venta_data.get("numero_control"):
             venta_data["numero_control"] = uuid.uuid4().hex[:8].upper()
         ticket_json = build_invoice_json(venta_data, cliente or {}, detalles)
-    with open(json_path, "w", encoding="utf-8") as fh:
-        json.dump(ticket_json, fh, ensure_ascii=False, indent=2)
-    if not os.path.exists(json_path):
-        raise IOError(f"No se pudo guardar JSON en {json_path}")
     try:
         resumen = ticket_json.get("resumen", {})
         condicion = normalize_condicion_operacion(
@@ -234,5 +228,7 @@ def generate_ticket_pdf(manager, venta_id):
         sign_and_save(ticket_json, json_path)
     except Exception:
         pass
+    if not os.path.exists(json_path):
+        raise IOError(f"No se pudo guardar JSON en {json_path}")
     manager.db.add_ticket_pdf(venta_id, filename)
     return filename

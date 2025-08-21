@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 from db import DB
 import requests
 from utils import jws
+from utils.stable_json import stable_stringify, save_file
 import auth
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
@@ -2406,11 +2407,10 @@ def _assert_no_ejemplo(path: str) -> None:
 
 def _write_json(path: str, data):
     _assert_no_ejemplo(path)
-    with open(path, "w", encoding="utf-8") as fh:
-        if isinstance(data, str):
-            fh.write(data)
-        else:
-            json.dump(data, fh, ensure_ascii=False)
+    if isinstance(data, str):
+        save_file(path, data, add_final_newline=not path.endswith(".jws"))
+    else:
+        save_file(path, stable_stringify(data, indent=2))
 
 
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:

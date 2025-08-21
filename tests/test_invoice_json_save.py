@@ -1,7 +1,10 @@
 import json
+import os
+import uuid
 import pytest
 from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
+import dte
 from sales_tab import SalesTab
 from utils import docs
 from utils.doc_generation import generate_invoice_pdf
@@ -61,6 +64,55 @@ def test_generate_invoice_creates_json(tmp_path):
     assert ident.get("numeroControl")
     assert data.get("cuerpoDocumento")
     assert data.get("resumen", {}).get("totalPagar") == 10
+
+
+def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
+    db = FakeDB()
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    man = Manager(db)
+
+    pdf_path = tmp_path / "fact.pdf"
+    json_path = tmp_path / "fact.json"
+
+    def fake_paths(date, cliente, identifier, doc_type, root=None):
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        return str(pdf_path), str(json_path)
+
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
+    monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda *a, **k: {"estado": "OK"})
+
+    created = {}
+
+    def fake_save(dte_data, jws_token):
+        fecha = dte_data.get("identificacion", {}).get("fecEmi") or dte.fecha_emision_hoy_str()
+        year = str(fecha)[:4]
+        base_dir = tmp_path / "dtes" / year
+        os.makedirs(base_dir, exist_ok=True)
+        nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
+        json_dest = base_dir / f"{nombre}.json"
+        dte._write_json(str(json_dest), dte_data)
+        jws_dest = base_dir / f"{nombre}.jws"
+        dte._write_json(str(jws_dest), jws_token)
+        sobre = dte.construir_sobre_recepcion(jws_token, dte_data)
+        if sobre.get("estado") != "Error":
+            sobre_dest = base_dir / f"{nombre}_sobre_hacienda.json"
+            dte._write_json(str(sobre_dest), sobre)
+        created["dir"] = base_dir
+
+    monkeypatch.setattr(dte, "_save_signed_dte", fake_save)
+
+    generate_invoice_pdf(man, 1)
+
+    base_dir = created["dir"]
+    files = list(base_dir.iterdir())
+    sobre = [f for f in files if f.name.endswith("_sobre_hacienda.json")]
+    assert sobre, "sobre no creado"
+    base = sobre[0].name.replace("_sobre_hacienda.json", "")
+    assert (base_dir / f"{base}.json").exists()
+    assert (base_dir / f"{base}.jws").exists()
 
 
 def test_save_ticket_creates_json(qt_app, tmp_path):

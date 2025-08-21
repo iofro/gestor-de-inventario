@@ -3,6 +3,7 @@ import os
 import uuid
 import logging
 
+import dte
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
 from dte import generar_ticket_json, generar_dte_json
@@ -170,7 +171,13 @@ def generate_invoice_pdf(manager, venta_id):
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
     try:
-        sign_and_save(json_data, json_path)
+        jws_path = sign_and_save(json_data, json_path)
+        try:
+            with open(jws_path, "r", encoding="utf-8") as fh:
+                jws_token = fh.read()
+            dte._save_signed_dte(json_data, jws_token)
+        except Exception:
+            pass
     except Exception:
         pass
     if not os.path.exists(json_path):

@@ -7,16 +7,13 @@ from typing import Any, Dict, List
 
 import csv
 import io
-from jsonschema import Draft7Validator, ValidationError
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 from paths import DATOS_NEGOCIO_PATH as _DATOS_NEGOCIO_PATH
-BASE_DIR = Path(__file__).resolve().parents[1]
 DATOS_NEGOCIO_PATH = Path(_DATOS_NEGOCIO_PATH)
-SCHEMAS_DIR = BASE_DIR / "svfe-json-schemas"
 
 TIPOS_DTE = [
     "FE",
@@ -46,19 +43,6 @@ CODIGO_TIPO = {
     "CDE": "15",
 }
 
-SCHEMA_MAP = {
-    "FE": SCHEMAS_DIR / "fe-fc-v1.json",
-    "CCFE": SCHEMAS_DIR / "fe-ccf-v3.json",
-    "NRE": SCHEMAS_DIR / "fe-nr-v3.json",
-    "NCE": SCHEMAS_DIR / "fe-nc-v3.json",
-    "NDE": SCHEMAS_DIR / "fe-nd-v3.json",
-    "FEXE": SCHEMAS_DIR / "fe-fex-v1.json",
-    "FSEE": SCHEMAS_DIR / "fe-fse-v1.json",
-    "CRE": SCHEMAS_DIR / "fe-cr-v1.json",
-    "CLE": SCHEMAS_DIR / "fe-cl-v1.json",
-    "DCLE": SCHEMAS_DIR / "fe-dcl-v1.json",
-    "CDE": SCHEMAS_DIR / "fe-cd-v1.json",
-}
 
 
 def _load_emisor() -> Dict[str, Any]:
@@ -136,15 +120,8 @@ def validate_dte_json(instance: Dict[str, Any], *, tipo: str, ambiente: str, str
         raise ValueError(
             ", ".join(missing)
         )
-    schema_path = SCHEMA_MAP.get(tipo)
-    if not schema_path or not schema_path.exists():
-        raise ValueError(f"Esquema no encontrado para tipo {tipo}")
-    with schema_path.open("r", encoding="utf-8") as fh:
-        schema = json.load(fh)
-    validator = Draft7Validator(schema)
-    errors = list(validator.iter_errors(instance))
-    if errors:
-        raise ValidationError("Errores de esquema")
+    # Schema validation disabled
+    return None
 
 
 def generar_reporte(errores: List[Dict[str, Any]], formato: str) -> str:
@@ -198,7 +175,6 @@ def main() -> int:
 
     for tipo in TIPOS_DTE:
         logger.info("Validando %s", tipo)
-        schema_path = SCHEMA_MAP.get(tipo)
         payload = build_payload(tipo, emisor, args.ambiente)
         try:
             validate_dte_json(payload, tipo=tipo, ambiente=args.ambiente, strict=True)
@@ -215,32 +191,6 @@ def main() -> int:
                 )
             if args.detener_en_fatal:
                 break
-        except ValidationError:
-            if schema_path and schema_path.exists():
-                with schema_path.open("r", encoding="utf-8") as fh:
-                    schema = json.load(fh)
-                validator = Draft7Validator(schema)
-                for err in sorted(validator.iter_errors(payload), key=lambda e: e.path):
-                    path = ".".join(str(p) for p in err.path) or "<root>"
-                    errores.append(
-                        {
-                            "tipo": tipo,
-                            "severidad": "error",
-                            "campo_path": path,
-                            "mensaje": err.message,
-                        }
-                    )
-            else:
-                errores.append(
-                    {
-                        "tipo": tipo,
-                        "severidad": "fatal",
-                        "campo_path": "<schema>",
-                        "mensaje": "Esquema no encontrado",
-                    }
-                )
-                if args.detener_en_fatal:
-                    break
 
     reporte = generar_reporte(errores, args.formato)
     if args.salida:

@@ -149,6 +149,10 @@ def money(value) -> D:
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
 
+def _norm3(value) -> str:
+    return re.sub(r"\D", "", str(value))[-3:].zfill(3)
+
+
 def normalize_uuid_v4_upper(value: str) -> str:
     """
     Normaliza `value` como UUID v4 con guiones en MAYÚSCULAS.
@@ -1161,20 +1165,11 @@ def recalcular_totales(
 
 
 
-def generar_numero_control(prefijo: str | None = None) -> str:
-    """Crea un número de control único siguiendo el formato de Hacienda.
-
-    When ``prefijo`` is ``None`` it is read from ``datos_negocio`` and falls
-    back to ``DTE-01-S001P001``.
-    """
-    if prefijo is None:
-        datos = _load_datos_negocio()
-        prefijo = (
-            (datos.get("dte_api") or {}).get("prefijo_control")
-            or "DTE-01-S001P001"
-        )
-    secuencia = str(uuid.uuid4().int % 10**15).zfill(15)
-    return f"{prefijo}-{secuencia}"
+def generar_numero_control(db: DB, tipo: str, sucursal: str, punto: str) -> str:
+    """Genera un número de control secuencial."""
+    correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
+    secuencia = str(correlativo).zfill(15)
+    return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
 
 
 def identificacion_a_xml(ident: dict) -> str:
@@ -1195,6 +1190,7 @@ def generar_cabecera_dte_data(
     tipo_modelo: int,
     tipo_operacion: int,
     tipo_dte: str,
+    db: DB,
     tipo_contingencia: int | None = None,
     motivo_contin: str | None = None,
     ambiente: str = "00",
@@ -1219,9 +1215,10 @@ def generar_cabecera_dte_data(
     m = re.search(r"S(\d{3})P(\d{3})", prefijo)
     if m:
         sucursal, punto = m.groups()
+    sucursal = _norm3(sucursal)
+    punto = _norm3(punto)
     codigo_generacion = str(uuid.uuid4()).upper()
-    prefijo_nc = f"DTE-{tipo_dte}-S{sucursal}P{punto}"
-    numero_control = generar_numero_control(prefijo_nc)
+    numero_control = generar_numero_control(db, tipo_dte, sucursal, punto)
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     return {
         "codigo_generacion": codigo_generacion,
@@ -1293,10 +1290,11 @@ def generar_dte_json(
     cod_punto_raw = re.sub(r"\D", "", str(datos.get("codPuntoVenta", "")))
     cod_estable = (cod_estable_raw or suc_pref.rjust(4, "0"))[-4:].zfill(4)
     cod_punto = (cod_punto_raw or punto_pref.rjust(4, "0"))[-4:].zfill(4)
-    prefijo_nc = f"DTE-{tipo_dte}-S{cod_estable[-3:]}P{cod_punto[-3:]}"
+    suc = _norm3(cod_estable)
+    pto = _norm3(cod_punto)
     # Generar identificadores con formatos oficiales
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(prefijo_nc)
+    numero_control = generar_numero_control(db, tipo_dte, suc, pto)
 
 
     now = datetime.now(TZ_EL_SALVADOR)
@@ -1721,11 +1719,16 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    validate_dte_json(result, precios_incluyen_iva=False)
+    validate_dte_json(result, db=db, precios_incluyen_iva=False)
     return result
 
 
-def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool | None = None) -> None:
+def validate_dte_json(
+    payload: dict,
+    *,
+    db: DB,
+    precios_incluyen_iva: bool | None = None,
+) -> None:
     """Basic validation and normalization for DTE payload antes de firmar."""
     # Normalización omitida para preservar códigos con ceros a la izquierda
     # ("01", etc.) que ``_normalize_payload`` convertiría a enteros.
@@ -1809,21 +1812,6 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool | None = None
         raise ValueError("ambiente debe ser '00' o '01'")
     if ident.get("tipoMoneda") != "USD":
         raise ValueError("tipoMoneda debe ser 'USD'")
-    emisor_nc = payload.get("emisor", {})
-    cod_est_nc = str(emisor_nc.get("codEstable") or negocio.get("codEstable") or "0000")
-    cod_pto_nc = str(emisor_nc.get("codPuntoVenta") or negocio.get("codPuntoVenta") or "0000")
-    prefijo_nc = f"DTE-{ident['tipoDte']}-S{cod_est_nc[-3:]}P{cod_pto_nc[-3:]}"
-    numero_control = ident.get("numeroControl")
-    if not (
-        isinstance(numero_control, str)
-        and numero_control.startswith(prefijo_nc + "-")
-        and re.fullmatch(rf"^DTE-{ident['tipoDte']}-[A-Z0-9]{{8}}-[0-9]{{15}}$", numero_control)
-    ):
-        numero_control = generar_numero_control(prefijo_nc)
-        ident["numeroControl"] = numero_control
-
-    if not re.fullmatch(rf"^DTE-{ident['tipoDte']}-[A-Z0-9]{{8}}-[0-9]{{15}}$", numero_control):
-        raise ValueError("numeroControl inválido")
     # Las reglas de operación/modelo/contingencia ya fueron normalizadas arriba.
     try:
         fec = datetime.strptime(str(ident.get("fecEmi")), "%Y-%m-%d").date()
@@ -1870,16 +1858,32 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool | None = None
     }
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))
-    cod_est = str(emisor.get("codEstable") or negocio.get("codEstable") or "0000")
+    cod_est = str(emisor.get("codEstable") or negocio.get("codEstable") or 1)
     emisor["codEstable"] = cod_est.zfill(4)
     emisor["codEstableMH"] = str(
         emisor.get("codEstableMH") or negocio.get("codEstableMH") or cod_est
     ).zfill(4)
-    cod_pto = str(emisor.get("codPuntoVenta") or negocio.get("codPuntoVenta") or "0000")
+    cod_pto = str(emisor.get("codPuntoVenta") or negocio.get("codPuntoVenta") or 1)
     emisor["codPuntoVenta"] = cod_pto.zfill(4)
     emisor["codPuntoVentaMH"] = str(
         emisor.get("codPuntoVentaMH") or negocio.get("codPuntoVentaMH") or cod_pto
     ).zfill(4)
+    tipo = str(ident.get("tipoDte") or "").zfill(2)
+    if not re.fullmatch(r"\d{2}", tipo):
+        raise ValueError("tipoDte inválido")
+    if hasattr(catalogos, "TIPOS_DTE") and tipo not in catalogos.TIPOS_DTE:
+        raise ValueError("Código de tipoDte inválido")
+    suc = _norm3(emisor.get("codEstableMH") or emisor.get("codEstable") or 1)
+    pto = _norm3(
+        emisor.get("codPuntoVentaMH") or emisor.get("codPuntoVenta") or 1
+    )
+    numero_control = ident.get("numeroControl")
+    regex_nc = r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$"
+    if not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
+        ident["numeroControl"] = generar_numero_control(db, tipo, suc, pto)
+    numero_control = ident.get("numeroControl")
+    if not re.fullmatch(regex_nc, numero_control):
+        raise ValueError("numeroControl inválido")
     emisor.pop("giro", None)
     emisor.pop("tipoContribuyente", None)
     required_emisor = {
@@ -2610,7 +2614,7 @@ def transmitir_dte(
     data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
     try:
-        validate_dte_json(data)
+        validate_dte_json(data, db=db)
     except Exception as exc:
         json_path = save_dte_json(data)
         errors = _format_validation_errors(exc)
@@ -2647,7 +2651,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         data = sanitize_dte_payload(raw)
         data = apply_schema_patch(data)
         try:
-            validate_dte_json(data)
+            validate_dte_json(data, db=db)
         except Exception as exc:
             errors = _format_validation_errors(exc)
             raise DTEValidationError(errors, json_path) from exc
@@ -2846,7 +2850,7 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
     try:
-        validate_dte_json(data)
+        validate_dte_json(data, db=db)
     except Exception as exc:
         json_path = save_dte_json(data)
         errors = _format_validation_errors(exc)
@@ -2863,7 +2867,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
     try:
-        validate_dte_json(data)
+        validate_dte_json(data, db=db)
     except Exception as exc:
         json_path = save_dte_json(data)
         errors = _format_validation_errors(exc)
@@ -2877,7 +2881,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
     try:
-        validate_dte_json(data)
+        validate_dte_json(data, db=db)
     except Exception as exc:
         json_path = save_dte_json(data)
         errors = _format_validation_errors(exc)
@@ -2891,7 +2895,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
     try:
-        validate_dte_json(data)
+        validate_dte_json(data, db=db)
     except Exception as exc:
         json_path = save_dte_json(data)
         errors = _format_validation_errors(exc)

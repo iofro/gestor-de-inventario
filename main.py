@@ -108,6 +108,7 @@ if __name__ == "__main__":
             window._actualizar_tabla_trabajadores()
             window._actualizar_historial()
             window._cargar_personas_estado()
+            window.sales_tab.load_sales()
             QMessageBox.information(window, "Inventario", "Inventario cargado exitosamente.")
         except (OSError, ValueError, json.JSONDecodeError, sqlite3.Error) as e:
             QMessageBox.critical(window, "Error", f"No se pudo cargar el inventario:\n{e}")

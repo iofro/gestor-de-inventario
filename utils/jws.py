@@ -14,7 +14,9 @@ from utils.stable_json import (
 logger = logging.getLogger(__name__)
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
-SIGN_TIMEOUT = 10
+SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
+
+SEND_DTEJSON_AS_OBJECT = os.getenv("SEND_DTEJSON_AS_OBJECT", "1") == "1"
 
 # Directory where the signing service expects certificate files (.crt)
 # Allow overriding via environment variable and strip any hidden characters.
@@ -98,27 +100,35 @@ def sign_json(
         raise RuntimeError("NIT del certificado no configurado")
     _ensure_cert_file(nit)
     url = url or _get_sign_url()
+
     if isinstance(payload, str):
         payload_str = payload
+        try:
+            payload_obj = json.loads(payload_str)
+        except Exception as exc:
+            raise ValueError("payload_str no es JSON válido") from exc
     else:
-        payload_dict = payload
-        payload_str = stable_stringify(payload_dict)
-        if version is None or tipo_dte is None:
-            ident = payload_dict.get("identificacion", {})
-            if version is None:
-                version = ident.get("version")
-            if tipo_dte is None:
-                tipo_dte = ident.get("tipoDte")
+        payload_obj = payload
+        payload_str = stable_stringify(payload_obj)
+
+    if (version is None or tipo_dte is None) and isinstance(payload_obj, dict):
+        ident = payload_obj.get("identificacion", {})
+        if version is None:
+            version = ident.get("version")
+        if tipo_dte is None:
+            tipo_dte = ident.get("tipoDte")
+
     body = {
         "nit": nit,
         "activo": activo,
         "passwordPri": passwordPri,
-        "dteJson": payload_str,
+        "dteJson": payload_obj if SEND_DTEJSON_AS_OBJECT else payload_str,
     }
     if version is not None:
         body["version"] = version
     if tipo_dte is not None:
         body["tipoDte"] = tipo_dte
+
     try:
         response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
         status_code = getattr(response, "status_code", "N/A")
@@ -135,6 +145,7 @@ def sign_json(
         raise RuntimeError(f"Error HTTP {status} al firmar: {exc.response.text}") from exc
     except requests.RequestException as exc:
         raise RuntimeError(f"Error al firmar: {exc}") from exc
+
     data = response.json()
     if isinstance(data, dict):
         if data.get("status") == "OK":
@@ -159,11 +170,11 @@ def sign_and_save(
     derived from the same serialized string.
     """
     json_pretty = stable_stringify(payload, indent=2)
+    payload_compact = stable_stringify(payload)
     save_file(json_path, json_pretty)
     if os.getenv("STABLE_JSON_CHECK") == "1":
         validar_montos(payload)
         assert_same_payload(payload)
-    payload_compact = stable_stringify(payload)
     ident = payload.get("identificacion", {})
     version = ident.get("version")
     tipo_dte = ident.get("tipoDte")
@@ -176,6 +187,7 @@ def sign_and_save(
         version=version,
         tipo_dte=tipo_dte,
     )
+    token = token.rstrip("\n")
     jws_path = os.path.splitext(json_path)[0] + ".jws"
     save_file(jws_path, token, add_final_newline=False)
     return jws_path

@@ -1374,7 +1374,14 @@ def generar_dte_json(
         "telefono": datos.get("telefono"),
         "correo": datos.get("correo"),
     }
-    emisor["direccion"] = svfe_config.get_emisor_direccion()
+    svfe_config.DATOS_NEGOCIO_PATH = DATOS_NEGOCIO_PATH
+    datos_cfg = svfe_config.load_datos_negocio()
+    dir_emisor = datos_cfg.get("direccion") or {}
+    emisor["direccion"] = {
+        "departamento": str(dir_emisor["departamento"]).zfill(2),
+        "municipio": str(dir_emisor["municipio"]),  # respetar dígitos tal cual
+        "complemento": dir_emisor.get("complemento") or "SIN DIRECCION",
+    }
     emisor.setdefault("codEstableMH", cod_estable)
     emisor.setdefault("codEstable", cod_estable)
     emisor.setdefault("codPuntoVentaMH", cod_punto)
@@ -1852,24 +1859,14 @@ def validate_dte_json(payload: dict, *, precios_incluyen_iva: bool | None = None
     )
     emisor.setdefault("descActividad", negocio.get("descActividad"))
     emisor.setdefault("tipoEstablecimiento", "01")
-    direccion = emisor.get("direccion")
-    if not isinstance(direccion, dict):
-        try:
-            direccion = svfe_config.get_emisor_direccion()
-        except Exception:
-            direccion = {}
-    depto = direccion.get("departamento")
-    if depto is not None:
-        depto = _map_departamento(depto)
-    municipio = direccion.get("municipio")
-    if municipio is not None:
-        municipio = _map_municipio(municipio, depto)
-    direccion = {
-        "departamento": depto,
-        "municipio": municipio,
-        "complemento": direccion.get("complemento"),
+    svfe_config.DATOS_NEGOCIO_PATH = DATOS_NEGOCIO_PATH
+    datos_cfg = svfe_config.load_datos_negocio()
+    dir_emisor = datos_cfg.get("direccion") or {}
+    emisor["direccion"] = {
+        "departamento": str(dir_emisor["departamento"]).zfill(2),
+        "municipio": str(dir_emisor["municipio"]),
+        "complemento": dir_emisor.get("complemento") or "SIN DIRECCION",
     }
-    emisor["direccion"] = direccion
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))
     cod_est = str(emisor.get("codEstable") or negocio.get("codEstable") or "0000")

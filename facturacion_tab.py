@@ -156,7 +156,7 @@ class FacturacionTab(QWidget):
         self.btn_estado = QPushButton("Estado")
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
-        self.btn_enviar_json = QPushButton("Enviar JSON...")
+        self.btn_enviar_jws = QPushButton("Enviar JWS...")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;"
@@ -166,7 +166,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
         btns.addWidget(self.btn_enviar)
-        btns.addWidget(self.btn_enviar_json)
+        btns.addWidget(self.btn_enviar_jws)
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
@@ -196,7 +196,7 @@ class FacturacionTab(QWidget):
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
-        self.btn_enviar_json.clicked.connect(self.send_json)
+        self.btn_enviar_jws.clicked.connect(self.send_jws)
         self.btn_eliminar.clicked.connect(self.delete_files)
 
     def _toggle_date_filter(self, checked):
@@ -590,27 +590,38 @@ class FacturacionTab(QWidget):
                         self, "Enviar a Hacienda", str(exc)
                     )
 
-    def send_json(self):
+    def send_jws(self):
         fname, _ = QFileDialog.getOpenFileName(
             self,
-            "Seleccionar JSON",
+            "Seleccionar JWS",
             "",
-            "JSON (*.json)",
+            "JWS (*.jws *.json)",
             options=QFileDialog.DontUseNativeDialog,
         )
         if not fname:
             return
         try:
             with open(fname, "r", encoding="utf-8") as fh:
-                json.load(fh)
+                content = fh.read()
         except Exception as exc:
-            QMessageBox.critical(self, "Enviar a Hacienda", f"Error al leer JSON: {exc}")
+            QMessageBox.critical(self, "Enviar a Hacienda", f"Error al leer archivo: {exc}")
             return
+
+        is_json = True
         try:
-            resp = dte.transmitir_dte_orphan(self.manager.db, fname)
-            if resp.get("estado") == "Error":
+            json.loads(content)
+        except Exception:
+            is_json = False
+
+        try:
+            if is_json:
+                resp = dte.transmitir_dte_orphan(self.manager.db, fname)
+            else:
+                resp = dte.enviar_dte_a_hacienda(content)
+
+            if resp.get("estado") in ("Error", "Rechazado"):
                 QMessageBox.critical(
-                    self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                    self, "Enviar a Hacienda", resp.get("detalle") or resp.get("errores", "Error")
                 )
             else:
                 QMessageBox.information(

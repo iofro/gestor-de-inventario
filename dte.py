@@ -2801,7 +2801,10 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     with open(json_path, "r", encoding="utf-8") as fh:
         raw = json.load(fh)
 
-    if _is_jws_token(raw):
+    if isinstance(raw, dict) and all(k in raw for k in ("documento", "ambiente", "idEnvio")):
+        jws_token = raw["documento"]
+        payload = _decode_jws_payload(jws_token)
+    elif _is_jws_token(raw):
         if isinstance(raw, dict):
             jws_token = ".".join(
                 [raw.get("protected", ""), raw.get("payload", ""), raw.get("signature", "")]

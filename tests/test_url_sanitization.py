@@ -30,12 +30,11 @@ def test_auth_url_is_stripped(monkeypatch, tmp_path):
 
 
 def test_recepcion_url_is_stripped(monkeypatch, tmp_path):
-    cfg = tmp_path / "config_negocio.json"
+    cfg = tmp_path / "datos_negocio.json"
     cfg.write_text(json.dumps({
-        "ambiente": "pruebas",
-        "pruebas": {"recepcion_url": " http://recepcion.example/path \n"}
+        "dte_api": {"url": " http://recepcion.example/path \n"}
     }))
-    monkeypatch.setattr(dte, "CONFIG_NEGOCIO_PATH", str(cfg))
+    monkeypatch.setattr(dte, "DATOS_NEGOCIO_PATH", str(cfg))
     monkeypatch.setattr(dte.jws, "sign_json", lambda data: make_jws(data))
     monkeypatch.setattr(dte.auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "recepcion.example")

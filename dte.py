@@ -2479,6 +2479,10 @@ def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
         _write_json(json_path, dte_data)
         jws_path = os.path.join(base_dir, f"{nombre}.jws")
         _write_json(jws_path, jws_token)
+        sobre = construir_sobre_recepcion(jws_token, dte_data)
+        if sobre.get("estado") != "Error":
+            sobre_path = os.path.join(base_dir, f"{nombre}_sobre_hacienda.json")
+            _write_json(sobre_path, sobre)
     except Exception:
         pass
 
@@ -2546,73 +2550,82 @@ def _decode_jws_payload(token: str) -> dict:
         raise ValueError("documento inválido") from exc
 
 
+def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> dict:
+    """Retorna el body listo para ``POST /fesv/recepciondte``.
+
+    Si ``documento`` parece un JWS se extraen los metadatos desde su payload.
+    Cuando no es un JWS válido o la decodificación falla, los metadatos se
+    obtienen de ``dte_data``.  Valida campos requeridos y formatos.  En caso de
+    error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
+    """
+
+    meta: dict[str, object] = {}
+
+    if isinstance(documento, str) and documento.count(".") == 2:
+        try:
+            payload = _decode_jws_payload(documento)
+            meta = payload.get("identificacion") or payload.get("identificador") or payload
+        except Exception:
+            meta = {}
+
+    if isinstance(dte_data, dict):
+        ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
+        if meta:
+            for k, v in ident.items():
+                meta.setdefault(k, v)
+        else:
+            meta = ident
+
+    try:
+        ambiente = str(meta["ambiente"])
+    except Exception:
+        return {"estado": "Error", "detalle": "falta ambiente"}
+    if ambiente not in {"00", "01"}:
+        return {"estado": "Error", "detalle": "ambiente inválido"}
+
+    try:
+        version = int(meta["version"])
+    except Exception:
+        return {"estado": "Error", "detalle": "version inválida"}
+
+    tipo = meta.get("tipoDte") or meta.get("tipoDocumento")
+    if tipo is None:
+        return {"estado": "Error", "detalle": "tipoDte requerido"}
+    tipo = str(tipo).zfill(2)
+
+    codigo = meta.get("codigoGeneracion")
+    if codigo is None:
+        return {"estado": "Error", "detalle": "codigoGeneracion requerido"}
+
+    id_envio = meta.get("idEnvio", 1)
+    try:
+        id_envio = int(id_envio)
+    except Exception:
+        return {"estado": "Error", "detalle": "idEnvio inválido"}
+
+    return {
+        "ambiente": ambiente,
+        "idEnvio": id_envio,
+        "version": version,
+        "tipoDte": tipo,
+        "codigoGeneracion": str(codigo),
+        "documento": documento,
+    }
+
+
+def _normalize_bearer(tok: str | None) -> str:
+    tok = (tok or "").strip()
+    return tok if tok.lower().startswith("bearer ") else (f"Bearer {tok}" if tok else "")
+
+
 def _post_dte(
-    url: str, token: str, jws_token: str, dte_data: dict | None = None
+    url: str, token: str, documento: str, dte_data: dict | None = None
 ) -> dict:
     token = token or ""
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:
         logger.debug("Token: <empty>")
-    headers = {
-        "Content-Type": "application/jose",
-        "Accept": "application/json",
-        "Authorization": token,
-    }
-    ident = {}
-    if isinstance(dte_data, dict):
-        ident = (
-            dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
-        )
-
-    # Always extract identification fields from the signed JWS payload
-    payload = _decode_jws_payload(jws_token)
-    pident = payload.get("identificacion") or payload.get("identificador") or {}
-    ambiente = pident.get("ambiente")
-    tipo_dte = pident.get("tipoDte") or pident.get("tipoDocumento")
-    version = pident.get("version")
-    codigo = pident.get("codigoGeneracion")
-
-    # If explicit metadata was provided, ensure it matches the JWS payload
-    if ident:
-        i_amb = ident.get("ambiente")
-        i_tipo = ident.get("tipoDte") or ident.get("tipoDocumento")
-        i_ver = ident.get("version")
-        i_cod = ident.get("codigoGeneracion")
-        if i_cod and i_cod != codigo:
-            raise ValueError("documento no coincide con codigoGeneracion")
-        if i_tipo and i_tipo != tipo_dte:
-            raise ValueError("documento no coincide con tipoDte")
-        if i_amb and i_amb != ambiente:
-            raise ValueError("documento no coincide con ambiente")
-        if i_ver and i_ver != version:
-            raise ValueError("documento no coincide con version")
-
-    missing = [
-        name
-        for name, value in (
-            ("ambiente", ambiente),
-            ("tipoDte", tipo_dte),
-            ("version", version),
-            ("codigoGeneracion", codigo),
-        )
-        if value is None
-    ]
-    if missing:
-        raise AssertionError("Faltan campos requeridos: " + ", ".join(missing))
-
-    assert str(jws_token).count(".") == 2, "documento JWS malformado"
-    codigo = "" if codigo is None else str(codigo)
-
-    try:
-        tipo_dte = int(tipo_dte)
-    except (TypeError, ValueError):
-        tipo_dte = str(tipo_dte)
-    else:
-        assert tipo_dte in {1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15}, "tipoDte inválido"
-
-    if token:
-        assert re.fullmatch(r"Bearer\s+\S+", token), "Authorization header malformado"
 
     pu = urlparse(url)
     assert pu.netloc in {
@@ -2620,23 +2633,39 @@ def _post_dte(
         "api.dtes.mh.gob.sv",
     }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
-    logger.info("POST recepcion → %s", url)
-    body = str(jws_token).strip().encode("utf-8")
-    resp = requests.post(url, headers=headers, data=body, timeout=20)
-    resp_text = getattr(resp, "text", "")
-    status_code = getattr(resp, "status_code", "N/A")
-    if isinstance(status_code, int) and status_code >= 400:
-        try:
-            logger.error("Hacienda %s: %s", status_code, resp_text)
-        finally:
-            resp.raise_for_status()
-    else:
-        logger.debug("Hacienda %s: %s", status_code, resp_text)
+
+    sobre = construir_sobre_recepcion(documento, dte_data)
+    if sobre.get("estado") == "Error":
+        return sobre
+
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": _normalize_bearer(token),
+        "User-Agent": "Vertex-DTE/1.0",
+    }
 
     try:
-        return resp.json()
+        print(json.dumps(sobre, ensure_ascii=False))
+        resp = requests.post(url, headers=headers, json=sobre, timeout=20)
+    except requests.RequestException as exc:
+        return {"estado": "Error", "detalle": str(exc)}
+
+    text = getattr(resp, "text", "")
+    try:
+        data = resp.json()
     except Exception:
-        return {"estado": "Error", "detalle": resp_text}
+        data = None
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else text
+        result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
 
 
 def transmitir_dte(

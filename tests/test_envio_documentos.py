@@ -86,8 +86,8 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        calls.append((url, headers, json))
+    def fake_post(url, data=None, headers=None, timeout=20):
+        calls.append((url, headers, data))
         data = responses.pop(0)
 
         class R:
@@ -123,15 +123,11 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     assert sign_calls["count"] == 2
     assert len(calls) == 2
-    for url, headers, payload in calls:
+    for url, headers, body in calls:
         assert url == "http://example.com"
-        assert payload["documento"] in sign_calls["tokens"]
-        assert payload["tipoDte"] == 1
-        assert payload["version"] == "2"
-        assert payload["ambiente"] == "00"
-        assert payload["codigoGeneracion"] == "ABC"
-        assert "idEnvio" in payload
+        assert body in sign_calls["tokens"]
         assert headers["Authorization"] == "Bearer JWT"
+        assert headers["Content-Type"] == "application/json"
 
 
 def test_no_envia_si_validacion_falla(monkeypatch):
@@ -140,7 +136,7 @@ def test_no_envia_si_validacion_falla(monkeypatch):
 
     sent = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         sent.append(True)
 
     monkeypatch.setattr("dte.requests.post", fake_post)
@@ -223,8 +219,8 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        calls.append((url, headers, json))
+    def fake_post(url, data=None, headers=None, timeout=20):
+        calls.append((url, headers, data))
 
         class R:
             status_code = 200
@@ -250,15 +246,11 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert row["estado"] == "Transmitido"
     assert sign_calls["count"] == 1
     assert len(calls) == 1
-    url, headers, payload = calls[0]
+    url, headers, body = calls[0]
     assert url == "http://example.com"
-    assert payload["documento"] in sign_calls["tokens"]
-    assert payload["tipoDte"] == 1
-    assert payload["version"] == "2"
-    assert payload["ambiente"] == "00"
-    assert payload["codigoGeneracion"] == "NC1"
-    assert "idEnvio" in payload
+    assert body in sign_calls["tokens"]
     assert headers["Authorization"] == "Bearer JWT"
+    assert headers["Content-Type"] == "application/json"
 
 
 def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
@@ -279,8 +271,8 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        calls.append((url, headers, json))
+    def fake_post(url, data=None, headers=None, timeout=20):
+        calls.append((url, headers, data))
 
         class R:
             status_code = 200
@@ -321,15 +313,11 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert row["estado"] == "Rechazado"
     assert sign_calls["count"] == 1
     assert len(calls) == 1
-    url, headers, payload = calls[0]
+    url, headers, body = calls[0]
     assert url == "http://example.com"
-    assert payload["documento"] == sign_calls["token"]
-    assert payload["tipoDte"] == "CON"
-    assert payload["version"] == "2"
-    assert payload["ambiente"] == "00"
-    assert payload["codigoGeneracion"] == "EV1"
-    assert "idEnvio" in payload
+    assert body == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
+    assert headers["Content-Type"] == "application/json"
 
 
 def test_enviar_evento_anulacion(monkeypatch, tmp_path):
@@ -350,8 +338,8 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        calls.append((url, headers, json))
+    def fake_post(url, data=None, headers=None, timeout=20):
+        calls.append((url, headers, data))
 
         class R:
             status_code = 200
@@ -386,13 +374,9 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert row["estado"] == "Transmitido"
     assert sign_calls["count"] == 1
     assert len(calls) == 1
-    url, headers, payload = calls[0]
+    url, headers, body = calls[0]
     assert url == "http://example.com"
-    assert payload["documento"] == sign_calls["token"]
-    assert payload["tipoDte"] == "ANU"
-    assert payload["version"] == "2"
-    assert payload["ambiente"] == "00"
-    assert payload["codigoGeneracion"] == "EV2"
-    assert "idEnvio" in payload
+    assert body == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
+    assert headers["Content-Type"] == "application/json"
 

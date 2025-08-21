@@ -133,7 +133,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     def fake_post(url, *a, **k):
         headers = k.get("headers", {})
-        calls.append((url, headers, k.get("json")))
+        calls.append((url, headers, k.get("data")))
         if url == auth_url:
             return Resp(
                 {

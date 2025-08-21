@@ -156,6 +156,40 @@ def sign_json(
     return data
 
 
+def validate_sobre_recepcion(sobre: dict) -> None:
+    """Validate minimal structure of a reception envelope ``sobre``.
+
+    The envelope is **not** a full DTE and only carries metadata plus the
+    JWS token.  This check verifies that the expected keys are present and
+    that their values are well formed.  Raises ``ValueError`` with a clear
+    message if any rule is violated.
+    """
+
+    if not isinstance(sobre, dict):
+        raise ValueError("sobre no es dict")
+
+    ambiente = str(sobre.get("ambiente"))
+    if ambiente not in {"00", "01"}:
+        raise ValueError("ambiente invalido")
+
+    try:
+        id_envio = int(sobre.get("idEnvio"))
+        if id_envio < 1:
+            raise ValueError
+    except Exception:
+        raise ValueError("idEnvio invalido")
+
+    for field in ("version", "tipoDte", "codigoGeneracion"):
+        if field not in sobre:
+            raise ValueError(f"{field} requerido")
+
+    doc = sobre.get("documento")
+    if not (isinstance(doc, str) and doc.count(".") == 2):
+        raise ValueError("documento invalido")
+    if any(not part for part in doc.split(".")):
+        raise ValueError("documento invalido")
+
+
 def sign_and_save(
     payload: dict,
     json_path: str,
@@ -206,24 +240,7 @@ def sign_and_save(
             detalle = sobre.get("detalle")
             raise ValueError(f"constructor sobre error: {detalle}")
 
-        if not isinstance(sobre, dict):
-            raise ValueError("sobre no es dict")
-        ident = dte_full.get("identificacion", {})
-        ambiente = sobre.get("ambiente")
-        if ambiente not in ("00", "01"):
-            raise ValueError("ambiente invalido")
-        if str(sobre.get("version")) != str(ident.get("version")):
-            raise ValueError("version no coincide")
-        if str(sobre.get("tipoDte")).zfill(2) != str(ident.get("tipoDte")).zfill(2):
-            raise ValueError("tipoDte no coincide")
-        if sobre.get("codigoGeneracion") != ident.get("codigoGeneracion"):
-            raise ValueError("codigoGeneracion no coincide")
-        doc = sobre.get("documento")
-        if not (isinstance(doc, str) and doc.count(".") == 2):
-            raise ValueError("documento invalido")
-        for part in doc.split("."):
-            if not part or any(not (c.isalnum() or c in "-_") for c in part):
-                raise ValueError("segmento jws invalido")
+        validate_sobre_recepcion(sobre)
 
         sobre_path = f"{base}-sobre.json"
         tmp_path = f"{sobre_path}.tmp"

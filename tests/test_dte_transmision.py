@@ -233,7 +233,7 @@ def test_post_dte_rejects_mismatch(monkeypatch):
     token = make_jws({"identificacion": meta})
     with pytest.raises(ValueError):
         _post_dte(
-            "http://example.com",
+            dte.DEFAULT_RECEPCION_URL,
             "Bearer TOKEN",
             token,
             {**meta, "codigoGeneracion": "XYZ"},

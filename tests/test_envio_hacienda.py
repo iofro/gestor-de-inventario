@@ -1,4 +1,5 @@
 import json
+import logging
 import pytest
 import requests
 import auth
@@ -68,7 +69,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
 
     monkeypatch.setattr(auth, "get_token", fake_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
-    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda d, db=None: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
         lambda db_obj, vid: {
@@ -191,7 +192,7 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
-    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda d, db=None: None)
 
     class Resp:
         status_code = status
@@ -226,7 +227,7 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
 
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
-    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda d, db=None: None)
 
     def fail(*a, **k):
         raise RuntimeError("firma")
@@ -362,16 +363,38 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
     assert not extra
 
 
-def test_recepcion_url_host_mismatch(monkeypatch, tmp_path):
+def test_recepcion_url_host_mismatch(monkeypatch, tmp_path, caplog):
     db = DB(":memory:")
     venta = create_sale(db)
     monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "auth.example")
-    monkeypatch.setattr("dte.validate_dte_json", lambda d: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda d, db=None: None)
     monkeypatch.setattr(
         "dte._load_datos_negocio",
         lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
     )
-    with pytest.raises(ValueError):
+    monkeypatch.setattr(
+        dte,
+        "generar_dte_json",
+        lambda db, vid: {
+            "identificacion": {
+                "ambiente": "00",
+                "version": "1",
+                "tipoDte": "01",
+                "codigoGeneracion": "ABC",
+            },
+            "resumen": {"totalLetras": "X"},
+        },
+    )
+    called = {}
+
+    def fake_post(url, token, jws_token, meta):
+        called["url"] = url
+        return {"estado": "Transmitido", "sello": "S"}
+
+    monkeypatch.setattr(dte, "_post_dte", fake_post)
+    with caplog.at_level(logging.WARNING):
         transmitir_dte(db, venta)
+    assert "Auth host auth.example ≠ recepción apitest.dtes.mh.gob.sv" in caplog.text
+    assert called["url"].endswith("/fesv/recepciondte")

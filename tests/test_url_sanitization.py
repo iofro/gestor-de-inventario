@@ -1,6 +1,7 @@
 import json
 import auth
 import dte
+from tests.conftest import make_jws
 
 
 def test_auth_url_is_stripped(monkeypatch, tmp_path):
@@ -35,8 +36,12 @@ def test_recepcion_url_is_stripped(monkeypatch, tmp_path):
         "pruebas": {"recepcion_url": " http://recepcion.example/path \n"}
     }))
     monkeypatch.setattr(dte, "CONFIG_NEGOCIO_PATH", str(cfg))
-    monkeypatch.setattr(dte.jws, "sign_json", lambda data: "SIGNED")
-    monkeypatch.setattr(dte.auth, "get_token", lambda: "JWT")
+    monkeypatch.setattr(dte.jws, "sign_json", lambda data: make_jws(data))
+    monkeypatch.setattr(dte.auth, "get_token", lambda: "Bearer JWT")
+    monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "recepcion.example")
+    monkeypatch.setattr(dte, "validate_dte_json", lambda data: None)
+    monkeypatch.setattr(dte, "normalize_condicion_operacion", lambda x: x)
+    monkeypatch.setattr(dte, "validate_pagos_basico", lambda r, c: None)
     called = {}
 
     def fake_post_dte(url, token, jws_token, dte_data):
@@ -49,6 +54,15 @@ def test_recepcion_url_is_stripped(monkeypatch, tmp_path):
         def registrar_envio_dte(self, *args, **kwargs):
             pass
 
-    dte._enviar_documento(DummyDB(), 1, {}, "normal")
+    payload = {
+        "resumen": {"totalLetras": "X"},
+        "identificacion": {
+            "ambiente": "00",
+            "version": 1,
+            "tipoDte": "01",
+            "codigoGeneracion": "X",
+        },
+    }
+    dte._enviar_documento(DummyDB(), 1, payload, "normal")
     assert called["url"] == "http://recepcion.example/path"
     assert called["url"].strip() == called["url"]

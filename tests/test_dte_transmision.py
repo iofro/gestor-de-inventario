@@ -48,7 +48,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     def fake_get_token():
         token_calls["count"] += 1
-        return "JWT"
+        return "Bearer JWT"
 
     monkeypatch.setattr(auth, "get_token", fake_get_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: f"{ambiente}.example.com")
@@ -161,7 +161,7 @@ def test_post_dte_uses_bearer(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
-    _post_dte("http://example.com", "TOKEN", token, meta)
+    _post_dte("http://example.com", "Bearer TOKEN", token, meta)
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
 
 
@@ -204,7 +204,12 @@ def test_post_dte_rejects_mismatch(monkeypatch):
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
     with pytest.raises(ValueError):
-        _post_dte("http://example.com", "TOKEN", token, {**meta, "codigoGeneracion": "XYZ"})
+        _post_dte(
+            "http://example.com",
+            "Bearer TOKEN",
+            token,
+            {**meta, "codigoGeneracion": "XYZ"},
+        )
 
 
 def test_post_dte_missing_fields(monkeypatch):
@@ -224,7 +229,7 @@ def test_post_dte_missing_fields(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     token = make_jws({})
     with pytest.raises(AssertionError):
-        _post_dte("http://example.com", "TOKEN", token, {})
+        _post_dte("http://example.com", "Bearer TOKEN", token, {})
     assert calls["count"] == 0
 
 
@@ -246,7 +251,7 @@ def test_post_dte_invalid_tipo(monkeypatch):
     meta = {"ambiente": "00", "version": 2, "tipoDte": "99", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
     with pytest.raises(AssertionError):
-        _post_dte("http://example.com", "TOKEN", token, meta)
+        _post_dte("http://example.com", "Bearer TOKEN", token, meta)
 
 
 def test_consultar_envio_dte():

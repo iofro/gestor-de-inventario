@@ -4,6 +4,13 @@ import base64
 import requests
 import logging
 
+from utils.stable_json import (
+    stable_stringify,
+    save_file,
+    assert_same_payload,
+    validar_montos,
+)
+
 logger = logging.getLogger(__name__)
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
@@ -76,11 +83,13 @@ def _ensure_cert_file(nit: str) -> None:
 
 
 def sign_json(
-    payload: dict,
+    payload: dict | str,
     nit: str | None = None,
     passwordPri: str | None = None,
     activo: bool = True,
     url: str | None = None,
+    version: str | None = None,
+    tipo_dte: str | None = None,
 ) -> str:
     """Sign ``payload`` using the external ``svfe-api-firmador`` service."""
     if nit is None or passwordPri is None:
@@ -89,14 +98,22 @@ def sign_json(
         raise RuntimeError("NIT del certificado no configurado")
     _ensure_cert_file(nit)
     url = url or _get_sign_url()
-    ident = payload.get("identificacion", {})
-    version = ident.get("version")
-    tipo_dte = ident.get("tipoDte")
+    if isinstance(payload, str):
+        payload_str = payload
+    else:
+        payload_dict = payload
+        payload_str = stable_stringify(payload_dict)
+        if version is None or tipo_dte is None:
+            ident = payload_dict.get("identificacion", {})
+            if version is None:
+                version = ident.get("version")
+            if tipo_dte is None:
+                tipo_dte = ident.get("tipoDte")
     body = {
         "nit": nit,
         "activo": activo,
         "passwordPri": passwordPri,
-        "dteJson": payload,
+        "dteJson": payload_str,
     }
     if version is not None:
         body["version"] = version
@@ -106,10 +123,8 @@ def sign_json(
         response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
         status_code = getattr(response, "status_code", "N/A")
         resp_text = getattr(response, "text", "")
-        print(status_code)
-        print(resp_text)
         if isinstance(status_code, int) and status_code >= 400:
-            logger.error("Respuesta del firmador %s: %s", status_code, resp_text)
+            logger.error("Respuesta del firmador %s", status_code)
         else:
             logger.debug("Respuesta del firmador %s: %s", status_code, resp_text)
         response.raise_for_status()
@@ -136,9 +151,31 @@ def sign_and_save(
     activo: bool = True,
     url: str | None = None,
 ) -> str:
-    """Sign ``payload`` and store the JWS next to ``json_path``."""
-    token = sign_json(payload, nit, passwordPri, activo, url)
+    """Sign ``payload`` and store both JSON and JWS files.
+
+    The JSON written to ``json_path`` uses a stable alphabetical key order
+    and indentation for readability.  The external signer receives the
+    compact representation without indentation ensuring both outputs are
+    derived from the same serialized string.
+    """
+    json_pretty = stable_stringify(payload, indent=2)
+    save_file(json_path, json_pretty)
+    if os.getenv("STABLE_JSON_CHECK") == "1":
+        validar_montos(payload)
+        assert_same_payload(payload)
+    payload_compact = stable_stringify(payload)
+    ident = payload.get("identificacion", {})
+    version = ident.get("version")
+    tipo_dte = ident.get("tipoDte")
+    token = sign_json(
+        payload_compact,
+        nit,
+        passwordPri,
+        activo,
+        url,
+        version=version,
+        tipo_dte=tipo_dte,
+    )
     jws_path = os.path.splitext(json_path)[0] + ".jws"
-    with open(jws_path, "w", encoding="utf-8") as fh:
-        fh.write(token)
+    save_file(jws_path, token, add_final_newline=False)
     return jws_path

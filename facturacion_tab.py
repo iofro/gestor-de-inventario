@@ -38,6 +38,7 @@ from dte import (
 )
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
+from utils.jws import sign_and_save
 import uuid
 from utils.email_sender import EmailSender
 from paths import DATOS_NEGOCIO_PATH
@@ -854,6 +855,18 @@ class FacturacionTab(QWidget):
                 None,
             )
 
+        extra = {}
+        raw_extra = venta.get("extra")
+        if raw_extra:
+            try:
+                extra = json.loads(raw_extra)
+            except Exception:
+                extra = {}
+        ambiente = venta_data.get("ambiente") or extra.get("ambiente") or "00"
+        if ambiente not in ("00", "01"):
+            amb_cfg = str(ambiente).lower()
+            ambiente = "01" if amb_cfg.startswith("produc") else "00"
+
         conf = {
             "debito": (NOTAS_DEBITO_DIR, "NotaDebito", generar_nota_debito_pdf, generar_nota_debito_json),
             "credito": (NOTAS_CREDITO_DIR, "NotaCredito", generar_nota_credito_pdf, generar_nota_credito_json),
@@ -872,8 +885,12 @@ class FacturacionTab(QWidget):
             archivo=pdf_path,
         )
         nota_json = json_func(self.manager.db, nota_id)
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(nota_json, fh, ensure_ascii=False, indent=2)
+        ident = nota_json.setdefault("identificacion", {})
+        ident["ambiente"] = ambiente
+        try:
+            sign_and_save(nota_json, json_path)
+        except Exception:
+            pass
 
         QMessageBox.information(self, "Nota", "Nota registrada")
         self.load_invoices()

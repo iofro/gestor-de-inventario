@@ -234,7 +234,7 @@ def test_generar_dte_json_normaliza_ambiente_config(
     data = dte_module.generar_dte_json(db, venta_id, ambiente="00")
     monkeypatch.setattr(dte_module, "validate_dte_json", orig_validate)
     data["identificacion"].pop("ambiente", None)
-    dte_module.validate_dte_json(data)
+    dte_module.validate_dte_json(data, db=db)
     monkeypatch.setattr(dte_module, "_normalize_payload", orig_norm)
     assert data["identificacion"]["ambiente"] == expected
 

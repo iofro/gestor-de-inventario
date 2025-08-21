@@ -1,5 +1,6 @@
 import json
 import dte
+from db import DB
 
 
 def test_cod_giro_used_for_emisor(tmp_path, monkeypatch):
@@ -9,6 +10,8 @@ def test_cod_giro_used_for_emisor(tmp_path, monkeypatch):
     datos_path.write_text("{}")
     monkeypatch.setattr(dte, "DATOS_NEGOCIO_PATH", datos_path)
     monkeypatch.setattr(dte, "CONFIG_NEGOCIO_PATH", config_path)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    db = DB()
     payload = {
         "identificacion": {},
         "emisor": {},
@@ -17,7 +20,7 @@ def test_cod_giro_used_for_emisor(tmp_path, monkeypatch):
         "resumen": {},
     }
     try:
-        dte.validate_dte_json(payload)
+        dte.validate_dte_json(payload, db=db)
     except Exception:
         pass
     assert payload["emisor"]["codActividad"] == "99999"

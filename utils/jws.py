@@ -192,14 +192,44 @@ def sign_and_save(
     token = token.rstrip("\n")
     jws_path = os.path.splitext(json_path)[0] + ".jws"
     save_file(jws_path, token, add_final_newline=False)
+
+    base = os.path.splitext(json_path)[0]
     try:
-        sobre = dte.construir_sobre_recepcion(token, payload)
-        if isinstance(sobre, dict) and sobre.get("estado") != "Error":
-            sobre_path = os.path.splitext(json_path)[0] + "-sobre.json"
-            save_file(
-                sobre_path,
-                json.dumps(sobre, ensure_ascii=False, indent=2),
-            )
+        with open(f"{base}.json", "r", encoding="utf-8") as fh:
+            dte_full = json.load(fh)
+        with open(f"{base}.jws", "r", encoding="utf-8") as fh:
+            jws = fh.read().strip()
+
+        sobre = dte.construir_sobre_recepcion(jws, dte_full)
+
+        if isinstance(sobre, dict) and sobre.get("estado") == "Error":
+            detalle = sobre.get("detalle")
+            raise ValueError(f"constructor sobre error: {detalle}")
+
+        if not isinstance(sobre, dict):
+            raise ValueError("sobre no es dict")
+        ident = dte_full.get("identificacion", {})
+        ambiente = sobre.get("ambiente")
+        if ambiente not in ("00", "01"):
+            raise ValueError("ambiente invalido")
+        if str(sobre.get("version")) != str(ident.get("version")):
+            raise ValueError("version no coincide")
+        if str(sobre.get("tipoDte")).zfill(2) != str(ident.get("tipoDte")).zfill(2):
+            raise ValueError("tipoDte no coincide")
+        if sobre.get("codigoGeneracion") != ident.get("codigoGeneracion"):
+            raise ValueError("codigoGeneracion no coincide")
+        doc = sobre.get("documento")
+        if not (isinstance(doc, str) and doc.count(".") == 2):
+            raise ValueError("documento invalido")
+        for part in doc.split("."):
+            if not part or any(not (c.isalnum() or c in "-_") for c in part):
+                raise ValueError("segmento jws invalido")
+
+        sobre_path = f"{base}-sobre.json"
+        tmp_path = f"{sobre_path}.tmp"
+        with open(tmp_path, "w", encoding="utf-8") as fh:
+            json.dump(sobre, fh, ensure_ascii=False, indent=2)
+        os.replace(tmp_path, sobre_path)
     except Exception as exc:
-        logger.error("Error guardando sobre para %s: %s", json_path, exc)
+        logger.error("Error construyendo/guardando sobre para %s: %s", base, exc)
     return jws_path

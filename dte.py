@@ -2500,14 +2500,13 @@ def _post_dte(
     url: str, token: str, jws_token: str, dte_data: dict | None = None
 ) -> dict:
     token = (token or "").strip().strip('"').replace("\r", "").replace("\n", "")
-    token = re.sub(r"^(?:Bearer\s+)+", "", token, flags=re.I)
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:
         logger.debug("Token: <empty>")
     headers = {
         "Content-Type": "application/json",
-        "Authorization": f"Bearer {token}",
+        "Authorization": token,
     }
     ident = {}
     if isinstance(dte_data, dict):

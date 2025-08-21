@@ -48,7 +48,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     def fake_get_token():
         token_calls["count"] += 1
-        return "JWT"
+        return "Bearer JWT"
 
     monkeypatch.setattr(auth, "get_token", fake_get_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: f"{ambiente}.example.com")
@@ -103,8 +103,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        calls.append((url, headers, json))
+    def fake_post(url, data=None, headers=None, timeout=20):
+        calls.append((url, headers, data))
 
         class R:
             status_code = 200
@@ -132,15 +132,11 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert token_calls["count"] == 1
     assert sign_calls["count"] == 1
     assert len(calls) == 1
-    url, headers, payload = calls[0]
+    url, headers, body = calls[0]
     assert url == f"http://{ambiente}.example.com"
     assert headers["Authorization"] == "Bearer JWT"
-    assert payload["documento"] in sign_calls["tokens"]
-    assert payload["tipoDte"] == 1
-    assert payload["version"] == "2"
-    assert payload["ambiente"] == "00"
-    assert payload["codigoGeneracion"] == "ABC"
-    assert "idEnvio" in payload
+    assert headers["Content-Type"] == "application/json"
+    assert body in sign_calls["tokens"]
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -151,7 +147,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 def test_post_dte_uses_bearer(monkeypatch):
     captured = {}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         captured["headers"] = headers
         class R:
             status_code = 200
@@ -165,12 +161,12 @@ def test_post_dte_uses_bearer(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
-    _post_dte("http://example.com", "TOKEN", token, meta)
+    _post_dte("http://example.com", "Bearer TOKEN", token, meta)
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
 
 
 def test_post_dte_handles_non_json(monkeypatch):
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = "error"
@@ -191,7 +187,7 @@ def test_post_dte_handles_non_json(monkeypatch):
 
 
 def test_post_dte_rejects_mismatch(monkeypatch):
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = ""
@@ -208,13 +204,18 @@ def test_post_dte_rejects_mismatch(monkeypatch):
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
     with pytest.raises(ValueError):
-        _post_dte("http://example.com", "TOKEN", token, {**meta, "codigoGeneracion": "XYZ"})
+        _post_dte(
+            "http://example.com",
+            "Bearer TOKEN",
+            token,
+            {**meta, "codigoGeneracion": "XYZ"},
+        )
 
 
 def test_post_dte_missing_fields(monkeypatch):
     calls = {"count": 0}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         calls["count"] += 1
         class R:
             status_code = 200
@@ -228,12 +229,12 @@ def test_post_dte_missing_fields(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     token = make_jws({})
     with pytest.raises(AssertionError):
-        _post_dte("http://example.com", "TOKEN", token, {})
+        _post_dte("http://example.com", "Bearer TOKEN", token, {})
     assert calls["count"] == 0
 
 
 def test_post_dte_invalid_tipo(monkeypatch):
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = ""
@@ -250,7 +251,7 @@ def test_post_dte_invalid_tipo(monkeypatch):
     meta = {"ambiente": "00", "version": 2, "tipoDte": "99", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
     with pytest.raises(AssertionError):
-        _post_dte("http://example.com", "TOKEN", token, meta)
+        _post_dte("http://example.com", "Bearer TOKEN", token, meta)
 
 
 def test_consultar_envio_dte():

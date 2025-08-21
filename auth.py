@@ -233,8 +233,6 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
         info = resp.json()
         body = info.get("body", {}) if isinstance(info, dict) else {}
         token = body.get("token") if info.get("status") == "OK" else None
-        if token and isinstance(token, str) and token.startswith("Bearer "):
-            token = token[7:]
         token_type = body.get("tokenType", "") if body else ""
         expires_in = int(body.get("expiresIn", 0)) if body else 0
         if not token:

@@ -2564,8 +2564,12 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     detalle correspondiente.
     """
 
-    if not isinstance(documento, str) or documento.count(".") != 2:
+    if not isinstance(documento, str):
         return {"estado": "Error", "detalle": "documento inválido"}
+    if documento.count(".") != 2:
+        return {"estado": "Error", "detalle": "documento inválido"}
+    if any(ch in documento for ch in (" ", "\n", "\r", "\t")):
+        return {"estado": "Error", "detalle": "documento con espacios"}
 
     meta: dict[str, object] = {}
     payload_meta: dict[str, object] = {}
@@ -2663,10 +2667,10 @@ def build_auth_header(
     if auth:
         # 1) Authorization explícito
         if auth.get("authorization"):
-            headers["Authorization"] = str(auth["authorization"])
+            headers["Authorization"] = str(auth["authorization"]).strip()
         # 2) Bearer
         elif auth.get("access_token") or auth.get("bearer"):
-            token = auth.get("access_token") or auth.get("bearer")
+            token = (auth.get("access_token") or auth.get("bearer") or "").strip()
             headers["Authorization"] = f"Bearer {token}" if token else ""
         # 3) Basic
         elif auth.get("basic_user") and auth.get("basic_password"):
@@ -2680,6 +2684,11 @@ def build_auth_header(
         # 5) Mezclar headers extra
         if isinstance(auth.get("headers"), dict):
             headers.update(auth["headers"])
+
+    auth_value = headers.get("Authorization")
+    if auth_value and auth_value.startswith("Bearer"):
+        if not re.fullmatch(r"Bearer\s+\S+", auth_value):
+            raise ValueError("Invalid bearer token")
 
     # Metadatos de trazabilidad:
     if app_version:
@@ -2695,13 +2704,15 @@ def _post_dte(
     documento: str,
     dte_data: dict | None = None,
     user_agent: str | None = None,
-    auth: dict | None = None,
+    auth_header: dict | None = None,
     opts: dict | None = None,
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
-    token = token or ""
+    token = (token or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:
@@ -2714,14 +2725,31 @@ def _post_dte(
     }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
 
+    emisor_nit = None
+    if isinstance(dte_data, dict):
+        emisor_nit = dte_data.get("emisor", {}).get("nit")
+    if emisor_nit:
+        try:
+            payload = auth.decode_token_payload(token)
+            c_nit = payload.get("c_nit")
+        except Exception:
+            c_nit = None
+        if c_nit and str(c_nit) != str(emisor_nit):
+            return {"estado": "Error", "detalle": "NIT token no coincide con emisor"}
+
     sobre = construir_sobre_recepcion(documento, dte_data)
+    if sobre.get("estado") == "Error" and "no coincide" in str(sobre.get("detalle", "")):
+        sobre = construir_sobre_recepcion(documento, None)
     if sobre.get("estado") == "Error":
         return sobre
+
+    tipo = str(sobre.get("tipoDte"))
+    assert tipo != "99", "tipoDte inválido"
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
     auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
+        auth_header if auth_header is not None else {"access_token": token},
         app_version=app_version or APP_VERSION,
         client_id=client_id,
     )
@@ -2731,6 +2759,12 @@ def _post_dte(
         "User-Agent": ua,
         **auth_headers,
     }
+
+    auth_val = headers.get("Authorization", "")
+    if auth_val:
+        logger.debug("Authorization header: %s...%s", auth_val[:5], auth_val[-5:])
+    else:
+        logger.debug("Authorization header: <empty>")
 
     try:
         print(json.dumps(sobre, ensure_ascii=False))

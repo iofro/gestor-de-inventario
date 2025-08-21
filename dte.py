@@ -27,7 +27,7 @@ from xml.etree.ElementTree import Element, SubElement
 logger = logging.getLogger(__name__)
 
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
-DEFAULT_RECEPCION_URL = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
 
 SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
@@ -2703,7 +2703,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
 
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
-    url = "https://sandbox.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    url = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
     payload = _decode_jws_payload(jws_token)
     ident = payload.get("identificacion") or payload.get("identificador") or {}
     meta = {

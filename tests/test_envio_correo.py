@@ -83,7 +83,7 @@ def _setup_tab(venta, cliente, producto, monkeypatch=None):
     return db, tab
 
 
-def test_transmit_success_email_fail(
+def test_save_invoice_does_not_send_or_transmit(
     qt_app,
     pdf_json_files,
     monkeypatch,
@@ -102,67 +102,22 @@ def test_transmit_success_email_fail(
         return str(p)
 
     monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
-    monkeypatch.setattr(
-        SalesTab,
-        "_check_smtp_credentials",
-        lambda self: {"server": "s", "port": 25, "user": "u", "password": "p"},
-    )
-
-    def fake_transmitir(db_obj, venta_id, modo="normal", tipo_dte="01"):
-        db_obj.registrar_envio_dte(venta_id, modo, "Transmitido", "S")
-        return {"estado": "Transmitido"}
-
-    monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
-
-    init_calls = []
-
-    def fake_init(self, server, port, user, password, to_addr, subject, body, attachments):
-        init_calls.append(to_addr)
-        self.to_addr = to_addr
-        self.subject = subject
-        self.attachments = attachments if isinstance(attachments, list) else [attachments]
-        self.finished = DummySignal()
-
-    monkeypatch.setattr("utils.email_sender.EmailSender.__init__", fake_init, raising=False)
-
-    send_called = {}
-
-    def fake_send(self):
-        send_called["called"] = True
-        raise smtplib.SMTPException("fail")
-
-    def fake_start(self):
-        try:
-            self.send()
-        except smtplib.SMTPException as e:
-            self.finished.emit(False, str(e))
-
-    monkeypatch.setattr("utils.email_sender.EmailSender.send", fake_send, raising=False)
-    monkeypatch.setattr("utils.email_sender.EmailSender.start", fake_start)
-
-    smtp_calls = []
-
-    class DummySMTP:
-        def __init__(self, *a, **k):
-            smtp_calls.append((a, k))
-
-    monkeypatch.setattr(smtplib, "SMTP", DummySMTP)
+    called = {}
+    monkeypatch.setattr("dte.transmitir_dte", lambda *a, **k: called.setdefault("tx", True))
+    monkeypatch.setattr(SalesTab, "send_email", lambda self: called.setdefault("email", True))
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
-    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
 
     tab.sales_table.selectRow(0)
-    tab.save_and_send()
-    qt_app.processEvents()
+    tab.save_invoice()
 
-    assert send_called.get("called")
-    assert db.envios and db.envios[0]["estado"] == "Transmitido"
     assert pdf.exists()
-    assert len(init_calls) == 1
-    assert not smtp_calls
+    assert db.saved == (1, "Factura", str(pdf))
+    assert "tx" not in called
+    assert "email" not in called
 
 
-def test_email_exitoso(
+def test_send_email_exitoso(
     qt_app,
     pdf_json_files,
     monkeypatch,
@@ -186,11 +141,6 @@ def test_email_exitoso(
         SalesTab,
         "_check_smtp_credentials",
         lambda self: {"server": "s", "port": 25, "user": "u", "password": "p"},
-    )
-
-    monkeypatch.setattr(
-        "sales_tab.transmitir_dte",
-        lambda db_obj, venta_id, modo="normal", tipo_dte="01": {"estado": "Transmitido"},
     )
 
     captured = {}
@@ -230,7 +180,8 @@ def test_email_exitoso(
     monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
 
     tab.sales_table.selectRow(0)
-    tab.save_and_send()
+    tab.save_invoice()
+    tab.send_email()
     qt_app.processEvents()
 
     assert captured["to"] == "cli@example.com"
@@ -244,7 +195,7 @@ def test_email_exitoso(
     assert not smtp_calls
 
 
-def test_transmit_fail_no_email(
+def test_save_invoice_fail_no_email(
     qt_app,
     pdf_json_files,
     monkeypatch,
@@ -263,21 +214,18 @@ def test_transmit_fail_no_email(
         return str(p)
 
     monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
-    monkeypatch.setattr(
-        "sales_tab.transmitir_dte", lambda *a, **k: {"estado": "error"}
-    )
-
     called = {}
 
-    def fake_send(self):
-        called["called"] = True
+    def fake_gen(manager, vid, p=pdf):
+        return None
 
-    monkeypatch.setattr(SalesTab, "send_email", fake_send)
+    monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
+    monkeypatch.setattr(SalesTab, "send_email", lambda self: called.setdefault("email", True))
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
 
     tab.sales_table.selectRow(0)
-    tab.save_and_send()
+    tab.save_invoice()
 
-    assert "called" not in called
+    assert "email" not in called
 

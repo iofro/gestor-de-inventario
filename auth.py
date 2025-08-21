@@ -323,9 +323,15 @@ def get_token(
             _current_user, _current_pwd = nit, pwd
 
     now = time.time()
-    if not refresh and _access_token and now < _expires_at - 60:
-        _check_and_update_token_len(_access_token)
-        return _access_token
+    if _access_token and not refresh:
+        if now < _obtained_at:
+            logger.warning(
+                "Hora del sistema anterior a emisión del token; reautenticando"
+            )
+            refresh = True
+        elif now < _expires_at - 60:
+            _check_and_update_token_len(_access_token)
+            return _access_token
 
     url = _get_auth_url()
     global _last_auth_url, _last_auth_host

@@ -2663,10 +2663,10 @@ def build_auth_header(
     if auth:
         # 1) Authorization explícito
         if auth.get("authorization"):
-            headers["Authorization"] = str(auth["authorization"])
+            headers["Authorization"] = str(auth["authorization"]).strip()
         # 2) Bearer
         elif auth.get("access_token") or auth.get("bearer"):
-            token = auth.get("access_token") or auth.get("bearer")
+            token = (auth.get("access_token") or auth.get("bearer") or "").strip()
             headers["Authorization"] = f"Bearer {token}" if token else ""
         # 3) Basic
         elif auth.get("basic_user") and auth.get("basic_password"):
@@ -2680,6 +2680,11 @@ def build_auth_header(
         # 5) Mezclar headers extra
         if isinstance(auth.get("headers"), dict):
             headers.update(auth["headers"])
+
+    auth_value = headers.get("Authorization")
+    if auth_value and auth_value.startswith("Bearer"):
+        if not re.fullmatch(r"Bearer\s+\S+", auth_value):
+            raise ValueError("Invalid bearer token")
 
     # Metadatos de trazabilidad:
     if app_version:
@@ -2731,6 +2736,12 @@ def _post_dte(
         "User-Agent": ua,
         **auth_headers,
     }
+
+    auth_val = headers.get("Authorization", "")
+    if auth_val:
+        logger.debug("Authorization header: %s...%s", auth_val[:5], auth_val[-5:])
+    else:
+        logger.debug("Authorization header: <empty>")
 
     try:
         print(json.dumps(sobre, ensure_ascii=False))

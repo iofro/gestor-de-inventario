@@ -199,6 +199,28 @@ def test_post_dte_rejects_invalid_path(monkeypatch):
         _post_dte(bad_url, "Bearer TOKEN", token, meta)
 
 
+def test_post_dte_rejects_double_bearer(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=20):
+        raise AssertionError("should not post")
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    with pytest.raises(ValueError):
+        _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
+
+
+def test_post_dte_rejects_token_with_newline(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=20):
+        raise AssertionError("should not post")
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    with pytest.raises(ValueError):
+        _post_dte(dte.DEFAULT_RECEPCION_URL, "TO\nKEN", token, meta)
+
+
 def test_post_dte_handles_non_json(monkeypatch):
     def fake_post(url, json=None, headers=None, timeout=20):
         class R:

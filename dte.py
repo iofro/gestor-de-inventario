@@ -2704,13 +2704,15 @@ def _post_dte(
     documento: str,
     dte_data: dict | None = None,
     user_agent: str | None = None,
-    auth: dict | None = None,
+    auth_header: dict | None = None,
     opts: dict | None = None,
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
-    token = token or ""
+    token = (token or "").strip()
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:
@@ -2723,14 +2725,31 @@ def _post_dte(
     }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
 
+    emisor_nit = None
+    if isinstance(dte_data, dict):
+        emisor_nit = dte_data.get("emisor", {}).get("nit")
+    if emisor_nit:
+        try:
+            payload = auth.decode_token_payload(token)
+            c_nit = payload.get("c_nit")
+        except Exception:
+            c_nit = None
+        if c_nit and str(c_nit) != str(emisor_nit):
+            return {"estado": "Error", "detalle": "NIT token no coincide con emisor"}
+
     sobre = construir_sobre_recepcion(documento, dte_data)
+    if sobre.get("estado") == "Error" and "no coincide" in str(sobre.get("detalle", "")):
+        sobre = construir_sobre_recepcion(documento, None)
     if sobre.get("estado") == "Error":
         return sobre
+
+    tipo = str(sobre.get("tipoDte"))
+    assert tipo != "99", "tipoDte inválido"
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
     auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
+        auth_header if auth_header is not None else {"access_token": token},
         app_version=app_version or APP_VERSION,
         client_id=client_id,
     )

@@ -89,11 +89,15 @@ bloque de configuración similar al siguiente:
   }
 }
 ```
-La URL debe incluir la ruta `/fesv/recepciondte`; si sólo se especifica el
-dominio, la aplicación la agregará automáticamente. La función
-`transmitir_dte(db, venta_id)` utilizará estos datos para enviar el DTE
-inmediatamente después de firmarlo en modo normal, o registrará un evento
-pendiente en modo de contingencia.
+`dte_api.url` es la **fuente primaria** de la URL de recepción. La ruta
+`/fesv/recepciondte` se añadirá automáticamente si solo se indica el host. El
+archivo `config_negocio.json` puede proveer valores de respaldo
+(`recepcion_url`, `url` o `endpoint`), pero siempre serán **sobrescritos** por lo
+configurado en `datos_negocio.json`.
+
+La función `transmitir_dte(db, venta_id)` utilizará la URL resultante para
+enviar el DTE inmediatamente después de firmarlo en modo normal, o registrará
+un evento pendiente en modo de contingencia.
 
 ### Condición de operación
 
@@ -207,14 +211,15 @@ configura el campo `ambiente` y las URLs en `config_negocio.json`:
   },
   "produccion": {
     "auth_url": "https://api.factura.gob.sv/auth",
-    "recepcion_url": "https://api.dtes.mh.gob.sv/recepciondte/api/recepciondte"
+    "recepcion_url": "https://api.dtes.mh.gob.sv/fesv/recepciondte"
   }
 }
 ```
-
-La aplicación buscará `auth_url` y `recepcion_url` dentro del bloque del
-ambiente seleccionado (`pruebas` o `produccion`). Al cambiar `ambiente` a
-`produccion` la aplicación utilizará los servicios productivos.
+Los valores de `recepcion_url` actúan como respaldo y serán reemplazados si se
+define `dte_api.url` en `datos_negocio.json`. La aplicación buscará `auth_url`
+y `recepcion_url` dentro del bloque del ambiente seleccionado (`pruebas` o
+`produccion`). Al cambiar `ambiente` a `produccion` la aplicación utilizará los
+servicios productivos.
 
 Dentro del mismo bloque puede definirse `api_user` y `api_pwd` para
 especificar el usuario y la contraseña de la API. Estos datos se utilizan

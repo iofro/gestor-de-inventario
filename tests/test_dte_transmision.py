@@ -199,6 +199,28 @@ def test_post_dte_rejects_invalid_path(monkeypatch):
         _post_dte(bad_url, "Bearer TOKEN", token, meta)
 
 
+def test_post_dte_rejects_double_bearer(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=20):
+        raise AssertionError("should not post")
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    with pytest.raises(ValueError):
+        _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
+
+
+def test_post_dte_rejects_token_with_newline(monkeypatch):
+    def fake_post(url, json=None, headers=None, timeout=20):
+        raise AssertionError("should not post")
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    with pytest.raises(ValueError):
+        _post_dte(dte.DEFAULT_RECEPCION_URL, "TO\nKEN", token, meta)
+
+
 def test_post_dte_handles_non_json(monkeypatch):
     def fake_post(url, json=None, headers=None, timeout=20):
         class R:
@@ -293,6 +315,37 @@ def test_post_dte_invalid_tipo(monkeypatch):
     token = make_jws({"identificacion": meta})
     with pytest.raises(AssertionError):
         _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
+
+
+def test_post_dte_nit_mismatch(monkeypatch):
+    calls = {"count": 0}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls["count"] += 1
+
+        class R:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    dte_data = {**meta, "emisor": {"nit": "06100000000001"}}
+    auth_token = make_jws({"c_nit": "06100000000002"})
+    documento = make_jws({"identificacion": meta})
+
+    res = _post_dte(dte.DEFAULT_RECEPCION_URL, auth_token, documento, dte_data)
+
+    assert res == {"estado": "Error", "detalle": "NIT token no coincide con emisor"}
+    assert calls["count"] == 0
 
 
 def test_consultar_envio_dte():

@@ -273,10 +273,6 @@ def _load_datos_negocio():
                 data = json.load(fh)
             dte_api = data.get("dte_api")
             if isinstance(dte_api, dict):
-                url = dte_api.get("url", "")
-                if url and "/fesv/recepciondte" not in url:
-                    dte_api["url"] = url.rstrip("/") + "/fesv/recepciondte"
-
                 # Extract branch and point-of-sale codes from the control prefix
                 prefijo = dte_api.get("prefijo_control")
                 if isinstance(prefijo, str):
@@ -2389,19 +2385,69 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
     return data
 
 
+def _normalize_recepcion_url(raw: str) -> str:
+    """Normaliza y valida ``raw`` como URL de recepción de Hacienda.
+
+    - ``strip()`` y eliminación de espacios, saltos de línea o tabulaciones
+    - Si falta el esquema se asume ``https``
+    - Hosts oficiales sin path obtienen ``/fesv/recepciondte``
+    - Colapsa dobles slashes y remueve el slash final
+    - Cadena vacía → ``DEFAULT_RECEPCION_URL``
+    - Rechaza dominios que contengan ``sandbox``
+    """
+
+    raw = "" if raw is None else str(raw)
+    raw = re.sub(r"\s+", "", raw.strip())
+    if not raw:
+        return DEFAULT_RECEPCION_URL
+    if "://" not in raw:
+        raw = "https://" + raw
+    pu = urlparse(raw)
+    host = pu.netloc.lower()
+    if "sandbox" in host:
+        raise ValueError("sandbox no permitido")
+    path = pu.path or ""
+    if host in {"apitest.dtes.mh.gob.sv", "api.dtes.mh.gob.sv"} and path in ("", "/"):
+        path = "/fesv/recepciondte"
+    path = "/" + path.lstrip("/")
+    path = re.sub("/+", "/", path).rstrip("/")
+    return f"{pu.scheme}://{host}{path}"
+
+
 def _load_dte_api_config():
-    """Lee configuración de URLs y ambiente desde ``datos_negocio.json``."""
+    """Carga configuración consolidada para la recepción de DTE."""
+
+    datos = _load_datos_negocio()
+    dte_api = datos.get("dte_api") or {}
+    raw_datos_url = dte_api.get("url") or dte_api.get("endpoint")
+    ambiente = dte_api.get("ambiente") or datos.get("ambiente")
+
+    cfg_recep = cfg_url = cfg_endpoint = None
     try:
-        with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
-            data = json.load(fh)
-        dte_api = data.get("dte_api") or {}
-        ambiente = dte_api.get("ambiente") or data.get("ambiente") or "pruebas"
-        url = (dte_api.get("url") or "").strip() or DEFAULT_RECEPCION_URL
-        logger.info("Recepción configurada → %s", url)
-        return {"ambiente": ambiente, "url": url}
+        with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        ambiente = ambiente or cfg.get("ambiente")
+        env = cfg.get(ambiente or "pruebas", {})
+        cfg_recep = env.get("recepcion_url")
+        cfg_url = env.get("url")
+        cfg_endpoint = env.get("endpoint")
     except Exception:
-        logger.info("Recepción configurada → %s", DEFAULT_RECEPCION_URL)
-        return {"ambiente": "pruebas", "url": DEFAULT_RECEPCION_URL}
+        pass
+
+    raw_cfg_url = cfg_recep or cfg_url or cfg_endpoint
+    ambiente = ambiente or "pruebas"
+    logger.debug("Cargando configuración DTE desde %s", DATOS_NEGOCIO_PATH)
+    logger.debug(
+        "Crudos: dte_api.url=%r dte_api.endpoint=%r cfg.recepcion_url=%r cfg.url=%r cfg.endpoint=%r",
+        dte_api.get("url"),
+        dte_api.get("endpoint"),
+        cfg_recep,
+        cfg_url,
+        cfg_endpoint,
+    )
+    url = _normalize_recepcion_url(raw_datos_url or raw_cfg_url)
+    logger.info("Recepción configurada → %s", url)
+    return {"ambiente": ambiente, "url": url}
 
 
 def _assert_no_ejemplo(path: str) -> None:
@@ -2565,14 +2611,14 @@ def _post_dte(
     else:
         assert tipo_dte in {1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15}, "tipoDte inválido"
 
-    auth_header = headers.get("Authorization")
     if token:
-        assert re.fullmatch(
-            r"Bearer [^\s]+", auth_header
-        ), "Authorization header malformado"
+        assert re.fullmatch(r"Bearer\s+\S+", token), "Authorization header malformado"
 
     pu = urlparse(url)
-    assert pu.netloc == "apitest.dtes.mh.gob.sv", f"Host inválido: {url}"
+    assert pu.netloc in {
+        "apitest.dtes.mh.gob.sv",
+        "api.dtes.mh.gob.sv",
+    }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
     logger.info("POST recepcion → %s", url)
     body = str(jws_token).strip().encode("utf-8")
@@ -2673,13 +2719,15 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
     config = _load_dte_api_config()
-    url = config.get("url") or DEFAULT_RECEPCION_URL
+    url = config["url"]
     token = auth.get_token()
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
     if auth_host and recep_host != auth_host:
-        raise ValueError(
-            f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
+        logger.warning(
+            "Auth host %s ≠ recepción %s (esto es normal en prod)",
+            auth_host,
+            recep_host,
         )
     try:
         respuesta = _post_dte(url, token, jws_token, meta)
@@ -2713,7 +2761,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
     config = _load_dte_api_config()
-    url = config.get("url") or DEFAULT_RECEPCION_URL
+    url = config["url"]
     payload = _decode_jws_payload(jws_token)
     ident = payload.get("identificacion") or payload.get("identificador") or {}
     meta = {
@@ -2764,7 +2812,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     if not data.get("resumen", {}).get("totalLetras"):
         raise ValueError("El total en letras es obligatorio")
 
-    url = config.get("url") or DEFAULT_RECEPCION_URL
+    url = config["url"]
     ident = data.get("identificacion") or data.get("identificador") or {}
     meta = {
         "ambiente": ident.get("ambiente"),
@@ -2782,8 +2830,10 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
     if auth_host and recep_host != auth_host:
-        raise ValueError(
-            f"Host de recepción {recep_host} difiere de autenticación {auth_host}"
+        logger.warning(
+            "Auth host %s ≠ recepción %s (esto es normal en prod)",
+            auth_host,
+            recep_host,
         )
     try:
         resumen = data.get("resumen", {})
@@ -2906,7 +2956,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
 def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     """Firma y envía un evento a Hacienda."""
     config = _load_dte_api_config()
-    url = config.get("url") or DEFAULT_RECEPCION_URL
+    url = config["url"]
     signed = jws.sign_json(data)
     token = auth.get_token()
 

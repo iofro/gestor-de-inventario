@@ -4,7 +4,7 @@
     {
       "cantidad": 0.0,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 7",
+      "descripcion": "Producto Demo 6",
       "ivaItem": 0.0,
       "montoDescu": 0.0,
       "noGravado": 0.0,
@@ -44,11 +44,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "DBA62839-474B-4A9A-9FD1-CC743342FAEC",
+    "codigoGeneracion": "456E5E80-F4AC-4DDA-BF04-513039AB988D",
     "fecEmi": "2025-08-21",
-    "horEmi": "15:32:30",
+    "horEmi": "16:15:31",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000011",
+    "numeroControl": "DTE-01-S001P001-000000000000015",
     "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,

@@ -29,8 +29,6 @@ from factura_sv import generar_factura_electronica_pdf
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from dialogs import ManualInvoiceDialog
-from dte import transmitir_dte
-import dte
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
 import tempfile
 import subprocess
@@ -129,11 +127,11 @@ class SalesTab(QWidget):
         preview_layout.addWidget(self.info_label)
 
         btn_layout = QHBoxLayout()
-        self.btn_guardar = QPushButton("Guardar y enviar")
+        self.btn_guardar = QPushButton("Guardar factura")
         self.btn_enviar = QPushButton("Solo enviar por correo")
         btn_layout.addWidget(self.btn_guardar)
         btn_layout.addWidget(self.btn_enviar)
-        self.btn_guardar.clicked.connect(self.save_and_send)
+        self.btn_guardar.clicked.connect(self.save_invoice)
         self.btn_enviar.clicked.connect(self.send_email)
         preview_layout.addLayout(btn_layout)
 
@@ -522,38 +520,20 @@ class SalesTab(QWidget):
     def _generate_ticket_pdf(self, venta_id):
         return generate_ticket_pdf(self.manager, venta_id)
 
-    def _show_validation_errors(self, errors, json_path):
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Enviar a Hacienda")
-        msg.setIcon(QMessageBox.Warning)
-        msg.setText("El DTE contiene errores de validación:")
-        msg.setInformativeText("\n".join(f"- {e}" for e in errors))
-        open_btn = msg.addButton("Abrir reporte", QMessageBox.ActionRole)
-        msg.addButton(QMessageBox.Close)
-        msg.exec_()
-        if msg.clickedButton() == open_btn and json_path:
-            report_path = os.path.splitext(json_path)[0] + ".md"
-            with open(report_path, "w", encoding="utf-8") as fh:
-                fh.write("# Errores de validación\n\n")
-                for e in errors:
-                    fh.write(f"- {e}\n")
-            QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
-
-    def save_and_send(self):
-        """Generate the document for the selected sale and transmit it."""
+    def save_invoice(self):
+        """Generate and store the document for the selected sale."""
         if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(self, "Guardar y enviar", "Seleccione una venta primero.")
+            QMessageBox.warning(self, "Guardar factura", "Seleccione una venta primero.")
             return
 
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
         venta = self.manager.db.get_venta_by_id(venta_id)
         if not venta or int(venta.get("id", 0)) != venta_id:
-            QMessageBox.warning(self, "Guardar y enviar", "No se encontró la venta seleccionada.")
+            QMessageBox.warning(self, "Guardar factura", "No se encontró la venta seleccionada.")
             return
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
         doc_type = "Factura"
-        tipo_dte = "01"
         if not credito_info and not venta.get("cliente_id"):
             box = QMessageBox(self)
             box.setWindowTitle("Tipo de documento")
@@ -566,7 +546,6 @@ class SalesTab(QWidget):
             if clicked == ticket_btn:
                 file_path = self._generate_ticket_pdf(venta_id)
                 doc_type = "Ticket"
-                tipo_dte = "03"
             elif clicked == factura_btn:
                 file_path = self._generate_invoice_pdf(venta_id)
             else:
@@ -574,65 +553,9 @@ class SalesTab(QWidget):
         else:
             file_path = self._generate_invoice_pdf(venta_id)
         if not file_path:
-            QMessageBox.warning(self, "Guardar y enviar", "No se pudo generar el documento.")
+            QMessageBox.warning(self, "Guardar factura", "No se pudo generar el documento.")
             return
-        QMessageBox.information(self, "Guardar y enviar", f"{doc_type} guardado en {file_path}")
-        modo = venta.get("modo_transmision")
-        if modo is None:
-            try:
-                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
-                    cfg = json.load(fh)
-                modo = cfg.get("dte_api", {}).get("modo_transmision")
-            except Exception:
-                modo = None
-        modo = (
-            "contingencia"
-            if isinstance(modo, str) and "contingencia" in modo.lower()
-            else "normal"
-        )
-        if modo == "contingencia":
-            QMessageBox.information(
-                self,
-                "Guardar y enviar",
-                "Modo contingencia: el DTE no se enviará a Hacienda.",
-            )
-        envio_ok = False
-        try:
-            resp = transmitir_dte(
-                self.manager.db, venta_id, modo=modo, tipo_dte=tipo_dte
-            )
-            estado = (resp or {}).get("estado", "")
-            if estado.lower() in ("rechazado", "error"):
-                self.status_label.setText("Estado actual: Error")
-                self.gen_label.setText(
-                    "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
-                )
-                if estado.lower() == "error":
-                    QMessageBox.warning(
-                        self, "Enviar a Hacienda", resp.get("detalle", "Error")
-                    )
-            else:
-                self.status_label.setText("Estado actual: Enviado")
-                self.sent_label.setText(
-                    "Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M")
-                )
-                envio_ok = True
-        except dte.DTEValidationError as e:
-            self.status_label.setText("Estado actual: Error")
-            self.gen_label.setText(
-                "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
-            )
-            self._show_validation_errors(e.errors, e.json_path)
-        except Exception as e:
-            self.status_label.setText("Estado actual: Error")
-            self.gen_label.setText(
-                "Generado: " + datetime.now().strftime("%Y-%m-%d %H:%M")
-            )
-            QMessageBox.warning(self, "Enviar a Hacienda", str(e))
-
-        # Después de guardar y transmitir, también enviar por correo si la transmisión fue exitosa
-        if envio_ok:
-            self.send_email()
+        QMessageBox.information(self, "Guardar factura", f"{doc_type} guardado en {file_path}")
 
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""

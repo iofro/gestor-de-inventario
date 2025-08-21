@@ -128,7 +128,7 @@ def test_send_email_builds_message_and_marks_status(
     }
 
 
-def test_save_and_send_generates_files_and_registers(
+def test_save_invoice_generates_files_and_registers(
     qt_app,
     pdf_json_files,
     monkeypatch,
@@ -149,20 +149,23 @@ def test_save_and_send_generates_files_and_registers(
         return str(pdf)
 
     monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
-    monkeypatch.setattr(SalesTab, "send_email", lambda self: None)
-    monkeypatch.setattr("sales_tab.transmitir_dte", lambda *a, **k: {"estado": "recibido"})
+    called = {}
+    monkeypatch.setattr("dte.transmitir_dte", lambda *a, **k: called.setdefault("tx", True))
+    monkeypatch.setattr(SalesTab, "send_email", lambda self: called.setdefault("email", True))
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
 
     tab.sales_table.selectRow(0)
-    tab.save_and_send()
+    tab.save_invoice()
 
     assert pdf.exists()
     assert pdf.with_suffix(".json").exists()
     assert db.saved == (1, "Factura", str(pdf))
+    assert "tx" not in called
+    assert "email" not in called
 
 
-def test_save_and_send_contingencia_no_http(
+def test_save_invoice_contingencia_no_transmit(
     qt_app,
     pdf_json_files,
     monkeypatch,
@@ -185,25 +188,8 @@ def test_save_and_send_contingencia_no_http(
         return str(pdf)
 
     monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
-    monkeypatch.setattr(SalesTab, "send_email", lambda self: None)
-    monkeypatch.setattr("dte._load_dte_api_config", lambda: {})
-
-    post_called = {"count": 0}
-
-    def fake_post(*a, **k):
-        post_called["count"] += 1
-        return {}
-
-    monkeypatch.setattr("dte._post_dte", fake_post)
-
-    transmit_args = {}
-
-    def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
-        transmit_args["modo"] = modo
-        return dte.transmitir_dte(db_, vid, modo=modo, tipo_dte=tipo_dte)
-
-    monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
-
+    called = {}
+    monkeypatch.setattr("dte.transmitir_dte", lambda *a, **k: called.setdefault("tx", True))
     mensajes = []
 
     def fake_info(parent, title, text):
@@ -213,17 +199,16 @@ def test_save_and_send_contingencia_no_http(
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
 
     tab.sales_table.selectRow(0)
-    tab.save_and_send()
+    tab.save_invoice()
 
-    assert transmit_args["modo"] == "contingencia"
-    assert post_called["count"] == 0
+    assert "tx" not in called
     assert any(
-        title == "Guardar y enviar" and text.startswith("Factura guardado")
+        title == "Guardar factura" and text.startswith("Factura guardado")
         for title, text in mensajes
     )
 
 
-def test_save_and_send_contingencia_from_config(
+def test_save_invoice_ignores_config_transmission(
     qt_app,
     tmp_path,
     pdf_json_files,
@@ -247,8 +232,6 @@ def test_save_and_send_contingencia_from_config(
         return str(pdf)
 
     monkeypatch.setattr("sales_tab.generate_invoice_pdf", fake_gen)
-    monkeypatch.setattr(SalesTab, "send_email", lambda self: None)
-    monkeypatch.setattr("dte._load_dte_api_config", lambda: {})
 
     datos_file = tmp_path / "datos_negocio.json"
     datos_file.write_text(
@@ -257,33 +240,10 @@ def test_save_and_send_contingencia_from_config(
     )
     monkeypatch.setattr("sales_tab.DATOS_NEGOCIO_PATH", str(datos_file))
 
-    post_called = {"count": 0}
-
-    def fake_post(*a, **k):
-        post_called["count"] += 1
-        return {}
-
-    monkeypatch.setattr("dte._post_dte", fake_post)
-
-    transmit_args = {}
-
-    def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
-        transmit_args["modo"] = modo
-        return dte.transmitir_dte(db_, vid, modo=modo, tipo_dte=tipo_dte)
-
-    monkeypatch.setattr("sales_tab.transmitir_dte", fake_transmitir)
-
-    mensajes = []
-
-    def fake_info(parent, title, text):
-        mensajes.append((title, text))
-
-    monkeypatch.setattr(QMessageBox, "information", fake_info)
-    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    called = {}
+    monkeypatch.setattr("dte.transmitir_dte", lambda *a, **k: called.setdefault("tx", True))
 
     tab.sales_table.selectRow(0)
-    tab.save_and_send()
+    tab.save_invoice()
 
-    assert transmit_args["modo"] == "contingencia"
-    assert post_called["count"] == 0
-    assert any("contingencia" in text.lower() for _, text in mensajes)
+    assert "tx" not in called

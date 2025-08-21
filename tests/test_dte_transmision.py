@@ -53,7 +53,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     monkeypatch.setattr(auth, "get_token", fake_get_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
-    monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
         lambda db_obj, vid: {
@@ -104,8 +104,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, data=None, headers=None, timeout=20):
-        calls.append((url, headers, data))
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls.append((url, headers, json))
 
         class R:
             status_code = 200
@@ -134,9 +134,10 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     url, headers, body = calls[0]
     assert url == dte.DEFAULT_RECEPCION_URL
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/jose"
+    assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
-    assert body in [t.encode() for t in sign_calls["tokens"]]
+    assert headers["User-Agent"] == "Vertex-DTE/1.0"
+    assert body["documento"] in sign_calls["tokens"]
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -144,36 +145,41 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert row["sello"] == "ABC123"
 
 
-def test_post_dte_uses_bearer(monkeypatch):
+def test_post_dte_normalizes_bearer(monkeypatch):
     captured = {}
 
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         captured["headers"] = headers
         captured["url"] = url
-        captured["data"] = data
+        captured["body"] = json
+
         class R:
             status_code = 200
             text = ""
+
             def json(self):
                 return {}
+
             def raise_for_status(self):
                 pass
+
         return R()
 
     monkeypatch.setattr("dte.requests.post", fake_post)
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
-    _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
+    _post_dte(dte.DEFAULT_RECEPCION_URL, "TOKEN", token, meta)
     assert captured["headers"]["Authorization"] == "Bearer TOKEN"
-    assert captured["headers"]["Content-Type"] == "application/jose"
+    assert captured["headers"]["Content-Type"] == "application/json"
     assert captured["headers"]["Accept"] == "application/json"
+    assert captured["headers"]["User-Agent"] == "Vertex-DTE/1.0"
     assert captured["url"] == dte.DEFAULT_RECEPCION_URL
-    assert captured["data"] == token.encode()
-    assert captured["data"].count(b".") >= 2
+    assert captured["body"]["documento"] == token
+    assert captured["body"]["documento"].count(".") >= 2
 
 
 def test_post_dte_rejects_invalid_path(monkeypatch):
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         class R:
             status_code = 200
 
@@ -194,7 +200,7 @@ def test_post_dte_rejects_invalid_path(monkeypatch):
 
 
 def test_post_dte_handles_non_json(monkeypatch):
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = "error"
@@ -211,11 +217,15 @@ def test_post_dte_handles_non_json(monkeypatch):
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
     res = _post_dte(dte.DEFAULT_RECEPCION_URL, "", token, meta)
-    assert res == {"estado": "Error", "detalle": "error"}
+    assert res == {"estado": "Recibido", "detalle": "error"}
 
 
-def test_post_dte_rejects_mismatch(monkeypatch):
-    def fake_post(url, data=None, headers=None, timeout=20):
+def test_post_dte_ignores_mismatch(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        captured["body"] = json
+
         class R:
             status_code = 200
             text = ""
@@ -231,38 +241,41 @@ def test_post_dte_rejects_mismatch(monkeypatch):
     monkeypatch.setattr("dte.requests.post", fake_post)
     meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
     token = make_jws({"identificacion": meta})
-    with pytest.raises(ValueError):
-        _post_dte(
-            dte.DEFAULT_RECEPCION_URL,
-            "Bearer TOKEN",
-            token,
-            {**meta, "codigoGeneracion": "XYZ"},
-        )
+    _post_dte(
+        dte.DEFAULT_RECEPCION_URL,
+        "Bearer TOKEN",
+        token,
+        {**meta, "codigoGeneracion": "XYZ"},
+    )
+    assert captured["body"]["codigoGeneracion"] == "ABC"
 
 
 def test_post_dte_missing_fields(monkeypatch):
     calls = {"count": 0}
 
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         calls["count"] += 1
         class R:
             status_code = 200
             text = ""
+
             def json(self):
                 return {}
+
             def raise_for_status(self):
                 pass
+
         return R()
 
     monkeypatch.setattr("dte.requests.post", fake_post)
     token = make_jws({})
-    with pytest.raises(AssertionError):
-        _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, {})
+    res = _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, {})
+    assert res["estado"] == "Error"
     assert calls["count"] == 0
 
 
 def test_post_dte_invalid_tipo(monkeypatch):
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = ""

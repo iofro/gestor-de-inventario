@@ -107,14 +107,15 @@ def test_normalize_adds_scheme():
 def test_post_dte_sets_required_headers(monkeypatch):
     captured = {}
 
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         captured["headers"] = headers
         return DummyResp()
 
     monkeypatch.setattr(dte.requests, "post", fake_post)
     _ = dte._post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer T", _make_token(), _make_meta())
-    assert captured["headers"]["Content-Type"] == "application/jose"
+    assert captured["headers"]["Content-Type"] == "application/json"
     assert captured["headers"]["Accept"] == "application/json"
+    assert captured["headers"]["User-Agent"] == "Vertex-DTE/1.0"
 
 
 def test_normalize_rejects_sandbox():

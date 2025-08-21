@@ -42,7 +42,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
-    monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
         lambda db_obj, vid: {
@@ -88,8 +88,8 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     calls = []
 
-    def fake_post(url, data=None, headers=None, timeout=20):
-        calls.append((url, headers, data))
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls.append((url, headers, json))
         data = responses.pop(0)
 
         class R:
@@ -132,10 +132,11 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     assert len(calls) == 2
     for url, headers, body in calls:
         assert url == dte.DEFAULT_RECEPCION_URL
-        assert body.decode() in sign_calls["tokens"]
+        assert body["documento"] in sign_calls["tokens"]
         assert headers["Authorization"] == "Bearer JWT"
-        assert headers["Content-Type"] == "application/jose"
+        assert headers["Content-Type"] == "application/json"
         assert headers["Accept"] == "application/json"
+        assert headers["User-Agent"] == "Vertex-DTE/1.0"
 
 
 def test_no_envia_si_validacion_falla(monkeypatch):
@@ -144,7 +145,7 @@ def test_no_envia_si_validacion_falla(monkeypatch):
 
     sent = []
 
-    def fake_post(url, data=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20):
         sent.append(True)
 
     monkeypatch.setattr("dte.requests.post", fake_post)
@@ -186,7 +187,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
-    monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
+    monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
         "dte.generar_nota_credito_json",
         lambda db_obj, nid: {
@@ -227,8 +228,8 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, data=None, headers=None, timeout=20):
-        calls.append((url, headers, data))
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls.append((url, headers, json))
 
         class R:
             status_code = 200
@@ -261,17 +262,18 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert len(calls) == 1
     url, headers, body = calls[0]
     assert url == dte.DEFAULT_RECEPCION_URL
-    assert body in [t.encode() for t in sign_calls["tokens"]]
+    assert body["documento"] in sign_calls["tokens"]
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/jose"
+    assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
+    assert headers["User-Agent"] == "Vertex-DTE/1.0"
 
 
-def test_post_dte_sends_raw_jws_body(monkeypatch):
+def test_post_dte_packs_jws_in_json_body(monkeypatch):
     captured = {}
 
-    def fake_post(url, data=None, headers=None, timeout=20):
-        captured["body"] = data
+    def fake_post(url, json=None, headers=None, timeout=20):
+        captured["body"] = json
 
         class R:
             status_code = 200
@@ -296,8 +298,8 @@ def test_post_dte_sends_raw_jws_body(monkeypatch):
     token = make_jws({"identificacion": meta})
     _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
 
-    assert captured["body"] == token.encode()
-    assert b"\n" not in captured["body"]
+    body_json = captured["body"]
+    assert body_json["documento"] == token
 
 
 def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
@@ -318,8 +320,8 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     calls = []
 
-    def fake_post(url, data=None, headers=None, timeout=20):
-        calls.append((url, headers, data))
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls.append((url, headers, json))
 
         class R:
             status_code = 200
@@ -367,10 +369,11 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert len(calls) == 1
     url, headers, body = calls[0]
     assert url == dte.DEFAULT_RECEPCION_URL
-    assert body == sign_calls["token"].encode()
+    assert body["documento"] == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/jose"
+    assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
+    assert headers["User-Agent"] == "Vertex-DTE/1.0"
 
 
 def test_enviar_evento_anulacion(monkeypatch, tmp_path):
@@ -391,8 +394,8 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, data=None, headers=None, timeout=20):
-        calls.append((url, headers, data))
+    def fake_post(url, json=None, headers=None, timeout=20):
+        calls.append((url, headers, json))
 
         class R:
             status_code = 200
@@ -434,8 +437,9 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert len(calls) == 1
     url, headers, body = calls[0]
     assert url == dte.DEFAULT_RECEPCION_URL
-    assert body == sign_calls["token"].encode()
+    assert body["documento"] == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/jose"
+    assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
+    assert headers["User-Agent"] == "Vertex-DTE/1.0"
 

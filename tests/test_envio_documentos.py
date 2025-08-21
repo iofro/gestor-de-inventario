@@ -9,6 +9,7 @@ from dte import (
     enviar_nota_credito,
     enviar_evento_contingencia,
     enviar_evento_anulacion,
+    _post_dte,
     DTEValidationError,
 )
 import auth
@@ -251,6 +252,39 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert body in sign_calls["tokens"]
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"
+
+
+def test_post_dte_sends_raw_jws_body(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        captured["body"] = json["documento"]
+
+        class R:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+
+    meta = {
+        "ambiente": "00",
+        "version": 2,
+        "tipoDte": "01",
+        "codigoGeneracion": "ABC",
+    }
+    token = make_jws({"identificacion": meta})
+    _post_dte("http://example.com", "TOKEN", token, meta)
+
+    assert captured["body"] == token
+    assert "\n" not in captured["body"]
 
 
 def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):

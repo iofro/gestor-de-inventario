@@ -2,6 +2,10 @@ import json
 import os
 import uuid
 import base64
+import platform
+import sys
+import re
+import requests as _requests
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from urllib.parse import urlparse
@@ -13,7 +17,6 @@ import auth
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 import logging
-import re
 import xml.etree.ElementTree as ET
 from utils.monto import monto_a_texto_sv
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -23,6 +26,8 @@ from pathlib import Path
 import jsonpatch
 from paths import DATOS_NEGOCIO_PATH
 from xml.etree.ElementTree import Element, SubElement
+
+APP_VERSION = "1.0.0"  # editable a futuro
 
 logger = logging.getLogger(__name__)
 
@@ -2612,14 +2617,79 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
         "documento": documento,
     }
 
+def format_cliente_id_from_dui(dui: str | None) -> str | None:
+    if not dui:
+        return None
+    return re.sub(r"\D+", "", str(dui)) or None
 
-def _normalize_bearer(tok: str | None) -> str:
-    tok = (tok or "").strip()
-    return tok if tok.lower().startswith("bearer ") else (f"Bearer {tok}" if tok else "")
+
+def detect_user_agent(
+    user_agent: str | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    client_id: str | None = None,
+) -> str:
+    # 1) UA explícito
+    if user_agent:
+        return str(user_agent)
+    # 2) UA proveniente de la capa web (navegador reenviado en opts)
+    if isinstance(opts, dict) and opts.get("user_agent"):
+        ua_from_opts = str(opts["user_agent"])[:256]
+        return ua_from_opts
+    # 3) Fallback genérico
+    av = app_version or APP_VERSION
+    parts = str(av).split(".")
+    base_version = ".".join(parts[:2]) if parts else str(av)
+    base = f"Vertex-DTE/{base_version}"
+    return base
+
+
+def build_auth_header(
+    auth: dict | None,
+    app_version: str | None = None,
+    client_id: str | None = None,
+) -> dict:
+    headers: dict = {}
+    if auth:
+        # 1) Authorization explícito
+        if auth.get("authorization"):
+            headers["Authorization"] = str(auth["authorization"])
+        # 2) Bearer
+        elif auth.get("access_token") or auth.get("bearer"):
+            token = auth.get("access_token") or auth.get("bearer")
+            headers["Authorization"] = f"Bearer {token}" if token else ""
+        # 3) Basic
+        elif auth.get("basic_user") and auth.get("basic_password"):
+            creds = f"{auth['basic_user']}:{auth['basic_password']}"
+            b64 = base64.b64encode(creds.encode()).decode()
+            headers["Authorization"] = f"Basic {b64}"
+        # 4) Esquema personalizado
+        elif auth.get("scheme") and auth.get("credentials"):
+            headers["Authorization"] = f"{auth['scheme']} {auth['credentials']}"
+
+        # 5) Mezclar headers extra
+        if isinstance(auth.get("headers"), dict):
+            headers.update(auth["headers"])
+
+    # Metadatos de trazabilidad:
+    if app_version:
+        headers.setdefault("app-version", str(app_version))
+    if client_id:
+        headers.setdefault("cliente-id", str(client_id))
+    return headers
 
 
 def _post_dte(
-    url: str, token: str, documento: str, dte_data: dict | None = None
+    url: str,
+    token: str,
+    documento: str,
+    dte_data: dict | None = None,
+    user_agent: str | None = None,
+    auth: dict | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    dui: str | None = None,
+    client_id: str | None = None,
 ) -> dict:
     token = token or ""
     if token:
@@ -2638,11 +2708,18 @@ def _post_dte(
     if sobre.get("estado") == "Error":
         return sobre
 
+    client_id = client_id or format_cliente_id_from_dui(dui)
+    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
+    auth_headers = build_auth_header(
+        auth if auth is not None else {"access_token": token},
+        app_version=app_version or APP_VERSION,
+        client_id=client_id,
+    )
     headers = {
         "Content-Type": "application/json",
         "Accept": "application/json",
-        "Authorization": _normalize_bearer(token),
-        "User-Agent": "Vertex-DTE/1.0",
+        "User-Agent": ua,
+        **auth_headers,
     }
 
     try:

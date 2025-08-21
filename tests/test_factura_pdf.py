@@ -86,7 +86,7 @@ def test_qr_value_contains_params():
         '01',
         'NC-1',
     )
-    assert url.startswith('https://sandbox.mh.gob.sv/consulta-dte?')
+    assert url.startswith('https://apitest.mh.gob.sv/consulta-dte?')
     assert 'codigoGeneracion=ABC' in url
     assert 'numeroDocumento=NC-1' in url
     assert 'tipoDte=01' in url
@@ -106,7 +106,7 @@ def test_qr_url_matches_environment(tmp_path, monkeypatch):
 
     scenarios = [
         ('01', 'https://www.mh.gob.sv/consulta-dte', '1'),
-        ('00', 'https://sandbox.mh.gob.sv/consulta-dte', '2'),
+        ('00', 'https://apitest.mh.gob.sv/consulta-dte', '2'),
     ]
 
     for env, expected_base, expected_param in scenarios:

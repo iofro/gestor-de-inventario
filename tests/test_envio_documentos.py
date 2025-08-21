@@ -12,6 +12,7 @@ from dte import (
     _post_dte,
     DTEValidationError,
 )
+import dte
 import auth
 from tests.conftest import make_jws
 
@@ -40,7 +41,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
-    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
@@ -104,10 +105,15 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    orig_load = dte._load_datos_negocio
+
+    def fake_load():
+        data = orig_load()
+        data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
+        data["dte_api"]["ambiente"] = "pruebas"
+        return data
+
+    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
 
     caplog.set_level(logging.ERROR)
     res = enviar_factura(db, venta)
@@ -125,10 +131,11 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     assert sign_calls["count"] == 2
     assert len(calls) == 2
     for url, headers, body in calls:
-        assert url == "http://example.com"
-        assert body in sign_calls["tokens"]
+        assert url == dte.DEFAULT_RECEPCION_URL
+        assert body.decode() in sign_calls["tokens"]
         assert headers["Authorization"] == "Bearer JWT"
-        assert headers["Content-Type"] == "application/json"
+        assert headers["Content-Type"] == "application/jose"
+        assert headers["Accept"] == "application/json"
 
 
 def test_no_envia_si_validacion_falla(monkeypatch):
@@ -178,7 +185,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
-    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data: None)
     monkeypatch.setattr(
         "dte.generar_nota_credito_json",
@@ -236,10 +243,15 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    orig_load = dte._load_datos_negocio
+
+    def fake_load():
+        data = orig_load()
+        data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
+        data["dte_api"]["ambiente"] = "pruebas"
+        return data
+
+    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
 
     res = enviar_nota_credito(db, nota_id)
     assert res["estado"] == "Transmitido"
@@ -248,17 +260,18 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == "http://example.com"
-    assert body in sign_calls["tokens"]
+    assert url == dte.DEFAULT_RECEPCION_URL
+    assert body in [t.encode() for t in sign_calls["tokens"]]
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/json"
+    assert headers["Content-Type"] == "application/jose"
+    assert headers["Accept"] == "application/json"
 
 
 def test_post_dte_sends_raw_jws_body(monkeypatch):
     captured = {}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        captured["body"] = json["documento"]
+    def fake_post(url, data=None, headers=None, timeout=20):
+        captured["body"] = data
 
         class R:
             status_code = 200
@@ -281,10 +294,10 @@ def test_post_dte_sends_raw_jws_body(monkeypatch):
         "codigoGeneracion": "ABC",
     }
     token = make_jws({"identificacion": meta})
-    _post_dte("http://example.com", "TOKEN", token, meta)
+    _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
 
-    assert captured["body"] == token
-    assert "\n" not in captured["body"]
+    assert captured["body"] == token.encode()
+    assert b"\n" not in captured["body"]
 
 
 def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
@@ -301,7 +314,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
-    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     calls = []
 
@@ -325,10 +338,15 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    orig_load = dte._load_datos_negocio
+
+    def fake_load():
+        data = orig_load()
+        data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
+        data["dte_api"]["ambiente"] = "pruebas"
+        return data
+
+    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
 
     caplog.set_level(logging.ERROR)
     data = {
@@ -348,10 +366,11 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == "http://example.com"
-    assert body == sign_calls["token"]
+    assert url == dte.DEFAULT_RECEPCION_URL
+    assert body == sign_calls["token"].encode()
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/json"
+    assert headers["Content-Type"] == "application/jose"
+    assert headers["Accept"] == "application/json"
 
 
 def test_enviar_evento_anulacion(monkeypatch, tmp_path):
@@ -368,7 +387,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
-    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "example.com")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     calls = []
 
@@ -388,10 +407,15 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    config = {"ambiente": "pruebas", "pruebas": {"recepcion_url": "http://example.com"}}
-    cfg_path = Path(__file__).resolve().parents[1] / "config_negocio.json"
-    with open(cfg_path, "w", encoding="utf-8") as fh:
-        json.dump(config, fh)
+    orig_load = dte._load_datos_negocio
+
+    def fake_load():
+        data = orig_load()
+        data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
+        data["dte_api"]["ambiente"] = "pruebas"
+        return data
+
+    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
 
     data = {
         "identificacion": {
@@ -409,8 +433,9 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == "http://example.com"
-    assert body == sign_calls["token"]
+    assert url == dte.DEFAULT_RECEPCION_URL
+    assert body == sign_calls["token"].encode()
     assert headers["Authorization"] == "Bearer JWT"
-    assert headers["Content-Type"] == "application/json"
+    assert headers["Content-Type"] == "application/jose"
+    assert headers["Accept"] == "application/json"
 

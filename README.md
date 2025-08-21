@@ -61,7 +61,7 @@ Para una prueba manual de extremo a extremo contra el entorno de
 Hacienda, ejecuta:
 
 ```bash
-python -m tests.manual_e2e_sandbox
+python -m tests.manual_e2e
 ```
 
 ### Generar DTE
@@ -272,7 +272,7 @@ En PowerShell puedes definir las variables necesarias:
 ```powershell
 setx SIGN_URL "http://127.0.0.1:8080/firma/firmardocumento/"
 setx NIT_FIRMADOR "09061712791014"
-setx HACIENDA_URL "https://sandbox.ejemplo.hacienda.sv/..."
+setx HACIENDA_URL "https://apitest.ejemplo.hacienda.sv/..."
 ```
 
 Coloca el certificado del NIT correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`.
@@ -284,10 +284,10 @@ Ejecuta las pruebas manuales con:
 
 ```bash
 python -m tests.manual_sign_check
-python -m tests.manual_e2e_sandbox
+python -m tests.manual_e2e
 ```
 
-Las salidas esperadas son `SIGN_TEST_OK` o `SIGN_TEST_FAIL` y `E2E_SANDBOX_OK` o `E2E_SANDBOX_FAIL` respectivamente.
+Las salidas esperadas son `SIGN_TEST_OK` o `SIGN_TEST_FAIL` y `E2E_API_OK` o `E2E_API_FAIL` respectivamente.
 
 ### Generar ticket en formato personalizado
 

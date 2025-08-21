@@ -156,6 +156,7 @@ class FacturacionTab(QWidget):
         self.btn_estado = QPushButton("Estado")
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
+        self.btn_enviar_json = QPushButton("Enviar JSON...")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;"
@@ -165,6 +166,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
         btns.addWidget(self.btn_enviar)
+        btns.addWidget(self.btn_enviar_json)
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
@@ -194,6 +196,7 @@ class FacturacionTab(QWidget):
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
+        self.btn_enviar_json.clicked.connect(self.send_json)
         self.btn_eliminar.clicked.connect(self.delete_files)
 
     def _toggle_date_filter(self, checked):
@@ -586,6 +589,37 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
                     )
+
+    def send_json(self):
+        fname, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar JSON",
+            "",
+            "JSON (*.json)",
+            options=QFileDialog.DontUseNativeDialog,
+        )
+        if not fname:
+            return
+        try:
+            with open(fname, "r", encoding="utf-8") as fh:
+                json.load(fh)
+        except Exception as exc:
+            QMessageBox.critical(self, "Enviar a Hacienda", f"Error al leer JSON: {exc}")
+            return
+        try:
+            resp = dte.transmitir_dte_orphan(self.manager.db, fname)
+            if resp.get("estado") == "Error":
+                QMessageBox.critical(
+                    self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                )
+            else:
+                QMessageBox.information(
+                    self, "Enviar a Hacienda", "Documento enviado"
+                )
+        except dte.DTEValidationError as exc:
+            self._show_validation_errors(exc.errors, exc.json_path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Enviar a Hacienda", str(exc))
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

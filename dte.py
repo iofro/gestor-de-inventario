@@ -2558,28 +2558,36 @@ def _decode_jws_payload(token: str) -> dict:
 def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> dict:
     """Retorna el body listo para ``POST /fesv/recepciondte``.
 
-    Si ``documento`` parece un JWS se extraen los metadatos desde su payload.
-    Cuando no es un JWS válido o la decodificación falla, los metadatos se
-    obtienen de ``dte_data``.  Valida campos requeridos y formatos.  En caso de
-    error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
+    Valida que ``documento`` sea una JWS compacta y que los metadatos
+    proporcionados en ``dte_data`` coincidan con los embebidos en el payload.
+    Cuando la validación falla se devuelve ``{"estado": "Error"}`` con el
+    detalle correspondiente.
     """
 
-    meta: dict[str, object] = {}
+    if not isinstance(documento, str) or documento.count(".") != 2:
+        return {"estado": "Error", "detalle": "documento inválido"}
 
-    if isinstance(documento, str) and documento.count(".") == 2:
-        try:
-            payload = _decode_jws_payload(documento)
-            meta = payload.get("identificacion") or payload.get("identificador") or payload
-        except Exception:
-            meta = {}
+    meta: dict[str, object] = {}
+    payload_meta: dict[str, object] = {}
+    try:
+        payload = _decode_jws_payload(documento)
+        payload_meta = (
+            payload.get("identificacion")
+            or payload.get("identificador")
+            or payload
+        )
+        meta.update(payload_meta)
+    except Exception:
+        pass
 
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
-        if meta:
-            for k, v in ident.items():
-                meta.setdefault(k, v)
-        else:
-            meta = ident
+        for field in ("ambiente", "version", "tipoDte", "codigoGeneracion"):
+            if field in payload_meta and field in ident:
+                if str(payload_meta[field]) != str(ident[field]):
+                    return {"estado": "Error", "detalle": f"{field} no coincide"}
+        for k, v in ident.items():
+            meta.setdefault(k, v)
 
     try:
         ambiente = str(meta["ambiente"])
@@ -2605,6 +2613,8 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     id_envio = meta.get("idEnvio", 1)
     try:
         id_envio = int(id_envio)
+        if id_envio < 1:
+            raise ValueError
     except Exception:
         return {"estado": "Error", "detalle": "idEnvio inválido"}
 

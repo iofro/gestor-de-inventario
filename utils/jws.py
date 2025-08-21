@@ -11,6 +11,8 @@ from utils.stable_json import (
     validar_montos,
 )
 
+import dte
+
 logger = logging.getLogger(__name__)
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
@@ -190,4 +192,14 @@ def sign_and_save(
     token = token.rstrip("\n")
     jws_path = os.path.splitext(json_path)[0] + ".jws"
     save_file(jws_path, token, add_final_newline=False)
+    try:
+        sobre = dte.construir_sobre_recepcion(token, payload)
+        if isinstance(sobre, dict) and sobre.get("estado") != "Error":
+            sobre_path = os.path.splitext(json_path)[0] + "-sobre.json"
+            save_file(
+                sobre_path,
+                json.dumps(sobre, ensure_ascii=False, indent=2),
+            )
+    except Exception as exc:
+        logger.error("Error guardando sobre para %s: %s", json_path, exc)
     return jws_path

@@ -2551,9 +2551,6 @@ def _post_dte(
     if missing:
         raise AssertionError("Faltan campos requeridos: " + ", ".join(missing))
 
-    ambiente = "00"
-    version = str(version)
-    id_envio = int(uuid.uuid4()) & 0x7FFFFFFF or 1
     documento = str(jws_token)
     assert documento.count(".") == 2, "documento JWS malformado"
     codigo = "" if codigo is None else str(codigo)
@@ -2565,42 +2562,13 @@ def _post_dte(
     else:
         assert tipo_dte in {1, 3, 4, 5, 6, 7, 8, 9, 11, 14, 15}, "tipoDte inválido"
 
-    payload = {
-        "ambiente": ambiente,
-        "version": version,
-        "idEnvio": int(id_envio),
-        "tipoDte": tipo_dte,
-        "documento": documento,
-    }
-    if codigo:
-        payload["codigoGeneracion"] = codigo
-    assert payload.get("codigoGeneracion") == codigo, "codigoGeneracion no coincide"
-
-    required = {
-        "ambiente": str,
-        "version": str,
-        "idEnvio": int,
-        "documento": str,
-    }
-    if "codigoGeneracion" in payload:
-        required["codigoGeneracion"] = str
-
-    for field, expected in required.items():
-        assert field in payload, f"{field} requerido"
-        assert isinstance(
-            payload[field], expected
-        ), f"{field} debe ser {expected.__name__}"
-
-    assert "tipoDte" in payload, "tipoDte requerido"
-    assert isinstance(payload["tipoDte"], (int, str)), "tipoDte debe ser int o str"
-
-    assert payload["idEnvio"] > 0
     auth_header = headers.get("Authorization")
     if token:
         assert re.fullmatch(
             r"Bearer [^\s]+", auth_header
         ), "Authorization header malformado"
-    resp = requests.post(url, headers=headers, json=payload, timeout=20)
+
+    resp = requests.post(url, headers=headers, data=documento, timeout=20)
     resp_text = getattr(resp, "text", "")
     status_code = getattr(resp, "status_code", "N/A")
     if isinstance(status_code, int) and status_code >= 400:

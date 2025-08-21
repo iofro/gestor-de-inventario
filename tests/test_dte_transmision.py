@@ -103,8 +103,8 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
-        calls.append((url, headers, json))
+    def fake_post(url, data=None, headers=None, timeout=20):
+        calls.append((url, headers, data))
 
         class R:
             status_code = 200
@@ -132,15 +132,11 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert token_calls["count"] == 1
     assert sign_calls["count"] == 1
     assert len(calls) == 1
-    url, headers, payload = calls[0]
+    url, headers, body = calls[0]
     assert url == f"http://{ambiente}.example.com"
     assert headers["Authorization"] == "Bearer JWT"
-    assert payload["documento"] in sign_calls["tokens"]
-    assert payload["tipoDte"] == 1
-    assert payload["version"] == "2"
-    assert payload["ambiente"] == "00"
-    assert payload["codigoGeneracion"] == "ABC"
-    assert "idEnvio" in payload
+    assert headers["Content-Type"] == "application/json"
+    assert body in sign_calls["tokens"]
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -151,7 +147,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
 def test_post_dte_uses_bearer(monkeypatch):
     captured = {}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         captured["headers"] = headers
         class R:
             status_code = 200
@@ -170,7 +166,7 @@ def test_post_dte_uses_bearer(monkeypatch):
 
 
 def test_post_dte_handles_non_json(monkeypatch):
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = "error"
@@ -191,7 +187,7 @@ def test_post_dte_handles_non_json(monkeypatch):
 
 
 def test_post_dte_rejects_mismatch(monkeypatch):
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = ""
@@ -214,7 +210,7 @@ def test_post_dte_rejects_mismatch(monkeypatch):
 def test_post_dte_missing_fields(monkeypatch):
     calls = {"count": 0}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         calls["count"] += 1
         class R:
             status_code = 200
@@ -233,7 +229,7 @@ def test_post_dte_missing_fields(monkeypatch):
 
 
 def test_post_dte_invalid_tipo(monkeypatch):
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, data=None, headers=None, timeout=20):
         class R:
             status_code = 200
             text = ""

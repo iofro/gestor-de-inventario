@@ -2564,8 +2564,12 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     detalle correspondiente.
     """
 
-    if not isinstance(documento, str) or documento.count(".") != 2:
+    if not isinstance(documento, str):
         return {"estado": "Error", "detalle": "documento inválido"}
+    if documento.count(".") != 2:
+        return {"estado": "Error", "detalle": "documento inválido"}
+    if any(ch in documento for ch in (" ", "\n", "\r", "\t")):
+        return {"estado": "Error", "detalle": "documento con espacios"}
 
     meta: dict[str, object] = {}
     payload_meta: dict[str, object] = {}

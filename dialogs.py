@@ -18,6 +18,7 @@ import os
 import shutil
 
 from utils import jws
+from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
 
 getcontext().prec = 4
 
@@ -2907,12 +2908,29 @@ class DatosNegocioDialog(QDialog):
         layout.addLayout(form)
         layout.addLayout(btns)
         self.setLayout(layout)
-        self.btn_guardar.clicked.connect(self.accept)
+        self.btn_guardar.clicked.connect(self._on_save)
         self.btn_cancelar.clicked.connect(self.reject)
         if datos:
             self.set_data(datos)
 
+    def _on_save(self):
+        try:
+            self.get_data()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Validación", str(exc))
+            return
+        self.accept()
+
     def get_data(self):
+        departamento = str(self.departamento.currentData() or "").zfill(2)
+        municipio = str(self.municipio.currentData() or "")
+        complemento = self.complemento.text()
+        if departamento not in CAT012_DEPARTAMENTOS:
+            raise ValueError("Departamento inválido")
+        if municipio not in CAT013_MUNICIPIOS:
+            raise ValueError("Municipio inválido")
+        if not complemento:
+            raise ValueError("Dirección requerida")
         return {
             "nit": self.nit.text(),
             "nrc": self.nrc.text(),
@@ -2925,13 +2943,9 @@ class DatosNegocioDialog(QDialog):
             "telefono": self.telefono.text(),
             "correo": self.correo.text(),
             "direccion": {
-                "departamento": self.departamento.currentData()
-                if self.departamento.currentData() in DEPARTAMENTOS_SET
-                else "",
-                "municipio": self.municipio.currentData()
-                if self.municipio.currentData() in MUNICIPIOS_SET
-                else "",
-                "complemento": self.complemento.text(),
+                "departamento": departamento,
+                "municipio": municipio,
+                "complemento": complemento,
             },
         }
 

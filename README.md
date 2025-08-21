@@ -272,7 +272,7 @@ En PowerShell puedes definir las variables necesarias:
 ```powershell
 setx SIGN_URL "http://127.0.0.1:8080/firma/firmardocumento/"
 setx NIT_FIRMADOR "09061712791014"
-setx HACIENDA_URL "https://sandbox.ejemplo.hacienda.sv/..."
+setx HACIENDA_URL "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 ```
 
 Coloca el certificado del NIT correspondiente en `svfe-api-firmador/uploads/<NIT>.crt`.

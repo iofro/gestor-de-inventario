@@ -8,6 +8,7 @@ from typing import Any, Dict, List
 from uuid import uuid4
 from db import DB
 from zoneinfo import ZoneInfo
+from utils.catalogos import TRIBUTO_IVA
 
 from .config import get_emisor_direccion
 
@@ -93,8 +94,8 @@ def generar_fc_ejemplo(
         "noGravado": D("0.00000000"),
     }
     if gravado:
-        item["codTributo"] = "19"
-        item["tributos"] = ["19"]
+        item["codTributo"] = TRIBUTO_IVA
+        item["tributos"] = [TRIBUTO_IVA]
         item["ventaGravada"] = venta
         item["ivaItem"] = iva8
     else:
@@ -247,9 +248,9 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "noGravado": d8(Decimal("0")),
     }
     # Todos los ítems gravados deben declarar el tributo IVA.
-    item["codTributo"] = "19"
+    item["codTributo"] = TRIBUTO_IVA
     item["ivaItem"] = iva_item
-    item["tributos"] = ["19"]
+    item["tributos"] = [TRIBUTO_IVA]
     return [item]
 
 
@@ -292,7 +293,7 @@ def _resumen(tipo: str) -> Dict[str, Any]:
     if tipo == "fc":
         data["totalIva"] = iva
         data["tributos"] = [
-            {"codigo": "19", "descripcion": "IVA", "valor": iva}
+            {"codigo": TRIBUTO_IVA, "descripcion": "IVA", "valor": iva}
         ]
     else:
         data["ivaPerci1"] = d2(Decimal("0"))

@@ -19,6 +19,7 @@ def test_import_maps_detalle_trabajador(tmp_path, monkeypatch):
                 "id": 1,
                 "nombre": "Prod",
                 "codigo": "P1",
+                "sku": "S1",
                 "precio_compra": 0,
                 "precio_venta_minorista": 0,
                 "precio_venta_mayorista": 0,

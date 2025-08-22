@@ -46,7 +46,7 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
     vend = db.cursor.lastrowid
     db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend, dist, 1, 2, 3, 5)
+    db.add_producto("Prod", "P1", None,  vend, dist, 1, 2, 3, 5)
     venta_id = db.add_venta(
         "2024-01-01", 10, cliente_id=cliente_id, vendedor_id=vend, Distribuidor_id=dist
     )

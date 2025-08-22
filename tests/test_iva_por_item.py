@@ -4,7 +4,7 @@ from dte import recalcular_totales
 from utils.stable_json import stable_stringify
 
 
-def _build_payload(precio, *, precios_incluyen_iva):
+def _build_payload(precio, *, precios_incluyen_iva=None):
     payload = {
         "identificacion": {"tipoDte": "01"},
         "cuerpoDocumento": [
@@ -18,7 +18,10 @@ def _build_payload(precio, *, precios_incluyen_iva):
         ],
         "resumen": {},
     }
-    recalcular_totales(payload, precios_incluyen_iva=precios_incluyen_iva)
+    if precios_incluyen_iva is None:
+        recalcular_totales(payload)
+    else:
+        recalcular_totales(payload, precios_incluyen_iva=precios_incluyen_iva)
     return payload
 
 
@@ -52,3 +55,17 @@ def test_serializacion_sin_tributos():
     assert D(str(resumen["totalIva"])) == iva_suma
     json_str = stable_stringify(payload)
     assert "-0.00" not in json_str
+
+
+def test_fc_precio_incluye_iva_default():
+    payload = _build_payload("13.00")
+    item = payload["cuerpoDocumento"][0]
+    resumen = payload["resumen"]
+    assert D(str(item["ventaGravada"])) == D("11.50")
+    assert D(str(item["ivaItem"])) == D("1.50")
+    assert D(str(resumen["totalGravada"])) == D("11.50")
+    assert D(str(resumen["totalIva"])) == D("1.50")
+    assert D(str(resumen["totalPagar"])) == D("13.00")
+    assert item.get("codTributo") is None
+    assert item.get("tributos") is None
+    assert resumen.get("tributos") is None

@@ -8,7 +8,7 @@ from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
 from dte import generar_ticket_json, generar_dte_json
 from utils.monto import monto_a_texto_sv
-from utils.docs import get_document_paths, build_invoice_json
+from utils.docs import get_document_paths
 from utils.jws import sign_and_save
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 
@@ -115,21 +115,15 @@ def generate_invoice_pdf(manager, venta_id):
     tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
     cliente_nombre = cliente.get("nombre") if cliente else ""
-    try:
-        json_data = generar_dte_json(
-            manager.db,
-            venta_id,
-            tipo_dte="03" if credito_info else "01",
-            ambiente=ambiente,
-            tipo_operacion=tipo_operacion,
-            tipo_contingencia=tipo_contingencia,
-            motivo_contin=motivo_contin,
-        )
-    except Exception:
-        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
-        ident = json_data.setdefault("identificacion", {})
-        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
-        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+    json_data = generar_dte_json(
+        manager.db,
+        venta_id,
+        tipo_dte="03" if credito_info else "01",
+        ambiente=ambiente,
+        tipo_operacion=tipo_operacion,
+        tipo_contingencia=tipo_contingencia,
+        motivo_contin=motivo_contin,
+    )
     ident = json_data.get("identificacion", {})
     codigo_generacion = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")
@@ -214,12 +208,7 @@ def generate_ticket_pdf(manager, venta_id):
     if hasattr(manager.db, "cursor"):
         ticket_json = generar_ticket_json(manager.db, venta_id)
     else:
-        venta_data = dict(venta)
-        if not venta_data.get("codigo_generacion"):
-            venta_data["codigo_generacion"] = uuid.uuid4().hex
-        if not venta_data.get("numero_control"):
-            venta_data["numero_control"] = uuid.uuid4().hex[:8].upper()
-        ticket_json = build_invoice_json(venta_data, cliente or {}, detalles)
+        raise RuntimeError("DB invalida para generar ticket")
     try:
         resumen = ticket_json.get("resumen", {})
         condicion = normalize_condicion_operacion(

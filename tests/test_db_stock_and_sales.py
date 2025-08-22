@@ -9,6 +9,7 @@ def test_aumentar_stock_increments_product_stock():
     db.add_producto(
         nombre='Prod',
         codigo='P1',
+        sku=None,
         vendedor_id=None,
         Distribuidor_id=None,
         precio_compra=1.0,
@@ -30,6 +31,7 @@ def test_registrar_venta_detallada_creates_records():
     db.add_producto(
         nombre='Prod',
         codigo='P1',
+        sku=None,
         vendedor_id=None,
         Distribuidor_id=None,
         precio_compra=1.0,

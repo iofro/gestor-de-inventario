@@ -12,7 +12,7 @@ def test_comisiones_compra_agregada_y_detallada():
     dist_id = db.cursor.lastrowid
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod1", "P1", vend_id, dist_id, 0, 0, 0, 10)
+    db.add_producto("Prod1", "P1", None,  vend_id, dist_id, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
 
     compra_id = db.add_compra_detallada({

@@ -32,7 +32,7 @@ def test_generar_dte_json_basic(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -104,7 +104,7 @@ def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -151,7 +151,7 @@ def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -207,7 +207,7 @@ def test_generar_dte_json_normaliza_ambiente_config(
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -243,7 +243,7 @@ def test_dte_rounding_and_validation(capsys):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -288,7 +288,7 @@ def test_dte_sum_mismatch_warning(capsys):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -342,7 +342,7 @@ def test_generar_ticket_json_tipo(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -375,7 +375,7 @@ def test_generar_dte_json_normaliza_ambiente_param(ambiente, expected, monkeypat
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -404,7 +404,7 @@ def test_dte_comision_sin_advertencia_total(capsys):
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -440,7 +440,7 @@ def test_generar_dte_json_condicion_operacion_invalida():
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -498,7 +498,7 @@ def test_generar_dte_json_receptor_extra_preserva_direccion(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -551,7 +551,7 @@ def test_generar_dte_json_municipio_fuera_depto(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",

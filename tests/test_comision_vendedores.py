@@ -12,9 +12,9 @@ def test_get_comision_vendedores():
     vid1 = db.cursor.lastrowid
     db.add_vendedor("V2")
     vid2 = db.cursor.lastrowid
-    db.add_producto("P1", "C1", vid1, None, 0, 0, 0, 10)
+    db.add_producto("P1", "C1", None,  vid1, None, 0, 0, 0, 10)
     pid1 = db.cursor.lastrowid
-    db.add_producto("P2", "C2", vid2, None, 0, 0, 0, 10)
+    db.add_producto("P2", "C2", None,  vid2, None, 0, 0, 0, 10)
     pid2 = db.cursor.lastrowid
 
     v1 = db.add_venta("2024-01-01", 100, vendedor_id=vid1)

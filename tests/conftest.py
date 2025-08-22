@@ -115,6 +115,7 @@ def producto_factory():
             "id": 1,
             "nombre": "Producto",
             "codigo": "P001",
+            "sku": "SKU001",
             "vendedor_id": 1,
             "Distribuidor_id": 1,
             "precio_compra": 0,

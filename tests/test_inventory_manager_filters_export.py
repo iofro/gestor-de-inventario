@@ -15,8 +15,8 @@ def create_manager(monkeypatch):
     vend1 = db.cursor.lastrowid
     db.add_vendedor("V2", Distribuidor_id=dist2)
     vend2 = db.cursor.lastrowid
-    db.add_producto("P1", "C1", vend1, dist1, 1, 2, 3, 10)
-    db.add_producto("P2", "C2", vend2, dist2, 1, 2, 3, 10)
+    db.add_producto("P1", "C1", None,  vend1, dist1, 1, 2, 3, 10)
+    db.add_producto("P2", "C2", None,  vend2, dist2, 1, 2, 3, 10)
     man.refresh_data()
     return man, db, vend1, vend2, dist1, dist2
 

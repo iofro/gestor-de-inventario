@@ -33,7 +33,7 @@ def test_import_inventory_clears_related_tables(tmp_path, monkeypatch):
     db = manager.db
 
     cliente_id = db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")
-    prod_id = db.add_producto("Prod", "C1", None, None, 1, 2, 3, 5)
+    prod_id = db.add_producto("Prod", "C1", None,  None, None, 1, 2, 3, 5)
     venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id)
     db.add_detalle_venta(venta_id, prod_id, 1, 10)
 

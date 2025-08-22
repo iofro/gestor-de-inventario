@@ -1135,10 +1135,11 @@ class ProductDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Producto")
         layout = QVBoxLayout()
+
+        # Datos básicos del producto
         self.codigo_edit = QLineEdit()
-        self.codigo_edit = QLineEdit()
+        self.sku_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
-        self.codigo_edit = QLineEdit()
         self.precio_compra_spin = QDoubleSpinBox()
         self.precio_compra_spin.setMaximum(1000000)
         self.precio_compra_spin.setDecimals(2)
@@ -1151,12 +1152,10 @@ class ProductDialog(QDialog):
 
         layout.addWidget(QLabel("Código:"))
         layout.addWidget(self.codigo_edit)
-        layout.addWidget(QLabel("Código:"))
-        layout.addWidget(self.codigo_edit)
+        layout.addWidget(QLabel("SKU:"))
+        layout.addWidget(self.sku_edit)
         layout.addWidget(QLabel("Nombre:"))
         layout.addWidget(self.nombre_edit)
-        layout.addWidget(QLabel("Código:"))
-        layout.addWidget(self.codigo_edit)
         layout.addWidget(QLabel("Precio de compra:"))
         layout.addWidget(self.precio_compra_spin)
         layout.addWidget(QLabel("Precio venta minorista:"))
@@ -1178,6 +1177,7 @@ class ProductDialog(QDialog):
         if producto:
             self.nombre_edit.setText(producto.get("nombre", ""))
             self.codigo_edit.setText(producto.get("codigo", ""))
+            self.sku_edit.setText(producto.get("sku", ""))
             self.precio_compra_spin.setValue(producto.get("precio_compra", 0))
             self.precio_venta_minorista_spin.setValue(producto.get("precio_venta_minorista", 0))
             self.precio_venta_mayorista_spin.setValue(producto.get("precio_venta_mayorista", 0))
@@ -1186,6 +1186,7 @@ class ProductDialog(QDialog):
         return {
             "nombre": self.nombre_edit.text(),
             "codigo": self.codigo_edit.text(),
+            "sku": self.sku_edit.text(),
             "precio_compra": self.precio_compra_spin.value(),
             "precio_venta_minorista": self.precio_venta_minorista_spin.value(),
             "precio_venta_mayorista": self.precio_venta_mayorista_spin.value()

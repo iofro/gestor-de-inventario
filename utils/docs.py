@@ -3,8 +3,6 @@ import os
 import re
 from datetime import datetime
 
-from dte import _map_departamento, _map_municipio
-
 # Base path is repository root two levels up from this file
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
 
@@ -18,6 +16,9 @@ FOLDERS = {
 }
 
 TEMPLATE_PATH = os.path.join(BASE_DIR, 'formato_factura.json')
+
+# Código de tributo IVA según Hacienda
+TRIBUTO_IVA = "20"
 
 
 def sanitize_filename(value: str) -> str:
@@ -58,85 +59,166 @@ def get_document_paths(date, cliente, identifier, doc_type, root=None):
     return pdf_path, json_path
 
 
-def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
-    """Create an invoice JSON following the template structure."""
-    try:
-        with open(template_path, 'r', encoding='utf-8') as fh:
-            data = json.load(fh)
-    except FileNotFoundError:
-        data = {
-            'identificacion': {},
-            'receptor': {},
-            'cuerpoDocumento': [],
-            'resumen': {},
+def _remove_none(value):
+    """Recursively remove keys with ``None`` values from ``value``."""
+    if isinstance(value, dict):
+        return {
+            k: _remove_none(v)
+            for k, v in value.items()
+            if v is not None
         }
+    if isinstance(value, list):
+        return [_remove_none(v) for v in value if v is not None]
+    return value
 
-    ident = data.get('identificacion', {})
-    if venta.get('numero_control'):
-        ident['numeroControl'] = venta['numero_control']
-    if venta.get('codigo_generacion'):
-        ident['codigoGeneracion'] = venta['codigo_generacion']
-    if venta.get('fecha'):
+
+def _validate_identificacion(identificacion: dict) -> None:
+    """Ensure ``identificacion`` has mandatory fields."""
+    required = [
+        "ambiente",
+        "version",
+        "tipoDte",
+        "codigoGeneracion",
+        "numeroControl",
+    ]
+    if not isinstance(identificacion, dict):
+        raise ValueError("identificacion requerida")
+    for key in required:
+        if identificacion.get(key) in (None, ""):
+            raise ValueError(f"identificacion.{key} requerido")
+
+
+def _validate_parties(emisor: dict, receptor: dict) -> None:
+    """Validate presence of parties and their addresses."""
+    if not isinstance(emisor, dict) or not emisor:
+        raise ValueError("emisor requerido")
+    direccion_emi = emisor.get("direccion")
+    if not isinstance(direccion_emi, dict):
+        raise ValueError("emisor.direccion requerido")
+    if not direccion_emi.get("departamento") or not direccion_emi.get("municipio"):
+        raise ValueError("emisor.direccion incompleta")
+
+    if not isinstance(receptor, dict):
+        raise ValueError("receptor requerido")
+    direccion_rec = receptor.get("direccion")
+    if direccion_rec:
+        if not direccion_rec.get("departamento") or not direccion_rec.get("municipio"):
+            raise ValueError("receptor.direccion incompleta")
+
+
+def _validate_items(items: list) -> None:
+    if not isinstance(items, list) or not items:
+        raise ValueError("items requeridos")
+    for idx, item in enumerate(items, 1):
+        cantidad = item.get("cantidad")
         try:
-            ident['fecEmi'] = datetime.fromisoformat(venta['fecha']).strftime('%Y-%m-%d')
-        except ValueError:
-            ident['fecEmi'] = str(venta['fecha'])[:10]
-    ident.setdefault('version', 1)
-    ident.setdefault('ambiente', venta.get('ambiente', '00'))
-    ident.setdefault('tipoMoneda', 'USD')
-    if venta.get('tipo_operacion') is not None:
-        ident['tipoOperacion'] = venta['tipo_operacion']
-        ident['tipoModelo'] = 2 if venta['tipo_operacion'] == 2 else 1
-    if venta.get('tipo_contingencia') is not None:
-        ident['tipoContingencia'] = venta['tipo_contingencia']
-    if venta.get('motivo_contin') is not None:
-        ident['motivoContin'] = venta['motivo_contin']
-    data['identificacion'] = ident
+            cantidad_val = float(cantidad)
+        except (TypeError, ValueError):
+            raise ValueError(f"item {idx}: cantidad numerica requerida")
+        if cantidad_val <= 0:
+            raise ValueError(f"item {idx}: cantidad>0 requerido")
 
-    rec = data.get('receptor', {})
-    if cliente:
-        if cliente.get('nombre'):
-            rec['nombre'] = cliente['nombre']
-        if cliente.get('direccion'):
-            rec['direccion'] = cliente['direccion']
-        if cliente.get('nit'):
-            rec['nit'] = cliente['nit']
-    data['receptor'] = rec
+        precio = item.get("precioUnitario")
+        try:
+            float(precio)
+        except (TypeError, ValueError):
+            raise ValueError(f"item {idx}: precioUnitario numerico requerido")
 
+        tributos = item.get("tributos")
+        if tributos is not None and not tributos:
+            raise ValueError(f"item {idx}: tributos vacio")
+        if tributos:
+            for t in tributos:
+                if t.get("monto") is None:
+                    raise ValueError(f"item {idx}: tributo.monto requerido")
+                try:
+                    float(t.get("monto"))
+                except (TypeError, ValueError):
+                    raise ValueError(f"item {idx}: tributo.monto numerico requerido")
+
+
+def _map_items(items: list) -> list:
     cuerpo = []
-    for idx, det in enumerate(detalles or [], 1):
-        cuerpo.append({
-            'numItem': idx,
-            'descripcion': det.get('descripcion'),
-            'cantidad': det.get('cantidad'),
-            'precioUni': det.get('precio_unitario'),
-        })
-    data['cuerpoDocumento'] = cuerpo
+    for idx, src in enumerate(items, 1):
+        cantidad = round(float(src.get("cantidad", 0)), 2)
+        precio = round(float(src.get("precioUnitario", 0)), 2)
+        mapped = {
+            "numItem": idx,
+            "descripcion": src.get("descripcion"),
+            "cantidad": cantidad,
+            "precioUnitario": precio,
+            "montoTotal": round(cantidad * precio, 2),
+        }
+        tributos = src.get("tributos") or []
+        if tributos:
+            mapped["tributos"] = []
+            for t in tributos:
+                codigo = str(t.get("codigo") or TRIBUTO_IVA)
+                monto = round(float(t.get("monto", 0)), 2)
+                mapped["tributos"].append(
+                    {
+                        "codigo": codigo,
+                        "monto": monto,
+                        "descripcion": t.get("descripcion"),
+                    }
+                )
+        cuerpo.append(_remove_none(mapped))
+    return cuerpo
 
-    resumen = data.get('resumen', {})
-    if venta.get('total') is not None:
-        resumen['totalPagar'] = venta['total']
-    if venta.get('subtotal') is not None:
-        resumen['subTotalVentas'] = venta['subtotal']
-        resumen['subTotal'] = venta['subtotal']
-    if venta.get('total_letras'):
-        resumen['totalLetras'] = venta['total_letras']
-    data['resumen'] = resumen
 
-    # Normalise emisor address codes if present
-    emisor = data.get('emisor')
-    if isinstance(emisor, dict):
-        dir_emi = emisor.get('direccion')
-        if isinstance(dir_emi, dict):
-            dep = dir_emi.get('departamento')
-            dir_emi['departamento'] = _map_departamento(dep)
-            dir_emi['municipio'] = _map_municipio(
-                dir_emi.get('municipio'), dep
+def _make_resumen(cuerpo: list, extras: dict | None = None) -> dict:
+    subtotal = sum(float(item.get("montoTotal", 0)) for item in cuerpo)
+    tributos_totales = {}
+    for item in cuerpo:
+        for t in item.get("tributos", []):
+            codigo = str(t.get("codigo") or TRIBUTO_IVA)
+            tributos_totales[codigo] = tributos_totales.get(codigo, 0) + float(
+                t.get("monto", 0)
             )
-            emisor['direccion'] = dir_emi
-        data['emisor'] = emisor
+    tributos_list = [
+        {"codigo": c, "monto": round(m, 2)} for c, m in tributos_totales.items()
+    ]
+    total_tributos = sum(t["monto"] for t in tributos_list)
+    total_pagar = round(subtotal + total_tributos, 2)
+    resumen = {
+        "subTotalVentas": round(subtotal, 2),
+        "totalPagar": total_pagar,
+    }
+    if tributos_list:
+        resumen["tributos"] = tributos_list
+    if extras:
+        resumen.update({k: v for k, v in extras.items() if v is not None})
 
-    return data
+    calc_total = round(
+        resumen.get("subTotalVentas", 0)
+        + sum(t.get("monto", 0) for t in resumen.get("tributos", [])),
+        2,
+    )
+    if calc_total != round(resumen.get("totalPagar", 0), 2):
+        raise ValueError("Totales incoherentes")
+    return resumen
+
+
+def build_invoice_json(*, identificacion, emisor, receptor, items, extras=None):
+    """Return a validated invoice ready for signing."""
+    _validate_identificacion(identificacion)
+    _validate_parties(emisor, receptor)
+    _validate_items(items)
+
+    cuerpo = _map_items(items)
+    extras = extras or {}
+    resumen = _make_resumen(cuerpo, extras.get("resumen"))
+
+    dte = {
+        "identificacion": identificacion,
+        "emisor": emisor,
+        "receptor": receptor,
+        "cuerpoDocumento": cuerpo,
+        "resumen": resumen,
+    }
+    if extras.get("documentoRelacionado"):
+        dte["documentoRelacionado"] = extras["documentoRelacionado"]
+    return _remove_none(dte)
 
 
 def list_documents(root=None):

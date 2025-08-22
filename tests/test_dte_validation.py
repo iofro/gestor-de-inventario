@@ -416,3 +416,18 @@ def test_fecha_hora_format(dte_metadata_factory, db_fixture):
     dte["identificacion"]["horEmi"] = "25:00:00"
     with pytest.raises(ValueError):
         validate_dte_json(dte, db=db_fixture)
+
+
+def test_validate_allows_envelope(db_fixture):
+    """Un sobre de recepción sin estructura completa de DTE es válido."""
+    sobre = {
+        "ambiente": "00",
+        "idEnvio": 1,
+        "version": 1,
+        "tipoDte": "01",
+        "codigoGeneracion": str(uuid.uuid4()).upper(),
+        "documento": "header.payload.signature",
+    }
+
+    # No debe lanzar ``ValueError`` aunque falten campos de un DTE tradicional
+    validate_dte_json(sobre, db=db_fixture)

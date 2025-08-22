@@ -171,19 +171,21 @@ def test_no_iva_en_items(dte_metadata_factory, db_fixture):
     item.pop("codTributo", None)
     validate_dte_json(dte, db=db_fixture)
     item = dte["cuerpoDocumento"][0]
-    assert item["tributos"] == []
-    assert "codTributo" not in item
+    assert item["tributos"] is None
+    assert item["codTributo"] is None
 
 
-def test_rechaza_iva_en_items(dte_metadata_factory, db_fixture):
+def test_iva_en_items_se_normaliza(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     dte["cuerpoDocumento"][0]["codTributo"] = TRIBUTO_IVA
-    with pytest.raises(ValueError):
-        validate_dte_json(dte, db=db_fixture)
+    validate_dte_json(dte, db=db_fixture)
+    item = dte["cuerpoDocumento"][0]
+    assert item["tributos"] is None and item["codTributo"] is None
     dte = dte_metadata_factory()
     dte["cuerpoDocumento"][0]["tributos"] = [TRIBUTO_IVA]
-    with pytest.raises(ValueError):
-        validate_dte_json(dte, db=db_fixture)
+    validate_dte_json(dte, db=db_fixture)
+    item = dte["cuerpoDocumento"][0]
+    assert item["tributos"] is None and item["codTributo"] is None
 
 
 def test_tributos_invalidos_rechazados(dte_metadata_factory, db_fixture):

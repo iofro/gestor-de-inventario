@@ -1086,127 +1086,73 @@ def recalcular_totales(
     configuración global.
     """
 
-    # IVA-FIX BEGIN
     extra_conf = data.get("extra") or {}
     precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
-
+    tipo_dte = str(data.get("identificacion", {}).get("tipoDte", ""))
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
     iva_total = D("0")
     venta_gravada_sum = D("0")
-    total_no_suj_sum = D("0")
-    total_exenta_sum = D("0")
-    total_no_gravado_sum = D("0")  # Σ noGravado por ítem
-
     for item in cuerpo:
         cant = D(str(item.get("cantidad") or 0))
         precio = D(str(item.get("precioUni") or 0))
         monto_descu = D(str(item.get("montoDescu") or 0))
-
-        trib_raw = item.get("tributos") or []
-        if isinstance(trib_raw, str):
-            tributos = [trib_raw]
+        linea = money(cant * precio - monto_descu)
+        if linea < 0:
+            linea = money(0)
+        if precios_flag:
+            base = money(linea / D("1.13"))
+            iva_val = money(linea - base)
         else:
-            tributos = list(trib_raw)
-            tributos = [str(t).upper() for t in tributos if t]
-            cod_tributo = item.get("codTributo")
-            if cod_tributo is not None:
-                cod_tributo = str(cod_tributo).upper()
-
-            invalid = [
-                t
-                for t in tributos
-                if t not in TRIBUTOS_PERMITIDOS_ITEM and t != TRIBUTO_IVA
-            ]
-            if cod_tributo and cod_tributo not in TRIBUTOS_PERMITIDOS_ITEM and cod_tributo != TRIBUTO_IVA:
-                invalid.append(cod_tributo)
-            if invalid:
-                raise ValueError(
-                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
-                )
-
-        linea_total = money(cant * precio - monto_descu)
-        if linea_total < 0:
-            linea_total = money(0)
-        gravado = D(str(item.get("ventaGravada") or 0)) > 0
-
-        if precios_flag and gravado:
-            base = money(linea_total / D("1.13"))
-            iva_val = money(linea_total - base)
-        else:
-            base = money(linea_total)
-            iva_val = money(base * D("0.13")) if gravado else D("0")
-
-        if gravado:
-            item["ventaGravada"] = base
-            item["ventaExenta"] = money(0)
-            item["ventaNoSuj"] = money(0)
-        else:
-            item["ventaGravada"] = money(0)  # preserva ventaExenta/ventaNoSuj si existen
+            base = linea
+            iva_val = money(base * D("0.13"))
+        item["ventaGravada"] = base
         item["ivaItem"] = iva_val
+        item["ventaExenta"] = money(0)
+        item["ventaNoSuj"] = money(0)
+        item["noGravado"] = money(0)
         if "montoIva" in item:
             item["montoIva"] = iva_val
-
+        if tipo_dte == "01":
+            item["codTributo"] = None
+            item["tributos"] = None
+        else:
+            if base > 0:
+                item["codTributo"] = TRIBUTO_IVA
+                item["tributos"] = [TRIBUTO_IVA]
+            else:
+                item["codTributo"] = None
+                item["tributos"] = []
         iva_total += iva_val
-        if gravado:
-            venta_gravada_sum += base
-        total_no_suj_sum += D(str(item.get("ventaNoSuj") or 0))
-        total_exenta_sum += D(str(item.get("ventaExenta") or 0))
-        total_no_gravado_sum += D(str(item.get("noGravado") or 0))
-    # IVA-FIX END
+        venta_gravada_sum += base
 
-    # IVA-FIX BEGIN
     venta_gravada_sum = money(venta_gravada_sum)
-    total_no_suj_sum = money(total_no_suj_sum)
-    total_exenta_sum = money(total_exenta_sum)
-    total_no_gravado_sum = money(total_no_gravado_sum)
     total_iva_sum = money(iva_total)
-    iva_ref = money(venta_gravada_sum * D("0.13"))
-    if venta_gravada_sum > D("0"):
-        diff = iva_ref - total_iva_sum
-        if abs(diff) <= D("0.01"):
-            total_iva_sum = iva_ref
-            if diff != D("0"):
-                for item in reversed(cuerpo):
-                    if D(str(item.get("ventaGravada") or 0)) > 0:
-                        nuevo = money(D(str(item.get("ivaItem") or 0)) + diff)
-                        item["ivaItem"] = nuevo
-                        if "montoIva" in item:
-                            item["montoIva"] = nuevo
-                        break
-    else:
-        total_iva_sum = money(0)
-
-    sub_total_ventas = money(total_no_suj_sum + total_exenta_sum + venta_gravada_sum)
-    descu_no_suj = money(resumen.get("descuNoSuj", 0))
-    descu_exenta = money(resumen.get("descuExenta", 0))
-    descu_gravada = money(resumen.get("descuGravada", 0))
-    total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
-    sub_total = money(sub_total_ventas - total_descu)
-    monto_total_operacion = money(sub_total + total_no_gravado_sum + total_iva_sum)
+    sub_total = venta_gravada_sum
+    monto_total_operacion = money(sub_total + total_iva_sum)
     total_pagar = monto_total_operacion
     total_letras = numero_a_letras(total_pagar)
 
-    esperado_num = {
-        "totalNoSuj": total_no_suj_sum,
-        "totalExenta": total_exenta_sum,
-        "totalGravada": venta_gravada_sum,
-        "subTotalVentas": sub_total_ventas,
-        "descuNoSuj": descu_no_suj,
-        "descuExenta": descu_exenta,
-        "descuGravada": descu_gravada,
-        "totalDescu": total_descu,
+    esperado = {
+        "totalNoSuj": money(0),
+        "totalExenta": money(0),
+        "totalGravada": sub_total,
+        "subTotalVentas": sub_total,
+        "descuNoSuj": money(0),
+        "descuExenta": money(0),
+        "descuGravada": money(0),
+        "totalDescu": money(0),
         "subTotal": sub_total,
-        "totalNoGravado": total_no_gravado_sum,
+        "totalNoGravado": money(0),
         "totalIva": total_iva_sum,
         "montoTotalOperacion": monto_total_operacion,
         "totalPagar": total_pagar,
     }
 
     modificados: list[str] = []
-    for k, v in esperado_num.items():
-        if k in resumen and money(D(str(resumen.get(k, 0)))) == money(v):
+    for k, v in esperado.items():
+        if k in resumen and money(D(str(resumen.get(k, 0)))) == v:
             continue
         resumen[k] = v
         modificados.append(k)
@@ -1215,25 +1161,24 @@ def recalcular_totales(
         resumen["totalLetras"] = total_letras
         modificados.append("totalLetras")
 
-    tipo_dte = str(data.get("identificacion", {}).get("tipoDte", ""))
-    if venta_gravada_sum > D("0") and tipo_dte != "01":
-        trib = [
-            {
-                "codigo": TRIBUTO_IVA,
-                "descripcion": "Impuesto al Valor Agregado 13%",
-                "valor": total_iva_sum,
-            }
-        ]
-        if resumen.get("tributos") != trib:
-            resumen["tributos"] = trib
+    if tipo_dte == "01":
+        if resumen.get("tributos") is not None:
+            resumen["tributos"] = None
             modificados.append("tributos")
     else:
-        if tipo_dte == "01":
-            if resumen.get("tributos") is not None:
-                resumen["tributos"] = None
+        if sub_total > D("0"):
+            trib = [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": "Impuesto al Valor Agregado 13%",
+                    "valor": total_iva_sum,
+                }
+            ]
+            if resumen.get("tributos") != trib:
+                resumen["tributos"] = trib
                 modificados.append("tributos")
-        elif "tributos" in resumen:
-            del resumen["tributos"]
+        elif resumen.get("tributos") is not None:
+            resumen["tributos"] = None
             modificados.append("tributos")
 
     data["resumen"] = resumen

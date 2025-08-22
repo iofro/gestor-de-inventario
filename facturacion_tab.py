@@ -150,7 +150,6 @@ class FacturacionTab(QWidget):
         left_layout.addWidget(self.table)
 
         btns = QHBoxLayout()
-        self.btn_ticket = QPushButton("Generar ticket virtual")
         self.btn_credito = QPushButton("Nota de crédito")
         self.btn_debito = QPushButton("Nota de débito")
         self.btn_estado = QPushButton("Estado")
@@ -161,7 +160,6 @@ class FacturacionTab(QWidget):
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;"
         )
-        btns.addWidget(self.btn_ticket)
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
@@ -191,7 +189,6 @@ class FacturacionTab(QWidget):
         self.table.itemSelectionChanged.connect(self.show_invoice)
         self.table.itemSelectionChanged.connect(self._update_send_btn)
         
-        self.btn_ticket.clicked.connect(self.create_ticket)
         self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)

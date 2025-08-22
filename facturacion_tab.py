@@ -119,7 +119,12 @@ class FacturacionTab(QWidget):
         filter_layout.addWidget(self.vendedor_filter)
 
         self.tipo_filter = QComboBox()
-        self.tipo_filter.addItems(["Todos", "Consumidor final", "Crédito fiscal", "Ticket"])
+        self.tipo_filter.addItems([
+            "Todos",
+            "Consumidor final",
+            "Crédito fiscal",
+            "Nota de débito",
+        ])
         filter_layout.addWidget(self.tipo_filter)
 
         self.date_filter_cb = QCheckBox("Filtrar por fecha")
@@ -281,19 +286,15 @@ class FacturacionTab(QWidget):
         self.load_invoices()
 
     def load_invoices(self):
-        clientes = {c["id"]: c["nombre"] for c in self.manager._clientes}
         search = self.search_bar.text().lower() if hasattr(self, "search_bar") else ""
         if self.date_filter_cb.isChecked():
             d_from = self.date_from.date().toPyDate()
             d_to = self.date_to.date().toPyDate()
         else:
             d_from = d_to = None
-        cli_id = self.client_filter.currentData()
-        vend_id = self.vendedor_filter.currentData()
         tipo = self.tipo_filter.currentText()
 
-        rows = self._get_invoices_from_db()
-        rows.extend(self._get_tickets_from_db())
+        rows = self._scan_documents()
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
@@ -303,23 +304,15 @@ class FacturacionTab(QWidget):
                 if d_to and fdate and fdate > d_to:
                     rows.remove(r)
                     continue
-            if cli_id and r.get("cliente_id") != cli_id:
+            if tipo != "Todos" and r.get("tipo") != tipo:
                 rows.remove(r)
                 continue
-            if vend_id and r.get("vendedor_id") != vend_id:
-                rows.remove(r)
-                continue
-            cliente = clientes.get(r.get("cliente_id"), "")
-            if search and search not in str(r.get("id", "")).lower() and search not in cliente.lower():
+            cliente = r.get("cliente", "")
+            if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
 
-        rows.extend(self._find_orphan_documents())
-
-        # Sort invoices, placing sales and tickets first, orphan documents at
-        # the end, and ordering by date descending with undated entries last
         rows.sort(
             key=lambda r: (
-                r.get("row_type") == "orphan",
                 r.get("_parsed_fecha") is None,
                 -(r.get("_parsed_fecha").toordinal() if r.get("_parsed_fecha") else 0),
             )
@@ -327,19 +320,15 @@ class FacturacionTab(QWidget):
 
         self.table.setRowCount(len(rows))
         for row, v in enumerate(rows):
-            if v.get("row_type") in ("venta", "ticket"):
-                self.table.setItem(row, 0, QTableWidgetItem(str(v.get("id"))))
-                self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
-                self.table.setItem(row, 2, QTableWidgetItem(clientes.get(v.get("cliente_id"), "")))
-                total = v.get('total') or 0
+            self.table.setItem(row, 0, QTableWidgetItem(v.get("name", "")))
+            self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
+            self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
+            total = v.get("total")
+            if isinstance(total, (int, float)):
                 self.table.setItem(row, 3, QTableWidgetItem(f"${total:.2f}"))
-                self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
             else:
-                self.table.setItem(row, 0, QTableWidgetItem(v.get("name", "")))
-                self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
-                self.table.setItem(row, 2, QTableWidgetItem(""))
                 self.table.setItem(row, 3, QTableWidgetItem(""))
-                self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
+            self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
             for col in range(5):
                 item = self.table.item(row, col)
                 if item:
@@ -348,144 +337,75 @@ class FacturacionTab(QWidget):
             self.table.selectRow(0)
         self._update_send_btn()
 
-    def _find_orphan_documents(self):
-        db_pdfs = set(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM facturas_pdf"))
-        db_pdfs.update(r["ruta"] for r in self.manager.db.cursor.execute("SELECT ruta FROM tickets_pdf"))
-        db_bases = {os.path.splitext(os.path.basename(p))[0] for p in db_pdfs}
+    def _scan_documents(self):
         result = []
-        folders = [CF_DIR, CREDITO_DIR, TICKETS_DIR] + ADDITIONAL_DIRS
+        folders = [CF_DIR, CREDITO_DIR, NOTAS_DEBITO_DIR] + ADDITIONAL_DIRS
         files = {}
         for folder in folders:
             if not os.path.isdir(folder):
                 continue
+            if folder == CF_DIR or "consumidor_final" in folder:
+                tipo = "Consumidor final"
+            elif folder == CREDITO_DIR or "credito_fiscal" in folder:
+                tipo = "Crédito fiscal"
+            elif folder == NOTAS_DEBITO_DIR or "notas_debito" in folder:
+                tipo = "Nota de débito"
+            else:
+                tipo = None
             for root, _dirs, fnames in os.walk(folder):
                 for fname in fnames:
                     base, ext = os.path.splitext(fname)
-                    if ext.lower() not in ('.pdf', '.json'):
+                    if ext.lower() not in (".pdf", ".json"):
                         continue
                     if not DOC_PATTERN.match(base):
                         continue
-                    entry = files.setdefault(base, {})
-                    # prefer existing paths to keep deterministic order
+                    entry = files.setdefault(base, {"tipo": tipo})
                     entry.setdefault(ext.lower(), os.path.join(root, fname))
+                    entry.setdefault("tipo", tipo or entry.get("tipo"))
 
         for base, paths in files.items():
-            pdf = paths.get('.pdf')
-            js = paths.get('.json')
-            if pdf and pdf in db_pdfs:
-                continue
-            if base in db_bases:
-                continue
-            mtime = None
-            if pdf and os.path.exists(pdf):
-                mtime = os.path.getmtime(pdf)
-            elif js and os.path.exists(js):
-                mtime = os.path.getmtime(js)
-            fecha = datetime.fromtimestamp(mtime).strftime('%Y-%m-%d') if mtime else ''
-            estado = 'Sin venta'
-            if not pdf or not js:
-                estado = 'Incompleta'
-            else:
-                try:
-                    with open(js, 'r', encoding='utf-8') as fh:
-                        json.load(fh)
-                except Exception:
-                    estado = 'Incompleta'
-            result.append({
-                'row_type': 'orphan',
-                'name': base,
-                'pdf': pdf,
-                'json': js,
-                'fecha': fecha,
-                '_parsed_fecha': datetime.fromtimestamp(mtime).date() if mtime else None,
-                'estado': estado,
-            })
-        return result
-
-    def _get_invoices_from_db(self):
-        ventas = {v["id"]: v for v in self.manager.db.get_ventas()}
-        clientes = {c["id"]: c.get("nombre", "") for c in self.manager._clientes}
-        result = []
-        for row in self.manager.db.cursor.execute("SELECT venta_id, ruta FROM facturas_pdf"):
-            venta_id = row["venta_id"]
-            venta = ventas.get(venta_id)
-            pdf = row["ruta"]
-            js = os.path.splitext(pdf)[0] + ".json"
-
-            # Remove stale DB records if both files are missing
-            if not os.path.exists(pdf) and not os.path.exists(js):
-                self.manager.db.delete_factura_pdf(venta_id)
-                continue
-
-            estado = venta.get("estado", "") if venta else "Sin venta"
-            if not os.path.exists(pdf) or not os.path.exists(js):
-                estado = "Incompleta"
-            else:
-                try:
-                    with open(js, 'r', encoding='utf-8') as fh:
-                        json.load(fh)
-                except Exception:
-                    estado = "Incompleta"
-            fecha = venta.get("fecha", "") if venta else ''
-            try:
-                fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date() if fecha else None
-            except Exception:
-                fdate = None
-            result.append({
-                'row_type': 'venta',
-                'id': row['venta_id'],
-                'pdf': pdf,
-                'json': js if os.path.exists(js) else None,
-                'fecha': fecha,
-                '_parsed_fecha': fdate,
-                'cliente_id': venta.get('cliente_id') if venta else None,
-                'vendedor_id': venta.get('vendedor_id') if venta else None,
-                'total': venta.get('total') if venta else None,
-                'estado': estado,
-            })
-        return result
-
-    def _get_tickets_from_db(self):
-        ventas = {v["id"]: v for v in self.manager.db.get_ventas()}
-        clientes = {c["id"]: c.get("nombre", "") for c in self.manager._clientes}
-        result = []
-        for row in self.manager.db.cursor.execute("SELECT venta_id, ruta FROM tickets_pdf"):
-            venta_id = row["venta_id"]
-            venta = ventas.get(venta_id)
-            pdf = row["ruta"]
-            js = os.path.splitext(pdf)[0] + ".json"
-
-            if not os.path.exists(pdf) and not os.path.exists(js):
-                self.manager.db.delete_ticket_pdf(venta_id)
-                continue
-
-            estado = venta.get("estado", "") if venta else "Sin venta"
-            if not os.path.exists(pdf) or not os.path.exists(js):
-                estado = "Incompleta"
-            else:
+            pdf = paths.get(".pdf")
+            js = paths.get(".json")
+            tipo = paths.get("tipo")
+            estado = "Completa" if pdf and js else "Incompleta"
+            numero = base
+            fecha = ""
+            cliente = ""
+            total = None
+            fdate = None
+            if js and os.path.exists(js):
                 try:
                     with open(js, "r", encoding="utf-8") as fh:
-                        json.load(fh)
+                        data = json.load(fh)
+                    numero = (
+                        data.get("identificacion", {}).get("numeroControl", numero)
+                    )
+                    fecha = data.get("identificacion", {}).get("fecEmi", "")
+                    cliente = data.get("receptor", {}).get("nombre", "")
+                    total = data.get("resumen", {}).get("totalPagar")
+                    if fecha:
+                        try:
+                            fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                        except Exception:
+                            fdate = None
                 except Exception:
                     estado = "Incompleta"
-            fecha = venta.get("fecha", "") if venta else ""
-            try:
-                fdate = datetime.strptime(fecha.split()[0], "%Y-%m-%d").date() if fecha else None
-            except Exception:
-                fdate = None
-            result.append({
-                "row_type": "ticket",
-                "id": row["venta_id"],
-                "pdf": pdf,
-                "json": js if os.path.exists(js) else None,
-                "fecha": fecha,
-                "_parsed_fecha": fdate,
-                "cliente_id": venta.get("cliente_id") if venta else None,
-                "vendedor_id": venta.get("vendedor_id") if venta else None,
-                "total": venta.get("total") if venta else None,
-                "estado": estado,
-            })
+            result.append(
+                {
+                    "row_type": "orphan",
+                    "name": numero,
+                    "pdf": pdf,
+                    "json": js,
+                    "fecha": fecha,
+                    "_parsed_fecha": fdate,
+                    "estado": estado,
+                    "cliente": cliente,
+                    "total": total,
+                    "tipo": tipo,
+                }
+            )
         return result
+
 
     def _selected_entry(self):
         selected_rows = self.table.selectionModel().selectedRows()

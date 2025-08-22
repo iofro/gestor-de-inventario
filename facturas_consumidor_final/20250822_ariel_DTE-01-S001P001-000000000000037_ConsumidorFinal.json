@@ -3,23 +3,23 @@
   "cuerpoDocumento": [
     {
       "cantidad": 1.0,
-      "codTributo": "19",
+      "codTributo": "20",
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 9",
-      "ivaItem": 1.73,
+      "descripcion": "Producto Demo 5",
+      "ivaItem": 1.26,
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": "NA",
-      "precioUni": 13.27,
+      "precioUni": 9.73,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
-        "19"
+        "20"
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 13.27,
+      "ventaGravada": 9.73,
       "ventaNoSuj": 0.0
     }
   ],
@@ -47,11 +47,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "490E0C5C-3A0B-4415-AC71-94560E11FC7F",
+    "codigoGeneracion": "D5DF6251-F47B-4BC7-B8EC-E5E4E10C65A1",
     "fecEmi": "2025-08-22",
-    "horEmi": "01:42:19",
+    "horEmi": "02:11:14",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000035",
+    "numeroControl": "DTE-01-S001P001-000000000000037",
     "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,
@@ -81,12 +81,12 @@
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 15.0,
+    "montoTotalOperacion": 10.99,
     "numPagoElectronico": null,
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 15.0,
+        "montoPago": 10.99,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -95,21 +95,21 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 13.27,
-    "subTotalVentas": 13.27,
+    "subTotal": 9.73,
+    "subTotalVentas": 9.73,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 13.27,
-    "totalIva": 1.73,
-    "totalLetras": "QUINCE CON 00/100 DÓLARES",
+    "totalGravada": 9.73,
+    "totalIva": 1.26,
+    "totalLetras": "DIEZ CON 99/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 15.0,
+    "totalPagar": 10.99,
     "tributos": [
       {
-        "codigo": "19",
+        "codigo": "20",
         "descripcion": "IVA 13%",
-        "valor": 1.73
+        "valor": 1.26
       }
     ]
   },

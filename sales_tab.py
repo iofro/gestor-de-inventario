@@ -128,11 +128,8 @@ class SalesTab(QWidget):
 
         btn_layout = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar factura")
-        self.btn_enviar = QPushButton("Solo enviar por correo")
         btn_layout.addWidget(self.btn_guardar)
-        btn_layout.addWidget(self.btn_enviar)
         self.btn_guardar.clicked.connect(self.save_invoice)
-        self.btn_enviar.clicked.connect(self.send_email)
         preview_layout.addLayout(btn_layout)
 
         preview_widget = QWidget()
@@ -145,13 +142,10 @@ class SalesTab(QWidget):
         self.email_label = QLabel("Correo destinatario: ")
         self.email_subject_edit = QLineEdit()
         self.email_body_edit = QTextEdit()
-        self.retry_btn = QPushButton("Reintentar envío")
         self.config_email_btn = QPushButton("Configurar correo")
         self.email_subject_edit.textChanged.connect(lambda t: setattr(self, "email_subject", t))
         self.email_body_edit.textChanged.connect(lambda: setattr(self, "email_body", self.email_body_edit.toPlainText()))
-        self.retry_btn.clicked.connect(self.send_email)
         self.config_email_btn.clicked.connect(self.configure_email)
-        self.retry_btn.setEnabled(False)
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.gen_label)
         status_layout.addWidget(self.sent_label)
@@ -160,10 +154,7 @@ class SalesTab(QWidget):
         status_layout.addWidget(self.email_subject_edit)
         status_layout.addWidget(QLabel("Mensaje:"))
         status_layout.addWidget(self.email_body_edit)
-        btns_layout = QHBoxLayout()
-        btns_layout.addWidget(self.retry_btn)
-        btns_layout.addWidget(self.config_email_btn)
-        status_layout.addLayout(btns_layout)
+        status_layout.addWidget(self.config_email_btn)
         status_widget = QWidget()
         status_widget.setLayout(status_layout)
 
@@ -609,14 +600,14 @@ class SalesTab(QWidget):
     def send_email(self):
         """Send the selected document via email in a background thread."""
         if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(self, "Solo enviar por correo", "No has seleccionado ninguna venta.")
+            QMessageBox.warning(self, "Enviar por correo", "No has seleccionado ninguna venta.")
             return
 
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
         venta = self.manager.db.get_venta_by_id(venta_id)
         if not venta or int(venta.get("id", 0)) != venta_id:
-            QMessageBox.warning(self, "Solo enviar por correo", "No se encontró la venta seleccionada.")
+            QMessageBox.warning(self, "Enviar por correo", "No se encontró la venta seleccionada.")
             return
 
         cliente_email = ""
@@ -625,7 +616,7 @@ class SalesTab(QWidget):
             if cli:
                 cliente_email = cli.get("email", "")
         if not cliente_email:
-            QMessageBox.warning(self, "Solo enviar por correo", "El cliente no tiene correo registrado.")
+            QMessageBox.warning(self, "Enviar por correo", "El cliente no tiene correo registrado.")
             return
 
         dte_meta = {
@@ -645,7 +636,7 @@ class SalesTab(QWidget):
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_ticket_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
-            QMessageBox.warning(self, "Solo enviar por correo", "No se pudo generar el documento.")
+            QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el documento.")
             return
         json_path = os.path.splitext(pdf_path)[0] + ".json"
         if not os.path.exists(json_path):
@@ -655,7 +646,7 @@ class SalesTab(QWidget):
                 pdf_path = self._generate_invoice_pdf(venta_id)
             json_path = os.path.splitext(pdf_path)[0] + ".json"
             if not os.path.exists(json_path):
-                QMessageBox.warning(self, "Solo enviar por correo", "No se encontró el JSON firmado.")
+                QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON firmado.")
                 return
 
         creds = self._check_smtp_credentials()
@@ -674,8 +665,6 @@ class SalesTab(QWidget):
         )
 
         self.status_label.setText("Estado actual: Enviando...")
-        self.retry_btn.setEnabled(False)
-        self.btn_enviar.setEnabled(False)
 
         self.email_thread = EmailSender(
             server,
@@ -691,16 +680,13 @@ class SalesTab(QWidget):
         self.email_thread.start()
 
     def _on_email_sent(self, success, message):
-        self.btn_enviar.setEnabled(True)
         if success:
             self.status_label.setText("Estado actual: Enviado")
             self.sent_label.setText("Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M"))
-            QMessageBox.information(self, "Solo enviar por correo", message)
-            self.retry_btn.setEnabled(False)
+            QMessageBox.information(self, "Enviar por correo", message)
         else:
             self.status_label.setText("Estado actual: Error")
-            QMessageBox.critical(self, "Solo enviar por correo", message)
-            self.retry_btn.setEnabled(True)
+            QMessageBox.critical(self, "Enviar por correo", message)
         self.email_thread = None
 
 

@@ -3,7 +3,6 @@
   "cuerpoDocumento": [
     {
       "cantidad": "2.50000000",
-      "codTributo": "20",
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
       "montoDescu": "0E-8",
@@ -13,9 +12,7 @@
       "precioUni": "9.54000000",
       "psv": "0E-8",
       "tipoItem": 1,
-      "tributos": [
-        "20"
-      ],
+      "tributos": [],
       "uniMedida": 59,
       "ventaExenta": "0E-8",
       "ventaGravada": "23.85000000",
@@ -104,7 +101,13 @@
     "totalNoGravado": "0.00",
     "totalNoSuj": "0.00",
     "totalPagar": "26.95",
-    "tributos": null
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": "3.10"
+      }
+    ]
   },
   "ventaTercero": null
 }

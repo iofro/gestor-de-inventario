@@ -16,7 +16,12 @@ from utils.stable_json import stable_stringify, save_file
 import auth
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
-from utils.catalogos import TRIBUTO_IVA
+from utils.catalogos import (
+    TRIBUTO_IVA,
+    TRIBUTOS_PERMITIDOS_ITEM,
+    TRIBUTOS_PERMITIDOS_RESUMEN,
+    UNIDADES_MEDIDA_PERMITIDAS,
+)
 import logging
 import xml.etree.ElementTree as ET
 from utils.monto import monto_a_texto_sv
@@ -153,6 +158,17 @@ def money(value) -> D:
     Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
     """
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _precios_incluyen_iva_from(
+    extra: dict | None, override: bool | None = None
+) -> bool:
+    if isinstance(extra, dict) and "precios_incluyen_iva" in extra:
+        return bool(extra["precios_incluyen_iva"])
+    if override is not None:
+        return bool(override)
+    cfg = getattr(svfe_config, "PRECIOS_INCLUYEN_IVA", None)
+    return bool(cfg) if cfg is not None else False
 
 
 def _norm3(value) -> str:
@@ -860,7 +876,7 @@ def armar_tributos(tributos_raw, tipo_dte):
     # Los códigos válidos se obtienen tanto del catálogo local como del
     # esquema oficial del tipo de documento.  Esto permite extender el catálogo
     # sin depender de que el esquema se encuentre actualizado.
-    allowed = set(catalogos.TRIBUTOS.keys())
+    allowed = set(TRIBUTOS_PERMITIDOS_RESUMEN)
     schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
         allowed.update(
@@ -897,9 +913,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     fiscal = fiscal or {}
     extra = extra or {}
-    precios_incluyen_iva = tipo_dte == "01"
-    if "precios_incluyen_iva" in extra:
-        precios_incluyen_iva = bool(extra["precios_incluyen_iva"])
+    precios_incluyen_iva = _precios_incluyen_iva_from(extra)
 
     items_total = money(items_total)
     total_exenta = money(fiscal.get("ventas_exentas", 0))
@@ -966,10 +980,14 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     if total_gravada > D("0"):
         resumen["tributos"] = [
-            {"codigo": TRIBUTO_IVA, "descripcion": "IVA 13%", "valor": total_iva}
+            {
+                "codigo": TRIBUTO_IVA,
+                "descripcion": "Impuesto al Valor Agregado 13%",
+                "valor": total_iva,
+            }
         ]
     else:
-        resumen["tributos"] = None
+        resumen.pop("tributos", None)
         resumen["totalIva"] = money(0)
 
     if "pagos" in resumen:
@@ -1031,18 +1049,13 @@ def recalcular_totales(
     lugar.  Devuelve una lista con los nombres de los campos ajustados.
 
     ``precios_incluyen_iva`` indica si los precios de los ítems incluyen IVA.
-    Cuando se omite (``None``), el valor se infiere del ``tipoDte`` del payload,
-    asumiendo ``True`` para facturas de consumidor final ("01").
+    Cuando se omite (``None``), el valor se obtiene de ``extra`` o de la
+    configuración global.
     """
 
     # IVA-FIX BEGIN
-    ident = data.get("identificacion", {})
-    precios_flag = str(ident.get("tipoDte")) == "01"
     extra_conf = data.get("extra") or {}
-    if isinstance(extra_conf, dict) and "precios_incluyen_iva" in extra_conf:
-        precios_flag = bool(extra_conf["precios_incluyen_iva"])
-    if precios_incluyen_iva is not None:
-        precios_flag = precios_incluyen_iva
+    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
 
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
@@ -1057,13 +1070,31 @@ def recalcular_totales(
         cant = D(str(item.get("cantidad") or 0))
         precio = D(str(item.get("precioUni") or 0))
         monto_descu = D(str(item.get("montoDescu") or 0))
-        tributos = item.get("tributos") or []
+
+        trib_raw = item.get("tributos") or []
+        if isinstance(trib_raw, str):
+            tributos = [trib_raw]
+        else:
+            tributos = list(trib_raw)
+        tributos = [str(t).upper() for t in tributos if t]
         cod_tributo = item.get("codTributo")
+        if cod_tributo is not None:
+            cod_tributo = str(cod_tributo).upper()
+
+        if cod_tributo == TRIBUTO_IVA or TRIBUTO_IVA in tributos:
+            raise ValueError("IVA 13% solo debe declararse en el resumen")
+        invalid = [t for t in tributos if t not in TRIBUTOS_PERMITIDOS_ITEM]
+        if cod_tributo and cod_tributo not in TRIBUTOS_PERMITIDOS_ITEM:
+            invalid.append(cod_tributo)
+        if invalid:
+            raise ValueError(
+                f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+            )
 
         linea_total = money(cant * precio - monto_descu)
         if linea_total < 0:
             linea_total = money(0)
-        gravado = cod_tributo == TRIBUTO_IVA or TRIBUTO_IVA in tributos
+        gravado = D(str(item.get("ventaGravada") or 0)) > 0
 
         if precios_flag and gravado:
             base = money(linea_total / D("1.13"))
@@ -1103,9 +1134,7 @@ def recalcular_totales(
             total_iva_sum = iva_ref
             if diff != D("0"):
                 for item in reversed(cuerpo):
-                    tributos = item.get("tributos") or []
-                    cod_tributo = item.get("codTributo")
-                    if cod_tributo == TRIBUTO_IVA or TRIBUTO_IVA in tributos:
+                    if D(str(item.get("ventaGravada") or 0)) > 0:
                         nuevo = money(D(str(item.get("ivaItem") or 0)) + diff)
                         item["ivaItem"] = nuevo
                         if "montoIva" in item:
@@ -1152,7 +1181,13 @@ def recalcular_totales(
         modificados.append("totalLetras")
 
     if venta_gravada_sum > D("0"):
-        trib = [{"codigo": TRIBUTO_IVA, "descripcion": "IVA 13%", "valor": total_iva_sum}]
+        trib = [
+            {
+                "codigo": TRIBUTO_IVA,
+                "descripcion": "Impuesto al Valor Agregado 13%",
+                "valor": total_iva_sum,
+            }
+        ]
         if resumen.get("tributos") != trib:
             resumen["tributos"] = trib
             modificados.append("tributos")
@@ -1458,9 +1493,9 @@ def generar_dte_json(
     total_exenta_sum = D("0")
     total_no_suj_sum = D("0")
     total_no_gravado_sum = D("0")
-    precios_incluyen_iva = tipo_dte == "01"
-    if "precios_incluyen_iva" in extra:
-        precios_incluyen_iva = bool(extra["precios_incluyen_iva"])
+    precios_incluyen_iva = _precios_incluyen_iva_from(
+        extra, kwargs.get("precios_incluyen_iva")
+    )
     for idx, d in enumerate(detalles, 1):
         try:
             cant = d8(D(str(d.get("cantidad") or 0)))
@@ -1474,9 +1509,13 @@ def generar_dte_json(
             tipo_item = int(d.get("tipoItem", 1))
         except Exception:
             tipo_item = 1
+        if tipo_item not in (1, 2, 3, 4):
+            tipo_item = 1
         try:
             uni_medida = int(d.get("uniMedida", 59))
         except Exception:
+            uni_medida = 59
+        if uni_medida not in UNIDADES_MEDIDA_PERMITIDAS:
             uni_medida = 59
         monto_descu = d8(D(str(d.get("descuento") or 0)))
         if monto_descu < 0:
@@ -1504,6 +1543,19 @@ def generar_dte_json(
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
             pass
+        trib_code_raw = d.get("codTributo")
+        if not trib_code_raw:
+            raw = d.get("tributos")
+            if isinstance(raw, list) and raw:
+                trib_code_raw = raw[0]
+            elif isinstance(raw, str):
+                trib_code_raw = raw
+        trib_code = str(trib_code_raw).upper() if trib_code_raw else ""
+        if trib_code == TRIBUTO_IVA:
+            raise ValueError("El IVA 13% (20) no va por ítem; solo en resumen")
+        if trib_code and trib_code not in TRIBUTOS_PERMITIDOS_ITEM:
+            raise ValueError(f"Código de tributo inválido en ítem: {trib_code}")
+
         item_data = {
             "numItem": idx,
             "tipoItem": tipo_item,
@@ -1520,10 +1572,10 @@ def generar_dte_json(
             "psv": D("0"),
             "noGravado": D("0"),
             "ivaItem": iva_val,
-            "tributos": [TRIBUTO_IVA] if venta_gravada > 0 else [],
+            "tributos": [trib_code] if trib_code else [],
         }
-        if venta_gravada > 0:
-            item_data["codTributo"] = TRIBUTO_IVA
+        if trib_code:
+            item_data["codTributo"] = trib_code
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -1722,7 +1774,7 @@ def generar_dte_json(
     }
 
     validate_dte_json(result, db=db, precios_incluyen_iva=False)
-    return result
+    return sanitize_dte_payload(result)
 
 
 def validate_dte_json(
@@ -1841,12 +1893,7 @@ def validate_dte_json(
     payload["identificacion"] = ident
     tipo_dte = str(ident.get("tipoDte", ""))
     extra_conf = payload.get("extra")
-    if precios_incluyen_iva is not None:
-        precios_flag = precios_incluyen_iva
-    elif isinstance(extra_conf, dict) and "precios_incluyen_iva" in extra_conf:
-        precios_flag = bool(extra_conf["precios_incluyen_iva"])
-    else:
-        precios_flag = tipo_dte == "01"
+    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
 
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
@@ -2039,6 +2086,8 @@ def validate_dte_json(
 
         if item["tipoItem"] not in catalogos.TIPO_ITEM:
             raise ValueError("tipoItem inválido")
+        if item["uniMedida"] not in UNIDADES_MEDIDA_PERMITIDAS:
+            item["uniMedida"] = 59
 
         item["numeroDocumento"] = item.get("numeroDocumento") or "NA"
         item["codigo"] = item.get("codigo") or "SKU-NA"
@@ -2088,34 +2137,43 @@ def validate_dte_json(
 
         # --- Manejo y validación de tributos ---
         venta_gravada_val = D(str(item.get("ventaGravada") or 0))
-        allowed = set(catalogos.TRIBUTOS.keys())
-        if venta_gravada_val > 0:
-            tributos = item.get("tributos") or []
-            if isinstance(tributos, str):
-                tributos = [tributos]
-            tributos = [str(t).upper() for t in tributos if t]
-            if TRIBUTO_IVA not in tributos:
-                tributos.insert(0, TRIBUTO_IVA)
+        trib_raw = item.get("tributos") or []
+        if isinstance(trib_raw, str):
+            tributos = [trib_raw]
+        else:
+            tributos = list(trib_raw)
+        tributos = [str(t).upper() for t in tributos if t]
+        cod_tri = item.get("codTributo")
+        if cod_tri is not None:
+            cod_tri = str(cod_tri).upper()
+
+        if cod_tri == TRIBUTO_IVA or TRIBUTO_IVA in tributos:
+            raise ValueError("IVA 13% solo debe declararse en el resumen")
+        invalid = [t for t in tributos if t not in TRIBUTOS_PERMITIDOS_ITEM]
+        if cod_tri and cod_tri not in TRIBUTOS_PERMITIDOS_ITEM:
+            invalid.append(cod_tri)
+        if invalid:
+            raise ValueError(
+                f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+            )
+
+        if tributos:
             item["tributos"] = tributos
-            if "codTributo" in allowed_item_keys:
-                item["codTributo"] = TRIBUTO_IVA
+            if len(tributos) == 1:
+                item["codTributo"] = tributos[0]
             else:
                 item.pop("codTributo", None)
-            invalid = [t for t in tributos if t not in allowed]
-            if invalid:
-                raise ValueError(
-                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
-                )
-            if iva_key:
-                if precios_flag and item.get(iva_key) not in (None, 0, D("0")):
-                    item[iva_key] = d8(D(str(item.get(iva_key))))
-                else:
-                    item[iva_key] = d8(venta_gravada_val * D("0.13"))
         else:
             item["tributos"] = []
             item.pop("codTributo", None)
-            if iva_key:
-                item[iva_key] = cero
+
+        if iva_key:
+            if precios_flag and item.get(iva_key) not in (None, 0, D("0")):
+                item[iva_key] = d8(D(str(item.get(iva_key))))
+            else:
+                item[iva_key] = (
+                    d8(venta_gravada_val * D("0.13")) if venta_gravada_val > 0 else cero
+                )
 
         # Totales a 2 decimales y normalizar -0.00
         for k in ("ventaGravada", "ventaExenta", "ventaNoSuj", "psv", "noGravado"):
@@ -2344,7 +2402,7 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
         if isinstance(v, (int, float)):
             resumen[k] = -abs(v)
     data["resumen"] = resumen
-    return data
+    return sanitize_dte_payload(data)
 
 
 def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
@@ -2370,7 +2428,7 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
         "tipoDoc": tipo_doc,
         "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
     }
-    return data
+    return sanitize_dte_payload(data)
 
 
 def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
@@ -2396,7 +2454,7 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
         "tipoDoc": tipo_doc,
         "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
     }
-    return data
+    return sanitize_dte_payload(data)
 
 
 def _normalize_recepcion_url(raw: str) -> str:

@@ -94,6 +94,10 @@ class FacturacionTab(QWidget):
         self.manager = manager
         self.email_thread = None
         self._setup_ui()
+        # Clean up any stale invoice references before loading
+        # documents into the table. This prevents entries tied to
+        # deleted sales or missing files from showing as "Sin venta".
+        self._get_invoices_from_db()
         self.load_invoices()
 
     def _setup_ui(self):
@@ -278,6 +282,61 @@ class FacturacionTab(QWidget):
 
         self.client_filter.blockSignals(False)
         self.vendedor_filter.blockSignals(False)
+
+    def _get_invoices_from_db(self):
+        """Return invoice entries stored in the database.
+
+        Stale records whose sale no longer exists or whose PDF file is
+        missing are removed to keep the table tidy. The remaining rows
+        are returned as a list of dictionaries compatible with
+        ``load_invoices``.
+        """
+
+        cur = self.manager.db.cursor
+        cur.execute(
+            "SELECT id, venta_id, tipo, ruta, fecha_creacion FROM facturas_pdf"
+        )
+        records = cur.fetchall()
+        rows = []
+        to_delete = []
+        for rec in records:
+            venta = cur.execute(
+                """
+                SELECT v.id, v.fecha, v.total, v.estado, c.nombre AS cliente
+                FROM ventas v
+                LEFT JOIN clientes c ON c.id = v.cliente_id
+                WHERE v.id=?
+                """,
+                (rec["venta_id"],),
+            ).fetchone()
+            ruta = rec["ruta"]
+            if not venta or not ruta or not os.path.exists(ruta):
+                to_delete.append((rec["id"],))
+                continue
+            fecha = venta["fecha"] or ""
+            fdate = None
+            if fecha:
+                try:
+                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                except Exception:
+                    fdate = None
+            rows.append(
+                {
+                    "row_type": "venta",
+                    "id": venta["id"],
+                    "name": os.path.splitext(os.path.basename(ruta))[0],
+                    "fecha": fecha,
+                    "_parsed_fecha": fdate,
+                    "cliente": venta["cliente"] or "",
+                    "total": venta["total"],
+                    "estado": venta["estado"],
+                    "tipo": rec["tipo"],
+                }
+            )
+        if to_delete:
+            cur.executemany("DELETE FROM facturas_pdf WHERE id=?", to_delete)
+            self.manager.db.conn.commit()
+        return rows
 
     def refresh_and_reload(self):
         """Refresh manager data and reload invoices."""

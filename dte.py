@@ -1571,6 +1571,9 @@ def generar_dte_json(
             venta_gravada = d2(base)
             iva_val = d8(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
             line_total = venta_gravada + iva_val
+        if tipo_dte == "01":
+            precio = money(venta_gravada / cant)
+            line_total = money(venta_gravada + iva_val)
         items_total += line_total
         iva_total += iva_val
         try:

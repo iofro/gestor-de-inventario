@@ -16,6 +16,7 @@ from utils.stable_json import stable_stringify, save_file
 import auth
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
+from utils.catalogos import TRIBUTO_IVA
 import logging
 import xml.etree.ElementTree as ET
 from utils.monto import monto_a_texto_sv
@@ -965,7 +966,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     if total_gravada > D("0"):
         resumen["tributos"] = [
-            {"codigo": "19", "descripcion": "IVA 13%", "valor": total_iva}
+            {"codigo": TRIBUTO_IVA, "descripcion": "IVA 13%", "valor": total_iva}
         ]
     else:
         resumen["tributos"] = None
@@ -1062,7 +1063,7 @@ def recalcular_totales(
         linea_total = money(cant * precio - monto_descu)
         if linea_total < 0:
             linea_total = money(0)
-        gravado = cod_tributo == "19" or "19" in tributos
+        gravado = cod_tributo == TRIBUTO_IVA or TRIBUTO_IVA in tributos
 
         if precios_flag and gravado:
             base = money(linea_total / D("1.13"))
@@ -1104,7 +1105,7 @@ def recalcular_totales(
                 for item in reversed(cuerpo):
                     tributos = item.get("tributos") or []
                     cod_tributo = item.get("codTributo")
-                    if cod_tributo == "19" or "19" in tributos:
+                    if cod_tributo == TRIBUTO_IVA or TRIBUTO_IVA in tributos:
                         nuevo = money(D(str(item.get("ivaItem") or 0)) + diff)
                         item["ivaItem"] = nuevo
                         if "montoIva" in item:
@@ -1151,7 +1152,7 @@ def recalcular_totales(
         modificados.append("totalLetras")
 
     if venta_gravada_sum > D("0"):
-        trib = [{"codigo": "19", "descripcion": "IVA 13%", "valor": total_iva_sum}]
+        trib = [{"codigo": TRIBUTO_IVA, "descripcion": "IVA 13%", "valor": total_iva_sum}]
         if resumen.get("tributos") != trib:
             resumen["tributos"] = trib
             modificados.append("tributos")
@@ -1519,10 +1520,10 @@ def generar_dte_json(
             "psv": D("0"),
             "noGravado": D("0"),
             "ivaItem": iva_val,
-            "tributos": ["19"] if venta_gravada > 0 else [],
+            "tributos": [TRIBUTO_IVA] if venta_gravada > 0 else [],
         }
         if venta_gravada > 0:
-            item_data["codTributo"] = "19"
+            item_data["codTributo"] = TRIBUTO_IVA
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -2093,11 +2094,11 @@ def validate_dte_json(
             if isinstance(tributos, str):
                 tributos = [tributos]
             tributos = [str(t).upper() for t in tributos if t]
-            if "19" not in tributos:
-                tributos.insert(0, "19")
+            if TRIBUTO_IVA not in tributos:
+                tributos.insert(0, TRIBUTO_IVA)
             item["tributos"] = tributos
             if "codTributo" in allowed_item_keys:
-                item["codTributo"] = "19"
+                item["codTributo"] = TRIBUTO_IVA
             else:
                 item.pop("codTributo", None)
             invalid = [t for t in tributos if t not in allowed]

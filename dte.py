@@ -1087,8 +1087,16 @@ def recalcular_totales(
     """
 
     extra_conf = data.get("extra") or {}
-    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
     tipo_dte = str(data.get("identificacion", {}).get("tipoDte", ""))
+    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
+    if (
+        tipo_dte == "01"
+        and "precios_incluyen_iva" not in extra_conf
+        and precios_incluyen_iva is None
+    ):
+        precios_flag = True
+        extra_conf["precios_incluyen_iva"] = True
+        data["extra"] = extra_conf
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
@@ -1491,9 +1499,15 @@ def generar_dte_json(
     total_exenta_sum = D("0")
     total_no_suj_sum = D("0")
     total_no_gravado_sum = D("0")
-    precios_incluyen_iva = _precios_incluyen_iva_from(
-        extra, kwargs.get("precios_incluyen_iva")
-    )
+    override_precio_flag = kwargs.get("precios_incluyen_iva")
+    precios_incluyen_iva = _precios_incluyen_iva_from(extra, override_precio_flag)
+    if (
+        tipo_dte == "01"
+        and "precios_incluyen_iva" not in extra
+        and override_precio_flag is None
+    ):
+        precios_incluyen_iva = True
+        extra["precios_incluyen_iva"] = True
     for idx, d in enumerate(detalles, 1):
         try:
             cant = d8(D(str(d.get("cantidad") or 0)))

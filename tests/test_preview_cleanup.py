@@ -1,7 +1,6 @@
 import os
 import pytest
 
-import dte
 from sales_tab import SalesTab
 from utils import docs
 from utils.doc_generation import generate_invoice_pdf
@@ -11,7 +10,7 @@ class FakeDB:
         self._ventas = []
         self.detalles = {}
         self.pdfs = {}
-    def get_ventas(self, *args, **kwargs):
+    def get_ventas(self):
         return self._ventas
     def get_venta_credito_fiscal(self, vid):
         return None
@@ -51,34 +50,7 @@ def test_preview_keeps_pdfs(qt_app, tmp_path, monkeypatch):
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         return docs.get_document_paths(date, cliente, identifier, doc_type, root=tmp_path)
 
-    def fake_dte(db_, vid, **kwargs):
-        return {
-            "identificacion": {
-                "version": 1,
-                "tipoDte": "01",
-                "codigoGeneracion": f"CG{vid}",
-                "numeroControl": f"NC-{vid}",
-                "ambiente": "00",
-            },
-            "resumen": {"totalPagar": 5 * vid},
-            "cuerpoDocumento": [{"cantidad": vid, "precioUnitario": 5}],
-        }
-
-    def fake_sobre(token, data):
-        ident = data.get("identificacion", {})
-        return {
-            "ambiente": ident.get("ambiente", "00"),
-            "idEnvio": 1,
-            "version": ident.get("version", 1),
-            "tipoDte": ident.get("tipoDte", "01"),
-            "codigoGeneracion": ident.get("codigoGeneracion", "CG"),
-            "documento": token,
-        }
-
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
-    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_dte)
-    monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
-    monkeypatch.setattr(dte, "construir_sobre_recepcion", fake_sobre)
 
     tab = SalesTab(man, check_smtp=False)
 

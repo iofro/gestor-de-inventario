@@ -2558,40 +2558,28 @@ def _decode_jws_payload(token: str) -> dict:
 def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> dict:
     """Retorna el body listo para ``POST /fesv/recepciondte``.
 
-    Valida que ``documento`` sea una JWS compacta y que los metadatos
-    proporcionados en ``dte_data`` coincidan con los embebidos en el payload.
-    Cuando la validación falla se devuelve ``{"estado": "Error"}`` con el
-    detalle correspondiente.
+    Si ``documento`` parece un JWS se extraen los metadatos desde su payload.
+    Cuando no es un JWS válido o la decodificación falla, los metadatos se
+    obtienen de ``dte_data``.  Valida campos requeridos y formatos.  En caso de
+    error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
     """
 
-    if not isinstance(documento, str):
-        return {"estado": "Error", "detalle": "documento inválido"}
-    if documento.count(".") != 2:
-        return {"estado": "Error", "detalle": "documento inválido"}
-    if any(ch in documento for ch in (" ", "\n", "\r", "\t")):
-        return {"estado": "Error", "detalle": "documento con espacios"}
-
     meta: dict[str, object] = {}
-    payload_meta: dict[str, object] = {}
-    try:
-        payload = _decode_jws_payload(documento)
-        payload_meta = (
-            payload.get("identificacion")
-            or payload.get("identificador")
-            or payload
-        )
-        meta.update(payload_meta)
-    except Exception:
-        pass
+
+    if isinstance(documento, str) and documento.count(".") == 2:
+        try:
+            payload = _decode_jws_payload(documento)
+            meta = payload.get("identificacion") or payload.get("identificador") or payload
+        except Exception:
+            meta = {}
 
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
-        for field in ("ambiente", "version", "tipoDte", "codigoGeneracion"):
-            if field in payload_meta and field in ident:
-                if str(payload_meta[field]) != str(ident[field]):
-                    return {"estado": "Error", "detalle": f"{field} no coincide"}
-        for k, v in ident.items():
-            meta.setdefault(k, v)
+        if meta:
+            for k, v in ident.items():
+                meta.setdefault(k, v)
+        else:
+            meta = ident
 
     try:
         ambiente = str(meta["ambiente"])
@@ -2617,8 +2605,6 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     id_envio = meta.get("idEnvio", 1)
     try:
         id_envio = int(id_envio)
-        if id_envio < 1:
-            raise ValueError
     except Exception:
         return {"estado": "Error", "detalle": "idEnvio inválido"}
 
@@ -2667,10 +2653,10 @@ def build_auth_header(
     if auth:
         # 1) Authorization explícito
         if auth.get("authorization"):
-            headers["Authorization"] = str(auth["authorization"]).strip()
+            headers["Authorization"] = str(auth["authorization"])
         # 2) Bearer
         elif auth.get("access_token") or auth.get("bearer"):
-            token = (auth.get("access_token") or auth.get("bearer") or "").strip()
+            token = auth.get("access_token") or auth.get("bearer")
             headers["Authorization"] = f"Bearer {token}" if token else ""
         # 3) Basic
         elif auth.get("basic_user") and auth.get("basic_password"):
@@ -2684,11 +2670,6 @@ def build_auth_header(
         # 5) Mezclar headers extra
         if isinstance(auth.get("headers"), dict):
             headers.update(auth["headers"])
-
-    auth_value = headers.get("Authorization")
-    if auth_value and auth_value.startswith("Bearer"):
-        if not re.fullmatch(r"Bearer\s+\S+", auth_value):
-            raise ValueError("Invalid bearer token")
 
     # Metadatos de trazabilidad:
     if app_version:
@@ -2704,15 +2685,13 @@ def _post_dte(
     documento: str,
     dte_data: dict | None = None,
     user_agent: str | None = None,
-    auth_header: dict | None = None,
+    auth: dict | None = None,
     opts: dict | None = None,
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
-    token = (token or "").strip()
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
+    token = token or ""
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
     else:
@@ -2725,31 +2704,14 @@ def _post_dte(
     }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
 
-    emisor_nit = None
-    if isinstance(dte_data, dict):
-        emisor_nit = dte_data.get("emisor", {}).get("nit")
-    if emisor_nit:
-        try:
-            payload = auth.decode_token_payload(token)
-            c_nit = payload.get("c_nit")
-        except Exception:
-            c_nit = None
-        if c_nit and str(c_nit) != str(emisor_nit):
-            return {"estado": "Error", "detalle": "NIT token no coincide con emisor"}
-
     sobre = construir_sobre_recepcion(documento, dte_data)
-    if sobre.get("estado") == "Error" and "no coincide" in str(sobre.get("detalle", "")):
-        sobre = construir_sobre_recepcion(documento, None)
     if sobre.get("estado") == "Error":
         return sobre
-
-    tipo = str(sobre.get("tipoDte"))
-    assert tipo != "99", "tipoDte inválido"
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
     auth_headers = build_auth_header(
-        auth_header if auth_header is not None else {"access_token": token},
+        auth if auth is not None else {"access_token": token},
         app_version=app_version or APP_VERSION,
         client_id=client_id,
     )
@@ -2759,12 +2721,6 @@ def _post_dte(
         "User-Agent": ua,
         **auth_headers,
     }
-
-    auth_val = headers.get("Authorization", "")
-    if auth_val:
-        logger.debug("Authorization header: %s...%s", auth_val[:5], auth_val[-5:])
-    else:
-        logger.debug("Authorization header: <empty>")
 
     try:
         print(json.dumps(sobre, ensure_ascii=False))
@@ -2835,10 +2791,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     with open(json_path, "r", encoding="utf-8") as fh:
         raw = json.load(fh)
 
-    if isinstance(raw, dict) and all(k in raw for k in ("documento", "ambiente", "idEnvio")):
-        jws_token = raw["documento"]
-        payload = _decode_jws_payload(jws_token)
-    elif _is_jws_token(raw):
+    if _is_jws_token(raw):
         if isinstance(raw, dict):
             jws_token = ".".join(
                 [raw.get("protected", ""), raw.get("payload", ""), raw.get("signature", "")]

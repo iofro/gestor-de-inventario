@@ -211,30 +211,6 @@ def _check_and_update_token_len(token: str) -> int:
     return token_len
 
 
-def decode_token_payload(token: str) -> dict:
-    """Devuelve el payload del JWT sin verificar la firma.
-
-    Se acepta ``token`` con o sin el prefijo ``Bearer``. Si el token no tiene
-    el formato de un JWT o el payload no es JSON válido se lanza
-    ``ValueError``.
-    """
-
-    token = token.strip()
-    if token.lower().startswith("bearer "):
-        token = token[7:].strip()
-
-    parts = token.split(".")
-    if len(parts) != 3 or any(not p for p in parts):
-        raise ValueError("Token JWT mal formado")
-
-    seg = parts[1]
-    padding = "=" * (-len(seg) % 4)
-    try:
-        return json.loads(base64.urlsafe_b64decode(seg + padding))
-    except Exception as exc:  # pragma: no cover - fallback
-        raise ValueError("Token JWT inválido") from exc
-
-
 def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[str, int, str]:
     """Solicita un nuevo token de acceso a la API."""
     headers = {"Content-Type": "application/x-www-form-urlencoded"}
@@ -347,15 +323,9 @@ def get_token(
             _current_user, _current_pwd = nit, pwd
 
     now = time.time()
-    if _access_token and not refresh:
-        if now < _obtained_at:
-            logger.warning(
-                "Hora del sistema anterior a emisión del token; reautenticando"
-            )
-            refresh = True
-        elif now < _expires_at - 60:
-            _check_and_update_token_len(_access_token)
-            return _access_token
+    if not refresh and _access_token and now < _expires_at - 60:
+        _check_and_update_token_len(_access_token)
+        return _access_token
 
     url = _get_auth_url()
     global _last_auth_url, _last_auth_host

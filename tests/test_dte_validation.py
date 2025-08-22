@@ -5,6 +5,7 @@ import re
 
 import dte
 from dte import sanitize_dte_payload, validate_dte_json
+from utils.catalogos import TRIBUTO_IVA
 from db import DB
 
 UUID4_RE = r"^[0-9A-F]{8}-[0-9A-F]{4}-4[0-9A-F]{3}-[89AB][0-9A-F]{3}-[0-9A-F]{12}$"
@@ -171,8 +172,8 @@ def test_autocompleta_tributos(dte_metadata_factory, db_fixture):
     item.pop("codTributo", None)
     validate_dte_json(dte, db=db_fixture)
     item = dte["cuerpoDocumento"][0]
-    assert item["tributos"] == ["19"]
-    assert item["codTributo"] == "19"
+    assert item["tributos"] == [TRIBUTO_IVA]
+    assert item["codTributo"] == TRIBUTO_IVA
 
 
 def test_tributos_invalidos_rechazados(dte_metadata_factory, db_fixture):

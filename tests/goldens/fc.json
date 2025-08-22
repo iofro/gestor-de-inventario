@@ -3,7 +3,7 @@
   "cuerpoDocumento": [
     {
       "cantidad": "2.50000000",
-      "codTributo": "19",
+      "codTributo": "20",
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
       "ivaItem": "3.10050000",
@@ -15,7 +15,7 @@
       "psv": "0E-8",
       "tipoItem": 4,
       "tributos": [
-        "19"
+        "20"
       ],
       "uniMedida": 99,
       "ventaExenta": "0E-8",
@@ -106,7 +106,7 @@
     "totalPagar": "26.95",
     "tributos": [
       {
-        "codigo": "19",
+        "codigo": "20",
         "descripcion": "IVA",
         "valor": "3.10"
       }

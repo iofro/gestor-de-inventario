@@ -32,6 +32,7 @@ from pathlib import Path
 import jsonpatch
 from paths import DATOS_NEGOCIO_PATH
 from xml.etree.ElementTree import Element, SubElement
+import copy
 
 APP_VERSION = "1.0.0"  # editable a futuro
 
@@ -1109,12 +1110,26 @@ def recalcular_totales(
         linea = money(cant * precio - monto_descu)
         if linea < 0:
             linea = money(0)
-        if precios_flag:
+        if tipo_dte == "01":
             base = money(linea / D("1.13"))
             iva_val = money(linea - base)
+            base = money(linea - iva_val)
+            item["codTributo"] = None
+            item["tributos"] = None
         else:
-            base = linea
-            iva_val = money(base * D("0.13"))
+            if precios_flag:
+                base = money(linea / D("1.13"))
+                iva_val = money(linea - base)
+                base = money(linea - iva_val)
+            else:
+                base = linea
+                iva_val = money(base * D("0.13"))
+            if base > 0:
+                item["codTributo"] = TRIBUTO_IVA
+                item["tributos"] = [TRIBUTO_IVA]
+            else:
+                item["codTributo"] = None
+                item["tributos"] = []
         item["ventaGravada"] = base
         item["ivaItem"] = iva_val
         item["ventaExenta"] = money(0)
@@ -1122,72 +1137,56 @@ def recalcular_totales(
         item["noGravado"] = money(0)
         if "montoIva" in item:
             item["montoIva"] = iva_val
-        if tipo_dte == "01":
-            item["codTributo"] = None
-            item["tributos"] = None
-        else:
-            if base > 0:
-                item["codTributo"] = TRIBUTO_IVA
-                item["tributos"] = [TRIBUTO_IVA]
-            else:
-                item["codTributo"] = None
-                item["tributos"] = []
         iva_total += iva_val
         venta_gravada_sum += base
 
     venta_gravada_sum = money(venta_gravada_sum)
     total_iva_sum = money(iva_total)
-    sub_total = venta_gravada_sum
-    monto_total_operacion = money(sub_total + total_iva_sum)
-    total_pagar = monto_total_operacion
-    total_letras = numero_a_letras(total_pagar)
-
-    esperado = {
-        "totalNoSuj": money(0),
-        "totalExenta": money(0),
-        "totalGravada": sub_total,
-        "subTotalVentas": sub_total,
-        "descuNoSuj": money(0),
-        "descuExenta": money(0),
-        "descuGravada": money(0),
-        "totalDescu": money(0),
-        "subTotal": sub_total,
-        "totalNoGravado": money(0),
-        "totalIva": total_iva_sum,
-        "montoTotalOperacion": monto_total_operacion,
-        "totalPagar": total_pagar,
-    }
 
     modificados: list[str] = []
-    for k, v in esperado.items():
-        if k in resumen and money(D(str(resumen.get(k, 0)))) == v:
-            continue
-        resumen[k] = v
-        modificados.append(k)
 
-    if resumen.get("totalLetras") != total_letras:
-        resumen["totalLetras"] = total_letras
-        modificados.append("totalLetras")
+    def _set_resumen(key: str, value: D):
+        current = resumen.get(key)
+        if current is not None and money(D(str(current))) == value:
+            resumen[key] = value
+            return
+        resumen[key] = value
+        modificados.append(key)
 
+    _set_resumen("totalNoSuj", money(0))
+    _set_resumen("totalExenta", money(0))
+    _set_resumen("totalGravada", venta_gravada_sum)
+    _set_resumen("subTotalVentas", venta_gravada_sum)
+    _set_resumen("descuNoSuj", money(0))
+    _set_resumen("descuExenta", money(0))
+    _set_resumen("descuGravada", money(0))
+    _set_resumen("totalDescu", money(0))
+    _set_resumen("subTotal", venta_gravada_sum)
+    _set_resumen("totalNoGravado", money(0))
+    _set_resumen("totalIva", total_iva_sum)
+    monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
+    _set_resumen("montoTotalOperacion", monto_total_operacion)
+    _set_resumen("totalPagar", monto_total_operacion)
     if tipo_dte == "01":
         if resumen.get("tributos") is not None:
             resumen["tributos"] = None
             modificados.append("tributos")
-    else:
-        if sub_total > D("0"):
-            trib = [
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": "Impuesto al Valor Agregado 13%",
-                    "valor": total_iva_sum,
-                }
-            ]
-            if resumen.get("tributos") != trib:
-                resumen["tributos"] = trib
-                modificados.append("tributos")
-        elif resumen.get("tributos") is not None:
-            resumen["tributos"] = None
-            modificados.append("tributos")
+    total_pagar = resumen["totalPagar"]
+    try:
+        total_letras = monto_a_texto_sv(total_pagar)
+    except Exception:
+        total_letras = None
+    if resumen.get("totalLetras") != total_letras:
+        resumen["totalLetras"] = total_letras
+        modificados.append("totalLetras")
+
+    if resumen.get("pagos"):
+        suma = money(sum(D(str(p.get("montoPago") or 0)) for p in resumen["pagos"]))
+        delta = money(total_pagar - suma)
+        if delta != D("0"):
+            first = resumen["pagos"][0]
+            first_val = D(str(first.get("montoPago") or 0))
+            first["montoPago"] = money(first_val + delta)
 
     data["resumen"] = resumen
     return modificados
@@ -1513,6 +1512,8 @@ def generar_dte_json(
             cant = d8(D(str(d.get("cantidad") or 0)))
         except Exception:
             cant = d8(D(0))
+        if cant <= 0:
+            cant = d8(D("1"))
         try:
             precio_raw = d8(D(str(d.get("precio_unitario") or 0)))
         except Exception:
@@ -1533,14 +1534,35 @@ def generar_dte_json(
         if monto_descu < 0:
             monto_descu = D("0")
         if precios_incluyen_iva:
-            total_final = d8(cant * precio_raw - monto_descu)
-            if total_final < 0:
-                total_final = D("0")
-            base_total = money(total_final / D("1.13"))
-            iva_val = money(total_final - base_total)
-            precio = money(precio_raw / D("1.13"))
-            venta_gravada = base_total
-            line_total = base_total + iva_val
+            if tipo_dte == "01":
+                origen = (extra.get("origen_precios") or "bruto").lower()
+                total_neto = money(cant * precio_raw - monto_descu)
+                if total_neto < D("0"):
+                    total_neto = D("0")
+                if origen == "neto":
+                    base_total = total_neto
+                    precio = money((base_total / cant) * D("1.13"))
+                    total_final = money(precio * cant)
+                    iva_val = money(total_final - base_total)
+                    base_total = money(total_final - iva_val)
+                else:
+                    total_final = total_neto
+                    base_total = money(total_final / D("1.13"))
+                    iva_val = money(total_final - base_total)
+                    base_total = money(total_final - iva_val)
+                    precio = money(total_final / cant)
+                venta_gravada = base_total
+                line_total = base_total + iva_val
+            else:
+                total_final = d8(cant * precio_raw - monto_descu)
+                if total_final < 0:
+                    total_final = D("0")
+                base_total = money(total_final / D("1.13"))
+                iva_val = money(total_final - base_total)
+                base_total = money(total_final - iva_val)
+                precio = money(total_final / cant)
+                venta_gravada = base_total
+                line_total = base_total + iva_val
         else:
             precio = precio_raw
             base = d8(cant * precio - monto_descu)
@@ -1585,11 +1607,11 @@ def generar_dte_json(
             "uniMedida": uni_medida,
             "precioUni": precio,
             "montoDescu": d2(monto_descu),
-            "ventaNoSuj": D("0"),
-            "ventaExenta": D("0"),
+            "ventaNoSuj": money(0),
+            "ventaExenta": money(0),
             "ventaGravada": venta_gravada,
-            "psv": D("0"),
-            "noGravado": D("0"),
+            "psv": money(0),
+            "noGravado": money(0),
             "ivaItem": iva_val,
             "tributos": [trib_code] if trib_code else [],
         }
@@ -1812,7 +1834,7 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    validate_dte_json(result, db=db, precios_incluyen_iva=False)
+    validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
     return result
 
 
@@ -1837,6 +1859,8 @@ def validate_dte_json(
     missing = [key for key in required if key not in payload]
     if missing:
         raise ValueError("Faltan campos obligatorios: " + ", ".join(missing))
+    extra_conf = payload.get("extra") or {}
+    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
 
     negocio = _load_datos_negocio()
 
@@ -1931,8 +1955,6 @@ def validate_dte_json(
         raise ValueError("fecEmi/horEmi no pueden ser futuras")
     payload["identificacion"] = ident
     tipo_dte = str(ident.get("tipoDte", ""))
-    extra_conf = payload.get("extra")
-    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
 
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
@@ -2267,6 +2289,17 @@ def validate_dte_json(
         print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 
     ident = payload.get("identificacion", {})
+    if ident.get("tipoDte") == "01":
+        for i in payload.get("cuerpoDocumento", []):
+            linea = money(
+                D(str(i.get("cantidad") or 0))
+                * D(str(i.get("precioUni") or 0))
+                - D(str(i.get("montoDescu") or 0))
+            )
+            base_chk = money(linea / D("1.13"))
+            iva_chk = money(linea - base_chk)
+            assert i.get("ventaGravada") == base_chk and i.get("ivaItem") == iva_chk
+
     resumen["pagos"] = normalizar_pagos(
         resumen.get("pagos"),
         resumen["totalPagar"],

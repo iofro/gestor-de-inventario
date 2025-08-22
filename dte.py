@@ -1609,10 +1609,17 @@ def generar_dte_json(
         if trib_code and trib_code not in TRIBUTOS_PERMITIDOS_ITEM:
             raise ValueError(f"Código de tributo inválido en ítem: {trib_code}")
 
+        num_doc = d.get("numeroDocumento")
+        if isinstance(num_doc, str):
+            if num_doc.strip().upper() in {"NA", "N/A", ""}:
+                num_doc = None
+        elif not num_doc:
+            num_doc = None
+
         item_data = {
             "numItem": idx,
             "tipoItem": tipo_item,
-            "numeroDocumento": "NA",
+            "numeroDocumento": num_doc,
             "codigo": d.get("codigo") or "SKU-NA",
             "descripcion": d.get("descripcion"),
             "cantidad": cant,
@@ -2162,7 +2169,14 @@ def validate_dte_json(
         if item["uniMedida"] not in UNIDADES_MEDIDA_PERMITIDAS:
             item["uniMedida"] = 59
 
-        item["numeroDocumento"] = item.get("numeroDocumento") or "NA"
+        num_doc = item.get("numeroDocumento")
+        if isinstance(num_doc, str):
+            if num_doc.strip().upper() in {"NA", "N/A", ""}:
+                num_doc = None
+        elif not num_doc:
+            num_doc = None
+        item["numeroDocumento"] = num_doc
+
         item["codigo"] = item.get("codigo") or "SKU-NA"
         cero = D("0")
         item.setdefault("montoDescu", cero)

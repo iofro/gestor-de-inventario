@@ -33,6 +33,10 @@ def test_generar_dte_json_basic(tmp_path):
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
     dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    import svfe.config as svfe_config
+    svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
+    svfe_config.load_datos_negocio = lambda: datos
+    dte_module._load_datos_negocio = lambda: datos
 
     db = create_db()
     db.add_vendedor("V1")
@@ -156,6 +160,11 @@ def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
         "descActividad": "Comercio",
         "telefono": "22222222",
         "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
     }
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
@@ -337,20 +346,6 @@ def test_dte_sum_mismatch_warning(capsys):
 
 def test_generar_ticket_json_tipo(tmp_path):
     import dte as dte_module
-
-    datos = {
-        "nit": "06141990011019",
-        "nrc": "1234567-8",
-        "nombre": "Mi Negocio",
-        "nombreComercial": "Mi Negocio",
-        "cod_giro": "123456",
-        "descActividad": "Comercio",
-        "telefono": "22222222",
-        "correo": "test@example.com",
-    }
-    tmp_file = tmp_path / "datos_negocio.json"
-    tmp_file.write_text(json.dumps(datos))
-    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
 
     db = create_db()
     db.add_vendedor("V1")
@@ -618,7 +613,7 @@ def test_receptor_defaults(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -673,7 +668,7 @@ def test_credit_payment_defaults(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -733,7 +728,7 @@ def test_item_tributo_guard(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -755,8 +750,12 @@ def test_item_tributo_guard(tmp_path):
 
     data = dte_module.generar_dte_json(db, venta_id)
     item = data["cuerpoDocumento"][0]
-    assert item["codTributo"] == "20"
-    assert item["tributos"] == ["20"]
+    resumen = data["resumen"]
+    assert item["codTributo"] is None
+    assert item["tributos"] is None
+    assert resumen["tributos"] is None
+    from decimal import Decimal as D
+    assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
 
 
 def test_item_no_tributo_when_exento(tmp_path):
@@ -784,7 +783,7 @@ def test_item_no_tributo_when_exento(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -816,8 +815,90 @@ def test_item_no_tributo_when_exento(tmp_path):
     res.pop("tributos", None)
     dte_module.validate_dte_json(data, db=db)
     item = data["cuerpoDocumento"][0]
-    assert "codTributo" not in item
-    assert item.get("tributos") == []
+    assert item["codTributo"] is None
+    assert item.get("tributos") is None
+
+
+def test_credito_fiscal_incluye_tributo(tmp_path):
+    import dte as dte_module
+    from utils.catalogos import TRIBUTO_IVA
+    from decimal import Decimal as D
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    import svfe.config as svfe_config
+    svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
+    svfe_config.load_datos_negocio = lambda: datos
+    dte_module._load_datos_negocio = lambda: datos
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "0614-000000-102-5",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cid = db.cursor.lastrowid
+    venta_id = db.add_venta_credito_fiscal(
+        cid,
+        "2024-01-01",
+        10,
+        "123",
+        "0614-000000-102-5",
+        "giro",
+        sumas=10,
+        descuentos=0,
+        iva=0,
+    )
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    item = data["cuerpoDocumento"][0]
+    resumen = data["resumen"]
+    assert item["codTributo"] == TRIBUTO_IVA
+    assert item["tributos"] == [TRIBUTO_IVA]
+    assert resumen["tributos"][0]["codigo"] == TRIBUTO_IVA
+    assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
 
 
 def test_resumen_tributo_codigo_str(tmp_path):

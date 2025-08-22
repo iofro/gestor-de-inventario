@@ -26,7 +26,15 @@ def test_sanitize_dte_payload_removes_none_recursively(dte_metadata_factory):
     assert "codActividad" not in clean["emisor"]
     for key in REQUIRED_NULL_FIELDS:
         assert key in clean and clean[key] is None
+    item0 = clean["cuerpoDocumento"][0]
+    assert item0["codTributo"] is None
+    assert item0["tributos"] is None
+    assert clean["resumen"]["tributos"] is None
     clean_no_required = {k: v for k, v in clean.items() if k not in REQUIRED_NULL_FIELDS}
+    for item in clean_no_required.get("cuerpoDocumento", []):
+        item.pop("codTributo", None)
+        item.pop("tributos", None)
+    clean_no_required.get("resumen", {}).pop("tributos", None)
     assert not _has_none(clean_no_required)
 
 
@@ -54,7 +62,15 @@ def test_enviar_factura_sanitizes_payload(monkeypatch, dte_metadata_factory):
     assert "codActividad" not in captured["data"]["emisor"]
     for key in REQUIRED_NULL_FIELDS:
         assert key in captured["data"] and captured["data"][key] is None
+    item0 = captured["data"]["cuerpoDocumento"][0]
+    assert item0["codTributo"] is None
+    assert item0["tributos"] is None
+    assert captured["data"]["resumen"]["tributos"] is None
     captured_no_required = {
         k: v for k, v in captured["data"].items() if k not in REQUIRED_NULL_FIELDS
     }
+    for item in captured_no_required.get("cuerpoDocumento", []):
+        item.pop("codTributo", None)
+        item.pop("tributos", None)
+    captured_no_required.get("resumen", {}).pop("tributos", None)
     assert not _has_none(captured_no_required)

@@ -10,7 +10,7 @@ def test_detalle_venta_con_vendedor():
     db = create_db()
     db.add_vendedor("Luis")
     vendedor_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vendedor_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vendedor_id, None, 0, 0, 0, 10)
     producto_id = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, producto_id, 1, 10, vendedor_id=vendedor_id)
@@ -31,6 +31,7 @@ def test_import_detalles_venta_uses_vendedor_map(tmp_path, monkeypatch):
                 "id": 1,
                 "nombre": "Prod",
                 "codigo": "P1",
+                "sku": "S1",
                 "precio_compra": 0,
                 "precio_venta_minorista": 0,
                 "precio_venta_mayorista": 0,

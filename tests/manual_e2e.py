@@ -24,7 +24,7 @@ def _build_sample_dte() -> dict:
     db = DB(":memory:")
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente("Cliente", "123", "0614-987654-321-0", "", "Giro", "", "", "Dir", "", "")
     cid = db.cursor.lastrowid

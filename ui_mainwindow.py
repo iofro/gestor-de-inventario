@@ -590,7 +590,7 @@ class MainWindow(QMainWindow):
         if dialog.exec_():
             data = dialog.get_data()
             self.manager.add_producto(
-                data["nombre"], data["codigo"], None, None,
+                data["nombre"], data["codigo"], data["sku"], None, None,
                 data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], 0
             )
             self._actualizar_arbol_vendedores()
@@ -613,7 +613,7 @@ class MainWindow(QMainWindow):
             data = dialog.get_data()
             self.manager.edit_producto(
                 prod["id"],
-                data["nombre"], data["codigo"],
+                data["nombre"], data["codigo"], data["sku"],
                 prod.get("vendedor_id"),  # Mantén el vendedor original
                 prod.get("Distribuidor_id"),  # Mantén el Distribuidor original
                 data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], data.get("stock", prod.get("stock", 0)),

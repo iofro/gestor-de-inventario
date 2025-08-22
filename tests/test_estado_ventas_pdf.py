@@ -11,7 +11,7 @@ def test_generar_estado_ventas_pdf(tmp_path):
     db.add_cliente("Cliente", "", "", "12345678-9", "", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     # Crear producto
-    db.add_producto("Prod", "P1", vendedor_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vendedor_id, None, 0, 0, 0, 10)
     producto_id = db.cursor.lastrowid
     # Registrar venta y detalle
     venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id, vendedor_id=vendedor_id)

@@ -19,7 +19,7 @@ def qt_app():
 def _create_sale(db):
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("P1", "C1", vid, None, 0, 10, 10, 1)
+    db.add_producto("P1", "C1", None,  vid, None, 0, 10, 10, 1)
     pid = db.cursor.lastrowid
     db.add_cliente("C", "", "", "", "", "", "c@x.com", "", "", "")
     cid = db.cursor.lastrowid

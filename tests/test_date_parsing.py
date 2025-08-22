@@ -16,7 +16,7 @@ def setup_db():
     db = DB(":memory:")
     db.add_Distribuidor("D1")
     db.add_vendedor("V1")
-    db.add_producto("P", "c1", 1, 1, 0, 0, 0, 10)
+    db.add_producto("P", "c1", None,  1, 1, 0, 0, 0, 10)
     db.add_compra_detallada({
         "fecha": "2024-01-01 10:00:00",
         "producto_id": 1,

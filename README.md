@@ -242,8 +242,19 @@ otros parámetros dentro de `datos_negocio.json` bajo el bloque `dte_api`:
 {
   "dte_api": {
     "token": "TOKEN",
-    "prefijo_control": "DTE-01-S001P001",
     "modo_transmision": "1 - Normal"
+  }
+}
+```
+
+Los códigos de sucursal y punto de venta utilizados para formar el número de
+control se establecen en `config_negocio.json`:
+
+```json
+{
+  "facturacion": {
+    "sucursal": 1,
+    "puntoVenta": 1
   }
 }
 ```

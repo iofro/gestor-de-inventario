@@ -12,5 +12,9 @@
       "nitUsuario": "000868547",
       "pwd": "T3Jpb24hN1BpYW5vOEx1eiM="
     }
+  },
+  "facturacion": {
+    "sucursal": 1,
+    "puntoVenta": 1
   }
 }

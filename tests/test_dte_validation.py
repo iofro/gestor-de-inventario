@@ -251,20 +251,24 @@ def test_numero_control_invalidos(dte_metadata_factory, numero, tmp_path, monkey
     )
 
 
-def test_numero_control_regenerates_from_emisor_codes(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
+def test_numero_control_uses_config_facturacion(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
     _patch_datos_negocio(tmp_path, monkeypatch)
-    dte = dte_metadata_factory()
-    dte["emisor"]["codEstable"] = "123"
-    dte["emisor"]["codEstableMH"] = "123"
-    dte["emisor"]["codPuntoVenta"] = "456"
-    dte["emisor"]["codPuntoVentaMH"] = "456"
-    dte["identificacion"]["numeroControl"] = "BAD"
-    validate_dte_json(dte, db=db_fixture)
-    ident = dte["identificacion"]
-    emisor = dte["emisor"]
-    assert emisor["codEstable"] == "0123"
-    assert emisor["codPuntoVenta"] == "0456"
-    assert ident["numeroControl"].startswith("DTE-01-S123P456")
+    cfg = {"facturacion": {"sucursal": 2, "puntoVenta": 5}}
+    cfg_path = tmp_path / "config_negocio.json"
+    cfg_path.write_text(json.dumps(cfg), encoding="utf-8")
+    monkeypatch.setattr(dte, "CONFIG_NEGOCIO_PATH", str(cfg_path))
+    dte_obj = dte_metadata_factory()
+    dte_obj["emisor"]["codEstable"] = "9999"
+    dte_obj["emisor"]["codEstableMH"] = "9999"
+    dte_obj["emisor"]["codPuntoVenta"] = "9999"
+    dte_obj["emisor"]["codPuntoVentaMH"] = "9999"
+    dte_obj["identificacion"]["numeroControl"] = "BAD"
+    validate_dte_json(dte_obj, db=db_fixture)
+    ident = dte_obj["identificacion"]
+    emisor = dte_obj["emisor"]
+    assert emisor["codEstable"] == "0002"
+    assert emisor["codPuntoVenta"] == "0005"
+    assert ident["numeroControl"].startswith("DTE-01-S002P005-")
 
 
 def test_numero_control_fallback_default(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):

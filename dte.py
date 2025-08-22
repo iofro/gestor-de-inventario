@@ -175,6 +175,29 @@ def _norm3(value) -> str:
     return re.sub(r"\D", "", str(value))[-3:].zfill(3)
 
 
+def _load_facturacion() -> tuple[str, str, str, str]:
+    """Carga sucursal y punto de venta desde ``config_negocio.json``.
+
+    Devuelve una tupla con las representaciones rellenadas:
+    ``(suc3, pto3, suc4, pto4)``.
+    """
+
+    sucursal = punto = 1
+    try:
+        with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+            cfg = json.load(fh)
+        fact = cfg.get("facturacion", {})
+        sucursal = int(fact.get("sucursal", 1))
+        punto = int(fact.get("puntoVenta", 1))
+    except Exception:
+        pass
+    if sucursal not in range(1, 6):
+        sucursal = 1
+    if punto not in range(1, 6):
+        punto = 1
+    return f"{sucursal:03d}", f"{punto:03d}", f"{sucursal:04d}", f"{punto:04d}"
+
+
 def normalize_uuid_v4_upper(value: str) -> str:
     """
     Normaliza `value` como UUID v4 con guiones en MAYÚSCULAS.
@@ -293,18 +316,11 @@ def _load_datos_negocio():
         try:
             with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
-            dte_api = data.get("dte_api")
-            if isinstance(dte_api, dict):
-                # Extract branch and point-of-sale codes from the control prefix
-                prefijo = dte_api.get("prefijo_control")
-                if isinstance(prefijo, str):
-                    m = re.search(r"S([A-Za-z0-9]{3})P([A-Za-z0-9]{3})", prefijo)
-                    if m:
-                        suc, punto = m.groups()
-                        data.setdefault("codEstable", suc.zfill(4))
-                        data.setdefault("codEstableMH", suc.zfill(4))
-                        data.setdefault("codPuntoVenta", punto.zfill(4))
-                        data.setdefault("codPuntoVentaMH", punto.zfill(4))
+            _, _, suc4, pto4 = _load_facturacion()
+            data.setdefault("codEstable", suc4)
+            data.setdefault("codEstableMH", suc4)
+            data.setdefault("codPuntoVenta", pto4)
+            data.setdefault("codPuntoVentaMH", pto4)
 
             # Ensure cod_giro is available and mirrors codActividad
             cod_giro = data.get("cod_giro")
@@ -1202,8 +1218,9 @@ def recalcular_totales(
 
 
 
-def generar_numero_control(db: DB, tipo: str, sucursal: str, punto: str) -> str:
+def generar_numero_control(db: DB, tipo: str) -> str:
     """Genera un número de control secuencial."""
+    sucursal, punto, _, _ = _load_facturacion()
     correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
     secuencia = str(correlativo).zfill(15)
     return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
@@ -1246,16 +1263,8 @@ def generar_cabecera_dte_data(
         tipo_modelo = 2
 
     datos = _load_datos_negocio()
-    prefijo = datos.get("dte_api", {}).get("prefijo_control", "")
-    sucursal = "001"
-    punto = "001"
-    m = re.search(r"S(\d{3})P(\d{3})", prefijo)
-    if m:
-        sucursal, punto = m.groups()
-    sucursal = _norm3(sucursal)
-    punto = _norm3(punto)
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(db, tipo_dte, sucursal, punto)
+    numero_control = generar_numero_control(db, tipo_dte)
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     return {
         "codigo_generacion": codigo_generacion,
@@ -1320,18 +1329,12 @@ def generar_dte_json(
     datos = _load_datos_negocio()
 
 
-    prefijo = str(datos.get("dte_api", {}).get("prefijo_control", ""))
-    m = re.match(r"^DTE-\d{2}-S(\d{3})P(\d{3})$", prefijo)
-    suc_pref, punto_pref = m.groups() if m else ("001", "001")
-    cod_estable_raw = re.sub(r"\D", "", str(datos.get("codEstable", "")))
-    cod_punto_raw = re.sub(r"\D", "", str(datos.get("codPuntoVenta", "")))
-    cod_estable = (cod_estable_raw or suc_pref.rjust(4, "0"))[-4:].zfill(4)
-    cod_punto = (cod_punto_raw or punto_pref.rjust(4, "0"))[-4:].zfill(4)
+    _, _, cod_estable, cod_punto = _load_facturacion()
     suc = _norm3(cod_estable)
     pto = _norm3(cod_punto)
     # Generar identificadores con formatos oficiales
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(db, tipo_dte, suc, pto)
+    numero_control = generar_numero_control(db, tipo_dte)
 
 
     now = datetime.now(TZ_EL_SALVADOR)
@@ -1915,29 +1918,25 @@ def validate_dte_json(
     }
     emisor.setdefault("telefono", negocio.get("telefono"))
     emisor.setdefault("correo", negocio.get("correo"))
-    cod_est = str(emisor.get("codEstable") or negocio.get("codEstable") or 1)
-    emisor["codEstable"] = cod_est.zfill(4)
-    emisor["codEstableMH"] = str(
-        emisor.get("codEstableMH") or negocio.get("codEstableMH") or cod_est
-    ).zfill(4)
-    cod_pto = str(emisor.get("codPuntoVenta") or negocio.get("codPuntoVenta") or 1)
-    emisor["codPuntoVenta"] = cod_pto.zfill(4)
-    emisor["codPuntoVentaMH"] = str(
-        emisor.get("codPuntoVentaMH") or negocio.get("codPuntoVentaMH") or cod_pto
-    ).zfill(4)
+    _, _, cod_est, cod_pto = _load_facturacion()
+    emisor["codEstable"] = cod_est
+    emisor["codEstableMH"] = cod_est
+    emisor["codPuntoVenta"] = cod_pto
+    emisor["codPuntoVentaMH"] = cod_pto
     tipo = str(ident.get("tipoDte") or "").zfill(2)
     if not re.fullmatch(r"\d{2}", tipo):
         raise ValueError("tipoDte inválido")
     if hasattr(catalogos, "TIPOS_DTE") and tipo not in catalogos.TIPOS_DTE:
         raise ValueError("Código de tipoDte inválido")
-    suc = _norm3(emisor.get("codEstableMH") or emisor.get("codEstable") or 1)
-    pto = _norm3(
-        emisor.get("codPuntoVentaMH") or emisor.get("codPuntoVenta") or 1
-    )
     numero_control = ident.get("numeroControl")
     regex_nc = r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$"
-    if not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
-        ident["numeroControl"] = generar_numero_control(db, tipo, suc, pto)
+    match = (
+        re.fullmatch(regex_nc, numero_control)
+        if isinstance(numero_control, str)
+        else None
+    )
+    if not match or match.group(1) != tipo or match.group(2) != _norm3(cod_est) or match.group(3) != _norm3(cod_pto):
+        ident["numeroControl"] = generar_numero_control(db, tipo)
     numero_control = ident.get("numeroControl")
     if not re.fullmatch(regex_nc, numero_control):
         raise ValueError("numeroControl inválido")

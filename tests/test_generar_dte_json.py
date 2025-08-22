@@ -24,6 +24,7 @@ def test_generar_dte_json_basic(tmp_path):
         "descActividad": "Comercio",
         "telefono": "22222222",
         "correo": "test@example.com",
+        "direccion": {"departamento": "01", "municipio": "13", "complemento": "Dir"},
     }
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
@@ -94,12 +95,16 @@ def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
         "descActividad": "Comercio",
         "telefono": "22222222",
         "correo": "test@example.com",
-        "codEstable": "2",
-        "codPuntoVenta": 5,
+        "direccion": {"departamento": "01", "municipio": "13", "complemento": "Dir"},
     }
-    tmp_file = tmp_path / "datos_negocio.json"
-    tmp_file.write_text(json.dumps(datos))
-    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    datos_path = tmp_path / "datos_negocio.json"
+    datos_path.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(datos_path)
+
+    cfg = {"facturacion": {"sucursal": 2, "puntoVenta": 5}}
+    cfg_path = tmp_path / "config_negocio.json"
+    cfg_path.write_text(json.dumps(cfg))
+    dte_module.CONFIG_NEGOCIO_PATH = str(cfg_path)
 
     db = create_db()
     db.add_vendedor("V1")

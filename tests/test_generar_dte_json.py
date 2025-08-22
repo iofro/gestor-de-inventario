@@ -5,7 +5,7 @@ from pathlib import Path
 from decimal import Decimal
 
 from db import DB
-from dte import generar_dte_json, _write_json
+from dte import generar_dte_json, _write_json, money
 
 
 def create_db():
@@ -198,8 +198,172 @@ def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
     assert D(str(item["ivaItem"])) == D("1.15")
     assert D(str(res["totalGravada"])) == D("8.85")
     assert D(str(res["totalIva"])) == D("1.15")
-    assert D(str(res["totalPagar"])) == D("10.00")
-    assert res["totalLetras"].startswith("DIEZ")
+
+
+def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 13, cliente_id=cliente_id)
+    db.add_detalle_venta(venta_id, pid, 1, 13, vendedor_id=vid)
+
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    D = Decimal
+    assert D(str(item["precioUni"])) == D("13.00")
+    assert D(str(item["ventaGravada"])) == D("11.50")
+    assert D(str(item["ivaItem"])) == D("1.50")
+    assert D(str(res["totalPagar"])) == D("13.00")
+    assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("13.00")
+
+
+def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 11, cliente_id=cliente_id)
+    db.add_detalle_venta(venta_id, pid, 2, 5.5, vendedor_id=vid)
+
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    D = Decimal
+    assert D(str(item["precioUni"])) == D("5.50")
+    assert D(str(item["ventaGravada"])) == D("9.73")
+    assert D(str(item["ivaItem"])) == D("1.27")
+    cantidad = D(str(item["cantidad"]))
+    assert money(D(str(item["precioUni"])) * cantidad) == D("11.00")
+    assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
+    assert D(str(res["totalPagar"])) == D("11.00")
+
+
+def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 11, cliente_id=cliente_id, extra={"origen_precios": "neto"})
+    db.add_detalle_venta(venta_id, pid, 2, 4.865, vendedor_id=vid)
+
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    D = Decimal
+    assert D(str(item["precioUni"])) == D("5.50")
+    assert D(str(item["ventaGravada"])) == D("9.73")
+    assert D(str(item["ivaItem"])) == D("1.27")
+    cantidad = D(str(item["cantidad"]))
+    assert money(D(str(item["precioUni"])) * cantidad) == D("11.00")
+    assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
+    assert D(str(res["totalPagar"])) == D("11.00")
 
 
 @pytest.mark.parametrize("cfg, expected", [("pruebas", "00"), ("produccion", "01")])

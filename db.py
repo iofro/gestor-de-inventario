@@ -263,6 +263,7 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 nombre TEXT NOT NULL,
                 codigo TEXT,
+                sku TEXT,
                 vendedor_id INTEGER,
                 Distribuidor_id INTEGER,
                 precio REAL,
@@ -284,6 +285,9 @@ class DB:
         )
         self.cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre)"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_productos_sku ON productos(sku)"
         )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS ventas (
@@ -578,6 +582,7 @@ class DB:
             ("ventas_credito_fiscal", "ventas_no_sujetas REAL DEFAULT 0"),
             ("detalles_venta", "precio_con_iva REAL DEFAULT 0"),
             ("detalles_venta", "vendedor_id INTEGER"),
+            ("productos", "sku TEXT"),
         ]
         for table, definition in columns:
             self.add_column_if_missing(table, definition)
@@ -768,6 +773,7 @@ class DB:
         self,
         nombre,
         codigo,
+        sku,
         vendedor_id,
         Distribuidor_id,
         precio_compra,
@@ -787,8 +793,8 @@ class DB:
 
         # Elimina fecha_vencimiento del método y de la consulta
         self.cursor.execute(
-            "INSERT INTO productos (nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-            (nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
+            "INSERT INTO productos (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
         )
         if commit:
             self.conn.commit()
@@ -812,8 +818,8 @@ class DB:
             filtros.append("Distribuidor_id=?")
             params.append(Distribuidor_id)
         if search:
-            filtros.append("(nombre LIKE ? OR codigo LIKE ?)")
-            params.extend([f"%{search}%", f"%{search}%"])
+            filtros.append("(nombre LIKE ? OR codigo LIKE ? OR sku LIKE ?)")
+            params.extend([f"%{search}%", f"%{search}%", f"%{search}%"])
         if filtros:
             query += " WHERE " + " AND ".join(filtros)
         if limit is not None:
@@ -822,11 +828,11 @@ class DB:
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def edit_producto(self, producto_id, nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
+    def edit_producto(self, producto_id, nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
         # Elimina fecha_vencimiento del método y de la consulta
         self.cursor.execute(
-            "UPDATE productos SET nombre=?, codigo=?, vendedor_id=?, Distribuidor_id=?, precio_compra=?, precio_venta_minorista=?, precio_venta_mayorista=?, stock=? WHERE id=?",
-            (nombre, codigo, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, producto_id)
+            "UPDATE productos SET nombre=?, codigo=?, sku=?, vendedor_id=?, Distribuidor_id=?, precio_compra=?, precio_venta_minorista=?, precio_venta_mayorista=?, stock=? WHERE id=?",
+            (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, producto_id)
         )
         self.conn.commit()
 

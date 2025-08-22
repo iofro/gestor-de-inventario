@@ -16,7 +16,7 @@ def _create_basic_sale(descuento=0, tributos=None, pagos=None):
     db = DB(":memory:")
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",

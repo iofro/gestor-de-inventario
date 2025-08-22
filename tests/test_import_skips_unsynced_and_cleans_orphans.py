@@ -16,6 +16,7 @@ def make_inv(path):
                 "id": 1,
                 "nombre": "P",
                 "codigo": "P1",
+                "sku": "S1",
                 "vendedor_id": None,
                 "Distribuidor_id": None,
                 "precio_compra": 1,

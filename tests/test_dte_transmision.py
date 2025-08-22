@@ -12,7 +12,7 @@ from tests.conftest import make_jws
 def create_sale(db):
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
-    db.add_producto("P1", "X", vid, None, 0, 0, 0, 1)
+    db.add_producto("P1", "X", None,  vid, None, 0, 0, 0, 1)
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)

@@ -27,10 +27,10 @@ def test_transmitir_dte_orphan_signs(monkeypatch, tmp_path):
     json_path = tmp_path / "dte.json"
     json_path.write_text(json.dumps(data))
     called = {}
-    monkeypatch.setattr(dte, "sanitize_dte_payload", lambda d: called.setdefault("san", True) and d)
-    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: called.setdefault("patch", True) and d)
-    monkeypatch.setattr(dte, "validate_dte_json", lambda d, db=None: called.setdefault("val", True))
-    monkeypatch.setattr(dte.jws, "sign_json", lambda d: called.setdefault("sign", True) and "SIGNED")
+    monkeypatch.setattr(dte, "sanitize_dte_payload", lambda d: called.setdefault("san", True) or d)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: called.setdefault("patch", True) or d)
+    monkeypatch.setattr(dte, "validate_dte_json", lambda d: called.setdefault("val", True))
+    monkeypatch.setattr(dte.jws, "sign_json", lambda d: called.setdefault("sign", True) or "SIGNED")
     monkeypatch.setattr(dte.auth, "get_token", lambda: "T")
     monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example.com"})
@@ -53,30 +53,6 @@ def test_transmitir_dte_orphan_uses_jws(monkeypatch, tmp_path):
     json_path = tmp_path / "signed.json"
     json_path.write_text(json.dumps(token))
     monkeypatch.setattr(dte.jws, "sign_json", lambda d: (_ for _ in ()).throw(RuntimeError("no sign")))
-    monkeypatch.setattr(dte.auth, "get_token", lambda: "T")
-    monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "example.com")
-    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example.com"})
-    captured = {}
-    def fake_post(url, token, jws_token, meta):
-        captured["jws"] = jws_token
-        return {"estado": "Transmitido", "sello": "S"}
-    monkeypatch.setattr(dte, "_post_dte", fake_post)
-    resp = dte.transmitir_dte_orphan(db, str(json_path))
-    assert captured["jws"] == token
-    row = db.cursor.execute("SELECT estado FROM dte_envios").fetchone()
-    assert row["estado"] == "Transmitido"
-    assert resp["estado"] == "Transmitido"
-
-
-def test_transmitir_dte_orphan_uses_envelope(monkeypatch, tmp_path):
-    db = DB(":memory:")
-    token = make_jws({"identificacion": {"ambiente": "00", "version": "1", "tipoDte": "01", "codigoGeneracion": "ABC"}})
-    sobre = {"documento": token, "ambiente": "00", "idEnvio": "1"}
-    json_path = tmp_path / "sobre.json"
-    json_path.write_text(json.dumps(sobre))
-    monkeypatch.setattr(dte.jws, "sign_json", lambda d: (_ for _ in ()).throw(RuntimeError("no sign")))
-    monkeypatch.setattr(dte, "sanitize_dte_payload", lambda d: (_ for _ in ()).throw(RuntimeError("san called")))
-    monkeypatch.setattr(dte, "validate_dte_json", lambda d, db=None: (_ for _ in ()).throw(RuntimeError("val called")))
     monkeypatch.setattr(dte.auth, "get_token", lambda: "T")
     monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "example.com")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example.com"})

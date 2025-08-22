@@ -11,8 +11,6 @@ from utils.stable_json import (
     validar_montos,
 )
 
-import dte
-
 logger = logging.getLogger(__name__)
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
@@ -156,40 +154,6 @@ def sign_json(
     return data
 
 
-def validate_sobre_recepcion(sobre: dict) -> None:
-    """Validate minimal structure of a reception envelope ``sobre``.
-
-    The envelope is **not** a full DTE and only carries metadata plus the
-    JWS token.  This check verifies that the expected keys are present and
-    that their values are well formed.  Raises ``ValueError`` with a clear
-    message if any rule is violated.
-    """
-
-    if not isinstance(sobre, dict):
-        raise ValueError("sobre no es dict")
-
-    ambiente = str(sobre.get("ambiente"))
-    if ambiente not in {"00", "01"}:
-        raise ValueError("ambiente invalido")
-
-    try:
-        id_envio = int(sobre.get("idEnvio"))
-        if id_envio < 1:
-            raise ValueError
-    except Exception:
-        raise ValueError("idEnvio invalido")
-
-    for field in ("version", "tipoDte", "codigoGeneracion"):
-        if field not in sobre:
-            raise ValueError(f"{field} requerido")
-
-    doc = sobre.get("documento")
-    if not (isinstance(doc, str) and doc.count(".") == 2):
-        raise ValueError("documento invalido")
-    if any(not part for part in doc.split(".")):
-        raise ValueError("documento invalido")
-
-
 def sign_and_save(
     payload: dict,
     json_path: str,
@@ -226,27 +190,4 @@ def sign_and_save(
     token = token.rstrip("\n")
     jws_path = os.path.splitext(json_path)[0] + ".jws"
     save_file(jws_path, token, add_final_newline=False)
-
-    base = os.path.splitext(json_path)[0]
-    try:
-        with open(f"{base}.json", "r", encoding="utf-8") as fh:
-            dte_full = json.load(fh)
-        with open(f"{base}.jws", "r", encoding="utf-8") as fh:
-            jws = fh.read().strip()
-
-        sobre = dte.construir_sobre_recepcion(jws, dte_full)
-
-        if isinstance(sobre, dict) and sobre.get("estado") == "Error":
-            detalle = sobre.get("detalle")
-            raise ValueError(f"constructor sobre error: {detalle}")
-
-        validate_sobre_recepcion(sobre)
-
-        sobre_path = f"{base}-sobre.json"
-        tmp_path = f"{sobre_path}.tmp"
-        with open(tmp_path, "w", encoding="utf-8") as fh:
-            json.dump(sobre, fh, ensure_ascii=False, indent=2)
-        os.replace(tmp_path, sobre_path)
-    except Exception as exc:
-        logger.error("Error construyendo/guardando sobre para %s: %s", base, exc)
     return jws_path

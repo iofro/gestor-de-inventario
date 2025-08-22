@@ -13,7 +13,6 @@ class FakeDB:
     def __init__(self):
         self._ventas = []
         self.detalles = {}
-        self.cursor = object()
     def get_ventas(self):
         return self._ventas
     def get_venta_credito_fiscal(self, vid):
@@ -47,40 +46,11 @@ def test_generate_invoice_creates_json(tmp_path):
 
     pdf_path = tmp_path / "fact.pdf"
     json_path = tmp_path / "fact.json"
-
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
-
-    def fake_dte(db_, vid, **kwargs):
-        return {
-            "identificacion": {
-                "version": 1,
-                "tipoDte": "01",
-                "codigoGeneracion": "XYZ",
-                "numeroControl": "NC-1",
-                "ambiente": "00",
-            },
-            "resumen": {"totalPagar": 10},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-        }
-
-    def fake_sobre(token, data):
-        ident = data.get("identificacion", {})
-        return {
-            "ambiente": ident.get("ambiente", "00"),
-            "idEnvio": 1,
-            "version": ident.get("version", 1),
-            "tipoDte": ident.get("tipoDte", "01"),
-            "codigoGeneracion": ident.get("codigoGeneracion", "XYZ"),
-            "documento": token,
-        }
-
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
-    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_dte)
-    monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
-    monkeypatch.setattr(dte, "construir_sobre_recepcion", fake_sobre)
 
     generate_invoice_pdf(man, 1)
     monkeypatch.undo()
@@ -110,34 +80,9 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
 
-    def fake_dte(db_, vid, **kwargs):
-        return {
-            "identificacion": {
-                "version": 1,
-                "tipoDte": "01",
-                "codigoGeneracion": "XYZ",
-                "numeroControl": "NC-1",
-                "ambiente": "00",
-            },
-            "resumen": {"totalPagar": 10},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-        }
-
-    def fake_sobre(token, data):
-        ident = data.get("identificacion", {})
-        return {
-            "ambiente": ident.get("ambiente", "00"),
-            "idEnvio": 1,
-            "version": ident.get("version", 1),
-            "tipoDte": ident.get("tipoDte", "01"),
-            "codigoGeneracion": ident.get("codigoGeneracion", "XYZ"),
-            "documento": token,
-        }
-
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
-    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_dte)
     monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
-    monkeypatch.setattr(dte, "construir_sobre_recepcion", fake_sobre)
+    monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda *a, **k: {"estado": "OK"})
 
     created = {}
 
@@ -185,39 +130,10 @@ def test_save_ticket_creates_json(qt_app, tmp_path):
 
     pdf_path = tmp_path / "ticket.pdf"
     json_path = tmp_path / "ticket.json"
-
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
-
-    def fake_ticket(db_, vid):
-        return {
-            "identificacion": {
-                "version": 1,
-                "tipoDte": "03",
-                "codigoGeneracion": "XYZ",
-                "numeroControl": "NC-1",
-                "ambiente": "00",
-            },
-            "resumen": {"totalPagar": 10},
-            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
-        }
-
-    def fake_sobre(token, data):
-        ident = data.get("identificacion", {})
-        return {
-            "ambiente": ident.get("ambiente", "00"),
-            "idEnvio": 1,
-            "version": ident.get("version", 1),
-            "tipoDte": ident.get("tipoDte", "03"),
-            "codigoGeneracion": ident.get("codigoGeneracion", "XYZ"),
-            "documento": token,
-        }
-
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
-    monkeypatch.setattr("utils.doc_generation.generar_ticket_json", fake_ticket)
-    monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
-    monkeypatch.setattr(dte, "construir_sobre_recepcion", fake_sobre)
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
 

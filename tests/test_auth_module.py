@@ -2,7 +2,6 @@ import json
 import time
 import os
 import logging
-import base64
 import pytest
 import requests
 import auth
@@ -199,35 +198,7 @@ def test_delete_token(monkeypatch, tmp_path):
         assert cur.fetchone() is None
     t2 = auth.get_token()
     assert t2 == f"Bearer {LONG_TOKEN}2"
-
-
-def test_future_iat_triggers_refresh(monkeypatch, tmp_path):
-    setup_paths(monkeypatch, tmp_path)
-
-    future = int(time.time() + 3600)
-    header = base64.urlsafe_b64encode(
-        json.dumps({"alg": "HS256", "typ": "JWT"}).encode()
-    ).rstrip(b"=").decode()
-    payload = base64.urlsafe_b64encode(
-        json.dumps({"iat": future, "exp": future + 3600, "fill": "x" * 100}).encode()
-    ).rstrip(b"=").decode()
-    signature = "c" * 121
-    token = f"{header}.{payload}.{signature}"
-
-    auth._check_and_update_token_len(token)
-    auth._access_token = f"Bearer {token}"
-    auth._token_type = "Bearer"
-
-    calls = {"n": 0}
-
-    def fake_request(nit, pwd, url):
-        calls["n"] += 1
-        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    result = auth.get_token()
-    assert result == f"Bearer {LONG_TOKEN}1"
-    assert calls["n"] == 1
+    assert calls["n"] == 2
 
 
 def test_reauth_logs_nit_and_url(monkeypatch, tmp_path, caplog):

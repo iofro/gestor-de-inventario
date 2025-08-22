@@ -49,7 +49,10 @@ def stable_stringify(value: Any, indent: int | None = None) -> str:
 
 def _json_default(obj: Any) -> float:
     if isinstance(obj, Decimal):
-        return float(obj.quantize(Decimal("0.1"), rounding=ROUND_HALF_UP))
+        q = obj.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if q == 0:
+            q = Decimal("0")
+        return float(q)
     raise TypeError(f"Tipo no serializable: {type(obj)}")
 
 

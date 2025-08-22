@@ -1,24 +1,27 @@
 {
+  "apendice": null,
   "cuerpoDocumento": [
     {
       "cantidad": 1.0,
+      "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 8",
-      "ivaItem": 1.82,
+      "descripcion": "Producto Demo 2",
+      "ivaItem": 1.04,
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
-      "numeroDocumento": "NA",
-      "precioUni": 14.0,
+      "numeroDocumento": null,
+      "precioUni": 8.0,
       "psv": 0.0,
       "tipoItem": 1,
-      "tributos": [],
+      "tributos": null,
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 14.0,
+      "ventaGravada": 8.0,
       "ventaNoSuj": 0.0
     }
   ],
+  "documentoRelacionado": null,
   "emisor": {
     "codActividad": "46484",
     "codEstable": "0001",
@@ -39,19 +42,26 @@
     "telefono": "22223456",
     "tipoEstablecimiento": "01"
   },
+  "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "CD93285C-BA0D-411F-AC1A-CDCA3D1253BA",
+    "codigoGeneracion": "51C95AE8-394F-44DE-8C46-B42E1E154332",
     "fecEmi": "2025-08-22",
-    "horEmi": "06:52:11",
-    "numeroControl": "DTE-01-S001P001-000000000000039",
+    "horEmi": "11:14:34",
+    "motivoContin": null,
+    "numeroControl": "DTE-01-S001P001-000000000000045",
+    "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,
     "tipoMoneda": "USD",
     "tipoOperacion": 1,
     "version": 1
   },
+  "otrosDocumentos": null,
   "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
     "direccion": {
       "complemento": "Calle Falsa 1, San Salvador",
       "departamento": "05",
@@ -69,32 +79,31 @@
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 15.82,
+    "montoTotalOperacion": 9.04,
+    "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 15.82
+        "montoPago": 9.04,
+        "periodo": null,
+        "plazo": null,
+        "referencia": null
       }
     ],
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 14.0,
-    "subTotalVentas": 14.0,
+    "subTotal": 8.0,
+    "subTotalVentas": 8.0,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 14.0,
-    "totalIva": 1.82,
-    "totalLetras": "QUINCE CON 82/100 DÓLARES",
+    "totalGravada": 8.0,
+    "totalIva": 1.04,
+    "totalLetras": "NUEVE CON 04/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 15.82,
-    "tributos": [
-      {
-        "codigo": "20",
-        "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.82
-      }
-    ]
-  }
+    "totalPagar": 9.04,
+    "tributos": null
+  },
+  "ventaTercero": null
 }

@@ -1,0 +1,105 @@
+{
+  "identificacion": {
+    "version": 1,
+    "ambiente": "01",
+    "tipoDte": "01",
+    "numeroControl": "DTE-01-M001P001-000000000095516",
+    "codigoGeneracion": "CE81D713-C1F6-4147-A092-B4E74F8D8294",
+    "tipoModelo": 1,
+    "tipoOperacion": 1,
+    "tipoContingencia": null,
+    "motivoContin": null,
+    "fecEmi": "2025-08-15",
+    "horEmi": "00:00:00",
+    "tipoMoneda": "USD"
+  },
+  "documentoRelacionado": null,
+  "emisor": {
+    "nit": "05110108740018",
+    "nrc": "621510",
+    "nombre": "ESCUELA ESPECIALIZADA EN INGENIERIA ITCA-FEPADE",
+    "codActividad": "85499",
+    "descActividad": "Enseñanza formal ",
+    "nombreComercial": "ESCUELA ESPECIALIZADA EN INGENIERIA ITCA-FEPADE",
+    "tipoEstablecimiento": "02",
+    "direccion": {
+      "departamento": "05",
+      "municipio": "28",
+      "complemento": "KM. 11 1/2, CARRETERA A SANTA TECLA"
+    },
+    "telefono": "21327400",
+    "correo": "facturacion.emisor@itca.edu.sv",
+    "codEstableMH": "M001",
+    "codEstable": "M001",
+    "codPuntoVentaMH": "P001",
+    "codPuntoVenta": "P001"
+  },
+  "receptor": {
+    "tipoDocumento": null,
+    "numDocumento": null,
+    "nrc": null,
+    "nombre": "ARIEL IOSEF ROSALES MARTINEZ",
+    "codActividad": null,
+    "descActividad": null,
+    "direccion": null,
+    "telefono": null,
+    "correo": "arieliosefrosales@gmail.com"
+  },
+  "otrosDocumentos": null,
+  "ventaTercero": null,
+  "cuerpoDocumento": [
+    {
+      "numItem": 1,
+      "tipoItem": 2,
+      "numeroDocumento": null,
+      "codigo": null,
+      "codTributo": null,
+      "descripcion": "CUOTA 2",
+      "cantidad": 1.0,
+      "uniMedida": 99,
+      "precioUni": 100.0,
+      "montoDescu": 0.0,
+      "ventaNoSuj": 0.0,
+      "ventaExenta": 100.0,
+      "ventaGravada": 0.0,
+      "tributos": null,
+      "psv": 0.0,
+      "noGravado": 0.0,
+      "ivaItem": 0.0
+    }
+  ],
+  "resumen": {
+    "totalNoSuj": 0.0,
+    "totalExenta": 100.0,
+    "totalGravada": 0.0,
+    "subTotalVentas": 100.0,
+    "descuNoSuj": 0.0,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "porcentajeDescuento": 0.0,
+    "totalDescu": 0.0,
+    "tributos": null,
+    "subTotal": 100.0,
+    "ivaRete1": 0.0,
+    "reteRenta": 0.0,
+    "montoTotalOperacion": 100.0,
+    "totalNoGravado": 0.0,
+    "totalPagar": 100.0,
+    "totalLetras": "CIEN CON 00/100 DOLARES",
+    "totalIva": 0.0,
+    "saldoFavor": 0.0,
+    "condicionOperacion": 1,
+    "pagos": [
+      {
+        "codigo": "99",
+        "montoPago": 100.0,
+        "referencia": null,
+        "plazo": null,
+        "periodo": null
+      }
+    ],
+    "numPagoElectronico": null
+  },
+  "extension": null,
+  "apendice": null
+}

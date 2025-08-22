@@ -105,6 +105,8 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         "ventaTercero",
         "extension",
         "apendice",
+        "codTributo",
+        "tributos",
     }
 
     def _remove_nulls(value, parent_key=None):
@@ -1004,15 +1006,21 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
 
     if total_gravada > D("0"):
-        resumen["tributos"] = [
-            {
-                "codigo": TRIBUTO_IVA,
-                "descripcion": "Impuesto al Valor Agregado 13%",
-                "valor": total_iva,
-            }
-        ]
+        if tipo_dte == "01":
+            resumen["tributos"] = None
+        else:
+            resumen["tributos"] = [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": "Impuesto al Valor Agregado 13%",
+                    "valor": total_iva,
+                }
+            ]
     else:
-        resumen.pop("tributos", None)
+        if tipo_dte == "01":
+            resumen["tributos"] = None
+        else:
+            resumen.pop("tributos", None)
         resumen["totalIva"] = money(0)
 
     if "pagos" in resumen:
@@ -1207,7 +1215,8 @@ def recalcular_totales(
         resumen["totalLetras"] = total_letras
         modificados.append("totalLetras")
 
-    if venta_gravada_sum > D("0"):
+    tipo_dte = str(data.get("identificacion", {}).get("tipoDte", ""))
+    if venta_gravada_sum > D("0") and tipo_dte != "01":
         trib = [
             {
                 "codigo": TRIBUTO_IVA,
@@ -1219,7 +1228,11 @@ def recalcular_totales(
             resumen["tributos"] = trib
             modificados.append("tributos")
     else:
-        if "tributos" in resumen:
+        if tipo_dte == "01":
+            if resumen.get("tributos") is not None:
+                resumen["tributos"] = None
+                modificados.append("tributos")
+        elif "tributos" in resumen:
             del resumen["tributos"]
             modificados.append("tributos")
 
@@ -1616,13 +1629,17 @@ def generar_dte_json(
         }
         if trib_code:
             item_data["codTributo"] = trib_code
-        if D(str(item_data.get("ventaGravada") or 0)) > 0:
-            if not item_data["tributos"]:
-                item_data["codTributo"] = TRIBUTO_IVA
-                item_data["tributos"] = [TRIBUTO_IVA]
+        if tipo_dte == "01":
+            item_data["codTributo"] = None
+            item_data["tributos"] = None
         else:
-            item_data.pop("codTributo", None)
-            item_data["tributos"] = []
+            if D(str(item_data.get("ventaGravada") or 0)) > 0:
+                if not item_data["tributos"]:
+                    item_data["codTributo"] = TRIBUTO_IVA
+                    item_data["tributos"] = [TRIBUTO_IVA]
+            else:
+                item_data.pop("codTributo", None)
+                item_data["tributos"] = []
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -2154,7 +2171,10 @@ def validate_dte_json(
         item.setdefault("ventaGravada", cero)
         item.setdefault("noGravado", cero)
         item.setdefault("psv", cero)
-        item.setdefault("tributos", [])
+        if tipo_dte == "01":
+            item["tributos"] = None
+        else:
+            item.setdefault("tributos", [])
         if iva_key:
             item.setdefault(iva_key, cero)
 
@@ -2203,30 +2223,34 @@ def validate_dte_json(
         if cod_tri is not None:
             cod_tri = str(cod_tri).upper()
 
-        invalid = [
-            t
-            for t in tributos
-            if t not in TRIBUTOS_PERMITIDOS_ITEM and t != TRIBUTO_IVA
-        ]
-        if cod_tri and cod_tri not in TRIBUTOS_PERMITIDOS_ITEM and cod_tri != TRIBUTO_IVA:
-            invalid.append(cod_tri)
-        if invalid:
-            raise ValueError(
-                f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
-            )
-
-        if venta_gravada_val <= 0:
-            item["tributos"] = []
-            item.pop("codTributo", None)
-        elif tributos:
-            item["tributos"] = tributos
-            if len(tributos) == 1:
-                item["codTributo"] = tributos[0]
-            else:
-                item.pop("codTributo", None)
+        if tipo_dte == "01":
+            item["codTributo"] = None
+            item["tributos"] = None
         else:
-            item["tributos"] = []
-            item.pop("codTributo", None)
+            invalid = [
+                t
+                for t in tributos
+                if t not in TRIBUTOS_PERMITIDOS_ITEM and t != TRIBUTO_IVA
+            ]
+            if cod_tri and cod_tri not in TRIBUTOS_PERMITIDOS_ITEM and cod_tri != TRIBUTO_IVA:
+                invalid.append(cod_tri)
+            if invalid:
+                raise ValueError(
+                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+                )
+
+            if venta_gravada_val <= 0:
+                item["tributos"] = []
+                item.pop("codTributo", None)
+            elif tributos:
+                item["tributos"] = tributos
+                if len(tributos) == 1:
+                    item["codTributo"] = tributos[0]
+                else:
+                    item.pop("codTributo", None)
+            else:
+                item["tributos"] = []
+                item.pop("codTributo", None)
 
         if iva_key:
             if precios_flag and item.get(iva_key) not in (None, 0, D("0")):
@@ -2247,6 +2271,8 @@ def validate_dte_json(
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})
+    if ident.get("tipoDte") == "01":
+        resumen["tributos"] = None
     for k, v in resumen.items():
         if k == "condicionOperacion":
             continue

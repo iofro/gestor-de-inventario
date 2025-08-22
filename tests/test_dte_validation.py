@@ -164,16 +164,26 @@ def test_recalcula_totales(dte_metadata_factory, db_fixture):
     assert dte["resumen"]["totalPagar"] == pytest.approx(10.0)
 
 
-def test_autocompleta_tributos(dte_metadata_factory, db_fixture):
+def test_no_iva_en_items(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     item = dte["cuerpoDocumento"][0]
-    # Eliminamos tributos para forzar el valor por defecto
     item.pop("tributos", None)
     item.pop("codTributo", None)
     validate_dte_json(dte, db=db_fixture)
     item = dte["cuerpoDocumento"][0]
-    assert item["tributos"] == [TRIBUTO_IVA]
-    assert item["codTributo"] == TRIBUTO_IVA
+    assert item["tributos"] == []
+    assert "codTributo" not in item
+
+
+def test_rechaza_iva_en_items(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    dte["cuerpoDocumento"][0]["codTributo"] = TRIBUTO_IVA
+    with pytest.raises(ValueError):
+        validate_dte_json(dte, db=db_fixture)
+    dte = dte_metadata_factory()
+    dte["cuerpoDocumento"][0]["tributos"] = [TRIBUTO_IVA]
+    with pytest.raises(ValueError):
+        validate_dte_json(dte, db=db_fixture)
 
 
 def test_tributos_invalidos_rechazados(dte_metadata_factory, db_fixture):
@@ -188,6 +198,13 @@ def test_tributos_invalidos_rechazados(dte_metadata_factory, db_fixture):
     dte["cuerpoDocumento"][0]["codTributo"] = "ZZ"
     with pytest.raises(ValueError):
         validate_dte_json(dte, db=db_fixture)
+
+
+def test_clamp_uni_medida(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    dte["cuerpoDocumento"][0]["uniMedida"] = 1  # valor fuera del catálogo permitido
+    validate_dte_json(dte, db=db_fixture)
+    assert dte["cuerpoDocumento"][0]["uniMedida"] == 59
 
 
 def test_numero_control_regex(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):

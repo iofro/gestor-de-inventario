@@ -79,7 +79,7 @@ def generar_fc_ejemplo(
     item = {
         "numItem": 1,
         "tipoItem": 1,
-        "numeroDocumento": "NA",
+        "numeroDocumento": None,
         "codigo": "SKU001",
         "descripcion": "Producto X",
         "cantidad": d8(cantidad),
@@ -229,7 +229,7 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     precio = Decimal("9.54")
     venta = d8(cantidad * precio)
     iva_item = d8(venta * Decimal("0.13"))
-    numero_documento = "NA" if tipo == "fc" else None
+    numero_documento = None
     tipo_item = 4 if tipo == "fc" else 1
     uni_medida = 99 if tipo == "fc" else 59
     item = {

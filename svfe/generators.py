@@ -94,8 +94,6 @@ def generar_fc_ejemplo(
         "noGravado": D("0.00000000"),
     }
     if gravado:
-        item["codTributo"] = TRIBUTO_IVA
-        item["tributos"] = [TRIBUTO_IVA]
         item["ventaGravada"] = venta
         item["ivaItem"] = iva8
     else:
@@ -246,11 +244,9 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "ventaGravada": venta,
         "psv": d8(Decimal("0")),
         "noGravado": d8(Decimal("0")),
+        "ivaItem": iva_item,
+        "tributos": [],
     }
-    # Todos los ítems gravados deben declarar el tributo IVA.
-    item["codTributo"] = TRIBUTO_IVA
-    item["ivaItem"] = iva_item
-    item["tributos"] = [TRIBUTO_IVA]
     return [item]
 
 
@@ -292,11 +288,17 @@ def _resumen(tipo: str) -> Dict[str, Any]:
     }
     if tipo == "fc":
         data["totalIva"] = iva
-        data["tributos"] = [
-            {"codigo": TRIBUTO_IVA, "descripcion": "IVA", "valor": iva}
-        ]
     else:
         data["ivaPerci1"] = d2(Decimal("0"))
+    if venta > D("0"):
+        data["tributos"] = [
+            {
+                "codigo": TRIBUTO_IVA,
+                "descripcion": "Impuesto al Valor Agregado 13%",
+                "valor": iva,
+            }
+        ]
+    else:
         data["tributos"] = None
     return data
 

@@ -542,8 +542,14 @@ TRIBUTOS = _CATS["CAT-015"].copy()
 TRIBUTO_IVA = "20"
 TRIBUTOS.setdefault(TRIBUTO_IVA, "Impuesto al Valor Agregado 13%")
 
+# Tributos especiales permitidos por ítem según CAT-015 sección 2
+TRIBUTOS_POR_ITEM_ESPECIALES = {"A8", "57", "90", "D4", "D5", "A6"}
+
 TIPO_ESTABLEC = _CATS["CAT-009"]
 TIPO_ITEM = {int(k): v for k, v in _CATS["CAT-011"].items()}
+
+# Subconjunto de unidades de medida permitidas para ítems (CAT-014)
+UNIDADES_MEDIDA_PERMITIDAS = {59, 99}
 
 PLAZO = _CATS["CAT-018"]
 
@@ -555,8 +561,8 @@ CONDICION_OPERACION = {int(k): v for k, v in _CATS["CAT-016"].items()}
 FORMA_PAGO = _CATS["CAT-017"]
 
 # Conjuntos derivados
-TRIBUTOS_PERMITIDOS_RESUMEN = set(TRIBUTOS.keys())
-TRIBUTOS_PERMITIDOS_ITEM = set(TRIBUTOS.keys())
+TRIBUTOS_PERMITIDOS_RESUMEN = {TRIBUTO_IVA}
+TRIBUTOS_PERMITIDOS_ITEM = set(TRIBUTOS_POR_ITEM_ESPECIALES)
 
 # Mapa general de catálogos para acceso dinámico
 CATALOGS: Dict[str, Dict[str, str]] = {key: val for key, val in _CATS.items()}
@@ -619,8 +625,10 @@ def register_code(cat: str, code: str, label: str) -> None:
     dest[code] = label
     if cat == "TRIBUTOS":
         TRIBUTOS[code] = label
-        TRIBUTOS_PERMITIDOS_RESUMEN.add(code)
-        TRIBUTOS_PERMITIDOS_ITEM.add(code)
+        if code == TRIBUTO_IVA:
+            TRIBUTOS_PERMITIDOS_RESUMEN.add(code)
+        if code in TRIBUTOS_POR_ITEM_ESPECIALES:
+            TRIBUTOS_PERMITIDOS_ITEM.add(code)
     elif cat == "TIPO_ITEM":
         try:
             TIPO_ITEM[int(code)] = label

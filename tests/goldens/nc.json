@@ -3,7 +3,6 @@
   "cuerpoDocumento": [
     {
       "cantidad": "2.50000000",
-      "codTributo": "20",
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
       "montoDescu": "0E-8",
@@ -11,9 +10,7 @@
       "numeroDocumento": "123",
       "precioUni": "9.54000000",
       "tipoItem": 1,
-      "tributos": [
-        "20"
-      ],
+      "tributos": [],
       "uniMedida": 59,
       "ventaExenta": "0E-8",
       "ventaGravada": "23.85000000",
@@ -90,7 +87,13 @@
     "totalGravada": "23.85",
     "totalLetras": "VEINTISEIS CON 95/100 USD",
     "totalNoSuj": "0.00",
-    "tributos": null
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": "3.10"
+      }
+    ]
   },
   "ventaTercero": null
 }

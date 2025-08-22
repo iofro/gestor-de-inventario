@@ -286,9 +286,6 @@ class DB:
         self.cursor.execute(
             "CREATE INDEX IF NOT EXISTS idx_productos_nombre ON productos(nombre)"
         )
-        self.cursor.execute(
-            "CREATE INDEX IF NOT EXISTS idx_productos_sku ON productos(sku)"
-        )
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS ventas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -586,6 +583,12 @@ class DB:
         ]
         for table, definition in columns:
             self.add_column_if_missing(table, definition)
+        # Create index for SKU only if the column exists
+        self.cursor.execute("PRAGMA table_info(productos)")
+        if any(row[1] == "sku" for row in self.cursor.fetchall()):
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_productos_sku ON productos(sku)"
+            )
         # Índices únicos para campos de texto
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_clientes_codigo ON clientes(codigo)"

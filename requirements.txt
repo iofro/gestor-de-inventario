@@ -12,3 +12,4 @@ msal
 jsonschema
 jsonpatch
 appdirs
+PyJWT

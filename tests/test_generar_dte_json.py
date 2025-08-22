@@ -24,6 +24,11 @@ def test_generar_dte_json_basic(tmp_path):
         "descActividad": "Comercio",
         "telefono": "22222222",
         "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "15",
+            "complemento": "Calle 1",
+        },
     }
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
@@ -80,6 +85,60 @@ def test_generar_dte_json_basic(tmp_path):
         "extension",
     }
     assert set(data.keys()) == expected
+
+
+def test_gravado_item_includes_tributos(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "15",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    import svfe.config as svfe_config
+    svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False}
+    )
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    data = dte_module.generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    resumen = data["resumen"]
+    assert item.get("tributos") == ["19"]
+    assert resumen.get("tributos")
 
 
 def test_generar_dte_json_usa_cod_estable_punto(tmp_path):

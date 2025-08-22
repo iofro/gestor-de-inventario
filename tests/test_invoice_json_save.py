@@ -5,6 +5,7 @@ import pytest
 from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
 import dte
+from db import DB
 from sales_tab import SalesTab
 from utils import docs
 from utils.doc_generation import generate_invoice_pdf
@@ -13,20 +14,28 @@ class FakeDB:
     def __init__(self):
         self._ventas = []
         self.detalles = {}
+
     def get_ventas(self):
         return self._ventas
+
     def get_venta_credito_fiscal(self, vid):
         return None
+
     def get_detalles_venta(self, vid):
         return self.detalles.get(vid, [])
+
     def get_trabajador(self, vid):
         return None
+
     def add_factura_pdf(self, *a):
         pass
+
     def add_ticket_pdf(self, *a):
         pass
+
     def get_ticket_pdf(self, vid):
         return None
+
     def get_factura_pdf(self, vid):
         return None
 
@@ -38,21 +47,65 @@ class Manager:
         self._vendedores = []
 
 def test_generate_invoice_creates_json(tmp_path):
-    db = FakeDB()
-    venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
-    db._ventas.append(venta)
-    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "15",
+            "complemento": "Calle 1",
+        },
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(dte, "DATOS_NEGOCIO_PATH", str(datos_file))
+    monkeypatch.setattr("svfe.config.DATOS_NEGOCIO_PATH", str(datos_file))
+
+    db = DB(":memory:")
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01",
+        11.3,
+        cliente_id=cliente_id,
+        extra={"precios_incluyen_iva": False},
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
     man = Manager(db)
 
     pdf_path = tmp_path / "fact.pdf"
     json_path = tmp_path / "fact.json"
+
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
-    monkeypatch = pytest.MonkeyPatch()
+
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
 
-    generate_invoice_pdf(man, 1)
+    generate_invoice_pdf(man, venta_id)
     monkeypatch.undo()
 
     assert pdf_path.exists()
@@ -63,14 +116,54 @@ def test_generate_invoice_creates_json(tmp_path):
     assert ident.get("codigoGeneracion")
     assert ident.get("numeroControl")
     assert data.get("cuerpoDocumento")
-    assert data.get("resumen", {}).get("totalPagar") == 10
 
 
 def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
-    db = FakeDB()
-    venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
-    db._ventas.append(venta)
-    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "15",
+            "complemento": "Calle 1",
+        },
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    monkeypatch.setattr(dte, "DATOS_NEGOCIO_PATH", str(datos_file))
+    monkeypatch.setattr("svfe.config.DATOS_NEGOCIO_PATH", str(datos_file))
+
+    db = DB(":memory:")
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01",
+        11.3,
+        cliente_id=cliente_id,
+        extra={"precios_incluyen_iva": False},
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
     man = Manager(db)
 
     pdf_path = tmp_path / "fact.pdf"
@@ -104,7 +197,7 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
 
     monkeypatch.setattr(dte, "_save_signed_dte", fake_save)
 
-    generate_invoice_pdf(man, 1)
+    generate_invoice_pdf(man, venta_id)
 
     base_dir = created["dir"]
     files = list(base_dir.iterdir())

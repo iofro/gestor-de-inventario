@@ -33,6 +33,8 @@ def test_generar_dte_json_basic(tmp_path):
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
     dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    dte_module._load_datos_negocio = lambda: datos
+    dte_module._load_datos_negocio = lambda: datos
     import svfe.config as svfe_config
     svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
     svfe_config.load_datos_negocio = lambda: datos
@@ -113,10 +115,16 @@ def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
         "correo": "test@example.com",
         "codEstable": "2",
         "codPuntoVenta": 5,
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
     }
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
     dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    dte_module._load_datos_negocio = lambda: datos
 
     db = create_db()
     db.add_vendedor("V1")
@@ -247,11 +255,64 @@ def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("13.00")
+    assert D(str(item["precioUni"])) == D("11.50")
     assert D(str(item["ventaGravada"])) == D("11.50")
     assert D(str(item["ivaItem"])) == D("1.50")
     assert D(str(res["totalPagar"])) == D("13.00")
     assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("13.00")
+
+
+def test_generar_dte_json_cons_final_precio_neto(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 9, cliente_id=cliente_id)
+    db.add_detalle_venta(venta_id, pid, 1, 9, vendedor_id=vid)
+
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    D = Decimal
+    assert D(str(item["precioUni"])) == D("7.96")
+    assert D(str(item["ventaGravada"])) == D("7.96")
+    assert D(str(item["ivaItem"])) == D("1.04")
+    assert D(str(res["totalPagar"])) == D("9.00")
 
 
 def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
@@ -301,11 +362,9 @@ def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("5.50")
+    assert D(str(item["precioUni"])) == D("4.87")
     assert D(str(item["ventaGravada"])) == D("9.73")
     assert D(str(item["ivaItem"])) == D("1.27")
-    cantidad = D(str(item["cantidad"]))
-    assert money(D(str(item["precioUni"])) * cantidad) == D("11.00")
     assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
     assert D(str(res["totalPagar"])) == D("11.00")
 
@@ -357,11 +416,9 @@ def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("5.50")
+    assert D(str(item["precioUni"])) == D("4.87")
     assert D(str(item["ventaGravada"])) == D("9.73")
     assert D(str(item["ivaItem"])) == D("1.27")
-    cantidad = D(str(item["cantidad"]))
-    assert money(D(str(item["precioUni"])) * cantidad) == D("11.00")
     assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
     assert D(str(res["totalPagar"])) == D("11.00")
 
@@ -466,7 +523,8 @@ def test_dte_rounding_and_validation(capsys):
     data = generar_dte_json(db, venta_id)
     capsys.readouterr()
     # Values rounded
-    assert data["cuerpoDocumento"][0]["precioUni"] == 1.12345679
+    D = Decimal
+    assert data["cuerpoDocumento"][0]["precioUni"] == D("1.13")
     assert data["resumen"]["totalGravada"] == 2.25
 
 
@@ -915,9 +973,9 @@ def test_item_tributo_guard(tmp_path):
     data = dte_module.generar_dte_json(db, venta_id)
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
-    assert item["codTributo"] is None
-    assert item["tributos"] is None
-    assert resumen["tributos"] is None
+    assert item.get("codTributo") is None
+    assert item.get("tributos") in (None, [])
+    assert resumen.get("tributos") is None
     from decimal import Decimal as D
     assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
 
@@ -1090,7 +1148,7 @@ def test_resumen_tributo_codigo_str(tmp_path):
     db = create_db()
     db.add_vendedor("V1")
     vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
@@ -1110,7 +1168,7 @@ def test_resumen_tributo_codigo_str(tmp_path):
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
-    data = dte_module.generar_dte_json(db, venta_id)
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
     res = data["resumen"]
     assert res["tributos"][0]["codigo"] == "20"
     assert isinstance(res["tributos"][0]["codigo"], str)

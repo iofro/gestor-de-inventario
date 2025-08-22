@@ -6,7 +6,7 @@ def test_delete_producto_removes_dependents(tmp_path):
     db = DB(str(tmp_path / "db.sqlite"))
     db.add_vendedor("V1")
     vendedor_id = db.get_vendedores()[0]["id"]
-    db.add_producto("P1", "C1", vendedor_id, None, 1, 2, 3, 10)
+    db.add_producto("P1", "C1", None,  vendedor_id, None, 1, 2, 3, 10)
     producto_id = db.get_productos()[0]["id"]
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, producto_id, 1, 10)
@@ -40,7 +40,7 @@ def test_delete_vendedor_requires_reassignment(tmp_path):
     db = DB(str(tmp_path / "db.sqlite"))
     db.add_vendedor("V1")
     vendedor_id = db.get_vendedores()[0]["id"]
-    db.add_producto("P1", "C1", vendedor_id, None, 1, 2, 3, 10)
+    db.add_producto("P1", "C1", None,  vendedor_id, None, 1, 2, 3, 10)
     producto_id = db.get_productos()[0]["id"]
     venta_id = db.add_venta("2024-01-01", 10, vendedor_id=vendedor_id)
     db.add_detalle_venta(
@@ -74,7 +74,7 @@ def test_delete_distribuidor_requires_reassignment(tmp_path):
     dist1 = db.get_Distribuidores()[0]["id"]
     db.add_vendedor("V1", Distribuidor_id=dist1)
     vend1 = db.get_vendedores()[0]["id"]
-    db.add_producto("P1", "C1", vend1, dist1, 1, 2, 3, 10)
+    db.add_producto("P1", "C1", None,  vend1, dist1, 1, 2, 3, 10)
     producto_id = db.get_productos()[0]["id"]
     venta_id = db.add_venta(
         "2024-01-01",
@@ -112,7 +112,7 @@ def test_delete_venta_removes_detalles(tmp_path):
     db = DB(str(tmp_path / "db.sqlite"))
     db.add_vendedor("V1")
     vendedor_id = db.get_vendedores()[0]["id"]
-    db.add_producto("P1", "C1", vendedor_id, None, 1, 2, 3, 10)
+    db.add_producto("P1", "C1", None,  vendedor_id, None, 1, 2, 3, 10)
     producto_id = db.get_productos()[0]["id"]
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, producto_id, 1, 10)

@@ -31,7 +31,7 @@ def test_inventory_reset_removes_dependencies(qt_app, monkeypatch, tmp_path):
     db = window.manager.db
 
     # create product
-    prod_id = db.add_producto("P1", "C1", None, None, 1, 2, 3, 5)
+    prod_id = db.add_producto("P1", "C1", None,  None, None, 1, 2, 3, 5)
     # create sale and detail
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, prod_id, 1, 10)
@@ -85,6 +85,7 @@ def test_import_inventory_creates_relations(tmp_path, monkeypatch):
                 "id": 1,
                 "nombre": "Prod",
                 "codigo": "C1",
+                "sku": "S1",
                 "precio_compra": 1,
                 "precio_venta_minorista": 2,
                 "precio_venta_mayorista": 3,

@@ -11,7 +11,7 @@ def test_detalle_venta_con_comision(tmp_path):
     db = create_db()
     db.add_vendedor("Vend")
     vid = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", vid, None, 0, 0, 0, 10)
+    db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
 
     venta_id = db.add_venta("2024-01-01", 10, vendedor_id=vid)

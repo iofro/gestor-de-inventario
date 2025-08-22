@@ -10,7 +10,7 @@ class MemoryDB(DB):
 def test_limpiar_inventario_handles_missing_tables():
     db = MemoryDB()
     # setup sample data
-    prod_id = db.add_producto("P1", "C1", None, None, 1, 2, 3, 5)
+    prod_id = db.add_producto("P1", "C1", None,  None, None, 1, 2, 3, 5)
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, prod_id, 1, 10)
     cliente_id = db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")
@@ -34,7 +34,7 @@ def test_limpiar_inventario_handles_missing_tables():
 
 def test_limpiar_inventario_rollback(monkeypatch):
     db = MemoryDB()
-    prod_id = db.add_producto("P1", "C1", None, None, 1, 2, 3, 5)
+    prod_id = db.add_producto("P1", "C1", None,  None, None, 1, 2, 3, 5)
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, prod_id, 1, 10)
     cliente_id = db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")

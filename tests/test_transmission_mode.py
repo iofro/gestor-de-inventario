@@ -33,16 +33,22 @@ class Manager:
         self._clientes = []
         self._vendedores = []
 
-def test_build_json_includes_transmission(tmp_path):
-    template = tmp_path / "t.json"
-    template.write_text('{"identificacion": {}, "receptor": {}, "cuerpoDocumento": [], "resumen": {}}')
-    venta = {
-        "numero_control": "NC",
-        "codigo_generacion": "CG",
-        "fecha": "2024-01-01",
-        "tipo_operacion": 2,
+def test_build_json_includes_transmission():
+    identificacion = {
+        "ambiente": "00",
+        "version": 1,
+        "tipoDte": "01",
+        "codigoGeneracion": "CG",
+        "numeroControl": "NC",
+        "tipoOperacion": 2,
     }
-    data = build_invoice_json(venta, {}, [], template_path=str(template))
+    emisor = {"nombre": "E", "direccion": {"departamento": "01", "municipio": "0101"}}
+    data = build_invoice_json(
+        identificacion=identificacion,
+        emisor=emisor,
+        receptor={},
+        items=[{"descripcion": "P", "cantidad": 1, "precioUnitario": 1}],
+    )
     assert data["identificacion"]["tipoOperacion"] == 2
 
 
@@ -58,6 +64,19 @@ def test_generate_invoice_registers_pending(tmp_path, monkeypatch):
         pdf.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf), str(js)
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr(
+        "utils.doc_generation.generar_dte_json",
+        lambda *a, **k: {
+            "identificacion": {
+                "version": 1,
+                "tipoDte": "01",
+                "codigoGeneracion": "XYZ",
+                "numeroControl": "NC-1",
+            },
+            "resumen": {"totalPagar": 10},
+            "cuerpoDocumento": [{"cantidad": 1, "precioUnitario": 10}],
+        },
+    )
     generate_invoice_pdf(man, 1)
     assert db.pending
 

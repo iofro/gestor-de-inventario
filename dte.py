@@ -1734,6 +1734,14 @@ def validate_dte_json(
     # Normalización omitida para preservar códigos con ceros a la izquierda
     # ("01", etc.) que ``_normalize_payload`` convertiría a enteros.
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
+
+    # Cuando ``payload`` representa un sobre de recepción (envelope) ya
+    # firmado, no incluye los campos de un DTE tradicional.  Evitamos la
+    # validación de campos obligatorios en este caso para permitir el envío
+    # directo del sobre a Hacienda.
+    if "documento" in payload and not any(k in payload for k in required):
+        return
+
     missing = [key for key in required if key not in payload]
     if missing:
         raise ValueError("Faltan campos obligatorios: " + ", ".join(missing))

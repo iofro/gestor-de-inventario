@@ -99,12 +99,37 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
     Cuando ``schema`` es ``None`` se usa el esquema ``FC_SCHEMA``.
     """
 
-    def _remove_nulls(value):
-        """Recursively drop keys or items with ``None`` values."""
+    REQUIRED_NULL_FIELDS = {
+        "documentoRelacionado",
+        "otrosDocumentos",
+        "ventaTercero",
+        "extension",
+        "apendice",
+    }
+
+    def _remove_nulls(value, parent_key=None):
+        """Recursively drop keys or items with ``None`` values.
+
+        Las claves en ``REQUIRED_NULL_FIELDS`` se conservan incluso si su
+        valor es ``None`` y las listas vacías bajo estas claves se
+        convierten en ``None``.
+        """
         if isinstance(value, dict):
-            return {k: _remove_nulls(v) for k, v in value.items() if v is not None}
+            clean = {}
+            for k, v in value.items():
+                cleaned = _remove_nulls(v, k)
+                if cleaned is not None or k in REQUIRED_NULL_FIELDS:
+                    clean[k] = cleaned
+            return clean
         if isinstance(value, list):
-            return [_remove_nulls(v) for v in value if v is not None]
+            cleaned_list = []
+            for item in value:
+                cleaned_item = _remove_nulls(item, parent_key)
+                if cleaned_item is not None:
+                    cleaned_list.append(cleaned_item)
+            if not cleaned_list and parent_key in REQUIRED_NULL_FIELDS:
+                return None
+            return cleaned_list
         return value
 
     if schema is None:
@@ -999,7 +1024,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         )
 
     if "numPagoElectronico" in resumen:
-        resumen["numPagoElectronico"] = extra.get("numPagoElectronico")
+        resumen["numPagoElectronico"] = extra.get("numPagoElectronico", "")
 
     excl = {
         "totalLetras",
@@ -1076,20 +1101,22 @@ def recalcular_totales(
             tributos = [trib_raw]
         else:
             tributos = list(trib_raw)
-        tributos = [str(t).upper() for t in tributos if t]
-        cod_tributo = item.get("codTributo")
-        if cod_tributo is not None:
-            cod_tributo = str(cod_tributo).upper()
+            tributos = [str(t).upper() for t in tributos if t]
+            cod_tributo = item.get("codTributo")
+            if cod_tributo is not None:
+                cod_tributo = str(cod_tributo).upper()
 
-        if cod_tributo == TRIBUTO_IVA or TRIBUTO_IVA in tributos:
-            raise ValueError("IVA 13% solo debe declararse en el resumen")
-        invalid = [t for t in tributos if t not in TRIBUTOS_PERMITIDOS_ITEM]
-        if cod_tributo and cod_tributo not in TRIBUTOS_PERMITIDOS_ITEM:
-            invalid.append(cod_tributo)
-        if invalid:
-            raise ValueError(
-                f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
-            )
+            invalid = [
+                t
+                for t in tributos
+                if t not in TRIBUTOS_PERMITIDOS_ITEM and t != TRIBUTO_IVA
+            ]
+            if cod_tributo and cod_tributo not in TRIBUTOS_PERMITIDOS_ITEM and cod_tributo != TRIBUTO_IVA:
+                invalid.append(cod_tributo)
+            if invalid:
+                raise ValueError(
+                    f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
+                )
 
         linea_total = money(cant * precio - monto_descu)
         if linea_total < 0:
@@ -1485,6 +1512,19 @@ def generar_dte_json(
         if fiscal.get("orden_no"):
             receptor["ordenNo"] = fiscal.get("orden_no")
 
+    if not receptor.get("codActividad"):
+        receptor["codActividad"] = (
+            emisor.get("codActividad") or datos.get("cod_giro") or "00000"
+        )
+    if not receptor.get("descActividad"):
+        receptor["descActividad"] = (
+            emisor.get("descActividad")
+            or datos.get("descActividad")
+            or "SIN GIRO"
+        )
+    if not receptor.get("correo"):
+        receptor["correo"] = "no-reply@example.com"
+
     cuerpo = []
     items_total = D("0")
     commission_total = D("0")
@@ -1576,6 +1616,13 @@ def generar_dte_json(
         }
         if trib_code:
             item_data["codTributo"] = trib_code
+        if D(str(item_data.get("ventaGravada") or 0)) > 0:
+            if not item_data["tributos"]:
+                item_data["codTributo"] = TRIBUTO_IVA
+                item_data["tributos"] = [TRIBUTO_IVA]
+        else:
+            item_data.pop("codTributo", None)
+            item_data["tributos"] = []
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -1712,6 +1759,15 @@ def generar_dte_json(
         resumen.pop("tributos", None)
 
     if resumen.get("pagos"):
+        if resumen.get("condicionOperacion") == 2:
+            for p in resumen["pagos"]:
+                p.setdefault("codigo", "01")
+                if p.get("referencia") is None:
+                    p["referencia"] = ""
+                if p.get("periodo") is None:
+                    p["periodo"] = ""
+                if p.get("plazo") is None:
+                    p["plazo"] = ""
         for p in resumen["pagos"]:
             val = D(str(p.get("montoPago") or 0))
             if val != money(val):
@@ -1774,7 +1830,7 @@ def generar_dte_json(
     }
 
     validate_dte_json(result, db=db, precios_incluyen_iva=False)
-    return sanitize_dte_payload(result)
+    return result
 
 
 def validate_dte_json(
@@ -2147,17 +2203,22 @@ def validate_dte_json(
         if cod_tri is not None:
             cod_tri = str(cod_tri).upper()
 
-        if cod_tri == TRIBUTO_IVA or TRIBUTO_IVA in tributos:
-            raise ValueError("IVA 13% solo debe declararse en el resumen")
-        invalid = [t for t in tributos if t not in TRIBUTOS_PERMITIDOS_ITEM]
-        if cod_tri and cod_tri not in TRIBUTOS_PERMITIDOS_ITEM:
+        invalid = [
+            t
+            for t in tributos
+            if t not in TRIBUTOS_PERMITIDOS_ITEM and t != TRIBUTO_IVA
+        ]
+        if cod_tri and cod_tri not in TRIBUTOS_PERMITIDOS_ITEM and cod_tri != TRIBUTO_IVA:
             invalid.append(cod_tri)
         if invalid:
             raise ValueError(
                 f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
             )
 
-        if tributos:
+        if venta_gravada_val <= 0:
+            item["tributos"] = []
+            item.pop("codTributo", None)
+        elif tributos:
             item["tributos"] = tributos
             if len(tributos) == 1:
                 item["codTributo"] = tributos[0]
@@ -2226,6 +2287,16 @@ def validate_dte_json(
             "Pagos no cuadran con totalPagar (|delta|=%s). Se deja que el validador falle.",
             delta,
         )
+
+    if resumen.get("pagos") and resumen.get("condicionOperacion") == 2:
+        for p in resumen["pagos"]:
+            p.setdefault("codigo", "01")
+            if p.get("referencia") is None:
+                p["referencia"] = ""
+            if p.get("periodo") is None:
+                p["periodo"] = ""
+            if p.get("plazo") is None:
+                p["plazo"] = ""
 
     # Verificación de centavos exactos en totales clave
     for k in (
@@ -2402,7 +2473,7 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
         if isinstance(v, (int, float)):
             resumen[k] = -abs(v)
     data["resumen"] = resumen
-    return sanitize_dte_payload(data)
+    return data
 
 
 def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
@@ -2428,7 +2499,7 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
         "tipoDoc": tipo_doc,
         "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
     }
-    return sanitize_dte_payload(data)
+    return data
 
 
 def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
@@ -2454,7 +2525,7 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
         "tipoDoc": tipo_doc,
         "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
     }
-    return sanitize_dte_payload(data)
+    return data
 
 
 def _normalize_recepcion_url(raw: str) -> str:
@@ -2830,8 +2901,9 @@ def transmitir_dte(
     else:
         data = generar_dte_json(db, venta_id)
 
-    data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
+    schema = catalogos.get_dte_schema(tipo_dte)
+    data = sanitize_dte_payload(data, schema)
     try:
         validate_dte_json(data, db=db)
     except Exception as exc:
@@ -2867,8 +2939,14 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             jws_token = raw
         payload = _decode_jws_payload(jws_token)
     else:
-        data = sanitize_dte_payload(raw)
-        data = apply_schema_patch(data)
+        data = apply_schema_patch(raw)
+        tipo = (
+            data.get("identificacion")
+            or data.get("identificador")
+            or {}
+        ).get("tipoDte")
+        schema = catalogos.get_dte_schema(str(tipo))
+        data = sanitize_dte_payload(data, schema)
         try:
             validate_dte_json(data, db=db)
         except Exception as exc:
@@ -3017,8 +3095,6 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
-    # Ensure the payload is sanitized and free of ``None`` values before signing
-    data = sanitize_dte_payload(data)
 
     signed = jws.sign_json(data)
 
@@ -3070,8 +3146,9 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
 def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una factura electrónica."""
     data = generar_dte_json(db, venta_id)
-    data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
+    schema = catalogos.get_dte_schema("01")
+    data = sanitize_dte_payload(data, schema)
     try:
         validate_dte_json(data, db=db)
     except Exception as exc:
@@ -3087,8 +3164,9 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
 def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de crédito."""
     data = generar_nota_credito_json(db, nota_id)
-    data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
+    schema = catalogos.get_dte_schema("05")
+    data = sanitize_dte_payload(data, schema)
     try:
         validate_dte_json(data, db=db)
     except Exception as exc:
@@ -3101,8 +3179,9 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
 def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de débito."""
     data = generar_nota_debito_json(db, nota_id)
-    data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
+    schema = catalogos.get_dte_schema("06")
+    data = sanitize_dte_payload(data, schema)
     try:
         validate_dte_json(data, db=db)
     except Exception as exc:
@@ -3115,8 +3194,9 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
 def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de remisión."""
     data = generar_nota_remision_json(db, nota_id)
-    data = sanitize_dte_payload(data)
     data = apply_schema_patch(data)
+    schema = catalogos.get_dte_schema("04")
+    data = sanitize_dte_payload(data, schema)
     try:
         validate_dte_json(data, db=db)
     except Exception as exc:

@@ -24,6 +24,11 @@ def test_generar_dte_json_basic(tmp_path):
         "descActividad": "Comercio",
         "telefono": "22222222",
         "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
     }
     tmp_file = tmp_path / "datos_negocio.json"
     tmp_file.write_text(json.dumps(datos))
@@ -80,6 +85,14 @@ def test_generar_dte_json_basic(tmp_path):
         "extension",
     }
     assert set(data.keys()) == expected
+    for key in (
+        "documentoRelacionado",
+        "otrosDocumentos",
+        "apendice",
+        "ventaTercero",
+        "extension",
+    ):
+        assert data[key] is None
 
 
 def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
@@ -578,3 +591,281 @@ def test_generar_dte_json_municipio_fuera_depto(tmp_path):
     direccion = data["receptor"]["direccion"]
     assert direccion["departamento"] == "06"
     assert direccion["municipio"] == "15"
+
+
+def test_receptor_defaults(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01",
+        11.3,
+        cliente_id=cliente_id,
+        extra={"precios_incluyen_iva": False},
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id)
+    rec = data["receptor"]
+    assert rec["codActividad"] == datos["cod_giro"]
+    assert rec["descActividad"] == datos["descActividad"]
+    assert rec["correo"] == "no-reply@example.com"
+
+
+def test_credit_payment_defaults(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    extra = {
+        "precios_incluyen_iva": False,
+        "condicion_operacion": 2,
+        "pagos": [
+            {"codigo": "01", "montoPago": 11.3, "periodo": "01", "plazo": 30}
+        ],
+    }
+    venta_id = db.add_venta("2024-01-01", 11.3, cliente_id=cliente_id, extra=extra)
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id)
+    res = data["resumen"]
+    assert res["numPagoElectronico"] == ""
+    pago = res["pagos"][0]
+    assert pago["codigo"] == "01"
+    assert pago["referencia"] == ""
+    assert str(pago["periodo"]).zfill(2) == "01"
+    assert str(pago["plazo"]) == "30"
+
+
+def test_item_tributo_guard(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False}
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    assert item["codTributo"] == "20"
+    assert item["tributos"] == ["20"]
+
+
+def test_item_no_tributo_when_exento(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False}
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    item["ventaExenta"] = item["ventaGravada"]
+    item["ventaGravada"] = 0
+    item["codTributo"] = "20"
+    item["tributos"] = ["20"]
+    res["totalExenta"] = res["totalGravada"]
+    res["totalGravada"] = 0
+    res.pop("tributos", None)
+    dte_module.validate_dte_json(data, db=db)
+    item = data["cuerpoDocumento"][0]
+    assert "codTributo" not in item
+    assert item.get("tributos") == []
+
+
+def test_resumen_tributo_codigo_str(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567-8",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False}
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id)
+    res = data["resumen"]
+    assert res["tributos"][0]["codigo"] == "20"
+    assert isinstance(res["tributos"][0]["codigo"], str)

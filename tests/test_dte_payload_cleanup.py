@@ -10,42 +10,51 @@ def _has_none(data):
         return any(_has_none(v) for v in data)
     return False
 
+REQUIRED_NULL_FIELDS = {
+    "documentoRelacionado",
+    "otrosDocumentos",
+    "ventaTercero",
+    "extension",
+    "apendice",
+}
+
 
 def test_sanitize_dte_payload_removes_none_recursively(dte_metadata_factory):
     dte_payload = dte_metadata_factory()
     dte_payload["emisor"]["codActividad"] = None
-    dte_payload["documentoRelacionado"] = None
     clean = dte.sanitize_dte_payload(dte_payload)
     assert "codActividad" not in clean["emisor"]
-    assert "documentoRelacionado" not in clean
-    assert not _has_none(clean)
+    for key in REQUIRED_NULL_FIELDS:
+        assert key in clean and clean[key] is None
+    clean_no_required = {k: v for k, v in clean.items() if k not in REQUIRED_NULL_FIELDS}
+    assert not _has_none(clean_no_required)
 
 
-def test_enviar_documento_uses_clean_payload(monkeypatch, dte_metadata_factory):
+def test_enviar_factura_sanitizes_payload(monkeypatch, dte_metadata_factory):
     payload = dte_metadata_factory()
     payload["emisor"]["codActividad"] = None
-    payload["documentoRelacionado"] = None
 
     captured = {}
 
-    from tests.conftest import make_jws
+    monkeypatch.setattr(dte, "generar_dte_json", lambda db, venta_id: payload)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda data: data)
+    monkeypatch.setattr(dte, "validate_dte_json", lambda data, db=None: None)
 
-    def fake_sign(data):
+    def fake_send(db, doc_id, data, modo):
         captured["data"] = data
-        return make_jws(data)
+        return {"estado": "Transmitido"}
 
-    monkeypatch.setattr(dte.jws, "sign_json", fake_sign)
-    monkeypatch.setattr(dte.auth, "get_token", lambda: "Bearer JWT")
-    monkeypatch.setattr(dte, "_post_dte", lambda url, token, jws, meta: {"estado": "Transmitido"})
-    monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: None)
-    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {})
+    monkeypatch.setattr(dte, "_enviar_documento", fake_send)
 
     class DummyDB:
-        def registrar_envio_dte(self, *args, **kwargs):
-            pass
+        pass
 
-    dte._enviar_documento(DummyDB(), 1, payload, "normal")
+    dte.enviar_factura(DummyDB(), 1)
 
     assert "codActividad" not in captured["data"]["emisor"]
-    assert "documentoRelacionado" not in captured["data"]
-    assert not _has_none(captured["data"])
+    for key in REQUIRED_NULL_FIELDS:
+        assert key in captured["data"] and captured["data"][key] is None
+    captured_no_required = {
+        k: v for k, v in captured["data"].items() if k not in REQUIRED_NULL_FIELDS
+    }
+    assert not _has_none(captured_no_required)

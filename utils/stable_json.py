@@ -60,6 +60,11 @@ def _sha256(s: str) -> str:
     return hashlib.sha256(s.encode("utf-8")).hexdigest()
 
 
+def hash_json(value: Any) -> str:
+    """Return a deterministic SHA256 hash for ``value`` serialized as JSON."""
+    return _sha256(stable_stringify(value))
+
+
 def assert_same_payload(dte: dict) -> None:
     compact = stable_stringify(dte)
     recompact = stable_stringify(json.loads(compact))

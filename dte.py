@@ -12,6 +12,7 @@ from urllib.parse import urlparse
 from db import DB
 import requests
 from utils import jws
+from utils import versioned_dte
 from utils.stable_json import stable_stringify, save_file
 import auth
 from jsonschema import ValidationError, RefResolver
@@ -2664,24 +2665,16 @@ def _write_json(path: str, data):
 
 
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
-    """Guarda el JSON original y el JWS en ``/dtes/{anio}/``."""
+    """Guarda el JSON y JWS usando estructura versionada por hash."""
     try:
-        fecha = (
-            dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
-        )
-        year = str(fecha)[:4]
-        base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
-        os.makedirs(base_dir, exist_ok=True)
-        nombre = (
-            dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
-        )
-        json_path = os.path.join(base_dir, f"{nombre}.json")
-        _write_json(json_path, dte_data)
-        jws_path = os.path.join(base_dir, f"{nombre}.jws")
-        _write_json(jws_path, jws_token)
+        base_dir = os.path.join(os.path.dirname(__file__), "dtes")
+        version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
+        jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
-            sobre_path = os.path.join(base_dir, f"{nombre}_sobre_hacienda.json")
+            sobre_path = os.path.join(
+                version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
+            )
             _write_json(sobre_path, sobre)
     except Exception:
         pass
@@ -2697,20 +2690,11 @@ class DTEValidationError(Exception):
 
 
 def save_dte_json(dte_data: dict) -> str:
-    """Guarda ``dte_data`` en ``/dtes/{anio}/`` y devuelve la ruta."""
+    """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
     try:
-        fecha = (
-            dte_data.get("identificacion", {}).get("fecEmi") or fecha_emision_hoy_str()
-        )
-        year = str(fecha)[:4]
-        base_dir = os.path.join(os.path.dirname(__file__), "dtes", year)
-        os.makedirs(base_dir, exist_ok=True)
-        nombre = (
-            dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
-        )
-        json_path = os.path.join(base_dir, f"{nombre}.json")
-        _write_json(json_path, dte_data)
-        return json_path
+        base_dir = os.path.join(os.path.dirname(__file__), "dtes")
+        version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
+        return os.path.join(version_dir, "documento.json")
     except Exception:
         return ""
 
@@ -2760,16 +2744,26 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     """
 
     meta: dict[str, object] = {}
+    payload = None
 
     if isinstance(documento, str) and documento.count(".") == 2:
         try:
             payload = _decode_jws_payload(documento)
             meta = payload.get("identificacion") or payload.get("identificador") or payload
         except Exception:
+            payload = None
             meta = {}
 
     if isinstance(dte_data, dict):
         ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
+        if payload is not None:
+            ident_payload = payload.get("identificacion") or payload.get("identificador") or payload
+            for key in ("codigoGeneracion", "tipoDte", "version"):
+                if str(ident_payload.get(key)) != str(ident.get(key)):
+                    return {
+                        "estado": "Error",
+                        "detalle": "La firma no corresponde a la versión actual del documento. Vuelva a firmar o seleccione una firma compatible.",
+                    }
         if meta:
             for k, v in ident.items():
                 meta.setdefault(k, v)

@@ -561,7 +561,22 @@ CONDICION_OPERACION = {int(k): v for k, v in _CATS["CAT-016"].items()}
 FORMA_PAGO = _CATS["CAT-017"]
 
 # Conjuntos derivados
-TRIBUTOS_PERMITIDOS_RESUMEN = {TRIBUTO_IVA}
+# Códigos permitidos en el resumen según el esquema oficial del DTE
+TRIBUTOS_PERMITIDOS_RESUMEN_SCHEMA = {
+    TRIBUTO_IVA,
+    "C3",
+    "59",
+    "71",
+    "D1",
+    "C8",
+    "D5",
+    "D4",
+    "C5",
+    "C6",
+    "C7",
+    "19",
+}
+TRIBUTOS_PERMITIDOS_RESUMEN = set(TRIBUTOS_PERMITIDOS_RESUMEN_SCHEMA)
 TRIBUTOS_PERMITIDOS_ITEM = set(TRIBUTOS_POR_ITEM_ESPECIALES)
 
 # Mapa general de catálogos para acceso dinámico
@@ -625,7 +640,7 @@ def register_code(cat: str, code: str, label: str) -> None:
     dest[code] = label
     if cat == "TRIBUTOS":
         TRIBUTOS[code] = label
-        if code == TRIBUTO_IVA:
+        if code in TRIBUTOS_PERMITIDOS_RESUMEN_SCHEMA:
             TRIBUTOS_PERMITIDOS_RESUMEN.add(code)
         if code in TRIBUTOS_POR_ITEM_ESPECIALES:
             TRIBUTOS_PERMITIDOS_ITEM.add(code)

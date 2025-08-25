@@ -194,7 +194,7 @@ especifica otra URL.
 
 ### Firmar un DTE manualmente
 
-Desde el menú **Archivo** de la aplicación puedes escoger la opción
+Desde el menú **Configuración** de la aplicación puedes escoger la opción
 "**Firmar DTE...**" para seleccionar un archivo `.json` previamente
 generado y enviarlo al servicio local de firmado. El resultado se guarda
 como archivo `.jws` en la ubicación que elijas sin modificar el JSON

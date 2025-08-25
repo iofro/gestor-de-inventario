@@ -419,8 +419,11 @@ def _clean_nit(nit):
 
 
 def _clean_nrc(nrc):
-    if nrc:
-        return "".join(c for c in str(nrc) if c.isdigit())
+    if not nrc:
+        return None
+    nrc_str = str(nrc)
+    if nrc_str.isdigit() and 1 <= len(nrc_str) <= 8:
+        return nrc_str
     return None
 
 
@@ -1006,22 +1009,18 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             condicion = fiscal.get("condicion_pago")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
 
-    if total_gravada > D("0"):
-        if tipo_dte == "01":
-            resumen["tributos"] = None
-        else:
-            resumen["tributos"] = [
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": "Impuesto al Valor Agregado 13%",
-                    "valor": total_iva,
-                }
-            ]
+    if tipo_dte == "01":
+        resumen["tributos"] = armar_tributos(
+            [{"codigo": TRIBUTO_IVA, "valor": resumen.get("totalIva", total_iva)}],
+            tipo_dte,
+        )
+    elif total_gravada > D("0"):
+        resumen["tributos"] = armar_tributos(
+            [{"codigo": TRIBUTO_IVA, "valor": total_iva}],
+            tipo_dte,
+        )
     else:
-        if tipo_dte == "01":
-            resumen["tributos"] = None
-        else:
-            resumen.pop("tributos", None)
+        resumen.pop("tributos", None)
         resumen["totalIva"] = money(0)
 
     if "pagos" in resumen:
@@ -1168,8 +1167,9 @@ def recalcular_totales(
     _set_resumen("montoTotalOperacion", monto_total_operacion)
     _set_resumen("totalPagar", monto_total_operacion)
     if tipo_dte == "01":
-        if resumen.get("tributos") is not None:
-            resumen["tributos"] = None
+        trib = armar_tributos([{"codigo": TRIBUTO_IVA, "valor": total_iva_sum}], tipo_dte)
+        if resumen.get("tributos") != trib:
+            resumen["tributos"] = trib
             modificados.append("tributos")
     total_pagar = resumen["totalPagar"]
     try:
@@ -1391,6 +1391,11 @@ def generar_dte_json(
         "tipoMoneda": tipo_moneda,
     }
 
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    tipo_est = datos.get("tipoEstablecimiento")
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else default_est
+    if tipo_est not in catalogos.TIPO_ESTABLEC:
+        tipo_est = default_est
     emisor = {
         "nombre": datos.get("nombre"),
         "nombreComercial": datos.get("nombreComercial"),
@@ -1398,9 +1403,9 @@ def generar_dte_json(
         "nrc": datos.get("nrc"),
         "codActividad": datos.get("cod_giro") or datos.get("codActividad"),
         "descActividad": datos.get("descActividad"),
-        "tipoContribuyente": datos.get("tipoContribuyente"),
         "telefono": datos.get("telefono"),
         "correo": datos.get("correo"),
+        "tipoEstablecimiento": tipo_est,
     }
     svfe_config.DATOS_NEGOCIO_PATH = DATOS_NEGOCIO_PATH
     datos_cfg = svfe_config.load_datos_negocio()
@@ -1968,7 +1973,12 @@ def validate_dte_json(
         "codActividad", negocio.get("cod_giro") or negocio.get("codActividad")
     )
     emisor.setdefault("descActividad", negocio.get("descActividad"))
-    emisor.setdefault("tipoEstablecimiento", "01")
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    tipo_est = emisor.get("tipoEstablecimiento")
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else default_est
+    if tipo_est not in catalogos.TIPO_ESTABLEC:
+        tipo_est = default_est
+    emisor["tipoEstablecimiento"] = tipo_est
     svfe_config.DATOS_NEGOCIO_PATH = DATOS_NEGOCIO_PATH
     datos_cfg = svfe_config.load_datos_negocio()
     dir_emisor = datos_cfg.get("direccion") or {}
@@ -2012,6 +2022,7 @@ def validate_dte_json(
         "nrc": emisor.get("nrc"),
         "nombre": emisor.get("nombre"),
         "nombreComercial": emisor.get("nombreComercial"),
+        "tipoEstablecimiento": emisor.get("tipoEstablecimiento"),
         "codActividad": emisor.get("codActividad"),
         "descActividad": emisor.get("descActividad"),
         "direccion.departamento": emisor.get("direccion", {}).get("departamento"),
@@ -2269,8 +2280,6 @@ def validate_dte_json(
     payload["cuerpoDocumento"] = cuerpo
 
     resumen = payload.get("resumen", {})
-    if ident.get("tipoDte") == "01":
-        resumen["tributos"] = None
     for k, v in resumen.items():
         if k == "condicionOperacion":
             continue
@@ -2290,6 +2299,19 @@ def validate_dte_json(
     cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
     if cambios:
         print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
+
+    if tipo_dte == "01":
+        tributos = resumen.get("tributos") or []
+        codigos = {t.get("codigo") for t in tributos}
+        if TRIBUTO_IVA not in codigos:
+            tributos.append(
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": resumen.get("totalIva", D("0")),
+                }
+            )
+        resumen["tributos"] = tributos
 
     ident = payload.get("identificacion", {})
     if ident.get("tipoDte") == "01":

@@ -5,19 +5,19 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 7",
-      "ivaItem": 1.69,
+      "descripcion": "Producto Demo 10",
+      "ivaItem": 1.84,
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 13.0,
+      "precioUni": 14.16,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": null,
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 13.0,
+      "ventaGravada": 14.16,
       "ventaNoSuj": 0.0
     }
   ],
@@ -40,16 +40,16 @@
     "nombreComercial": "Farmacia Santa Catalina",
     "nrc": "2301408",
     "telefono": "22223456",
-    "tipoEstablecimiento": "01"
+    "tipoContribuyente": "Persona Natural"
   },
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "5CA422B4-CE77-49AC-B83D-914198B5BA7A",
+    "codigoGeneracion": "4BB4C4ED-5693-4BDA-AAAB-098FAB7CC66D",
     "fecEmi": "2025-08-22",
-    "horEmi": "11:49:04",
+    "horEmi": "15:03:21",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000047",
+    "numeroControl": "DTE-01-S001P001-000000000000055",
     "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,
@@ -68,7 +68,7 @@
       "municipio": "28"
     },
     "nombre": "ariel",
-    "nrc": "1234511",
+    "nrc": "123451-1",
     "numDocumento": "06141990011019",
     "telefono": "70000001",
     "tipoDocumento": "36"
@@ -79,12 +79,12 @@
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 14.69,
+    "montoTotalOperacion": 16.0,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 14.69,
+        "montoPago": 16.0,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -93,17 +93,16 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 13.0,
-    "subTotalVentas": 13.0,
+    "subTotal": 14.16,
+    "subTotalVentas": 14.16,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 13.0,
-    "totalIva": 1.69,
-    "totalLetras": "CATORCE CON 69/100 DÓLARES",
+    "totalGravada": 14.16,
+    "totalIva": 1.84,
+    "totalLetras": "DIECISÉIS CON 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 14.69,
-    "tributos": null
+    "totalPagar": 16.0
   },
   "ventaTercero": null
 }

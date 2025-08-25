@@ -40,10 +40,10 @@ def test_validar_nit(nit, expected):
 
 
 @pytest.mark.parametrize("nrc, expected", [
-    ("123456-7", True),
-    ("000001-0", True),
-    ("12345-7", False),
-    ("123456-78", False),
+    ("1234567", True),
+    ("0000010", True),
+    ("123456789", False),
+    ("123456a", False),
 ])
 @pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
 def test_validar_nrc(nrc, expected):

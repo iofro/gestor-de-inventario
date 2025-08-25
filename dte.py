@@ -937,6 +937,10 @@ def armar_tributos(tributos_raw, tipo_dte):
                 "valor": valor,
             }
         )
+    if tipo_dte == "01" and any(t["codigo"] == TRIBUTO_IVA for t in result):
+        raise ValueError(
+            "Código 20 (IVA) no permitido en resumen.tributos para consumidor final"
+        )
     return result or None
 
 
@@ -1010,17 +1014,35 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             condicion = fiscal.get("condicion_pago")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
 
-    if tipo_dte == "01":
-        resumen["tributos"] = armar_tributos(
-            [{"codigo": TRIBUTO_IVA, "valor": resumen.get("totalIva", total_iva)}],
-            tipo_dte,
-        )
-    elif total_gravada > D("0"):
-        resumen["tributos"] = armar_tributos(
-            [{"codigo": TRIBUTO_IVA, "valor": total_iva}],
-            tipo_dte,
-        )
-    else:
+    # Consolidar tributos adicionales desde ``extra`` o ``fiscal``
+    trib_raw = []
+    for src in (extra.get("tributos"), fiscal.get("tributos")):
+        if not src:
+            continue
+        if isinstance(src, dict):
+            src = [src]
+        trib_raw.extend(src)
+
+    suma_por_codigo: dict[str, D] = {}
+    for t in trib_raw:
+        codigo = str(t.get("codigo", "")).upper()
+        if codigo == TRIBUTO_IVA:
+            if tipo_dte == "01":
+                raise ValueError(
+                    "Código 20 (IVA) no permitido en resumen.tributos para consumidor final"
+                )
+            continue
+        if not codigo:
+            continue
+        valor = money(t.get("valor", 0))
+        suma_por_codigo[codigo] = money(suma_por_codigo.get(codigo, D("0")) + valor)
+
+    tributos_list = [{"codigo": c, "valor": v} for c, v in suma_por_codigo.items()]
+    if tipo_dte != "01" and total_gravada > D("0"):
+        tributos_list.append({"codigo": TRIBUTO_IVA, "valor": total_iva})
+
+    resumen["tributos"] = armar_tributos(tributos_list, tipo_dte)
+    if tipo_dte != "01" and total_gravada <= D("0") and not tributos_list:
         resumen.pop("tributos", None)
         resumen["totalIva"] = money(0)
 
@@ -1167,11 +1189,34 @@ def recalcular_totales(
     monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
     _set_resumen("montoTotalOperacion", monto_total_operacion)
     _set_resumen("totalPagar", monto_total_operacion)
+    trib_raw = resumen.get("tributos")
     if tipo_dte == "01":
-        trib = armar_tributos([{"codigo": TRIBUTO_IVA, "valor": total_iva_sum}], tipo_dte)
-        if resumen.get("tributos") != trib:
-            resumen["tributos"] = trib
-            modificados.append("tributos")
+        suma: dict[str, D] = {}
+        for t in trib_raw or []:
+            codigo = str(t.get("codigo", "")).upper()
+            if codigo == TRIBUTO_IVA:
+                raise ValueError(
+                    "Código 20 (IVA) no permitido en resumen.tributos para consumidor final"
+                )
+            if not codigo:
+                continue
+            valor = money(t.get("valor", 0))
+            suma[codigo] = money(suma.get(codigo, D("0")) + valor)
+        trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
+    else:
+        suma: dict[str, D] = {}
+        for t in trib_raw or []:
+            codigo = str(t.get("codigo", "")).upper()
+            if not codigo or codigo == TRIBUTO_IVA:
+                continue
+            valor = money(t.get("valor", 0))
+            suma[codigo] = money(suma.get(codigo, D("0")) + valor)
+        if venta_gravada_sum > D("0"):
+            suma[TRIBUTO_IVA] = total_iva_sum
+        trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
+    if resumen.get("tributos") != trib:
+        resumen["tributos"] = trib
+        modificados.append("tributos")
     total_pagar = resumen["totalPagar"]
     try:
         total_letras = monto_a_texto_sv(total_pagar)
@@ -2300,19 +2345,6 @@ def validate_dte_json(
     cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
     if cambios:
         print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
-
-    if tipo_dte == "01":
-        tributos = resumen.get("tributos") or []
-        codigos = {t.get("codigo") for t in tributos}
-        if TRIBUTO_IVA not in codigos:
-            tributos.append(
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
-                    "valor": resumen.get("totalIva", D("0")),
-                }
-            )
-        resumen["tributos"] = tributos
 
     ident = payload.get("identificacion", {})
     if ident.get("tipoDte") == "01":

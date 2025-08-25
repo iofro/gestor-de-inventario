@@ -26,7 +26,7 @@ def datos_negocio_incompleto(tmp_path):
 def datos_negocio_completo(tmp_path):
     data = {
         "nit": "0614-000000-102-2",
-        "nrc": "123456-7",
+        "nrc": "1234567",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "codActividad": "0000",

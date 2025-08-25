@@ -17,7 +17,7 @@ def test_generar_dte_json_basic(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -106,7 +106,7 @@ def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -161,7 +161,7 @@ def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -213,7 +213,7 @@ def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -267,7 +267,7 @@ def test_generar_dte_json_cons_final_precio_neto(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -320,7 +320,7 @@ def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -374,7 +374,7 @@ def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -431,7 +431,7 @@ def test_generar_dte_json_normaliza_ambiente_config(
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -713,7 +713,7 @@ def test_generar_dte_json_receptor_extra_preserva_direccion(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -766,7 +766,7 @@ def test_generar_dte_json_municipio_fuera_depto(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -815,7 +815,7 @@ def test_receptor_defaults(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -870,7 +870,7 @@ def test_credit_payment_defaults(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -930,7 +930,7 @@ def test_item_tributo_guard(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -985,7 +985,7 @@ def test_item_no_tributo_when_exento(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -1048,7 +1048,7 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -1062,7 +1062,7 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -1128,7 +1128,7 @@ def test_resumen_tributo_codigo_str(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "1234567-8",
+        "nrc": "12345678",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",

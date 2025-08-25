@@ -60,9 +60,9 @@ def validar_email(email):
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
 
 def validar_nrc(nrc):
-    """Valida el formato del NRC salvadoreño (######-#)."""
+    """Valida el formato del NRC salvadoreño (solo dígitos, sin guiones)."""
     import re
-    return bool(re.match(r"^\d{6}-\d$", nrc))
+    return bool(re.fullmatch(r"\d{1,8}", nrc))
 
 def validar_telefono(telefono):
     """Valida números de teléfono salvadoreños con o sin código de país."""

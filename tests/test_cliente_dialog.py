@@ -49,7 +49,7 @@ def test_invalid_fields(monkeypatch, qt_app, field, value):
     dialog = make_dialog(db)
 
     dialog.nombre_edit.setText('Nombre')
-    dialog.nrc_edit.setText('123456-7')
+    dialog.nrc_edit.setText('1234567')
     dialog.nit_edit.setText('1234-123456-123-1')
     dialog.telefono_edit.setText('1234-5678')
     dialog.email_edit.setText('test@example.com')
@@ -73,7 +73,7 @@ def test_duplicate_nit(monkeypatch, qt_app):
     dialog = make_dialog(db)
 
     dialog.nombre_edit.setText('Nombre')
-    dialog.nrc_edit.setText('123456-7')
+    dialog.nrc_edit.setText('1234567')
     dialog.nit_edit.setText('1234-123456-123-1')
     dialog.telefono_edit.setText('1234-5678')
     dialog.email_edit.setText('test@example.com')

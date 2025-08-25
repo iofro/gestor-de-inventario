@@ -34,6 +34,7 @@ from num2words import num2words  # Instala las dependencias con: pip install -r 
 from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
 from utils.monto import monto_a_texto_sv
+from utils.jws import sign_json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -96,9 +97,12 @@ class MainWindow(QMainWindow):
         guardar_como_action.triggered.connect(self.guardar_como)
         cargar_inventario_action = QAction("Cargar inventario...", self)
         cargar_inventario_action.triggered.connect(self.cargar_inventario)
+        firmar_dte_action = QAction("Firmar DTE...", self)
+        firmar_dte_action.triggered.connect(self.firmar_dte_manual)
         archivo_menu.addAction(nuevo_inventario_action)
         archivo_menu.addAction(guardar_como_action)
         archivo_menu.addAction(cargar_inventario_action)
+        archivo_menu.addAction(firmar_dte_action)
 
         # --- CONFIGURACIÓN ---
         config_menu = menubar.addMenu("Configuración")
@@ -924,6 +928,42 @@ class MainWindow(QMainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
                 self._actualizar_historial()
+
+    def firmar_dte_manual(self):
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar DTE",
+            "",
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+        )
+        if not filename:
+            return
+        try:
+            with open(filename, "r", encoding="utf-8") as fh:
+                contenido = fh.read()
+            token = sign_json(contenido)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo firmar el DTE:\n{exc}")
+            return
+        default_jws = os.path.splitext(filename)[0] + ".jws"
+        save_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar JWS",
+            default_jws,
+            "Archivos JWS (*.jws);;Todos los archivos (*)",
+        )
+        if not save_path:
+            return
+        try:
+            with open(save_path, "w", encoding="utf-8") as fh:
+                fh.write(token)
+            QMessageBox.information(
+                self,
+                "Firmado",
+                f"DTE firmado guardado en:\n{save_path}",
+            )
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo guardar el archivo:\n{exc}")
 
     def guardar_rapido(self):
         if self.ultimo_archivo_json:

@@ -102,7 +102,6 @@ class MainWindow(QMainWindow):
         archivo_menu.addAction(nuevo_inventario_action)
         archivo_menu.addAction(guardar_como_action)
         archivo_menu.addAction(cargar_inventario_action)
-        archivo_menu.addAction(firmar_dte_action)
 
         # --- CONFIGURACIÓN ---
         config_menu = menubar.addMenu("Configuración")
@@ -121,6 +120,7 @@ class MainWindow(QMainWindow):
             config_menu.addAction(user_action)
         else:
             config_menu.menuAction().setVisible(False)
+        config_menu.addAction(firmar_dte_action)
 
         logout_action = QAction("Cerrar sesión", self)
         logout_action.triggered.connect(self.cerrar_sesion)

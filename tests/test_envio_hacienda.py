@@ -29,7 +29,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
             "nombre": "ACME",
             "nombreComercial": "ACME",
             "nit": "0614-123456-102-3",
-            "nrc": "123456-7",
+            "nrc": "1234567",
             "codActividad": "0000",
             "descActividad": "Giro",
             "tipoContribuyente": "Persona Jurídica",

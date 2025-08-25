@@ -192,6 +192,14 @@ Luego se firmará cada DTE enviándolo a
 `http://127.0.0.1:8080/firma/firmardocumento/` de forma automática si no se
 especifica otra URL.
 
+### Firmar un DTE manualmente
+
+Desde el menú **Archivo** de la aplicación puedes escoger la opción
+"**Firmar DTE...**" para seleccionar un archivo `.json` previamente
+generado y enviarlo al servicio local de firmado. El resultado se guarda
+como archivo `.jws` en la ubicación que elijas sin modificar el JSON
+original.
+
 El firmador utiliza HTTP por defecto. Si deseas habilitar HTTPS, define las
 variables `SVFE_ARCHIVO` y `SVFE_PASSWORD` en un archivo `.env` (consulta
 `.env.example`). Esta configuración es opcional y el perfil principal seguirá

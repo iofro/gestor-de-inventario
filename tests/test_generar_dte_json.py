@@ -975,7 +975,8 @@ def test_item_tributo_guard(tmp_path):
     resumen = data["resumen"]
     assert item.get("codTributo") is None
     assert item.get("tributos") in (None, [])
-    assert resumen.get("tributos") is None
+    assert "tributos" in resumen
+    assert resumen["tributos"] is None
     from decimal import Decimal as D
     assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
 

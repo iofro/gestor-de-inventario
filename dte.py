@@ -1815,7 +1815,10 @@ def generar_dte_json(
                 val = D("0")
             t["valor"] = val
     else:
-        resumen.pop("tributos", None)
+        if tipo_dte != "01":
+            resumen.pop("tributos", None)
+        else:
+            resumen["tributos"] = None
 
     if resumen.get("pagos"):
         if resumen.get("condicionOperacion") == 2:

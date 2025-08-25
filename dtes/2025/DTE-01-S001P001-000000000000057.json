@@ -5,19 +5,19 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 10",
-      "ivaItem": 1.84,
+      "descripcion": "Producto Demo 5",
+      "ivaItem": 1.27,
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 14.16,
+      "precioUni": 9.73,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": null,
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 14.16,
+      "ventaGravada": 9.73,
       "ventaNoSuj": 0.0
     }
   ],
@@ -40,16 +40,16 @@
     "nombreComercial": "Farmacia Santa Catalina",
     "nrc": "2301408",
     "telefono": "22223456",
-    "tipoContribuyente": "Persona Natural"
+    "tipoEstablecimiento": "01"
   },
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "4BB4C4ED-5693-4BDA-AAAB-098FAB7CC66D",
-    "fecEmi": "2025-08-22",
-    "horEmi": "15:03:21",
+    "codigoGeneracion": "5005B30B-2A06-4592-ABDB-3AEBE3F1B1F0",
+    "fecEmi": "2025-08-25",
+    "horEmi": "13:50:02",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000055",
+    "numeroControl": "DTE-01-S001P001-000000000000057",
     "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,
@@ -79,12 +79,12 @@
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 16.0,
+    "montoTotalOperacion": 11.0,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 16.0,
+        "montoPago": 11.0,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -93,16 +93,23 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 14.16,
-    "subTotalVentas": 14.16,
+    "subTotal": 9.73,
+    "subTotalVentas": 9.73,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 14.16,
-    "totalIva": 1.84,
-    "totalLetras": "DIECISÉIS CON 00/100 DÓLARES",
+    "totalGravada": 9.73,
+    "totalIva": 1.27,
+    "totalLetras": "ONCE CON 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 16.0
+    "totalPagar": 11.0,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 1.27
+      }
+    ]
   },
   "ventaTercero": null
 }

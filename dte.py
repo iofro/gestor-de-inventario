@@ -108,7 +108,7 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         "extension",
         "apendice",
         "codTributo",
-        "tributos",
+        "tributos",  # e.g. resumen.tributos must remain even if None
     }
 
     def _remove_nulls(value, parent_key=None):

@@ -255,7 +255,7 @@ def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("11.50")
+    assert D(str(item["precioUni"])) == D("13.00")
     assert D(str(item["ventaGravada"])) == D("11.50")
     assert D(str(item["ivaItem"])) == D("1.50")
     assert D(str(res["totalPagar"])) == D("13.00")
@@ -309,7 +309,7 @@ def test_generar_dte_json_cons_final_precio_neto(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("7.96")
+    assert D(str(item["precioUni"])) == D("9.00")
     assert D(str(item["ventaGravada"])) == D("7.96")
     assert D(str(item["ivaItem"])) == D("1.04")
     assert D(str(res["totalPagar"])) == D("9.00")
@@ -362,7 +362,7 @@ def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("4.87")
+    assert D(str(item["precioUni"])) == D("5.50")
     assert D(str(item["ventaGravada"])) == D("9.73")
     assert D(str(item["ivaItem"])) == D("1.27")
     assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
@@ -416,11 +416,79 @@ def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
-    assert D(str(item["precioUni"])) == D("4.87")
+    assert D(str(item["precioUni"])) == D("5.50")
     assert D(str(item["ventaGravada"])) == D("9.73")
     assert D(str(item["ivaItem"])) == D("1.27")
     assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
     assert D(str(res["totalPagar"])) == D("11.00")
+
+
+@pytest.mark.parametrize("descuento", [Decimal("0.01"), Decimal("0.02")])
+def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    line_total = money(Decimal("3") * Decimal("5.5") - descuento)
+    venta_id = db.add_venta("2024-01-01", float(line_total), cliente_id=cliente_id)
+    db.add_detalle_venta(
+        venta_id, pid, 3, 5.5, vendedor_id=vid, descuento=float(descuento)
+    )
+
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+
+    venta_gravada = money(line_total / Decimal("1.13"))
+    iva_item = money(line_total - venta_gravada)
+
+    assert Decimal(str(item["precioUni"])) == Decimal("5.50")
+    assert Decimal(str(item["ventaGravada"])) == venta_gravada
+    assert Decimal(str(item["ivaItem"])) == iva_item
+    assert money(
+        Decimal(str(item["ventaGravada"])) + Decimal(str(item["ivaItem"]))
+    ) == line_total
+
+    assert Decimal(str(res["subTotalVentas"])) == venta_gravada
+    assert Decimal(str(res["totalIva"])) == iva_item
+    assert Decimal(str(res["montoTotalOperacion"])) == line_total
+    assert Decimal(str(res["totalPagar"])) == line_total
+    assert res["tributos"] is None
 
 
 @pytest.mark.parametrize("cfg, expected", [("pruebas", "00"), ("produccion", "01")])

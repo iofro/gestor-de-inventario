@@ -1584,36 +1584,29 @@ def generar_dte_json(
         monto_descu = d8(D(str(d.get("descuento") or 0)))
         if monto_descu < 0:
             monto_descu = D("0")
-        if precios_incluyen_iva:
-            if tipo_dte == "01":
-                origen = (extra.get("origen_precios") or "bruto").lower()
-                total_neto = money(cant * precio_raw - monto_descu)
-                if total_neto < D("0"):
-                    total_neto = D("0")
-                if origen == "neto":
-                    base_total = total_neto
-                    precio = money((base_total / cant) * D("1.13"))
-                    total_final = money(precio * cant)
-                    iva_val = money(total_final - base_total)
-                    base_total = money(total_final - iva_val)
-                else:
-                    total_final = total_neto
-                    base_total = money(total_final / D("1.13"))
-                    iva_val = money(total_final - base_total)
-                    base_total = money(total_final - iva_val)
-                    precio = money(total_final / cant)
-                venta_gravada = base_total
-                line_total = base_total + iva_val
+        if tipo_dte == "01":
+            origen = (
+                extra.get("origen_precios")
+                or ("bruto" if precios_incluyen_iva else "neto")
+            ).lower()
+            if origen == "neto":
+                precio = money(precio_raw * D("1.13"))
             else:
-                total_final = d8(cant * precio_raw - monto_descu)
-                if total_final < 0:
-                    total_final = D("0")
-                base_total = money(total_final / D("1.13"))
-                iva_val = money(total_final - base_total)
-                base_total = money(total_final - iva_val)
-                precio = money(total_final / cant)
-                venta_gravada = base_total
-                line_total = base_total + iva_val
+                precio = money(precio_raw)
+            line_total = money(cant * precio - monto_descu)
+            venta_gravada = money(line_total / D("1.13"))
+            iva_val = money(line_total - venta_gravada)
+            line_total = venta_gravada + iva_val
+        elif precios_incluyen_iva:
+            total_final = d8(cant * precio_raw - monto_descu)
+            if total_final < 0:
+                total_final = D("0")
+            base_total = money(total_final / D("1.13"))
+            iva_val = money(total_final - base_total)
+            base_total = money(total_final - iva_val)
+            precio = money(total_final / cant)
+            venta_gravada = base_total
+            line_total = base_total + iva_val
         else:
             precio = precio_raw
             base = d8(cant * precio - monto_descu)
@@ -1622,9 +1615,6 @@ def generar_dte_json(
             venta_gravada = d2(base)
             iva_val = d8(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
             line_total = venta_gravada + iva_val
-        if tipo_dte == "01":
-            precio = money(venta_gravada / cant)
-            line_total = money(venta_gravada + iva_val)
         items_total += line_total
         iva_total += iva_val
         try:

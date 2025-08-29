@@ -215,7 +215,7 @@ def test_numero_control_regex(dte_metadata_factory, tmp_path, monkeypatch, db_fi
     dte["identificacion"]["numeroControl"] = "INVALID"
     validate_dte_json(dte, db=db_fixture)
     assert re.fullmatch(
-        r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$",
+        r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{18})$",
         dte["identificacion"]["numeroControl"],
     )
 
@@ -223,8 +223,8 @@ def test_numero_control_regex(dte_metadata_factory, tmp_path, monkeypatch, db_fi
 @pytest.mark.parametrize(
     "numero",
     [
-        "DTE-01-S123P456-123456789012345",
-        "DTE-01-S001P001-000000000000000",
+        "DTE-01-S123P456-123456789012345678",
+        "DTE-01-S001P001-000000000000000000",
     ],
 )
 def test_numero_control_validos(dte_metadata_factory, numero, tmp_path, monkeypatch, db_fixture):
@@ -237,9 +237,9 @@ def test_numero_control_validos(dte_metadata_factory, numero, tmp_path, monkeypa
 @pytest.mark.parametrize(
     "numero",
     [
-        "DTE-01-S01P001-123456789012345",
+        "DTE-01-S01P001-123456789012345678",
         "DTE-01-S001P001-12345",
-        "dte-01-S001P001-123456789012345",
+        "dte-01-S001P001-123456789012345678",
     ],
 )
 def test_numero_control_invalidos(dte_metadata_factory, numero, tmp_path, monkeypatch, db_fixture):
@@ -248,7 +248,7 @@ def test_numero_control_invalidos(dte_metadata_factory, numero, tmp_path, monkey
     _patch_datos_negocio(tmp_path, monkeypatch)
     validate_dte_json(dte, db=db_fixture)
     assert re.fullmatch(
-        r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$",
+        r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{18})$",
         dte["identificacion"]["numeroControl"],
     )
 
@@ -277,7 +277,7 @@ def test_numero_control_fallback_default(dte_metadata_factory, tmp_path, monkeyp
         dte["emisor"].pop(key, None)
     dte["identificacion"]["numeroControl"] = "BAD"
     validate_dte_json(dte, db=db_fixture)
-    assert dte["identificacion"]["numeroControl"] == "DTE-01-S001P001-000000000000001"
+    assert dte["identificacion"]["numeroControl"] == "DTE-01-S001P001-000000000000000001"
 
 
 def test_numero_control_secuencial_por_combinacion(
@@ -303,16 +303,16 @@ def test_numero_control_secuencial_por_combinacion(
     validate_dte_json(dte3, db=db_fixture)
     n3 = dte3["identificacion"]["numeroControl"]
 
-    assert n1.endswith("000000000000001")
-    assert n2.endswith("000000000000002")
+    assert n1.endswith("000000000000000001")
+    assert n2.endswith("000000000000000002")
     assert n3.startswith("DTE-01-S001P002-")
-    assert n3.endswith("000000000000001")
+    assert n3.endswith("000000000000000001")
 
 
 def test_numero_control_idempotencia(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
     _patch_datos_negocio(tmp_path, monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
-    numero = "DTE-01-S123P456-000000000000123"
+    numero = "DTE-01-S123P456-000000000000000123"
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = numero
     validate_dte_json(dte, db=db_fixture)
@@ -327,7 +327,7 @@ def test_numero_control_idempotencia_dura(db_fixture, dte_metadata_factory):
     dte = dte_metadata_factory()
     ident = dte["identificacion"]
     ident["tipoDte"] = "01"
-    ident["numeroControl"] = "DTE-01-S999P888-000000000000777"
+    ident["numeroControl"] = "DTE-01-S999P888-000000000000000777"
     dte["emisor"]["codEstableMH"] = "001"
     dte["emisor"]["codPuntoVentaMH"] = "001"
 

@@ -20,7 +20,7 @@
   "documentoRelacionado": [
     {
       "fechaEmision": "2024-01-01",
-      "numeroDocumento": "DTE-03-S001P001-000000000000001",
+      "numeroDocumento": "DTE-03-S001P001-000000000000000001",
       "tipoDocumento": "03",
       "tipoGeneracion": 1
     }
@@ -48,7 +48,7 @@
     "fecEmi": "2000-01-01",
     "horEmi": "00:00:00",
     "motivoContin": null,
-    "numeroControl": "DTE-05-S001P001-000000000000001",
+    "numeroControl": "DTE-05-S001P001-000000000000000001",
     "tipoContingencia": null,
     "tipoDte": "05",
     "tipoModelo": 1,

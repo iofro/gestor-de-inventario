@@ -28,9 +28,9 @@
                 "numeroControl" : {
                     "type" : "string",
                     "description" : "Número de Control",
-                    "maxLength" : 31,
-                    "minLength" : 31,
-                    "pattern" : "^DTE-03-[A-Z0-9]{8}-[0-9]{15}$"
+                    "maxLength" : 34,
+                    "minLength" : 34,
+                    "pattern" : "^DTE-03-[A-Z0-9]{8}-[0-9]{18}$"
                 },
                 "codigoGeneracion" : {
                     "type" : "string",

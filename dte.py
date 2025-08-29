@@ -1243,7 +1243,7 @@ def recalcular_totales(
 def generar_numero_control(db: DB, tipo: str, sucursal: str, punto: str) -> str:
     """Genera un número de control secuencial."""
     correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
-    secuencia = str(correlativo).zfill(18)
+    secuencia = str(correlativo).zfill(15)
     return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
 
 
@@ -1258,8 +1258,6 @@ def identificacion_a_xml(ident: dict) -> str:
     ET.SubElement(root, "FecEmi").text = ident.get("fecEmi", "")
     ET.SubElement(root, "HorEmi").text = ident.get("horEmi", "")
     ET.SubElement(root, "Ambiente").text = ident.get("ambiente", "")
-    ET.SubElement(root, "TipoContingencia").text = str(ident.get("tipoContingencia") or "")
-    ET.SubElement(root, "MotivoContin").text = ident.get("motivoContin") or ""
     return ET.tostring(root, encoding="unicode")
 
 
@@ -2050,7 +2048,7 @@ def validate_dte_json(
         emisor.get("codPuntoVentaMH") or emisor.get("codPuntoVenta") or 1
     )
     numero_control = ident.get("numeroControl")
-    regex_nc = r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{18})$"
+    regex_nc = r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$"
     if not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
         ident["numeroControl"] = generar_numero_control(db, tipo, suc, pto)
     numero_control = ident.get("numeroControl")

@@ -6,7 +6,7 @@ def test_identificacion_xml_tags_and_optional_empty():
         "version": 1,
         "ambiente": "00",
         "tipoDte": "01",
-        "numeroControl": "DTE-01-S001P001-123456789012345678",
+        "numeroControl": "DTE-01-S001P001-123456789012345",
         "codigoGeneracion": "00000000-0000-4000-8000-000000000001",
         "tipoModelo": 1,
         "tipoOperacion": 1,

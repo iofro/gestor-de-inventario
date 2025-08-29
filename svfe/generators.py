@@ -46,7 +46,7 @@ def strip_extras(dte: Dict[str, Any]) -> Dict[str, Any]:
 
 def _numero_control(db: DB, tipo: str, sucursal: str = "001", punto: str = "001") -> str:
     correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
-    secuencia = str(correlativo).zfill(15)
+    secuencia = str(correlativo).zfill(18)
     return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
 
 
@@ -317,7 +317,7 @@ def _documento_relacionado(tipo: str) -> Any:
             {
                 "tipoDocumento": "03",
                 "tipoGeneracion": 1,
-                "numeroDocumento": "DTE-03-00000000-000000000000001",
+                "numeroDocumento": "DTE-03-00000000-000000000000000001",
                 "fechaEmision": "2024-01-01",
             }
         ]

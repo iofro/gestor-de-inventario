@@ -40,7 +40,7 @@ def _q2(x: Decimal) -> Decimal:
 def _sanitize(data: dict, tipo: str) -> dict:
     data = copy.deepcopy(data)
     ident = data["identificacion"]
-    ident["numeroControl"] = f"DTE-{SCHEMA_MAP[tipo][1]}-S001P001-000000000000001"
+    ident["numeroControl"] = f"DTE-{SCHEMA_MAP[tipo][1]}-S001P001-000000000000000001"
     ident["codigoGeneracion"] = "00000000-0000-4000-8000-000000000000"
     ident["fecEmi"] = "2000-01-01"
     ident["horEmi"] = "00:00:00"

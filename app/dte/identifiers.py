@@ -6,7 +6,7 @@ import re
 import uuid
 from typing import Dict, Any
 
-ND_CONTROL_REGEX = r"^DTE-06-[A-Z0-9]{8}-[0-9]{18}$"
+ND_CONTROL_REGEX = r"^DTE-06-[A-Z0-9]{8}-[0-9]{15}$"
 
 
 def ensure_numero_control(
@@ -19,7 +19,7 @@ def ensure_numero_control(
 
     ``numeroControl`` follows the official pattern for debit notes::
 
-        ^DTE-06-[A-Z0-9]{8}-[0-9]{18}$
+        ^DTE-06-[A-Z0-9]{8}-[0-9]{15}$
 
     If ``codigoGeneracion`` is missing a UUIDv4 is generated and stored in
     uppercase format.
@@ -33,7 +33,7 @@ def ensure_numero_control(
 
     numero = ident.get("numeroControl")
     if not (isinstance(numero, str) and re.fullmatch(ND_CONTROL_REGEX, numero)):
-        secuencia = f"{correlativo:018d}"
+        secuencia = f"{correlativo:015d}"
         ident["numeroControl"] = f"DTE-06-S{sucursal}P{punto}-{secuencia}"
     return ident["numeroControl"]
 

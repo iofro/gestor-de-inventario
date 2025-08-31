@@ -34,11 +34,13 @@ except ImportError:  # pragma: no cover - fallback for environments without num2
 
 
 def monto_a_texto_sv(monto):
-    """Convierte un monto a texto en formato fiscal salvadoreño."""
+    """Convierte un monto numérico a texto con formato natural."""
     entero = int(monto)
     centavos = int(round((monto - entero) * 100))
-    palabras = num2words(entero, lang="es").upper()
-    return f"{palabras} {centavos:02d}/100 DÓLARES"
+    palabras = num2words(entero, lang="es")
+    palabras = palabras.capitalize()
+    centavos_txt = num2words(centavos, lang="es")
+    return f"{palabras} Dolares con {centavos_txt} centavos"
 
 
 

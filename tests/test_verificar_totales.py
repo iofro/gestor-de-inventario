@@ -6,8 +6,8 @@ def _sample_doc():
     return {
         "identificacion": {"ambiente": "00", "tipoDte": "01"},
         "cuerpoDocumento": [
-            {"cantidad": 2, "precioUni": 1.5},
-            {"cantidad": 1, "precioUni": 2.0},
+            {"cantidad": 2, "precioUni": 1.5, "ventaGravada": 3.0, "ivaItem": 0},
+            {"cantidad": 1, "precioUni": 2.0, "ventaGravada": 2.0, "ivaItem": 0},
         ],
         "resumen": {
             "totalNoSuj": 0,

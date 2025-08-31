@@ -20,11 +20,11 @@ def test_item_and_total_rounding():
     assert str(iva) == '3.10050000'
     assert decimal_places(iva) <= 8
 
-    resumen = calcular_resumen(venta, {'total': venta + iva}, fiscal={'iva': iva}, extra={"precios_incluyen_iva": False})
+    resumen = calcular_resumen(venta, {'total': venta}, fiscal={'iva': iva}, extra={})
 
     assert f"{d2(resumen['totalGravada']):.2f}" == '23.85'
     assert f"{d2(resumen['totalIva']):.2f}" == '3.10'
-    assert f"{d2(resumen['totalPagar']):.2f}" == '26.95'
+    assert f"{d2(resumen['totalPagar']):.2f}" == '23.85'
 
     for key in ['totalGravada', 'totalIva', 'totalPagar']:
         assert decimal_places(resumen[key]) <= 2

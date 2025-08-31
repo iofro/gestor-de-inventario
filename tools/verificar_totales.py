@@ -43,11 +43,19 @@ def check_document(data: dict, expected_ambiente: str | None = None) -> List[str
     cuerpo = data.get("cuerpoDocumento", [])
     items_total = Decimal("0")
     iva_total = Decimal("0")
-    for item in cuerpo:
+    for idx, item in enumerate(cuerpo, 1):
         cant = Decimal(str(item.get("cantidad") or 0))
         precio = Decimal(str(item.get("precioUni") or 0))
-        items_total += cant * precio
-        iva_item = Decimal(str(item.get("ivaItem") or item.get("montoIva") or item.get("iva") or 0))
+        venta = Decimal(str(item.get("ventaGravada") or 0))
+        calc = (cant * precio).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+        if venta != calc:
+            errors.append(
+                f"item {idx}: cantidad*precio {calc} != ventaGravada {venta}"
+            )
+        items_total += venta
+        iva_item = Decimal(
+            str(item.get("ivaItem") or item.get("montoIva") or item.get("iva") or 0)
+        )
         iva_total += iva_item
 
     resumen = data.get("resumen", {})
@@ -70,6 +78,12 @@ def check_document(data: dict, expected_ambiente: str | None = None) -> List[str
         extra=extra,
         tipo_dte=ident.get("tipoDte", "01"),
     )
+
+    if abs(Decimal(str(resumen.get("totalIva", 0))) - iva_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)) > Decimal("0.01"):
+        errors.append("totalIva no coincide con suma de ivaItem")
+
+    if Decimal(str(resumen.get("totalPagar", 0))) != Decimal(str(resumen.get("subTotal", 0))):
+        errors.append("totalPagar debe ser igual a subTotal")
 
     compare_keys = [
         "totalGravada",

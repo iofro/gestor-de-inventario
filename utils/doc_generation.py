@@ -4,6 +4,7 @@ import uuid
 import logging
 
 import dte
+from jsonschema import ValidationError, validate as validate_schema
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
 from dte import generar_ticket_json, generar_dte_json
@@ -11,6 +12,7 @@ from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
+from utils import catalogos
 
 
 logger = logging.getLogger(__name__)
@@ -115,21 +117,15 @@ def generate_invoice_pdf(manager, venta_id):
     tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
     cliente_nombre = cliente.get("nombre") if cliente else ""
-    try:
-        json_data = generar_dte_json(
-            manager.db,
-            venta_id,
-            tipo_dte="03" if credito_info else "01",
-            ambiente=ambiente,
-            tipo_operacion=tipo_operacion,
-            tipo_contingencia=tipo_contingencia,
-            motivo_contin=motivo_contin,
-        )
-    except Exception:
-        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
-        ident = json_data.setdefault("identificacion", {})
-        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
-        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+    json_data = generar_dte_json(
+        manager.db,
+        venta_id,
+        tipo_dte="03" if credito_info else "01",
+        ambiente=ambiente,
+        tipo_operacion=tipo_operacion,
+        tipo_contingencia=tipo_contingencia,
+        motivo_contin=motivo_contin,
+    )
     ident = json_data.get("identificacion", {})
     codigo_generacion = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")
@@ -157,8 +153,6 @@ def generate_invoice_pdf(manager, venta_id):
         tipo_contingencia=tipo_contingencia,
         motivo_contin=motivo_contin,
     )
-    if tipo_operacion == 2:
-        manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
     try:
         resumen = json_data.get("resumen", {})
         condicion = normalize_condicion_operacion(
@@ -170,6 +164,17 @@ def generate_invoice_pdf(manager, venta_id):
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
+
+    schema = catalogos.get_dte_schema("03" if credito_info else "01")
+    if schema:
+        try:
+            validate_schema(json_data, schema)
+        except ValidationError as exc:
+            logger.error("ERROR: DTE no cumple el esquema: %s", exc)
+            raise ValueError(f"DTE inválido: {exc}") from exc
+
+    if tipo_operacion == 2:
+        manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
     try:
         jws_path = sign_and_save(json_data, json_path)
         try:

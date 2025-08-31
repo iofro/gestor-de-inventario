@@ -47,8 +47,9 @@ def _sanitize(data: dict, tipo: str) -> dict:
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
     if tipo == "fc":
-        item["ivaItem"] = _q8(item["ventaGravada"] * Decimal("0.13"))
-        resumen["totalIva"] = _q2(resumen["montoTotalOperacion"] - resumen["totalGravada"])
+        iva = _q2(item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13")))
+        item["ivaItem"] = iva
+        resumen["totalIva"] = iva
     elif tipo in {"nd", "nc"}:
         data.pop("otrosDocumentos", None)
         for key in ("codEstable", "codEstableMH", "codPuntoVenta", "codPuntoVentaMH"):
@@ -83,19 +84,28 @@ def _sanitize(data: dict, tipo: str) -> dict:
             resumen.pop(key, None)
     return data
 
-def _assert_base(data: dict) -> None:
+def _assert_base(data: dict, tipo: str) -> None:
     item = data["cuerpoDocumento"][0]
-    assert str(item["ventaGravada"]) == "23.85000000"
-    iva = _q8(item["ventaGravada"] * Decimal("0.13"))
-    assert str(iva) == "3.10050000"
     resumen = data["resumen"]
-    assert str(resumen["totalGravada"]) == "23.85"
-    total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-    assert str(total) == "26.95"
-    total_iva = resumen.get("totalIva")
-    if total_iva is None:
-        total_iva = resumen["montoTotalOperacion"] - resumen["totalGravada"]
-    assert str(_q2(total_iva)) == "3.10"
+    if tipo == "fc":
+        assert str(item["ventaGravada"]) == "26.95000000"
+        iva = _q2(item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13")))
+        assert str(iva) == "3.10"
+        assert str(resumen["totalGravada"]) == "26.95"
+        total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
+        assert str(total) == "26.95"
+        assert str(_q2(resumen["totalIva"])) == "3.10"
+    else:
+        assert str(item["ventaGravada"]) == "23.85000000"
+        iva = _q8(item["ventaGravada"] * Decimal("0.13"))
+        assert str(iva) == "3.10050000"
+        assert str(resumen["totalGravada"]) == "23.85"
+        total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
+        assert str(total) == "26.95"
+        total_iva = resumen.get("totalIva")
+        if total_iva is None:
+            total_iva = resumen["montoTotalOperacion"] - resumen["totalGravada"]
+        assert str(_q2(total_iva)) == "3.10"
 
 
 @pytest.mark.parametrize("tipo", ["ccf", "fc", "nd", "nc", "nr"])
@@ -103,7 +113,7 @@ def test_all_dtes(tipo):
     gen = GEN_MAP[tipo]
     data = _sanitize(gen(), tipo)
     validar_contra_schema(strip_extras(data), tipo)
-    _assert_base(data)
+    _assert_base(data, tipo)
     norm = normalize_for_schema(copy.deepcopy(data))
     golden_path = Path(__file__).resolve().parent / "goldens" / f"{tipo}.json"
     with open(golden_path, "r", encoding="utf-8") as fh:

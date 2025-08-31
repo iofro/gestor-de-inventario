@@ -1,0 +1,33 @@
+{
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1,
+      "descripcion": "Producto Demo 7",
+      "numItem": 1,
+      "precioUni": 13.0
+    }
+  ],
+  "emisor": {},
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "5be9dc2c6d63450480fc54fb25698397",
+    "fecEmi": "2025-08-31",
+    "numeroControl": "16046F28",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 1
+  },
+  "receptor": {
+    "direccion": "Calle Falsa 1, San Salvador",
+    "nit": "0614-199001-101-9",
+    "nombre": "ariel"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "subTotal": 13.0,
+    "subTotalVentas": 13.0,
+    "totalLetras": "TRECE 00/100 DÓLARES",
+    "totalPagar": 13.0
+  }
+}

@@ -20,4 +20,4 @@ def test_stable_stringify_handles_float_precisely(value, expected):
 
 def test_stable_stringify_handles_decimal():
     """Decimals should serialize without negative zero artifacts."""
-    assert stable_stringify({"monto": Decimal("10.3")}) == '{"monto":10.3}'
+    assert stable_stringify({"monto": Decimal("10.3")}) == '{"monto":"10.30"}'

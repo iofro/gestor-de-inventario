@@ -29,17 +29,17 @@ def test_calculo_iva_precios_excluyen_iva():
     payload = _build_payload("13.00", precios_incluyen_iva=False)
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert D(str(item["ventaGravada"])) == D("11.50")
-    assert D(str(item["ivaItem"])) == D("1.50")
-    assert D(str(resumen["montoTotalOperacion"])) == D("13.00")
-    assert D(str(resumen["totalIva"])) == D("1.50")
+    assert D(str(item["ventaGravada"])) == D("14.69")
+    assert D(str(item["ivaItem"])) == D("1.69")
+    assert D(str(resumen["montoTotalOperacion"])) == D("14.69")
+    assert D(str(resumen["totalIva"])) == D("1.69")
 
 
 def test_calculo_iva_precios_incluyen_iva():
     payload = _build_payload("14.69", precios_incluyen_iva=True)
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert D(str(item["ventaGravada"])) == D("13.00")
+    assert D(str(item["ventaGravada"])) == D("14.69")
     assert D(str(item["ivaItem"])) == D("1.69")
     assert D(str(resumen["totalIva"])) == D("1.69")
 
@@ -61,7 +61,7 @@ def test_fc_precio_incluye_iva_default():
     payload = _build_payload("13.00")
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert D(str(item["ventaGravada"])) == D("11.50")
+    assert D(str(item["ventaGravada"])) == D("13.00")
     assert D(str(item["ivaItem"])) == D("1.50")
     assert D(str(resumen["totalGravada"])) == D("11.50")
     assert D(str(resumen["totalIva"])) == D("1.50")

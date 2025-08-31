@@ -256,10 +256,10 @@ def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
     res = data["resumen"]
     D = Decimal
     assert D(str(item["precioUni"])) == D("13.00")
-    assert D(str(item["ventaGravada"])) == D("11.50")
+    assert D(str(item["ventaGravada"])) == D("13.00")
     assert D(str(item["ivaItem"])) == D("1.50")
     assert D(str(res["totalPagar"])) == D("13.00")
-    assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("13.00")
+    assert D(str(res["totalGravada"])) == D("13.00")
 
 
 def test_generar_dte_json_cons_final_precio_neto(tmp_path):
@@ -310,9 +310,10 @@ def test_generar_dte_json_cons_final_precio_neto(tmp_path):
     res = data["resumen"]
     D = Decimal
     assert D(str(item["precioUni"])) == D("9.00")
-    assert D(str(item["ventaGravada"])) == D("7.96")
+    assert D(str(item["ventaGravada"])) == D("9.00")
     assert D(str(item["ivaItem"])) == D("1.04")
     assert D(str(res["totalPagar"])) == D("9.00")
+    assert D(str(res["totalGravada"])) == D("9.00")
 
 
 def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
@@ -363,10 +364,10 @@ def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
     res = data["resumen"]
     D = Decimal
     assert D(str(item["precioUni"])) == D("5.50")
-    assert D(str(item["ventaGravada"])) == D("9.73")
+    assert D(str(item["ventaGravada"])) == D("11.00")
     assert D(str(item["ivaItem"])) == D("1.27")
-    assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
     assert D(str(res["totalPagar"])) == D("11.00")
+    assert D(str(res["totalGravada"])) == D("11.00")
 
 
 def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
@@ -417,10 +418,10 @@ def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
     res = data["resumen"]
     D = Decimal
     assert D(str(item["precioUni"])) == D("5.50")
-    assert D(str(item["ventaGravada"])) == D("9.73")
+    assert D(str(item["ventaGravada"])) == D("11.00")
     assert D(str(item["ivaItem"])) == D("1.27")
-    assert money(D(str(item["ventaGravada"])) + D(str(item["ivaItem"]))) == D("11.00")
     assert D(str(res["totalPagar"])) == D("11.00")
+    assert D(str(res["totalGravada"])) == D("11.00")
 
 
 @pytest.mark.parametrize("descuento", [Decimal("0.01"), Decimal("0.02")])
@@ -474,17 +475,13 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
 
-    venta_gravada = money(line_total / Decimal("1.13"))
-    iva_item = money(line_total - venta_gravada)
+    iva_item = money(line_total - (line_total / Decimal("1.13")))
 
     assert Decimal(str(item["precioUni"])) == Decimal("5.50")
-    assert Decimal(str(item["ventaGravada"])) == venta_gravada
+    assert Decimal(str(item["ventaGravada"])) == line_total
     assert Decimal(str(item["ivaItem"])) == iva_item
-    assert money(
-        Decimal(str(item["ventaGravada"])) + Decimal(str(item["ivaItem"]))
-    ) == line_total
 
-    assert Decimal(str(res["subTotalVentas"])) == venta_gravada
+    assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalIva"])) == iva_item
     assert Decimal(str(res["montoTotalOperacion"])) == line_total
     assert Decimal(str(res["totalPagar"])) == line_total

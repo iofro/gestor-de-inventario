@@ -9,7 +9,7 @@ def qt_app(monkeypatch):
     return app
 
 
-def test_iva_desglosado_con_descuento(qt_app):
+def test_descuento_sin_iva(qt_app):
     productos = [{
         "lote_id": 1,
         "producto_id": 1,
@@ -25,21 +25,18 @@ def test_iva_desglosado_con_descuento(qt_app):
     dialog.precio_spin.setValue(113)
     dialog.descuento_spin.setValue(10)
     dialog.descuento_tipo_combo.setCurrentText("%")
-    dialog.iva_checkbox.setChecked(True)
-    dialog.iva_desglosado_radio.setChecked(True)
-
     dialog._agregar_a_venta()
     assert len(dialog.venta_items) == 1
     item = dialog.venta_items[0]
-    assert item["subtotal"] == pytest.approx(100.0)
-    assert item["descuento_monto"] == pytest.approx(10.0)
-    assert item["subtotal_con_descuento"] == pytest.approx(90.0)
-    assert item["iva"] == pytest.approx(11.7)
+    assert item["subtotal"] == pytest.approx(113.0)
+    assert item["descuento_monto"] == pytest.approx(11.3)
+    assert item["subtotal_con_descuento"] == pytest.approx(101.7)
+    assert item["iva"] == pytest.approx(0.0)
     assert item["total"] == pytest.approx(101.7)
 
     data = dialog.get_data()
-    assert data["sumas"] == pytest.approx(100.0)
-    assert data["descuentos"] == pytest.approx(10.0)
-    assert data["iva"] == pytest.approx(11.7)
+    assert data["sumas"] == pytest.approx(113.0)
+    assert data["descuentos"] == pytest.approx(11.3)
+    assert data["iva"] == pytest.approx(0.0)
     assert data["total"] == pytest.approx(101.7)
     assert data["sumas"] - data["descuentos"] + data["iva"] == pytest.approx(data["total"])

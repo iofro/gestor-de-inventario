@@ -1,10 +1,12 @@
 from decimal import Decimal as D
 
+import pytest
+
 from dte import recalcular_totales
 from utils.stable_json import stable_stringify
 
 
-def _build_payload(precio, *, precios_incluyen_iva=None):
+def _build_payload(precio):
     payload = {
         "identificacion": {"tipoDte": "01"},
         "cuerpoDocumento": [
@@ -18,34 +20,21 @@ def _build_payload(precio, *, precios_incluyen_iva=None):
         ],
         "resumen": {},
     }
-    if precios_incluyen_iva is None:
-        recalcular_totales(payload)
-    else:
-        recalcular_totales(payload, precios_incluyen_iva=precios_incluyen_iva)
+    recalcular_totales(payload)
     return payload
 
 
-def test_calculo_iva_precios_excluyen_iva():
-    payload = _build_payload("13.00", precios_incluyen_iva=False)
-    item = payload["cuerpoDocumento"][0]
-    resumen = payload["resumen"]
-    assert D(str(item["ventaGravada"])) == D("11.50")
-    assert D(str(item["ivaItem"])) == D("1.50")
-    assert D(str(resumen["montoTotalOperacion"])) == D("13.00")
-    assert D(str(resumen["totalIva"])) == D("1.50")
-
-
-def test_calculo_iva_precios_incluyen_iva():
-    payload = _build_payload("14.69", precios_incluyen_iva=True)
+def test_calculo_iva_item():
+    payload = _build_payload("13.00")
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
     assert D(str(item["ventaGravada"])) == D("13.00")
-    assert D(str(item["ivaItem"])) == D("1.69")
-    assert D(str(resumen["totalIva"])) == D("1.69")
+    assert D(str(item["ivaItem"])) == D("1.50")
+    assert D(str(resumen["totalIva"])) == D("1.50")
 
 
 def test_serializacion_sin_tributos():
-    payload = _build_payload("13.00", precios_incluyen_iva=False)
+    payload = _build_payload("13.00")
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
     assert item.get("tributos") is None
@@ -61,11 +50,30 @@ def test_fc_precio_incluye_iva_default():
     payload = _build_payload("13.00")
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert D(str(item["ventaGravada"])) == D("11.50")
+    assert D(str(item["ventaGravada"])) == D("13.00")
     assert D(str(item["ivaItem"])) == D("1.50")
-    assert D(str(resumen["totalGravada"])) == D("11.50")
+    assert D(str(resumen["totalGravada"])) == D("13.00")
     assert D(str(resumen["totalIva"])) == D("1.50")
     assert D(str(resumen["totalPagar"])) == D("13.00")
     assert item.get("codTributo") is None
     assert item.get("tributos") is None
     assert resumen.get("tributos") is None
+
+
+def test_valida_iva_incorrecto_error():
+    payload = {
+        "identificacion": {"tipoDte": "01"},
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "descripcion": "Test",
+                "cantidad": D("1"),
+                "precioUni": D("13.00"),
+                "montoDescu": D("0"),
+                "ivaItem": D("0"),
+            }
+        ],
+        "resumen": {},
+    }
+    with pytest.raises(ValueError):
+        recalcular_totales(payload)

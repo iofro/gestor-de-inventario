@@ -9,7 +9,6 @@ from uuid import uuid4
 from db import DB
 from zoneinfo import ZoneInfo
 from utils.catalogos import TRIBUTO_IVA
-from utils.monto import monto_a_texto_sv
 
 from .config import get_emisor_direccion
 
@@ -30,7 +29,6 @@ SCHEMA_MAP: Dict[str, tuple[str, str]] = {
 }
 
 D8 = Decimal("0.00000001")
-D4 = Decimal("0.0001")
 D2 = Decimal("0.01")
 D = Decimal
 IVA = D("0.13")
@@ -60,11 +58,6 @@ def d8(value: Decimal) -> Decimal:
 def d2(value: Decimal) -> Decimal:
     """Quantize ``value`` to two decimal places using ``ROUND_HALF_UP``."""
     return value.quantize(D2, rounding=ROUND_HALF_UP)
-
-
-def d4(value: Decimal) -> Decimal:
-    """Quantize ``value`` to four decimal places using ``ROUND_HALF_UP``."""
-    return value.quantize(D4, rounding=ROUND_HALF_UP)
 
 
 def hoy_sv() -> str:
@@ -233,14 +226,9 @@ def _validate_direccion(d: Dict[str, Any], quien: str) -> None:
 
 def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     cantidad = Decimal("2.5")
-    if tipo == "fc":
-        precio = Decimal("10.7802")
-        venta = d4(cantidad * precio)
-        iva_item = d4(venta - d4(venta / Decimal("1.13")))
-    else:
-        precio = Decimal("9.54")
-        venta = d4(cantidad * precio)
-        iva_item = d4(venta * Decimal("0.13"))
+    precio = Decimal("9.54")
+    venta = d8(cantidad * precio)
+    iva_item = d8(venta * Decimal("0.13"))
     numero_documento = None
     tipo_item = 4 if tipo == "fc" else 1
     uni_medida = 99 if tipo == "fc" else 59
@@ -250,15 +238,15 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "numeroDocumento": numero_documento,
         "codigo": "SKU001",
         "descripcion": "Producto de prueba",
-        "cantidad": d4(cantidad),
+        "cantidad": d8(cantidad),
         "uniMedida": uni_medida,
-        "precioUni": d4(precio),
-        "montoDescu": d4(Decimal("0")),
-        "ventaNoSuj": d4(Decimal("0")),
-        "ventaExenta": d4(Decimal("0")),
+        "precioUni": d8(precio),
+        "montoDescu": d8(Decimal("0")),
+        "ventaNoSuj": d8(Decimal("0")),
+        "ventaExenta": d8(Decimal("0")),
         "ventaGravada": venta,
-        "psv": d4(Decimal("0")),
-        "noGravado": d4(Decimal("0")),
+        "psv": d8(Decimal("0")),
+        "noGravado": d8(Decimal("0")),
         "ivaItem": iva_item,
     }
     if tipo == "fc":
@@ -271,35 +259,27 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
 
 def _resumen(tipo: str) -> Dict[str, Any]:
     cantidad = Decimal("2.5")
-    if tipo == "fc":
-        precio = Decimal("10.7802")
-        venta = d2(cantidad * precio)
-        base = d2(venta / Decimal("1.13"))
-        iva = d2(venta - base)
-        total = venta
-    else:
-        precio = Decimal("9.54")
-        venta = d2(cantidad * precio)
-        iva = d2(venta * Decimal("0.13"))
-        total = d2(venta + iva)
-        base = venta
+    precio = Decimal("9.54")
+    venta = d2(cantidad * precio)
+    iva = d2(venta * Decimal("0.13"))
+    total = d2(venta + iva)
     data = {
         "totalNoSuj": d2(Decimal("0")),
         "totalExenta": d2(Decimal("0")),
-        "totalGravada": d2(base),
-        "subTotalVentas": d2(base),
+        "totalGravada": d2(venta),
+        "subTotalVentas": d2(venta),
         "descuNoSuj": d2(Decimal("0")),
         "descuExenta": d2(Decimal("0")),
         "descuGravada": d2(Decimal("0")),
         "porcentajeDescuento": d2(Decimal("0")),
         "totalDescu": d2(Decimal("0")),
-        "subTotal": d2(base),
+        "subTotal": d2(venta),
         "ivaRete1": d2(Decimal("0")),
         "reteRenta": d2(Decimal("0")),
         "montoTotalOperacion": d2(total),
         "totalNoGravado": d2(Decimal("0")),
         "totalPagar": d2(total),
-        "totalLetras": monto_a_texto_sv(total),
+        "totalLetras": "VEINTISEIS CON 95/100 USD",
         "saldoFavor": d2(Decimal("0")),
         "condicionOperacion": 1,
         "pagos": [

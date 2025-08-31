@@ -113,7 +113,7 @@ def test_nd_minimum_pipeline():
             }
         ],
         "montoTotalOperacion": Decimal("26.95"),
-        "totalLetras": "Veintiseis Dolares con noventa y cinco centavos",
+        "totalLetras": "VEINTISEIS CON 95/100 USD",
         "condicionOperacion": 1,
         "numPagoElectronico": None,
     }

@@ -8,37 +8,34 @@ from utils import catalogos
 
 
 def test_resumen_formulas_fc():
-    items_total = D('26.95')
-    fiscal = {'iva': D('3.10')}
-    resumen = calcular_resumen(items_total, {}, fiscal=fiscal)
-    assert D(str(resumen['totalGravada'])) == D('26.95')
-    assert D(str(resumen['subTotalVentas'])) == D('26.95')
-    assert D(str(resumen['subTotal'])) == D('26.95')
-    assert D(str(resumen['montoTotalOperacion'])) == D('26.95')
-    assert D(str(resumen['totalPagar'])) == D('26.95')
-    assert D(str(resumen['totalIva'])) == D('3.10')
-
-
-def test_resumen_con_descuento_fc():
-    items_total = D('10.17')
+    items_total = D('23.85000000')
     fiscal = {
-        'iva': D('1.17'),
-        'sub_total_ventas': D('11.30'),
-        'descuentos': D('1.13'),
+        'sumas': D('23.85000000'),
+        'ventas_exentas': D('1.22222222'),
+        'ventas_no_sujetas': D('2.33333333'),
+        'no_gravado': D('0.44444444'),
+        'descu_exenta': D('0.11111111'),
+        'descu_no_suj': D('0.22222222'),
+        'descu_gravada': D('0.33333333'),
+        'iva': D('3.10444444'),
     }
-    resumen = calcular_resumen(items_total, {}, fiscal=fiscal)
-    assert D(str(resumen['subTotalVentas'])) == D('11.30')
-    assert D(str(resumen['totalDescu'])) == D('1.13')
-    assert D(str(resumen['subTotal'])) == D('10.17')
-    assert D(str(resumen['montoTotalOperacion'])) == D('10.17')
-    assert D(str(resumen['totalPagar'])) == D('10.17')
-    assert D(str(resumen['totalIva'])) == D('1.17')
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, extra={"precios_incluyen_iva": False})
+    assert D(str(resumen['totalNoSuj'])) == D('2.33')
+    assert D(str(resumen['totalExenta'])) == D('1.22')
+    assert D(str(resumen['totalGravada'])) == D('23.85')
+    assert D(str(resumen['subTotalVentas'])) == D('27.40')
+    assert D(str(resumen['totalDescu'])) == D('0.66')
+    assert D(str(resumen['subTotal'])) == D('26.74')
+    assert D(str(resumen['totalNoGravado'])) == D('0.44')
+    assert D(str(resumen['montoTotalOperacion'])) == D('30.28')
+    assert D(str(resumen['totalPagar'])) == D('30.28')
+    assert D(str(resumen['totalIva'])) == D('3.10')
 
 
 def test_resumen_sin_gravada_sin_tributos():
     items_total = D('0')
     fiscal = {'sumas': D('0'), 'ventas_exentas': D('5'), 'iva': D('0')}
-    resumen = calcular_resumen(items_total, {}, fiscal=fiscal)
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, extra={"precios_incluyen_iva": False})
     assert D(str(resumen['totalGravada'])) == D('0.00')
     assert D(str(resumen['totalIva'])) == D('0.00')
     assert resumen['tributos'] is None

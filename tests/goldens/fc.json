@@ -5,18 +5,18 @@
       "cantidad": "2.50000000",
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
-      "ivaItem": "3.10050000",
+      "ivaItem": "3.10",
       "montoDescu": "0E-8",
       "noGravado": "0E-8",
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": "9.54000000",
+      "precioUni": "10.78000000",
       "psv": "0E-8",
       "tipoItem": 4,
-      "tributos": [],
+      "tributos": null,
       "uniMedida": 99,
       "ventaExenta": "0E-8",
-      "ventaGravada": "23.85000000",
+      "ventaGravada": "26.95000000",
       "ventaNoSuj": "0E-8"
     }
   ],
@@ -57,7 +57,7 @@
     "version": 1
   },
   "otrosDocumentos": null,
-    "receptor": {
+  "receptor": {
     "codActividad": "62010",
     "correo": "cliente@example.com",
     "descActividad": "Servicios de software",
@@ -71,7 +71,7 @@
     "telefono": "70000001",
     "tipoDocumento": "36"
   },
-    "resumen": {
+  "resumen": {
     "condicionOperacion": 1,
     "descuExenta": "0.00",
     "descuGravada": "0.00",
@@ -91,23 +91,17 @@
     "porcentajeDescuento": "0.00",
     "reteRenta": "0.00",
     "saldoFavor": "0.00",
-    "subTotal": "23.85",
-    "subTotalVentas": "23.85",
+    "subTotal": "26.95",
+    "subTotalVentas": "26.95",
     "totalDescu": "0.00",
     "totalExenta": "0.00",
-    "totalGravada": "23.85",
+    "totalGravada": "26.95",
     "totalIva": "3.10",
-    "totalLetras": "VEINTISEIS CON 95/100 USD",
+    "totalLetras": "Veintiseis Dolares con noventa y cinco centavos",
     "totalNoGravado": "0.00",
     "totalNoSuj": "0.00",
     "totalPagar": "26.95",
-    "tributos": [
-      {
-        "codigo": "20",
-        "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": "3.10"
-      }
-    ]
+    "tributos": null
   },
   "ventaTercero": null
 }

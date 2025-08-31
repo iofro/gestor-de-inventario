@@ -226,9 +226,14 @@ def _validate_direccion(d: Dict[str, Any], quien: str) -> None:
 
 def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     cantidad = Decimal("2.5")
-    precio = Decimal("9.54")
-    venta = d8(cantidad * precio)
-    iva_item = d8(venta * Decimal("0.13"))
+    if tipo == "fc":
+        precio = Decimal("10.78")  # precio con IVA incluido
+        venta = d8(cantidad * precio)
+        iva_item = d2(venta - (venta / Decimal("1.13")))
+    else:
+        precio = Decimal("9.54")
+        venta = d8(cantidad * precio)
+        iva_item = d8(venta * Decimal("0.13"))
     numero_documento = None
     tipo_item = 4 if tipo == "fc" else 1
     uni_medida = 99 if tipo == "fc" else 59
@@ -259,10 +264,16 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
 
 def _resumen(tipo: str) -> Dict[str, Any]:
     cantidad = Decimal("2.5")
-    precio = Decimal("9.54")
-    venta = d2(cantidad * precio)
-    iva = d2(venta * Decimal("0.13"))
-    total = d2(venta + iva)
+    if tipo == "fc":
+        precio = Decimal("10.78")
+        venta = d2(cantidad * precio)
+        iva = d2(venta - (venta / Decimal("1.13")))
+        total = venta
+    else:
+        precio = Decimal("9.54")
+        venta = d2(cantidad * precio)
+        iva = d2(venta * Decimal("0.13"))
+        total = d2(venta + iva)
     data = {
         "totalNoSuj": d2(Decimal("0")),
         "totalExenta": d2(Decimal("0")),
@@ -279,7 +290,7 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         "montoTotalOperacion": d2(total),
         "totalNoGravado": d2(Decimal("0")),
         "totalPagar": d2(total),
-        "totalLetras": "VEINTISEIS CON 95/100 USD",
+        "totalLetras": "Veintiseis Dolares con noventa y cinco centavos" if tipo == "fc" else "VEINTISEIS CON 95/100 USD",
         "saldoFavor": d2(Decimal("0")),
         "condicionOperacion": 1,
         "pagos": [

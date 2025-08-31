@@ -2,19 +2,19 @@
   "apendice": null,
   "cuerpoDocumento": [
     {
-      "cantidad": "2.50000000",
+      "cantidad": "2.50",
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
-      "montoDescu": "0E-8",
+      "montoDescu": "0.0",
       "numItem": 1,
       "numeroDocumento": "123",
-      "precioUni": "9.54000000",
+      "precioUni": "9.5400",
       "tipoItem": 1,
       "tributos": [],
       "uniMedida": 59,
-      "ventaExenta": "0E-8",
-      "ventaGravada": "23.85000000",
-      "ventaNoSuj": "0E-8"
+      "ventaExenta": "0.0",
+      "ventaGravada": "23.8500",
+      "ventaNoSuj": "0.0"
     }
   ],
   "documentoRelacionado": [
@@ -85,7 +85,7 @@
     "totalDescu": "0.00",
     "totalExenta": "0.00",
     "totalGravada": "23.85",
-    "totalLetras": "VEINTISEIS CON 95/100 USD",
+    "totalLetras": "Veintiseis Dolares con noventa y cinco centavos",
     "totalNoSuj": "0.00",
     "tributos": [
       {

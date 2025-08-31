@@ -47,7 +47,8 @@ def _sanitize(data: dict, tipo: str) -> dict:
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
     if tipo == "fc":
-        item["ivaItem"] = _q8(item["ventaGravada"] * Decimal("0.13"))
+        base = _q8(item["ventaGravada"] / Decimal("1.13"))
+        item["ivaItem"] = _q8(item["ventaGravada"] - base)
         resumen["totalIva"] = _q2(resumen["montoTotalOperacion"] - resumen["totalGravada"])
     elif tipo in {"nd", "nc"}:
         data.pop("otrosDocumentos", None)
@@ -85,8 +86,8 @@ def _sanitize(data: dict, tipo: str) -> dict:
 
 def _assert_base(data: dict) -> None:
     item = data["cuerpoDocumento"][0]
-    assert str(item["ventaGravada"]) == "23.85000000"
-    iva = _q8(item["ventaGravada"] * Decimal("0.13"))
+    assert str(item["ventaGravada"]) == "26.9505"
+    iva = _q8(item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13")))
     assert str(iva) == "3.10050000"
     resumen = data["resumen"]
     assert str(resumen["totalGravada"]) == "23.85"

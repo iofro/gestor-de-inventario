@@ -2,7 +2,7 @@ import pytest
 
 import json
 from pathlib import Path
-from decimal import Decimal
+from decimal import Decimal, getcontext, setcontext
 
 from db import DB
 from dte import generar_dte_json, _write_json, money
@@ -10,6 +10,50 @@ from dte import generar_dte_json, _write_json, money
 
 def create_db():
     return DB(":memory:")
+
+
+def test_generate_invoice_pdf_error_visible(monkeypatch):
+    from utils.doc_generation import generate_invoice_pdf
+    class FakeDB:
+        def __init__(self):
+            self._ventas = [{"id": 1, "fecha": "2024-01-01", "total": 10}]
+            self.detalles = {1: [{"cantidad": 1, "precio_unitario": 10}]}
+
+        def get_ventas(self):
+            return self._ventas
+
+        def get_venta_credito_fiscal(self, vid):
+            return None
+
+        def get_detalles_venta(self, vid):
+            return self.detalles.get(vid, [])
+
+        def get_trabajador(self, vid):
+            return None
+
+        def add_factura_pdf(self, *a):
+            pass
+
+    class Manager:
+        def __init__(self, db):
+            self.db = db
+            self._Distribuidores = []
+            self._clientes = []
+            self._vendedores = []
+
+    man = Manager(FakeDB())
+
+    def fail(*a, **k):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fail)
+
+    ctx = getcontext().copy()
+    try:
+        with pytest.raises(ValueError):
+            generate_invoice_pdf(man, 1)
+    finally:
+        setcontext(ctx)
 
 
 def test_generar_dte_json_basic(tmp_path):

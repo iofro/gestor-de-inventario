@@ -6,8 +6,8 @@ from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
 import dte
 from sales_tab import SalesTab
-from utils import docs
 from utils.doc_generation import generate_invoice_pdf
+import facturacion_tab
 
 class FakeDB:
     def __init__(self):
@@ -53,6 +53,39 @@ def test_generate_invoice_creates_json(tmp_path):
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
 
     generate_invoice_pdf(man, 1)
+    monkeypatch.undo()
+
+    assert pdf_path.exists()
+    assert json_path.exists()
+
+    data = json.load(open(json_path))
+    ident = data.get("identificacion", {})
+    assert ident.get("codigoGeneracion")
+    assert ident.get("numeroControl")
+    assert data.get("cuerpoDocumento")
+    assert data.get("resumen", {}).get("totalPagar") == 10
+
+
+def test_facturacion_tab_generate_invoice_creates_json(tmp_path):
+    db = FakeDB()
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    man = Manager(db)
+    tab = facturacion_tab.FacturacionTab.__new__(facturacion_tab.FacturacionTab)
+    tab.manager = man
+
+    pdf_path = tmp_path / "fact.pdf"
+    json_path = tmp_path / "fact.json"
+
+    def fake_paths(date, cliente, identifier, doc_type, root=None):
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        return str(pdf_path), str(json_path)
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+
+    tab._generate_invoice_pdf(1)
     monkeypatch.undo()
 
     assert pdf_path.exists()

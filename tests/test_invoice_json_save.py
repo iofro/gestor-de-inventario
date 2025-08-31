@@ -46,11 +46,23 @@ def test_generate_invoice_creates_json(tmp_path):
 
     pdf_path = tmp_path / "fact.pdf"
     json_path = tmp_path / "fact.json"
+
     def fake_paths(date, cliente, identifier, doc_type, root=None):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
+
+    def fake_generar(db_, vid, **_):
+        venta = next(v for v in db_.get_ventas() if v["id"] == vid)
+        detalles = db_.get_detalles_venta(vid)
+        data = docs.build_invoice_json(venta, {}, detalles)
+        ident = data.setdefault("identificacion", {})
+        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
+        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+        return data
+
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_generar)
 
     generate_invoice_pdf(man, 1)
     monkeypatch.undo()
@@ -113,7 +125,17 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
 
+    def fake_generar(db_, vid, **_):
+        venta = next(v for v in db_.get_ventas() if v["id"] == vid)
+        detalles = db_.get_detalles_venta(vid)
+        data = docs.build_invoice_json(venta, {}, detalles)
+        ident = data.setdefault("identificacion", {})
+        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
+        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+        return data
+
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_generar)
     monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
     monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda *a, **k: {"estado": "OK"})
 
@@ -146,6 +168,22 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
     base = sobre[0].name.replace("_sobre_hacienda.json", "")
     assert (base_dir / f"{base}.json").exists()
     assert (base_dir / f"{base}.jws").exists()
+
+
+def test_generate_invoice_pdf_propagates_error(monkeypatch):
+    db = FakeDB()
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    man = Manager(db)
+
+    def fail(*a, **k):
+        raise ValueError("boom")
+
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fail)
+
+    with pytest.raises(ValueError):
+        generate_invoice_pdf(man, 1)
 
 
 def test_save_ticket_creates_json(qt_app, tmp_path):

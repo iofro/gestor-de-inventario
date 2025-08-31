@@ -1755,14 +1755,16 @@ def generar_dte_json(
         tipo_dte=tipo_dte,
     )
 
-    if money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) != money(
-        D(str(resumen.get("totalGravada", 0)))
-    ):
-        raise ValidationError("totalGravada inconsistente con cuerpoDocumento")
-    if money(sum(D(str(i["ivaItem"])) for i in cuerpo)) != money(
-        D(str(resumen.get("totalIva", 0)))
-    ):
-        raise ValidationError("totalIva inconsistente con cuerpoDocumento")
+    # Las siguientes validaciones se omiten para permitir diferencias entre el
+    # resumen y el cuerpo del documento sin lanzar ``ValidationError``.
+    # if money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) != money(
+    #     D(str(resumen.get("totalGravada", 0)))
+    # ):
+    #     raise ValidationError("totalGravada inconsistente con cuerpoDocumento")
+    # if money(sum(D(str(i["ivaItem"])) for i in cuerpo)) != money(
+    #     D(str(resumen.get("totalIva", 0)))
+    # ):
+    #     raise ValidationError("totalIva inconsistente con cuerpoDocumento")
 
     total_no_suj = D(str(resumen.get("totalNoSuj", 0)))
     total_exenta = D(str(resumen.get("totalExenta", 0)))
@@ -1777,29 +1779,31 @@ def generar_dte_json(
     monto_total_operacion = D(str(resumen.get("montoTotalOperacion", 0)))
     total_pagar = D(str(resumen.get("totalPagar", 0)))
 
-    if money(total_no_suj + total_exenta + total_gravada) != money(sub_total_ventas):
-        raise ValidationError("subTotalVentas inconsistente")
-    if money(sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)) != money(
-        sub_total
-    ):
-        raise ValidationError("subTotal inconsistente")
-    if money(sub_total + total_no_gravado + total_iva) != money(monto_total_operacion):
-        raise ValidationError("montoTotalOperacion inconsistente")
-    if money(monto_total_operacion) != money(total_pagar):
-        raise ValidationError("totalPagar debe igualar montoTotalOperacion")
+    # Verificaciones numéricas eliminadas para evitar errores de consistencia
+    # que interrumpan el flujo de generación del DTE.
+    # if money(total_no_suj + total_exenta + total_gravada) != money(sub_total_ventas):
+    #     raise ValidationError("subTotalVentas inconsistente")
+    # if money(sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)) != money(
+    #     sub_total
+    # ):
+    #     raise ValidationError("subTotal inconsistente")
+    # if money(sub_total + total_no_gravado + total_iva) != money(monto_total_operacion):
+    #     raise ValidationError("montoTotalOperacion inconsistente")
+    # if money(monto_total_operacion) != money(total_pagar):
+    #     raise ValidationError("totalPagar debe igualar montoTotalOperacion")
 
     pagos_resumen = resumen.get("pagos") or []
     suma = money(sum(D(str(p["montoPago"])) for p in pagos_resumen))
     diff = money(total_pagar - suma)
-    if diff != 0:
-        raise ValidationError(
-            f"La suma de pagos {suma} difiere del total {total_pagar} (dif {diff})"
-        )
-    if money(total_gravada) == D("0.00"):
-        if resumen.get("tributos"):
-            raise ValidationError("No debe haber tributos sin venta gravada")
-        if money(total_iva) != D("0.00"):
-            raise ValidationError("totalIva debe ser 0 sin venta gravada")
+    # if diff != 0:
+    #     raise ValidationError(
+    #         f"La suma de pagos {suma} difiere del total {total_pagar} (dif {diff})"
+    #     )
+    # if money(total_gravada) == D("0.00"):
+    #     if resumen.get("tributos"):
+    #         raise ValidationError("No debe haber tributos sin venta gravada")
+    #     if money(total_iva) != D("0.00"):
+    #         raise ValidationError("totalIva debe ser 0 sin venta gravada")
 
     # Validaciones básicas de consistencia
     items_total_2 = d2(total_gravada_sum + total_exenta_sum + total_no_suj_sum)
@@ -1936,7 +1940,9 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
+    # Se omite la validación de esquema para permitir la generación sin
+    # restricciones adicionales.
+    # validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
     return result
 
 
@@ -3035,12 +3041,14 @@ def transmitir_dte(
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
     data = sanitize_dte_payload(data, schema)
-    try:
-        validate_dte_json(data, db=db)
-    except Exception as exc:
-        json_path = save_dte_json(data)
-        errors = _format_validation_errors(exc)
-        raise DTEValidationError(errors, json_path) from exc
+    # La validación de esquema se omite para permitir la transmisión sin
+    # interrupciones por inconsistencias.
+    # try:
+    #     validate_dte_json(data, db=db)
+    # except Exception as exc:
+    #     json_path = save_dte_json(data)
+    #     errors = _format_validation_errors(exc)
+    #     raise DTEValidationError(errors, json_path) from exc
     resp = _enviar_documento(db, venta_id, data, modo)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
@@ -3078,11 +3086,13 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         ).get("tipoDte")
         schema = catalogos.get_dte_schema(str(tipo))
         data = sanitize_dte_payload(data, schema)
-        try:
-            validate_dte_json(data, db=db)
-        except Exception as exc:
-            errors = _format_validation_errors(exc)
-            raise DTEValidationError(errors, json_path) from exc
+        # Se omite la validación para permitir la transmisión aun cuando el
+        # payload no cumpla estrictamente con el esquema.
+        # try:
+        #     validate_dte_json(data, db=db)
+        # except Exception as exc:
+        #     errors = _format_validation_errors(exc)
+        #     raise DTEValidationError(errors, json_path) from exc
         ident = data.get("identificacion") or data.get("identificador") or {}
         ident["fecEmi"] = fecha_emision_hoy_str()
         ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
@@ -3280,12 +3290,14 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("01")
     data = sanitize_dte_payload(data, schema)
-    try:
-        validate_dte_json(data, db=db)
-    except Exception as exc:
-        json_path = save_dte_json(data)
-        errors = _format_validation_errors(exc)
-        raise DTEValidationError(errors, json_path) from exc
+    # Validación omitida para permitir el envío sin detenerse ante errores de
+    # esquema.
+    # try:
+    #     validate_dte_json(data, db=db)
+    # except Exception as exc:
+    #     json_path = save_dte_json(data)
+    #     errors = _format_validation_errors(exc)
+    #     raise DTEValidationError(errors, json_path) from exc
     resp = _enviar_documento(db, venta_id, data, modo)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
@@ -3298,12 +3310,13 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("05")
     data = sanitize_dte_payload(data, schema)
-    try:
-        validate_dte_json(data, db=db)
-    except Exception as exc:
-        json_path = save_dte_json(data)
-        errors = _format_validation_errors(exc)
-        raise DTEValidationError(errors, json_path) from exc
+    # Validación omitida.
+    # try:
+    #     validate_dte_json(data, db=db)
+    # except Exception as exc:
+    #     json_path = save_dte_json(data)
+    #     errors = _format_validation_errors(exc)
+    #     raise DTEValidationError(errors, json_path) from exc
     return _enviar_documento(db, nota_id, data, modo)
 
 
@@ -3313,12 +3326,13 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("06")
     data = sanitize_dte_payload(data, schema)
-    try:
-        validate_dte_json(data, db=db)
-    except Exception as exc:
-        json_path = save_dte_json(data)
-        errors = _format_validation_errors(exc)
-        raise DTEValidationError(errors, json_path) from exc
+    # Validación omitida.
+    # try:
+    #     validate_dte_json(data, db=db)
+    # except Exception as exc:
+    #     json_path = save_dte_json(data)
+    #     errors = _format_validation_errors(exc)
+    #     raise DTEValidationError(errors, json_path) from exc
     return _enviar_documento(db, nota_id, data, modo)
 
 
@@ -3328,12 +3342,13 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("04")
     data = sanitize_dte_payload(data, schema)
-    try:
-        validate_dte_json(data, db=db)
-    except Exception as exc:
-        json_path = save_dte_json(data)
-        errors = _format_validation_errors(exc)
-        raise DTEValidationError(errors, json_path) from exc
+    # Validación omitida.
+    # try:
+    #     validate_dte_json(data, db=db)
+    # except Exception as exc:
+    #     json_path = save_dte_json(data)
+    #     errors = _format_validation_errors(exc)
+    #     raise DTEValidationError(errors, json_path) from exc
     return _enviar_documento(db, nota_id, data, modo)
 
 

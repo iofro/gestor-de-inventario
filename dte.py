@@ -1166,14 +1166,16 @@ def recalcular_totales(
             linea = d4(cant * precio - monto_descu)
             if linea < 0:
                 linea = d4(0)
-            esperado_iva = money(linea - (linea / D("1.13")))
-            actual_iva = money(D(str(item.get("ivaItem") or 0)))
-            if linea > D("0") and actual_iva != esperado_iva:
-                raise ValueError(
-                    "IVA por ítem incoherente con modelo de precios con IVA incluido"
-                )
-            if linea == D("0") and actual_iva != D("0"):
-                raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
+            esperado_iva = money(linea * D("0.13") / D("1.13"))
+            iva_raw = item.get("ivaItem")
+            actual_iva = money(D(str(iva_raw))) if iva_raw is not None else None
+            if iva_raw is not None:
+                if linea > D("0") and actual_iva != esperado_iva:
+                    raise ValueError(
+                        "IVA por ítem incoherente con modelo de precios con IVA incluido"
+                    )
+                if linea == D("0") and actual_iva != D("0"):
+                    raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
             item["ventaGravada"] = linea
             item["ivaItem"] = esperado_iva
             item["ventaExenta"] = d4(0)
@@ -1649,9 +1651,9 @@ def generar_dte_json(
             else:
                 precio = money(precio_raw)
             line_total = money(cant * precio - monto_descu)
-            venta_gravada = money(line_total / D("1.13"))
-            iva_val = money(line_total - venta_gravada)
-            line_total = venta_gravada + iva_val
+            venta_gravada = line_total
+            iva_val = money(line_total * D("0.13") / D("1.13"))
+            line_total = venta_gravada
         elif precios_incluyen_iva:
             total_final = d8(cant * precio_raw - monto_descu)
             if total_final < 0:
@@ -2408,9 +2410,8 @@ def validate_dte_json(
                 * D(str(i.get("precioUni") or 0))
                 - D(str(i.get("montoDescu") or 0))
             )
-            base_chk = money(linea / D("1.13"))
-            iva_chk = money(linea - base_chk)
-            assert i.get("ventaGravada") == base_chk and i.get("ivaItem") == iva_chk
+            iva_chk = money(linea * D("0.13") / D("1.13"))
+            assert i.get("ventaGravada") == linea and i.get("ivaItem") == iva_chk
 
     resumen["pagos"] = normalizar_pagos(
         resumen.get("pagos"),

@@ -506,23 +506,6 @@ class ProductDialogBase:
         ]
         self._mostrar_productos(filtrados)
 
-    def _toggle_iva_radios(self, state):
-        checked = self.iva_checkbox.isChecked()
-        self.iva_agregado_radio.setEnabled(checked)
-        self.iva_desglosado_radio.setEnabled(checked)
-        if not checked:
-            self.iva_agregado_radio.setAutoExclusive(False)
-            self.iva_desglosado_radio.setAutoExclusive(False)
-            self.iva_agregado_radio.setChecked(False)
-            self.iva_desglosado_radio.setChecked(False)
-            self.iva_agregado_radio.setAutoExclusive(True)
-            self.iva_desglosado_radio.setAutoExclusive(True)
-        else:
-            if not self.iva_agregado_radio.isChecked() and not self.iva_desglosado_radio.isChecked():
-                self.iva_agregado_radio.setChecked(True)
-        if hasattr(self, "_recalcular_totales"):
-            self._recalcular_totales()
-
     def _toggle_comision_inputs(self, state):
         enabled = self.comision_chk.isChecked()
         self.comision_pct_spin.setEnabled(enabled)
@@ -648,20 +631,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
         self.descuento_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
 
-        # IVA con checkbox y radios
-        iva_layout = QHBoxLayout()
-        self.iva_checkbox = QCheckBox("Aplicar IVA")
-        self.iva_checkbox.setChecked(False)
-        iva_layout.addWidget(self.iva_checkbox)
-        self.iva_agregado_radio = QRadioButton("IVA agregado (sumar 13%)")
-        self.iva_desglosado_radio = QRadioButton("IVA desglosado (precio incluye IVA)")
-        self.iva_agregado_radio.setChecked(False)
-        self.iva_desglosado_radio.setChecked(False)
-        self.iva_agregado_radio.setEnabled(False)
-        self.iva_desglosado_radio.setEnabled(False)
-        iva_layout.addWidget(self.iva_agregado_radio)
-        iva_layout.addWidget(self.iva_desglosado_radio)
-        left_layout.addLayout(iva_layout)
+        # IVA eliminado: ya no se muestran opciones para aplicar IVA
 
 
         # --- Clasificación fiscal individual por producto ---
@@ -795,19 +765,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.tipo_venta_group.addButton(self.tipo_mayorista_unit)
         self.tipo_venta_group.addButton(self.tipo_mayorista_total)
 
-        # Agrupa los radios en un grupo exclusivo para que solo uno pueda estar seleccionado
-        self.iva_group = QButtonGroup(self)
-        self.iva_group.setExclusive(True)
-        self.iva_group.addButton(self.iva_agregado_radio)
-        self.iva_group.addButton(self.iva_desglosado_radio)
-
-        # --- CONEXIONES PARA IVA ---
-        # Al cambiar la checkbox, habilita/deshabilita los radios y selecciona uno por defecto si se activa
-        self.iva_checkbox.stateChanged.connect(self._toggle_iva_radios)
-        # Al cambiar cualquiera de los radios, recalcula el total en tiempo real
-        self.iva_agregado_radio.toggled.connect(self._recalcular_totales)      # <--- CORRIGE AQUÍ
-        self.iva_desglosado_radio.toggled.connect(self._recalcular_totales)    # <--- Y AQUÍ
-
         # Estado
         self.productos_data = productos
 
@@ -820,9 +777,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.cantidad_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_total_spin.valueChanged.connect(self._recalcular_totales)
-        self.iva_agregado_radio.toggled.connect(self._recalcular_totales)
-        self.iva_desglosado_radio.toggled.connect(self._recalcular_totales)
-        self.product_search.textChanged.connect(self._filtrar_productos)       
+        self.product_search.textChanged.connect(self._filtrar_productos)
 
         # Permitir edición según tipo de venta
         self.tipo_minorista.toggled.connect(self._toggle_precio_edicion)
@@ -985,7 +940,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 else "Mayorista (total personalizado)"
             ),
             "precio_total_manual": float(self.precio_total_spin.value()),
-            "iva_agregado": self.iva_agregado_radio.isChecked(),
+            "iva_agregado": self.iva_agregado_radio.isChecked() if hasattr(self, "iva_agregado_radio") else False,
             "venta_a_cuenta_de": self.venta_a_cuenta_de_edit.text(),
             "documento_venta_a_cuenta": self.venta_documento_edit.text(),
             "sumas": sumas,
@@ -1824,27 +1779,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
         self.descuento_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
 
-        # IVA con checkbox y radios
-        iva_layout = QHBoxLayout()
-        self.iva_checkbox = QCheckBox("Aplicar IVA")
-        self.iva_checkbox.setChecked(False)
-        iva_layout.addWidget(self.iva_checkbox)
-        self.iva_agregado_radio = QRadioButton("IVA agregado (sumar 13%)")
-        self.iva_desglosado_radio = QRadioButton("IVA desglosado (precio incluye IVA)")
-        self.iva_agregado_radio.setChecked(False)
-        self.iva_desglosado_radio.setChecked(False)
-        self.iva_agregado_radio.setEnabled(False)
-        self.iva_desglosado_radio.setEnabled(False)
-        iva_layout.addWidget(self.iva_agregado_radio)
-        iva_layout.addWidget(self.iva_desglosado_radio)
-        left_layout.addLayout(iva_layout)
-        self.iva_group = QButtonGroup(self)
-        self.iva_group.setExclusive(True)
-        self.iva_group.addButton(self.iva_agregado_radio)
-        self.iva_group.addButton(self.iva_desglosado_radio)
-        self.iva_checkbox.stateChanged.connect(self._toggle_iva_radios)
-        self.iva_agregado_radio.toggled.connect(self._recalcular_totales)
-        self.iva_desglosado_radio.toggled.connect(self._recalcular_totales)
+        # IVA eliminado: ya no se muestran opciones para aplicar IVA
 
         # Selector de tipo fiscal
         tipo_fiscal_layout = QHBoxLayout()
@@ -2298,7 +2233,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 else "Mayorista (total personalizado)"
             ),
             "precio_total_manual": float(self.precio_total_spin.value()),
-            "iva_agregado": self.iva_agregado_radio.isChecked(),
+            "iva_agregado": self.iva_agregado_radio.isChecked() if hasattr(self, "iva_agregado_radio") else False,
             "nrc": self.nrc_edit.text(),
             "nit": self.nit_edit.text(),
             "giro": self.giro_edit.text(),

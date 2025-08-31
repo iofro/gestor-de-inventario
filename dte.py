@@ -181,6 +181,22 @@ def d8(value: "object") -> D:
     return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
 
 
+def d4(value: "object") -> D:
+    """Return ``value`` as :class:`Decimal` with 4 decimal places."""
+    return D(str(value)).quantize(D("0.0001"), rounding=ROUND_HALF_UP)
+
+
+def d4_or_2(value: "object") -> D:
+    """Return value with 4 decimals only when needed.
+
+    If ``value`` is a multiple of 0.01 it is quantized to two decimals,
+    otherwise it is kept with four decimals.  The rounding mode is
+    ``ROUND_HALF_UP`` to comply with the fiscal specification.
+    """
+    q4 = d4(value)
+    return q4 if q4 % D("0.01") != 0 else money(q4)
+
+
 def money(value) -> D:
     """
     Convierte `value` a Decimal con 2 decimales (multipleOf 0.01) usando ROUND_HALF_UP.
@@ -218,13 +234,9 @@ def normalize_uuid_v4_upper(value: str) -> str:
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
     try:
-        texto = monto_a_texto_sv(float(monto))
+        return monto_a_texto_sv(float(monto))
     except Exception:
         return ""
-    if " " in texto:
-        partes = texto.split(" ", 1)
-        return f"{partes[0]} CON {partes[1]}"
-    return texto
 
 
 def identificacion_a_xml(ident: dict) -> Element:
@@ -1129,16 +1141,27 @@ def recalcular_totales(
         cant = D(str(item.get("cantidad") or 0))
         precio = D(str(item.get("precioUni") or 0))
         monto_descu = D(str(item.get("montoDescu") or 0))
-        linea = money(cant * precio - monto_descu)
+        linea = d8(cant * precio - monto_descu)
         if linea < 0:
-            linea = money(0)
+            linea = D("0")
         if tipo_dte == "01":
+            precio = d4_or_2(linea / cant) if cant != 0 else d4_or_2(0)
+            linea = d4_or_2(cant * precio)
             base = money(linea / D("1.13"))
             iva_val = money(linea - base)
-            base = money(linea - iva_val)
+            item["precioUni"] = precio
+            item["montoDescu"] = money(0)
+            item["ventaGravada"] = linea
+            item["ivaItem"] = iva_val
+            item["ventaExenta"] = money(0)
+            item["ventaNoSuj"] = money(0)
+            item["noGravado"] = money(0)
             item["codTributo"] = None
             item["tributos"] = None
+            if "montoIva" in item:
+                item["montoIva"] = iva_val
         else:
+            linea = money(linea)
             if precios_flag:
                 base = money(linea / D("1.13"))
                 iva_val = money(linea - base)
@@ -1152,13 +1175,13 @@ def recalcular_totales(
             else:
                 item["codTributo"] = None
                 item["tributos"] = []
-        item["ventaGravada"] = base
-        item["ivaItem"] = iva_val
-        item["ventaExenta"] = money(0)
-        item["ventaNoSuj"] = money(0)
-        item["noGravado"] = money(0)
-        if "montoIva" in item:
-            item["montoIva"] = iva_val
+            item["ventaGravada"] = base
+            item["ivaItem"] = iva_val
+            item["ventaExenta"] = money(0)
+            item["ventaNoSuj"] = money(0)
+            item["noGravado"] = money(0)
+            if "montoIva" in item:
+                item["montoIva"] = iva_val
         iva_total += iva_val
         venta_gravada_sum += base
 
@@ -1589,14 +1612,18 @@ def generar_dte_json(
                 extra.get("origen_precios")
                 or ("bruto" if precios_incluyen_iva else "neto")
             ).lower()
-            if origen == "neto":
-                precio = money(precio_raw * D("1.13"))
-            else:
-                precio = money(precio_raw)
-            line_total = money(cant * precio - monto_descu)
-            venta_gravada = money(line_total / D("1.13"))
-            iva_val = money(line_total - venta_gravada)
-            line_total = venta_gravada + iva_val
+            precio_bruto = (
+                d8(precio_raw * D("1.13")) if origen == "neto" else d8(precio_raw)
+            )
+            total_linea = d8(cant * precio_bruto - monto_descu)
+            if total_linea < 0:
+                total_linea = D("0")
+            precio = d4_or_2(total_linea / cant) if cant != 0 else d4_or_2(0)
+            venta_gravada = d4_or_2(cant * precio)
+            iva_val = money(venta_gravada - (venta_gravada / D("1.13")))
+            line_total = venta_gravada
+            monto_descu = money(0)
+            venta_gravada_base = money(venta_gravada / D("1.13"))
         elif precios_incluyen_iva:
             total_final = d8(cant * precio_raw - monto_descu)
             if total_final < 0:
@@ -1674,7 +1701,6 @@ def generar_dte_json(
                 item_data["tributos"] = []
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
-        total_gravada_sum += D(str(item_data["ventaGravada"]))
         total_no_gravado_sum += D(str(item_data["noGravado"]))
         cuerpo.append(item_data)
 

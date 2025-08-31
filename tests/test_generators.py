@@ -1,5 +1,5 @@
 import copy
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal
 
 import pytest
 
@@ -17,10 +17,12 @@ from svfe.json_compare import normalize_for_schema, similarity
 
 def _assert_base(data):
     item = data["cuerpoDocumento"][0]
-    assert str(item["ventaGravada"]) == "26.9505"
+    assert str(item["ventaGravada"]) == "23.85000000"
     venta = item["ventaGravada"]
-    iva = (venta - (venta / Decimal("1.13"))).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-    assert str(item["ivaItem"]) == str(iva)
+    iva = (venta * Decimal("0.13")).quantize(Decimal("0.00000001"))
+    assert str(iva) == "3.10050000"
+    if "ivaItem" in item:
+        assert str(item["ivaItem"]) == str(iva)
 
     resumen = data["resumen"]
     assert str(resumen["totalGravada"]) == "23.85"

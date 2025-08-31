@@ -33,18 +33,18 @@ except ImportError:  # pragma: no cover - fallback for environments without num2
         raise ImportError("num2words is required")
 
 
-_TRANSLATE = str.maketrans("áéíóúÁÉÍÓÚ", "aeiouAEIOU")
-
-
-def _sin_tildes(texto: str) -> str:
-    return texto.translate(_TRANSLATE)
-
-
 def monto_a_texto_sv(monto):
-    """Convierte un monto a texto con redacción natural."""
+    """Convierte un monto a texto en formato fiscal salvadoreño."""
     entero = int(monto)
     centavos = int(round((monto - entero) * 100))
-    palabras = _sin_tildes(num2words(entero, lang="es")).capitalize()
-    centavos_txt = "cero" if centavos == 0 else _sin_tildes(num2words(centavos, lang="es"))
-    return f"{palabras} Dolares con {centavos_txt} centavos"
+    palabras = num2words(entero, lang="es").upper()
+    return f"{palabras} {centavos:02d}/100 DÓLARES"
+
+
+
+def d2(value):
+    """Redondea ``value`` a 2 decimales usando ``ROUND_HALF_UP``."""
+    if value is None:
+        value = 0
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 

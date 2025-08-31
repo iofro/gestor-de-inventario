@@ -6,38 +6,30 @@ import os
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Iterator, Tuple
 
-ITEM_KEYS = {
-    "precioUni",
-    "ventaGravada",
-    "ventaExenta",
-    "ventaNoSuj",
-    "psv",
-    "noGravado",
-    "montoDescu",
-}
-
 
 def stable_stringify(value: Any, indent: int | None = None) -> str:
-    """Serialize ``value`` to JSON with stable alphabetical key order."""
+    """Serialize ``value`` to JSON with stable alphabetical key order.
+
+    The function normalizes ``value`` by sorting dictionary keys
+    recursively. ``indent`` controls pretty-printing; when ``None`` the
+    result is compact without extra spaces.  Cyclic references raise
+    ``ValueError``.
+    """
 
     seen: set[int] = set()
 
-    def order(obj: Any, key: str | None = None) -> Any:
-        if isinstance(obj, dict):
-            oid = id(obj)
-            if oid in seen:
-                raise ValueError("Ciclo detectado en JSON")
-            seen.add(oid)
-            return {k: order(v, k) for k, v in sorted(obj.items())}
+    def order(obj: Any) -> Any:
+        if obj is None:
+            return obj
+        if not isinstance(obj, (dict, list)):
+            return obj
+        oid = id(obj)
+        if oid in seen:
+            raise ValueError("Ciclo detectado en JSON")
+        seen.add(oid)
         if isinstance(obj, list):
-            oid = id(obj)
-            if oid in seen:
-                raise ValueError("Ciclo detectado en JSON")
-            seen.add(oid)
             return [order(item) for item in obj]
-        if isinstance(obj, Decimal):
-            return _format_decimal(obj, key)
-        return obj
+        return {k: order(obj[k]) for k in sorted(obj)}
 
     normalized = order(value)
     if indent is None:
@@ -45,23 +37,23 @@ def stable_stringify(value: Any, indent: int | None = None) -> str:
             normalized,
             ensure_ascii=False,
             separators=(",", ":"),
+            default=_json_default,
         )
     return json.dumps(
         normalized,
         ensure_ascii=False,
         indent=indent,
+        default=_json_default,
     )
 
 
-def _format_decimal(value: Decimal, key: str | None) -> str:
-    q = value.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-    if q == 0:
-        return "0.00" if key and "total" in key.lower() else "0.0"
-    if key in ITEM_KEYS:
-        return f"{q:.4f}"
-    if key and "total" in key.lower():
-        return f"{q:.2f}"
-    return f"{q:.2f}" if q % Decimal("0.01") == 0 else f"{q:.4f}"
+def _json_default(obj: Any) -> float:
+    if isinstance(obj, Decimal):
+        q = obj.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        if q == 0:
+            q = Decimal("0")
+        return float(q)
+    raise TypeError(f"Tipo no serializable: {type(obj)}")
 
 
 def _sha256(s: str) -> str:

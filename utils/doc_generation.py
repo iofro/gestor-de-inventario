@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import logging
+import re
 
 import dte
 from jsonschema import ValidationError, validate as validate_schema
@@ -223,7 +224,19 @@ def generate_ticket_pdf(manager, venta_id):
         if not venta_data.get("codigo_generacion"):
             venta_data["codigo_generacion"] = uuid.uuid4().hex
         if not venta_data.get("numero_control"):
-            venta_data["numero_control"] = uuid.uuid4().hex[:8].upper()
+            datos = dte._load_datos_negocio()
+            prefijo = datos.get("dte_api", {}).get("prefijo_control", "")
+            sucursal = "001"
+            punto = "001"
+            m = re.search(r"S(\d{3})P(\d{3})", prefijo)
+            if m:
+                sucursal, punto = m.groups()
+            sucursal = dte._norm3(sucursal)
+            punto = dte._norm3(punto)
+            tipo_dte = venta_data.get("tipo_dte", "03")
+            venta_data["numero_control"] = dte.generar_numero_control(
+                manager.db, tipo_dte, sucursal, punto
+            )
         ticket_json = build_invoice_json(venta_data, cliente or {}, detalles)
     try:
         resumen = ticket_json.get("resumen", {})

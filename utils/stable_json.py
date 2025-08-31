@@ -13,6 +13,7 @@ ITEM_KEYS = {
     "ventaNoSuj",
     "psv",
     "noGravado",
+    "montoDescu",
 }
 
 

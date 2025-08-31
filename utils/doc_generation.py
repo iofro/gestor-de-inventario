@@ -125,11 +125,9 @@ def generate_invoice_pdf(manager, venta_id):
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
         )
-    except Exception:
-        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
-        ident = json_data.setdefault("identificacion", {})
-        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
-        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+    except ValueError:
+        logger.exception("Error al generar el DTE real")
+        raise
     ident = json_data.get("identificacion", {})
     codigo_generacion = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")

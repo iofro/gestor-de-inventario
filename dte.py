@@ -957,68 +957,42 @@ def armar_tributos(tributos_raw, tipo_dte):
 
 
 def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01"):
-    """Calcula la sección resumen acorde al esquema oficial."""
+    """Calcula la sección ``resumen`` basada en los ítems del cuerpo."""
 
     fiscal = fiscal or {}
     extra = extra or {}
-    precios_incluyen_iva = _precios_incluyen_iva_from(extra)
 
     items_total = money(items_total)
-    total_exenta = money(fiscal.get("ventas_exentas", 0))
-    total_no_suj = money(fiscal.get("ventas_no_sujetas", 0))
-    total_no_gravado = money(fiscal.get("no_gravado", 0))
-    if precios_incluyen_iva:
-        total_gravada = money(
-            fiscal.get("sumas", (items_total - total_exenta - total_no_suj) / D("1.13"))
-        )
-        total_iva = money(
-            fiscal.get("iva", items_total - total_exenta - total_no_suj - total_gravada)
-        )
-    else:
-        total_gravada = money(fiscal.get("sumas", items_total))
-        total_iva = money(fiscal.get("iva", 0)) if total_gravada > D("0") else money(0)
+    total_iva = money(fiscal.get("iva", 0))
 
-    descu_no_suj = money(fiscal.get("descu_no_suj", 0))
-    descu_exenta = money(fiscal.get("descu_exenta", 0))
-    descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
-
-    sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
-    total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
+    sub_total_ventas = money(fiscal.get("sub_total_ventas", items_total))
+    total_descu = money(fiscal.get("descuentos", 0))
     sub_total = money(sub_total_ventas - total_descu)
-
-    monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
-    total_pagar = money(monto_total_operacion)
-
-    porcentaje_desc = money(
-        (total_descu * D("100") / sub_total_ventas) if sub_total_ventas else D("0")
-    )
+    total_gravada = sub_total
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
     resumen.update(
         {
-            "totalNoSuj": total_no_suj,
-            "totalExenta": total_exenta,
+            "totalNoSuj": money(fiscal.get("ventas_no_sujetas", 0)),
+            "totalExenta": money(fiscal.get("ventas_exentas", 0)),
             "totalGravada": total_gravada,
             "subTotalVentas": sub_total_ventas,
-            "descuNoSuj": descu_no_suj,
-            "descuExenta": descu_exenta,
-            "descuGravada": descu_gravada,
+            "descuNoSuj": money(0),
+            "descuExenta": money(0),
+            "descuGravada": total_descu,
             "totalDescu": total_descu,
             "subTotal": sub_total,
-            "porcentajeDescuento": porcentaje_desc,
-            "totalNoGravado": total_no_gravado,
+            "porcentajeDescuento": money(0),
+            "totalNoGravado": money(fiscal.get("no_gravado", 0)),
             "totalIva": total_iva,
-            "montoTotalOperacion": monto_total_operacion,
-            "totalPagar": total_pagar,
-            "totalLetras": numero_a_letras(total_pagar),
+            "montoTotalOperacion": sub_total,
+            "totalPagar": sub_total,
+            "totalLetras": numero_a_letras(sub_total),
         }
     )
 
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
-
-    if tipo_dte == "01":
-        resumen["totalIva"] = total_iva
 
     if tipo_dte in {"01", "03", "05", "06"}:
         condicion = extra.get("condicion_operacion")
@@ -1054,6 +1028,18 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         tributos_list.append({"codigo": TRIBUTO_IVA, "valor": total_iva})
 
     resumen["tributos"] = armar_tributos(tributos_list, tipo_dte)
+
+    otros_trib = money(
+        sum(t["valor"] for t in tributos_list if t["codigo"] != TRIBUTO_IVA)
+    )
+    if tipo_dte == "01":
+        operacion_total = sub_total
+    else:
+        operacion_total = money(sub_total + total_iva + otros_trib)
+    resumen["montoTotalOperacion"] = operacion_total
+    resumen["totalPagar"] = operacion_total
+    resumen["totalLetras"] = numero_a_letras(operacion_total)
+
     if tipo_dte != "01" and total_gravada <= D("0") and not tributos_list:
         resumen.pop("tributos", None)
         resumen["totalIva"] = money(0)
@@ -1121,72 +1107,45 @@ def recalcular_totales(
     configuración global.
     """
 
-    extra_conf = data.get("extra") or {}
     tipo_dte = str(data.get("identificacion", {}).get("tipoDte", ""))
-    precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
-    if (
-        tipo_dte == "01"
-        and "precios_incluyen_iva" not in extra_conf
-        and precios_incluyen_iva is None
-    ):
-        precios_flag = True
-        extra_conf["precios_incluyen_iva"] = True
-        data["extra"] = extra_conf
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
     iva_total = D("0")
     venta_gravada_sum = D("0")
+    bruto_sum = D("0")
+    descu_sum = D("0")
     for item in cuerpo:
         cant = D(str(item.get("cantidad") or 0))
         precio = D(str(item.get("precioUni") or 0))
         monto_descu = D(str(item.get("montoDescu") or 0))
-        linea = d8(cant * precio - monto_descu)
-        if linea < 0:
-            linea = D("0")
+        bruto = d8(cant * precio)
+        venta_gravada = D(str(item.get("ventaGravada") or 0))
+        if money(bruto) != money(venta_gravada + monto_descu):
+            raise ValueError("cantidad × precioUni debe ser igual a ventaGravada + descuento")
+        iva_val = money(item.get("ivaItem", 0))
+        esperado = money(venta_gravada - venta_gravada / D("1.13"))
+        if iva_val != D("0") and iva_val != esperado:
+            raise ValueError(
+                "No se permite mezclar base sin IVA con precios con IVA en el mismo documento"
+            )
         if tipo_dte == "01":
-            precio = d4_or_2(linea / cant) if cant != 0 else d4_or_2(0)
-            linea = d4_or_2(cant * precio)
-            base = money(linea / D("1.13"))
-            iva_val = money(linea - base)
-            item["precioUni"] = precio
-            item["montoDescu"] = money(0)
-            item["ventaGravada"] = linea
-            item["ivaItem"] = iva_val
-            item["ventaExenta"] = money(0)
-            item["ventaNoSuj"] = money(0)
-            item["noGravado"] = money(0)
             item["codTributo"] = None
             item["tributos"] = None
-            if "montoIva" in item:
-                item["montoIva"] = iva_val
         else:
-            linea = money(linea)
-            if precios_flag:
-                base = money(linea / D("1.13"))
-                iva_val = money(linea - base)
-                base = money(linea - iva_val)
-            else:
-                base = linea
-                iva_val = money(base * D("0.13"))
-            if base > 0:
-                item["codTributo"] = TRIBUTO_IVA
-                item["tributos"] = [TRIBUTO_IVA]
-            else:
-                item["codTributo"] = None
-                item["tributos"] = []
-            item["ventaGravada"] = base
-            item["ivaItem"] = iva_val
-            item["ventaExenta"] = money(0)
-            item["ventaNoSuj"] = money(0)
-            item["noGravado"] = money(0)
-            if "montoIva" in item:
-                item["montoIva"] = iva_val
+            item["codTributo"] = TRIBUTO_IVA if iva_val > 0 else None
+            item["tributos"] = [TRIBUTO_IVA] if iva_val > 0 else []
+        if "montoIva" in item:
+            item["montoIva"] = iva_val
+        bruto_sum += d4(bruto)
+        descu_sum += d4(monto_descu)
         iva_total += iva_val
-        venta_gravada_sum += base
+        venta_gravada_sum += money(venta_gravada)
 
     venta_gravada_sum = money(venta_gravada_sum)
     total_iva_sum = money(iva_total)
+    bruto_sum = money(bruto_sum)
+    descu_sum = money(descu_sum)
 
     modificados: list[str] = []
 
@@ -1201,17 +1160,18 @@ def recalcular_totales(
     _set_resumen("totalNoSuj", money(0))
     _set_resumen("totalExenta", money(0))
     _set_resumen("totalGravada", venta_gravada_sum)
-    _set_resumen("subTotalVentas", venta_gravada_sum)
+    _set_resumen("subTotalVentas", bruto_sum)
     _set_resumen("descuNoSuj", money(0))
     _set_resumen("descuExenta", money(0))
-    _set_resumen("descuGravada", money(0))
-    _set_resumen("totalDescu", money(0))
-    _set_resumen("subTotal", venta_gravada_sum)
+    _set_resumen("descuGravada", descu_sum)
+    _set_resumen("totalDescu", descu_sum)
+    sub_total = money(bruto_sum - descu_sum)
+    _set_resumen("subTotal", sub_total)
     _set_resumen("totalNoGravado", money(0))
     _set_resumen("totalIva", total_iva_sum)
-    monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
-    _set_resumen("montoTotalOperacion", monto_total_operacion)
-    _set_resumen("totalPagar", monto_total_operacion)
+    operacion_total = sub_total if tipo_dte == "01" else money(sub_total + total_iva_sum)
+    _set_resumen("montoTotalOperacion", operacion_total)
+    _set_resumen("totalPagar", operacion_total)
     trib_raw = resumen.get("tributos")
     if tipo_dte == "01":
         suma: dict[str, D] = {}
@@ -1240,6 +1200,17 @@ def recalcular_totales(
     if resumen.get("tributos") != trib:
         resumen["tributos"] = trib
         modificados.append("tributos")
+    if tipo_dte != "01":
+        otros_trib = money(
+            sum(t["valor"] for t in (trib or []) if t["codigo"] != TRIBUTO_IVA)
+        )
+        operacion_total = money(sub_total + total_iva_sum + otros_trib)
+        if resumen.get("montoTotalOperacion") != operacion_total:
+            resumen["montoTotalOperacion"] = operacion_total
+            modificados.append("montoTotalOperacion")
+        if resumen.get("totalPagar") != operacion_total:
+            resumen["totalPagar"] = operacion_total
+            modificados.append("totalPagar")
     total_pagar = resumen["totalPagar"]
     try:
         total_letras = monto_a_texto_sv(total_pagar)
@@ -1572,6 +1543,8 @@ def generar_dte_json(
     total_exenta_sum = D("0")
     total_no_suj_sum = D("0")
     total_no_gravado_sum = D("0")
+    sub_total_ventas_sum = D("0")
+    total_descuento_sum = D("0")
     override_precio_flag = kwargs.get("precios_incluyen_iva")
     precios_incluyen_iva = _precios_incluyen_iva_from(extra, override_precio_flag)
     if (
@@ -1612,18 +1585,35 @@ def generar_dte_json(
                 extra.get("origen_precios")
                 or ("bruto" if precios_incluyen_iva else "neto")
             ).lower()
-            precio_bruto = (
-                d8(precio_raw * D("1.13")) if origen == "neto" else d8(precio_raw)
-            )
-            total_linea = d8(cant * precio_bruto - monto_descu)
-            if total_linea < 0:
-                total_linea = D("0")
-            precio = d4_or_2(total_linea / cant) if cant != 0 else d4_or_2(0)
-            venta_gravada = d4_or_2(cant * precio)
+            precio_bruto = d8(precio_raw * D("1.13")) if origen == "neto" else d8(precio_raw)
+            precio = d4(precio_bruto)
+            importe_bruto = d4(cant * precio)
+            desc_total = D("0")
+            if isinstance(d.get("descuentos"), list) and d["descuentos"]:
+                for ds in d["descuentos"]:
+                    if isinstance(ds, dict):
+                        if "pct" in ds:
+                            desc_total += d8(importe_bruto * D(str(ds["pct"])) / D("100"))
+                        elif "monto" in ds:
+                            desc_total += d8(D(str(ds["monto"])))
+                    else:
+                        desc_total += d8(D(str(ds)))
+            else:
+                desc_val = D(str(d.get("descuento") or 0))
+                desc_tipo = str(d.get("descuento_tipo", "")).lower()
+                if desc_tipo in {"%", "pct", "porcentaje"}:
+                    desc_total += d8(importe_bruto * desc_val / D("100"))
+                else:
+                    desc_total += d8(desc_val)
+            desc_total = d4(desc_total)
+            if desc_total > importe_bruto:
+                desc_total = importe_bruto
+            venta_gravada = d4(importe_bruto - desc_total)
             iva_val = money(venta_gravada - (venta_gravada / D("1.13")))
             line_total = venta_gravada
-            monto_descu = money(0)
-            venta_gravada_base = money(venta_gravada / D("1.13"))
+            monto_descu = desc_total
+            sub_total_ventas_sum += importe_bruto
+            total_descuento_sum += desc_total
         elif precios_incluyen_iva:
             total_final = d8(cant * precio_raw - monto_descu)
             if total_final < 0:
@@ -1644,6 +1634,9 @@ def generar_dte_json(
             line_total = venta_gravada + iva_val
         items_total += line_total
         iva_total += iva_val
+        if tipo_dte != "01":
+            sub_total_ventas_sum += d4(cant * precio)
+            total_descuento_sum += d4(monto_descu)
         try:
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
@@ -1676,13 +1669,13 @@ def generar_dte_json(
             "descripcion": d.get("descripcion"),
             "cantidad": cant,
             "uniMedida": uni_medida,
-            "precioUni": precio,
-            "montoDescu": d2(monto_descu),
-            "ventaNoSuj": money(0),
-            "ventaExenta": money(0),
-            "ventaGravada": venta_gravada,
-            "psv": money(0),
-            "noGravado": money(0),
+            "precioUni": d4(precio),
+            "montoDescu": d4(monto_descu),
+            "ventaNoSuj": d4(0),
+            "ventaExenta": d4(0),
+            "ventaGravada": d4(venta_gravada),
+            "psv": d4(0),
+            "noGravado": d4(0),
             "ivaItem": iva_val,
             "tributos": [trib_code] if trib_code else [],
         }
@@ -1699,6 +1692,7 @@ def generar_dte_json(
             else:
                 item_data.pop("codTributo", None)
                 item_data["tributos"] = []
+        total_gravada_sum += D(str(item_data["ventaGravada"]))
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_no_gravado_sum += D(str(item_data["noGravado"]))
@@ -1710,6 +1704,8 @@ def generar_dte_json(
     total_gravada_sum = money(total_gravada_sum)
     total_no_gravado_sum = money(total_no_gravado_sum)
     total_iva_sum = money(iva_total)
+    sub_total_ventas_sum = money(sub_total_ventas_sum)
+    total_descuento_sum = money(total_descuento_sum)
 
     resumen = calcular_resumen(
         items_total,
@@ -1721,43 +1717,53 @@ def generar_dte_json(
             "ventas_no_sujetas": total_no_suj_sum,
             "no_gravado": total_no_gravado_sum,
             "iva": total_iva_sum,
+            "sub_total_ventas": sub_total_ventas_sum,
+            "descuentos": total_descuento_sum,
         },
         extra=extra,
         tipo_dte=tipo_dte,
     )
 
-    if money(sum(D(str(i["ventaGravada"])) for i in cuerpo)) != money(
-        D(str(resumen.get("totalGravada", 0)))
-    ):
-        raise ValidationError("totalGravada inconsistente con cuerpoDocumento")
+    sub_total_ventas_items = money(
+        sum(D(str(i["precioUni"])) * D(str(i["cantidad"])) for i in cuerpo)
+    )
+    if sub_total_ventas_items != money(D(str(resumen.get("subTotalVentas", 0)))):
+        raise ValidationError("subTotalVentas inconsistente con cuerpoDocumento")
+    if money(
+        sum(D(str(i.get("montoDescu") or 0)) for i in cuerpo)
+    ) != money(D(str(resumen.get("totalDescu", 0)))):
+        raise ValidationError("totalDescu inconsistente con cuerpoDocumento")
+    sub_total_items = money(sum(D(str(i["ventaGravada"])) for i in cuerpo))
+    sub_total_val = money(D(str(resumen.get("subTotal", 0))))
+    if sub_total_items != sub_total_val:
+        raise ValidationError("subTotal inconsistente con cuerpoDocumento")
+    if money(D(str(resumen.get("totalGravada", 0)))) != sub_total_val:
+        raise ValidationError("totalGravada debe igualar subTotal")
     if money(sum(D(str(i["ivaItem"])) for i in cuerpo)) != money(
         D(str(resumen.get("totalIva", 0)))
     ):
         raise ValidationError("totalIva inconsistente con cuerpoDocumento")
-
-    total_no_suj = D(str(resumen.get("totalNoSuj", 0)))
-    total_exenta = D(str(resumen.get("totalExenta", 0)))
+    if tipo_dte == "01":
+        if money(D(str(resumen.get("montoTotalOperacion", 0)))) != sub_total_val:
+            raise ValidationError("montoTotalOperacion debe igualar subTotal")
+        if money(D(str(resumen.get("totalPagar", 0)))) != sub_total_val:
+            raise ValidationError("totalPagar debe igualar subTotal")
+    else:
+        otros_trib = money(
+            sum(
+                D(str(t.get("valor") or 0))
+                for t in (resumen.get("tributos") or [])
+                if str(t.get("codigo")) != TRIBUTO_IVA
+            )
+        )
+        esperado = money(sub_total_val + D(str(resumen.get("totalIva", 0))) + otros_trib)
+        if money(D(str(resumen.get("montoTotalOperacion", 0)))) != esperado:
+            raise ValidationError("montoTotalOperacion inconsistente con totales")
+        if money(D(str(resumen.get("totalPagar", 0)))) != esperado:
+            raise ValidationError("totalPagar inconsistente con totales")
+    total_pagar = money(D(str(resumen.get("totalPagar", 0))))
     total_gravada = D(str(resumen.get("totalGravada", 0)))
-    sub_total_ventas = D(str(resumen.get("subTotalVentas", 0)))
-    descu_no_suj = D(str(resumen.get("descuNoSuj", 0)))
-    descu_exenta = D(str(resumen.get("descuExenta", 0)))
-    descu_gravada = D(str(resumen.get("descuGravada", 0)))
-    sub_total = D(str(resumen.get("subTotal", 0)))
-    total_no_gravado = D(str(resumen.get("totalNoGravado", 0)))
     total_iva = D(str(resumen.get("totalIva", 0)))
-    monto_total_operacion = D(str(resumen.get("montoTotalOperacion", 0)))
-    total_pagar = D(str(resumen.get("totalPagar", 0)))
-
-    if money(total_no_suj + total_exenta + total_gravada) != money(sub_total_ventas):
-        raise ValidationError("subTotalVentas inconsistente")
-    if money(sub_total_ventas - (descu_no_suj + descu_exenta + descu_gravada)) != money(
-        sub_total
-    ):
-        raise ValidationError("subTotal inconsistente")
-    if money(sub_total + total_no_gravado + total_iva) != money(monto_total_operacion):
-        raise ValidationError("montoTotalOperacion inconsistente")
-    if money(monto_total_operacion) != money(total_pagar):
-        raise ValidationError("totalPagar debe igualar montoTotalOperacion")
 
     pagos_resumen = resumen.get("pagos") or []
     suma = money(sum(D(str(p["montoPago"])) for p in pagos_resumen))
@@ -1771,38 +1777,6 @@ def generar_dte_json(
             raise ValidationError("No debe haber tributos sin venta gravada")
         if money(total_iva) != D("0.00"):
             raise ValidationError("totalIva debe ser 0 sin venta gravada")
-
-    # Validaciones básicas de consistencia
-    items_total_2 = d2(total_gravada_sum + total_exenta_sum + total_no_suj_sum)
-    if abs(items_total_2 - D(str(resumen.get("subTotalVentas", 0)))) > D("0.01"):
-        print(
-            f"Advertencia: la suma de los ítems {items_total_2:.2f} difiere del resumen {resumen.get('subTotalVentas',0):.2f}"
-        )
-
-    calc_sub_total = d2(
-        D(str(resumen.get("subTotalVentas", 0))) - D(str(resumen.get("totalDescu", 0)))
-    )
-    if abs(calc_sub_total - D(str(resumen.get("subTotal", 0)))) > D("0.01"):
-        print(
-            f"Advertencia: el subtotal calculado {calc_sub_total:.2f} difiere del resumen {resumen.get('subTotal',0):.2f}"
-        )
-
-    iva_ref = resumen.get("totalIva")
-    if iva_ref is None:
-        iva_ref = resumen.get("ivaPerci1", 0)
-    iva_ref = D(str(iva_ref or 0))
-    calc_total = d2(calc_sub_total + iva_ref)
-    if abs(calc_total - D(str(resumen.get("montoTotalOperacion", 0)))) > D("0.01"):
-        print(
-            f"Advertencia: el monto total {resumen.get('montoTotalOperacion',0):.2f} difiere del calculado {calc_total:.2f}"
-        )
-    calc_total_commission = d2(calc_total + commission_total)
-    if "totalPagar" in resumen and abs(
-        calc_total_commission - D(str(resumen.get("totalPagar", 0)))
-    ) > D("0.01"):
-        print(
-            f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
-        )
     # SERIALIZE-GUARD BEGIN
     for k in (
         "totalIva",
@@ -2334,11 +2308,11 @@ def validate_dte_json(
                     d8(venta_gravada_val * D("0.13")) if venta_gravada_val > 0 else cero
                 )
 
-        # Totales a 2 decimales y normalizar -0.00
+        # Totales a 4 decimales y normalizar -0.0000
         for k in ("ventaGravada", "ventaExenta", "ventaNoSuj", "psv", "noGravado"):
-            val = d2(item.get(k, cero))
+            val = d4(item.get(k, cero))
             item[k] = cero if val == 0 else val
-        item["montoDescu"] = d2(monto_descu)
+        item["montoDescu"] = d4(monto_descu)
         if iva_key:
             iva_val_q8 = d8(D(str(item.get(iva_key) or 0)))
             item[iva_key] = cero if iva_val_q8 == 0 else iva_val_q8

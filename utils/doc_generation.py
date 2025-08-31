@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import logging
+import re
 
 import dte
 from factura_sv import generar_factura_electronica_pdf
@@ -115,11 +116,12 @@ def generate_invoice_pdf(manager, venta_id):
     tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
     cliente_nombre = cliente.get("nombre") if cliente else ""
+    tipo_dte = "03" if credito_info else "01"
     try:
         json_data = generar_dte_json(
             manager.db,
             venta_id,
-            tipo_dte="03" if credito_info else "01",
+            tipo_dte=tipo_dte,
             ambiente=ambiente,
             tipo_operacion=tipo_operacion,
             tipo_contingencia=tipo_contingencia,
@@ -129,7 +131,17 @@ def generate_invoice_pdf(manager, venta_id):
         json_data = build_invoice_json(venta_data, cliente or {}, detalles)
         ident = json_data.setdefault("identificacion", {})
         ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
-        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+        datos = dte._load_datos_negocio()
+        prefijo = datos.get("dte_api", {}).get("prefijo_control", "")
+        sucursal = "001"
+        punto = "001"
+        m = re.search(r"S([A-Za-z0-9]{3})P([A-Za-z0-9]{3})", prefijo)
+        if m:
+            sucursal, punto = m.groups()
+        ident.setdefault(
+            "numeroControl",
+            dte.generar_numero_control(manager.db, tipo_dte, sucursal, punto),
+        )
     ident = json_data.get("identificacion", {})
     codigo_generacion = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")
@@ -218,7 +230,16 @@ def generate_ticket_pdf(manager, venta_id):
         if not venta_data.get("codigo_generacion"):
             venta_data["codigo_generacion"] = uuid.uuid4().hex
         if not venta_data.get("numero_control"):
-            venta_data["numero_control"] = uuid.uuid4().hex[:8].upper()
+            datos = dte._load_datos_negocio()
+            prefijo = datos.get("dte_api", {}).get("prefijo_control", "")
+            sucursal = "001"
+            punto = "001"
+            m = re.search(r"S([A-Za-z0-9]{3})P([A-Za-z0-9]{3})", prefijo)
+            if m:
+                sucursal, punto = m.groups()
+            venta_data["numero_control"] = dte.generar_numero_control(
+                manager.db, "03", sucursal, punto
+            )
         ticket_json = build_invoice_json(venta_data, cliente or {}, detalles)
     try:
         resumen = ticket_json.get("resumen", {})

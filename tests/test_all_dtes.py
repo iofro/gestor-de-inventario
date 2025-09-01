@@ -91,7 +91,7 @@ def _assert_base(data: dict, tipo: str) -> None:
         assert str(item["ventaGravada"]) == "26.95000000"
         iva = _q2(item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13")))
         assert str(iva) == "3.10"
-        assert str(resumen["totalGravada"]) == "26.95"
+        assert str(resumen["totalGravada"]) == "26.9500"
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
         assert str(total) == "26.95"
         assert str(_q2(resumen["totalIva"])) == "3.10"
@@ -99,7 +99,7 @@ def _assert_base(data: dict, tipo: str) -> None:
         assert str(item["ventaGravada"]) == "23.85000000"
         iva = _q8(item["ventaGravada"] * Decimal("0.13"))
         assert str(iva) == "3.10050000"
-        assert str(resumen["totalGravada"]) == "23.85"
+        assert str(resumen["totalGravada"]) == "23.8500"
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
         assert str(total) == "26.95"
         total_iva = resumen.get("totalIva")

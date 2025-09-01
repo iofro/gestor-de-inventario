@@ -105,6 +105,10 @@ class SalesTab(QWidget):
         self.sales_table.itemSelectionChanged.connect(self.show_sale)
         left_layout.addWidget(self.sales_table)
 
+        self.btn_estado = QPushButton("Estado")
+        self.btn_estado.clicked.connect(self.show_sale_details)
+        left_layout.addWidget(self.btn_estado)
+
         self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
         self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
         left_layout.addWidget(self.new_invoice_btn)
@@ -302,6 +306,21 @@ class SalesTab(QWidget):
         self.email_label.setText(f"Correo destinatario: {cliente_email}")
         self._update_preview(venta_id)
         self._update_email_preview()
+
+    def show_sale_details(self):
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Estado", "Seleccione una venta")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(self, "Estado", "No se encontró la venta seleccionada")
+            return
+        detalles = self.manager.db.get_detalles_venta(venta_id)
+        from dialogs import VentaDetalleDialog
+        dialog = VentaDetalleDialog(venta, detalles, self)
+        dialog.exec_()
 
     def _clear_preview_files(self):
         """Remove temporary preview image without deleting stored PDFs."""

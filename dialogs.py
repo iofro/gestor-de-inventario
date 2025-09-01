@@ -2735,6 +2735,57 @@ class VendedorDialog(QDialog):
                     QMessageBox.warning(self, "Nombre duplicado", "Ya existe un vendedor con ese nombre.")
                     return
         super().accept()
+
+
+class VentaDetalleDialog(QDialog):
+    def __init__(self, venta, detalles, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Detalle de Venta")
+        layout = QVBoxLayout()
+
+        vendedores = []
+        productos = []
+        clientes = []
+        if parent and hasattr(parent, "manager"):
+            vendedores = getattr(parent.manager, "_vendedores", [])
+            productos = getattr(parent.manager, "_products", [])
+            clientes = getattr(parent.manager, "_clientes", [])
+        vendedores_dict = {v["id"]: v["nombre"] for v in vendedores}
+        productos_dict = {p["id"]: p["nombre"] for p in productos}
+        clientes_dict = {c["id"]: c.get("nombre", "") for c in clientes}
+
+        vendedor_nombre = vendedores_dict.get(venta.get("vendedor_id"), "Desconocido")
+        cliente_nombre = clientes_dict.get(venta.get("cliente_id"), "Desconocido")
+
+        layout.addWidget(QLabel(f"Fecha: {venta.get('fecha', '')}"))
+        layout.addWidget(QLabel(f"Cliente: {cliente_nombre}"))
+        layout.addWidget(QLabel(f"Vendedor: {vendedor_nombre}"))
+        layout.addWidget(QLabel(f"Total: ${venta.get('total', 0):.2f}"))
+
+        table = QTableWidget(len(detalles), 7)
+        table.setHorizontalHeaderLabels([
+            "Producto", "Cantidad", "Precio U.", "Subtotal", "Descuento", "IVA", "Comisión"
+        ])
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionBehavior(QTableWidget.SelectRows)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        for i, d in enumerate(detalles):
+            nombre_producto = d.get("descripcion") or productos_dict.get(d.get("producto_id"), "Desconocido")
+            precio_unitario = d.get("precio_unitario", 0)
+            subtotal = d.get("cantidad", 0) * precio_unitario
+            table.setItem(i, 0, QTableWidgetItem(nombre_producto))
+            table.setItem(i, 1, QTableWidgetItem(str(d.get("cantidad", ""))))
+            table.setItem(i, 2, QTableWidgetItem(f"${precio_unitario:.2f}"))
+            table.setItem(i, 3, QTableWidgetItem(f"${subtotal:.2f}"))
+            table.setItem(i, 4, QTableWidgetItem(f"${d.get('descuento', 0):.2f}"))
+            table.setItem(i, 5, QTableWidgetItem(f"${d.get('iva', 0):.2f}"))
+            table.setItem(i, 6, QTableWidgetItem(f"${d.get('comision', 0):.2f}"))
+        table.resizeColumnsToContents()
+        layout.addWidget(table)
+        self.setLayout(layout)
+
+
 class CompraDetalleDialog(QDialog):
     def __init__(self, compra, detalles, parent=None):
         super().__init__(parent)

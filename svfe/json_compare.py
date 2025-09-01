@@ -5,7 +5,7 @@ from itertools import zip_longest
 import json
 from typing import Any, Dict, List
 
-DEC8 = Decimal("0.00000001")
+DEC4 = Decimal("0.0001")
 DEC2 = Decimal("0.01")
 
 ITEM_KEYS = {
@@ -56,7 +56,7 @@ def _norm_value(value: Any, key: str | None) -> Any:
             dec = Decimal(str(value))
         except Exception:
             return value
-        quant = DEC8 if key in ITEM_KEYS else DEC2
+        quant = DEC4 if key in ITEM_KEYS else DEC2
         return str(dec.quantize(quant, rounding=ROUND_HALF_UP))
 
     if isinstance(value, Decimal):

@@ -1680,9 +1680,9 @@ def generar_dte_json(
         if cant <= 0:
             cant = d1(D("1"))
         try:
-            precio_raw = d8(D(str(d.get("precio_unitario") or 0)))
+            precio_raw = d4(D(str(d.get("precio_unitario") or 0)))
         except Exception:
-            precio_raw = d8(D(0))
+            precio_raw = d4(D(0))
         try:
             tipo_item = int(d.get("tipoItem", 1))
         except Exception:
@@ -1695,14 +1695,14 @@ def generar_dte_json(
             uni_medida = 59
         if uni_medida not in UNIDADES_MEDIDA_PERMITIDAS:
             uni_medida = 59
-        monto_descu = d8(D(str(d.get("descuento") or 0)))
+        monto_descu = d4(D(str(d.get("descuento") or 0)))
         if monto_descu < 0:
             monto_descu = D("0")
         tipo_fiscal_item = str(d.get("tipo_fiscal", "")).lower()
         if tipo_fiscal_item == "venta exenta":
-            precio = precio_raw
-            bruto = d8(cant * precio)
-            line_total = d8(bruto - monto_descu)
+            precio = d4(precio_raw)
+            bruto = d4(cant * precio)
+            line_total = d4(bruto - monto_descu)
             if line_total < 0:
                 line_total = D("0")
             bruto_total += bruto
@@ -1712,9 +1712,9 @@ def generar_dte_json(
             venta_no_suj = D("0")
             iva_val = D("0")
         elif tipo_fiscal_item == "venta no sujeta":
-            precio = precio_raw
-            bruto = d8(cant * precio)
-            line_total = d8(bruto - monto_descu)
+            precio = d4(precio_raw)
+            bruto = d4(cant * precio)
+            line_total = d4(bruto - monto_descu)
             if line_total < 0:
                 line_total = D("0")
             bruto_total += bruto
@@ -1741,26 +1741,26 @@ def generar_dte_json(
                 bruto_total += bruto
                 descuentos_total += d4(monto_descu)
             elif precios_incluyen_iva:
-                bruto = d8(cant * precio_raw)
-                total_final = d8(bruto - monto_descu)
+                bruto = d4(cant * precio_raw)
+                total_final = d4(bruto - monto_descu)
                 if total_final < 0:
                     total_final = D("0")
                 base_total = money(total_final / D("1.13"))
                 iva_val = money(total_final - base_total)
                 base_total = money(total_final - iva_val)
-                precio = money(total_final / cant)
+                precio = d4(money(total_final / cant))
                 venta_gravada = base_total
                 line_total = base_total + iva_val
                 bruto_total += bruto
                 descuentos_total += monto_descu
             else:
-                precio = precio_raw
-                bruto = d8(cant * precio)
-                base = d8(cant * precio - monto_descu)
+                precio = d4(precio_raw)
+                bruto = d4(cant * precio)
+                base = d4(cant * precio - monto_descu)
                 if base < 0:
                     base = D("0")
                 venta_gravada = d2(base)
-                iva_val = d8(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
+                iva_val = d4(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
                 line_total = venta_gravada + iva_val
                 bruto_total += bruto
                 descuentos_total += monto_descu

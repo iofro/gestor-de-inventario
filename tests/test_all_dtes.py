@@ -28,11 +28,11 @@ GEN_MAP = {
     "nr": generar_nota_remision,
 }
 
-D8 = Decimal("0.00000001")
+D4 = Decimal("0.0001")
 D2 = Decimal("0.01")
 
-def _q8(x: Decimal) -> Decimal:
-    return x.quantize(D8, rounding=ROUND_HALF_UP)
+def _q4(x: Decimal) -> Decimal:
+    return x.quantize(D4, rounding=ROUND_HALF_UP)
 
 def _q2(x: Decimal) -> Decimal:
     return x.quantize(D2, rounding=ROUND_HALF_UP)
@@ -88,7 +88,7 @@ def _assert_base(data: dict, tipo: str) -> None:
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
     if tipo == "fc":
-        assert str(item["ventaGravada"]) == "26.95000000"
+        assert str(item["ventaGravada"]) == "26.9500"
         iva = _q2(item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13")))
         assert str(iva) == "3.10"
         assert str(resumen["totalGravada"]) == "26.95"
@@ -96,9 +96,9 @@ def _assert_base(data: dict, tipo: str) -> None:
         assert str(total) == "26.95"
         assert str(_q2(resumen["totalIva"])) == "3.10"
     else:
-        assert str(item["ventaGravada"]) == "23.85000000"
-        iva = _q8(item["ventaGravada"] * Decimal("0.13"))
-        assert str(iva) == "3.10050000"
+        assert str(item["ventaGravada"]) == "23.8500"
+        iva = _q4(item["ventaGravada"] * Decimal("0.13"))
+        assert str(iva) == "3.1005"
         assert str(resumen["totalGravada"]) == "23.85"
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
         assert str(total) == "26.95"

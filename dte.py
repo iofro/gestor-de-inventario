@@ -2954,7 +2954,11 @@ def build_auth_header(
         # 2) Bearer
         elif auth.get("access_token") or auth.get("bearer"):
             token = auth.get("access_token") or auth.get("bearer")
-            headers["Authorization"] = f"Bearer {token}" if token else ""
+            token = str(token).strip()
+            if token.lower().startswith("bearer "):
+                headers["Authorization"] = token
+            else:
+                headers["Authorization"] = f"Bearer {token}" if token else ""
         # 3) Basic
         elif auth.get("basic_user") and auth.get("basic_password"):
             creds = f"{auth['basic_user']}:{auth['basic_password']}"

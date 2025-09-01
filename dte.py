@@ -999,13 +999,13 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         total_gravada = money(
             fiscal.get(
                 "sumas",
-                max(sub_total_ventas - total_exenta - total_no_suj - total_descu, D("0")),
+                max(sub_total_ventas - total_exenta - total_no_suj, D("0")),
             )
         )
         total_iva = money(
             fiscal.get("iva", total_gravada - (total_gravada / D("1.13")))
         )
-        sub_total = money(sub_total_ventas - total_descu)
+        sub_total = sub_total_ventas
         monto_total_operacion = sub_total
         total_pagar = sub_total
     elif precios_incluyen_iva:
@@ -1027,8 +1027,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
         total_pagar = money(monto_total_operacion)
 
+    base_desc = sub_total_ventas + total_descu
     porcentaje_desc = money(
-        (total_descu * D("100") / sub_total_ventas) if sub_total_ventas else D("0")
+        (total_descu * D("100") / base_desc) if base_desc else D("0")
     )
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
@@ -1262,16 +1263,19 @@ def recalcular_totales(
         _set_resumen("totalNoSuj", d4(0))
         _set_resumen("totalExenta", d4(0))
         _set_resumen("totalGravada", d4(venta_gravada_sum))
-        _set_resumen("subTotalVentas", money(bruto_sum))
+        _set_resumen("subTotalVentas", money(venta_gravada_sum))
         _set_resumen("descuNoSuj", money(0))
         _set_resumen("descuExenta", money(0))
         _set_resumen("descuGravada", money(descu_sum))
         _set_resumen("totalDescu", money(descu_sum))
-        neto = bruto_sum - descu_sum
-        _set_resumen("subTotal", money(neto))
+        porcentaje_desc = money(
+            (descu_sum * D("100") / bruto_sum) if bruto_sum else D("0")
+        )
+        _set_resumen("porcentajeDescuento", porcentaje_desc)
+        _set_resumen("subTotal", money(venta_gravada_sum))
         _set_resumen("totalNoGravado", money(0))
         _set_resumen("totalIva", total_iva_sum)
-        monto_total_operacion = money(neto)
+        monto_total_operacion = money(venta_gravada_sum)
         _set_resumen("montoTotalOperacion", monto_total_operacion)
         _set_resumen("totalPagar", monto_total_operacion)
     else:
@@ -1283,6 +1287,11 @@ def recalcular_totales(
         _set_resumen("descuExenta", money(0))
         _set_resumen("descuGravada", money(0))
         _set_resumen("totalDescu", money(0))
+        base = venta_gravada_sum + descu_sum
+        porcentaje_desc = money(
+            (descu_sum * D("100") / base) if base else D("0")
+        )
+        _set_resumen("porcentajeDescuento", porcentaje_desc)
         _set_resumen("subTotal", money(venta_gravada_sum))
         _set_resumen("totalNoGravado", money(0))
         _set_resumen("totalIva", total_iva_sum)
@@ -1856,7 +1865,7 @@ def generar_dte_json(
     total_iva_sum = money(iva_total)
 
     resumen = calcular_resumen(
-        bruto_total,
+        items_total,
         venta,
         fiscal={
             **(fiscal or {}),

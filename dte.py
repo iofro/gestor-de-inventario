@@ -1103,12 +1103,17 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         "numPagoElectronico",
         "tributos",
     }
+    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
     for key, val in list(resumen.items()):
         if key in excl:
             continue
         if isinstance(val, Decimal):
-            if val != money(val):
-                raise ValidationError(f"{key} debe ser múltiplo de 0.01")
+            if key in special_d4_fields:
+                if val != d4(val):
+                    raise ValidationError(f"{key} debe ser múltiplo de 0.0001")
+            else:
+                if val != money(val):
+                    raise ValidationError(f"{key} debe ser múltiplo de 0.01")
             if val == D("0") and val.as_tuple().sign:
                 resumen[key] = D("0")
 
@@ -1231,9 +1236,9 @@ def recalcular_totales(
         resumen[key] = value
         modificados.append(key)
 
-    _set_resumen("totalNoSuj", money(0))
-    _set_resumen("totalExenta", money(0))
-    _set_resumen("totalGravada", money(venta_gravada_sum))
+    _set_resumen("totalNoSuj", d4(0))
+    _set_resumen("totalExenta", d4(0))
+    _set_resumen("totalGravada", d4(venta_gravada_sum))
     _set_resumen("subTotalVentas", money(venta_gravada_sum))
     _set_resumen("descuNoSuj", money(0))
     _set_resumen("descuExenta", money(0))
@@ -1855,20 +1860,22 @@ def generar_dte_json(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
     # SERIALIZE-GUARD BEGIN
-    for k in (
-        "totalIva",
-        "montoTotalOperacion",
-        "totalPagar",
-        "totalGravada",
-        "totalExenta",
-        "totalNoSuj",
-        "totalNoGravado",
-    ):
+    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):
         if k in resumen:
             val = D(str(resumen[k]))
             if val != money(val):
                 raise ValidationError(
                     f"{k} debe ser múltiplo de 0.01 (recibido={resumen[k]})"
+                )
+            if val == D("0") and val.as_tuple().sign:
+                resumen[k] = D("0")
+    for k in special_d4_fields:
+        if k in resumen:
+            val = D(str(resumen[k]))
+            if val != d4(val):
+                raise ValidationError(
+                    f"{k} debe ser múltiplo de 0.0001 (recibido={resumen[k]})"
                 )
             if val == D("0") and val.as_tuple().sign:
                 resumen[k] = D("0")
@@ -2424,7 +2431,7 @@ def validate_dte_json(
     ident = payload.get("identificacion", {})
     if ident.get("tipoDte") == "01":
         for i in payload.get("cuerpoDocumento", []):
-            linea = money(
+            linea = d4(
                 D(str(i.get("cantidad") or 0))
                 * D(str(i.get("precioUni") or 0))
                 - D(str(i.get("montoDescu") or 0))
@@ -2463,20 +2470,22 @@ def validate_dte_json(
                 p["plazo"] = ""
 
     # Verificación de centavos exactos en totales clave
-    for k in (
-        "totalIva",
-        "montoTotalOperacion",
-        "totalPagar",
-        "totalGravada",
-        "totalExenta",
-        "totalNoSuj",
-        "totalNoGravado",
-    ):
+    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):
         if k in resumen:
             val = D(str(resumen[k]))
             if val != money(val):
                 raise ValidationError(
                     f"{k} debe ser múltiplo de 0.01 (recibido={resumen[k]})"
+                )
+            if val == D("0") and val.as_tuple().sign:
+                resumen[k] = D("0")
+    for k in special_d4_fields:
+        if k in resumen:
+            val = D(str(resumen[k]))
+            if val != d4(val):
+                raise ValidationError(
+                    f"{k} debe ser múltiplo de 0.0001 (recibido={resumen[k]})"
                 )
             if val == D("0") and val.as_tuple().sign:
                 resumen[k] = D("0")
@@ -2554,6 +2563,7 @@ def validate_dte_json(
             item[k] = _zero_or(item.get(k, D("0")), qfn)
 
     resumen = payload.get("resumen", {})
+    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
     for k, v in list(resumen.items()):
         if k in {
             "totalLetras",
@@ -2564,7 +2574,8 @@ def validate_dte_json(
         }:
             continue
         if isinstance(v, Decimal):
-            resumen[k] = _zero_or(v, money)
+            qfn = d4 if k in special_d4_fields else money
+            resumen[k] = _zero_or(v, qfn)
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:

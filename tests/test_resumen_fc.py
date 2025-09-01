@@ -28,6 +28,17 @@ def test_resumen_sin_gravada_sin_tributos():
     assert resumen['tributos'] is None
 
 
+def test_resumen_fc_exenta_nosuj_no_doble_conteo():
+    items_total = D('10.00')
+    fiscal = {
+        'ventas_exentas': D('2.00'),
+        'ventas_no_sujetas': D('3.00'),
+    }
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='01')
+    assert D(str(resumen['totalGravada'])) == D('5.00')
+    assert D(str(resumen['subTotalVentas'])) == D('10.00')
+
+
 def test_pagos_contado_default():
     pagos = normalizar_pagos([], D('10.00'), condicion=1)
     assert pagos == [

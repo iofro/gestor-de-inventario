@@ -1553,7 +1553,9 @@ class MainWindow(QMainWindow):
         dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self)
         if dlg.exec_():
             new_dte_api, new_fe, new_urls = dlg.get_data()
+            ambiente = new_dte_api["ambiente"]
             datos["dte_api"] = new_dte_api
+            config["ambiente"] = ambiente
             config.setdefault(ambiente, {})
             config[ambiente]["firma_electronica"] = new_fe
             config[ambiente]["auth_url"] = new_urls.get("auth_url", "")

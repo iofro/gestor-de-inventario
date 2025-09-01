@@ -178,6 +178,39 @@ def test_post_dte_normalizes_bearer(monkeypatch):
     assert captured["body"]["documento"].count(".") >= 2
 
 
+def test_post_dte_handles_prefixed_token(monkeypatch):
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        captured["headers"] = headers
+        captured["url"] = url
+        captured["body"] = json
+
+        class R:
+            status_code = 200
+            text = ""
+
+            def json(self):
+                return {}
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    meta = {"ambiente": "00", "version": 2, "tipoDte": "01", "codigoGeneracion": "ABC"}
+    token = make_jws({"identificacion": meta})
+    _post_dte(dte.DEFAULT_RECEPCION_URL, "Bearer TOKEN", token, meta)
+    assert captured["headers"]["Authorization"] == "Bearer TOKEN"
+    assert captured["headers"]["Content-Type"] == "application/json"
+    assert captured["headers"]["Accept"] == "application/json"
+    assert captured["headers"]["User-Agent"] == "Vertex-DTE/1.0"
+    assert captured["url"] == dte.DEFAULT_RECEPCION_URL
+    assert captured["body"]["documento"] == token
+    assert captured["body"]["documento"].count(".") >= 2
+
+
 def test_post_dte_rejects_invalid_path(monkeypatch):
     def fake_post(url, json=None, headers=None, timeout=20):
         class R:

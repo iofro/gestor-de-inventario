@@ -2725,17 +2725,25 @@ def _normalize_recepcion_url(raw: str) -> str:
 
 def _load_dte_api_config():
     """Carga configuración consolidada para la recepción de DTE."""
-
     datos = _load_datos_negocio()
     dte_api = datos.get("dte_api") or {}
     raw_datos_url = dte_api.get("url") or dte_api.get("endpoint")
-    ambiente = dte_api.get("ambiente") or datos.get("ambiente")
+
+    def _norm(amb):
+        amb = "" if amb is None else str(amb).strip().lower()
+        if amb in {"00", "pruebas"}:
+            return "pruebas"
+        if amb in {"01", "1", "produccion", "producción"}:
+            return "produccion"
+        return amb
+
+    ambiente = _norm(dte_api.get("ambiente") or datos.get("ambiente"))
 
     cfg_recep = cfg_url = cfg_endpoint = None
     try:
         with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             cfg = json.load(fh)
-        ambiente = ambiente or cfg.get("ambiente")
+        ambiente = _norm(ambiente or cfg.get("ambiente"))
         env = cfg.get(ambiente or "pruebas", {})
         cfg_recep = env.get("recepcion_url")
         cfg_url = env.get("url")
@@ -2851,6 +2859,9 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
     """
 
+    if isinstance(documento, str):
+        documento = documento.strip()
+
     meta: dict[str, object] = {}
     payload = None
 
@@ -2954,7 +2965,11 @@ def build_auth_header(
         # 2) Bearer
         elif auth.get("access_token") or auth.get("bearer"):
             token = auth.get("access_token") or auth.get("bearer")
-            headers["Authorization"] = f"Bearer {token}" if token else ""
+            token = str(token).strip()
+            if token.lower().startswith("bearer "):
+                headers["Authorization"] = token
+            else:
+                headers["Authorization"] = f"Bearer {token}" if token else ""
         # 3) Basic
         elif auth.get("basic_user") and auth.get("basic_password"):
             creds = f"{auth['basic_user']}:{auth['basic_password']}"
@@ -3174,6 +3189,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
 
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
+    jws_token = jws_token.strip()
     config = _load_dte_api_config()
     url = config["url"]
     payload = _decode_jws_payload(jws_token)

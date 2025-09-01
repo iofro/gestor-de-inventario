@@ -3072,13 +3072,17 @@ class DTEConfigDialog(QDialog):
         layout.addLayout(form)
         btns = QHBoxLayout()
         guardar = QPushButton("Guardar")
+        restaurar = QPushButton("Restaurar")
         cancelar = QPushButton("Cancelar")
         btns.addWidget(guardar)
+        btns.addWidget(restaurar)
         btns.addWidget(cancelar)
         layout.addLayout(btns)
         self.setLayout(layout)
         guardar.clicked.connect(self.accept)
         cancelar.clicked.connect(self.reject)
+        restaurar.clicked.connect(self._restore_defaults)
+        restaurar.clicked.connect(self._set_default_urls)
         self.token_btn.clicked.connect(self._fetch_token)
         self.cert_btn.clicked.connect(self._select_cert)
         self.ambiente_hacienda.currentTextChanged.connect(self._set_default_urls)
@@ -3136,6 +3140,13 @@ class DTEConfigDialog(QDialog):
         cert = os.path.join(jws.CERT_UPLOAD_DIR, f"{nit}.crt") if nit else ""
         if cert and os.path.isfile(cert):
             self.cert_path.setText(cert)
+
+    def _restore_defaults(self):
+        """Restaurar valores por defecto de URLs y token."""
+        self.token_hacienda.clear()
+        self.endpoint_hacienda.clear()
+        self.auth_url.clear()
+        self.recepcion_url.clear()
 
     def _set_default_urls(self):
         base = self.endpoint_hacienda.text().strip()

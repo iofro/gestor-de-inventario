@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 import hashlib
 import os
-from decimal import Decimal, ROUND_HALF_UP
+import re
+from decimal import Decimal
 from typing import Any, Iterator, Tuple
 
 
@@ -37,25 +38,33 @@ def stable_stringify(value: Any, indent: int | None = None) -> str:
             normalized,
             ensure_ascii=False,
             separators=(",", ":"),
-            default=_json_default,
+            cls=DecimalEncoder,
         )
     return json.dumps(
         normalized,
         ensure_ascii=False,
         indent=indent,
-        default=_json_default,
+        cls=DecimalEncoder,
     )
 
 
-def _json_default(obj: Any) -> float:
-    """Conversión predeterminada para tipos no estándar en JSON."""
-    if isinstance(obj, Decimal):
-        # Permite hasta cuatro decimales manteniendo 0 como ``0.0``
-        q = obj.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
-        if q == 0:
-            q = Decimal("0")
-        return float(q)
-    raise TypeError(f"Tipo no serializable: {type(obj)}")
+class DecimalEncoder(json.JSONEncoder):
+    """Encode :class:`decimal.Decimal` preserving trailing zeros.
+
+    ``format(value, 'f')`` renders the decimal in fixed-point notation,
+    so numbers like ``Decimal('1.50')`` are serialized as ``1.50`` and
+    ``Decimal('13.0000')`` as ``13.0000``.  The encoded JSON contains
+    numbers without surrounding quotes.
+    """
+
+    def default(self, obj: Any) -> Any:  # type: ignore[override]
+        if isinstance(obj, Decimal):
+            return f"__decimal__:{format(obj, 'f')}"
+        return super().default(obj)
+
+    def encode(self, o: Any) -> str:  # type: ignore[override]
+        s = super().encode(o)
+        return re.sub(r'"__decimal__:([^"\n]+)"', r"\1", s)
 
 
 def _sha256(s: str) -> str:

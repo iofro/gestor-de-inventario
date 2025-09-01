@@ -21,3 +21,12 @@ def test_stable_stringify_handles_float_precisely(value, expected):
 def test_stable_stringify_handles_decimal():
     """Decimals should serialize without negative zero artifacts."""
     assert stable_stringify({"monto": Decimal("10.3")}) == '{"monto":10.3}'
+
+
+def test_decimal_encoder_preserves_trailing_zeros():
+    """Decimals retain their explicit scale when serialized."""
+    assert stable_stringify({"monto": Decimal("1.50")}) == '{"monto":1.50}'
+    assert (
+        stable_stringify({"gravadas": Decimal("13.0000")})
+        == '{"gravadas":13.0000}'
+    )

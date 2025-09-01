@@ -172,6 +172,11 @@ getcontext().rounding = ROUND_HALF_UP
 D = Decimal
 
 
+def d1(value: "object") -> D:
+    """Return ``value`` as :class:`Decimal` with 1 decimal place."""
+    return D(str(value)).quantize(D("0.1"), rounding=ROUND_HALF_UP)
+
+
 def d2(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 2 decimal places."""
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
@@ -1617,11 +1622,11 @@ def generar_dte_json(
         extra["precios_incluyen_iva"] = True
     for idx, d in enumerate(detalles, 1):
         try:
-            cant = d8(D(str(d.get("cantidad") or 0)))
+            cant = d1(D(str(d.get("cantidad") or 0)))
         except Exception:
-            cant = d8(D(0))
+            cant = d1(D(0))
         if cant <= 0:
-            cant = d8(D("1"))
+            cant = d1(D("1"))
         try:
             precio_raw = d8(D(str(d.get("precio_unitario") or 0)))
         except Exception:
@@ -2289,7 +2294,7 @@ def validate_dte_json(
             item.setdefault(iva_key, cero)
 
         # --- Cálculo de base ---
-        cantidad = d8(D(str(item.get("cantidad") or 0)))
+        cantidad = d1(D(str(item.get("cantidad") or 0)))
         precio = d8(D(str(item.get(precio_key) or 0)))
         item["cantidad"] = cantidad
         item[precio_key] = precio
@@ -2516,8 +2521,8 @@ def validate_dte_json(
         return D("0.0") if dec == 0 else dec
 
     for item in payload.get("cuerpoDocumento", []):
-        # cantidad solo requiere un decimal cuando es cero
-        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), d2)
+        # cantidad se cuantiza a un decimal
+        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), d1)
         # precio unitario y ventas: 4 decimales cuando es mayor a 0
         item[precio_key] = _zero_or(item.get(precio_key, D("0")), d4)
         if iva_key and iva_key in item:

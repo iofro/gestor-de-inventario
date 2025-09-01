@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "EBC49965-ACAF-4934-B824-BBD6474C5193",
+  "estado": "borrador",
+  "firmas": [
+    {
+      "archivo": "documento-20250901114650.jws",
+      "estado": "borrador",
+      "fechaFirma": "20250901114650",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "d6f57540d39bf864164d9f3838062f38fef6ecdddf24cd9efe4ced773b68d455",
+  "timestamp": "20250901114650"
+}

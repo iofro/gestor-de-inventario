@@ -3031,7 +3031,7 @@ class DTEConfigDialog(QDialog):
         self.modo_transmision = QComboBox()
         self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
         self.ambiente_hacienda = QComboBox()
-        self.ambiente_hacienda.addItems(["Pruebas", "Producción"])
+        self.ambiente_hacienda.addItems(["00 - Pruebas", "01 - Producción"])
         self.token_hacienda = QLineEdit()
         self.token_btn = QPushButton("Obtener")
         self.endpoint_hacienda = QLineEdit()
@@ -3113,8 +3113,11 @@ class DTEConfigDialog(QDialog):
         self.tipo_contribuyente.setCurrentText(dte_api.get("tipo_contribuyente", "Persona Natural"))
         self.prefijo_control.setText(dte_api.get("prefijo_control", "DTE-01-S001P001"))
         self.modo_transmision.setCurrentText(dte_api.get("modo_transmision", "1 - Normal"))
-        ambiente = dte_api.get("ambiente", "pruebas")
-        self.ambiente_hacienda.setCurrentText("Producción" if ambiente.lower() in ["producción", "produccion"] else "Pruebas")
+        ambiente = str(dte_api.get("ambiente", "00")).lower()
+        if ambiente in {"01", "1", "produccion", "producción"}:
+            self.ambiente_hacienda.setCurrentIndex(1)
+        else:
+            self.ambiente_hacienda.setCurrentIndex(0)
         self.token_hacienda.setText(dte_api.get("token", ""))
         self.endpoint_hacienda.setText(dte_api.get("url", ""))
         self.auth_url.setText(env_config.get("auth_url", ""))
@@ -3137,7 +3140,7 @@ class DTEConfigDialog(QDialog):
     def _set_default_urls(self):
         base = self.endpoint_hacienda.text().strip()
         if not base:
-            if self.ambiente_hacienda.currentText().startswith("Produc"):
+            if "Producción" in self.ambiente_hacienda.currentText():
                 base = "https://api.dtes.mh.gob.sv"
             else:
                 base = "https://apitest.dtes.mh.gob.sv"
@@ -3224,7 +3227,7 @@ class DTEConfigDialog(QDialog):
     def get_data(self):
         dte_api = {
             "url": self.endpoint_hacienda.text().strip(),
-            "ambiente": self.ambiente_hacienda.currentText().lower(),
+            "ambiente": self.ambiente_hacienda.currentText().split(" - ", 1)[0],
             "token": self.token_hacienda.text(),
             "prefijo_control": self.prefijo_control.text(),
             "modo_transmision": self.modo_transmision.currentText(),

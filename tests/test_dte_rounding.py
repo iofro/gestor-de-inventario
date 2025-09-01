@@ -34,7 +34,7 @@ def test_item_and_total_rounding():
 
     for key in ['totalIva', 'totalPagar']:
         assert decimal_places(resumen[key]) <= 2
-    assert decimal_places(resumen['totalGravada']) <= 4
+    assert decimal_places(resumen['totalGravada']) <= 2
 
 
 def test_pagos_rounding_adjusts_last_payment():

@@ -989,12 +989,12 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     total_exenta = money(fiscal.get("ventas_exentas", 0))
     total_no_suj = money(fiscal.get("ventas_no_sujetas", 0))
     total_no_gravado = money(fiscal.get("no_gravado", 0))
-    descu_no_suj = money(fiscal.get("descu_no_suj", 0))
-    descu_exenta = money(fiscal.get("descu_exenta", 0))
-    descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
-    total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
 
     if tipo_dte == "01":
+        descu_no_suj = money(0)
+        descu_exenta = money(0)
+        descu_gravada = money(0)
+        total_descu = money(fiscal.get("descuentos", 0))
         sub_total_ventas = money(items_total)
         total_gravada = money(
             fiscal.get(
@@ -1008,7 +1008,12 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         sub_total = sub_total_ventas
         monto_total_operacion = sub_total
         total_pagar = sub_total
+        porcentaje_desc = money(0)
     elif precios_incluyen_iva:
+        descu_no_suj = money(fiscal.get("descu_no_suj", 0))
+        descu_exenta = money(fiscal.get("descu_exenta", 0))
+        descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
+        total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
         total_gravada = money(
             fiscal.get("sumas", (items_total - total_exenta - total_no_suj) / D("1.13"))
         )
@@ -1019,18 +1024,25 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         sub_total = money(sub_total_ventas - total_descu)
         monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
         total_pagar = money(monto_total_operacion)
+        base_desc = sub_total_ventas + total_descu
+        porcentaje_desc = money(
+            (total_descu * D("100") / base_desc) if base_desc else D("0")
+        )
     else:
+        descu_no_suj = money(fiscal.get("descu_no_suj", 0))
+        descu_exenta = money(fiscal.get("descu_exenta", 0))
+        descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
+        total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
         total_gravada = money(fiscal.get("sumas", items_total))
         total_iva = money(fiscal.get("iva", 0)) if total_gravada > D("0") else money(0)
         sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
         sub_total = money(sub_total_ventas - total_descu)
         monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
         total_pagar = money(monto_total_operacion)
-
-    base_desc = sub_total_ventas + total_descu
-    porcentaje_desc = money(
-        (total_descu * D("100") / base_desc) if base_desc else D("0")
-    )
+        base_desc = sub_total_ventas + total_descu
+        porcentaje_desc = money(
+            (total_descu * D("100") / base_desc) if base_desc else D("0")
+        )
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
     resumen.update(
@@ -1266,12 +1278,9 @@ def recalcular_totales(
         _set_resumen("subTotalVentas", money(venta_gravada_sum))
         _set_resumen("descuNoSuj", money(0))
         _set_resumen("descuExenta", money(0))
-        _set_resumen("descuGravada", money(descu_sum))
+        _set_resumen("descuGravada", money(0))
         _set_resumen("totalDescu", money(descu_sum))
-        porcentaje_desc = money(
-            (descu_sum * D("100") / bruto_sum) if bruto_sum else D("0")
-        )
-        _set_resumen("porcentajeDescuento", porcentaje_desc)
+        _set_resumen("porcentajeDescuento", money(0))
         _set_resumen("subTotal", money(venta_gravada_sum))
         _set_resumen("totalNoGravado", money(0))
         _set_resumen("totalIva", total_iva_sum)

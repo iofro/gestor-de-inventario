@@ -5,6 +5,7 @@ import re
 
 import dte
 from dte import sanitize_dte_payload, validate_dte_json
+from jsonschema import ValidationError
 from utils.catalogos import TRIBUTO_IVA
 from db import DB
 from utils.monto import D
@@ -454,13 +455,12 @@ def test_validate_allows_envelope(db_fixture):
     validate_dte_json(sobre, db=db_fixture)
 
 
-def test_totales_permiten_cuatro_decimales(dte_metadata_factory, db_fixture):
+def test_totales_rechazan_mas_de_dos_decimales(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     item = dte["cuerpoDocumento"][0]
     item["precioUni"] = D("1.2345")
     item["ventaGravada"] = D("1.2345")
     item["ivaItem"] = D("0.14")
     dte.setdefault("extra", {})["precios_incluyen_iva"] = True
-    validate_dte_json(dte, db=db_fixture)
-    assert str(dte["cuerpoDocumento"][0]["precioUni"]) == "1.2345"
-    assert str(dte["resumen"]["totalGravada"]) == "1.2345"
+    with pytest.raises(ValidationError):
+        validate_dte_json(dte, db=db_fixture)

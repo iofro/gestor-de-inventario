@@ -79,6 +79,44 @@ def test_values_are_rounded(tmp_path):
     assert '10.0000' in text
 
 
+def test_total_letras_is_wrapped(tmp_path):
+    venta = {
+        'sumas': 0,
+        'descuentos': 0,
+        'subtotal': 0,
+        'iva': 0,
+        'total': 0,
+        'ventas_exentas': 0,
+        'ventas_no_sujetas': 0,
+        'total_letras': 'TRESCIENTOS SESENTA Y SIETE 71/100 DÓLARES',
+    }
+    detalles = [
+        {
+            'cantidad': 1,
+            'descripcion': 'Prod',
+            'precio_unitario': 0,
+            'ventas_no_sujetas': 0,
+            'ventas_exentas': 0,
+            'ventas_gravadas': 0,
+        }
+    ]
+    out = tmp_path / 'fact.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        'Crédito Fiscal',
+        archivo=str(out),
+        datos_negocio={},
+    )
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+    lines = text.splitlines()
+    assert any('TRESCIENTOS SESENTA Y SIETE' in ln for ln in lines)
+    assert any('71/100 DÓLARES' in ln for ln in lines)
+
+
 def test_qr_value_contains_params():
     url = build_qr_value(
         2,

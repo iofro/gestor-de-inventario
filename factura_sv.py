@@ -441,7 +441,14 @@ def generar_factura_electronica_pdf(
     c.setFont("Helvetica-Bold", 11)
     c.drawString(bloque_totales_x + 10, bloque_totales_y + bloque_totales_h - 18, "Valor en letras:")
     c.setFont("Helvetica", 11)
-    c.drawString(bloque_totales_x + 120, bloque_totales_y + bloque_totales_h - 18, f"{venta.get('total_letras', '')}")
+    draw_wrapped_text(
+        c,
+        f"{venta.get('total_letras', '')}",
+        bloque_totales_x + 120,
+        bloque_totales_y + bloque_totales_h - 18,
+        columna_totales_w - 130,
+        14,
+    )
 
     # --- Pie de página ---
     c.setFont("Helvetica", 8)

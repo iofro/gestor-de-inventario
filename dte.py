@@ -2908,10 +2908,20 @@ def _write_json(path: str, data):
         save_file(path, stable_stringify(data, indent=2))
 
 
+def _dte_base_dir(dte_data: dict) -> str:
+    """Return destination directory for ``dte_data`` grouped by tipoDte."""
+    ident = dte_data.get("identificacion", {})
+    tipo = str(ident.get("tipoDte", "")).zfill(2)
+    base = os.path.join(os.path.dirname(__file__), "dtes")
+    mapping = {"01": "fcf", "03": "ccf"}
+    folder = mapping.get(tipo)
+    return os.path.join(base, folder) if folder else base
+
+
 def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
     try:
-        base_dir = os.path.join(os.path.dirname(__file__), "dtes")
+        base_dir = _dte_base_dir(dte_data)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
@@ -2936,7 +2946,7 @@ class DTEValidationError(Exception):
 def save_dte_json(dte_data: dict) -> str:
     """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
     try:
-        base_dir = os.path.join(os.path.dirname(__file__), "dtes")
+        base_dir = _dte_base_dir(dte_data)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         return os.path.join(version_dir, "documento.json")
     except Exception:

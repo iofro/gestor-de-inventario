@@ -28,7 +28,7 @@ SCHEMA_MAP: Dict[str, tuple[str, str]] = {
     "nr": ("fe-nr-v3.json", "04"),
 }
 
-D8 = Decimal("0.00000001")
+D4 = Decimal("0.0001")
 D2 = Decimal("0.01")
 D = Decimal
 IVA = D("0.13")
@@ -50,9 +50,9 @@ def _numero_control(db: DB, tipo: str, sucursal: str = "001", punto: str = "001"
     return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
 
 
-def d8(value: Decimal) -> Decimal:
-    """Quantize ``value`` to eight decimal places using ``ROUND_HALF_UP``."""
-    return value.quantize(D8, rounding=ROUND_HALF_UP)
+def d4(value: Decimal) -> Decimal:
+    """Quantize ``value`` to four decimal places using ``ROUND_HALF_UP``."""
+    return value.quantize(D4, rounding=ROUND_HALF_UP)
 
 
 def d2(value: Decimal) -> Decimal:
@@ -70,10 +70,10 @@ def generar_fc_ejemplo(
     precio: Decimal = D("9.54"),
     gravado: bool = True,
 ) -> dict:
-    venta = d8(cantidad * precio)
-    iva8 = d8(venta * IVA) if gravado else d8(D("0"))
+    venta = d4(cantidad * precio)
+    iva = d4(venta * IVA) if gravado else d4(D("0"))
     total_base = d2(venta)
-    total_iva = d2(iva8)
+    total_iva = d2(iva)
     total_pagar = d2(total_base + total_iva)
 
     item = {
@@ -82,21 +82,21 @@ def generar_fc_ejemplo(
         "numeroDocumento": None,
         "codigo": "SKU001",
         "descripcion": "Producto X",
-        "cantidad": d8(cantidad),
+        "cantidad": d4(cantidad),
         "uniMedida": 59,
-        "precioUni": d8(precio),
-        "montoDescu": D("0.00000000"),
-        "ventaNoSuj": D("0.00000000"),
-        "ventaExenta": D("0.00000000"),
-        "ventaGravada": D("0.00000000"),
+        "precioUni": d4(precio),
+        "montoDescu": D("0.0000"),
+        "ventaNoSuj": D("0.0000"),
+        "ventaExenta": D("0.0000"),
+        "ventaGravada": D("0.0000"),
         "codTributo": None,
         "tributos": None,
-        "psv": D("0.00000000"),
-        "noGravado": D("0.00000000"),
+        "psv": D("0.0000"),
+        "noGravado": D("0.0000"),
     }
     if gravado:
         item["ventaGravada"] = venta
-        item["ivaItem"] = iva8
+        item["ivaItem"] = iva
     else:
         item["ventaExenta"] = venta
 
@@ -228,12 +228,12 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     cantidad = Decimal("2.5")
     if tipo == "fc":
         precio = Decimal("10.78")  # precio con IVA incluido
-        venta = d8(cantidad * precio)
+        venta = d4(cantidad * precio)
         iva_item = d2(venta - (venta / Decimal("1.13")))
     else:
         precio = Decimal("9.54")
-        venta = d8(cantidad * precio)
-        iva_item = d8(venta * Decimal("0.13"))
+        venta = d4(cantidad * precio)
+        iva_item = d4(venta * Decimal("0.13"))
     numero_documento = None
     tipo_item = 4 if tipo == "fc" else 1
     uni_medida = 99 if tipo == "fc" else 59
@@ -243,15 +243,15 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "numeroDocumento": numero_documento,
         "codigo": "SKU001",
         "descripcion": "Producto de prueba",
-        "cantidad": d8(cantidad),
+        "cantidad": d4(cantidad),
         "uniMedida": uni_medida,
-        "precioUni": d8(precio),
-        "montoDescu": d8(Decimal("0")),
-        "ventaNoSuj": d8(Decimal("0")),
-        "ventaExenta": d8(Decimal("0")),
+        "precioUni": d4(precio),
+        "montoDescu": d4(Decimal("0")),
+        "ventaNoSuj": d4(Decimal("0")),
+        "ventaExenta": d4(Decimal("0")),
         "ventaGravada": venta,
-        "psv": d8(Decimal("0")),
-        "noGravado": d8(Decimal("0")),
+        "psv": d4(Decimal("0")),
+        "noGravado": d4(Decimal("0")),
         "ivaItem": iva_item,
     }
     if tipo == "fc":

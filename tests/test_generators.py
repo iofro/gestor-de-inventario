@@ -20,7 +20,7 @@ def _assert_base(data):
     resumen = data["resumen"]
     if resumen.get("totalGravada") == Decimal("26.95"):
         # consumidor final
-        assert str(item["ventaGravada"]) == "26.95000000"
+        assert str(item["ventaGravada"]) == "26.9500"
         iva = (item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13"))).quantize(Decimal("0.01"))
         if "ivaItem" in item:
             assert str(item["ivaItem"]) == str(iva)
@@ -29,10 +29,10 @@ def _assert_base(data):
         assert str(total) == "26.95"
         assert str(resumen["totalIva"]) == "3.10"
     else:
-        assert str(item["ventaGravada"]) == "23.85000000"
+        assert str(item["ventaGravada"]) == "23.8500"
         venta = item["ventaGravada"]
-        iva = (venta * Decimal("0.13")).quantize(Decimal("0.00000001"))
-        assert str(iva) == "3.10050000"
+        iva = (venta * Decimal("0.13")).quantize(Decimal("0.0001"))
+        assert str(iva) == "3.1005"
         if "ivaItem" in item:
             assert str(item["ivaItem"]) == str(iva)
         assert str(resumen["totalGravada"]) == "23.85"

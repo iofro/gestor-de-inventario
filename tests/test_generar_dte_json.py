@@ -5,7 +5,7 @@ from pathlib import Path
 from decimal import Decimal, getcontext, setcontext
 
 from db import DB
-from dte import generar_dte_json, _write_json, money
+from dte import generar_dte_json, _write_json, money, d4
 
 
 def create_db():
@@ -598,6 +598,7 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
     )
     cliente_id = db.cursor.lastrowid
     gross_total = money(Decimal("3") * Decimal("5.5"))
+    line_total_dec = d4(gross_total - descuento)
     line_total = money(gross_total - descuento)
     venta_id = db.add_venta("2024-01-01", float(line_total), cliente_id=cliente_id)
     db.add_detalle_venta(
@@ -608,16 +609,92 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
 
-    iva_item = money(line_total - (line_total / Decimal("1.13")))
+    iva_item = d4(line_total_dec - (line_total_dec / Decimal("1.13")))
 
     assert Decimal(str(item["precioUni"])) == Decimal("5.50")
-    assert Decimal(str(item["ventaGravada"])) == line_total
+    assert Decimal(str(item["ventaGravada"])) == line_total_dec
     assert Decimal(str(item["ivaItem"])) == iva_item
 
     assert Decimal(str(res["subTotalVentas"])) == gross_total
     assert Decimal(str(res["totalDescu"])) == money(descuento)
     assert Decimal(str(res["subTotal"])) == line_total
-    assert Decimal(str(res["totalIva"])) == iva_item
+    assert Decimal(str(res["totalIva"])) == money(iva_item)
+    assert Decimal(str(res["montoTotalOperacion"])) == line_total
+    assert Decimal(str(res["totalPagar"])) == line_total
+    assert res["tributos"] is None
+
+
+def test_generar_dte_json_cf_descuento_pct(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cliente_id = db.cursor.lastrowid
+    gross_total = money(Decimal("3") * Decimal("5.5"))
+    descuento_pct = Decimal("10")
+    desc_monto = d4(gross_total * descuento_pct / Decimal("100"))
+    line_total_dec = d4(gross_total - desc_monto)
+    line_total = money(gross_total - desc_monto)
+    venta_id = db.add_venta("2024-01-01", float(line_total), cliente_id=cliente_id)
+    db.add_detalle_venta(
+        venta_id,
+        pid,
+        3,
+        5.5,
+        vendedor_id=vid,
+        descuento=float(descuento_pct),
+        descuento_tipo="%",
+    )
+
+    data = generar_dte_json(db, venta_id)
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+
+    iva_item = d4(line_total_dec - (line_total_dec / Decimal("1.13")))
+
+    assert Decimal(str(item["precioUni"])) == Decimal("5.50")
+    assert Decimal(str(item["montoDescu"])) == desc_monto
+    assert Decimal(str(item["ventaGravada"])) == line_total_dec
+    assert Decimal(str(item["ivaItem"])) == iva_item
+
+    assert Decimal(str(res["subTotalVentas"])) == gross_total
+    assert Decimal(str(res["totalDescu"])) == money(desc_monto)
+    assert Decimal(str(res["subTotal"])) == line_total
+    assert Decimal(str(res["totalIva"])) == money(iva_item)
     assert Decimal(str(res["montoTotalOperacion"])) == line_total
     assert Decimal(str(res["totalPagar"])) == line_total
     assert res["tributos"] is None

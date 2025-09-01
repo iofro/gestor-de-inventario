@@ -163,7 +163,7 @@ class FacturacionTab(QWidget):
         self.btn_estado = QPushButton("Estado")
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
-        self.btn_enviar_jws = QPushButton("Enviar JWS...")
+        self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;"
@@ -172,7 +172,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_debito)
         btns.addWidget(self.btn_estado)
         btns.addWidget(self.btn_enviar)
-        btns.addWidget(self.btn_enviar_jws)
+        btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
         left_layout.addLayout(btns)
@@ -201,7 +201,7 @@ class FacturacionTab(QWidget):
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
         self.btn_estado.clicked.connect(self.change_estado)
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
-        self.btn_enviar_jws.clicked.connect(self.send_jws)
+        self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_files)
 
     def _toggle_date_filter(self, checked):
@@ -565,47 +565,31 @@ class FacturacionTab(QWidget):
                         self, "Enviar a Hacienda", str(exc)
                     )
 
-    def send_jws(self):
-        fname, _ = QFileDialog.getOpenFileName(
-            self,
-            "Seleccionar JWS",
-            "",
-            "JWS (*.jws *.json)",
-            options=QFileDialog.DontUseNativeDialog,
-        )
-        if not fname:
-            return
-        try:
-            with open(fname, "r", encoding="utf-8") as fh:
-                content = fh.read()
-        except Exception as exc:
-            QMessageBox.critical(self, "Enviar a Hacienda", f"Error al leer archivo: {exc}")
+    def open_pdf(self):
+        entry = self._selected_entry()
+        if not entry:
+            QMessageBox.warning(self, "Abrir PDF", "No se ha seleccionado ninguna factura.")
             return
 
-        is_json = True
-        try:
-            json.loads(content)
-        except Exception:
-            is_json = False
+        pdf_path = None
+        rtype = entry.get("row_type")
+        if rtype == "venta":
+            venta_id = entry.get("id")
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_invoice_pdf(venta_id)
+        elif rtype == "ticket":
+            venta_id = entry.get("id")
+            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_ticket_pdf(venta_id)
+        else:
+            pdf_path = entry.get("pdf")
 
-        try:
-            if is_json:
-                resp = dte.transmitir_dte_orphan(self.manager.db, fname)
-            else:
-                resp = dte.enviar_dte_a_hacienda(content)
-
-            if resp.get("estado") in ("Error", "Rechazado"):
-                QMessageBox.critical(
-                    self, "Enviar a Hacienda", resp.get("detalle") or resp.get("errores", "Error")
-                )
-            else:
-                QMessageBox.information(
-                    self, "Enviar a Hacienda", "Documento enviado"
-                )
-        except dte.DTEValidationError as exc:
-            self._show_validation_errors(exc.errors, exc.json_path)
-        except Exception as exc:
-            QMessageBox.critical(self, "Enviar a Hacienda", str(exc))
+        if pdf_path and os.path.exists(pdf_path):
+            QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
+        else:
+            QMessageBox.warning(self, "Abrir PDF", "No se encontró el archivo PDF.")
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

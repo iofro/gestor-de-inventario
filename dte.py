@@ -1198,9 +1198,9 @@ def recalcular_totales(
             linea = d4(bruto - monto_descu)
             if linea < 0:
                 linea = d4(0)
-            esperado_iva = money(linea * D("0.13") / D("1.13"))
+            esperado_iva = d4(linea - (linea / D("1.13")))
             iva_raw = item.get("ivaItem")
-            actual_iva = money(D(str(iva_raw))) if iva_raw is not None else None
+            actual_iva = d4(D(str(iva_raw))) if iva_raw is not None else None
             if iva_raw is not None:
                 if linea > D("0") and actual_iva != esperado_iva:
                     raise ValueError(
@@ -1695,13 +1695,24 @@ def generar_dte_json(
             uni_medida = 59
         if uni_medida not in UNIDADES_MEDIDA_PERMITIDAS:
             uni_medida = 59
-        monto_descu = d4(D(str(d.get("descuento") or 0)))
-        if monto_descu < 0:
-            monto_descu = D("0")
+
+        desc_raw = d4(D(str(d.get("descuento") or 0)))
+        if desc_raw < 0:
+            desc_raw = D("0")
+        desc_tipo = str(d.get("descuento_tipo") or "$")
+
+        def _calc_desc(bruto: D) -> D:
+            if desc_tipo == "%":
+                monto = d4(bruto * desc_raw / D("100"))
+            else:
+                monto = d4(desc_raw)
+            return monto if monto <= bruto else bruto
+
         tipo_fiscal_item = str(d.get("tipo_fiscal", "")).lower()
         if tipo_fiscal_item == "venta exenta":
             precio = d4(precio_raw)
             bruto = d4(cant * precio)
+            monto_descu = _calc_desc(bruto)
             line_total = d4(bruto - monto_descu)
             if line_total < 0:
                 line_total = D("0")
@@ -1714,6 +1725,7 @@ def generar_dte_json(
         elif tipo_fiscal_item == "venta no sujeta":
             precio = d4(precio_raw)
             bruto = d4(cant * precio)
+            monto_descu = _calc_desc(bruto)
             line_total = d4(bruto - monto_descu)
             if line_total < 0:
                 line_total = D("0")
@@ -1734,19 +1746,21 @@ def generar_dte_json(
                 else:
                     precio = d4(precio_raw)
                 bruto = d4(cant * precio)
+                monto_descu = _calc_desc(bruto)
                 line_total = d4(bruto - monto_descu)
-                venta_gravada = line_total
-                iva_val = money(line_total * D("0.13") / D("1.13"))
+                venta_gravada = line_total if line_total > 0 else D("0")
+                iva_val = d4(venta_gravada - (venta_gravada / D("1.13")))
                 line_total = venta_gravada
                 bruto_total += bruto
-                descuentos_total += d4(monto_descu)
+                descuentos_total += monto_descu
             elif precios_incluyen_iva:
                 bruto = d4(cant * precio_raw)
+                monto_descu = _calc_desc(bruto)
                 total_final = d4(bruto - monto_descu)
                 if total_final < 0:
                     total_final = D("0")
                 base_total = money(total_final / D("1.13"))
-                iva_val = money(total_final - base_total)
+                iva_val = d4(total_final - base_total)
                 base_total = money(total_final - iva_val)
                 precio = d4(money(total_final / cant))
                 venta_gravada = base_total
@@ -1756,6 +1770,7 @@ def generar_dte_json(
             else:
                 precio = d4(precio_raw)
                 bruto = d4(cant * precio)
+                monto_descu = _calc_desc(bruto)
                 base = d4(cant * precio - monto_descu)
                 if base < 0:
                     base = D("0")
@@ -1800,14 +1815,14 @@ def generar_dte_json(
             "descripcion": d.get("descripcion"),
             "cantidad": cant,
             "uniMedida": uni_medida,
-            "precioUni": precio,
-            "montoDescu": d2(monto_descu),
+            "precioUni": d4(precio),
+            "montoDescu": d4(monto_descu),
             "ventaNoSuj": venta_no_suj,
             "ventaExenta": venta_exenta,
             "ventaGravada": venta_gravada,
             "psv": money(0),
             "noGravado": money(0),
-            "ivaItem": iva_val,
+            "ivaItem": d4(iva_val),
             "tributos": [trib_code] if trib_code else [],
         }
         if trib_code:

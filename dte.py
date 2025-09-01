@@ -1647,10 +1647,10 @@ def generar_dte_json(
                 or ("bruto" if precios_incluyen_iva else "neto")
             ).lower()
             if origen == "neto":
-                precio = money(precio_raw * D("1.13"))
+                precio = d4(precio_raw * D("1.13"))
             else:
-                precio = money(precio_raw)
-            line_total = money(cant * precio - monto_descu)
+                precio = d4(precio_raw)
+            line_total = d4(cant * precio - monto_descu)
             venta_gravada = line_total
             iva_val = money(line_total * D("0.13") / D("1.13"))
             line_total = venta_gravada
@@ -1902,10 +1902,9 @@ def generar_dte_json(
             ultimo = resumen["pagos"][-1]
             ult_m = D(str(ultimo.get("montoPago") or 0))
             ultimo["montoPago"] = money(ult_m + delta)
-
-    def _float_money(value: D) -> float:
-        val = float(money(value))
-        return 0.0 if val == -0.0 else val
+    def _quantize_money(value: D) -> D:
+        dec = money(value)
+        return D("0.0") if dec == 0 else dec
 
     for k, v in list(resumen.items()):
         if k in {
@@ -1916,15 +1915,15 @@ def generar_dte_json(
             "tributos",
         }:
             continue
-        resumen[k] = _float_money(v)
+        resumen[k] = _quantize_money(D(str(v)))
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            t["valor"] = _float_money(D(str(t["valor"])))
+            t["valor"] = _quantize_money(D(str(t["valor"])))
 
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            p["montoPago"] = _float_money(D(str(p["montoPago"])))
+            p["montoPago"] = _quantize_money(D(str(p["montoPago"])))
     # SERIALIZE-GUARD END
 
     extension = None
@@ -2477,11 +2476,6 @@ def validate_dte_json(
                 raise ValidationError("montoPago debe ser múltiplo de 0.01")
             if val == D("0") and val.as_tuple().sign:
                 p["montoPago"] = D("0")
-
-    def _float_money(value: D) -> float:
-        val = float(money(value))
-        return 0.0 if val == -0.0 else val
-
     # --- Catálogo validations ---
     ident = payload.get("identificacion", {})
     tipo_dte = ident.get("tipoDte")
@@ -2550,15 +2544,15 @@ def validate_dte_json(
         }:
             continue
         if isinstance(v, Decimal):
-            resumen[k] = _float_money(v)
+            resumen[k] = _zero_or(v, money)
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
-            t["valor"] = _float_money(t["valor"])
+            t["valor"] = _zero_or(t["valor"], money)
 
     if resumen.get("pagos"):
         for p in resumen["pagos"]:
-            p["montoPago"] = _float_money(p["montoPago"])
+            p["montoPago"] = _zero_or(p["montoPago"], money)
 
     payload["resumen"] = resumen
 

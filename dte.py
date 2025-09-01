@@ -1103,7 +1103,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         "numPagoElectronico",
         "tributos",
     }
-    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    special_d4_fields = {"totalExenta", "totalNoSuj"}
     for key, val in list(resumen.items()):
         if key in excl:
             continue
@@ -1630,6 +1630,10 @@ def generar_dte_json(
         dec = d4(value)
         return D("0.0") if dec == 0 else dec
 
+    def _zero_or_d2(value: D) -> D:
+        dec = d2(value)
+        return D("0.0") if dec == 0 else dec
+
     for idx, d in enumerate(detalles, 1):
         try:
             cant = d1(D(str(d.get("cantidad") or 0)))
@@ -1755,7 +1759,7 @@ def generar_dte_json(
     items_total = money(items_total)
     total_no_suj_sum = _zero_or_d4(total_no_suj_sum)
     total_exenta_sum = _zero_or_d4(total_exenta_sum)
-    total_gravada_sum = _zero_or_d4(total_gravada_sum)
+    total_gravada_sum = _zero_or_d2(total_gravada_sum)
     total_no_gravado_sum = money(total_no_gravado_sum)
     total_iva_sum = money(iva_total)
 
@@ -1776,7 +1780,7 @@ def generar_dte_json(
 
     resumen["totalNoSuj"] = _zero_or_d4(total_no_suj_sum)
     resumen["totalExenta"] = _zero_or_d4(total_exenta_sum)
-    resumen["totalGravada"] = _zero_or_d4(total_gravada_sum)
+    resumen["totalGravada"] = _zero_or_d2(total_gravada_sum)
 
     # Las siguientes validaciones se omiten para permitir diferencias entre el
     # resumen y el cuerpo del documento sin lanzar ``ValidationError``.
@@ -1860,7 +1864,7 @@ def generar_dte_json(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
     # SERIALIZE-GUARD BEGIN
-    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    special_d4_fields = {"totalExenta", "totalNoSuj"}
     for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):
         if k in resumen:
             val = D(str(resumen[k]))
@@ -1929,7 +1933,7 @@ def generar_dte_json(
         dec = money(value)
         return D("0.0") if dec == 0 else dec
 
-    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    special_d4_fields = {"totalExenta", "totalNoSuj"}
 
     for k, v in list(resumen.items()):
         if k in {
@@ -2470,7 +2474,7 @@ def validate_dte_json(
                 p["plazo"] = ""
 
     # Verificación de centavos exactos en totales clave
-    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    special_d4_fields = {"totalExenta", "totalNoSuj"}
     for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):
         if k in resumen:
             val = D(str(resumen[k]))
@@ -2563,7 +2567,7 @@ def validate_dte_json(
             item[k] = _zero_or(item.get(k, D("0")), qfn)
 
     resumen = payload.get("resumen", {})
-    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+    special_d4_fields = {"totalExenta", "totalNoSuj"}
     for k, v in list(resumen.items()):
         if k in {
             "totalLetras",

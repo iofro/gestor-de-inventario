@@ -3081,8 +3081,12 @@ class DTEConfigDialog(QDialog):
         cancelar.clicked.connect(self.reject)
         self.token_btn.clicked.connect(self._fetch_token)
         self.cert_btn.clicked.connect(self._select_cert)
+        self.ambiente_hacienda.currentTextChanged.connect(self._set_default_urls)
+        self.endpoint_hacienda.textChanged.connect(self._set_default_urls)
         if dte_api or fe_config or env_config:
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
+        else:
+            self._set_default_urls()
 
     def set_data(self, dte_api, fe_config, env_config):
         auth_conf = env_config.get("auth", {})
@@ -3115,6 +3119,12 @@ class DTEConfigDialog(QDialog):
         self.endpoint_hacienda.setText(dte_api.get("url", ""))
         self.auth_url.setText(env_config.get("auth_url", ""))
         self.recepcion_url.setText(env_config.get("recepcion_url", ""))
+        if (
+            not self.endpoint_hacienda.text()
+            or not self.auth_url.text()
+            or not self.recepcion_url.text()
+        ):
+            self._set_default_urls()
         self.envio_automatico.setChecked(dte_api.get("envio_automatico", False))
         self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
@@ -3123,6 +3133,18 @@ class DTEConfigDialog(QDialog):
         cert = os.path.join(jws.CERT_UPLOAD_DIR, f"{nit}.crt") if nit else ""
         if cert and os.path.isfile(cert):
             self.cert_path.setText(cert)
+
+    def _set_default_urls(self):
+        base = self.endpoint_hacienda.text().strip()
+        if not base:
+            if self.ambiente_hacienda.currentText().startswith("Produc"):
+                base = "https://api.dtes.mh.gob.sv"
+            else:
+                base = "https://apitest.dtes.mh.gob.sv"
+            self.endpoint_hacienda.setText(base)
+        base = base.rstrip("/")
+        self.auth_url.setText(f"{base}/seguridad/auth")
+        self.recepcion_url.setText(f"{base}/fesv/recepciondte")
 
     def _fetch_token(self):
         nit_default = self.api_user.text().strip()
@@ -3135,10 +3157,8 @@ class DTEConfigDialog(QDialog):
             return
         url = self.auth_url.text().strip()
         if not url:
-            if self.ambiente_hacienda.currentText().startswith("Produc"):
-                url = "https://api.factura.gob.sv/auth"
-            else:
-                url = "https://apitest.dtes.mh.gob.sv/seguridad/auth"
+            self._set_default_urls()
+            url = self.auth_url.text().strip()
         try:
             resp = requests.post(url, data={"user": nit, "pwd": pwd}, timeout=20)
             status_code = getattr(resp, "status_code", "N/A")

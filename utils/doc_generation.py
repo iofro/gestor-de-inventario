@@ -7,7 +7,7 @@ import dte
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
 from dte import generar_ticket_json, generar_dte_json
-from utils.monto import monto_a_texto_sv
+from utils.monto import monto_a_texto_sv, iva_item
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -41,7 +41,7 @@ def generate_invoice_pdf(manager, venta_id):
         if d.get("descuento_tipo") == "%":
             desc = base_total * d.get("descuento", 0) / 100
         base = base_total - desc
-        iva_item = d.get("iva", 0)
+        iva_item_val = d.get("iva", 0)
         tipo = d.get("tipo_fiscal", "").lower()
         if tipo == "venta exenta":
             d["ventas_exentas"] = base
@@ -50,10 +50,13 @@ def generate_invoice_pdf(manager, venta_id):
             d["ventas_no_sujetas"] = base
             ventas_no_sujetas += base
         else:
+            if credito_info and not iva_item_val:
+                iva_item_val = float(iva_item(base))
+                d["iva"] = iva_item_val
             d["ventas_gravadas"] = base
             sumas += base_total
             descuentos += desc
-            iva += iva_item
+            iva += iva_item_val
 
     subtotal = (sumas - descuentos) + iva
     total = subtotal + ventas_exentas + ventas_no_sujetas

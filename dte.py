@@ -982,8 +982,10 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     total_no_suj = money(fiscal.get("ventas_no_sujetas", 0))
     total_no_gravado = money(fiscal.get("no_gravado", 0))
     if tipo_dte == "01":
-        total_gravada = items_total
-        total_iva = money(fiscal.get("iva", items_total - (items_total / D("1.13"))))
+        total_gravada = money(max(items_total - total_exenta - total_no_suj, D("0")))
+        total_iva = money(
+            fiscal.get("iva", total_gravada - (total_gravada / D("1.13")))
+        )
     elif precios_incluyen_iva:
         total_gravada = money(
             fiscal.get("sumas", (items_total - total_exenta - total_no_suj) / D("1.13"))
@@ -1000,7 +1002,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
 
     if tipo_dte == "01":
-        sub_total_ventas = money(total_gravada + total_no_suj + total_exenta)
+        sub_total_ventas = money(items_total)
         total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
         sub_total = money(sub_total_ventas - total_descu)
         monto_total_operacion = sub_total

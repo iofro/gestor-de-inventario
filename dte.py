@@ -2725,17 +2725,25 @@ def _normalize_recepcion_url(raw: str) -> str:
 
 def _load_dte_api_config():
     """Carga configuración consolidada para la recepción de DTE."""
-
     datos = _load_datos_negocio()
     dte_api = datos.get("dte_api") or {}
     raw_datos_url = dte_api.get("url") or dte_api.get("endpoint")
-    ambiente = dte_api.get("ambiente") or datos.get("ambiente")
+
+    def _norm(amb):
+        amb = "" if amb is None else str(amb).strip().lower()
+        if amb in {"00", "pruebas"}:
+            return "pruebas"
+        if amb in {"01", "1", "produccion", "producción"}:
+            return "produccion"
+        return amb
+
+    ambiente = _norm(dte_api.get("ambiente") or datos.get("ambiente"))
 
     cfg_recep = cfg_url = cfg_endpoint = None
     try:
         with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             cfg = json.load(fh)
-        ambiente = ambiente or cfg.get("ambiente")
+        ambiente = _norm(ambiente or cfg.get("ambiente"))
         env = cfg.get(ambiente or "pruebas", {})
         cfg_recep = env.get("recepcion_url")
         cfg_url = env.get("url")

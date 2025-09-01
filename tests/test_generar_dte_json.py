@@ -615,7 +615,7 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
     assert Decimal(str(item["ventaGravada"])) == line_total_dec
     assert Decimal(str(item["ivaItem"])) == iva_item
 
-    assert Decimal(str(res["subTotalVentas"])) == gross_total
+    assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalDescu"])) == money(descuento)
     assert Decimal(str(res["subTotal"])) == line_total
     assert Decimal(str(res["totalIva"])) == money(iva_item)
@@ -691,7 +691,7 @@ def test_generar_dte_json_cf_descuento_pct(tmp_path):
     assert Decimal(str(item["ventaGravada"])) == line_total_dec
     assert Decimal(str(item["ivaItem"])) == iva_item
 
-    assert Decimal(str(res["subTotalVentas"])) == gross_total
+    assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalDescu"])) == money(desc_monto)
     assert Decimal(str(res["subTotal"])) == line_total
     assert Decimal(str(res["totalIva"])) == money(iva_item)

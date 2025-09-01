@@ -24,6 +24,7 @@ from utils.catalogos import (
     UNIDADES_MEDIDA_PERMITIDAS,
 )
 import logging
+import warnings
 import xml.etree.ElementTree as ET
 from utils.monto import monto_a_texto_sv
 from num2words import num2words
@@ -593,7 +594,11 @@ def _normalize_municipio(dep_code: str | None, value):
     """
 
     if value is None:
-        raise ValidationError("Municipio requerido")
+        warnings.warn(
+            "Municipio requerido; se continuará con el valor en blanco",
+            UserWarning,
+        )
+        return None, dep_code
 
     val = str(value).strip()
     dep_norm = dep_code
@@ -639,8 +644,11 @@ def _build_receptor_direccion(src: dict) -> dict:
     dep_code = _normalize_departamento(raw_dep) if raw_dep is not None else None
     muni_code, dep_inferred = _normalize_municipio(dep_code, raw_muni)
     dep_code = dep_code or dep_inferred
-    if dep_code is None:
-        raise ValidationError("Departamento requerido")
+    if dep_code is None or muni_code is None:
+        warnings.warn(
+            "Información de dirección incompleta; la factura se generará con campos nulos",
+            UserWarning,
+        )
 
     return {
         "departamento": dep_code,

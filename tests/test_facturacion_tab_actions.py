@@ -56,32 +56,6 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     assert save_path.with_suffix(".json").exists()
 
 
-def test_change_estado_updates_table(qt_app, monkeypatch, tmp_path):
-    db = DB(":memory:")
-    venta_id, cid = _create_sale(db)
-    pdf_path = tmp_path / "doc.pdf"
-    pdf_path.write_text("pdf")
-    pdf_path.with_suffix(".json").write_text("{}")
-    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
-    tab = _make_tab(db, cid)
-    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
-
-    class DummyDlg:
-        def __init__(self, estado, parent=None):
-            pass
-        def exec_(self):
-            return QDialog.Accepted
-        def get_estado(self):
-            return "Anulada"
-    monkeypatch.setattr("dialogs.EstadoVentaDialog", DummyDlg)
-    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
-
-    tab.change_estado()
-    assert tab.table.item(0, 4).text() == "Anulada"
-    row = db.cursor.execute("SELECT estado FROM ventas WHERE id=?", (venta_id,)).fetchone()
-    assert row["estado"] == "Anulada"
-
-
 def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

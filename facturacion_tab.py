@@ -160,7 +160,6 @@ class FacturacionTab(QWidget):
         btns = QHBoxLayout()
         self.btn_credito = QPushButton("Nota de crédito")
         self.btn_debito = QPushButton("Nota de débito")
-        self.btn_estado = QPushButton("Estado")
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
@@ -170,7 +169,6 @@ class FacturacionTab(QWidget):
         )
         btns.addWidget(self.btn_credito)
         btns.addWidget(self.btn_debito)
-        btns.addWidget(self.btn_estado)
         btns.addWidget(self.btn_enviar)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
@@ -199,7 +197,6 @@ class FacturacionTab(QWidget):
         
         self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
         self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
-        self.btn_estado.clicked.connect(self.change_estado)
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_files)
@@ -836,25 +833,6 @@ class FacturacionTab(QWidget):
 
         QMessageBox.information(self, "Nota", "Nota registrada")
         self.load_invoices()
-
-    def change_estado(self):
-        venta_id = self._selected_venta()
-        if venta_id is None:
-            QMessageBox.warning(self, "Estado", "Seleccione una venta")
-            return
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        if not venta:
-            QMessageBox.warning(self, "Estado", "No se encontró la venta seleccionada")
-            return
-        from dialogs import EstadoVentaDialog
-        dialog = EstadoVentaDialog(venta.get("estado", "Pagada"), self)
-        if dialog.exec_():
-            estado = dialog.get_estado()
-            self.manager.db.update_venta_estado(venta_id, estado)
-            self.load_invoices()
-            parent = self.parent()
-            if parent and hasattr(parent, "sales_tab"):
-                parent.sales_tab.load_sales()
 
     def delete_files(self):
         """Elimina PDF y JSON asociados a la venta seleccionada."""

@@ -1615,6 +1615,11 @@ def generar_dte_json(
     ):
         precios_incluyen_iva = True
         extra["precios_incluyen_iva"] = True
+
+    def _zero_or_d4(value: D) -> D:
+        dec = d4(value)
+        return D("0.0") if dec == 0 else dec
+
     for idx, d in enumerate(detalles, 1):
         try:
             cant = d8(D(str(d.get("cantidad") or 0)))
@@ -1729,6 +1734,8 @@ def generar_dte_json(
             else:
                 item_data.pop("codTributo", None)
                 item_data["tributos"] = []
+        for key in ("ventaNoSuj", "ventaExenta", "ventaGravada"):
+            item_data[key] = _zero_or_d4(D(str(item_data[key])))
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -1736,9 +1743,9 @@ def generar_dte_json(
         cuerpo.append(item_data)
 
     items_total = money(items_total)
-    total_no_suj_sum = money(total_no_suj_sum)
-    total_exenta_sum = money(total_exenta_sum)
-    total_gravada_sum = money(total_gravada_sum)
+    total_no_suj_sum = _zero_or_d4(total_no_suj_sum)
+    total_exenta_sum = _zero_or_d4(total_exenta_sum)
+    total_gravada_sum = _zero_or_d4(total_gravada_sum)
     total_no_gravado_sum = money(total_no_gravado_sum)
     total_iva_sum = money(iva_total)
 
@@ -1756,6 +1763,10 @@ def generar_dte_json(
         extra=extra,
         tipo_dte=tipo_dte,
     )
+
+    resumen["totalNoSuj"] = _zero_or_d4(total_no_suj_sum)
+    resumen["totalExenta"] = _zero_or_d4(total_exenta_sum)
+    resumen["totalGravada"] = _zero_or_d4(total_gravada_sum)
 
     # Las siguientes validaciones se omiten para permitir diferencias entre el
     # resumen y el cuerpo del documento sin lanzar ``ValidationError``.
@@ -1906,6 +1917,8 @@ def generar_dte_json(
         dec = money(value)
         return D("0.0") if dec == 0 else dec
 
+    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+
     for k, v in list(resumen.items()):
         if k in {
             "totalLetras",
@@ -1915,7 +1928,8 @@ def generar_dte_json(
             "tributos",
         }:
             continue
-        resumen[k] = _quantize_money(D(str(v)))
+        qfn = _zero_or_d4 if k in special_d4_fields else _quantize_money
+        resumen[k] = qfn(D(str(v)))
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
@@ -1944,7 +1958,8 @@ def generar_dte_json(
     # Se omite la validación de esquema para permitir la generación sin
     # restricciones adicionales.
     # validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
-    return result
+    json_result = stable_stringify(result)
+    return json.loads(json_result, parse_float=Decimal)
 
 
 def validate_dte_json(

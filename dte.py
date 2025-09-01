@@ -1660,37 +1660,59 @@ def generar_dte_json(
         monto_descu = d8(D(str(d.get("descuento") or 0)))
         if monto_descu < 0:
             monto_descu = D("0")
-        if tipo_dte == "01":
-            origen = (
-                extra.get("origen_precios")
-                or ("bruto" if precios_incluyen_iva else "neto")
-            ).lower()
-            if origen == "neto":
-                precio = d4(precio_raw * D("1.13"))
-            else:
-                precio = d4(precio_raw)
-            line_total = d4(cant * precio - monto_descu)
-            venta_gravada = line_total
-            iva_val = money(line_total * D("0.13") / D("1.13"))
-            line_total = venta_gravada
-        elif precios_incluyen_iva:
-            total_final = d8(cant * precio_raw - monto_descu)
-            if total_final < 0:
-                total_final = D("0")
-            base_total = money(total_final / D("1.13"))
-            iva_val = money(total_final - base_total)
-            base_total = money(total_final - iva_val)
-            precio = money(total_final / cant)
-            venta_gravada = base_total
-            line_total = base_total + iva_val
-        else:
+        tipo_fiscal_item = str(d.get("tipo_fiscal", "")).lower()
+        if tipo_fiscal_item == "venta exenta":
             precio = precio_raw
-            base = d8(cant * precio - monto_descu)
-            if base < 0:
-                base = D("0")
-            venta_gravada = d2(base)
-            iva_val = d8(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
-            line_total = venta_gravada + iva_val
+            line_total = d8(cant * precio - monto_descu)
+            if line_total < 0:
+                line_total = D("0")
+            venta_gravada = D("0")
+            venta_exenta = d2(line_total)
+            venta_no_suj = D("0")
+            iva_val = D("0")
+        elif tipo_fiscal_item == "venta no sujeta":
+            precio = precio_raw
+            line_total = d8(cant * precio - monto_descu)
+            if line_total < 0:
+                line_total = D("0")
+            venta_gravada = D("0")
+            venta_exenta = D("0")
+            venta_no_suj = d2(line_total)
+            iva_val = D("0")
+        else:
+            if tipo_dte == "01":
+                origen = (
+                    extra.get("origen_precios")
+                    or ("bruto" if precios_incluyen_iva else "neto")
+                ).lower()
+                if origen == "neto":
+                    precio = d4(precio_raw * D("1.13"))
+                else:
+                    precio = d4(precio_raw)
+                line_total = d4(cant * precio - monto_descu)
+                venta_gravada = line_total
+                iva_val = money(line_total * D("0.13") / D("1.13"))
+                line_total = venta_gravada
+            elif precios_incluyen_iva:
+                total_final = d8(cant * precio_raw - monto_descu)
+                if total_final < 0:
+                    total_final = D("0")
+                base_total = money(total_final / D("1.13"))
+                iva_val = money(total_final - base_total)
+                base_total = money(total_final - iva_val)
+                precio = money(total_final / cant)
+                venta_gravada = base_total
+                line_total = base_total + iva_val
+            else:
+                precio = precio_raw
+                base = d8(cant * precio - monto_descu)
+                if base < 0:
+                    base = D("0")
+                venta_gravada = d2(base)
+                iva_val = d8(venta_gravada * D("0.13")) if venta_gravada > 0 else D("0")
+                line_total = venta_gravada + iva_val
+            venta_exenta = D("0")
+            venta_no_suj = D("0")
         items_total += line_total
         iva_total += iva_val
         try:
@@ -1727,8 +1749,8 @@ def generar_dte_json(
             "uniMedida": uni_medida,
             "precioUni": precio,
             "montoDescu": d2(monto_descu),
-            "ventaNoSuj": money(0),
-            "ventaExenta": money(0),
+            "ventaNoSuj": venta_no_suj,
+            "ventaExenta": venta_exenta,
             "ventaGravada": venta_gravada,
             "psv": money(0),
             "noGravado": money(0),

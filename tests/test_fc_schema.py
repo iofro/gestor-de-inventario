@@ -10,7 +10,7 @@ def test_fc_min_valido():
     payload = strip_extras(dte)
     validate_against_schema(payload, "fc")
     item = payload["cuerpoDocumento"][0]
-    assert str(item["ventaGravada"]) == "26.95000000"
+    assert str(item["ventaGravada"]) == "26.9500"
     assert str(item["ivaItem"]) == "3.10"
     assert str(payload["resumen"]["totalGravada"]) == "26.95"
     assert str(payload["resumen"]["totalIva"]) == "3.10"

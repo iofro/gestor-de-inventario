@@ -2762,9 +2762,17 @@ class VentaDetalleDialog(QDialog):
         layout.addWidget(QLabel(f"Vendedor: {vendedor_nombre}"))
         layout.addWidget(QLabel(f"Total: ${venta.get('total', 0):.2f}"))
 
-        table = QTableWidget(len(detalles), 7)
+        # Mostrar dos columnas de descuento: porcentaje y monto
+        table = QTableWidget(len(detalles), 8)
         table.setHorizontalHeaderLabels([
-            "Producto", "Cantidad", "Precio U.", "Subtotal", "Descuento", "IVA", "Comisión"
+            "Producto",
+            "Cantidad",
+            "Precio U.",
+            "Subtotal",
+            "Desc %",
+            "Desc $",
+            "IVA",
+            "Comisión",
         ])
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
@@ -2778,9 +2786,25 @@ class VentaDetalleDialog(QDialog):
             table.setItem(i, 1, QTableWidgetItem(str(d.get("cantidad", ""))))
             table.setItem(i, 2, QTableWidgetItem(f"${precio_unitario:.2f}"))
             table.setItem(i, 3, QTableWidgetItem(f"${subtotal:.2f}"))
-            table.setItem(i, 4, QTableWidgetItem(f"${d.get('descuento', 0):.2f}"))
-            table.setItem(i, 5, QTableWidgetItem(f"${d.get('iva', 0):.2f}"))
-            table.setItem(i, 6, QTableWidgetItem(f"${d.get('comision', 0):.2f}"))
+
+            # Calcular monto y porcentaje de descuento
+            descuento_valor = d.get("descuento", 0) or 0
+            descuento_tipo = d.get("descuento_tipo") or "$"
+            descuento_monto = d.get("descuento_monto")
+            if descuento_monto is None:
+                if descuento_tipo == "%":
+                    descuento_monto = subtotal * (descuento_valor / 100)
+                else:
+                    descuento_monto = descuento_valor
+            if descuento_tipo == "%":
+                descuento_pct = descuento_valor
+            else:
+                descuento_pct = (descuento_monto / subtotal * 100) if subtotal else 0
+
+            table.setItem(i, 4, QTableWidgetItem(f"{descuento_pct:.2f}%"))
+            table.setItem(i, 5, QTableWidgetItem(f"${descuento_monto:.2f}"))
+            table.setItem(i, 6, QTableWidgetItem(f"${d.get('iva', 0):.2f}"))
+            table.setItem(i, 7, QTableWidgetItem(f"${d.get('comision', 0):.2f}"))
         table.resizeColumnsToContents()
         layout.addWidget(table)
         self.setLayout(layout)

@@ -2515,12 +2515,19 @@ def validate_dte_json(
         clean_doc = str(receptor_doc).replace("-", "")
         if len(clean_doc) not in (9, catalogos.NIT_LENGTH):
             raise ValueError("Número de documento inválido en receptor")
-    # Conversión final de Decimals a float para el JSON
+    # Conversión final de Decimals con formatos específicos para el JSON
+    def _zero_or(value: D, qfn) -> D:
+        """Quantiza ``value`` usando ``qfn`` retornando ``0.0`` si es cero."""
+        dec = qfn(value)
+        return D("0.0") if dec == 0 else dec
+
     for item in payload.get("cuerpoDocumento", []):
-        item["cantidad"] = float(d8(item.get("cantidad", D("0"))))
-        item[precio_key] = float(d8(item.get(precio_key, D("0"))))
+        # cantidad solo requiere un decimal cuando es cero
+        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), d2)
+        # precio unitario y ventas: 4 decimales cuando es mayor a 0
+        item[precio_key] = _zero_or(item.get(precio_key, D("0")), d4)
         if iva_key and iva_key in item:
-            item[iva_key] = float(d8(item.get(iva_key, D("0"))))
+            item[iva_key] = _zero_or(item.get(iva_key, D("0")), d2)
         for k in (
             "montoDescu",
             "ventaNoSuj",
@@ -2529,8 +2536,8 @@ def validate_dte_json(
             "psv",
             "noGravado",
         ):
-            val = d2(item.get(k, D("0")))
-            item[k] = 0.0 if val == 0 else float(val)
+            qfn = d4 if k in {"ventaNoSuj", "ventaExenta", "ventaGravada"} else d2
+            item[k] = _zero_or(item.get(k, D("0")), qfn)
 
     resumen = payload.get("resumen", {})
     for k, v in list(resumen.items()):

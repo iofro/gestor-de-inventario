@@ -597,7 +597,8 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
         "01",
     )
     cliente_id = db.cursor.lastrowid
-    line_total = money(Decimal("3") * Decimal("5.5") - descuento)
+    gross_total = money(Decimal("3") * Decimal("5.5"))
+    line_total = money(gross_total - descuento)
     venta_id = db.add_venta("2024-01-01", float(line_total), cliente_id=cliente_id)
     db.add_detalle_venta(
         venta_id, pid, 3, 5.5, vendedor_id=vid, descuento=float(descuento)
@@ -613,7 +614,9 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
     assert Decimal(str(item["ventaGravada"])) == line_total
     assert Decimal(str(item["ivaItem"])) == iva_item
 
-    assert Decimal(str(res["subTotalVentas"])) == line_total
+    assert Decimal(str(res["subTotalVentas"])) == gross_total
+    assert Decimal(str(res["totalDescu"])) == money(descuento)
+    assert Decimal(str(res["subTotal"])) == line_total
     assert Decimal(str(res["totalIva"])) == iva_item
     assert Decimal(str(res["montoTotalOperacion"])) == line_total
     assert Decimal(str(res["totalPagar"])) == line_total

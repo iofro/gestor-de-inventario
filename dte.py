@@ -2851,6 +2851,9 @@ def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> d
     error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
     """
 
+    if isinstance(documento, str):
+        documento = documento.strip()
+
     meta: dict[str, object] = {}
     payload = None
 
@@ -3178,6 +3181,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
 
 def enviar_dte_a_hacienda(jws_token: str) -> dict:
     """Transmite un DTE ya firmado (JWS) al entorno de pruebas de Hacienda."""
+    jws_token = jws_token.strip()
     config = _load_dte_api_config()
     url = config["url"]
     payload = _decode_jws_payload(jws_token)

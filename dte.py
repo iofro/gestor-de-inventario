@@ -172,6 +172,11 @@ getcontext().rounding = ROUND_HALF_UP
 D = Decimal
 
 
+def d1(value: "object") -> D:
+    """Return ``value`` as :class:`Decimal` with 1 decimal place."""
+    return D(str(value)).quantize(D("0.1"), rounding=ROUND_HALF_UP)
+
+
 def d2(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 2 decimal places."""
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
@@ -1615,13 +1620,18 @@ def generar_dte_json(
     ):
         precios_incluyen_iva = True
         extra["precios_incluyen_iva"] = True
+
+    def _zero_or_d4(value: D) -> D:
+        dec = d4(value)
+        return D("0.0") if dec == 0 else dec
+
     for idx, d in enumerate(detalles, 1):
         try:
-            cant = d8(D(str(d.get("cantidad") or 0)))
+            cant = d1(D(str(d.get("cantidad") or 0)))
         except Exception:
-            cant = d8(D(0))
+            cant = d1(D(0))
         if cant <= 0:
-            cant = d8(D("1"))
+            cant = d1(D("1"))
         try:
             precio_raw = d8(D(str(d.get("precio_unitario") or 0)))
         except Exception:
@@ -1729,6 +1739,8 @@ def generar_dte_json(
             else:
                 item_data.pop("codTributo", None)
                 item_data["tributos"] = []
+        for key in ("ventaNoSuj", "ventaExenta", "ventaGravada"):
+            item_data[key] = _zero_or_d4(D(str(item_data[key])))
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -1736,9 +1748,9 @@ def generar_dte_json(
         cuerpo.append(item_data)
 
     items_total = money(items_total)
-    total_no_suj_sum = money(total_no_suj_sum)
-    total_exenta_sum = money(total_exenta_sum)
-    total_gravada_sum = money(total_gravada_sum)
+    total_no_suj_sum = _zero_or_d4(total_no_suj_sum)
+    total_exenta_sum = _zero_or_d4(total_exenta_sum)
+    total_gravada_sum = _zero_or_d4(total_gravada_sum)
     total_no_gravado_sum = money(total_no_gravado_sum)
     total_iva_sum = money(iva_total)
 
@@ -1756,6 +1768,10 @@ def generar_dte_json(
         extra=extra,
         tipo_dte=tipo_dte,
     )
+
+    resumen["totalNoSuj"] = _zero_or_d4(total_no_suj_sum)
+    resumen["totalExenta"] = _zero_or_d4(total_exenta_sum)
+    resumen["totalGravada"] = _zero_or_d4(total_gravada_sum)
 
     # Las siguientes validaciones se omiten para permitir diferencias entre el
     # resumen y el cuerpo del documento sin lanzar ``ValidationError``.
@@ -1906,6 +1922,8 @@ def generar_dte_json(
         dec = money(value)
         return D("0.0") if dec == 0 else dec
 
+    special_d4_fields = {"totalGravada", "totalExenta", "totalNoSuj"}
+
     for k, v in list(resumen.items()):
         if k in {
             "totalLetras",
@@ -1915,7 +1933,8 @@ def generar_dte_json(
             "tributos",
         }:
             continue
-        resumen[k] = _quantize_money(D(str(v)))
+        qfn = _zero_or_d4 if k in special_d4_fields else _quantize_money
+        resumen[k] = qfn(D(str(v)))
 
     if resumen.get("tributos"):
         for t in resumen["tributos"]:
@@ -1944,7 +1963,8 @@ def generar_dte_json(
     # Se omite la validación de esquema para permitir la generación sin
     # restricciones adicionales.
     # validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
-    return result
+    json_result = stable_stringify(result)
+    return json.loads(json_result, parse_float=Decimal)
 
 
 def validate_dte_json(
@@ -2289,7 +2309,7 @@ def validate_dte_json(
             item.setdefault(iva_key, cero)
 
         # --- Cálculo de base ---
-        cantidad = d8(D(str(item.get("cantidad") or 0)))
+        cantidad = d1(D(str(item.get("cantidad") or 0)))
         precio = d8(D(str(item.get(precio_key) or 0)))
         item["cantidad"] = cantidad
         item[precio_key] = precio
@@ -2516,8 +2536,8 @@ def validate_dte_json(
         return D("0.0") if dec == 0 else dec
 
     for item in payload.get("cuerpoDocumento", []):
-        # cantidad solo requiere un decimal cuando es cero
-        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), d2)
+        # cantidad se cuantiza a un decimal
+        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), d1)
         # precio unitario y ventas: 4 decimales cuando es mayor a 0
         item[precio_key] = _zero_or(item.get(precio_key, D("0")), d4)
         if iva_key and iva_key in item:

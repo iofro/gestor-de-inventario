@@ -3077,7 +3077,6 @@ def transmitir_dte(
 
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
-    data = sanitize_dte_payload(data, schema)
     # La validación de esquema se omite para permitir la transmisión sin
     # interrupciones por inconsistencias.
     # try:
@@ -3122,7 +3121,6 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             or {}
         ).get("tipoDte")
         schema = catalogos.get_dte_schema(str(tipo))
-        data = sanitize_dte_payload(data, schema)
         # Se omite la validación para permitir la transmisión aun cuando el
         # payload no cumpla estrictamente con el esquema.
         # try:
@@ -3327,7 +3325,6 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     data = generar_dte_json(db, venta_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("01")
-    data = sanitize_dte_payload(data, schema)
     # Validación omitida para permitir el envío sin detenerse ante errores de
     # esquema.
     # try:
@@ -3347,7 +3344,6 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = generar_nota_credito_json(db, nota_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("05")
-    data = sanitize_dte_payload(data, schema)
     # Validación omitida.
     # try:
     #     validate_dte_json(data, db=db)
@@ -3363,7 +3359,6 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = generar_nota_debito_json(db, nota_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("06")
-    data = sanitize_dte_payload(data, schema)
     # Validación omitida.
     # try:
     #     validate_dte_json(data, db=db)
@@ -3379,7 +3374,6 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     data = generar_nota_remision_json(db, nota_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("04")
-    data = sanitize_dte_payload(data, schema)
     # Validación omitida.
     # try:
     #     validate_dte_json(data, db=db)

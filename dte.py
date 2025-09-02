@@ -1212,8 +1212,16 @@ def recalcular_totales(
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
         data["extra"] = extra_conf
+    elif tipo_dte == "03":
+        precios_flag = True
+        extra_conf["precios_incluyen_iva"] = True
+        data["extra"] = extra_conf
+        nit = str(data.get("receptor", {}).get("nit") or "")
+        if not (len(nit) == 14 and nit.isdigit()):
+            raise ValueError("receptor.nit debe tener 14 dígitos sin guiones")
     else:
         precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
+
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
@@ -1221,7 +1229,10 @@ def recalcular_totales(
     venta_gravada_sum = D("0")
     bruto_sum = D("0")
     descu_sum = D("0")
-    for item in cuerpo:
+    bases: list[D] = []
+    ivas: list[D] = []
+
+    for idx, item in enumerate(cuerpo):
         cant = D(str(item.get("cantidad") or 0))
         precio = D(str(item.get("precioUni") or 0))
         monto_descu = D(str(item.get("montoDescu") or 0))
@@ -1260,6 +1271,8 @@ def recalcular_totales(
             linea = money(cant * precio - monto_descu)
             if linea < 0:
                 linea = money(0)
+            bruto_sum += linea
+            descu_sum += money(monto_descu)
             if precios_flag:
                 base = money(linea / D("1.13"))
                 iva_val = money(linea - base)
@@ -1267,23 +1280,48 @@ def recalcular_totales(
             else:
                 base = linea
                 iva_val = money(base * D("0.13"))
+            base4 = d4(base)
+            bases.append(base4)
+            ivas.append(iva_val)
             trib_list: list[str] = []
             tipo_item = int(item.get("tipoItem", 1))
             if base > 0:
                 trib_list.append(TRIBUTO_IVA)
-            if tipo_item == 4 and item.get("codTributo") and item.get("codTributo") != TRIBUTO_IVA:
-                trib_list.append(str(item["codTributo"]))
-            item["codTributo"] = item.get("codTributo") if tipo_item == 4 else None
-            item["tributos"] = trib_list
-            item["ventaGravada"] = base
+            if tipo_item == 4:
+                if str(item.get("codTributo")) == TRIBUTO_IVA:
+                    item["codTributo"] = None
+                item["uniMedida"] = item.get("uniMedida") or 99
+            else:
+                item["codTributo"] = None
+            item["tributos"] = trib_list or None
+            item["ventaGravada"] = base4
             item.pop("ivaItem", None)
             item["ventaExenta"] = money(0)
             item["ventaNoSuj"] = money(0)
             item["noGravado"] = money(0)
             if "montoIva" in item:
                 item["montoIva"] = iva_val
-            iva_total += iva_val
-            venta_gravada_sum += base
+    if tipo_dte != "01":
+        if bases:
+            bruto_total = bruto_sum
+            base_total = money(bruto_total / D("1.13"))
+            iva_total_calc = money(bruto_total - base_total)
+            base_total = money(bruto_total - iva_total_calc)
+            base_res = base_total - sum(bases)
+            iva_res = iva_total_calc - sum(ivas)
+            if base_res or iva_res:
+                bases[0] = money(bases[0] + base_res)
+                ivas[0] = money(ivas[0] + iva_res)
+            for idx, item in enumerate(cuerpo):
+                if idx < len(bases):
+                    item["ventaGravada"] = bases[idx]
+                    if "montoIva" in item:
+                        item["montoIva"] = ivas[idx]
+            venta_gravada_sum = sum(bases)
+            iva_total = sum(ivas)
+        else:
+            venta_gravada_sum = D("0")
+            iva_total = D("0")
 
     venta_gravada_sum = venta_gravada_sum
     total_iva_sum = money(iva_total)
@@ -1331,14 +1369,12 @@ def recalcular_totales(
         _set_resumen("subTotal", money(venta_gravada_sum))
         _set_resumen("totalNoGravado", money(0))
         _set_resumen("totalIva", total_iva_sum)
-        if tipo_dte == "03":
-            monto_total_operacion = money(money(venta_gravada_sum))
-        else:
-            monto_total_operacion = money(money(venta_gravada_sum) + total_iva_sum)
+        monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
 
         _set_resumen("montoTotalOperacion", monto_total_operacion)
         _set_resumen("totalPagar", monto_total_operacion)
-        resumen.pop("totalIva", None)
+        if tipo_dte == "03":
+            resumen.pop("totalIva", None)
     trib_raw = resumen.get("tributos")
     if tipo_dte == "01":
         suma: dict[str, D] = {}

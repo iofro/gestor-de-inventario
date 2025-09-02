@@ -231,16 +231,19 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         venta = d4(cantidad * precio)
         iva_item = d2(venta - (venta / Decimal("1.13")))
         base = venta
+        precio_uni = d4(precio)
     elif tipo == "ccf":
-        precio = Decimal("10.78")
+        precio = Decimal("10.78")  # precio con IVA incluido
         base_unit = d2(precio / Decimal("1.13"))
         base = d4(base_unit * cantidad)
         venta = d4(cantidad * precio)
+        precio_uni = d4(base_unit)
     else:
         precio = Decimal("9.54")
         venta = d4(cantidad * precio)
         iva_item = d4(venta * Decimal("0.13"))
         base = venta
+        precio_uni = d4(precio)
     numero_documento = None
     tipo_item = 4 if tipo == "fc" else 1
     uni_medida = 99 if tipo == "fc" else 59
@@ -252,7 +255,7 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "descripcion": "Producto de prueba",
         "cantidad": d4(cantidad),
         "uniMedida": uni_medida,
-        "precioUni": d4(precio),
+        "precioUni": precio_uni,
         "montoDescu": d4(Decimal("0")),
         "ventaNoSuj": d4(Decimal("0")),
         "ventaExenta": d4(Decimal("0")),

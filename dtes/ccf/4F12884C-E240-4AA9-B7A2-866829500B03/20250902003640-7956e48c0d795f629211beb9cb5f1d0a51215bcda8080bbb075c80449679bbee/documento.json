@@ -5,19 +5,20 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 10",
-      "ivaItem": 1.8407,
+      "descripcion": "Producto Demo 2",
       "montoDescu": 0.0000,
       "noGravado": 0.00,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 16.0000,
+      "precioUni": 7.0800,
       "psv": 0.00,
       "tipoItem": 1,
-      "tributos": null,
+      "tributos": [
+        "20"
+      ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 16.0000,
+      "ventaGravada": 7.0800,
       "ventaNoSuj": 0.0
     }
   ],
@@ -45,17 +46,17 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "9BD93306-CF00-453A-B1D6-0F42ACE4D0AD",
-    "fecEmi": "2025-09-01",
-    "horEmi": "22:47:42",
+    "codigoGeneracion": "4F12884C-E240-4AA9-B7A2-866829500B03",
+    "fecEmi": "2025-09-02",
+    "horEmi": "00:36:40",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000142",
+    "numeroControl": "DTE-03-S001P001-000000000000024",
     "tipoContingencia": null,
-    "tipoDte": "01",
+    "tipoDte": "03",
     "tipoModelo": 1,
     "tipoMoneda": "USD",
     "tipoOperacion": 1,
-    "version": 1
+    "version": 3
   },
   "otrosDocumentos": null,
   "receptor": {
@@ -67,24 +68,25 @@
       "departamento": "05",
       "municipio": "28"
     },
+    "nit": "13240304791012",
     "nombre": "ariel",
+    "nombreComercial": null,
     "nrc": "2273734",
-    "numDocumento": "13240304791012",
-    "telefono": "70000001",
-    "tipoDocumento": "36"
+    "telefono": "70000001"
   },
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 16.00,
+    "montoTotalOperacion": 8.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 16.00,
+        "montoPago": 8.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -93,17 +95,22 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 16.00,
-    "subTotalVentas": 16.00,
+    "subTotal": 7.08,
+    "subTotalVentas": 7.08,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 16.00,
-    "totalIva": 1.84,
-    "totalLetras": "Dieciséis Dolares con cero centavos",
+    "totalGravada": 7.08,
+    "totalLetras": "OCHO CON 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 16.00,
-    "tributos": null
+    "totalPagar": 8.00,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 0.92
+      }
+    ]
   },
   "ventaTercero": null
 }

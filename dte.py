@@ -1923,7 +1923,7 @@ def generar_dte_json(
                 base_total = money(total_final / D("1.13"))
                 iva_val = d4(total_final - base_total)
                 base_total = money(total_final - iva_val)
-                precio = d4(money(total_final / cant))
+                precio = d4(money(base_total / cant))
                 venta_gravada = base_total
                 line_total = base_total + iva_val
                 bruto_total += bruto
@@ -2229,9 +2229,7 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    # Se omite la validación de esquema para permitir la generación sin
-    # restricciones adicionales.
-    # validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
+    validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
     json_result = stable_stringify(result)
     return json.loads(json_result, parse_float=Decimal)
 

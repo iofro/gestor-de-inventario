@@ -51,6 +51,14 @@ with FC_SCHEMA_PATH.open("r", encoding="utf-8") as fh:
     FC_SCHEMA = json.load(fh)
 RESOLVER = RefResolver(base_uri=f"{SCHEMAS_DIR.as_uri()}/", referrer=FC_SCHEMA)
 
+DTE_VERSIONES = {
+    "01": 1,
+    "03": 3,
+    "04": 3,
+    "05": 3,
+    "06": 3,
+}
+
 
 def _strip_additional_properties(value, schema):
     """Remove keys not defined in ``schema`` when ``additionalProperties`` is ``false``."""
@@ -1049,6 +1057,8 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         )
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
+    if tipo_dte == "03":
+        resumen.pop("totalIva", None)
     resumen.update(
         {
             "totalNoSuj": total_no_suj,
@@ -1062,7 +1072,6 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             "subTotal": sub_total,
             "porcentajeDescuento": porcentaje_desc,
             "totalNoGravado": total_no_gravado,
-            "totalIva": total_iva,
             "montoTotalOperacion": monto_total_operacion,
             "totalPagar": total_pagar,
             "totalLetras": (
@@ -1109,13 +1118,17 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         suma_por_codigo[codigo] = money(suma_por_codigo.get(codigo, D("0")) + valor)
 
     tributos_list = [{"codigo": c, "valor": v} for c, v in suma_por_codigo.items()]
-    if tipo_dte != "01" and total_gravada > D("0"):
-        tributos_list.append({"codigo": TRIBUTO_IVA, "valor": total_iva})
-
-    resumen["tributos"] = armar_tributos(tributos_list, tipo_dte)
-    if tipo_dte != "01" and total_gravada <= D("0") and not tributos_list:
-        resumen.pop("tributos", None)
-        resumen["totalIva"] = money(0)
+    if tipo_dte == "03":
+        resumen["tributos"] = (
+            [{"codigo": TRIBUTO_IVA, "valor": total_iva}] if total_gravada > D("0") else None
+        )
+    else:
+        if tipo_dte != "01" and total_gravada > D("0"):
+            tributos_list.append({"codigo": TRIBUTO_IVA, "valor": total_iva})
+        resumen["tributos"] = armar_tributos(tributos_list, tipo_dte)
+        if tipo_dte != "01" and total_gravada <= D("0") and not tributos_list:
+            resumen.pop("tributos", None)
+            resumen["totalIva"] = money(0)
 
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
@@ -1246,14 +1259,16 @@ def recalcular_totales(
             else:
                 base = linea
                 iva_val = money(base * D("0.13"))
+            trib_list: list[str] = []
+            tipo_item = int(item.get("tipoItem", 1))
             if base > 0:
-                item["codTributo"] = TRIBUTO_IVA
-                item["tributos"] = [TRIBUTO_IVA]
-            else:
-                item["codTributo"] = None
-                item["tributos"] = []
+                trib_list.append(TRIBUTO_IVA)
+            if tipo_item == 4 and item.get("codTributo") and item.get("codTributo") != TRIBUTO_IVA:
+                trib_list.append(str(item["codTributo"]))
+            item["codTributo"] = item.get("codTributo") if tipo_item == 4 else None
+            item["tributos"] = trib_list
             item["ventaGravada"] = base
-            item["ivaItem"] = iva_val
+            item.pop("ivaItem", None)
             item["ventaExenta"] = money(0)
             item["ventaNoSuj"] = money(0)
             item["noGravado"] = money(0)
@@ -1312,8 +1327,10 @@ def recalcular_totales(
             monto_total_operacion = money(money(venta_gravada_sum))
         else:
             monto_total_operacion = money(money(venta_gravada_sum) + total_iva_sum)
+
         _set_resumen("montoTotalOperacion", monto_total_operacion)
         _set_resumen("totalPagar", monto_total_operacion)
+        resumen.pop("totalIva", None)
     trib_raw = resumen.get("tributos")
     if tipo_dte == "01":
         suma: dict[str, D] = {}
@@ -1329,16 +1346,23 @@ def recalcular_totales(
             suma[codigo] = money(suma.get(codigo, D("0")) + valor)
         trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
     else:
-        suma: dict[str, D] = {}
-        for t in trib_raw or []:
-            codigo = str(t.get("codigo", "")).upper()
-            if not codigo or codigo == TRIBUTO_IVA:
-                continue
-            valor = money(t.get("valor", 0))
-            suma[codigo] = money(suma.get(codigo, D("0")) + valor)
-        if venta_gravada_sum > D("0"):
-            suma[TRIBUTO_IVA] = total_iva_sum
-        trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
+        if tipo_dte == "03":
+            trib = (
+                [{"codigo": TRIBUTO_IVA, "valor": total_iva_sum}]
+                if venta_gravada_sum > D("0")
+                else None
+            )
+        else:
+            suma: dict[str, D] = {}
+            for t in trib_raw or []:
+                codigo = str(t.get("codigo", "")).upper()
+                if not codigo or codigo == TRIBUTO_IVA:
+                    continue
+                valor = money(t.get("valor", 0))
+                suma[codigo] = money(suma.get(codigo, D("0")) + valor)
+            if venta_gravada_sum > D("0"):
+                suma[TRIBUTO_IVA] = total_iva_sum
+            trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
     if resumen.get("tributos") != trib:
         resumen["tributos"] = trib
         modificados.append("tributos")
@@ -1550,8 +1574,9 @@ def generar_dte_json(
         raise ValueError("tipoOperacion debe ser 1 o 2")
 
     tipo_dte = str(tipo_dte or "01").zfill(2)
+    version = DTE_VERSIONES.get(tipo_dte, 1)
     identificacion = {
-        "version": 1,
+        "version": version,
         "ambiente": ambiente,
         "tipoDte": tipo_dte,
         "numeroControl": numero_control,
@@ -1634,6 +1659,8 @@ def generar_dte_json(
         "numDocumento": num_doc,
         "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
         "nombre": rec.get("nombre"),
+        "nit": nit,
+        "nombreComercial": rec.get("nombreComercial"),
         "codActividad": None,
         "descActividad": None,
         "telefono": rec.get("telefono"),
@@ -1668,6 +1695,23 @@ def generar_dte_json(
         )
     if not receptor.get("correo"):
         receptor["correo"] = "no-reply@example.com"
+
+    # Campos obligatorios y limpieza de campos no permitidos
+    required_rec_fields = [
+        "nit",
+        "nrc",
+        "nombre",
+        "nombreComercial",
+        "codActividad",
+        "descActividad",
+        "telefono",
+        "correo",
+        "direccion",
+    ]
+    for f in required_rec_fields:
+        receptor.setdefault(f, None)
+    for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        receptor.pop(f, None)
 
     cuerpo = []
     items_total = D("0")
@@ -1847,22 +1891,23 @@ def generar_dte_json(
             "ventaGravada": venta_gravada,
             "psv": money(0),
             "noGravado": money(0),
-            "ivaItem": d4(iva_val),
-            "tributos": [trib_code] if trib_code else [],
+            "tributos": [],
         }
-        if trib_code:
-            item_data["codTributo"] = trib_code
+        if tipo_dte == "01":
+            item_data["ivaItem"] = d4(iva_val)
         if tipo_dte == "01":
             item_data["codTributo"] = None
             item_data["tributos"] = None
         else:
+            trib_list: list[str] = []
             if D(str(item_data.get("ventaGravada") or 0)) > 0:
-                if not item_data["tributos"]:
-                    item_data["codTributo"] = TRIBUTO_IVA
-                    item_data["tributos"] = [TRIBUTO_IVA]
+                trib_list.append(TRIBUTO_IVA)
+            if tipo_item == 4 and trib_code:
+                item_data["codTributo"] = trib_code
+                trib_list.append(trib_code)
             else:
-                item_data.pop("codTributo", None)
-                item_data["tributos"] = []
+                item_data["codTributo"] = None
+            item_data["tributos"] = trib_list
         for key in ("ventaNoSuj", "ventaExenta", "ventaGravada"):
             item_data[key] = _zero_or_d4(D(str(item_data[key])))
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
@@ -1969,7 +2014,8 @@ def generar_dte_json(
 
     iva_ref = resumen.get("totalIva")
     if iva_ref is None:
-        iva_ref = resumen.get("ivaPerci1", 0)
+        tribs = resumen.get("tributos") or []
+        iva_ref = next((t.get("valor") for t in tribs if t.get("codigo") == TRIBUTO_IVA), resumen.get("ivaPerci1", 0))
     iva_ref = D(str(iva_ref or 0))
     calc_total = d2(calc_sub_total + iva_ref)
     if abs(calc_total - D(str(resumen.get("montoTotalOperacion", 0)))) > D("0.01"):
@@ -2181,7 +2227,12 @@ def validate_dte_json(
     else:
         raise ValueError("tipoOperacion debe ser 1 o 2")
 
-    ident["version"] = int(ident.get("version", 1))
+    tipo = ident.get("tipoDte")
+    expected_version = DTE_VERSIONES.get(tipo)
+    if expected_version is not None:
+        ident["version"] = expected_version
+    else:
+        ident["version"] = int(ident.get("version", 1))
     ident.setdefault("codigoGeneracion", str(uuid.uuid4()).upper())
     try:
         ident["codigoGeneracion"] = normalize_uuid_v4_upper(ident["codigoGeneracion"])
@@ -2191,8 +2242,6 @@ def validate_dte_json(
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
     ident["tipoMoneda"] = "USD"
     # Validaciones de campos de identificacion
-    if ident["version"] != 1:
-        raise ValueError("identificacion.version debe ser 1")
     if ident.get("ambiente") not in {"00", "01"}:
         raise ValueError("ambiente debe ser '00' o '01'")
     if ident.get("tipoMoneda") != "USD":
@@ -2282,6 +2331,10 @@ def validate_dte_json(
         "direccion.complemento": emisor.get("direccion", {}).get("complemento"),
         "telefono": emisor.get("telefono"),
         "correo": emisor.get("correo"),
+        "codEstable": emisor.get("codEstable"),
+        "codEstableMH": emisor.get("codEstableMH"),
+        "codPuntoVenta": emisor.get("codPuntoVenta"),
+        "codPuntoVentaMH": emisor.get("codPuntoVentaMH"),
     }
     missing = [
         key
@@ -2297,24 +2350,29 @@ def validate_dte_json(
     payload["emisor"] = emisor
 
     receptor = payload.get("receptor", {})
-    nit_field = receptor.pop("nit", None)
+    nit_field = receptor.get("nit")
     tipo_doc = receptor.get("tipoDocumento")
-    if tipo_doc is not None:
-        tipo_doc = str(tipo_doc)
-    if nit_field is not None:
-        receptor["numDocumento"] = _clean_nit(nit_field)
-        if tipo_doc is None:
-            tipo_doc = "36"
-    num_doc = receptor.get("numDocumento")
-    if tipo_doc == "36":
-        num_doc = _clean_nit(num_doc)
-        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
-            raise ValueError("NIT inválido en receptor")
-    elif tipo_doc == "13":
-        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-            raise ValueError("DUI inválido en receptor")
-    receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
-    receptor["numDocumento"] = num_doc
+    if tipo_dte != "03":
+        if tipo_doc is not None:
+            tipo_doc = str(tipo_doc)
+        if nit_field is not None:
+            receptor["numDocumento"] = _clean_nit(nit_field)
+            if tipo_doc is None:
+                tipo_doc = "36"
+        num_doc = receptor.get("numDocumento")
+        if tipo_doc == "36":
+            num_doc = _clean_nit(num_doc)
+            if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+                raise ValueError("NIT inválido en receptor")
+        elif tipo_doc == "13":
+            if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+                raise ValueError("DUI inválido en receptor")
+        receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
+        receptor["numDocumento"] = num_doc
+    else:
+        receptor["nit"] = _clean_nit(nit_field)
+        receptor.pop("tipoDocumento", None)
+        receptor.pop("numDocumento", None)
 
     nrc_schema = (
         FC_SCHEMA.get("properties", {})
@@ -2346,6 +2404,21 @@ def validate_dte_json(
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
         raise ValueError("Teléfono de receptor inválido")
+    required_rec_fields = [
+        "nit",
+        "nrc",
+        "nombre",
+        "nombreComercial",
+        "codActividad",
+        "descActividad",
+        "telefono",
+        "correo",
+        "direccion",
+    ]
+    for f in required_rec_fields:
+        receptor.setdefault(f, None)
+    for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        receptor.pop(f, None)
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
@@ -2493,7 +2566,9 @@ def validate_dte_json(
                 for t in tributos
                 if t not in TRIBUTOS_PERMITIDOS_ITEM and t != TRIBUTO_IVA
             ]
-            if cod_tri and cod_tri not in TRIBUTOS_PERMITIDOS_ITEM and cod_tri != TRIBUTO_IVA:
+            if cod_tri and (
+                cod_tri not in TRIBUTOS_PERMITIDOS_ITEM or cod_tri == TRIBUTO_IVA
+            ):
                 invalid.append(cod_tri)
             if invalid:
                 raise ValueError(
@@ -2502,16 +2577,22 @@ def validate_dte_json(
 
             if venta_gravada_val <= 0:
                 item["tributos"] = []
-                item.pop("codTributo", None)
+                item["codTributo"] = None
             elif tributos:
+                if TRIBUTO_IVA not in tributos and venta_gravada_val > 0:
+                    tributos.append(TRIBUTO_IVA)
                 item["tributos"] = tributos
-                if len(tributos) == 1:
+                if (
+                    len(tributos) == 1
+                    and item.get("tipoItem") == 4
+                    and tributos[0] != TRIBUTO_IVA
+                ):
                     item["codTributo"] = tributos[0]
                 else:
-                    item.pop("codTributo", None)
+                    item["codTributo"] = None
             else:
-                item["tributos"] = []
-                item.pop("codTributo", None)
+                item["tributos"] = [TRIBUTO_IVA]
+                item["codTributo"] = None
 
         if iva_key:
             if precios_flag and item.get(iva_key) not in (None, 0, D("0")):
@@ -2592,6 +2673,16 @@ def validate_dte_json(
                 p["periodo"] = ""
             if p.get("plazo") is None:
                 p["plazo"] = ""
+
+    if ident.get("tipoDte") == "03":
+        total_grav = D(str(resumen.get("totalGravada") or 0))
+        iva_val = D(str(resumen.get("totalIva") or 0))
+        resumen.pop("totalIva", None)
+        if total_grav > 0:
+            resumen["tributos"] = [{"codigo": TRIBUTO_IVA, "valor": iva_val}]
+        else:
+            resumen.pop("tributos", None)
+            iva_val = D("0")
 
     # Verificación de centavos exactos en totales clave
     special_d4_fields = {"totalExenta", "totalNoSuj"}

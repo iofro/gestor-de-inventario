@@ -2,23 +2,24 @@
   "apendice": null,
   "cuerpoDocumento": [
     {
-      "numItem": 1,
-      "tipoItem": 1,
-      "numeroDocumento": null,
+
+      "cantidad": "2.5000",
+      "codTributo": null,
       "codigo": "SKU001",
       "descripcion": "Producto de prueba",
-      "cantidad": "2.5000",
-      "uniMedida": 59,
+      "montoDescu": "0.0",
+      "noGravado": "0.0",
+      "numItem": 1,
+      "numeroDocumento": null,
       "precioUni": "9.5400",
-      "montoDescu": "0.0000",
-      "ventaNoSuj": "0.0000",
-      "ventaExenta": "0.0000",
+      "psv": "0.0",
+      "tipoItem": 1,
+      "tributos": ["20"],
+      "uniMedida": 59,
+      "ventaExenta": "0.0",
       "ventaGravada": "23.8500",
-      "psv": "0.0000",
-      "noGravado": "0.0000",
-      "ivaItem": "3.1005",
-      "codTributo": "20",
-      "tributos": ["20"]
+      "ventaNoSuj": "0.0"
+
     }
   ],
   "documentoRelacionado": null,
@@ -107,7 +108,6 @@
     "tributos": [
       {
         "codigo": "20",
-        "descripcion": "Impuesto al Valor Agregado 13%",
         "valor": "3.10"
       }
     ]

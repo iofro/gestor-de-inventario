@@ -733,7 +733,6 @@ RESUMEN_DEFAULTS = {
         "totalDescu": 0,
         "tributos": None,
         "subTotal": 0,
-        "totalIva": 0,
         "ivaPerci1": 0,
         "ivaRete1": 0,
         "reteRenta": 0,
@@ -1045,29 +1044,29 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         )
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
-    resumen.update(
-        {
-            "totalNoSuj": total_no_suj,
-            "totalExenta": total_exenta,
-            "totalGravada": total_gravada,
-            "subTotalVentas": sub_total_ventas,
-            "descuNoSuj": descu_no_suj,
-            "descuExenta": descu_exenta,
-            "descuGravada": descu_gravada,
-            "totalDescu": total_descu,
-            "subTotal": sub_total,
-            "porcentajeDescuento": porcentaje_desc,
-            "totalNoGravado": total_no_gravado,
-            "totalIva": total_iva,
-            "montoTotalOperacion": monto_total_operacion,
-            "totalPagar": total_pagar,
-            "totalLetras": (
-                monto_a_letras_natural(total_pagar)
-                if tipo_dte == "01"
-                else numero_a_letras(total_pagar)
-            ),
-        }
-    )
+    resumen_fields = {
+        "totalNoSuj": total_no_suj,
+        "totalExenta": total_exenta,
+        "totalGravada": total_gravada,
+        "subTotalVentas": sub_total_ventas,
+        "descuNoSuj": descu_no_suj,
+        "descuExenta": descu_exenta,
+        "descuGravada": descu_gravada,
+        "totalDescu": total_descu,
+        "subTotal": sub_total,
+        "porcentajeDescuento": porcentaje_desc,
+        "totalNoGravado": total_no_gravado,
+        "montoTotalOperacion": monto_total_operacion,
+        "totalPagar": total_pagar,
+        "totalLetras": (
+            monto_a_letras_natural(total_pagar)
+            if tipo_dte == "01"
+            else numero_a_letras(total_pagar)
+        ),
+    }
+    if tipo_dte != "03":
+        resumen_fields["totalIva"] = total_iva
+    resumen.update(resumen_fields)
 
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
@@ -1111,7 +1110,10 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     resumen["tributos"] = armar_tributos(tributos_list, tipo_dte)
     if tipo_dte != "01" and total_gravada <= D("0") and not tributos_list:
         resumen.pop("tributos", None)
-        resumen["totalIva"] = money(0)
+        if tipo_dte != "03":
+            resumen["totalIva"] = money(0)
+        else:
+            resumen.pop("totalIva", None)
 
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
@@ -1303,7 +1305,11 @@ def recalcular_totales(
         _set_resumen("porcentajeDescuento", porcentaje_desc)
         _set_resumen("subTotal", money(venta_gravada_sum))
         _set_resumen("totalNoGravado", money(0))
-        _set_resumen("totalIva", total_iva_sum)
+        if tipo_dte != "03":
+            _set_resumen("totalIva", total_iva_sum)
+        elif "totalIva" in resumen:
+            del resumen["totalIva"]
+            modificados.append("totalIva")
         monto_total_operacion = money(money(venta_gravada_sum) + total_iva_sum)
         _set_resumen("montoTotalOperacion", monto_total_operacion)
         _set_resumen("totalPagar", monto_total_operacion)

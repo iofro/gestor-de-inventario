@@ -1711,21 +1711,37 @@ def generar_dte_json(
         receptor["correo"] = "no-reply@example.com"
 
     # Campos obligatorios y limpieza de campos no permitidos
-    required_rec_fields = [
-        "nit",
-        "nrc",
-        "nombre",
-        "nombreComercial",
-        "codActividad",
-        "descActividad",
-        "telefono",
-        "correo",
-        "direccion",
-    ]
+    if tipo_dte == "01":
+        required_rec_fields = [
+            "nrc",
+            "nombre",
+            "codActividad",
+            "descActividad",
+            "telefono",
+            "correo",
+            "direccion",
+            "tipoDocumento",
+            "numDocumento",
+        ]
+        for f in ("nit", "nombreComercial"):
+            receptor.pop(f, None)
+    else:
+        required_rec_fields = [
+            "nit",
+            "nrc",
+            "nombre",
+            "nombreComercial",
+            "codActividad",
+            "descActividad",
+            "telefono",
+            "correo",
+            "direccion",
+        ]
+        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+            receptor.pop(f, None)
+
     for f in required_rec_fields:
         receptor.setdefault(f, None)
-    for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
-        receptor.pop(f, None)
 
     cuerpo = []
     items_total = D("0")

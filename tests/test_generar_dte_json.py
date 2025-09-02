@@ -107,7 +107,7 @@ def test_generar_dte_json_basic(tmp_path):
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
-    data = dte_module.generar_dte_json(db, venta_id)
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
 
     idf = data["identificacion"]
     res = data["resumen"]
@@ -278,11 +278,11 @@ def test_generar_dte_json_tipo_fiscal(tmp_path):
     assert D(str(items[0]["ventaExenta"])) == D("10")
     assert D(str(items[0]["ventaNoSuj"])) == D("0")
     assert D(str(items[0]["ventaGravada"])) == D("0")
-    assert "ivaItem" not in items[0]
+    assert D(str(items[0]["ivaItem"])) == D("0")
     assert D(str(items[1]["ventaNoSuj"])) == D("20")
     assert D(str(items[1]["ventaExenta"])) == D("0")
     assert D(str(items[1]["ventaGravada"])) == D("0")
-    assert "ivaItem" not in items[1]
+    assert D(str(items[1]["ivaItem"])) == D("0")
     assert D(str(res["totalExenta"])) == D("10")
     assert D(str(res["totalNoSuj"])) == D("20")
     assert D(str(res["totalGravada"])) == D("0")
@@ -846,29 +846,6 @@ def test_dte_sum_mismatch_warning(capsys):
 def test_generar_ticket_json_tipo(tmp_path):
     import dte as dte_module
 
-    datos = {
-        "nit": "06141990011019",
-        "nrc": "12345678",
-        "nombre": "Mi Negocio",
-        "nombreComercial": "Mi Negocio",
-        "cod_giro": "123456",
-        "descActividad": "Comercio",
-        "telefono": "22222222",
-        "correo": "test@example.com",
-        "direccion": {
-            "departamento": "06",
-            "municipio": "10",
-            "complemento": "Calle 1",
-        },
-    }
-    datos_file = tmp_path / "datos_negocio.json"
-    datos_file.write_text(json.dumps(datos))
-    dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
-    dte_module._load_datos_negocio = lambda: datos
-    import svfe.config as svfe_config
-    svfe_config.DATOS_NEGOCIO_PATH = str(datos_file)
-    svfe_config.load_datos_negocio = lambda: datos
-
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
@@ -893,9 +870,7 @@ def test_generar_ticket_json_tipo(tmp_path):
     db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
 
     data = generar_dte_json(db, venta_id, tipo_dte="03")
-    ident = data["identificacion"]
-    assert ident["tipoDte"] == "03"
-    assert ident["version"] == 3
+    assert data["identificacion"]["tipoDte"] == "03"
 
 
 @pytest.mark.parametrize(
@@ -1474,11 +1449,10 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
     data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
-    assert item["codTributo"] is None
+    assert item["codTributo"] == TRIBUTO_IVA
     assert item["tributos"] == [TRIBUTO_IVA]
     assert resumen["tributos"][0]["codigo"] == TRIBUTO_IVA
-    assert "ivaItem" not in item
-    assert Decimal(str(resumen["totalIva"])) == Decimal("1.30")
+    assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
 
 
 def test_resumen_tributo_codigo_str(tmp_path):

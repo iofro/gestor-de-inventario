@@ -273,7 +273,10 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         precio = Decimal("9.54")
         venta = d2(cantidad * precio)
         iva = d2(venta * Decimal("0.13"))
-        total = d2(venta + iva)
+        if tipo == "ccf":
+            total = d2(venta)
+        else:
+            total = d2(venta + iva)
     data = {
         "totalNoSuj": d2(Decimal("0")),
         "totalExenta": d2(Decimal("0")),
@@ -290,7 +293,13 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         "montoTotalOperacion": d2(total),
         "totalNoGravado": d2(Decimal("0")),
         "totalPagar": d2(total),
-        "totalLetras": "Veintiseis Dolares con noventa y cinco centavos" if tipo == "fc" else "VEINTISEIS CON 95/100 USD",
+        "totalLetras": (
+            "Veintiseis Dolares con noventa y cinco centavos"
+            if tipo == "fc"
+            else (
+                "VEINTITRÉS CON 85/100 USD" if tipo == "ccf" else "VEINTISEIS CON 95/100 USD"
+            )
+        ),
         "saldoFavor": d2(Decimal("0")),
         "condicionOperacion": 1,
         "pagos": [
@@ -308,6 +317,7 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         data["totalIva"] = iva
         data["tributos"] = None
     else:
+        data["totalIva"] = iva
         data["ivaPerci1"] = d2(Decimal("0"))
         if venta > D("0"):
             data["tributos"] = [

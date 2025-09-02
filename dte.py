@@ -1231,6 +1231,7 @@ def recalcular_totales(
     descu_sum = D("0")
     bases: list[D] = []
     ivas: list[D] = []
+    cantidades: list[D] = []
 
     for idx, item in enumerate(cuerpo):
         cant = D(str(item.get("cantidad") or 0))
@@ -1268,39 +1269,25 @@ def recalcular_totales(
             iva_total += esperado_iva
             venta_gravada_sum += linea
         else:
-            linea = money(cant * precio - monto_descu)
-            if linea < 0:
-                linea = money(0)
-            bruto_sum += linea
+            bruto = money(cant * precio - monto_descu)
+            if bruto < 0:
+                bruto = money(0)
+            bruto_sum += bruto
             descu_sum += money(monto_descu)
             if precios_flag:
-                base = money(linea / D("1.13"))
-                iva_val = money(linea - base)
-                base = money(linea - iva_val)
+                base = money(bruto / D("1.13"))
+                iva_val = money(bruto - base)
+                base = money(bruto - iva_val)
             else:
-                base = linea
+                base = bruto
                 iva_val = money(base * D("0.13"))
-            base4 = d4(base)
-            bases.append(base4)
+            bases.append(base)
             ivas.append(iva_val)
-            trib_list: list[str] = []
-            tipo_item = int(item.get("tipoItem", 1))
-            if base > 0:
-                trib_list.append(TRIBUTO_IVA)
-            if tipo_item == 4:
-                if str(item.get("codTributo")) == TRIBUTO_IVA:
-                    item["codTributo"] = None
-                item["uniMedida"] = item.get("uniMedida") or 99
-            else:
-                item["codTributo"] = None
-            item["tributos"] = trib_list or None
-            item["ventaGravada"] = base4
+            cantidades.append(cant)
             item.pop("ivaItem", None)
             item["ventaExenta"] = money(0)
             item["ventaNoSuj"] = money(0)
             item["noGravado"] = money(0)
-            if "montoIva" in item:
-                item["montoIva"] = iva_val
     if tipo_dte != "01":
         if bases:
             bruto_total = bruto_sum
@@ -1314,9 +1301,27 @@ def recalcular_totales(
                 ivas[0] = money(ivas[0] + iva_res)
             for idx, item in enumerate(cuerpo):
                 if idx < len(bases):
-                    item["ventaGravada"] = bases[idx]
+                    base_val = bases[idx]
+                    cant = cantidades[idx]
+                    iva_val = ivas[idx]
+                    item["ventaGravada"] = base_val
+                    if cant > 0:
+                        item["precioUni"] = money(base_val / cant)
+                    else:
+                        item["precioUni"] = money(0)
+                    trib_list: list[str] = []
+                    tipo_item = int(item.get("tipoItem", 1))
+                    if base_val > 0:
+                        trib_list.append(TRIBUTO_IVA)
+                    if tipo_item == 4:
+                        if str(item.get("codTributo")) == TRIBUTO_IVA:
+                            item["codTributo"] = None
+                        item["uniMedida"] = item.get("uniMedida") or 99
+                    else:
+                        item["codTributo"] = None
+                    item["tributos"] = trib_list or None
                     if "montoIva" in item:
-                        item["montoIva"] = ivas[idx]
+                        item["montoIva"] = iva_val
             venta_gravada_sum = sum(bases)
             iva_total = sum(ivas)
         else:
@@ -1435,6 +1440,27 @@ def recalcular_totales(
             first = resumen["pagos"][0]
             first_val = D(str(first.get("montoPago") or 0))
             first["montoPago"] = money(first_val + delta)
+
+    if tipo_dte == "03":
+        for item in cuerpo:
+            cant = D(str(item.get("cantidad") or 0))
+            precio_u = D(str(item.get("precioUni") or 0))
+            descuento = D(str(item.get("montoDescu") or 0))
+            esperado = money(precio_u * cant - descuento)
+            if esperado != money(item.get("ventaGravada", 0)):
+                raise ValueError(
+                    "precioUni * cantidad - montoDescu incoherente con ventaGravada"
+                )
+        sub_total = money(resumen.get("totalGravada", 0))
+        suma_trib = money(
+            sum(D(str(t.get("valor") or 0)) for t in resumen.get("tributos") or [])
+        )
+        if money(sub_total + suma_trib) != money(
+            resumen.get("montoTotalOperacion", 0)
+        ):
+            raise ValueError(
+                "subTotal + tributos.valor incoherente con montoTotalOperacion"
+            )
 
     data["resumen"] = resumen
     return modificados
@@ -2743,22 +2769,6 @@ def validate_dte_json(
                 p["periodo"] = ""
             if p.get("plazo") is None:
                 p["plazo"] = ""
-
-    if ident.get("tipoDte") == "03":
-        total_grav = D(str(resumen.get("totalGravada") or 0))
-        iva_val = D(str(resumen.get("totalIva") or 0))
-        resumen.pop("totalIva", None)
-        if total_grav > 0:
-            resumen["tributos"] = [
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
-                    "valor": money(iva_val),
-                }
-            ]
-        else:
-            resumen.pop("tributos", None)
-            iva_val = D("0")
 
     # Verificación de centavos exactos en totales clave
     special_d4_fields = {"totalExenta", "totalNoSuj"}

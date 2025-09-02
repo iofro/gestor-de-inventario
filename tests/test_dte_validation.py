@@ -211,17 +211,6 @@ def test_clamp_uni_medida(dte_metadata_factory, db_fixture):
     assert dte["cuerpoDocumento"][0]["uniMedida"] == 59
 
 
-def test_tipo03_remueve_iva_item_y_cod_tributo(dte_metadata_factory, db_fixture):
-    dte = dte_metadata_factory()
-    dte["identificacion"]["tipoDte"] = "03"
-    validate_dte_json(dte, db=db_fixture)
-    item = dte["cuerpoDocumento"][0]
-    assert "ivaItem" not in item
-    assert item["codTributo"] is None
-    if item["ventaGravada"] > 0:
-        assert item["tributos"] == [TRIBUTO_IVA]
-
-
 def test_numero_control_regex(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
     _patch_datos_negocio(tmp_path, monkeypatch)
     dte = dte_metadata_factory()

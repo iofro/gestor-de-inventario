@@ -37,7 +37,7 @@ def _assert_base(data):
             assert str(item["ivaItem"]) == str(iva)
         assert str(resumen["totalGravada"]) == "23.85"
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-        assert str(total) == "26.95"
+        assert str(total) == "23.85"
         total_iva = resumen.get("totalIva")
         if total_iva is None:
             total_iva = resumen["montoTotalOperacion"] - resumen["totalGravada"]

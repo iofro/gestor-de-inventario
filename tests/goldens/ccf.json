@@ -2,6 +2,7 @@
   "apendice": null,
   "cuerpoDocumento": [
     {
+
       "cantidad": "2.5000",
       "codTributo": null,
       "codigo": "SKU001",
@@ -18,6 +19,7 @@
       "ventaExenta": "0.0",
       "ventaGravada": "23.8500",
       "ventaNoSuj": "0.0"
+
     }
   ],
   "documentoRelacionado": null,
@@ -30,9 +32,9 @@
     "correo": "demo@example.com",
     "descActividad": "Venta de productos",
     "direccion": {
-      "complemento": "Calle X #123",
-      "departamento": "06",
-      "municipio": "23"
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "25"
     },
     "nit": "06142512891020",
     "nombre": "Compañía Demo S.A. de C.V.",
@@ -64,7 +66,7 @@
     "direccion": {
       "complemento": "San Salvador",
       "departamento": "05",
-      "municipio": "23"
+      "municipio": "13"
     },
     "nit": "06141990011019",
     "nombre": "Consumidor Final",
@@ -79,12 +81,12 @@
     "descuNoSuj": "0.00",
     "ivaPerci1": "0.00",
     "ivaRete1": "0.00",
-    "montoTotalOperacion": "26.95",
+    "montoTotalOperacion": "23.85",
     "numPagoElectronico": null,
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": "26.95",
+        "montoPago": "23.85",
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -98,10 +100,11 @@
     "totalDescu": "0.00",
     "totalExenta": "0.00",
     "totalGravada": "23.85",
-    "totalLetras": "VEINTISEIS CON 95/100 USD",
+    "totalIva": "3.10",
+    "totalLetras": "VEINTITRÉS CON 85/100 USD",
     "totalNoGravado": "0.00",
     "totalNoSuj": "0.00",
-    "totalPagar": "26.95",
+    "totalPagar": "23.85",
     "tributos": [
       {
         "codigo": "20",

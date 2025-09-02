@@ -987,7 +987,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     fiscal = fiscal or {}
     extra = extra or {}
-    if tipo_dte == "01":
+    if tipo_dte in {"01", "03"}:
         precios_incluyen_iva = True
         extra["precios_incluyen_iva"] = True
     else:
@@ -1031,7 +1031,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
         sub_total = money(sub_total_ventas - total_descu)
         monto_total_operacion = money(
-            sub_total + total_no_gravado + (D("0") if tipo_dte == "03" else total_iva)
+            sub_total + total_no_gravado + total_iva
         )
         total_pagar = money(monto_total_operacion)
         base_desc = sub_total_ventas + total_descu
@@ -1048,7 +1048,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
         sub_total = money(sub_total_ventas - total_descu)
         monto_total_operacion = money(
-            sub_total + total_no_gravado + (D("0") if tipo_dte == "03" else total_iva)
+            sub_total + total_no_gravado + total_iva
         )
         total_pagar = money(monto_total_operacion)
         base_desc = sub_total_ventas + total_descu
@@ -1792,7 +1792,7 @@ def generar_dte_json(
     override_precio_flag = kwargs.get("precios_incluyen_iva")
     precios_incluyen_iva = _precios_incluyen_iva_from(extra, override_precio_flag)
     if (
-        tipo_dte == "01"
+        tipo_dte in {"01", "03"}
         and "precios_incluyen_iva" not in extra
         and override_precio_flag is None
     ):
@@ -2257,6 +2257,10 @@ def validate_dte_json(
     ident["tipoDte"] = tipo_dte_val
     if tipo_dte_val not in catalogos.DTE_TIPOS:
         raise ValueError("tipoDte inválido")
+    if tipo_dte_val in {"01", "03"}:
+        precios_flag = True
+        extra_conf["precios_incluyen_iva"] = True
+        payload["extra"] = extra_conf
 
     # Normalización de operación y contingencia
     try:

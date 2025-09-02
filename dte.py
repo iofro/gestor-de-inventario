@@ -1228,10 +1228,14 @@ def recalcular_totales(
     iva_total = D("0")
     venta_gravada_sum = D("0")
     bruto_sum = D("0")
+    bruto_linea_sum = D("0")
     descu_sum = D("0")
     bases: list[D] = []
+    bases_pre: list[D] = []
     ivas: list[D] = []
     cantidades: list[D] = []
+    sub_total_ventas = D("0")
+    descu_gravada_sum = D("0")
 
     for idx, item in enumerate(cuerpo):
         cant = D(str(item.get("cantidad") or 0))
@@ -1269,18 +1273,23 @@ def recalcular_totales(
             iva_total += esperado_iva
             venta_gravada_sum += linea
         else:
-            bruto = money(cant * precio - monto_descu)
+            bruto_linea = money(cant * precio)
+            bruto_linea_sum += bruto_linea
+            bruto = money(bruto_linea - monto_descu)
             if bruto < 0:
                 bruto = money(0)
             bruto_sum += bruto
             descu_sum += money(monto_descu)
             if precios_flag:
+                base_pre = money(bruto_linea / D("1.13"))
                 base = money(bruto / D("1.13"))
                 iva_val = money(bruto - base)
                 base = money(bruto - iva_val)
+                bases_pre.append(base_pre)
             else:
-                base = bruto
+                base_pre = base = bruto
                 iva_val = money(base * D("0.13"))
+                bases_pre.append(base_pre)
             bases.append(base)
             ivas.append(iva_val)
             cantidades.append(cant)
@@ -1328,6 +1337,16 @@ def recalcular_totales(
             venta_gravada_sum = D("0")
             iva_total = D("0")
 
+    if tipo_dte != "01":
+        if precios_flag:
+            sub_total_ventas = money(sum(bases_pre))
+            descu_gravada_sum = money(
+                sum(bp - b for bp, b in zip(bases_pre, bases))
+            )
+        else:
+            sub_total_ventas = money(venta_gravada_sum)
+            descu_gravada_sum = money(0)
+
     venta_gravada_sum = venta_gravada_sum
     total_iva_sum = money(iva_total)
 
@@ -1361,25 +1380,41 @@ def recalcular_totales(
         _set_resumen("totalNoSuj", d4(0))
         _set_resumen("totalExenta", d4(0))
         _set_resumen("totalGravada", d4(venta_gravada_sum))
-        _set_resumen("subTotalVentas", money(venta_gravada_sum))
-        _set_resumen("descuNoSuj", money(0))
-        _set_resumen("descuExenta", money(0))
-        _set_resumen("descuGravada", money(0))
-        _set_resumen("totalDescu", money(0))
-        base = venta_gravada_sum + descu_sum
-        porcentaje_desc = money(
-            (descu_sum * D("100") / base) if base else D("0")
-        )
-        _set_resumen("porcentajeDescuento", porcentaje_desc)
-        _set_resumen("subTotal", money(venta_gravada_sum))
-        _set_resumen("totalNoGravado", money(0))
-        _set_resumen("totalIva", total_iva_sum)
-        monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
-
-        _set_resumen("montoTotalOperacion", monto_total_operacion)
-        _set_resumen("totalPagar", monto_total_operacion)
         if tipo_dte == "03":
+            _set_resumen("subTotalVentas", sub_total_ventas)
+            _set_resumen("descuNoSuj", money(0))
+            _set_resumen("descuExenta", money(0))
+            _set_resumen("descuGravada", descu_gravada_sum)
+            _set_resumen("totalDescu", money(descu_sum))
+            base_pct = bruto_linea_sum
+            porcentaje_desc = money(
+                (descu_sum * D("100") / base_pct) if base_pct else D("0")
+            )
+            _set_resumen("porcentajeDescuento", porcentaje_desc)
+            _set_resumen("subTotal", money(venta_gravada_sum))
+            _set_resumen("totalNoGravado", money(0))
+            _set_resumen("totalIva", total_iva_sum)
+            monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
+            _set_resumen("montoTotalOperacion", monto_total_operacion)
+            _set_resumen("totalPagar", monto_total_operacion)
             resumen.pop("totalIva", None)
+        else:
+            _set_resumen("subTotalVentas", money(venta_gravada_sum))
+            _set_resumen("descuNoSuj", money(0))
+            _set_resumen("descuExenta", money(0))
+            _set_resumen("descuGravada", money(0))
+            _set_resumen("totalDescu", money(0))
+            base = venta_gravada_sum + descu_sum
+            porcentaje_desc = money(
+                (descu_sum * D("100") / base) if base else D("0")
+            )
+            _set_resumen("porcentajeDescuento", porcentaje_desc)
+            _set_resumen("subTotal", money(venta_gravada_sum))
+            _set_resumen("totalNoGravado", money(0))
+            _set_resumen("totalIva", total_iva_sum)
+            monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
+            _set_resumen("montoTotalOperacion", monto_total_operacion)
+            _set_resumen("totalPagar", monto_total_operacion)
     trib_raw = resumen.get("tributos")
     if tipo_dte == "01":
         suma: dict[str, D] = {}
@@ -1445,11 +1480,10 @@ def recalcular_totales(
         for item in cuerpo:
             cant = D(str(item.get("cantidad") or 0))
             precio_u = D(str(item.get("precioUni") or 0))
-            descuento = D(str(item.get("montoDescu") or 0))
-            esperado = money(precio_u * cant - descuento)
+            esperado = money(precio_u * cant)
             if esperado != money(item.get("ventaGravada", 0)):
                 warnings.warn(
-                    "precioUni * cantidad - montoDescu incoherente con ventaGravada"
+                    "precioUni * cantidad incoherente con ventaGravada"
                 )
                 item["ventaGravada"] = esperado
         sub_total = money(resumen.get("totalGravada", 0))

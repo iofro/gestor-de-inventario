@@ -8,7 +8,7 @@ from typing import Any, Dict, List
 from uuid import uuid4
 from db import DB
 from zoneinfo import ZoneInfo
-from utils.catalogos import TRIBUTO_IVA
+from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 
 from .config import get_emisor_direccion
 
@@ -320,7 +320,13 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         data["totalIva"] = iva
         data["ivaPerci1"] = d2(Decimal("0"))
         if venta > D("0"):
-            data["tributos"] = [{"codigo": TRIBUTO_IVA, "valor": iva}]
+            data["tributos"] = [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": iva,
+                }
+            ]
         else:
             data["tributos"] = None
     return data

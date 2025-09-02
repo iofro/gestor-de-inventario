@@ -278,15 +278,15 @@ def test_generar_dte_json_tipo_fiscal(tmp_path):
     assert D(str(items[0]["ventaExenta"])) == D("10")
     assert D(str(items[0]["ventaNoSuj"])) == D("0")
     assert D(str(items[0]["ventaGravada"])) == D("0")
-    assert D(str(items[0]["ivaItem"])) == D("0")
     assert D(str(items[1]["ventaNoSuj"])) == D("20")
     assert D(str(items[1]["ventaExenta"])) == D("0")
     assert D(str(items[1]["ventaGravada"])) == D("0")
-    assert D(str(items[1]["ivaItem"])) == D("0")
     assert D(str(res["totalExenta"])) == D("10")
     assert D(str(res["totalNoSuj"])) == D("20")
     assert D(str(res["totalGravada"])) == D("0")
-    assert D(str(res["totalIva"])) == D("0")
+    assert "ivaItem" not in items[0]
+    assert "ivaItem" not in items[1]
+    assert "totalIva" not in res
 
 def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
     import dte as dte_module
@@ -1376,7 +1376,6 @@ def test_item_no_tributo_when_exento(tmp_path):
 def test_credito_fiscal_incluye_tributo(tmp_path):
     import dte as dte_module
     from utils.catalogos import TRIBUTO_IVA
-    from decimal import Decimal as D
 
     datos = {
         "nit": "06141990011019",
@@ -1449,10 +1448,27 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
     data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
-    assert item["codTributo"] == TRIBUTO_IVA
+    receptor = data["receptor"]
+    assert item.get("codTributo") is None
     assert item["tributos"] == [TRIBUTO_IVA]
-    assert resumen["tributos"][0]["codigo"] == TRIBUTO_IVA
-    assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
+    assert resumen["tributos"] == [{"codigo": TRIBUTO_IVA, "valor": Decimal("1.30")}]
+    assert "descripcion" not in resumen["tributos"][0]
+    for f in (
+        "nit",
+        "nrc",
+        "nombre",
+        "nombreComercial",
+        "codActividad",
+        "descActividad",
+        "telefono",
+        "correo",
+        "direccion",
+    ):
+        assert f in receptor
+    for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        assert f not in receptor
 
 
 def test_resumen_tributo_codigo_str(tmp_path):

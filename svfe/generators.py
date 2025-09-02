@@ -252,13 +252,13 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "ventaGravada": venta,
         "psv": d4(Decimal("0")),
         "noGravado": d4(Decimal("0")),
-        "ivaItem": iva_item,
     }
     if tipo == "fc":
+        item["ivaItem"] = iva_item
         item["tributos"] = None
     else:
-        item["codTributo"] = TRIBUTO_IVA
-        item["tributos"] = [TRIBUTO_IVA]
+        item["codTributo"] = None
+        item["tributos"] = [TRIBUTO_IVA] if venta > D("0") else []
     return [item]
 
 
@@ -310,13 +310,7 @@ def _resumen(tipo: str) -> Dict[str, Any]:
     else:
         data["ivaPerci1"] = d2(Decimal("0"))
         if venta > D("0"):
-            data["tributos"] = [
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": "Impuesto al Valor Agregado 13%",
-                    "valor": iva,
-                }
-            ]
+            data["tributos"] = [{"codigo": TRIBUTO_IVA, "valor": iva}]
         else:
             data["tributos"] = None
     return data

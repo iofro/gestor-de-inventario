@@ -1543,8 +1543,9 @@ def generar_dte_json(
         raise ValueError("tipoOperacion debe ser 1 o 2")
 
     tipo_dte = str(tipo_dte or "01").zfill(2)
+    version = 3 if tipo_dte == "03" else 1
     identificacion = {
-        "version": 1,
+        "version": version,
         "ambiente": ambiente,
         "tipoDte": tipo_dte,
         "numeroControl": numero_control,
@@ -2174,7 +2175,7 @@ def validate_dte_json(
     else:
         raise ValueError("tipoOperacion debe ser 1 o 2")
 
-    ident["version"] = int(ident.get("version", 1))
+    ident["version"] = int(ident.get("version", 3 if tipo_dte_val == "03" else 1))
     ident.setdefault("codigoGeneracion", str(uuid.uuid4()).upper())
     try:
         ident["codigoGeneracion"] = normalize_uuid_v4_upper(ident["codigoGeneracion"])
@@ -2184,8 +2185,12 @@ def validate_dte_json(
         raise ValueError("codigoGeneracion debe ser un UUID v4 válido")
     ident["tipoMoneda"] = "USD"
     # Validaciones de campos de identificacion
-    if ident["version"] != 1:
-        raise ValueError("identificacion.version debe ser 1")
+    if tipo_dte_val == "03":
+        if ident["version"] != 3:
+            raise ValueError("identificacion.version debe ser 3 para tipoDte '03'")
+    else:
+        if ident["version"] != 1:
+            raise ValueError("identificacion.version debe ser 1")
     if ident.get("ambiente") not in {"00", "01"}:
         raise ValueError("ambiente debe ser '00' o '01'")
     if ident.get("tipoMoneda") != "USD":

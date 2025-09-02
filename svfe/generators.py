@@ -230,10 +230,17 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         precio = Decimal("10.78")  # precio con IVA incluido
         venta = d4(cantidad * precio)
         iva_item = d2(venta - (venta / Decimal("1.13")))
+        base = venta
+    elif tipo == "ccf":
+        precio = Decimal("10.78")
+        base_unit = d2(precio / Decimal("1.13"))
+        base = d4(base_unit * cantidad)
+        venta = d4(cantidad * precio)
     else:
         precio = Decimal("9.54")
         venta = d4(cantidad * precio)
         iva_item = d4(venta * Decimal("0.13"))
+        base = venta
     numero_documento = None
     tipo_item = 4 if tipo == "fc" else 1
     uni_medida = 99 if tipo == "fc" else 59
@@ -249,13 +256,16 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "montoDescu": d4(Decimal("0")),
         "ventaNoSuj": d4(Decimal("0")),
         "ventaExenta": d4(Decimal("0")),
-        "ventaGravada": venta,
+        "ventaGravada": base,
         "psv": d4(Decimal("0")),
         "noGravado": d4(Decimal("0")),
     }
     if tipo == "fc":
         item["ivaItem"] = iva_item
         item["tributos"] = None
+    elif tipo == "ccf":
+        item["codTributo"] = None
+        item["tributos"] = [TRIBUTO_IVA] if base > D("0") else []
     else:
         item["codTributo"] = None
         item["tributos"] = [TRIBUTO_IVA] if venta > D("0") else []
@@ -266,17 +276,21 @@ def _resumen(tipo: str) -> Dict[str, Any]:
     cantidad = Decimal("2.5")
     if tipo == "fc":
         precio = Decimal("10.78")
-        venta = d2(cantidad * precio)
-        iva = d2(venta - (venta / Decimal("1.13")))
-        total = venta
+        bruto = d2(cantidad * precio)
+        iva = d2(bruto - (bruto / Decimal("1.13")))
+        venta = bruto
+        total = bruto
+    elif tipo == "ccf":
+        precio = Decimal("10.78")
+        bruto = d2(cantidad * precio)
+        venta = d2(bruto / Decimal("1.13"))
+        iva = d2(bruto - venta)
+        total = bruto
     else:
         precio = Decimal("9.54")
         venta = d2(cantidad * precio)
         iva = d2(venta * Decimal("0.13"))
-        if tipo == "ccf":
-            total = d2(venta)
-        else:
-            total = d2(venta + iva)
+        total = d2(venta + iva)
     data = {
         "totalNoSuj": d2(Decimal("0")),
         "totalExenta": d2(Decimal("0")),
@@ -297,7 +311,7 @@ def _resumen(tipo: str) -> Dict[str, Any]:
             "Veintiseis Dolares con noventa y cinco centavos"
             if tipo == "fc"
             else (
-                "VEINTITRÉS CON 85/100 USD" if tipo == "ccf" else "VEINTISEIS CON 95/100 USD"
+                "VEINTISÉIS CON 95/100 USD" if tipo == "ccf" else "VEINTISEIS CON 95/100 USD"
             )
         ),
         "saldoFavor": d2(Decimal("0")),
@@ -316,6 +330,17 @@ def _resumen(tipo: str) -> Dict[str, Any]:
     if tipo == "fc":
         data["totalIva"] = iva
         data["tributos"] = None
+    elif tipo == "ccf":
+        if venta > D("0"):
+            data["tributos"] = [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": iva,
+                }
+            ]
+        else:
+            data["tributos"] = None
     else:
         data["totalIva"] = iva
         data["ivaPerci1"] = d2(Decimal("0"))

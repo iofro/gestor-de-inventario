@@ -1120,7 +1120,15 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     tributos_list = [{"codigo": c, "valor": v} for c, v in suma_por_codigo.items()]
     if tipo_dte == "03":
         resumen["tributos"] = (
-            [{"codigo": TRIBUTO_IVA, "valor": total_iva}] if total_gravada > D("0") else None
+            [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": money(total_iva),
+                }
+            ]
+            if total_gravada > D("0")
+            else None
         )
     else:
         if tipo_dte != "01" and total_gravada > D("0"):
@@ -1348,7 +1356,13 @@ def recalcular_totales(
     else:
         if tipo_dte == "03":
             trib = (
-                [{"codigo": TRIBUTO_IVA, "valor": total_iva_sum}]
+                [
+                    {
+                        "codigo": TRIBUTO_IVA,
+                        "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
+                        "valor": money(total_iva_sum),
+                    }
+                ]
                 if venta_gravada_sum > D("0")
                 else None
             )
@@ -1636,11 +1650,11 @@ def generar_dte_json(
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
     num_doc = rec.get("numDocumento")
-    nit = rec.get("nit")
+    nit = _clean_nit(rec.get("nit"))
     if fiscal:
         tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
         num_doc = fiscal.get("numDocumento") or num_doc
-        nit = fiscal.get("nit") or nit
+        nit = _clean_nit(fiscal.get("nit") or nit)
     if nit and not num_doc:
         num_doc = nit
     if nit and not tipo_doc:
@@ -2679,7 +2693,13 @@ def validate_dte_json(
         iva_val = D(str(resumen.get("totalIva") or 0))
         resumen.pop("totalIva", None)
         if total_grav > 0:
-            resumen["tributos"] = [{"codigo": TRIBUTO_IVA, "valor": iva_val}]
+            resumen["tributos"] = [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": money(iva_val),
+                }
+            ]
         else:
             resumen.pop("tributos", None)
             iva_val = D("0")

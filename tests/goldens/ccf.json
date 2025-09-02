@@ -11,7 +11,7 @@
       "noGravado": "0.0",
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": "9.5400",
+      "precioUni": "10.7800",
       "psv": "0.0",
       "tipoItem": 1,
       "tributos": ["20"],
@@ -81,12 +81,12 @@
     "descuNoSuj": "0.00",
     "ivaPerci1": "0.00",
     "ivaRete1": "0.00",
-    "montoTotalOperacion": "23.85",
+    "montoTotalOperacion": "26.95",
     "numPagoElectronico": null,
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": "23.85",
+        "montoPago": "26.95",
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -100,14 +100,14 @@
     "totalDescu": "0.00",
     "totalExenta": "0.00",
     "totalGravada": "23.85",
-    "totalIva": "3.10",
-    "totalLetras": "VEINTITRÉS CON 85/100 USD",
+    "totalLetras": "VEINTISÉIS CON 95/100 USD",
     "totalNoGravado": "0.00",
     "totalNoSuj": "0.00",
-    "totalPagar": "23.85",
+    "totalPagar": "26.95",
     "tributos": [
       {
         "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
         "valor": "3.10"
       }
     ]

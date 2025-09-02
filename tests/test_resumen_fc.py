@@ -19,6 +19,15 @@ def test_resumen_formulas_fc():
     assert D(str(resumen['totalIva'])) == D('1.50')
 
 
+def test_resumen_credito_fiscal_no_suma_iva():
+    items_total = D('15.00')
+    fiscal = {'iva': D('1.95'), 'sumas': D('15.00')}
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='03')
+    assert D(str(resumen['subTotal'])) == D('15.00')
+    assert D(str(resumen['totalIva'])) == D('1.95')
+    assert D(str(resumen['totalPagar'])) == D('15.00')
+
+
 def test_resumen_sin_gravada_sin_tributos():
     items_total = D('0')
     fiscal = {'sumas': D('0'), 'ventas_exentas': D('5'), 'iva': D('0')}

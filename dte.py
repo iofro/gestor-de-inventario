@@ -1022,7 +1022,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         )
         sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
         sub_total = money(sub_total_ventas - total_descu)
-        monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
+        monto_total_operacion = money(
+            sub_total + total_no_gravado + (D("0") if tipo_dte == "03" else total_iva)
+        )
         total_pagar = money(monto_total_operacion)
         base_desc = sub_total_ventas + total_descu
         porcentaje_desc = money(
@@ -1037,7 +1039,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         total_iva = money(fiscal.get("iva", 0)) if total_gravada > D("0") else money(0)
         sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
         sub_total = money(sub_total_ventas - total_descu)
-        monto_total_operacion = money(sub_total + total_no_gravado + total_iva)
+        monto_total_operacion = money(
+            sub_total + total_no_gravado + (D("0") if tipo_dte == "03" else total_iva)
+        )
         total_pagar = money(monto_total_operacion)
         base_desc = sub_total_ventas + total_descu
         porcentaje_desc = money(
@@ -1304,7 +1308,10 @@ def recalcular_totales(
         _set_resumen("subTotal", money(venta_gravada_sum))
         _set_resumen("totalNoGravado", money(0))
         _set_resumen("totalIva", total_iva_sum)
-        monto_total_operacion = money(money(venta_gravada_sum) + total_iva_sum)
+        if tipo_dte == "03":
+            monto_total_operacion = money(money(venta_gravada_sum))
+        else:
+            monto_total_operacion = money(money(venta_gravada_sum) + total_iva_sum)
         _set_resumen("montoTotalOperacion", monto_total_operacion)
         _set_resumen("totalPagar", monto_total_operacion)
     trib_raw = resumen.get("tributos")

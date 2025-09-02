@@ -1242,14 +1242,19 @@ def recalcular_totales(
             else:
                 base = linea
                 iva_val = money(base * D("0.13"))
-            if base > 0:
-                item["codTributo"] = TRIBUTO_IVA
-                item["tributos"] = [TRIBUTO_IVA]
-            else:
+            if tipo_dte == "03":
                 item["codTributo"] = None
-                item["tributos"] = []
+                item["tributos"] = [TRIBUTO_IVA] if base > 0 else []
+                item.pop("ivaItem", None)
+            else:
+                if base > 0:
+                    item["codTributo"] = TRIBUTO_IVA
+                    item["tributos"] = [TRIBUTO_IVA]
+                else:
+                    item["codTributo"] = None
+                    item["tributos"] = []
+                item["ivaItem"] = iva_val
             item["ventaGravada"] = base
-            item["ivaItem"] = iva_val
             item["ventaExenta"] = money(0)
             item["ventaNoSuj"] = money(0)
             item["noGravado"] = money(0)
@@ -1845,7 +1850,11 @@ def generar_dte_json(
         }
         if trib_code:
             item_data["codTributo"] = trib_code
-        if tipo_dte == "01":
+        if tipo_dte == "03":
+            item_data.pop("ivaItem", None)
+            item_data["codTributo"] = None
+            item_data["tributos"] = [TRIBUTO_IVA] if D(str(item_data.get("ventaGravada") or 0)) > 0 else []
+        elif tipo_dte == "01":
             item_data["codTributo"] = None
             item_data["tributos"] = None
         else:
@@ -2373,6 +2382,8 @@ def validate_dte_json(
         }
     precio_key = "precioUni"
     iva_key = "ivaItem" if "ivaItem" in allowed_item_keys else None
+    if tipo_dte == "03":
+        iva_key = None
 
     for item in cuerpo:
         # --- Normalización de nombres ---
@@ -2431,6 +2442,8 @@ def validate_dte_json(
             item.setdefault("tributos", [])
         if iva_key:
             item.setdefault(iva_key, cero)
+        if tipo_dte == "03":
+            item.pop("ivaItem", None)
 
         # --- Cálculo de base ---
         cantidad = d1(D(str(item.get("cantidad") or 0)))
@@ -2480,6 +2493,9 @@ def validate_dte_json(
         if tipo_dte == "01":
             item["codTributo"] = None
             item["tributos"] = None
+        elif tipo_dte == "03":
+            item["codTributo"] = None
+            item["tributos"] = [TRIBUTO_IVA] if venta_gravada_val > 0 else []
         else:
             invalid = [
                 t
@@ -2555,6 +2571,14 @@ def validate_dte_json(
             )
             iva_chk = money(linea * D("0.13") / D("1.13"))
             assert i.get("ventaGravada") == linea and i.get("ivaItem") == iva_chk
+    elif ident.get("tipoDte") == "03":
+        for i in payload.get("cuerpoDocumento", []):
+            i["codTributo"] = None
+            i.pop("ivaItem", None)
+            if D(str(i.get("ventaGravada") or 0)) > 0:
+                i["tributos"] = [TRIBUTO_IVA]
+            else:
+                i["tributos"] = []
 
     resumen["pagos"] = normalizar_pagos(
         resumen.get("pagos"),

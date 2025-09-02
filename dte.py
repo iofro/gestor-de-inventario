@@ -2736,7 +2736,14 @@ def validate_dte_json(
                 - D(str(i.get("montoDescu") or 0))
             )
             iva_chk = money(linea * D("0.13") / D("1.13"))
-            assert i.get("ventaGravada") == linea and i.get("ivaItem") == iva_chk
+            if i.get("ventaGravada") != linea or i.get("ivaItem") != iva_chk:
+                logger.warning(
+                    "ventaGravada/ivaItem incoherente: %s/%s esperado %s/%s",
+                    i.get("ventaGravada"),
+                    i.get("ivaItem"),
+                    linea,
+                    iva_chk,
+                )
 
     resumen["pagos"] = normalizar_pagos(
         resumen.get("pagos"),

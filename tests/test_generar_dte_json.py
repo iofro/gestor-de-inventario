@@ -1375,7 +1375,7 @@ def test_item_no_tributo_when_exento(tmp_path):
 
 def test_credito_fiscal_incluye_tributo(tmp_path):
     import dte as dte_module
-    from utils.catalogos import TRIBUTO_IVA
+    from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 
     datos = {
         "nit": "06141990011019",
@@ -1453,8 +1453,10 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
     assert item["tributos"] == [TRIBUTO_IVA]
     assert "ivaItem" not in item
     assert "totalIva" not in resumen
-    assert resumen["tributos"] == [{"codigo": TRIBUTO_IVA, "valor": Decimal("1.30")}]
-    assert "descripcion" not in resumen["tributos"][0]
+    assert resumen["tributos"][0]["codigo"] == TRIBUTO_IVA
+    assert resumen["tributos"][0]["descripcion"] == TRIBUTOS[TRIBUTO_IVA]
+    assert resumen["tributos"][0]["valor"] == Decimal("1.30")
+    assert receptor["nit"] == "06140000001025"
     for f in (
         "nit",
         "nrc",

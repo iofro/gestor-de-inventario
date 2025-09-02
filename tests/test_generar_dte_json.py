@@ -107,7 +107,7 @@ def test_generar_dte_json_basic(tmp_path):
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id)
 
     idf = data["identificacion"]
     res = data["resumen"]
@@ -846,6 +846,29 @@ def test_dte_sum_mismatch_warning(capsys):
 def test_generar_ticket_json_tipo(tmp_path):
     import dte as dte_module
 
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
+    dte_module._load_datos_negocio = lambda: datos
+    import svfe.config as svfe_config
+    svfe_config.DATOS_NEGOCIO_PATH = str(datos_file)
+    svfe_config.load_datos_negocio = lambda: datos
+
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
@@ -870,7 +893,9 @@ def test_generar_ticket_json_tipo(tmp_path):
     db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
 
     data = generar_dte_json(db, venta_id, tipo_dte="03")
-    assert data["identificacion"]["tipoDte"] == "03"
+    ident = data["identificacion"]
+    assert ident["tipoDte"] == "03"
+    assert ident["version"] == 3
 
 
 @pytest.mark.parametrize(

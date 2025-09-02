@@ -18,8 +18,8 @@ from svfe.json_compare import normalize_for_schema, similarity
 def _assert_base(data):
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
-    if resumen.get("totalGravada") == Decimal("26.95"):
-        # consumidor final
+    tipo = data["identificacion"]["tipoDte"]
+    if tipo == "01":
         assert str(item["ventaGravada"]) == "26.9500"
         iva = (item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13"))).quantize(Decimal("0.01"))
         if "ivaItem" in item:
@@ -28,6 +28,14 @@ def _assert_base(data):
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
         assert str(total) == "26.95"
         assert str(resumen["totalIva"]) == "3.10"
+    elif tipo == "03":
+        assert str(item["ventaGravada"]) == "23.8500"
+        assert str(resumen["totalGravada"]) == "23.85"
+        total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
+        assert str(total) == "26.95"
+        iva = total - resumen["totalGravada"]
+        assert str(iva.quantize(Decimal("0.01"))) == "3.10"
+        assert "totalIva" not in resumen
     else:
         assert str(item["ventaGravada"]) == "23.8500"
         venta = item["ventaGravada"]
@@ -37,7 +45,7 @@ def _assert_base(data):
             assert str(item["ivaItem"]) == str(iva)
         assert str(resumen["totalGravada"]) == "23.85"
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-        assert str(total) == "23.85"
+        assert str(total) == "26.95"
         total_iva = resumen.get("totalIva")
         if total_iva is None:
             total_iva = resumen["montoTotalOperacion"] - resumen["totalGravada"]

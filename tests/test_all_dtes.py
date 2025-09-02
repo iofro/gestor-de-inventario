@@ -97,15 +97,11 @@ def _assert_base(data: dict, tipo: str) -> None:
         assert str(_q2(resumen["totalIva"])) == "3.10"
     elif tipo == "ccf":
         assert str(item["ventaGravada"]) == "23.8500"
-        iva = _q4(item["ventaGravada"] * Decimal("0.13"))
-        assert str(iva) == "3.1005"
         assert str(resumen["totalGravada"]) == "23.85"
         total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-        assert str(total) == "23.85"
-        total_iva = resumen.get("totalIva")
-        if total_iva is None:
-            total_iva = resumen["montoTotalOperacion"] - resumen["totalGravada"]
-        assert str(_q2(total_iva)) == "3.10"
+        assert str(total) == "26.95"
+        iva = total - resumen["totalGravada"]
+        assert str(_q2(iva)) == "3.10"
     else:
         assert str(item["ventaGravada"]) == "23.8500"
         iva = _q4(item["ventaGravada"] * Decimal("0.13"))

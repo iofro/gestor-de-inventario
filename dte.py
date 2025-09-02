@@ -1597,14 +1597,12 @@ def generar_dte_json(
         if v not in (None, "", []):
             rec[k] = v
 
-    def _clean_nit(nit):
-        return "".join(c for c in str(nit) if c.isdigit()) if nit else None
-
     tipo_doc = rec.get("tipoDocumento")
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
     num_doc = rec.get("numDocumento")
     nit = rec.get("nit")
+    clean_nit = _clean_nit(nit)
     if fiscal:
         tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
         num_doc = fiscal.get("numDocumento") or num_doc
@@ -1625,8 +1623,10 @@ def generar_dte_json(
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
         "numDocumento": num_doc,
+        "nit": clean_nit,
         "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
         "nombre": rec.get("nombre"),
+        "nombreComercial": rec.get("nombreComercial") or rec.get("nombre"),
         "codActividad": None,
         "descActividad": None,
         "telefono": rec.get("telefono"),
@@ -2290,24 +2290,40 @@ def validate_dte_json(
     payload["emisor"] = emisor
 
     receptor = payload.get("receptor", {})
-    nit_field = receptor.pop("nit", None)
+    nit_field = receptor.get("nit")
+    if nit_field is not None:
+        nit_clean = _clean_nit(nit_field)
+        if nit_clean and not re.fullmatch(r"[0-9]{14}|[0-9]{9}", nit_clean):
+            raise ValueError("NIT inválido en receptor")
+        receptor["nit"] = nit_clean
+    else:
+        receptor.pop("nit", None)
+
     tipo_doc = receptor.get("tipoDocumento")
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
-    if nit_field is not None:
-        receptor["numDocumento"] = _clean_nit(nit_field)
-        if tipo_doc is None:
+
+    if tipo_dte != "03":
+        if receptor.get("nit") and not receptor.get("numDocumento"):
+            receptor["numDocumento"] = receptor["nit"]
+        if receptor.get("nit") and not tipo_doc:
             tipo_doc = "36"
-    num_doc = receptor.get("numDocumento")
-    if tipo_doc == "36":
-        num_doc = _clean_nit(num_doc)
-        if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
-            raise ValueError("NIT inválido en receptor")
-    elif tipo_doc == "13":
-        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-            raise ValueError("DUI inválido en receptor")
-    receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
-    receptor["numDocumento"] = num_doc
+        num_doc = receptor.get("numDocumento")
+        if tipo_doc == "36":
+            num_doc = _clean_nit(num_doc)
+            if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+                raise ValueError("NIT inválido en receptor")
+        elif tipo_doc == "13":
+            if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+                raise ValueError("DUI inválido en receptor")
+        receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
+        receptor["numDocumento"] = num_doc
+    else:
+        for key in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+            receptor.pop(key, None)
+
+    if not receptor.get("nombreComercial"):
+        receptor["nombreComercial"] = receptor.get("nombre")
 
     nrc_schema = (
         FC_SCHEMA.get("properties", {})

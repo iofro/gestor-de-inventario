@@ -29,10 +29,12 @@ def test_item_and_total_rounding():
     )
 
     assert f"{d2(resumen['totalGravada']):.2f}" == '23.85'
-    assert f"{d2(resumen['totalIva']):.2f}" == '3.10'
+    assert 'totalIva' not in resumen
     assert f"{d2(resumen['totalPagar']):.2f}" == '26.95'
+    trib = resumen['tributos']
+    assert any(t['codigo'] == '20' and f"{d2(t['valor']):.2f}" == '3.10' for t in trib)
 
-    for key in ['totalIva', 'totalPagar']:
+    for key in ['totalPagar']:
         assert decimal_places(resumen[key]) <= 2
     assert decimal_places(resumen['totalGravada']) <= 2
 

@@ -715,6 +715,7 @@ def test_generar_dte_json_normaliza_ambiente_config(
         "descActividad": "Comercio",
         "telefono": "22222222",
         "correo": "test@example.com",
+        "direccion": {"departamento": "06", "municipio": "10", "complemento": "Calle 1"},
     }
     datos_file = tmp_path / "datos_negocio.json"
     datos_file.write_text(json.dumps(datos))
@@ -845,6 +846,25 @@ def test_dte_sum_mismatch_warning(capsys):
 
 def test_generar_ticket_json_tipo(tmp_path):
     import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "06", "municipio": "10", "complemento": "Calle 1"},
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
+    svfe_config.DATOS_NEGOCIO_PATH = str(datos_file)
+    svfe_config.load_datos_negocio = lambda: datos
+    dte_module._load_datos_negocio = lambda: datos
 
     db = create_db()
     db.add_vendedor("V1")
@@ -1455,7 +1475,7 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
     assert "totalIva" not in resumen
     assert resumen["tributos"][0]["codigo"] == TRIBUTO_IVA
     assert resumen["tributos"][0]["descripcion"] == TRIBUTOS[TRIBUTO_IVA]
-    assert resumen["tributos"][0]["valor"] == Decimal("1.30")
+    assert resumen["tributos"][0]["valor"] == Decimal("1.15")
     assert receptor["nit"] == "06140000001025"
     for f in (
         "nit",

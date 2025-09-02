@@ -1448,19 +1448,26 @@ def recalcular_totales(
             descuento = D(str(item.get("montoDescu") or 0))
             esperado = money(precio_u * cant - descuento)
             if esperado != money(item.get("ventaGravada", 0)):
-                raise ValueError(
+                warnings.warn(
                     "precioUni * cantidad - montoDescu incoherente con ventaGravada"
                 )
+                item["ventaGravada"] = esperado
         sub_total = money(resumen.get("totalGravada", 0))
         suma_trib = money(
             sum(D(str(t.get("valor") or 0)) for t in resumen.get("tributos") or [])
         )
-        if money(sub_total + suma_trib) != money(
-            resumen.get("montoTotalOperacion", 0)
-        ):
-            raise ValueError(
+        esperado_total = money(sub_total + suma_trib)
+        if esperado_total != money(resumen.get("montoTotalOperacion", 0)):
+            warnings.warn(
                 "subTotal + tributos.valor incoherente con montoTotalOperacion"
             )
+            resumen["montoTotalOperacion"] = esperado_total
+            if money(resumen.get("totalPagar", 0)) != esperado_total:
+                resumen["totalPagar"] = esperado_total
+                if "totalPagar" not in modificados:
+                    modificados.append("totalPagar")
+            if "montoTotalOperacion" not in modificados:
+                modificados.append("montoTotalOperacion")
 
     data["resumen"] = resumen
     return modificados

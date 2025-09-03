@@ -1303,9 +1303,9 @@ def recalcular_totales(
             base = money(base_pre - monto_descu)
             if base < 0:
                 base = money(0)
-            iva_val = money(base * D("0.13"))
-            bruto_desc = money(base + iva_val)
-            bruto_linea = money(base_pre * D("1.13"))
+            bruto_desc = money((base * D("1.13")).quantize(D("0.001"), rounding=ROUND_HALF_UP))
+            iva_val = money(bruto_desc - base)
+            bruto_linea = money((base_pre * D("1.13")).quantize(D("0.001"), rounding=ROUND_HALF_UP))
             bases_pre.append(base_pre)
             bases.append(base)
             ivas.append(iva_val)

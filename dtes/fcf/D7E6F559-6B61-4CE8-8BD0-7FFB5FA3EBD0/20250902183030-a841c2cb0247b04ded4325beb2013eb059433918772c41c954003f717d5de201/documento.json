@@ -1,0 +1,128 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1.0,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 9",
+      "ivaItem": 1.7257,
+      "montoDescu": 0.0000,
+      "noGravado": 0.00,
+      "numItem": 1,
+      "numeroDocumento": null,
+      "precioUni": 15.0000,
+      "psv": 0.00,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 15.0000,
+      "ventaNoSuj": 0.0
+    },
+    {
+      "cantidad": 1.0,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 9",
+      "ivaItem": 1.6912,
+      "montoDescu": 0.3000,
+      "noGravado": 0.00,
+      "numItem": 2,
+      "numeroDocumento": null,
+      "precioUni": 15.0000,
+      "psv": 0.00,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 14.7000,
+      "ventaNoSuj": 0.0
+    }
+  ],
+  "documentoRelacionado": null,
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "D7E6F559-6B61-4CE8-8BD0-7FFB5FA3EBD0",
+    "fecEmi": "2025-09-02",
+    "horEmi": "18:30:30",
+    "motivoContin": null,
+    "numeroControl": "DTE-01-S001P001-000000000000159",
+    "tipoContingencia": null,
+    "tipoDte": "01",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 1
+  },
+  "otrosDocumentos": null,
+  "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nombre": "ariel",
+    "nrc": "2273734",
+    "numDocumento": "13240304791012",
+    "telefono": "70000001",
+    "tipoDocumento": "36"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 29.70,
+    "numPagoElectronico": "",
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 29.70,
+        "periodo": null,
+        "plazo": null,
+        "referencia": null
+      }
+    ],
+    "porcentajeDescuento": 0.0,
+    "reteRenta": 0.0,
+    "saldoFavor": 0.0,
+    "subTotal": 29.70,
+    "subTotalVentas": 29.70,
+    "totalDescu": 0.30,
+    "totalExenta": 0.0,
+    "totalGravada": 29.70,
+    "totalIva": 3.42,
+    "totalLetras": "Veintinueve Dolares con setenta centavos",
+    "totalNoGravado": 0.0,
+    "totalNoSuj": 0.0,
+    "totalPagar": 29.70,
+    "tributos": null
+  },
+  "ventaTercero": null
+}

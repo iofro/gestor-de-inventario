@@ -1,0 +1,117 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1.0,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 11",
+      "montoDescu": 0.0000,
+      "noGravado": 0.00,
+      "numItem": 1,
+      "numeroDocumento": null,
+      "precioUni": 15.0400,
+      "psv": 0.00,
+      "tipoItem": 1,
+      "tributos": [
+        "20"
+      ],
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 15.0400,
+      "ventaNoSuj": 0.0
+    }
+  ],
+  "documentoRelacionado": null,
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "96A1ABA5-62DC-4520-B1D8-D80EF5A28ED2",
+    "fecEmi": "2025-09-02",
+    "horEmi": "18:11:35",
+    "motivoContin": null,
+    "numeroControl": "DTE-03-S001P001-000000000000048",
+    "tipoContingencia": null,
+    "tipoDte": "03",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "otrosDocumentos": null,
+  "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nit": "13240304791012",
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "nrc": "2273734",
+    "telefono": "70000001"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 15.04,
+    "numPagoElectronico": "",
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 15.04,
+        "periodo": null,
+        "plazo": null,
+        "referencia": null
+      }
+    ],
+    "porcentajeDescuento": 0.0,
+    "reteRenta": 0.0,
+    "saldoFavor": 0.0,
+    "subTotal": 15.04,
+    "subTotalVentas": 15.04,
+    "totalDescu": 0.0,
+    "totalExenta": 0.0,
+    "totalGravada": 15.04,
+    "totalIva": 1.96,
+    "totalLetras": "QUINCE CON 04/100 DÓLARES",
+    "totalNoGravado": 0.0,
+    "totalNoSuj": 0.0,
+    "totalPagar": 15.04,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 1.96
+      }
+    ]
+  },
+  "ventaTercero": null
+}

@@ -1020,24 +1020,53 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     elif precios_incluyen_iva:
         descu_no_suj = money(fiscal.get("descu_no_suj", 0))
         descu_exenta = money(fiscal.get("descu_exenta", 0))
-        descu_gravada = money(fiscal.get("descu_gravada", fiscal.get("descuentos", 0)))
+        descu_gravada = money(
+            fiscal.get("descu_gravada", fiscal.get("descuentos", 0))
+        )
         total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
-        total_gravada = money(
-            fiscal.get("sumas", (items_total - total_exenta - total_no_suj) / D("1.13"))
-        )
-        total_iva = money(
-            fiscal.get("iva", items_total - total_exenta - total_no_suj - total_gravada)
-        )
-        sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
-        sub_total = money(sub_total_ventas - total_descu)
-        monto_total_operacion = money(
-            sub_total + total_no_gravado + total_iva
-        )
-        total_pagar = money(monto_total_operacion)
-        base_desc = sub_total_ventas + total_descu
-        porcentaje_desc = money(
-            (total_descu * D("100") / base_desc) if base_desc else D("0")
-        )
+        if tipo_dte == "03":
+            if "sumas" in fiscal:
+                total_gravada = money(fiscal["sumas"])
+                total_iva = money(fiscal.get("iva", 0))
+                sub_total_ventas = total_gravada
+                sub_total = total_gravada
+                monto_total_operacion = total_gravada
+            else:
+                total_gravada = money(items_total)
+                total_iva = money(
+                    fiscal.get("iva", items_total * D("0.13"))
+                )
+                sub_total_ventas = total_gravada
+                sub_total = total_gravada
+                monto_total_operacion = money(total_gravada + total_iva)
+            total_pagar = monto_total_operacion
+            porcentaje_desc = money(
+                (total_descu * D("100") / sub_total_ventas)
+                if sub_total_ventas
+                else D("0")
+            )
+        else:
+            total_gravada = money(
+                fiscal.get(
+                    "sumas",
+                    (items_total - total_exenta - total_no_suj) / D("1.13"),
+                )
+            )
+            total_iva = money(
+                fiscal.get(
+                    "iva", items_total - total_exenta - total_no_suj - total_gravada
+                )
+            )
+            sub_total_ventas = money(total_no_suj + total_exenta + total_gravada)
+            sub_total = money(sub_total_ventas - total_descu)
+            monto_total_operacion = money(
+                sub_total + total_no_gravado + total_iva
+            )
+            total_pagar = money(monto_total_operacion)
+            base_desc = sub_total_ventas + total_descu
+            porcentaje_desc = money(
+                (total_descu * D("100") / base_desc) if base_desc else D("0")
+            )
     else:
         descu_no_suj = money(fiscal.get("descu_no_suj", 0))
         descu_exenta = money(fiscal.get("descu_exenta", 0))
@@ -1057,8 +1086,6 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         )
 
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
-    if tipo_dte == "03":
-        resumen.pop("totalIva", None)
     resumen.update(
         {
             "totalNoSuj": total_no_suj,
@@ -1085,7 +1112,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
 
-    if tipo_dte == "01":
+    if tipo_dte in {"01", "03"}:
         resumen["totalIva"] = total_iva
 
     if tipo_dte in {"01", "03", "05", "06"}:

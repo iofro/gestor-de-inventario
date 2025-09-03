@@ -5,12 +5,12 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 11",
-      "montoDescu": 0.1700,
+      "descripcion": "Producto Demo 9",
+      "montoDescu": 0.0000,
       "noGravado": 0.00,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 14.8900,
+      "precioUni": 13.2700,
       "psv": 0.00,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +18,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 14.8900,
+      "ventaGravada": 13.2700,
       "ventaNoSuj": 0.0
     }
   ],
@@ -46,11 +46,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "3074AC4D-0C54-4FB8-9CFF-607EAE6CE136",
+    "codigoGeneracion": "039BF5A4-0B35-4310-A37E-A255540FE475",
     "fecEmi": "2025-09-02",
-    "horEmi": "18:29:18",
+    "horEmi": "18:44:12",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000050",
+    "numeroControl": "DTE-03-S001P001-000000000000056",
     "tipoContingencia": null,
     "tipoDte": "03",
     "tipoModelo": 1,
@@ -77,39 +77,38 @@
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
-    "descuGravada": 0.17,
+    "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 16.83,
+    "montoTotalOperacion": 15.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 16.83,
+        "montoPago": 15.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
       }
     ],
-    "porcentajeDescuento": 1.14,
+    "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 14.72,
-    "subTotalVentas": 14.89,
-    "totalDescu": 0.17,
+    "subTotal": 13.27,
+    "subTotalVentas": 13.27,
+    "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 14.89,
-    "totalIva": 1.94,
-    "totalLetras": "DIECISÉIS CON 83/100 DÓLARES",
+    "totalGravada": 13.27,
+    "totalLetras": "QUINCE CON 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 16.83,
+    "totalPagar": 15.00,
     "tributos": [
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.94
+        "valor": 1.73
       }
     ]
   },

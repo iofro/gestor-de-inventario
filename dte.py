@@ -7,7 +7,7 @@ import sys
 import re
 import requests as _requests
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP, getcontext
+from decimal import Decimal, ROUND_HALF_UP, ROUND_UP, getcontext
 from urllib.parse import urlparse
 from db import DB
 import requests
@@ -207,6 +207,11 @@ def money(value) -> D:
     Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
     """
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+
+
+def money_round_up(value) -> D:
+    """Return ``value`` rounded up to 2 decimal places."""
+    return D(str(value)).quantize(D("0.01"), rounding=ROUND_UP)
 
 
 def _precios_incluyen_iva_from(
@@ -1303,9 +1308,9 @@ def recalcular_totales(
             base = money(base_pre - monto_descu)
             if base < 0:
                 base = money(0)
-            bruto_desc = money(base * D("1.13"))
+            bruto_desc = money_round_up(base * D("1.13"))
             iva_val = money(bruto_desc - base)
-            bruto_linea = money(base_pre * D("1.13"))
+            bruto_linea = money_round_up(base_pre * D("1.13"))
             bases_pre.append(base_pre)
             bases.append(base)
             ivas.append(iva_val)

@@ -24,7 +24,9 @@ def test_resumen_credito_fiscal_suma_iva():
     fiscal = {'iva': D('1.95'), 'sumas': D('15.00')}
     resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='03')
     assert D(str(resumen['subTotal'])) == D('15.00')
-    assert D(str(resumen['totalIva'])) == D('1.95')
+    assert 'totalIva' not in resumen
+    assert resumen['tributos'][0]['codigo'] == '20'
+    assert resumen['tributos'][0]['valor'] == D('1.95')
     assert D(str(resumen['montoTotalOperacion'])) == D('16.95')
     assert D(str(resumen['totalPagar'])) == D('16.95')
 
@@ -34,13 +36,15 @@ def test_resumen_credito_fiscal_sin_sumas():
     fiscal = {'iva': D('13.00'), 'descu_gravada': D('10.00')}
     resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='03')
     assert D(str(resumen['totalGravada'])) == D('100.00')
-    assert D(str(resumen['subTotalVentas'])) == D('100.00')
-    assert D(str(resumen['subTotal'])) == D('90.00')
-    assert D(str(resumen['totalIva'])) == D('13.00')
-    assert D(str(resumen['montoTotalOperacion'])) == D('103.00')
-    assert D(str(resumen['totalPagar'])) == D('103.00')
+    assert D(str(resumen['subTotalVentas'])) == D('110.00')
+    assert D(str(resumen['subTotal'])) == D('100.00')
+    assert 'totalIva' not in resumen
+    assert D(str(resumen['montoTotalOperacion'])) == D('113.00')
+    assert D(str(resumen['totalPagar'])) == D('113.00')
     assert D(str(resumen['totalDescu'])) == D('10.00')
-    assert D(str(resumen['porcentajeDescuento'])) == D('10.00')
+    assert D(str(resumen['porcentajeDescuento'])) == D('9.09')
+    assert resumen['tributos'][0]['codigo'] == '20'
+    assert resumen['tributos'][0]['valor'] == D('13.00')
 
 
 def test_resumen_sin_gravada_sin_tributos():

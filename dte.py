@@ -741,7 +741,6 @@ RESUMEN_DEFAULTS = {
         "totalDescu": 0,
         "tributos": None,
         "subTotal": 0,
-        "totalIva": 0,
         "ivaPerci1": 0,
         "ivaRete1": 0,
         "reteRenta": 0,
@@ -1120,7 +1119,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
 
-    if tipo_dte in {"01", "03"}:
+    if tipo_dte == "01":
         resumen["totalIva"] = total_iva
 
     if tipo_dte in {"01", "03", "05", "06"}:
@@ -1171,7 +1170,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         resumen["tributos"] = armar_tributos(tributos_list, tipo_dte)
         if tipo_dte != "01" and total_gravada <= D("0") and not tributos_list:
             resumen.pop("tributos", None)
-            resumen["totalIva"] = money(0)
+            resumen.pop("totalIva", None)
 
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(

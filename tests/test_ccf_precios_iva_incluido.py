@@ -1,5 +1,6 @@
 from decimal import Decimal as D
 import pytest
+
 from dte import recalcular_totales
 
 
@@ -14,8 +15,8 @@ def _build_payload(items, nit="06141990011019"):
 
 def test_ccf_totals_with_inclusive_prices():
     items = [
-        {"numItem": 1, "descripcion": "A", "cantidad": D("1"), "precioUni": D("0.05"), "montoDescu": D("0")},
-        {"numItem": 2, "descripcion": "B", "cantidad": D("1"), "precioUni": D("0.05"), "montoDescu": D("0")},
+        {"numItem": 1, "descripcion": "A", "cantidad": D("1"), "precioUni": D("0.044"), "montoDescu": D("0")},
+        {"numItem": 2, "descripcion": "B", "cantidad": D("1"), "precioUni": D("0.044"), "montoDescu": D("0")},
     ]
     payload = _build_payload(items)
     recalcular_totales(payload)
@@ -38,8 +39,8 @@ def test_ccf_descuento_linea():
             "numItem": 1,
             "descripcion": "A",
             "cantidad": D("1"),
-            "precioUni": D("11.17"),
-            "montoDescu": D("0.84"),
+            "precioUni": D("9.88"),
+            "montoDescu": D("0.74"),
         }
     ]
     payload = _build_payload(items)
@@ -48,11 +49,11 @@ def test_ccf_descuento_linea():
     resumen = payload["resumen"]
     assert item["precioUni"] == D("9.14")
     assert item["ventaGravada"] == D("9.14")
-    assert item["montoDescu"] == D("0.84")
+    assert item["montoDescu"] == D("0.74")
     assert item["tributos"] == ["20"]
     assert resumen["subTotalVentas"] == D("9.88")
     assert resumen["descuGravada"] == D("0.74")
-    assert resumen["totalDescu"] == D("0.84")
+    assert resumen["totalDescu"] == D("0.74")
     assert resumen["subTotal"] == D("9.14")
     assert resumen["montoTotalOperacion"] == D("10.33")
     assert resumen["totalPagar"] == D("10.33")

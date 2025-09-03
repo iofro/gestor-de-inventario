@@ -609,11 +609,11 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
 
-    iva_item = d4(line_total_dec - (line_total_dec / Decimal("1.13")))
+    iva_item = line_total_dec - (line_total_dec / Decimal("1.13"))
 
     assert Decimal(str(item["precioUni"])) == Decimal("5.50")
     assert Decimal(str(item["ventaGravada"])) == line_total_dec
-    assert Decimal(str(item["ivaItem"])) == iva_item
+    assert Decimal(str(item["ivaItem"])) == money(iva_item)
 
     assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalDescu"])) == money(descuento)
@@ -684,12 +684,12 @@ def test_generar_dte_json_cf_descuento_pct(tmp_path):
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
 
-    iva_item = d4(line_total_dec - (line_total_dec / Decimal("1.13")))
+    iva_item = line_total_dec - (line_total_dec / Decimal("1.13"))
 
     assert Decimal(str(item["precioUni"])) == Decimal("5.50")
     assert Decimal(str(item["montoDescu"])) == desc_monto
     assert Decimal(str(item["ventaGravada"])) == line_total_dec
-    assert Decimal(str(item["ivaItem"])) == iva_item
+    assert Decimal(str(item["ivaItem"])) == money(iva_item)
 
     assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalDescu"])) == money(desc_monto)

@@ -5,12 +5,12 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 9",
-      "montoDescu": 0.0000,
+      "descripcion": "Producto Demo 1",
+      "montoDescu": 0.1000,
       "noGravado": 0.00,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 13.2700,
+      "precioUni": 8.7600,
       "psv": 0.00,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +18,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 13.2700,
+      "ventaGravada": 8.7600,
       "ventaNoSuj": 0.0
     }
   ],
@@ -46,11 +46,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "039BF5A4-0B35-4310-A37E-A255540FE475",
+    "codigoGeneracion": "90CBACB2-092B-4EE0-BCDF-827503D5391C",
     "fecEmi": "2025-09-02",
-    "horEmi": "18:44:12",
+    "horEmi": "19:01:01",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000056",
+    "numeroControl": "DTE-03-S001P001-000000000000058",
     "tipoContingencia": null,
     "tipoDte": "03",
     "tipoModelo": 1,
@@ -77,38 +77,38 @@
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
-    "descuGravada": 0.0,
+    "descuGravada": 0.10,
     "descuNoSuj": 0.0,
     "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 15.00,
+    "montoTotalOperacion": 9.90,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 15.00,
+        "montoPago": 9.90,
         "periodo": null,
         "plazo": null,
         "referencia": null
       }
     ],
-    "porcentajeDescuento": 0.0,
+    "porcentajeDescuento": 1.14,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 13.27,
-    "subTotalVentas": 13.27,
-    "totalDescu": 0.0,
+    "subTotal": 8.66,
+    "subTotalVentas": 8.76,
+    "totalDescu": 0.10,
     "totalExenta": 0.0,
-    "totalGravada": 13.27,
-    "totalLetras": "QUINCE CON 00/100 DÓLARES",
+    "totalGravada": 8.76,
+    "totalLetras": "NUEVE CON 90/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 15.00,
+    "totalPagar": 9.90,
     "tributos": [
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.73
+        "valor": 1.14
       }
     ]
   },

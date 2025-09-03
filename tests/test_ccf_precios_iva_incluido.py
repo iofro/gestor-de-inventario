@@ -1,7 +1,7 @@
 from decimal import Decimal as D, ROUND_HALF_UP
 import pytest
 
-from dte import recalcular_totales
+from dte import recalcular_totales, money
 
 
 def _build_payload(items, nit="06141990011019"):
@@ -76,8 +76,26 @@ def test_ccf_descuento_alto_iva_consistente():
     recalcular_totales(payload)
     resumen = payload["resumen"]
     total_gravada = resumen["totalGravada"]
-    expected_iva = (total_gravada * D("0.13")).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+    bruto = money((total_gravada * D("1.13")).quantize(D("0.001"), rounding=ROUND_HALF_UP))
+    expected_iva = money(bruto - total_gravada)
     assert resumen["tributos"][0]["valor"] == expected_iva
+
+
+def test_ccf_precio_7_96_iva_redondeo():
+    items = [
+        {
+            "numItem": 1,
+            "descripcion": "A",
+            "cantidad": D("1"),
+            "precioUni": D("7.96"),
+            "montoDescu": D("0"),
+        }
+    ]
+    payload = _build_payload(items)
+    recalcular_totales(payload)
+    resumen = payload["resumen"]
+    assert resumen["tributos"][0]["valor"] == D("1.04")
+    assert resumen["montoTotalOperacion"] == D("9.00")
 
 
 def test_ccf_nit_validation():

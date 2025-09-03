@@ -1029,16 +1029,24 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
                 total_gravada = money(fiscal["sumas"])
                 total_iva = money(fiscal.get("iva", 0))
                 sub_total_ventas = total_gravada
-                sub_total = total_gravada
-                monto_total_operacion = total_gravada
+                sub_total = (
+                    money(total_gravada - total_descu)
+                    if total_descu
+                    else total_gravada
+                )
+                monto_total_operacion = money(total_gravada + total_iva)
             else:
                 total_gravada = money(items_total)
                 total_iva = money(
                     fiscal.get("iva", items_total * D("0.13"))
                 )
                 sub_total_ventas = total_gravada
-                sub_total = total_gravada
-                monto_total_operacion = money(total_gravada + total_iva)
+                sub_total = (
+                    money(total_gravada - total_descu)
+                    if total_descu
+                    else total_gravada
+                )
+                monto_total_operacion = money(sub_total + total_iva)
             total_pagar = monto_total_operacion
             porcentaje_desc = money(
                 (total_descu * D("100") / sub_total_ventas)

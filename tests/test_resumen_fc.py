@@ -28,6 +28,20 @@ def test_resumen_credito_fiscal_no_suma_iva():
     assert D(str(resumen['totalPagar'])) == D('15.00')
 
 
+def test_resumen_credito_fiscal_sin_sumas():
+    items_total = D('100.00')
+    fiscal = {'iva': D('13.00'), 'descu_gravada': D('10.00')}
+    resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='03')
+    assert D(str(resumen['totalGravada'])) == D('100.00')
+    assert D(str(resumen['subTotalVentas'])) == D('100.00')
+    assert D(str(resumen['subTotal'])) == D('100.00')
+    assert D(str(resumen['totalIva'])) == D('13.00')
+    assert D(str(resumen['montoTotalOperacion'])) == D('113.00')
+    assert D(str(resumen['totalPagar'])) == D('113.00')
+    assert D(str(resumen['totalDescu'])) == D('10.00')
+    assert D(str(resumen['porcentajeDescuento'])) == D('10.00')
+
+
 def test_resumen_sin_gravada_sin_tributos():
     items_total = D('0')
     fiscal = {'sumas': D('0'), 'ventas_exentas': D('5'), 'iva': D('0')}

@@ -1,4 +1,4 @@
-from decimal import Decimal as D
+from decimal import Decimal as D, ROUND_HALF_UP
 import pytest
 
 from dte import recalcular_totales
@@ -59,6 +59,25 @@ def test_ccf_descuento_linea():
     assert resumen["totalPagar"] == D("10.33")
     assert resumen["pagos"][0]["montoPago"] == D("10.33")
     assert resumen["tributos"][0]["valor"] == D("1.19")
+
+
+def test_ccf_descuento_alto_iva_consistente():
+    """Los tributos deben derivarse de la base gravada con descuentos altos."""
+    items = [
+        {
+            "numItem": 1,
+            "descripcion": "A",
+            "cantidad": D("1"),
+            "precioUni": D("8.85"),
+            "montoDescu": D("0.89"),
+        }
+    ]
+    payload = _build_payload(items)
+    recalcular_totales(payload)
+    resumen = payload["resumen"]
+    total_gravada = resumen["totalGravada"]
+    expected_iva = (total_gravada * D("0.13")).quantize(D("0.01"), rounding=ROUND_HALF_UP)
+    assert resumen["tributos"][0]["valor"] == expected_iva
 
 
 def test_ccf_nit_validation():

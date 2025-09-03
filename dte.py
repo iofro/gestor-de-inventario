@@ -2019,7 +2019,9 @@ def generar_dte_json(
                     precio = d4(money(base_pre / cant))
                     monto_descu = descuento_base
                     venta_gravada = base_final
-                    iva_val = money(bruto_final - base_final)
+                    iva_val_pre = money(base_pre * D("0.13"))
+                    iva_desc = money(descuento_base * D("0.13"))
+                    iva_val = money(iva_val_pre - iva_desc)
                     line_total = money(base_final + iva_val)
                     bruto_total += bruto
                     descuentos_total += descuento_base

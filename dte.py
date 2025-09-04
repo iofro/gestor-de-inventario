@@ -19,6 +19,7 @@ from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 from utils.catalogos import (
     TRIBUTO_IVA,
+    TRIBUTOS,
     TRIBUTOS_PERMITIDOS_ITEM,
     TRIBUTOS_PERMITIDOS_RESUMEN,
     UNIDADES_MEDIDA_PERMITIDAS,
@@ -3125,99 +3126,6 @@ def generar_ticket_json(
         motivo_contin=motivo_contin,
         **kwargs,
     )
-
-
-def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
-    """Genera la estructura JSON para una nota de crédito."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "credito":
-        raise ValueError("La nota indicada no es de crédito")
-
-    venta_id = nota.get("venta_id")
-    # Determine document type of the original sale
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
-    data = generar_dte_json(db, venta_id, tipo_dte="05")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
-
-    for item in data.get("cuerpoDocumento", []):
-        if isinstance(item.get("cantidad"), (int, float)):
-            item["cantidad"] = -abs(item["cantidad"])
-        if isinstance(item.get("precioUni"), (int, float)):
-            item["precioUni"] = -abs(item["precioUni"])
-
-    resumen = data.get("resumen", {})
-    for k, v in resumen.items():
-        if isinstance(v, (int, float)):
-            resumen[k] = -abs(v)
-    data["resumen"] = resumen
-    return data
-
-
-def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
-    """Genera la estructura JSON para una nota de débito."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "debito":
-        raise ValueError("La nota indicada no es de débito")
-
-    venta_id = nota.get("venta_id")
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
-    data = generar_dte_json(db, venta_id, tipo_dte="06")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
-    return data
-
-
-def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
-    """Genera la estructura JSON para una nota de remisión."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "remision":
-        raise ValueError("La nota indicada no es de remisión")
-
-    venta_id = nota.get("venta_id")
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
-    data = generar_dte_json(db, venta_id, tipo_dte="04")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
-    return data
-
-
 def _normalize_recepcion_url(raw: str) -> str:
     """Normaliza y valida ``raw`` como URL de recepción de Hacienda.
 
@@ -3871,51 +3779,6 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
     return resp
-
-
-def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
-    """Genera y transmite una nota de crédito."""
-    data = generar_nota_credito_json(db, nota_id)
-    data = apply_schema_patch(data)
-    schema = catalogos.get_dte_schema("05")
-    # Validación omitida.
-    # try:
-    #     validate_dte_json(data, db=db)
-    # except Exception as exc:
-    #     json_path = save_dte_json(data)
-    #     errors = _format_validation_errors(exc)
-    #     raise DTEValidationError(errors, json_path) from exc
-    return _enviar_documento(db, nota_id, data, modo)
-
-
-def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
-    """Genera y transmite una nota de débito."""
-    data = generar_nota_debito_json(db, nota_id)
-    data = apply_schema_patch(data)
-    schema = catalogos.get_dte_schema("06")
-    # Validación omitida.
-    # try:
-    #     validate_dte_json(data, db=db)
-    # except Exception as exc:
-    #     json_path = save_dte_json(data)
-    #     errors = _format_validation_errors(exc)
-    #     raise DTEValidationError(errors, json_path) from exc
-    return _enviar_documento(db, nota_id, data, modo)
-
-
-def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
-    """Genera y transmite una nota de remisión."""
-    data = generar_nota_remision_json(db, nota_id)
-    data = apply_schema_patch(data)
-    schema = catalogos.get_dte_schema("04")
-    # Validación omitida.
-    # try:
-    #     validate_dte_json(data, db=db)
-    # except Exception as exc:
-    #     json_path = save_dte_json(data)
-    #     errors = _format_validation_errors(exc)
-    #     raise DTEValidationError(errors, json_path) from exc
-    return _enviar_documento(db, nota_id, data, modo)
 
 
 def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:

@@ -1,6 +1,6 @@
 import fitz
 from db import DB
-from dte import generar_nota_debito_json, generar_nota_remision_json
+from notas import generar_nota_debito_json, generar_nota_remision_json
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
 
 

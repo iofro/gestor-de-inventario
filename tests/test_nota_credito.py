@@ -1,11 +1,47 @@
 import fitz
+import json
+from pathlib import Path
+from shutil import copyfile
+
+import dte as dte_module
+from svfe import config as svfe_config
 from db import DB
-from dte import generar_nota_credito_json
+from notas import generar_nota_credito_json
 from factura_sv import generar_nota_credito_pdf
 
 
 def create_db():
     return DB(":memory:")
+
+
+def _setup_datos_negocio(tmp_path: Path):
+    dest = tmp_path / "datos_negocio.json"
+    src = Path("datos_negocio.json")
+    if src.exists():
+        copyfile(src, dest)
+    else:
+        dest.write_text(
+            json.dumps(
+                {
+                    "nit": "00000000000000",
+                    "nrc": "000000-0",
+                    "nombre": "Empresa",
+                    "nombreComercial": "Empresa",
+                    "codActividad": "46484",
+                    "descActividad": "Pruebas",
+                    "telefono": "2222",
+                    "correo": "test@example.com",
+                    "direccion": {
+                        "departamento": "01",
+                        "municipio": "10",
+                        "complemento": "X",
+                    },
+                },
+                ensure_ascii=False,
+            )
+        )
+    dte_module.DATOS_NEGOCIO_PATH = str(dest)
+    svfe_config.DATOS_NEGOCIO_PATH = str(dest)
 
 
 def test_generar_nota_credito_json_ticket(tmp_path):
@@ -23,12 +59,16 @@ def test_generar_nota_credito_json_ticket(tmp_path):
     nota_id = db.cursor.lastrowid
     db.conn.commit()
 
+    _setup_datos_negocio(tmp_path)
     data = generar_nota_credito_json(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "05"
-    assert data.get("documentoRelacionado")
-    assert data["documentoRelacionado"]["tipoDoc"] == "03"
-    assert data["cuerpoDocumento"][0]["precioUni"] < 0
-    assert data["resumen"]["totalPagar"] < 0
+    assert isinstance(data.get("documentoRelacionado"), list)
+    rel = data["documentoRelacionado"][0]
+    assert rel["tipoDocumento"] == "03"
+    assert rel["tipoGeneracion"] == 2
+    assert data["cuerpoDocumento"][0]["precioUni"] > 0
+    assert data["resumen"]["montoTotalOperacion"] > 0
+    assert "totalPagar" not in data["resumen"]
 
 
 def test_generar_nota_credito_json_factura(tmp_path):
@@ -37,9 +77,11 @@ def test_generar_nota_credito_json_factura(tmp_path):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06142201591023", "", "giro", "", "", "Dir", "01", "10")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "nit1", "giro", descuentos=0)
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id, "2024-01-01", 10, "123", "06142201591023", "giro", descuentos=0
+    )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",
@@ -48,8 +90,10 @@ def test_generar_nota_credito_json_factura(tmp_path):
     nota_id = db.cursor.lastrowid
     db.conn.commit()
 
+    _setup_datos_negocio(tmp_path)
     data = generar_nota_credito_json(db, nota_id)
-    assert data["documentoRelacionado"]["tipoDoc"] == "01"
+    rel = data["documentoRelacionado"][0]
+    assert rel["tipoDocumento"] == "03"
 
 
 def _sample_data():

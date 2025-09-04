@@ -6,19 +6,19 @@
       "codTributo": null,
       "codigo": "SKU-NA",
       "descripcion": "Producto Demo 11",
-      "montoDescu": 0.7500,
-      "noGravado": 0.00,
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
       "precioUni": 15.0400,
-      "psv": 0.00,
+      "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
         "20"
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 14.2900,
+      "ventaGravada": 15.0400,
       "ventaNoSuj": 0.0
     }
   ],
@@ -44,13 +44,16 @@
     "tipoEstablecimiento": "01"
   },
   "extension": null,
+  "extra": {
+    "precios_incluyen_iva": true
+  },
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "C8CD65DC-F1B6-48B2-8EDA-5876D344F685",
+    "codigoGeneracion": "0472362B-B666-4297-9EDE-C8FE9607B8DB",
     "fecEmi": "2025-09-03",
-    "horEmi": "22:36:57",
+    "horEmi": "22:53:24",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000110",
+    "numeroControl": "DTE-03-S001P001-000000000000114",
     "tipoContingencia": null,
     "tipoDte": "03",
     "tipoModelo": 1,
@@ -77,38 +80,38 @@
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
-    "descuGravada": 0.75,
+    "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 16.15,
+    "montoTotalOperacion": 17.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 16.15,
+        "montoPago": 17.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
       }
     ],
-    "porcentajeDescuento": 4.99,
+    "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 14.29,
+    "subTotal": 15.04,
     "subTotalVentas": 15.04,
-    "totalDescu": 0.75,
+    "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 14.29,
-    "totalLetras": "DIECISÉIS CON 15/100 DÓLARES",
+    "totalGravada": 15.04,
+    "totalLetras": "DIECISIETE 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 16.15,
+    "totalPagar": 17.00,
     "tributos": [
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.86
+        "valor": 1.96
       }
     ]
   },

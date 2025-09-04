@@ -5,20 +5,20 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 7",
-      "montoDescu": 0.5700,
-      "noGravado": 0.00,
+      "descripcion": "Producto Demo 11",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 11.5000,
-      "psv": 0.00,
+      "precioUni": 15.0400,
+      "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
         "20"
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 10.9300,
+      "ventaGravada": 15.0400,
       "ventaNoSuj": 0.0
     }
   ],
@@ -44,13 +44,16 @@
     "tipoEstablecimiento": "01"
   },
   "extension": null,
+  "extra": {
+    "precios_incluyen_iva": true
+  },
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "CA090512-175A-4055-AEFF-192BF0E7FE6E",
+    "codigoGeneracion": "0472362B-B666-4297-9EDE-C8FE9607B8DB",
     "fecEmi": "2025-09-03",
-    "horEmi": "22:34:37",
+    "horEmi": "22:53:24",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000108",
+    "numeroControl": "DTE-03-S001P001-000000000000114",
     "tipoContingencia": null,
     "tipoDte": "03",
     "tipoModelo": 1,
@@ -77,38 +80,38 @@
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
-    "descuGravada": 0.57,
+    "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 12.36,
+    "montoTotalOperacion": 17.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 12.36,
+        "montoPago": 17.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
       }
     ],
-    "porcentajeDescuento": 4.96,
+    "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 10.93,
-    "subTotalVentas": 11.50,
-    "totalDescu": 0.57,
+    "subTotal": 15.04,
+    "subTotalVentas": 15.04,
+    "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 10.93,
-    "totalLetras": "DOCE CON 36/100 DÓLARES",
+    "totalGravada": 15.04,
+    "totalLetras": "DIECISIETE 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 12.36,
+    "totalPagar": 17.00,
     "tributos": [
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.43
+        "valor": 1.96
       }
     ]
   },

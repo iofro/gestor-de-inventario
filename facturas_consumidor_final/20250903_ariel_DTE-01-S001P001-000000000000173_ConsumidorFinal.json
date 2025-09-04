@@ -1,0 +1,112 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1.0,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 8",
+      "ivaItem": 1.53,
+      "montoDescu": 0.70,
+      "noGravado": 0.0,
+      "numItem": 1,
+      "numeroDocumento": null,
+      "precioUni": 14.0000,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 13.3000,
+      "ventaNoSuj": 0.0
+    }
+  ],
+  "documentoRelacionado": null,
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "extra": {
+    "precios_incluyen_iva": true
+  },
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "12246AC0-C05A-498E-B891-D0D76592EC7A",
+    "fecEmi": "2025-09-03",
+    "horEmi": "23:27:15",
+    "motivoContin": null,
+    "numeroControl": "DTE-01-S001P001-000000000000173",
+    "tipoContingencia": null,
+    "tipoDte": "01",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 1
+  },
+  "otrosDocumentos": null,
+  "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nit": null,
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "nrc": "2273734",
+    "telefono": "70000001"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 13.30,
+    "numPagoElectronico": "",
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 13.30,
+        "periodo": null,
+        "plazo": null,
+        "referencia": null
+      }
+    ],
+    "porcentajeDescuento": 0.0,
+    "reteRenta": 0.0,
+    "saldoFavor": 0.0,
+    "subTotal": 13.30,
+    "subTotalVentas": 13.30,
+    "totalDescu": 0.70,
+    "totalExenta": 0.0,
+    "totalGravada": 13.30,
+    "totalIva": 1.53,
+    "totalLetras": "Trece Dolares con treinta centavos",
+    "totalNoGravado": 0.0,
+    "totalNoSuj": 0.0,
+    "totalPagar": 13.30,
+    "tributos": null
+  },
+  "ventaTercero": null
+}

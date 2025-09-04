@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "EC8D1A94-8321-4EA1-9282-2A229469D4EB",
+  "estado": "borrador",
+  "firmas": [
+    {
+      "archivo": "documento-20250903225256.jws",
+      "estado": "borrador",
+      "fechaFirma": "20250903225256",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "d85c7d579de9b12a738125e96e49ec548e3c310894fc0456297c9bd106416597",
+  "timestamp": "20250903225256"
+}

@@ -2393,6 +2393,7 @@ def generar_dte_json(
     }
 
     validate_dte_json(result, db=db, precios_incluyen_iva=False)
+    result.pop("extra", None)
     return json.loads(stable_stringify(result), parse_float=Decimal)
 
 

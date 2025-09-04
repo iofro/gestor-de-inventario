@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QCheckBox,
+    QMenu,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -158,17 +159,19 @@ class FacturacionTab(QWidget):
         left_layout.addWidget(self.table)
 
         btns = QHBoxLayout()
-        self.btn_credito = QPushButton("Nota de crédito")
-        self.btn_debito = QPushButton("Nota de débito")
+        self.btn_nota = QPushButton("Nota de crédito y débito")
+        nota_menu = QMenu(self)
+        nota_menu.addAction("Nota de crédito", lambda: self.create_nota("credito"))
+        nota_menu.addAction("Nota de débito", lambda: self.create_nota("debito"))
+        self.btn_nota.setMenu(nota_menu)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
-            "background-color: #b71c1c; color: #fff; border-radius: 6px;"
+            "background-color: #b71c1c; color: #fff; border-radius: 6px;",
         )
-        btns.addWidget(self.btn_credito)
-        btns.addWidget(self.btn_debito)
+        btns.addWidget(self.btn_nota)
         btns.addWidget(self.btn_enviar)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
@@ -194,9 +197,7 @@ class FacturacionTab(QWidget):
         self.date_to.dateChanged.connect(self.load_invoices)
         self.table.itemSelectionChanged.connect(self.show_invoice)
         self.table.itemSelectionChanged.connect(self._update_send_btn)
-        
-        self.btn_credito.clicked.connect(lambda: self.create_nota("credito"))
-        self.btn_debito.clicked.connect(lambda: self.create_nota("debito"))
+
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_files)

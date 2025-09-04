@@ -1,4 +1,4 @@
-from decimal import Decimal as D, ROUND_HALF_UP
+from decimal import Decimal as D
 import pytest
 
 from dte import recalcular_totales, money
@@ -31,54 +31,49 @@ def test_ccf_totals_with_inclusive_prices():
     assert resumen["tributos"][0]["valor"] == D("0.01")
     assert "totalIva" not in resumen
     assert resumen["pagos"][0]["montoPago"] == D("0.10")
-
-
-def test_ccf_descuento_linea():
+def test_ccf_descuento_no_permitido():
     items = [
         {
             "numItem": 1,
             "descripcion": "A",
             "cantidad": D("1"),
-            "precioUni": D("9.88"),
-            "montoDescu": D("0.74"),
+            "precioUni": D("10.00"),
+            "montoDescu": D("2.00"),
         }
     ]
     payload = _build_payload(items)
     recalcular_totales(payload)
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert item["precioUni"] == D("9.14")
-    assert item["ventaGravada"] == D("9.14")
-    assert item["montoDescu"] == D("0.74")
-    assert item["tributos"] == ["20"]
-    assert resumen["subTotalVentas"] == D("9.88")
-    assert resumen["descuGravada"] == D("0.74")
-    assert resumen["totalDescu"] == D("0.74")
-    assert resumen["subTotal"] == D("9.14")
-    assert resumen["montoTotalOperacion"] == D("10.33")
-    assert resumen["totalPagar"] == D("10.33")
-    assert resumen["pagos"][0]["montoPago"] == D("10.33")
-    assert resumen["tributos"][0]["valor"] == D("1.19")
+    assert item["precioUni"] == D("8.00")
+    assert item["montoDescu"] == D("0")
+    assert resumen["totalDescu"] == D("0")
+    assert resumen["porcentajeDescuento"] == D("0")
+    assert resumen["totalGravada"] == D("8.00")
+    assert resumen["montoTotalOperacion"] == D("9.04")
+    assert resumen["pagos"][0]["montoPago"] == D("9.04")
 
 
-def test_ccf_descuento_alto_iva_consistente():
-    """Los tributos deben derivarse de la base gravada con descuentos altos."""
+def test_ccf_descuento_un_por_ciento():
     items = [
         {
             "numItem": 1,
             "descripcion": "A",
             "cantidad": D("1"),
-            "precioUni": D("8.85"),
-            "montoDescu": D("0.89"),
+            "precioUni": D("100.00"),
+            "montoDescu": D("1.00"),
         }
     ]
     payload = _build_payload(items)
     recalcular_totales(payload)
+    item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    total_gravada = resumen["totalGravada"]
-    bruto = money((total_gravada * D("1.13")).quantize(D("0.001"), rounding=ROUND_HALF_UP))
-    expected_iva = money(bruto - total_gravada)
-    assert resumen["tributos"][0]["valor"] == expected_iva
+    assert item["precioUni"] == D("99.00")
+    assert item["montoDescu"] == D("1.00")
+    assert resumen["totalDescu"] == D("1.00")
+    assert resumen["porcentajeDescuento"] == D("1.00")
+    assert resumen["tributos"][0]["valor"] == D("12.87")
+    assert resumen["totalPagar"] == D("111.87")
 
 
 def test_ccf_precio_7_96_iva_redondeo():

@@ -1256,6 +1256,31 @@ def recalcular_totales(
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
+    if tipo_dte == "03":
+        bruto_desc = D("0")
+        desc_sum = D("0")
+        for _it in cuerpo:
+            _cant = D(str(_it.get("cantidad") or 0))
+            _precio = D(str(_it.get("precioUni") or 0))
+            _descu = D(str(_it.get("montoDescu") or 0))
+            bruto_desc += _cant * _precio
+            desc_sum += _descu
+        porcentaje = (
+            d2(desc_sum * D("100") / bruto_desc) if bruto_desc else D("0")
+        )
+        if porcentaje != D("1"):
+            for _it in cuerpo:
+                _cant = D(str(_it.get("cantidad") or 0))
+                _precio = D(str(_it.get("precioUni") or 0))
+                _descu = D(str(_it.get("montoDescu") or 0))
+                if _descu:
+                    total_final = (_cant * _precio) - _descu
+                    if _cant:
+                        _it["precioUni"] = money(total_final / _cant)
+                    _it["montoDescu"] = money(0)
+            resumen["descuNoSuj"] = resumen["descuExenta"] = resumen["descuGravada"] = resumen["totalDescu"] = money(0)
+            resumen["porcentajeDescuento"] = money(0)
+
     iva_total = D("0")
     venta_gravada_sum = D("0")
     bruto_sum = D("0")

@@ -2444,10 +2444,13 @@ def validate_dte_json(
     ident["tipoDte"] = tipo_dte_val
     if tipo_dte_val not in catalogos.DTE_TIPOS:
         raise ValueError("tipoDte inválido")
-    if tipo_dte_val in {"01", "03"}:
+    if tipo_dte_val == "03":
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
         payload["extra"] = extra_conf
+    elif tipo_dte_val == "01":
+        precios_flag = True
+        extra_conf["precios_incluyen_iva"] = True
 
     # Normalización de operación y contingencia
     try:
@@ -2661,21 +2664,40 @@ def validate_dte_json(
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
         raise ValueError("Teléfono de receptor inválido")
-    required_rec_fields = [
-        "nit",
-        "nrc",
-        "nombre",
-        "nombreComercial",
-        "codActividad",
-        "descActividad",
-        "telefono",
-        "correo",
-        "direccion",
-    ]
-    for f in required_rec_fields:
-        receptor.setdefault(f, None)
-    for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
-        receptor.pop(f, None)
+    if tipo_dte == "01":
+        required_rec_fields = [
+            "nrc",
+            "nombre",
+            "codActividad",
+            "descActividad",
+            "telefono",
+            "correo",
+            "direccion",
+            "tipoDocumento",
+            "numDocumento",
+        ]
+        for f in ("nit", "nombreComercial"):
+            receptor.pop(f, None)
+        for f in required_rec_fields:
+            receptor.setdefault(f, None)
+        for f in ("noRemision", "ordenNo"):
+            receptor.pop(f, None)
+    else:
+        required_rec_fields = [
+            "nit",
+            "nrc",
+            "nombre",
+            "nombreComercial",
+            "codActividad",
+            "descActividad",
+            "telefono",
+            "correo",
+            "direccion",
+        ]
+        for f in required_rec_fields:
+            receptor.setdefault(f, None)
+        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+            receptor.pop(f, None)
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
@@ -3057,6 +3079,8 @@ def validate_dte_json(
         for p in resumen["pagos"]:
             p["montoPago"] = _zero_or(p["montoPago"], money)
 
+    if payload.get("identificacion", {}).get("tipoDte") == "01":
+        payload.pop("extra", None)
     payload["resumen"] = resumen
 
 

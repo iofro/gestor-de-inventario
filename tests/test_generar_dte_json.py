@@ -1673,3 +1673,71 @@ def test_generar_dte_json_cons_final_rechaza_iva_en_tributos(tmp_path):
 
     with pytest.raises(ValueError):
         generar_dte_json(db, venta_id)
+
+
+def test_generar_dte_json_dte03_descuento_colapsado(tmp_path):
+    import dte as dte_module
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cid = db.cursor.lastrowid
+
+    precio = Decimal("15.04")
+    descuento = Decimal("0.75")
+    total = money(precio - descuento)
+    venta_id = db.add_venta(
+        "2024-01-01", float(total), cliente_id=cid, extra={"precios_incluyen_iva": False}
+    )
+    db.add_detalle_venta(
+        venta_id, pid, 1, float(precio), vendedor_id=vid, descuento=float(descuento)
+    )
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    item = data["cuerpoDocumento"][0]
+    res = data["resumen"]
+    D = Decimal
+
+    assert D(str(item["precioUni"])) == D("14.29")
+    assert D(str(item["montoDescu"])) == D("0")
+    assert D(str(res["descuGravada"])) == D("0")
+    assert D(str(res["descuExenta"])) == D("0")
+    assert D(str(res["descuNoSuj"])) == D("0")
+    assert D(str(res["totalDescu"])) == D("0")
+
+    assert D(str(res["subTotalVentas"])) == D("14.29")
+    assert D(str(res["subTotal"])) == D("14.29")
+    assert D(str(res["totalGravada"])) == D("14.29")

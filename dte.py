@@ -35,7 +35,6 @@ from pathlib import Path
 import jsonpatch
 from paths import DATOS_NEGOCIO_PATH
 from xml.etree.ElementTree import Element, SubElement
-import copy
 
 APP_VERSION = "1.0.0"  # editable a futuro
 
@@ -2393,9 +2392,8 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    validate_dte_json(copy.deepcopy(result), db=db, precios_incluyen_iva=False)
-    json_result = stable_stringify(result)
-    return json.loads(json_result, parse_float=Decimal)
+    validate_dte_json(result, db=db, precios_incluyen_iva=False)
+    return json.loads(stable_stringify(result), parse_float=Decimal)
 
 
 def validate_dte_json(

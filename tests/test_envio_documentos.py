@@ -6,12 +6,12 @@ from pathlib import Path
 from db import DB
 from dte import (
     enviar_factura,
-    enviar_nota_credito,
     enviar_evento_contingencia,
     enviar_evento_anulacion,
     _post_dte,
     DTEValidationError,
 )
+from notas import enviar_nota_credito
 import dte
 import auth
 from tests.conftest import make_jws
@@ -189,7 +189,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
-        "dte.generar_nota_credito_json",
+        "notas.generar_nota_credito_json",
         lambda db_obj, nid: {
             "receptor": {"nombre": "Cliente"},
             "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],

@@ -30,11 +30,11 @@ from factura_sv import (
     generar_nota_debito_pdf,
     generar_nota_remision_pdf,
 )
-from dte import (
+from dte import transmitir_dte
+from notas import (
     generar_nota_credito_json,
     generar_nota_debito_json,
     generar_nota_remision_json,
-    transmitir_dte,
 )
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths

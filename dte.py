@@ -1256,6 +1256,7 @@ def recalcular_totales(
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
+    colapso_desc = False
     if tipo_dte == "03":
         bruto_desc = D("0")
         desc_sum = D("0")
@@ -1265,19 +1266,22 @@ def recalcular_totales(
             _descu = D(str(_it.get("montoDescu") or 0))
             bruto_desc += _cant * _precio
             desc_sum += _descu
-        porcentaje = (
-            d2(desc_sum * D("100") / bruto_desc) if bruto_desc else D("0")
-        )
+        porcentaje = d2(desc_sum * D("100") / bruto_desc) if bruto_desc else D("0")
         if porcentaje != D("1"):
+            colapso_desc = True
             for _it in cuerpo:
                 _cant = D(str(_it.get("cantidad") or 0))
                 _precio = D(str(_it.get("precioUni") or 0))
                 _descu = D(str(_it.get("montoDescu") or 0))
                 if _descu:
-                    total_final = (_cant * _precio) - _descu
+                    total_final_base = (_cant * _precio) - _descu
                     if _cant:
-                        _it["precioUni"] = money(total_final / _cant)
-                    _it["montoDescu"] = money(0)
+                        base_unit = d4(total_final_base / _cant)
+                    else:
+                        base_unit = d4(0)
+                    _it["precioUni"] = base_unit
+                    _it["montoDescu"] = d4(0)
+                    _it["ventaGravada"] = d4(base_unit * _cant)
             resumen["descuNoSuj"] = resumen["descuExenta"] = resumen["descuGravada"] = resumen["totalDescu"] = money(0)
             resumen["porcentajeDescuento"] = money(0)
 
@@ -1329,10 +1333,10 @@ def recalcular_totales(
             iva_total += esperado_iva
             venta_gravada_sum += linea
         elif tipo_dte == "03":
-            base_pre = money(cant * precio)
-            base = money(base_pre - monto_descu)
+            base_pre = d4(cant * precio)
+            base = d4(base_pre - monto_descu)
             if base < 0:
-                base = money(0)
+                base = d4(0)
             bruto_desc = money_round_up(base * D("1.13"))
             iva_val = money(bruto_desc - base)
             bruto_linea = money_round_up(base_pre * D("1.13"))
@@ -1344,9 +1348,9 @@ def recalcular_totales(
             descu_sum += money(monto_descu)
             cantidades.append(cant)
             item.pop("ivaItem", None)
-            item["ventaExenta"] = money(0)
-            item["ventaNoSuj"] = money(0)
-            item["noGravado"] = money(0)
+            item["ventaExenta"] = d4(0)
+            item["ventaNoSuj"] = d4(0)
+            item["noGravado"] = d4(0)
         else:
             bruto_linea = money(cant * precio)
             bruto_linea_sum += bruto_linea
@@ -1381,18 +1385,18 @@ def recalcular_totales(
             base_res = base_total - sum(bases)
             iva_res = iva_total_calc - sum(ivas)
             if base_res or iva_res:
-                bases[0] = money(bases[0] + base_res)
+                bases[0] = d4(bases[0] + base_res)
                 ivas[0] = money(ivas[0] + iva_res)
             for idx, item in enumerate(cuerpo):
                 if idx < len(bases):
-                    base_val = bases[idx]
+                    base_val = d4(bases[idx])
                     cant = cantidades[idx]
                     iva_val = ivas[idx]
                     item["ventaGravada"] = base_val
                     if cant > 0:
-                        item["precioUni"] = money(base_val / cant)
+                        item["precioUni"] = d4(base_val / cant)
                     else:
-                        item["precioUni"] = money(0)
+                        item["precioUni"] = d4(0)
                     trib_list: list[str] = []
                     tipo_item = int(item.get("tipoItem", 1))
                     if base_val > 0:
@@ -1413,10 +1417,14 @@ def recalcular_totales(
             iva_total = D("0")
 
         if tipo_dte == "03":
-            sub_total_ventas = money(sum(bases_pre))
-            descu_gravada_sum = money(
-                sum(bp - b for bp, b in zip(bases_pre, bases))
-            )
+            if colapso_desc:
+                sub_total_ventas = money(sum(bases))
+                descu_gravada_sum = money(0)
+            else:
+                sub_total_ventas = money(sum(bases_pre))
+                descu_gravada_sum = money(
+                    sum(bp - b for bp, b in zip(bases_pre, bases))
+                )
         else:
             if precios_flag:
                 sub_total_ventas = money(sum(bases_pre))

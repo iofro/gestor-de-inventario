@@ -1,0 +1,103 @@
+{
+  "identificacion": {
+    "version": 3,
+    "ambiente": "00",
+    "tipoDte": "04",
+    "numeroControl": "DTE-04-S001P001-000000000000001",
+    "codigoGeneracion": "E86F016F-F5F3-46CA-A3AB-984793501841",
+    "tipoModelo": 1,
+    "tipoOperacion": 1,
+    "tipoContingencia": null,
+    "motivoContin": null,
+    "fecEmi": "2025-09-04",
+    "horEmi": "10:30:00",
+    "tipoMoneda": "USD"
+  },
+  "documentoRelacionado": [
+    {
+      "tipoDocumento": "03",
+      "tipoGeneracion": 2,
+      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "fechaEmision": "2025-09-04"
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "nrc": "2273734",
+    "telefono": "70000001",
+    "bienTitulo": "01",
+    "tipoDocumento": "36",
+    "numDocumento": "007989352"
+  },
+  "ventaTercero": null,
+  "cuerpoDocumento": [
+    {
+      "numItem": 1,
+      "tipoItem": 1,
+      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "codigo": "NR-REL-CCF",
+      "codTributo": null,
+      "descripcion": "Traslado de mercancía según CCF 7F7A41AA…",
+      "cantidad": 1,
+      "uniMedida": 59,
+      "precioUni": 0.0,
+      "montoDescu": 0.0,
+      "ventaNoSuj": 0.0,
+      "ventaExenta": 0.0,
+      "ventaGravada": 0.0,
+      "tributos": null
+    }
+  ],
+  "resumen": {
+    "totalNoSuj": 0.0,
+    "totalExenta": 0.0,
+    "totalGravada": 0.0,
+    "subTotalVentas": 0.0,
+    "descuNoSuj": 0.0,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "porcentajeDescuento": 0.0,
+    "totalDescu": 0.0,
+    "tributos": null,
+    "subTotal": 0.0,
+    "montoTotalOperacion": 0.0,
+    "totalLetras": "CERO 00/100 DÓLARES"
+  },
+  "extension": {
+    "nombEntrega": "Responsable Emisor",
+    "docuEntrega": "000868547",
+    "nombRecibe": "Responsable Receptor",
+    "docuRecibe": "007989352",
+    "observaciones": "Traslado de mercancía sin valor comercial, documento de transporte vinculado al CCF relacionado."
+  },
+  "apendice": null
+}

@@ -47,3 +47,12 @@ def test_pagos_rounding_adjusts_last_payment():
     suma = sum(p["montoPago"] for p in norm)
     assert suma == total
     assert norm[-1]["montoPago"] == D("5.00")
+
+
+def test_resumen_matches_sale_total():
+    items_total = D('40.51')
+    fiscal = {'iva': D('5.27')}
+    venta = {'total': D('45.77')}
+    resumen = calcular_resumen(items_total, venta, fiscal=fiscal, tipo_dte='03')
+    assert resumen['totalPagar'] == D('45.77')
+    assert resumen['tributos'][0]['valor'] == D('5.26')

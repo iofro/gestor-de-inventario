@@ -1088,6 +1088,23 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             (total_descu * D("100") / base_desc) if base_desc else D("0")
         )
 
+    venta_total = None
+    if isinstance(venta, dict):
+        venta_total_raw = venta.get("total")
+        if venta_total_raw is not None:
+            venta_total = money(venta_total_raw)
+    elif venta is not None:
+        try:
+            venta_total = money(venta)
+        except Exception:
+            venta_total = None
+    if venta_total is not None:
+        diff = money(venta_total - total_pagar)
+        if diff != 0:
+            total_iva = money(total_iva + diff)
+            monto_total_operacion = money(monto_total_operacion + diff)
+            total_pagar = money(total_pagar + diff)
+
     resumen = RESUMEN_DEFAULTS.get(tipo_dte, {}).copy()
     resumen.update(
         {

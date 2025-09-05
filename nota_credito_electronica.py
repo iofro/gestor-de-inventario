@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+import json
 from typing import Optional
 
 from db import DB
@@ -74,6 +75,24 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
         tipo_doc = "03"
 
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+
+    detalles = None
+    if nota.get("detalles"):
+        try:
+            detalles = json.loads(nota["detalles"])
+        except Exception:
+            detalles = None
+
+    if detalles:
+        return generar_nce_desde_dte(
+            db,
+            dte_origen,
+            None,
+            detalles=detalles,
+            ambiente=ambiente,
+            motivo=nota.get("motivo"),
+        )
+
     total_origen = Decimal(str(dte_origen.get("resumen", {}).get("montoTotalOperacion", 0)))
     monto_nc = Decimal(str(nota.get("monto", 0)))
     if total_origen <= Decimal_0:
@@ -92,28 +111,16 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
 def generar_nce_desde_dte(
     db: DB,
     dte_origen: dict,
-    ratio: Decimal,
+    ratio: Decimal | None,
     *,
+    detalles: Optional[list] = None,
     ambiente: str = "00",
     motivo: Optional[str] = None,
 ) -> dict:
-    """Genera la estructura JSON de una NCE.
-
-    Parameters
-    ----------
-    db:
-        Conexión a la base de datos (usada para numeración).
-    dte_origen:
-        DTE original desde el cual se prorrateará la nota.
-    ratio:
-        Fracción del documento original que se acreditará (``0`` a ``1``).
-    ambiente:
-        Código de ambiente MH.
-    motivo:
-        Texto opcional para incluir en la descripción del ítem.
-    """
-    if ratio <= Decimal_0:
-        raise ValueError("El porcentaje a acreditar debe ser mayor que cero")
+    """Genera la estructura JSON de una NCE."""
+    if detalles is None:
+        if ratio is None or ratio <= Decimal_0:
+            raise ValueError("El porcentaje a acreditar debe ser mayor que cero")
 
     cabecera = generar_cabecera_dte_data(1, 1, "05", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
@@ -148,79 +155,122 @@ def generar_nce_desde_dte(
     limpiar_documentos(receptor)
 
     orig_resumen = dte_origen.get("resumen", {})
-    total_grav = Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio
-    total_exenta = Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio
-    total_nosuj = Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio
-
-    total_grav = d2(total_grav)
-    total_exenta = d2(total_exenta)
-    total_nosuj = d2(total_nosuj)
-
-    items = []
-    num = 1
+    items: list[dict] = []
     uuid_origen = origen_ident.get("codigoGeneracion", "")
-    pct_text = _pct_label(ratio)
     tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
     extra_desc = f": {motivo}" if motivo else ""
-    if total_grav > 0:
-        items.append(
-            {
-                "numItem": num,
-                "tipoItem": 1,
-                "codigo": f"NC{pct_text}-{uuid_origen[:8]}-G",
-                "descripcion": f"Nota de crédito {pct_text}% sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}",
-                "cantidad": 1,
-                "uniMedida": 59,
-                "precioUni": total_grav,
-                "montoDescu": 0.0,
-                "ventaGravada": total_grav,
-                "ventaExenta": 0.0,
-                "ventaNoSuj": 0.0,
-                "tributos": [TRIBUTO_IVA],
-                "numeroDocumento": uuid_origen,
-                "codTributo": None,
-            }
-        )
-        num += 1
-    if total_exenta > 0:
-        items.append(
-            {
-                "numItem": num,
-                "tipoItem": 1,
-                "codigo": f"NC{pct_text}-{uuid_origen[:8]}-E",
-                "descripcion": f"Nota de crédito {pct_text}% sobre operaciones exentas del {tipo_doc_desc} relacionado{extra_desc}",
-                "cantidad": 1,
-                "uniMedida": 59,
-                "precioUni": total_exenta,
-                "montoDescu": 0.0,
-                "ventaGravada": 0.0,
-                "ventaExenta": total_exenta,
-                "ventaNoSuj": 0.0,
-                "tributos": [],
-                "numeroDocumento": uuid_origen,
-                "codTributo": None,
-            }
-        )
-        num += 1
-    if total_nosuj > 0:
-        items.append(
-            {
-                "numItem": num,
-                "tipoItem": 1,
-                "codigo": f"NC{pct_text}-{uuid_origen[:8]}-N",
-                "descripcion": f"Nota de crédito {pct_text}% sobre operaciones no sujetas del {tipo_doc_desc} relacionado{extra_desc}",
-                "cantidad": 1,
-                "uniMedida": 59,
-                "precioUni": total_nosuj,
-                "montoDescu": 0.0,
-                "ventaGravada": 0.0,
-                "ventaExenta": 0.0,
-                "ventaNoSuj": total_nosuj,
-                "tributos": [],
-                "numeroDocumento": uuid_origen,
-                "codTributo": None,
-            }
-        )
+
+    if detalles:
+        total_grav = Decimal_0
+        total_exenta = Decimal_0
+        total_nosuj = Decimal_0
+        num = 1
+        for det in detalles:
+            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
+            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0))
+            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0))
+            total_grav += grav
+            total_exenta += exenta
+            total_nosuj += nosuj
+            precio = det.get("precio_unitario") or det.get("precioUni")
+            if precio is None:
+                precio = float(grav + exenta + nosuj)
+            cantidad = det.get("cantidad", 1)
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": det.get("tipoItem", 1),
+                    "codigo": det.get("codigo", f"NC{uuid_origen[:8]}-{num}"),
+                    "descripcion": det.get(
+                        "descripcion",
+                        f"Nota de crédito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
+                    ),
+                    "cantidad": cantidad,
+                    "uniMedida": det.get("uniMedida", 59),
+                    "precioUni": precio,
+                    "montoDescu": det.get("montoDescu", 0.0),
+                    "ventaGravada": d2(grav),
+                    "ventaExenta": d2(exenta),
+                    "ventaNoSuj": d2(nosuj),
+                    "tributos": [TRIBUTO_IVA] if grav > 0 else [],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
+                }
+            )
+            num += 1
+        total_grav = d2(total_grav)
+        total_exenta = d2(total_exenta)
+        total_nosuj = d2(total_nosuj)
+    else:
+        total_grav = Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio
+        total_exenta = Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio
+        total_nosuj = Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio
+
+        total_grav = d2(total_grav)
+        total_exenta = d2(total_exenta)
+        total_nosuj = d2(total_nosuj)
+
+        num = 1
+        pct_text = _pct_label(ratio)
+        if total_grav > 0:
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": 1,
+                    "codigo": f"NC{pct_text}-{uuid_origen[:8]}-G",
+                    "descripcion": f"Nota de crédito {pct_text}% sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}",
+                    "cantidad": 1,
+                    "uniMedida": 59,
+                    "precioUni": total_grav,
+                    "montoDescu": 0.0,
+                    "ventaGravada": total_grav,
+                    "ventaExenta": 0.0,
+                    "ventaNoSuj": 0.0,
+                    "tributos": [TRIBUTO_IVA],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
+                }
+            )
+            num += 1
+        if total_exenta > 0:
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": 1,
+                    "codigo": f"NC{pct_text}-{uuid_origen[:8]}-E",
+                    "descripcion": f"Nota de crédito {pct_text}% sobre operaciones exentas del {tipo_doc_desc} relacionado{extra_desc}",
+                    "cantidad": 1,
+                    "uniMedida": 59,
+                    "precioUni": total_exenta,
+                    "montoDescu": 0.0,
+                    "ventaGravada": 0.0,
+                    "ventaExenta": total_exenta,
+                    "ventaNoSuj": 0.0,
+                    "tributos": [],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
+                }
+            )
+            num += 1
+        if total_nosuj > 0:
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": 1,
+                    "codigo": f"NC{pct_text}-{uuid_origen[:8]}-N",
+                    "descripcion": f"Nota de crédito {pct_text}% sobre operaciones no sujetas del {tipo_doc_desc} relacionado{extra_desc}",
+                    "cantidad": 1,
+                    "uniMedida": 59,
+                    "precioUni": total_nosuj,
+                    "montoDescu": 0.0,
+                    "ventaGravada": 0.0,
+                    "ventaExenta": 0.0,
+                    "ventaNoSuj": total_nosuj,
+                    "tributos": [],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
+                }
+            )
 
     subtotal_ventas = total_grav + total_exenta + total_nosuj
     iva_val = d2(Decimal(str(total_grav)) * IVA)

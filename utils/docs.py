@@ -58,6 +58,28 @@ def get_document_paths(date, cliente, identifier, doc_type, root=None):
     return pdf_path, json_path
 
 
+def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
+    """Return paths ensuring MH-required naming for DTE notes."""
+    base = root or BASE_DIR
+    folder = FOLDERS.get(doc_type)
+    if root:
+        name = os.path.basename(folder)
+        folder = os.path.join(root, name)
+    os.makedirs(folder, exist_ok=True)
+    if isinstance(fecha, datetime):
+        d = fecha
+    else:
+        try:
+            d = datetime.strptime(str(fecha)[:10], '%Y-%m-%d')
+        except Exception:
+            d = datetime.now()
+    date_str = d.strftime('%Y%m%d')
+    base_name = f"{date_str}_{sanitize_filename(empresa)}_{numero_control}_{sanitize_filename(doc_type)}"
+    pdf_path = os.path.join(folder, base_name + '.pdf')
+    json_path = os.path.join(folder, base_name + '.json')
+    return pdf_path, json_path
+
+
 def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
     """Create an invoice JSON following the template structure."""
     try:

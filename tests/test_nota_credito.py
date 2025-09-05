@@ -1,6 +1,6 @@
 import fitz
 from db import DB
-from dte import generar_nota_credito_json
+from nota_credito_electronica import generar_nce_desde_nota
 from factura_sv import generar_nota_credito_pdf
 
 
@@ -8,7 +8,16 @@ def create_db():
     return DB(":memory:")
 
 
-def test_generar_nota_credito_json_ticket(tmp_path):
+def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
@@ -23,23 +32,37 @@ def test_generar_nota_credito_json_ticket(tmp_path):
     nota_id = db.cursor.lastrowid
     db.conn.commit()
 
-    data = generar_nota_credito_json(db, nota_id)
+    data = generar_nce_desde_nota(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
-    assert data["documentoRelacionado"]["tipoDoc"] == "03"
-    assert data["cuerpoDocumento"][0]["precioUni"] < 0
-    assert data["resumen"]["totalPagar"] < 0
+    assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
+    assert data["cuerpoDocumento"][0]["precioUni"] > 0
+    assert "totalPagar" not in data["resumen"]
+    assert data["resumen"]["montoTotalOperacion"] > 0
+    for k in ("ivaRete1", "reteRenta", "ivaPerci1", "condicionOperacion"):
+        assert k not in data["resumen"]
 
 
-def test_generar_nota_credito_json_factura(tmp_path):
+def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "0614-140710-001-2", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "nit1", "giro", descuentos=0)
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id, "2024-01-01", 10, "123", "06141407100012", "giro", descuentos=0
+    )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",
@@ -48,8 +71,9 @@ def test_generar_nota_credito_json_factura(tmp_path):
     nota_id = db.cursor.lastrowid
     db.conn.commit()
 
-    data = generar_nota_credito_json(db, nota_id)
-    assert data["documentoRelacionado"]["tipoDoc"] == "01"
+    data = generar_nce_desde_nota(db, nota_id)
+    assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
+    assert "-" not in data["receptor"].get("nit", "")
 
 
 def _sample_data():

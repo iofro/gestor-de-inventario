@@ -17,9 +17,10 @@ from PyQt5.QtCore import Qt
 class NotaDetalleDialog(QDialog):
     """Dialogo para ajustar montos de una venta por partida."""
 
-    def __init__(self, detalles: List[Dict], parent=None):
+    def __init__(self, detalles: List[Dict], tipo: str, parent=None):
         super().__init__(parent)
         self.detalles = detalles
+        self.tipo = tipo
         self.setWindowTitle("Detalle de Nota")
         self._build_ui()
         self._populate_table()
@@ -83,7 +84,10 @@ class NotaDetalleDialog(QDialog):
 
             spin = QDoubleSpinBox()
             spin.setDecimals(2)
-            spin.setRange(-1_000_000, 1_000_000)
+            if self.tipo == "credito":
+                spin.setRange(-1_000_000, 0)
+            else:
+                spin.setRange(0, 1_000_000)
             spin.setValue(0)
             spin.valueChanged.connect(self._update_total)
             self.table.setCellWidget(row, 5, spin)
@@ -93,7 +97,7 @@ class NotaDetalleDialog(QDialog):
         for row in range(self.table.rowCount()):
             spin = self.table.cellWidget(row, 5)
             if isinstance(spin, QDoubleSpinBox):
-                total += spin.value()
+                total += abs(spin.value())
         self.total_label.setText(f"Total: {total:.2f}")
 
     def get_data(self) -> Tuple[float, str, List[Dict]]:
@@ -111,5 +115,5 @@ class NotaDetalleDialog(QDialog):
                             "ajuste": val,
                         }
                     )
-                    total += val
+                    total += abs(val)
         return total, self.motivo_edit.text(), detalles

@@ -64,7 +64,7 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     assert data["identificacion"]["tipoDte"] == "06"
     assert data["resumen"]["montoTotalOperacion"] > 0
     doc_rel = data["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "01"
+    assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["fechaEmision"]
     assert doc_rel["numeroDocumento"] != data["identificacion"].get("numeroControl")

@@ -471,8 +471,9 @@ def generar_nota_credito_pdf(
     det_neg = []
     for d in detalles:
         dn = d.copy()
-        if "cantidad" in dn and isinstance(dn["cantidad"], (int, float)):
-            dn["cantidad"] = -abs(dn["cantidad"])
+        for key in ("cantidad", "precio_unitario", "ventas_gravadas", "ventas_exentas", "ventas_no_sujetas"):
+            if key in dn and isinstance(dn[key], (int, float)):
+                dn[key] = -abs(dn[key])
         det_neg.append(dn)
 
     generar_factura_electronica_pdf(

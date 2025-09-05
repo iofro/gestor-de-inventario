@@ -30,14 +30,13 @@ from factura_sv import (
     generar_nota_remision_pdf,
 )
 from dte import (
-    generar_nota_credito_json,
-    generar_nota_debito_json,
     generar_nota_remision_json,
     transmitir_dte,
     enviar_nota_credito,
     enviar_nota_debito,
+    generar_nde_desde_dte,
 )
-from utils.monto import monto_a_texto_sv
+import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
@@ -47,6 +46,7 @@ import subprocess
 import shutil
 import dte
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
+from decimal import Decimal
 
 # Directory where debit notes will be stored
 NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
@@ -827,19 +827,16 @@ class FacturacionTab(QWidget):
                     "id": d.get("numItem"),
                     "producto_id": d.get("codigo"),
                     "descripcion": d.get("descripcion", ""),
-                    "cantidad": d.get("cantidad", 0),
-                    "precio_unitario": d.get("precioUni", 0),
-                    "descuento": d.get("montoDescu", 0),
+                    "cantidad": float(d.get("cantidad", 0)),
+                    "precio_unitario": float(d.get("precioUni", 0)),
+                    "descuento": float(d.get("montoDescu", 0)),
                     "descuento_tipo": "$",
+                    "ventas_gravadas": float(d.get("ventaGravada", 0)),
+                    "ventas_exentas": float(d.get("ventaExenta", 0)),
+                    "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
                 }
             )
 
-        venta = None
-        if venta_id is not None:
-            venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-            if venta is None:
-                QMessageBox.warning(self, "Nota", "Venta asociada no encontrada")
-                return
         dialog = NotaDetalleDialog(detalles_venta, tipo, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -848,12 +845,11 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Nota", "El monto total debe ser diferente de cero")
             return
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
-
         resumen_factura = data.get("resumen", {}) or {}
         total_original = float(
             resumen_factura.get("totalPagar")
             or resumen_factura.get("montoTotalOperacion")
-            or (venta.get("total") if venta else 0)
+            or 0
         )
         if tipo == "debito":
             total_ajustado = total_original + monto
@@ -870,106 +866,90 @@ class FacturacionTab(QWidget):
         if QMessageBox.question(self, "Confirmar", resumen, QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
 
-        if venta_id is None:
-            confirm = QMessageBox.question(
-                self,
-                "Nota",
-                "La factura no está asociada a una venta. Esto podría causar algún conflicto. ¿Desea continuar?",
-                QMessageBox.Yes | QMessageBox.No,
-            )
-            if confirm != QMessageBox.Yes:
-                return
-
         nota_id = self.manager.db.agregar_nota(
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
-        if venta_id is None:
-            QMessageBox.warning(
-                self,
-                "Nota",
-                "La nota no está asociada a una venta; no se puede generar DTE.",
-            )
-            return
-
-        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
-        venta_data = dict(venta)
-        if credito_info:
-            venta_data.update(credito_info)
-
-        if venta_data.get("vendedor_id"):
-            trabajador = self.manager.db.get_trabajador(venta_data["vendedor_id"])
-            if trabajador:
-                venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
-
-        sumas = descuentos = 0
-        ventas_exentas = ventas_no_sujetas = iva = 0
-        for d in detalles_venta:
-            base_total = d.get("precio_unitario", 0) * d.get("cantidad", 0)
-            desc = d.get("descuento", 0)
-            if d.get("descuento_tipo") == "%":
-                desc = base_total * d.get("descuento", 0) / 100
-            base = base_total - desc
-            iva_item = d.get("iva", 0)
-            tipo_fiscal = d.get("tipo_fiscal", "").lower()
-            if tipo_fiscal == "venta exenta":
-                d["ventas_exentas"] = base
-                ventas_exentas += base
-            elif tipo_fiscal == "venta no sujeta":
-                d["ventas_no_sujetas"] = base
-                ventas_no_sujetas += base
-            else:
-                d["ventas_gravadas"] = base
-                sumas += base_total
-                descuentos += desc
-                iva += iva_item
-
-        subtotal = (sumas - descuentos) + iva
-        total = subtotal + ventas_exentas + ventas_no_sujetas
-        venta_data.update(
-            {
-                "sumas": sumas,
-                "descuentos": descuentos,
-                "iva": iva,
-                "ventas_exentas": ventas_exentas,
-                "ventas_no_sujetas": ventas_no_sujetas,
-                "subtotal": subtotal,
-                "total": total,
+        detalle_map = {d["id"]: d for d in detalles_venta}
+        detalles_pdf = []
+        for det in detalles_nota or []:
+            src = detalle_map.get(det.get("detalle_id"))
+            if not src:
+                continue
+            aj = abs(det.get("ajuste", 0))
+            detalle = {
+                "cantidad": 1,
+                "descripcion": src.get("descripcion", ""),
+                "precio_unitario": aj,
+                "ventas_gravadas": aj if src.get("ventas_gravadas") else 0,
+                "ventas_exentas": aj if src.get("ventas_exentas") else 0,
+                "ventas_no_sujetas": aj if src.get("ventas_no_sujetas") else 0,
             }
-        )
-        if not venta_data.get("total_letras"):
-            try:
-                venta_data["total_letras"] = monto_a_texto_sv(total)
-            except Exception:
-                venta_data["total_letras"] = ""
+            detalles_pdf.append(detalle)
 
-        cliente = None
-        if venta.get("cliente_id"):
-            cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
-        distribuidor = None
-        if venta.get("Distribuidor_id"):
-            distribuidor = next(
-                (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
-                None,
+        if tipo == "credito":
+            ratio = None
+            if not detalles_pdf:
+                ratio = Decimal(str(monto / total_original))
+            nota_json = nota_credito_electronica.generar_nce_desde_dte(
+                self.manager.db,
+                data,
+                ratio,
+                detalles=detalles_pdf or None,
+                motivo=motivo,
             )
+        elif tipo == "debito":
+            nota_json = generar_nde_desde_dte(
+                self.manager.db, data, detalles_pdf or None, monto, motivo
+            )
+        else:
+            nota_json = generar_nota_remision_json(self.manager.db, nota_id)
+
+        resumen_nota = nota_json.get("resumen", {})
+        tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}
+        venta_data = {
+            "sumas": float(resumen_nota.get("subTotalVentas", 0)),
+            "descuentos": float(resumen_nota.get("totalDescu", 0)),
+            "iva": float(tributos.get("20", 0)),
+            "ventas_exentas": float(resumen_nota.get("totalExenta", 0)),
+            "ventas_no_sujetas": float(resumen_nota.get("totalNoSuj", 0)),
+            "subtotal": float(resumen_nota.get("subTotal", 0)),
+            "total": float(resumen_nota.get("montoTotalOperacion", 0)),
+            "total_letras": resumen_nota.get("totalLetras", ""),
+        }
+        if not detalles_pdf:
+            detalles_pdf = []
+            for d in nota_json.get("cuerpoDocumento", []) or []:
+                detalles_pdf.append(
+                    {
+                        "cantidad": float(d.get("cantidad", 1)),
+                        "descripcion": d.get("descripcion", ""),
+                        "precio_unitario": float(d.get("precioUni", 0)),
+                        "ventas_gravadas": float(d.get("ventaGravada", 0)),
+                        "ventas_exentas": float(d.get("ventaExenta", 0)),
+                        "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
+                    }
+                )
+
+        cliente = data.get("receptor", {}) or {}
+        distribuidor = {}
 
         conf = {
-            "debito": (NOTAS_DEBITO_DIR, "NotaDebito", generar_nota_debito_pdf, generar_nota_debito_json),
-            "credito": (NOTAS_CREDITO_DIR, "NotaCredito", generar_nota_credito_pdf, generar_nota_credito_json),
-            "remision": (NOTAS_REMISION_DIR, "NotaRemision", generar_nota_remision_pdf, generar_nota_remision_json),
+            "debito": (NOTAS_DEBITO_DIR, "NotaDebito", generar_nota_debito_pdf),
+            "credito": (NOTAS_CREDITO_DIR, "NotaCredito", generar_nota_credito_pdf),
+            "remision": (NOTAS_REMISION_DIR, "NotaRemision", generar_nota_remision_pdf),
         }
-        out_dir, doc_type, pdf_func, json_func = conf.get(tipo)
+        out_dir, doc_type, pdf_func = conf.get(tipo)
         os.makedirs(out_dir, exist_ok=True)
-        nota_json = json_func(self.manager.db, nota_id)
         pdf_path, json_path = get_dte_document_paths(
             nota_json["identificacion"].get("fecEmi"),
-            cliente.get("nombre") if cliente else "",
+            cliente.get("nombre") or cliente.get("nombreComercial") or "",
             nota_json["identificacion"].get("numeroControl"),
             doc_type,
         )
         pdf_func(
             venta_data,
-            detalles_venta,
+            detalles_pdf,
             cliente or {},
             distribuidor or {},
             archivo=pdf_path,

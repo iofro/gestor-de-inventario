@@ -40,6 +40,7 @@ import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
+from utils.jws import sign_and_save
 from paths import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
@@ -954,8 +955,7 @@ class FacturacionTab(QWidget):
             distribuidor or {},
             archivo=pdf_path,
         )
-        with open(json_path, "w", encoding="utf-8") as fh:
-            json.dump(nota_json, fh, ensure_ascii=False, indent=2)
+        sign_and_save(nota_json, json_path)
 
         try:
             if tipo == "debito":

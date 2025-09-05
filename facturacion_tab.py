@@ -868,8 +868,14 @@ class FacturacionTab(QWidget):
             return
 
         if venta_id is None:
-            QMessageBox.warning(self, "Nota", "La factura no está asociada a una venta")
-            return
+            confirm = QMessageBox.question(
+                self,
+                "Nota",
+                "La factura no está asociada a una venta. Esto podría causar algún conflicto. ¿Desea continuar?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if confirm != QMessageBox.Yes:
+                return
 
         nota_id = self.manager.db.agregar_nota(
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota

@@ -47,6 +47,7 @@ import tempfile
 import subprocess
 import shutil
 import dte
+from dialogs.nota_detalle_dialog import NotaDetalleDialog
 
 # Directory where debit notes will be stored
 NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
@@ -748,17 +749,35 @@ class FacturacionTab(QWidget):
         if venta_id is None:
             QMessageBox.warning(self, "Nota", "Seleccione una venta")
             return
-        monto, ok = QInputDialog.getDouble(self, "Monto", "Monto de la nota", 0, decimals=2)
-        if not ok:
+        detalles_venta = self.manager.db.get_detalles_venta(venta_id)
+        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        dialog = NotaDetalleDialog(detalles_venta, self)
+        if dialog.exec_() != QDialog.Accepted:
             return
-        motivo, ok2 = QInputDialog.getText(self, "Motivo", "Motivo")
-        if not ok2:
+        monto, motivo, detalles_nota = dialog.get_data()
+        if monto == 0:
+            QMessageBox.warning(self, "Nota", "El monto total debe ser diferente de cero")
             return
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
-        nota_id = self.manager.db.add_nota(venta_id, tipo, fecha, monto, motivo)
 
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        detalles = self.manager.db.get_detalles_venta(venta_id)
+        total_original = float(venta.get("total", 0)) if venta else 0
+        if tipo == "debito":
+            total_ajustado = total_original + monto
+        elif tipo == "credito":
+            total_ajustado = total_original - monto
+        else:
+            total_ajustado = total_original
+        resumen = (
+            f"Total original: {total_original:.2f}\n"
+            f"Ajuste: {monto:.2f}\n"
+            f"Total ajustado: {total_ajustado:.2f}\n\n"
+            "¿Desea continuar?"
+        )
+        if QMessageBox.question(self, "Confirmar", resumen, QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
+            return
+
+        nota_id = self.manager.db.agregar_nota(tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota)
+
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
         venta_data = dict(venta)
         if credito_info:
@@ -771,7 +790,7 @@ class FacturacionTab(QWidget):
 
         sumas = descuentos = 0
         ventas_exentas = ventas_no_sujetas = iva = 0
-        for d in detalles:
+        for d in detalles_venta:
             base_total = d.get("precio_unitario", 0) * d.get("cantidad", 0)
             desc = d.get("descuento", 0)
             if d.get("descuento_tipo") == "%":
@@ -836,7 +855,7 @@ class FacturacionTab(QWidget):
         )
         pdf_func(
             venta_data,
-            detalles,
+            detalles_venta,
             cliente or {},
             distribuidor or {},
             archivo=pdf_path,

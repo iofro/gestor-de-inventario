@@ -837,6 +837,9 @@ class FacturacionTab(QWidget):
         venta = None
         if venta_id is not None:
             venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+            if venta is None:
+                QMessageBox.warning(self, "Nota", "Venta asociada no encontrada")
+                return
         dialog = NotaDetalleDialog(detalles_venta, tipo, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -933,10 +936,10 @@ class FacturacionTab(QWidget):
                 venta_data["total_letras"] = ""
 
         cliente = None
-        if venta.get("cliente_id"):
+        if venta and venta.get("cliente_id"):
             cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
         distribuidor = None
-        if venta.get("Distribuidor_id"):
+        if venta and venta.get("Distribuidor_id"):
             distribuidor = next(
                 (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
                 None,

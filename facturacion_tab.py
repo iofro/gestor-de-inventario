@@ -884,8 +884,16 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
+        if venta_id is None:
+            QMessageBox.warning(
+                self,
+                "Nota",
+                "La nota no está asociada a una venta; no se puede generar DTE.",
+            )
+            return
+
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
-        venta_data = dict(venta) if venta else {}
+        venta_data = dict(venta)
         if credito_info:
             venta_data.update(credito_info)
 
@@ -936,10 +944,10 @@ class FacturacionTab(QWidget):
                 venta_data["total_letras"] = ""
 
         cliente = None
-        if venta and venta.get("cliente_id"):
+        if venta.get("cliente_id"):
             cliente = next((c for c in self.manager._clientes if c["id"] == venta["cliente_id"]), None)
         distribuidor = None
-        if venta and venta.get("Distribuidor_id"):
+        if venta.get("Distribuidor_id"):
             distribuidor = next(
                 (d for d in self.manager._Distribuidores if d["id"] == venta["Distribuidor_id"]),
                 None,

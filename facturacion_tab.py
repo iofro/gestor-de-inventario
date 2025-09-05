@@ -837,7 +837,7 @@ class FacturacionTab(QWidget):
         venta = None
         if venta_id is not None:
             venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
-        dialog = NotaDetalleDialog(detalles_venta, self)
+        dialog = NotaDetalleDialog(detalles_venta, tipo, self)
         if dialog.exec_() != QDialog.Accepted:
             return
         monto, motivo, detalles_nota = dialog.get_data()
@@ -846,7 +846,12 @@ class FacturacionTab(QWidget):
             return
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
 
-        total_original = float(venta.get("total", 0)) if venta else 0
+        resumen_factura = data.get("resumen", {}) or {}
+        total_original = float(
+            resumen_factura.get("totalPagar")
+            or resumen_factura.get("montoTotalOperacion")
+            or (venta.get("total") if venta else 0)
+        )
         if tipo == "debito":
             total_ajustado = total_original + monto
         elif tipo == "credito":

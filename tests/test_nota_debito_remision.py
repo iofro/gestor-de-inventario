@@ -1,6 +1,6 @@
 import fitz
 from db import DB
-from dte import generar_nota_debito_json, generar_nota_remision_json, generar_dte_json
+from dte import generar_nde_desde_dte, generar_nota_remision_json, generar_dte_json
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
 
 
@@ -59,14 +59,8 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "1234567", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    db.cursor.execute(
-        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",
-        (venta_id, "debito", "2024-01-02", 10, "Ajuste"),
-    )
-    nota_id = db.cursor.lastrowid
-    db.conn.commit()
-
-    data = generar_nota_debito_json(db, nota_id)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    data = generar_nde_desde_dte(db, dte_origen, None, 10, "Ajuste")
     assert data["identificacion"]["tipoDte"] == "06"
     assert data["resumen"]["montoTotalOperacion"] > 0
     doc_rel = data["documentoRelacionado"][0]
@@ -77,15 +71,32 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     assert "-" not in data["emisor"].get("nit", "")
 
 
-def test_generar_nota_remision_json_factura(tmp_path):
+def test_generar_nota_remision_json_factura(tmp_path, monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "nit1", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "123", "06141407100012", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "nit1", "giro", descuentos=0)
+    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",

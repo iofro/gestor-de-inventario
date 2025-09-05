@@ -3128,42 +3128,15 @@ def generar_ticket_json(
 
 
 def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
-    """Genera la estructura JSON para una nota de crédito."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "credito":
-        raise ValueError("La nota indicada no es de crédito")
+    """Genera la estructura JSON para una nota de crédito.
 
-    venta_id = nota.get("venta_id")
-    # Determine document type of the original sale
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
-    data = generar_dte_json(db, venta_id, tipo_dte="05")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
+    La lógica principal se encuentra en :mod:`nota_credito_electronica` y se
+    delega aquí para mantener compatibilidad con el resto del módulo.
+    """
 
-    for item in data.get("cuerpoDocumento", []):
-        if isinstance(item.get("cantidad"), (int, float)):
-            item["cantidad"] = -abs(item["cantidad"])
-        if isinstance(item.get("precioUni"), (int, float)):
-            item["precioUni"] = -abs(item["precioUni"])
+    from nota_credito_electronica import generar_nce_desde_nota
 
-    resumen = data.get("resumen", {})
-    for k, v in resumen.items():
-        if isinstance(v, (int, float)):
-            resumen[k] = -abs(v)
-    data["resumen"] = resumen
-    return data
+    return generar_nce_desde_nota(db, nota_id)
 
 
 def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
@@ -3185,11 +3158,23 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
     data = generar_dte_json(db, venta_id, tipo_dte="06")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
-    return data
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc)
+    origen_ident = dte_origen.get("identificacion", {})
+    data["documentoRelacionado"] = [
+        {
+            "tipoDocumento": tipo_doc,
+            "tipoGeneracion": 2,
+            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "fechaEmision": origen_ident.get("fecEmi"),
+        }
+    ]
+    from utils.sanitize import limpiar_documentos
+    limpiar_documentos(data.get("emisor"))
+    limpiar_documentos(data.get("receptor"))
+    limpiar_documentos(data.get("extension"))
+    from utils import catalogos as _catalogos
+    schema = _catalogos.get_dte_schema("06")
+    return sanitize_dte_payload(data, schema)
 
 
 def generar_nota_remision_json(db: DB, nota_id: int) -> dict:

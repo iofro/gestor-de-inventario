@@ -477,10 +477,48 @@ class FacturacionTab(QWidget):
         item = self.table.item(row, 0)
         return item.data(Qt.UserRole) if item else None
 
-    def _selected_venta(self):
+    def _selected_factura(self):
+        """Return information about the selected invoice.
+
+        The returned dictionary contains at least the JSON path and
+        control number. If the invoice is associated with a sale the
+        corresponding ``venta_id`` is also included. ``None`` is
+        returned if the selection does not correspond to a valid
+        invoice.
+        """
+
         data = self._selected_entry()
-        if data and data.get("row_type") in ("venta", "ticket"):
-            return data.get("id")
+        if not data:
+            return None
+        rtype = data.get("row_type")
+        if rtype == "venta":
+            venta_id = data.get("id")
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path:
+                return None
+            json_path = os.path.splitext(pdf_path)[0] + ".json"
+            if not os.path.exists(json_path):
+                return None
+            control = None
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    jdata = json.load(fh)
+                control = jdata.get("identificacion", {}).get("numeroControl")
+            except Exception:
+                pass
+            return {"venta_id": venta_id, "json": json_path, "control": control}
+        if rtype == "orphan":
+            json_path = data.get("json")
+            pdf_path = data.get("pdf")
+            if not json_path or not os.path.exists(json_path):
+                return None
+            if not pdf_path or not os.path.exists(pdf_path):
+                return None
+            return {
+                "venta_id": data.get("id"),
+                "json": json_path,
+                "control": data.get("name"),
+            }
         return None
 
     def _update_send_btn(self):
@@ -513,11 +551,18 @@ class FacturacionTab(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
 
     def send_selected_invoice(self):
-        venta_id = self._selected_venta()
         entry = self._selected_entry()
         if not entry:
             QMessageBox.warning(self, "Enviar", "Seleccione un documento")
             return
+
+        factura = None
+        rtype = entry.get("row_type")
+        if rtype in ("venta", "orphan"):
+            factura = self._selected_factura()
+            if not factura:
+                QMessageBox.warning(self, "Enviar", "Seleccione una factura válida")
+                return
 
         dialog = SendOptionsDialog(self)
         dialog.email_cb.setChecked(True)
@@ -525,15 +570,15 @@ class FacturacionTab(QWidget):
             return
 
         if dialog.email_cb.isChecked():
-            if entry.get("row_type") == "venta":
-                self._send_invoice_email(venta_id)
-            elif entry.get("row_type") == "ticket":
-                self._send_ticket_email(venta_id)
-            elif entry.get("row_type") == "orphan":
+            if rtype == "venta" and factura:
+                self._send_invoice_email(factura.get("venta_id"))
+            elif rtype == "ticket":
+                self._send_ticket_email(entry.get("id"))
+            elif rtype == "orphan" and factura:
                 self._send_orphan_email(entry)
         if dialog.hacienda_cb.isChecked():
-            if entry.get("row_type") == "orphan":
-                json_path = entry.get("json")
+            if rtype == "orphan" and factura:
+                json_path = factura.get("json")
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
                     if resp.get("estado") == "Error":
@@ -551,9 +596,9 @@ class FacturacionTab(QWidget):
                         self, "Enviar a Hacienda", str(exc)
                     )
             else:
-                tipo = "03" if entry.get("row_type") == "ticket" else "01"
+                tipo = "03" if rtype == "ticket" else "01"
                 try:
-                    resp = transmitir_dte(self.manager.db, venta_id, tipo_dte=tipo)
+                    resp = transmitir_dte(self.manager.db, entry.get("id"), tipo_dte=tipo)
                     if resp.get("estado") == "Error":
                         QMessageBox.critical(
                             self, "Enviar a Hacienda", resp.get("detalle", "Error")
@@ -716,9 +761,10 @@ class FacturacionTab(QWidget):
         self.email_thread = None
 
     def create_ticket(self):
-        venta_id = self._selected_venta()
-        if venta_id is None:
+        entry = self._selected_entry()
+        if not entry or entry.get("row_type") not in ("venta", "ticket"):
             raise ValueError("No sale selected")
+        venta_id = entry.get("id")
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         detalles = self.manager.db.get_detalles_venta(venta_id)
         extra = {}
@@ -741,8 +787,9 @@ class FacturacionTab(QWidget):
         QMessageBox.information(self, "Ticket", "Ticket generado correctamente")
 
     def abrir_dialogo_tipo_nota(self):
-        if self._selected_venta() is None:
-            QMessageBox.warning(self, "Nota", "Seleccione una venta")
+        factura = self._selected_factura()
+        if not factura:
+            QMessageBox.warning(self, "Nota", "Seleccione una factura")
             return
         dialog = QDialog(self)
         dialog.setWindowTitle("Tipo de nota")
@@ -757,15 +804,39 @@ class FacturacionTab(QWidget):
         if dialog.exec_() == QDialog.Accepted:
             selected = tipo_combo.currentText()
             tipo = "credito" if selected == "Crédito" else "debito"
-            self.create_nota(tipo)
+            self.create_nota(tipo, factura)
 
-    def create_nota(self, tipo):
-        venta_id = self._selected_venta()
-        if venta_id is None:
-            QMessageBox.warning(self, "Nota", "Seleccione una venta")
+    def create_nota(self, tipo, factura=None):
+        factura = factura or self._selected_factura()
+        if not factura:
+            QMessageBox.warning(self, "Nota", "Seleccione una factura")
             return
-        detalles_venta = self.manager.db.get_detalles_venta(venta_id)
-        venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        json_path = factura.get("json")
+        venta_id = factura.get("venta_id")
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
+            return
+
+        detalles_venta = []
+        for d in data.get("cuerpoDocumento", []) or []:
+            detalles_venta.append(
+                {
+                    "id": d.get("numItem"),
+                    "producto_id": d.get("codigo"),
+                    "descripcion": d.get("descripcion", ""),
+                    "cantidad": d.get("cantidad", 0),
+                    "precio_unitario": d.get("precioUni", 0),
+                    "descuento": d.get("montoDescu", 0),
+                    "descuento_tipo": "$",
+                }
+            )
+
+        venta = None
+        if venta_id is not None:
+            venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         dialog = NotaDetalleDialog(detalles_venta, self)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -791,10 +862,16 @@ class FacturacionTab(QWidget):
         if QMessageBox.question(self, "Confirmar", resumen, QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
 
-        nota_id = self.manager.db.agregar_nota(tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota)
+        if venta_id is None:
+            QMessageBox.warning(self, "Nota", "La factura no está asociada a una venta")
+            return
+
+        nota_id = self.manager.db.agregar_nota(
+            tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
+        )
 
         credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
-        venta_data = dict(venta)
+        venta_data = dict(venta) if venta else {}
         if credito_info:
             venta_data.update(credito_info)
 

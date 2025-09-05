@@ -1,7 +1,7 @@
-import json
 from db import DB
-from nota_credito_electronica import generar_nce_desde_nota
-from dte import generar_nota_debito_json
+from decimal import Decimal
+from nota_credito_electronica import generar_nce_desde_dte
+from dte import generar_nde_desde_dte, generar_dte_json
 
 def create_db():
     return DB(":memory:")
@@ -38,13 +38,8 @@ def test_generar_nce_detalles(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
-    db.cursor.execute(
-        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo, detalles) VALUES (?,?,?,?,?,?)",
-        (venta_id, "credito", "2024-01-02", 10, "Dev", json.dumps(detalles)),
-    )
-    nota_id = db.cursor.lastrowid
-    db.conn.commit()
-    data = generar_nce_desde_nota(db, nota_id)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles, motivo="Dev")
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 10
     assert data["resumen"]["totalGravada"] == 10
@@ -69,13 +64,8 @@ def test_generar_nota_debito_detalles(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
-    db.cursor.execute(
-        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo, detalles) VALUES (?,?,?,?,?,?)",
-        (venta_id, "debito", "2024-01-02", 2, "Ajuste", json.dumps(detalles)),
-    )
-    nota_id = db.cursor.lastrowid
-    db.conn.commit()
-    data = generar_nota_debito_json(db, nota_id)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    data = generar_nde_desde_dte(db, dte_origen, detalles, 2, "Ajuste")
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 2
     assert data["resumen"]["totalGravada"] == 2

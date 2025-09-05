@@ -1,6 +1,8 @@
 import fitz
+from decimal import Decimal
 from db import DB
-from nota_credito_electronica import generar_nce_desde_nota
+from dte import generar_dte_json
+from nota_credito_electronica import generar_nce_desde_dte
 from factura_sv import generar_nota_credito_pdf
 
 
@@ -25,14 +27,8 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    db.cursor.execute(
-        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",
-        (venta_id, "credito", "2024-01-02", 10, "Dev"),
-    )
-    nota_id = db.cursor.lastrowid
-    db.conn.commit()
-
-    data = generar_nce_desde_nota(db, nota_id)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
@@ -64,14 +60,8 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
         cliente_id, "2024-01-01", 10, "123", "06141407100012", "giro", descuentos=0
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    db.cursor.execute(
-        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",
-        (venta_id, "credito", "2024-01-02", 10, "Dev"),
-    )
-    nota_id = db.cursor.lastrowid
-    db.conn.commit()
-
-    data = generar_nce_desde_nota(db, nota_id)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert "-" not in data["receptor"].get("nit", "")
 

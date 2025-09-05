@@ -17,7 +17,6 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QCheckBox,
-    QMenu,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -162,10 +161,7 @@ class FacturacionTab(QWidget):
 
         btns = QHBoxLayout()
         self.btn_nota = QPushButton("Nota de crédito y débito")
-        nota_menu = QMenu(self)
-        nota_menu.addAction("Nota de crédito", lambda: self.create_nota("credito"))
-        nota_menu.addAction("Nota de débito", lambda: self.create_nota("debito"))
-        self.btn_nota.setMenu(nota_menu)
+        self.btn_nota.clicked.connect(self.abrir_dialogo_tipo_nota)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
@@ -742,6 +738,25 @@ class FacturacionTab(QWidget):
             return
         generar_ticket_personalizado(venta, detalles, fname, dte_data=extra)
         QMessageBox.information(self, "Ticket", "Ticket generado correctamente")
+
+    def abrir_dialogo_tipo_nota(self):
+        if self._selected_venta() is None:
+            QMessageBox.warning(self, "Nota", "Seleccione una venta")
+            return
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Tipo de nota")
+        layout = QVBoxLayout(dialog)
+        tipo_combo = QComboBox(dialog)
+        tipo_combo.addItems(["Crédito", "Débito"])
+        layout.addWidget(tipo_combo)
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+        if dialog.exec_() == QDialog.Accepted:
+            selected = tipo_combo.currentText()
+            tipo = "credito" if selected == "Crédito" else "debito"
+            self.create_nota(tipo)
 
     def create_nota(self, tipo):
         venta_id = self._selected_venta()

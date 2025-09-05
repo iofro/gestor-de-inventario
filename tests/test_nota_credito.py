@@ -36,7 +36,11 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     assert "totalPagar" not in data["resumen"]
     assert data["resumen"]["montoTotalOperacion"] > 0
     for k in ("ivaRete1", "reteRenta", "ivaPerci1", "condicionOperacion"):
-        assert k not in data["resumen"]
+        assert k in data["resumen"]
+    assert data["resumen"]["ivaPerci1"] == 0.0
+    assert data["resumen"]["ivaRete1"] == 0.0
+    assert data["resumen"]["reteRenta"] == 0.0
+    assert data["resumen"]["condicionOperacion"] == 1
 
 
 def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):

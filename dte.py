@@ -19,6 +19,7 @@ from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 from utils.catalogos import (
     TRIBUTO_IVA,
+    TRIBUTOS,
     TRIBUTOS_PERMITIDOS_ITEM,
     TRIBUTOS_PERMITIDOS_RESUMEN,
     UNIDADES_MEDIDA_PERMITIDAS,
@@ -3168,6 +3169,78 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]
+
+    detalles = None
+    if nota.get("detalles"):
+        try:
+            detalles = json.loads(nota["detalles"])
+        except Exception:
+            detalles = None
+
+    if detalles:
+        items = []
+        total_grav = Decimal("0")
+        total_exenta = Decimal("0")
+        total_nosuj = Decimal("0")
+        num = 1
+        for det in detalles:
+            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
+            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0))
+            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0))
+            total_grav += grav
+            total_exenta += exenta
+            total_nosuj += nosuj
+            precio = det.get("precio_unitario") or det.get("precioUni")
+            if precio is None:
+                precio = float(grav + exenta + nosuj)
+            cantidad = det.get("cantidad", 1)
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": det.get("tipoItem", 1),
+                    "codigo": det.get("codigo", f"ND{origen_ident.get('codigoGeneracion','')[:8]}-{num}"),
+                    "descripcion": det.get("descripcion", "Nota de débito"),
+                    "cantidad": cantidad,
+                    "uniMedida": det.get("uniMedida", 59),
+                    "precioUni": precio,
+                    "montoDescu": det.get("montoDescu", 0.0),
+                    "ventaGravada": d2(grav),
+                    "ventaExenta": d2(exenta),
+                    "ventaNoSuj": d2(nosuj),
+                    "tributos": [TRIBUTO_IVA] if grav > 0 else [],
+                    "numeroDocumento": origen_ident.get("codigoGeneracion"),
+                    "codTributo": None,
+                }
+            )
+            num += 1
+        subtotal = total_grav + total_exenta + total_nosuj
+        iva_val = d2(Decimal(str(total_grav)) * Decimal("0.13"))
+        tributos_resumen = []
+        if iva_val > 0:
+            tributos_resumen.append(
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA, ""),
+                    "valor": iva_val,
+                }
+            )
+        monto_total = d2(Decimal(str(subtotal)) + Decimal(str(iva_val)))
+        data["cuerpoDocumento"] = items
+        data["resumen"] = {
+            "totalNoSuj": d2(total_nosuj),
+            "totalExenta": d2(total_exenta),
+            "totalGravada": d2(total_grav),
+            "subTotal": d2(subtotal),
+            "subTotalVentas": d2(subtotal),
+            "descuNoSuj": 0.0,
+            "descuExenta": 0.0,
+            "descuGravada": 0.0,
+            "totalDescu": 0.0,
+            "tributos": tributos_resumen,
+            "montoTotalOperacion": monto_total,
+            "totalLetras": monto_a_texto_sv(float(monto_total)),
+        }
+
     from utils.sanitize import limpiar_documentos
     limpiar_documentos(data.get("emisor"))
     limpiar_documentos(data.get("receptor"))

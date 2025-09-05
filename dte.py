@@ -3140,45 +3140,58 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
     return generar_nce_desde_nota(db, nota_id)
 
 
-def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
-    """Genera la estructura JSON para una nota de débito."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "debito":
-        raise ValueError("La nota indicada no es de débito")
+def generar_nde_desde_dte(
+    db: DB,
+    dte_origen: dict,
+    detalles: list | None,
+    monto: float | None,
+    motivo: str | None = None,
+    *,
+    ambiente: str = "00",
+) -> dict:
+    """Genera la estructura JSON de una Nota de Débito a partir de un DTE."""
 
-    venta_id = nota.get("venta_id")
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
-    data = generar_dte_json(db, venta_id, tipo_dte="06")
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc)
+    cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": DTE_VERSIONES["06"],
+        "ambiente": ambiente,
+        "tipoDte": "06",
+        "numeroControl": cabecera["numero_control"],
+        "codigoGeneracion": cabecera["codigo_generacion"],
+        "tipoModelo": cabecera["tipo_modelo"],
+        "tipoOperacion": cabecera["tipo_operacion"],
+        "tipoContingencia": cabecera["tipo_contingencia"],
+        "motivoContin": cabecera["motivo_contin"],
+        "fecEmi": fecha_emision_hoy_str(now),
+        "horEmi": now.strftime("%H:%M:%S"),
+        "tipoMoneda": "USD",
+    }
+
     origen_ident = dte_origen.get("identificacion", {})
-    data["documentoRelacionado"] = [
+    doc_rel = [
         {
-            "tipoDocumento": tipo_doc,
+            "tipoDocumento": origen_ident.get("tipoDte"),
             "tipoGeneracion": 2,
             "numeroDocumento": origen_ident.get("codigoGeneracion"),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]
 
-    detalles = None
-    if nota.get("detalles"):
-        try:
-            detalles = json.loads(nota["detalles"])
-        except Exception:
-            detalles = None
+    emisor = dte_origen.get("emisor")
+    receptor = dte_origen.get("receptor")
+    from utils.sanitize import limpiar_documentos
+
+    limpiar_documentos(emisor)
+    limpiar_documentos(receptor)
+
+    orig_resumen = dte_origen.get("resumen", {})
+    items: list[dict] = []
+    uuid_origen = origen_ident.get("codigoGeneracion", "")
+    tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
+    extra_desc = f": {motivo}" if motivo else ""
 
     if detalles:
-        items = []
         total_grav = Decimal("0")
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
@@ -3198,8 +3211,11 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
                 {
                     "numItem": num,
                     "tipoItem": det.get("tipoItem", 1),
-                    "codigo": det.get("codigo", f"ND{origen_ident.get('codigoGeneracion','')[:8]}-{num}"),
-                    "descripcion": det.get("descripcion", "Nota de débito"),
+                    "codigo": det.get("codigo", f"ND{uuid_origen[:8]}-{num}"),
+                    "descripcion": det.get(
+                        "descripcion",
+                        f"Nota de débito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
+                    ),
                     "cantidad": cantidad,
                     "uniMedida": det.get("uniMedida", 59),
                     "precioUni": precio,
@@ -3208,46 +3224,161 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
                     "ventaExenta": d2(exenta),
                     "ventaNoSuj": d2(nosuj),
                     "tributos": [TRIBUTO_IVA] if grav > 0 else [],
-                    "numeroDocumento": origen_ident.get("codigoGeneracion"),
+                    "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
             num += 1
-        subtotal = total_grav + total_exenta + total_nosuj
-        iva_val = d2(Decimal(str(total_grav)) * Decimal("0.13"))
-        tributos_resumen = []
-        if iva_val > 0:
-            tributos_resumen.append(
+        total_grav = d2(total_grav)
+        total_exenta = d2(total_exenta)
+        total_nosuj = d2(total_nosuj)
+    else:
+        if monto is None:
+            raise ValueError("Se requiere monto para nota de débito")
+        total_origen = Decimal(
+            str(
+                orig_resumen.get("montoTotalOperacion")
+                or orig_resumen.get("totalPagar")
+                or 0
+            )
+        )
+        if total_origen <= 0:
+            raise ValueError("El documento de origen no tiene total válido")
+        ratio = Decimal(str(monto)) / total_origen
+        pct_text = str((ratio * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
+        total_grav = d2(Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio)
+        total_exenta = d2(Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio)
+        total_nosuj = d2(Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio)
+        num = 1
+        if total_grav > 0:
+            items.append(
                 {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA, ""),
-                    "valor": iva_val,
+                    "numItem": num,
+                    "tipoItem": 1,
+                    "codigo": f"ND{pct_text}-{uuid_origen[:8]}-G",
+                    "descripcion": f"Nota de débito {pct_text}% sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}",
+                    "cantidad": 1,
+                    "uniMedida": 59,
+                    "precioUni": total_grav,
+                    "montoDescu": 0.0,
+                    "ventaGravada": total_grav,
+                    "ventaExenta": 0.0,
+                    "ventaNoSuj": 0.0,
+                    "tributos": [TRIBUTO_IVA],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
                 }
             )
-        monto_total = d2(Decimal(str(subtotal)) + Decimal(str(iva_val)))
-        data["cuerpoDocumento"] = items
-        data["resumen"] = {
-            "totalNoSuj": d2(total_nosuj),
-            "totalExenta": d2(total_exenta),
-            "totalGravada": d2(total_grav),
-            "subTotal": d2(subtotal),
-            "subTotalVentas": d2(subtotal),
-            "descuNoSuj": 0.0,
-            "descuExenta": 0.0,
-            "descuGravada": 0.0,
-            "totalDescu": 0.0,
-            "tributos": tributos_resumen,
-            "montoTotalOperacion": monto_total,
-            "totalLetras": monto_a_texto_sv(float(monto_total)),
-        }
+            num += 1
+        if total_exenta > 0:
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": 1,
+                    "codigo": f"ND{pct_text}-{uuid_origen[:8]}-E",
+                    "descripcion": f"Nota de débito {pct_text}% sobre operaciones exentas del {tipo_doc_desc} relacionado{extra_desc}",
+                    "cantidad": 1,
+                    "uniMedida": 59,
+                    "precioUni": total_exenta,
+                    "montoDescu": 0.0,
+                    "ventaGravada": 0.0,
+                    "ventaExenta": total_exenta,
+                    "ventaNoSuj": 0.0,
+                    "tributos": [],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
+                }
+            )
+            num += 1
+        if total_nosuj > 0:
+            items.append(
+                {
+                    "numItem": num,
+                    "tipoItem": 1,
+                    "codigo": f"ND{pct_text}-{uuid_origen[:8]}-N",
+                    "descripcion": f"Nota de débito {pct_text}% sobre operaciones no sujetas del {tipo_doc_desc} relacionado{extra_desc}",
+                    "cantidad": 1,
+                    "uniMedida": 59,
+                    "precioUni": total_nosuj,
+                    "montoDescu": 0.0,
+                    "ventaGravada": 0.0,
+                    "ventaExenta": 0.0,
+                    "ventaNoSuj": total_nosuj,
+                    "tributos": [],
+                    "numeroDocumento": uuid_origen,
+                    "codTributo": None,
+                }
+            )
 
-    from utils.sanitize import limpiar_documentos
-    limpiar_documentos(data.get("emisor"))
-    limpiar_documentos(data.get("receptor"))
-    limpiar_documentos(data.get("extension"))
-    from utils import catalogos as _catalogos
-    schema = _catalogos.get_dte_schema("06")
+    subtotal_ventas = total_grav + total_exenta + total_nosuj
+    iva_val = d2(Decimal(str(total_grav)) * Decimal("0.13"))
+    tributos_resumen = []
+    if iva_val > 0:
+        tributos_resumen.append(
+            {
+                "codigo": TRIBUTO_IVA,
+                "descripcion": TRIBUTOS.get(TRIBUTO_IVA, ""),
+                "valor": iva_val,
+            }
+        )
+    monto_total = d2(Decimal(str(subtotal_ventas)) + Decimal(str(iva_val)))
+    resumen = {
+        "totalNoSuj": total_nosuj,
+        "totalExenta": total_exenta,
+        "totalGravada": total_grav,
+        "subTotal": subtotal_ventas,
+        "subTotalVentas": subtotal_ventas,
+        "descuNoSuj": 0.0,
+        "descuExenta": 0.0,
+        "descuGravada": 0.0,
+        "totalDescu": 0.0,
+        "tributos": tributos_resumen,
+        "montoTotalOperacion": monto_total,
+        "totalLetras": monto_a_texto_sv(float(monto_total)),
+    }
+
+    data = {
+        "identificacion": identificacion,
+        "documentoRelacionado": doc_rel,
+        "emisor": emisor,
+        "receptor": receptor,
+        "cuerpoDocumento": items,
+        "resumen": resumen,
+        "ventaTercero": None,
+        "extension": None,
+        "apendice": None,
+    }
+
+    schema = catalogos.get_dte_schema("06")
     return sanitize_dte_payload(data, schema)
+
+
+def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
+    """Genera la estructura JSON para una nota de débito."""
+    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
+    if not row:
+        raise ValueError("Nota no encontrada")
+    nota = dict(row)
+    if nota.get("tipo") != "debito":
+        raise ValueError("La nota indicada no es de débito")
+
+    venta_id = nota.get("venta_id")
+    venta_row = db.cursor.execute(
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+    ).fetchone()
+    tipo_doc = "01"
+    if venta_row:
+        venta = dict(venta_row)
+        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+            tipo_doc = "03"
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc)
+    detalles = None
+    if nota.get("detalles"):
+        try:
+            detalles = json.loads(nota["detalles"])
+        except Exception:
+            detalles = None
+    return generar_nde_desde_dte(db, dte_origen, detalles, nota.get("monto"), nota.get("motivo"))
 
 
 def generar_nota_remision_json(db: DB, nota_id: int) -> dict:

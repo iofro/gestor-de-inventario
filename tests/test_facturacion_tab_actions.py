@@ -39,7 +39,9 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
     tab = _make_tab(db, cid)
-    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
+    monkeypatch.setattr(
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+    )
 
     save_path = tmp_path / "ticket.pdf"
 
@@ -79,7 +81,14 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     monkeypatch.setattr(facturacion_tab, "DATOS_NEGOCIO_PATH", str(creds_path))
 
     tab = _make_tab(db, cid)
-    monkeypatch.setattr(tab, "_selected_venta", lambda: venta_id)
+    monkeypatch.setattr(
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
 
     class DummyCheck:
         def __init__(self):
@@ -136,6 +145,9 @@ def test_delete_files_removes(qt_app, tmp_path, monkeypatch):
     js.write_text("{}")
     db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf))
     tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+    )
 
     monkeypatch.setattr(facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes)
     monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)

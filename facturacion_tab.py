@@ -35,6 +35,8 @@ from dte import (
     generar_nota_debito_json,
     generar_nota_remision_json,
     transmitir_dte,
+    enviar_nota_credito,
+    enviar_nota_debito,
 )
 from utils.monto import monto_a_texto_sv
 from utils.docs import get_document_paths, get_dte_document_paths
@@ -395,7 +397,12 @@ class FacturacionTab(QWidget):
 
     def _scan_documents(self):
         result = []
-        folders = [CF_DIR, CREDITO_DIR, NOTAS_DEBITO_DIR] + ADDITIONAL_DIRS
+        folders = [
+            CF_DIR,
+            CREDITO_DIR,
+            NOTAS_DEBITO_DIR,
+            NOTAS_CREDITO_DIR,
+        ] + ADDITIONAL_DIRS
         files = {}
         for folder in folders:
             if not os.path.isdir(folder):
@@ -406,6 +413,8 @@ class FacturacionTab(QWidget):
                 tipo = "Crédito fiscal"
             elif folder == NOTAS_DEBITO_DIR or "notas_debito" in folder:
                 tipo = "Nota de débito"
+            elif folder == NOTAS_CREDITO_DIR or "notas_credito" in folder:
+                tipo = "Nota de crédito"
             else:
                 tipo = None
             for root, _dirs, fnames in os.walk(folder):
@@ -835,7 +844,21 @@ class FacturacionTab(QWidget):
         with open(json_path, "w", encoding="utf-8") as fh:
             json.dump(nota_json, fh, ensure_ascii=False, indent=2)
 
-        QMessageBox.information(self, "Nota", "Nota registrada")
+        try:
+            if tipo == "debito":
+                resp = enviar_nota_debito(self.manager.db, nota_id)
+            elif tipo == "credito":
+                resp = enviar_nota_credito(self.manager.db, nota_id)
+            else:
+                resp = None
+            if resp and resp.get("estado") == "Error":
+                QMessageBox.critical(self, "Nota", resp.get("detalle", "Error"))
+            else:
+                QMessageBox.information(self, "Nota", "Nota registrada y transmitida")
+        except dte.DTEValidationError as exc:
+            self._show_validation_errors(exc.errors, exc.json_path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Nota", str(exc))
         self.load_invoices()
 
     def delete_files(self):

@@ -119,6 +119,9 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         "apendice",
         "codTributo",
         "tributos",  # e.g. resumen.tributos must remain even if None
+        "tipoContingencia",
+        "motivoContin",
+        "nombreComercial",
     }
 
     def _remove_nulls(value, parent_key=None):
@@ -3953,8 +3956,13 @@ def _parse_error_response(respuesta: dict) -> str:
     return mensaje
 
 
-def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> dict:
-    """Firma y envía ``data`` a la API de Hacienda registrando el envío."""
+def _enviar_documento(
+    db: DB, doc_id: int, data: dict, modo: str = "normal", jws_token: str | None = None
+) -> dict:
+    """Firma y envía ``data`` registrando el envío.
+
+    Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
+    """
     config = _load_dte_api_config()
     if modo == "contingencia":
         db.registrar_envio_dte(doc_id, modo, "Pendiente", "")
@@ -3996,7 +4004,7 @@ def _enviar_documento(db: DB, doc_id: int, data: dict, modo: str = "normal") -> 
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
 
-    signed = jws.sign_json(data)
+    signed = jws_token or jws.sign_json(data)
 
     # Verify that metadata matches the signed payload and update it
     payload = _decode_jws_payload(signed)
@@ -4074,7 +4082,25 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
-    return _enviar_documento(db, nota_id, data, modo)
+    from utils.docs import get_dte_document_paths
+
+    ident = data.get("identificacion", {})
+    receptor = data.get("receptor", {}) or {}
+    _, json_path = get_dte_document_paths(
+        ident.get("fecEmi"),
+        receptor.get("nombre") or receptor.get("nombreComercial") or "",
+        ident.get("numeroControl"),
+        "NotaCredito",
+    )
+    jws_path = os.path.splitext(json_path)[0] + ".jws"
+    jws_token = None
+    if os.path.exists(jws_path):
+        try:
+            with open(jws_path, "r", encoding="utf-8") as fh:
+                jws_token = fh.read()
+        except Exception:
+            jws_token = None
+    return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 
 def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
@@ -4089,7 +4115,25 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
-    return _enviar_documento(db, nota_id, data, modo)
+    from utils.docs import get_dte_document_paths
+
+    ident = data.get("identificacion", {})
+    receptor = data.get("receptor", {}) or {}
+    _, json_path = get_dte_document_paths(
+        ident.get("fecEmi"),
+        receptor.get("nombre") or receptor.get("nombreComercial") or "",
+        ident.get("numeroControl"),
+        "NotaDebito",
+    )
+    jws_path = os.path.splitext(json_path)[0] + ".jws"
+    jws_token = None
+    if os.path.exists(jws_path):
+        try:
+            with open(jws_path, "r", encoding="utf-8") as fh:
+                jws_token = fh.read()
+        except Exception:
+            jws_token = None
+    return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 
 def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:

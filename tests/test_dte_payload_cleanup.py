@@ -22,8 +22,12 @@ REQUIRED_NULL_FIELDS = {
 def test_sanitize_dte_payload_removes_none_recursively(dte_metadata_factory):
     dte_payload = dte_metadata_factory()
     dte_payload["emisor"]["codActividad"] = None
+    dte_payload["emisor"]["nombreComercial"] = None
     clean = dte.sanitize_dte_payload(dte_payload)
     assert "codActividad" not in clean["emisor"]
+    assert clean["emisor"]["nombreComercial"] is None
+    assert clean["identificacion"]["tipoContingencia"] is None
+    assert clean["identificacion"]["motivoContin"] is None
     for key in REQUIRED_NULL_FIELDS:
         assert key in clean and clean[key] is None
     item0 = clean["cuerpoDocumento"][0]
@@ -35,4 +39,7 @@ def test_sanitize_dte_payload_removes_none_recursively(dte_metadata_factory):
         item.pop("codTributo", None)
         item.pop("tributos", None)
     clean_no_required.get("resumen", {}).pop("tributos", None)
+    clean_no_required.get("identificacion", {}).pop("tipoContingencia", None)
+    clean_no_required.get("identificacion", {}).pop("motivoContin", None)
+    clean_no_required.get("emisor", {}).pop("nombreComercial", None)
     assert not _has_none(clean_no_required)

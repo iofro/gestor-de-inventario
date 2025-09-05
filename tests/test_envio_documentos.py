@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 import pytest
 
 from pathlib import Path
@@ -15,6 +16,7 @@ from dte import (
 import dte
 import auth
 from tests.conftest import make_jws
+from utils import docs
 
 
 def create_sale(db):
@@ -267,6 +269,116 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
     assert headers["User-Agent"] == "Vertex-DTE/1.0"
+
+
+def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+    nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
+
+    data = {
+        "receptor": {"nombre": "Cliente"},
+        "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
+        "resumen": {
+            "totalNoSuj": 0,
+            "totalExenta": 0,
+            "totalGravada": 10,
+            "subTotalVentas": 10,
+            "descuNoSuj": 0,
+            "descuExenta": 0,
+            "descuGravada": 0,
+            "porcentajeDescuento": 0,
+            "totalDescu": 0,
+            "tributos": [],
+            "subTotal": 10,
+            "ivaRete1": 0,
+            "reteRenta": 0,
+            "montoTotalOperacion": 10,
+            "totalNoGravado": 0,
+            "totalPagar": 10,
+            "totalLetras": "DIEZ",
+            "totalIva": 0,
+            "saldoFavor": 0,
+            "condicionOperacion": 1,
+            "pagos": None,
+            "numPagoElectronico": None,
+        },
+        "identificacion": {
+            "tipoDte": "01",
+            "version": 2,
+            "ambiente": "00",
+            "codigoGeneracion": "NC1",
+            "numeroControl": "1",
+            "fecEmi": "2024-01-02",
+        },
+    }
+
+    monkeypatch.setattr(
+        "dte.generar_nota_credito_json",
+        lambda db_obj, nid: data,
+    )
+
+    sign_calls = {"count": 0}
+
+    def fake_sign(payload):
+        sign_calls["count"] += 1
+        return "SIGNED"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+
+    orig_paths = docs.get_dte_document_paths
+
+    def fake_paths(fecha, empresa, numero_control, doc_type, root=None):
+        return orig_paths(fecha, empresa, numero_control, doc_type, root=tmp_path)
+
+    monkeypatch.setattr(docs, "get_dte_document_paths", fake_paths)
+
+    _, json_path = fake_paths(
+        data["identificacion"]["fecEmi"],
+        data["receptor"]["nombre"],
+        data["identificacion"]["numeroControl"],
+        "NotaCredito",
+    )
+    jws_path = os.path.splitext(json_path)[0] + ".jws"
+    token = make_jws(data)
+    with open(jws_path, "w", encoding="utf-8") as fh:
+        fh.write(token)
+
+    captured = {}
+
+    def fake_post(url, json=None, headers=None, timeout=20):
+        captured["token"] = json["documento"]
+
+        class R:
+            status_code = 200
+
+            def json(self):
+                return {"estado": "Transmitido", "sello": "XYZ"}
+
+            def raise_for_status(self):
+                pass
+
+        return R()
+
+    monkeypatch.setattr("dte.requests.post", fake_post)
+
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
+
+    orig_load = dte._load_datos_negocio
+
+    def fake_load():
+        cfg = orig_load()
+        cfg.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
+        cfg["dte_api"]["ambiente"] = "pruebas"
+        return cfg
+
+    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
+
+    res = enviar_nota_credito(db, nota_id)
+    assert res["estado"] == "Transmitido"
+    assert captured["token"] == token
+    assert sign_calls["count"] == 0
 
 
 def test_post_dte_packs_jws_in_json_body(monkeypatch):

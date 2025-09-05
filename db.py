@@ -1890,13 +1890,19 @@ class DB:
 
     # --- NOTAS DE CRÉDITO Y DÉBITO ---
     def agregar_nota(self, tipo, venta_id, fecha, monto, motivo, detalles=None):
-        """Registra una nota de crédito o débito asociada a una venta."""
+        """Registra una nota de crédito o débito asociada a una venta.
+
+        Si ``venta_id`` es ``None``, la nota se almacenará sin asociarse a una
+        venta. Esto puede ocasionar inconsistencias si la venta no se
+        regulariza posteriormente.
+        """
         if tipo not in ("credito", "debito", "remision"):
             raise ValueError("tipo debe ser 'credito', 'debito' o 'remision'")
 
-        self.cursor.execute("SELECT id FROM ventas WHERE id=?", (venta_id,))
-        if self.cursor.fetchone() is None:
-            raise ValueError("La venta indicada no existe")
+        if venta_id is not None:
+            self.cursor.execute("SELECT id FROM ventas WHERE id=?", (venta_id,))
+            if self.cursor.fetchone() is None:
+                raise ValueError("La venta indicada no existe")
 
         detalles_json = json.dumps(detalles) if detalles is not None else None
         self.cursor.execute(

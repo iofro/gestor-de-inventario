@@ -3174,9 +3174,11 @@ def generar_nde_desde_dte(
     }
 
     origen_ident = dte_origen.get("identificacion", {})
+    tipo_origen = origen_ident.get("tipoDte")
+    tipo_rel = "07" if tipo_origen == "07" else "03"
     doc_rel = [
         {
-            "tipoDocumento": origen_ident.get("tipoDte"),
+            "tipoDocumento": tipo_rel,
             "tipoGeneracion": 2,
             "numeroDocumento": origen_ident.get("codigoGeneracion"),
             "fechaEmision": origen_ident.get("fecEmi"),

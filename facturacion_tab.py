@@ -37,7 +37,7 @@ from dte import (
     transmitir_dte,
 )
 from utils.monto import monto_a_texto_sv
-from utils.docs import get_document_paths
+from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from paths import DATOS_NEGOCIO_PATH
@@ -818,8 +818,12 @@ class FacturacionTab(QWidget):
         }
         out_dir, doc_type, pdf_func, json_func = conf.get(tipo)
         os.makedirs(out_dir, exist_ok=True)
-        pdf_path, json_path = get_document_paths(
-            venta.get("fecha"), cliente.get("nombre") if cliente else "", nota_id, doc_type
+        nota_json = json_func(self.manager.db, nota_id)
+        pdf_path, json_path = get_dte_document_paths(
+            nota_json["identificacion"].get("fecEmi"),
+            cliente.get("nombre") if cliente else "",
+            nota_json["identificacion"].get("numeroControl"),
+            doc_type,
         )
         pdf_func(
             venta_data,
@@ -828,7 +832,6 @@ class FacturacionTab(QWidget):
             distribuidor or {},
             archivo=pdf_path,
         )
-        nota_json = json_func(self.manager.db, nota_id)
         with open(json_path, "w", encoding="utf-8") as fh:
             json.dump(nota_json, fh, ensure_ascii=False, indent=2)
 

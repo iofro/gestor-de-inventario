@@ -71,6 +71,66 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     assert "-" not in data["emisor"].get("nit", "")
 
 
+def test_generar_nde_consumidor_final_sin_nit(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    db = create_db()
+    dte_origen = {
+        "identificacion": {"tipoDte": "01", "codigoGeneracion": "UUID", "fecEmi": "2024-01-01"},
+        "emisor": {},
+        "receptor": {"nombre": "Consumidor Final"},
+        "resumen": {
+            "montoTotalOperacion": 10,
+            "totalGravada": 10,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+        },
+    }
+    data = generar_nde_desde_dte(db, dte_origen, None, 10, "Ajuste")
+    assert data["identificacion"]["tipoDte"] == "06"
+
+
+def test_generar_nde_ticket_minimo(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    db = create_db()
+    dte_origen = {
+        "identificacion": {"tipoDte": "03", "codigoGeneracion": "UUID", "fecEmi": "2024-01-01"},
+        "emisor": {},
+        "receptor": {},
+        "resumen": {
+            "montoTotalOperacion": 5,
+            "totalGravada": 5,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+        },
+    }
+    data = generar_nde_desde_dte(db, dte_origen, None, 5, "Ajuste")
+    assert data["identificacion"]["tipoDte"] == "06"
+
+
 def test_generar_nota_remision_json_factura(tmp_path, monkeypatch):
     datos = {
         "nit": "0614-140710-001-2",

@@ -69,3 +69,5 @@ def test_generar_nota_debito_detalles(monkeypatch):
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 2
     assert data["resumen"]["totalGravada"] == 2
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"

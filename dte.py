@@ -996,7 +996,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
     fiscal = fiscal or {}
     extra = extra or {}
-    if tipo_dte in {"01", "03"}:
+    if tipo_dte in {"01", "03", "05", "06"}:
         precios_incluyen_iva = True
         extra["precios_incluyen_iva"] = True
     else:
@@ -1033,7 +1033,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             fiscal.get("descu_gravada", fiscal.get("descuentos", 0))
         )
         total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
-        if tipo_dte == "03":
+        if tipo_dte in {"03", "05", "06"}:
             if "sumas" in fiscal:
                 total_gravada = money(fiscal["sumas"])
                 total_iva = money(fiscal.get("iva", 0))
@@ -1138,7 +1138,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
 
-    if tipo_dte != "03":
+    if tipo_dte not in {"03", "05", "06"}:
         resumen["totalIva"] = total_iva
 
     if tipo_dte in {"01", "03", "05", "06"}:
@@ -1171,7 +1171,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         suma_por_codigo[codigo] = money(suma_por_codigo.get(codigo, D("0")) + valor)
 
     tributos_list = [{"codigo": c, "valor": v} for c, v in suma_por_codigo.items()]
-    if tipo_dte == "03":
+    if tipo_dte in {"03", "05", "06"}:
         resumen["tributos"] = (
             [
                 {
@@ -1265,7 +1265,7 @@ def recalcular_totales(
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
         data["extra"] = extra_conf
-    elif tipo_dte == "03":
+    elif tipo_dte in {"03", "05", "06"}:
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
         data["extra"] = extra_conf
@@ -1446,7 +1446,7 @@ def recalcular_totales(
             venta_gravada_sum = D("0")
             iva_total = D("0")
 
-        if tipo_dte == "03":
+        if tipo_dte in {"03", "05", "06"}:
             if colapso_desc:
                 sub_total_ventas = money(sum(bases))
                 descu_gravada_sum = money(0)
@@ -1498,7 +1498,7 @@ def recalcular_totales(
         _set_resumen("totalNoSuj", d4(0))
         _set_resumen("totalExenta", d4(0))
         _set_resumen("totalGravada", d4(venta_gravada_sum))
-        if tipo_dte == "03":
+        if tipo_dte in {"03", "05", "06"}:
             _set_resumen("subTotalVentas", sub_total_ventas)
             _set_resumen("descuNoSuj", money(0))
             _set_resumen("descuExenta", money(0))
@@ -1547,7 +1547,7 @@ def recalcular_totales(
             suma[codigo] = money(suma.get(codigo, D("0")) + valor)
         trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
     else:
-        if tipo_dte == "03":
+        if tipo_dte in {"03", "05", "06"}:
             trib = (
                 [
                     {
@@ -1593,7 +1593,7 @@ def recalcular_totales(
             first_val = D(str(first.get("montoPago") or 0))
             first["montoPago"] = money(first_val + delta)
 
-    if tipo_dte == "03":
+    if tipo_dte in {"03", "05", "06"}:
         for item in cuerpo:
             cant = D(str(item.get("cantidad") or 0))
             precio_u = D(str(item.get("precioUni") or 0))
@@ -1978,7 +1978,7 @@ def generar_dte_json(
     override_precio_flag = kwargs.get("precios_incluyen_iva")
     precios_incluyen_iva = _precios_incluyen_iva_from(extra, override_precio_flag)
     if (
-        tipo_dte in {"01", "03"}
+        tipo_dte in {"01", "03", "05", "06"}
         and "precios_incluyen_iva" not in extra
         and override_precio_flag is None
     ):
@@ -2075,7 +2075,7 @@ def generar_dte_json(
                 bruto_total += bruto
                 descuentos_total += monto_descu
             elif precios_incluyen_iva:
-                if tipo_dte == "03":
+                if tipo_dte in {"03", "05", "06"}:
                     bruto = d4(cant * precio_raw)
                     descu_total = _calc_desc(bruto)
                     bruto_final = d4(bruto - descu_total)
@@ -2208,7 +2208,7 @@ def generar_dte_json(
         "no_gravado": total_no_gravado_sum,
         "iva": total_iva_sum,
     }
-    if tipo_dte == "03":
+    if tipo_dte in {"03", "05", "06"}:
         fiscal_data.update(
             {
                 "descu_gravada": descu_gravada_sum,
@@ -2475,7 +2475,7 @@ def validate_dte_json(
     ident["tipoDte"] = tipo_dte_val
     if tipo_dte_val not in catalogos.DTE_TIPOS:
         raise ValueError("tipoDte inválido")
-    if tipo_dte_val == "03":
+    if tipo_dte_val in {"03", "05", "06"}:
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
         payload["extra"] = extra_conf

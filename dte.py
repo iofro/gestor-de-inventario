@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import base64
+import copy
 import platform
 import sys
 import re
@@ -122,6 +123,7 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         "tipoContingencia",
         "motivoContin",
         "nombreComercial",
+        "numPagoElectronico",
     }
 
     def _remove_nulls(value, parent_key=None):
@@ -3172,9 +3174,11 @@ def generar_nde_desde_dte(
     }
 
     origen_ident = dte_origen.get("identificacion", {})
+    tipo_origen = origen_ident.get("tipoDte")
+    tipo_rel = "07" if tipo_origen == "07" else "03"
     doc_rel = [
         {
-            "tipoDocumento": origen_ident.get("tipoDte"),
+            "tipoDocumento": tipo_rel,
             "tipoGeneracion": 2,
             "numeroDocumento": origen_ident.get("codigoGeneracion"),
             "fechaEmision": origen_ident.get("fecEmi"),
@@ -3182,8 +3186,12 @@ def generar_nde_desde_dte(
     ]
 
     emisor = dte_origen.get("emisor")
-    receptor = dte_origen.get("receptor")
+    receptor = copy.deepcopy(dte_origen.get("receptor", {}))
     from utils.sanitize import limpiar_documentos
+
+    receptor.setdefault("nombreComercial", None)
+    if not receptor.get("nit"):
+        raise ValueError("receptor.nit es obligatorio para notas de débito")
 
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)
@@ -3335,6 +3343,11 @@ def generar_nde_desde_dte(
         "descuExenta": 0.0,
         "descuGravada": 0.0,
         "totalDescu": 0.0,
+        "ivaPerci1": 0.0,
+        "ivaRete1": 0.0,
+        "reteRenta": 0.0,
+        "condicionOperacion": dte_origen.get("resumen", {}).get("condicionOperacion", 1),
+        "numPagoElectronico": dte_origen.get("resumen", {}).get("numPagoElectronico"),
         "tributos": tributos_resumen,
         "montoTotalOperacion": monto_total,
         "totalLetras": monto_a_texto_sv(float(monto_total)),

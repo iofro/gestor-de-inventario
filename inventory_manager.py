@@ -321,7 +321,12 @@ class InventoryManager:
 
     def importar_inventario_json(self, filename):
         with open(filename, "r", encoding="utf-8") as f:
-            data = json.load(f)
+            try:
+                data = json.load(f)
+            except json.JSONDecodeError as e:
+                raise InventoryManagerError(
+                    f"No se pudo importar inventario desde {filename}: JSON malformado en línea {e.lineno}, columna {e.colno}"
+                ) from e
         # Limpia tablas hijas primero para evitar violaciones de clave foránea
         self.db.conn.execute("BEGIN")
         try:

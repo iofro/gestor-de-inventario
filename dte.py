@@ -1269,9 +1269,17 @@ def recalcular_totales(
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
         data["extra"] = extra_conf
-        nit = str(data.get("receptor", {}).get("nit") or "")
-        if not (len(nit) == 14 and nit.isdigit()):
-            raise ValueError("receptor.nit debe tener 14 dígitos sin guiones")
+        # ``03`` se usa tanto para comprobantes de crédito fiscal como para
+        # tickets.  Solo los primeros requieren un NIT receptor válido; los
+        # tickets pueden omitirlo.  Se omite la validación si no hay receptor
+        # o si ``extra['es_ticket']`` está definido y es verdadero.
+        receptor = data.get("receptor") or {}
+        if receptor and not extra_conf.get("es_ticket"):
+            nit = str(receptor.get("nit") or "")
+            if not (len(nit) == 14 and nit.isdigit()):
+                raise ValueError(
+                    "receptor.nit debe tener 14 dígitos sin guiones"
+                )
     else:
         precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
 
@@ -3117,11 +3125,16 @@ def generar_ticket_json(
     motivo_contin: str | None = None,
     **kwargs,
 ) -> dict:
-    """Genera la estructura JSON para un Ticket Electrónico."""
+    """Genera la estructura JSON para un Ticket Electrónico.
+
+    El resultado se marca con ``extra['es_ticket']`` para indicar que se trata
+    de un ticket y no de un comprobante de crédito fiscal completo.
+    """
     if ambiente not in ("00", "01"):
         ambiente_cfg = str(ambiente).lower()
         ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
-    return generar_dte_json(
+
+    data = generar_dte_json(
         db,
         venta_id,
         tipo_dte="03",
@@ -3131,6 +3144,9 @@ def generar_ticket_json(
         motivo_contin=motivo_contin,
         **kwargs,
     )
+
+    data.setdefault("extra", {})["es_ticket"] = True
+    return data
 
 
 def generar_nota_credito_json(db: DB, nota_id: int) -> dict:

@@ -1,0 +1,102 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1,
+      "codTributo": null,
+      "codigo": "ND12246AC0-1",
+      "descripcion": "Producto Demo 8",
+      "montoDescu": 0.0,
+      "numItem": 1,
+      "numeroDocumento": "12246AC0-C05A-498E-B891-D0D76592EC7A",
+      "precioUni": 10.0,
+      "tipoItem": 1,
+      "tributos": [
+        "20"
+      ],
+      "uniMedida": 59,
+      "ventaExenta": 0.00,
+      "ventaGravada": 10.00,
+      "ventaNoSuj": 0.00
+    }
+  ],
+  "documentoRelacionado": [
+    {
+      "fechaEmision": "2025-09-03",
+      "numeroDocumento": "12246AC0-C05A-498E-B891-D0D76592EC7A",
+      "tipoDocumento": "03",
+      "tipoGeneracion": 2
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "CC0FF54D-E93F-4195-A19D-0088783FA1C0",
+    "fecEmi": "2025-09-07",
+    "horEmi": "15:42:47",
+    "motivoContin": null,
+    "numeroControl": "DTE-06-S001P001-000000000000005",
+    "tipoContingencia": null,
+    "tipoDte": "06",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "nrc": "2273734",
+    "telefono": "70000001"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 11.30,
+    "numPagoElectronico": "",
+    "reteRenta": 0.0,
+    "subTotal": 10.00,
+    "subTotalVentas": 10.00,
+    "totalDescu": 0.0,
+    "totalExenta": 0.00,
+    "totalGravada": 10.00,
+    "totalLetras": "ONCE 30/100 DÓLARES",
+    "totalNoSuj": 0.00,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 1.30
+      }
+    ]
+  },
+  "ventaTercero": null
+}

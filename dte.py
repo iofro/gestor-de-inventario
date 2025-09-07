@@ -3185,13 +3185,12 @@ def generar_nde_desde_dte(
         }
     ]
 
-    emisor = dte_origen.get("emisor")
+    emisor = copy.deepcopy(dte_origen.get("emisor", {}))
     receptor = copy.deepcopy(dte_origen.get("receptor", {}))
     from utils.sanitize import limpiar_documentos
 
     receptor.setdefault("nombreComercial", None)
-    if not receptor.get("nit"):
-        raise ValueError("receptor.nit es obligatorio para notas de débito")
+    receptor.setdefault("nit", None)
 
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)

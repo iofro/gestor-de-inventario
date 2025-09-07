@@ -7,6 +7,7 @@ import os
 import logging
 import sqlite3
 from paths import DATOS_NEGOCIO_PATH
+from utils.stable_json import DecimalEncoder
 
 logger = logging.getLogger(__name__)
 
@@ -210,80 +211,113 @@ class InventoryManager:
             for item in iterator:
                 if not first_item:
                     f.write(",")
-                json.dump(item, f, ensure_ascii=False)
+                try:
+                    json.dump(item, f, ensure_ascii=False)
+                except TypeError:
+                    f.write(
+                        json.dumps(item, ensure_ascii=False, cls=DecimalEncoder)
+                    )
+                except Exception:
+                    raise
                 first_item = False
             f.write("]")
             first_section = False
 
-        with open(filename, "w", encoding="utf-8") as f:
-            first_section = True
-            f.write("{")
-            write_array("productos", self._products)
-            write_array("vendedores", (dict(v) for v in self._vendedores))
-            write_array("Distribuidores", (dict(v) for v in self._Distribuidores))
-            write_array("clientes", (dict(c) for c in self._clientes))
-            # Export only synchronized sales.  Older installations might lack the
-            # ``sincronizada`` column, so ensure it exists with a sensible
-            # default before querying.
-            self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
-            write_array(
-                "ventas",
-                (
-                    dict(v)
-                    for v in self.db.cursor.execute(
-                        "SELECT * FROM ventas WHERE sincronizada=1"
-                    )
-                ),
-            )
-            write_array(
-                "compras",
-                (dict(c) for c in self.db.cursor.execute("SELECT * FROM compras")),
-            )
-            write_array(
-                "movimientos",
-                (dict(m) for m in self.db.cursor.execute("SELECT * FROM movimientos")),
-            )
-            write_array(
-                "detalles_venta",
-                (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_venta")),
-            )
-            write_array(
-                "detalles_compra",
-                (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")),
-            )
-            write_array(
-                "dte_envios",
-                (dict(d) for d in self.db.cursor.execute("SELECT * FROM dte_envios")),
-            )
-            write_array(
-                "notas",
-                (dict(n) for n in self.db.cursor.execute("SELECT * FROM notas")),
-            )
-            write_array(
-                "facturas_pdf",
-                (dict(f) for f in self.db.cursor.execute("SELECT * FROM facturas_pdf")),
-            )
-            write_array(
-                "tickets_pdf",
-                (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
-            )
-            if datos_negocio:
-                f.write(",\n\"datos_negocio\":")
-                json.dump(datos_negocio, f, ensure_ascii=False)
-            else:
-                f.write(",\n\"datos_negocio\":{}")
-            write_array(
-                "trabajadores",
-                (dict(t) for t in self.db.cursor.execute("SELECT * FROM trabajadores")),
-            )
-            write_array(
-                "ventas_credito_fiscal",
-                (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")),
-            )
-            if tab_order is not None:
-                f.write(",\n\"tab_order\":")
-                json.dump(tab_order, f, ensure_ascii=False)
-            f.write("}")
+        try:
+            with open(filename, "w", encoding="utf-8") as f:
+                first_section = True
+                f.write("{")
+                write_array("productos", self._products)
+                write_array("vendedores", (dict(v) for v in self._vendedores))
+                write_array("Distribuidores", (dict(v) for v in self._Distribuidores))
+                write_array("clientes", (dict(c) for c in self._clientes))
+                # Export only synchronized sales.  Older installations might lack the
+                # ``sincronizada`` column, so ensure it exists with a sensible
+                # default before querying.
+                self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
+                write_array(
+                    "ventas",
+                    (
+                        dict(v)
+                        for v in self.db.cursor.execute(
+                            "SELECT * FROM ventas WHERE sincronizada=1"
+                        )
+                    ),
+                )
+                write_array(
+                    "compras",
+                    (dict(c) for c in self.db.cursor.execute("SELECT * FROM compras")),
+                )
+                write_array(
+                    "movimientos",
+                    (dict(m) for m in self.db.cursor.execute("SELECT * FROM movimientos")),
+                )
+                write_array(
+                    "detalles_venta",
+                    (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_venta")),
+                )
+                write_array(
+                    "detalles_compra",
+                    (dict(d) for d in self.db.cursor.execute("SELECT * FROM detalles_compra")),
+                )
+                write_array(
+                    "dte_envios",
+                    (dict(d) for d in self.db.cursor.execute("SELECT * FROM dte_envios")),
+                )
+                write_array(
+                    "notas",
+                    (dict(n) for n in self.db.cursor.execute("SELECT * FROM notas")),
+                )
+                write_array(
+                    "facturas_pdf",
+                    (dict(f) for f in self.db.cursor.execute("SELECT * FROM facturas_pdf")),
+                )
+                write_array(
+                    "tickets_pdf",
+                    (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
+                )
+                if datos_negocio:
+                    f.write(",\n\"datos_negocio\":")
+                    try:
+                        json.dump(datos_negocio, f, ensure_ascii=False)
+                    except TypeError:
+                        f.write(
+                            json.dumps(
+                                datos_negocio, ensure_ascii=False, cls=DecimalEncoder
+                            )
+                        )
+                    except Exception:
+                        raise
+                else:
+                    f.write(",\n\"datos_negocio\":{}")
+                write_array(
+                    "trabajadores",
+                    (dict(t) for t in self.db.cursor.execute("SELECT * FROM trabajadores")),
+                )
+                write_array(
+                    "ventas_credito_fiscal",
+                    (dict(v) for v in self.db.cursor.execute("SELECT * FROM ventas_credito_fiscal")),
+                )
+                if tab_order is not None:
+                    f.write(",\n\"tab_order\":")
+                    try:
+                        json.dump(tab_order, f, ensure_ascii=False)
+                    except TypeError:
+                        f.write(
+                            json.dumps(tab_order, ensure_ascii=False, cls=DecimalEncoder)
+                        )
+                    except Exception:
+                        raise
+                f.write("}")
+        except Exception as e:
+            logger.exception("Error al exportar inventario a %s", filename)
+            try:
+                os.remove(filename)
+            except OSError:
+                pass
+            raise InventoryManagerError(
+                f"No se pudo exportar inventario a {filename}: {e}"
+            ) from e
 
     def importar_inventario_json(self, filename):
         with open(filename, "r", encoding="utf-8") as f:

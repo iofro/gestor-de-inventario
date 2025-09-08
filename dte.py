@@ -3412,7 +3412,7 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
     return generar_nde_desde_dte(db, dte_origen, detalles, nota.get("monto"), nota.get("motivo"))
 
 
-def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
+def generar_nota_remision_json(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
     """Genera la estructura JSON para una nota de remisión."""
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
     if not row:
@@ -3430,13 +3430,10 @@ def generar_nota_remision_json(db: DB, nota_id: int) -> dict:
         venta = dict(venta_row)
         if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
             tipo_doc = "03"
-    data = generar_dte_json(db, venta_id, tipo_dte="04")
-    data["documentoRelacionado"] = {
-        "tipoDoc": tipo_doc,
-        "numeroDocumento": data["identificacion"].get("numeroControl") or venta_id,
-    }
-    return data
 
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+    from nota_remision import generar_nota_remision
+    return generar_nota_remision(db, factura=dte_origen, ambiente=ambiente)
 
 def _normalize_recepcion_url(raw: str) -> str:
     """Normaliza y valida ``raw`` como URL de recepción de Hacienda.

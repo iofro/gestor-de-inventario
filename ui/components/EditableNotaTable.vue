@@ -5,7 +5,13 @@
       <label>
         <input type="checkbox" v-model="applyToSelected" /> Aplicar a todas las líneas seleccionadas
       </label>
-      <button class="add-item" @click="addItem">+ Agregar ítem</button>
+      <button
+        v-if="notaTipo === 'debito'"
+        class="add-item"
+        @click="addItem"
+      >
+        + Agregar ítem
+      </button>
     </div>
     <table>
       <thead>
@@ -143,11 +149,17 @@ interface NotaItem {
   previas?: number;
   ajuste?: number;
   concepto?: string;
+  unidad?: string;
 }
 
 defineOptions({ name: 'EditableNotaTable' });
 
-const props = defineProps<{ modelValue: NotaItem[]; topeCredito?: number; ivaIncluido: boolean }>();
+const props = defineProps<{
+  modelValue: NotaItem[];
+  topeCredito?: number;
+  ivaIncluido: boolean;
+  notaTipo: 'debito' | 'credito';
+}>();
 const emit = defineEmits(['update:modelValue']);
 
 const items = ref<NotaItem[]>(props.modelValue ? [...props.modelValue] : []);
@@ -183,21 +195,33 @@ function toggleAll(val: boolean) {
 
 let nextId = 1;
 function addItem() {
+  const codigo = prompt('Código del ítem');
+  if (codigo === null) return;
+  const descripcion = prompt('Descripción del ítem') || '';
+  const cantidadStr = prompt('Cantidad');
+  if (cantidadStr === null) return;
+  const cantidad = parseFloat(cantidadStr) || 0;
+  const ajusteStr = prompt('Ajuste (USD)');
+  if (ajusteStr === null) return;
+  const ajuste = parseFloat(ajusteStr) || 0;
+  const unidad = prompt('Unidad') || '';
+  const concepto = prompt('Concepto') || '';
   items.value.push({
     id: nextId++,
     selected: false,
-    codigo: '',
-    descripcion: '',
-    cantidadFacturada: 0,
-    cantidadAjustar: 0,
+    codigo,
+    descripcion,
+    cantidadFacturada: cantidad,
+    cantidadAjustar: cantidad,
     tipo: 'debito',
     modo: 'monto',
     valor: 0,
     ivaInc: false,
     afectacion: 'gravada',
     previas: 0,
-    ajuste: 0,
-    concepto: '',
+    ajuste,
+    concepto,
+    unidad,
   });
 }
 

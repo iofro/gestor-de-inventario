@@ -231,7 +231,7 @@ function formatNumber(n: number) {
 const totalCredito = computed(() =>
   items.value
     .filter((i) => i.tipo === 'credito')
-    .reduce((acc, cur) => acc + cur.cantidadAjustar, 0)
+    .reduce((acc, i) => acc + calcTotal(i), 0)
 );
 
 const creditoExcede = computed(() =>

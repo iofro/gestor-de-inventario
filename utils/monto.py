@@ -34,9 +34,17 @@ except ImportError:  # pragma: no cover - fallback for environments without num2
 
 
 def monto_a_texto_sv(monto):
-    """Convierte un monto a texto en formato fiscal salvadoreño."""
+    """Convierte un monto a texto en formato fiscal salvadoreño.
+
+    Acepta :class:`Decimal` o cualquier valor numérico convertible a
+    ``Decimal``. El valor se redondea a 2 decimales utilizando ``ROUND_HALF_UP``
+    para que montos con más de dos decimales se conviertan correctamente sin
+    pérdidas de precisión.
+    """
+
+    monto = D(monto).quantize(Q2, rounding=ROUND_HALF_UP)
     entero = int(monto)
-    centavos = int(round((monto - entero) * 100))
+    centavos = int((monto - D(entero)) * 100)
     palabras = num2words(entero, lang="es").upper()
     return f"{palabras} {centavos:02d}/100 DÓLARES"
 

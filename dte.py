@@ -248,7 +248,7 @@ def normalize_uuid_v4_upper(value: str) -> str:
 def numero_a_letras(monto):
     """Convierte ``monto`` numérico a su representación en letras."""
     try:
-        texto = monto_a_texto_sv(float(monto))
+        texto = monto_a_texto_sv(monto)
     except Exception:
         return ""
     if " " in texto:
@@ -3368,7 +3368,7 @@ def generar_nde_desde_dte(
         "numPagoElectronico": dte_origen.get("resumen", {}).get("numPagoElectronico"),
         "tributos": tributos_resumen,
         "montoTotalOperacion": monto_total,
-        "totalLetras": monto_a_texto_sv(float(monto_total)),
+        "totalLetras": monto_a_texto_sv(monto_total),
     }
 
     data = {

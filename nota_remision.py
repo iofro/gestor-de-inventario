@@ -87,8 +87,6 @@ def normalizar_receptor(receptor: dict) -> dict:
         if len(num) != 9:
             raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
         receptor.pop("nrc", None)
-        receptor.pop("codActividad", None)
-        receptor.pop("descActividad", None)
     elif tipo == "36":
         if len(num) != 14:
             raise ValueError("NIT debe tener 14 dígitos (sin guiones)")

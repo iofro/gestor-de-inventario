@@ -1911,8 +1911,8 @@ def generar_dte_json(
         "nombre": rec.get("nombre"),
         "nit": nit,
         "nombreComercial": rec.get("nombreComercial"),
-        "codActividad": None,
-        "descActividad": None,
+        "codActividad": rec.get("codActividad"),
+        "descActividad": rec.get("giro") or rec.get("descActividad"),
         "telefono": rec.get("telefono"),
         "correo": rec.get("correo"),
     }

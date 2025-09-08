@@ -134,7 +134,7 @@ const excedeSaldo = computed(
 );
 
 function validar() {
-  return !!motivo.value && total.value > 0 && !excedeSaldo.value;
+  return total.value > 0 && !excedeSaldo.value;
 }
 
 async function onPreviewPdf() {

@@ -53,6 +53,7 @@ import subprocess
 import shutil
 import dte
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
+from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from decimal import Decimal
 
 # Directory where debit notes will be stored
@@ -563,6 +564,7 @@ class FacturacionTab(QWidget):
         self.date_to.dateChanged.connect(self.load_invoices)
         self.table.itemSelectionChanged.connect(self.show_invoice)
         self.table.itemSelectionChanged.connect(self._update_send_btn)
+        self.table.itemDoubleClicked.connect(self.mostrar_detalle_factura)
 
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
@@ -1017,6 +1019,26 @@ class FacturacionTab(QWidget):
             QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
         else:
             QMessageBox.warning(self, "Abrir PDF", "No se encontró el archivo PDF.")
+
+    def mostrar_detalle_factura(self, item=None):
+        factura = self._selected_factura()
+        if not factura:
+            QMessageBox.warning(self, "Detalle", "Seleccione una factura válida")
+            return
+        json_path = factura.get("json")
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(self, "Detalle", "No se encontró el archivo JSON")
+            return
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            QMessageBox.warning(self, "Detalle", "Error al leer el archivo JSON")
+            return
+        items = data.get("cuerpoDocumento") or []
+        resumen = data.get("resumen") or {}
+        dlg = InvoiceDetailDialog(items, resumen, self)
+        dlg.exec_()
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

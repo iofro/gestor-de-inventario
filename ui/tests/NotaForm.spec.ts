@@ -98,6 +98,38 @@ describe('NotaForm', () => {
     expect(cells[5].text()).toBe('12.00');
   });
 
+  it('muestra bloques de factura y nota y solo nota cambia', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: {
+          tipo: '01',
+          numero: '1',
+          fecha: '2024-01-01',
+          uuid: 'abc',
+          cliente: 'A',
+          total: 1000,
+          ventas_gravadas: 1000,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'debito'
+      }
+    });
+    const facturaTexto = wrapper.find('.factura-resumen').text();
+    expect(facturaTexto).toContain('Base gravada: 1000.00');
+    const radioMonto = wrapper.find('input[value="monto"]');
+    await radioMonto.setValue();
+    const chk = wrapper.find('.nota-header input[type="checkbox"]');
+    await chk.setValue(false);
+    const input = wrapper.find('input[type="number"]');
+    await input.setValue('10');
+    await wrapper.vm.$nextTick();
+    const notaTexto = wrapper.find('.nota-resumen').text();
+    expect(notaTexto).toContain('Base gravada: 10.00');
+    expect(wrapper.find('.factura-resumen').text()).toBe(facturaTexto);
+  });
+
   it('muestra badge rojo si excede saldo', async () => {
     const wrapper = mount(NotaForm, {
       props: {

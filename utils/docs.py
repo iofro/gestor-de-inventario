@@ -74,6 +74,10 @@ def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
         except Exception:
             d = datetime.now()
     date_str = d.strftime('%Y%m%d')
+    if isinstance(numero_control, str):
+        m = re.match(r"^(DTE-\d{2}-[^-]+-)(\d+)$", numero_control)
+        if m:
+            numero_control = f"{m.group(1)}{int(m.group(2)):015d}"
     base_name = f"{date_str}_{sanitize_filename(empresa)}_{numero_control}_{sanitize_filename(doc_type)}"
     pdf_path = os.path.join(folder, base_name + '.pdf')
     json_path = os.path.join(folder, base_name + '.json')

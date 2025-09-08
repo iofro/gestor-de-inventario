@@ -237,8 +237,20 @@ const total = computed(
 
 const totalLetras = computed(() => numeroALetras(total.value));
 
+const totalCredito = computed(() => {
+  if (activeTab.value === 'producto') {
+    return items.value
+      .filter((i) => i.tipo === 'credito')
+      .reduce((acc, i) => {
+        const val = i.ajuste !== undefined ? i.ajuste : resolveValor(i);
+        return acc + val;
+      }, 0);
+  }
+  return tipo === 'credito' ? total.value : 0;
+});
+
 const excedeSaldo = computed(
-  () => tipo === 'credito' && total.value > (props.factura.total ?? 0)
+  () => totalCredito.value > (saldoDisponible.value)
 );
 
 function validar() {

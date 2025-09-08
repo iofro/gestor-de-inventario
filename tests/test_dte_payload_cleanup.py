@@ -43,3 +43,18 @@ def test_sanitize_dte_payload_removes_none_recursively(dte_metadata_factory):
     clean_no_required.get("identificacion", {}).pop("motivoContin", None)
     clean_no_required.get("emisor", {}).pop("nombreComercial", None)
     assert not _has_none(clean_no_required)
+
+
+def test_sanitize_dte_payload_adds_required_fields_and_cleans_docs(dte_metadata_factory):
+    payload = dte_metadata_factory()
+    payload.pop("ventaTercero", None)
+    payload.pop("extension", None)
+    payload.pop("apendice", None)
+    payload["emisor"]["nit"] = "0614-123456-001-1"
+    payload["receptor"]["numDocumento"] = "01234567-8"
+    clean = dte.sanitize_dte_payload(payload)
+    assert clean["ventaTercero"] is None
+    assert clean["extension"] is None
+    assert clean["apendice"] is None
+    assert clean["emisor"]["nit"] == "06141234560011"
+    assert clean["receptor"]["numDocumento"] == "012345678"

@@ -2,7 +2,8 @@ import fitz
 from decimal import Decimal
 from db import DB
 from dte import generar_dte_json
-from nota_credito_electronica import generar_nce_desde_dte
+from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_nota
+import pytest
 from factura_sv import generar_nota_credito_pdf
 
 
@@ -126,6 +127,62 @@ def test_nota_credito_precio_uni(monkeypatch):
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")
     assert data["resumen"]["montoTotalOperacion"] == 9.0
+
+
+def test_generar_nce_rechaza_monto_excedido(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 15, '')",
+        (venta_id,),
+    ).lastrowid
+    with pytest.raises(ValueError):
+        generar_nce_desde_nota(db, nota_id)
+
+
+def test_generar_nce_detalle_excede(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "cantidad": 1,
+            "descripcion": "Prod",
+            "codigo": codigo,
+            "ventas_gravadas": Decimal("20"),
+        }
+    ]
+    with pytest.raises(ValueError):
+        generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
 
 
 def _sample_data():

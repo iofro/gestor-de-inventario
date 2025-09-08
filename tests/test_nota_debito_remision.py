@@ -1,7 +1,8 @@
 import fitz
 from decimal import Decimal
 from db import DB
-from dte import generar_nde_desde_dte, generar_dte_json
+from nota_debito_electronica import generar_nde_desde_dte
+from dte import generar_dte_json
 from nota_remision import generar_nota_remision_desde_db
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
 

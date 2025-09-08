@@ -77,6 +77,8 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
         self.manager = InventoryManager()
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        # Contador de cambios en la base de datos para detectar si hay datos sin guardar
+        self._mark_saved()
         self._setup_ui()
         self._apply_styles()
 
@@ -893,6 +895,7 @@ class MainWindow(QMainWindow):
                 self.ultimo_archivo_json = filename
                 with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
+                self._mark_saved()
                 QMessageBox.information(self, "Guardar como", "Inventario guardado correctamente.")
 
             thread.finished.connect(on_finished)
@@ -923,7 +926,7 @@ class MainWindow(QMainWindow):
                 self._actualizar_inventario_actual()
                 self._actualizar_historial()
                 self._cargar_personas_estado()
-
+                self._mark_saved()
                 QMessageBox.information(self, "Cargar inventario", "Inventario cargado correctamente.")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
@@ -974,6 +977,7 @@ class MainWindow(QMainWindow):
             )
 
             def on_finished():
+                self._mark_saved()
                 QMessageBox.information(
                     self,
                     "Guardar rápido",
@@ -1003,6 +1007,7 @@ class MainWindow(QMainWindow):
                 self.filter_products()
                 self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA
                 self._mostrar_historial_general()
+                self._mark_saved()
                 QMessageBox.information(self, "Cargar rápido", f"Inventario cargado de:\n{self.ultimo_archivo_json}")
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
@@ -1810,7 +1815,19 @@ class MainWindow(QMainWindow):
                 return i
         return -1
 
+    def _mark_saved(self):
+        """Registra el estado actual de la base de datos como guardado.
+
+        Se almacena el número total de cambios realizados en la conexión de
+        SQLite para poder detectar posteriormente si el inventario ha sido
+        modificado sin guardar.
+        """
+        self._db_change_counter = self.manager.db.conn.total_changes
+
     def closeEvent(self, event):
+        if self.manager.db.conn.total_changes == self._db_change_counter:
+            event.accept()
+            return
         reply = QMessageBox.question(
             self,
             "Salir",

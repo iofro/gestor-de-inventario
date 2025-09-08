@@ -254,7 +254,7 @@ function calcIva(item: NotaItem) {
   if (item.ivaInc) {
     return toBaseIva(monto).iva;
   }
-  return monto * 0.13;
+  return monto * 0.20;
 }
 function calcTotal(item: NotaItem) {
   const monto = getMonto(item);

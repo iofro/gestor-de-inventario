@@ -70,12 +70,12 @@ describe('NotaForm', () => {
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
     const input = wrapper.find('input[type="number"]');
-    await input.setValue('11.3');
+    await input.setValue('12');
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
     expect(cells[1].text()).toBe('10.00');
-    expect(cells[4].text()).toBe('1.30');
-    expect(cells[5].text()).toBe('11.30');
+    expect(cells[4].text()).toBe('2.00');
+    expect(cells[5].text()).toBe('12.00');
   });
 
   it('interpreta monto como base cuando ivaIncluido está inactivo', async () => {
@@ -94,8 +94,8 @@ describe('NotaForm', () => {
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
     expect(cells[1].text()).toBe('10.00');
-    expect(cells[4].text()).toBe('1.30');
-    expect(cells[5].text()).toBe('11.30');
+    expect(cells[4].text()).toBe('2.00');
+    expect(cells[5].text()).toBe('12.00');
   });
 
   it('muestra badge rojo si excede saldo', async () => {
@@ -204,7 +204,7 @@ describe('NotaForm', () => {
     await wrapper.vm.$nextTick();
     const resumen = wrapper.find('.resumen').text();
     expect(resumen).toContain('Base gravada: 100.00');
-    expect(resumen).toContain('IVA: 13.00');
-    expect(resumen).toContain('Total: 113.00');
+    expect(resumen).toContain('IVA: 20.00');
+    expect(resumen).toContain('Total: 120.00');
   });
 });

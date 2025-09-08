@@ -3231,7 +3231,8 @@ def generar_nde_desde_dte(
             total_nosuj += nosuj
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
-                precio = float(grav + exenta + nosuj)
+                precio = grav + exenta + nosuj
+            precio = d4(precio)
             cantidad = det.get("cantidad", 1)
             items.append(
                 {
@@ -3245,10 +3246,10 @@ def generar_nde_desde_dte(
                     "cantidad": cantidad,
                     "uniMedida": det.get("uniMedida", 59),
                     "precioUni": precio,
-                    "montoDescu": det.get("montoDescu", 0.0),
-                    "ventaGravada": d2(grav),
-                    "ventaExenta": d2(exenta),
-                    "ventaNoSuj": d2(nosuj),
+                    "montoDescu": d4(det.get("montoDescu", 0.0)),
+                    "ventaGravada": d4(grav),
+                    "ventaExenta": d4(exenta),
+                    "ventaNoSuj": d4(nosuj),
                     "tributos": [TRIBUTO_IVA] if grav > 0 else [],
                     "numeroDocumento": uuid_origen,
                     "codTributo": None,

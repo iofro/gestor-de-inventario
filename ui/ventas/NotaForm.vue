@@ -74,7 +74,20 @@
         </div>
       </div>
       <div class="resumen">
-        <!-- Resumen y acciones -->
+        <div>Base gravada: {{ format(preview.base) }}</div>
+        <div>Exenta: {{ format(0) }}</div>
+        <div>No sujeta: {{ format(0) }}</div>
+        <div>IVA: {{ format(preview.iva) }}</div>
+        <div>Total: {{ format(total) }}</div>
+        <div>Total en letras: {{ totalLetras }}</div>
+        <div>Documento relacionado: {{ factura.numero }}</div>
+        <span v-if="excedeSaldo" class="badge rojo">Crédito excede saldo</span>
+        <div class="acciones">
+          <button @click="onPreviewPdf">Previsualizar PDF</button>
+          <button @click="onPreviewJson">Previsualizar JSON</button>
+          <button @click="onGuardarBorrador">Guardar borrador</button>
+          <button @click="onFirmarTransmitir">Firmar &amp; Transmitir</button>
+        </div>
       </div>
     </div>
   </div>
@@ -82,6 +95,7 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue';
+import { previsualizarPdf, previsualizarJson, guardarBorrador, firmarTransmitir } from '../services/notasApi';
 
 const props = defineProps<{
   factura: { numero: string; cliente: string; total?: number };
@@ -115,6 +129,52 @@ const preview = computed(() => {
   return { base: total, iva: total * 0.2 };
 });
 
+const total = computed(() => preview.value.base + preview.value.iva);
+
+const totalLetras = computed(() => numeroALetras(total.value));
+
+const excedeSaldo = computed(
+  () => tipo === 'credito' && total.value > (props.factura.total ?? 0)
+);
+
+function validar() {
+  return !!motivo.value && total.value > 0 && !excedeSaldo.value;
+}
+
+async function onPreviewPdf() {
+  if (!validar()) return;
+  await previsualizarPdf(getPayload());
+}
+
+async function onPreviewJson() {
+  if (!validar()) return;
+  await previsualizarJson(getPayload());
+}
+
+async function onGuardarBorrador() {
+  if (!validar()) return;
+  await guardarBorrador(getPayload());
+}
+
+async function onFirmarTransmitir() {
+  if (!validar()) return;
+  await firmarTransmitir(getPayload());
+}
+
+function getPayload() {
+  return {
+    factura: factura.numero,
+    tipo,
+    motivo: motivo.value,
+    monto: total.value,
+    ivaIncluido: ivaIncluido.value,
+  };
+}
+
+function numeroALetras(n: number) {
+  return n.toFixed(2) + ' USD';
+}
+
 function format(n: number) {
   return n.toFixed(2);
 }
@@ -141,6 +201,10 @@ const { factura, tipo } = props;
   background-color: #eee;
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
+}
+.badge.rojo {
+  background-color: #c00;
+  color: #fff;
 }
 .tabs {
   margin-bottom: 1rem;

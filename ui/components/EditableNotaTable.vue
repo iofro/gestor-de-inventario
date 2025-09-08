@@ -18,6 +18,7 @@
           <th>Tipo</th>
           <th>Modo</th>
           <th>Valor</th>
+          <th>Afectación</th>
           <th>IVA inc.</th>
           <th>Base</th>
           <th>IVA</th>
@@ -39,7 +40,11 @@
               @keydown.enter.prevent="$event.target.blur()"
               @keydown.esc.prevent="onEsc(item, 'cantidadAjustar'); $event.target.blur()"
             />
-            <span v-if="item.tipo === 'credito' && item.cantidadAjustar > item.cantidadFacturada" class="error">Excede</span>
+            <span
+              v-if="item.tipo === 'credito' && item.cantidadAjustar > item.cantidadFacturada - (item.previas || 0)"
+              class="error"
+              >Excede</span
+            >
           </td>
           <td>
             <select
@@ -76,6 +81,13 @@
               @change="update(item, 'ivaInc', $event.target.checked)"
             />
           </td>
+          <td>
+            <select :value="item.afectacion" @change="update(item, 'afectacion', $event.target.value)">
+              <option value="gravada">Gravada</option>
+              <option value="exenta">Exenta</option>
+              <option value="no_sujeta">No sujeta</option>
+            </select>
+          </td>
           <td>{{ formatNumber(calcBase(item)) }}</td>
           <td>{{ formatNumber(calcIva(item)) }}</td>
           <td>{{ formatNumber(calcTotal(item)) }}</td>
@@ -88,6 +100,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, defineProps, defineEmits, defineOptions } from 'vue';
+import { toBaseIva } from '../services/useIvaConversion';
 
 interface NotaItem {
   id: number;
@@ -100,6 +113,8 @@ interface NotaItem {
   modo: 'monto' | 'porcentaje';
   valor: number;
   ivaInc: boolean;
+  afectacion: 'gravada' | 'exenta' | 'no_sujeta';
+  previas?: number;
 }
 
 defineOptions({ name: 'EditableNotaTable' });
@@ -151,6 +166,8 @@ function addItem() {
     modo: 'monto',
     valor: 0,
     ivaInc: false,
+    afectacion: 'gravada',
+    previas: 0,
   });
 }
 
@@ -173,12 +190,6 @@ function update(item: NotaItem, field: keyof NotaItem, value: any) {
   }
 }
 
-function toBaseIva(monto: number) {
-  const base = monto / 1.13;
-  const iva = monto - base;
-  return { base, iva };
-}
-
 function resolveValor(item: NotaItem) {
   if (item.modo === 'porcentaje') {
     return (item.cantidadFacturada * item.valor) / 100;
@@ -188,12 +199,18 @@ function resolveValor(item: NotaItem) {
 
 function calcBase(item: NotaItem) {
   const monto = resolveValor(item);
+  if (item.afectacion !== 'gravada') {
+    return monto;
+  }
   if (item.ivaInc) {
     return toBaseIva(monto).base;
   }
   return monto;
 }
 function calcIva(item: NotaItem) {
+  if (item.afectacion !== 'gravada') {
+    return 0;
+  }
   const monto = resolveValor(item);
   if (item.ivaInc) {
     return toBaseIva(monto).iva;

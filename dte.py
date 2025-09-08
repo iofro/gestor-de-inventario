@@ -28,7 +28,8 @@ from utils.catalogos import (
 import logging
 import warnings
 import xml.etree.ElementTree as ET
-from utils.monto import monto_a_texto_sv
+from utils.monto import monto_a_texto_sv, to_base_iva
+from utils.sanitize import limpiar_documentos, limpiar_doc
 from num2words import num2words
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
@@ -154,7 +155,11 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
     if schema is None:
         schema = FC_SCHEMA
     cleaned = _strip_additional_properties(data, schema)
-    return _remove_nulls(cleaned)
+    limpiar_documentos(cleaned)
+    cleaned = _remove_nulls(cleaned)
+    for key in ("documentoRelacionado", "otrosDocumentos", "ventaTercero", "extension", "apendice"):
+        cleaned.setdefault(key, None)
+    return cleaned
 
 
 def apply_schema_patch(data: dict) -> dict:
@@ -1342,7 +1347,8 @@ def recalcular_totales(
             linea = d4(bruto - monto_descu)
             if linea < 0:
                 linea = d4(0)
-            esperado_iva = money(linea - (linea / D("1.13")))
+            _, iva_calc = to_base_iva(linea)
+            esperado_iva = money(iva_calc)
             iva_raw = item.get("ivaItem")
             actual_iva = money(D(str(iva_raw))) if iva_raw is not None else None
             if iva_raw is not None:
@@ -2070,7 +2076,8 @@ def generar_dte_json(
                 monto_descu = _calc_desc(bruto)
                 line_total = d4(bruto - monto_descu)
                 venta_gravada = line_total if line_total > 0 else D("0")
-                iva_val = d4(venta_gravada - (venta_gravada / D("1.13")))
+                _, iva_val_tmp = to_base_iva(venta_gravada)
+                iva_val = d4(iva_val_tmp)
                 line_total = venta_gravada
                 bruto_total += bruto
                 descuentos_total += monto_descu
@@ -3055,14 +3062,18 @@ def validate_dte_json(
 
     # Validación de longitud de NIT / numDocumento
     emisor_nit = payload.get("emisor", {}).get("nit")
-    if emisor_nit and len(emisor_nit.replace("-", "")) != catalogos.NIT_LENGTH:
-        raise ValueError("NIT inválido en emisor")
+    if emisor_nit:
+        clean_emisor_nit = limpiar_doc(emisor_nit)
+        payload["emisor"]["nit"] = clean_emisor_nit
+        if len(clean_emisor_nit) != catalogos.NIT_LENGTH:
+            raise ValueError("NIT inválido en emisor")
 
     receptor_doc = payload.get("receptor", {}).get("numDocumento")
     if receptor_doc:
-        clean_doc = str(receptor_doc).replace("-", "")
+        clean_doc = limpiar_doc(receptor_doc)
         if len(clean_doc) not in (9, catalogos.NIT_LENGTH):
             raise ValueError("Número de documento inválido en receptor")
+        payload["receptor"]["numDocumento"] = clean_doc
     # Conversión final de Decimals con formatos específicos para el JSON
     def _zero_or(value: D, qfn) -> D:
         """Quantiza ``value`` usando ``qfn`` retornando ``0.0`` si es cero."""

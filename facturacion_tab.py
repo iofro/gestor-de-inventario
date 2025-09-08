@@ -334,16 +334,19 @@ class NotaRemisionDialog(QDialog):
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         left.addWidget(self.table)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        left.addWidget(buttons, alignment=Qt.AlignLeft)
+
         main_layout.addLayout(left, 1)
 
         # Right column: datos de entrega
         self.ext_widget = NotaRemisionExtWidget(self.db, self)
         main_layout.addWidget(self.ext_widget, 1)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        main_layout.addWidget(buttons)
+
 
         # Search debounce
         self.prod_timer = QTimer(self)

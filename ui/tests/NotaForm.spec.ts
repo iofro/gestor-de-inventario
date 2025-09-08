@@ -239,9 +239,39 @@ describe('NotaForm', () => {
       concepto: ''
     });
     await wrapper.vm.$nextTick();
-    const resumen = wrapper.find('.resumen').text();
+    const resumen = wrapper.find('.nota-resumen').text();
     expect(resumen).toContain('Base gravada: 100.00');
     expect(resumen).toContain('IVA: 20.00');
     expect(resumen).toContain('Total: 120.00');
+  });
+
+  it('mantiene estático el resumen de factura', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 120,
+          ventas_gravadas: 100,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 20,
+          tipo: '01',
+          fecha: '2024-01-01',
+          uuid: 'abc'
+        },
+        tipo: 'credito'
+      }
+    });
+    const facturaAntes = wrapper.find('.factura-resumen').text();
+    const radioMonto = wrapper.find('input[value="monto"]');
+    await radioMonto.setValue();
+    const input = wrapper.find('input[type="number"]');
+    await input.setValue('10');
+    await wrapper.vm.$nextTick();
+    const facturaDespues = wrapper.find('.factura-resumen').text();
+    expect(facturaDespues).toBe(facturaAntes);
+    const nota = wrapper.find('.nota-resumen').text();
+    expect(nota).toContain('Total: 10.00');
   });
 });

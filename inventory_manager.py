@@ -520,6 +520,7 @@ class InventoryManager:
                     c.get("departamento", ""),
                     c.get("municipio", ""),
                     c.get("codigo"),
+                    codActividad=c.get("codActividad"),
                     commit=False,
                 )
                 self.db.cursor.execute(
@@ -824,6 +825,7 @@ class InventoryManager:
         nit,
         dui,
         giro,
+        codActividad,
         telefono,
         email,
         direccion,
@@ -845,6 +847,7 @@ class InventoryManager:
             departamento,
             municipio,
             codigo=codigo,
+            codActividad=codActividad,
         )
         self.refresh_data()
 
@@ -857,6 +860,7 @@ class InventoryManager:
         nit,
         dui,
         giro,
+        codActividad,
         telefono,
         email,
         direccion,
@@ -873,6 +877,7 @@ class InventoryManager:
             nit,
             dui,
             giro,
+            codActividad,
             telefono,
             email,
             direccion,

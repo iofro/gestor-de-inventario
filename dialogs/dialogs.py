@@ -2495,6 +2495,7 @@ class ClienteDialog(QDialog):
         self.nit_edit = QLineEdit()
         self.dui_edit = QLineEdit()
         self.giro_edit = QLineEdit()
+        self.codActividad_edit = QLineEdit()
         self.telefono_edit = QLineEdit()
         self.email_edit = QLineEdit()
         self.direccion_edit = QLineEdit()
@@ -2521,6 +2522,7 @@ class ClienteDialog(QDialog):
             ("NIT:", self.nit_edit),
             ("DUI:", self.dui_edit),
             ("Giro:", self.giro_edit),
+            ("Código de actividad:", self.codActividad_edit),
             ("Teléfono:", self.telefono_edit),
             ("Correo electrónico:", self.email_edit),
             ("Dirección:", self.direccion_edit),
@@ -2554,6 +2556,7 @@ class ClienteDialog(QDialog):
             self.nit_edit.setText(cliente.get("nit", ""))
             self.dui_edit.setText(cliente.get("dui", ""))
             self.giro_edit.setText(cliente.get("giro", ""))
+            self.codActividad_edit.setText(cliente.get("codActividad", ""))
             self.telefono_edit.setText(cliente.get("telefono", ""))
             self.email_edit.setText(cliente.get("email", ""))
             self.direccion_edit.setText(cliente.get("direccion", ""))
@@ -2617,6 +2620,7 @@ class ClienteDialog(QDialog):
             "nit": self.nit_edit.text().strip(),
             "dui": self.dui_edit.text().strip(),
             "giro": self.giro_edit.text().strip(),
+            "codActividad": self.codActividad_edit.text().strip(),
             "telefono": self.telefono_edit.text().strip(),
             "email": self.email_edit.text().strip(),
             "direccion": self.direccion_edit.text().strip(),

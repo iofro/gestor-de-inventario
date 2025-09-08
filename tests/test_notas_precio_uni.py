@@ -1,8 +1,9 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from db import DB
 from nota_credito_electronica import generar_nce_desde_dte
 from nota_debito_electronica import generar_nde_desde_dte
+from utils.monto import to_base_iva
 
 
 def _datos_negocio():
@@ -76,12 +77,24 @@ def test_notas_precio_uni_cuatro_decimales(monkeypatch):
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
     nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste")
 
-    total_original = Decimal(str(dte_origen["resumen"]["montoTotalOperacion"]))
-    for nota in (nce, nde):
-        for det, esperado in zip(nota["cuerpoDocumento"], precios):
-            dec = Decimal(str(det["precioUni"]))
-            assert dec == esperado
-            assert dec.as_tuple().exponent == -4
-        assert (
-            Decimal(str(nota["resumen"]["montoTotalOperacion"])) == total_original
-        )
+    expected_subtotal = sum(
+        to_base_iva(p)[0].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        for p in precios
+    )
+    expected_iva = sum(
+        to_base_iva(p)[1].quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        for p in precios
+    )
+    expected_total = expected_subtotal + expected_iva
+    for det, esperado in zip(nce["cuerpoDocumento"], precios):
+        dec = Decimal(str(det["precioUni"]))
+        assert dec == esperado
+        assert dec.as_tuple().exponent == -4
+    for det, esperado in zip(nde["cuerpoDocumento"], precios):
+        dec = Decimal(str(det["precioUni"]))
+        assert dec == esperado
+        assert dec.as_tuple().exponent == -4
+    assert Decimal(str(nce["resumen"]["montoTotalOperacion"])) == Decimal(
+        "1.88"
+    )
+    assert Decimal(str(nde["resumen"]["montoTotalOperacion"])) == expected_total

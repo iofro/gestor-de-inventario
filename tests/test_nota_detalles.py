@@ -1,8 +1,9 @@
 from db import DB
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from nota_credito_electronica import generar_nce_desde_dte
 from nota_debito_electronica import generar_nde_desde_dte
-from dte import generar_dte_json
+from dte import generar_dte_json, d4
+from utils.monto import to_base_iva, d2
 
 def create_db():
     return DB(":memory:")
@@ -59,17 +60,17 @@ def test_generar_nota_debito_detalles(monkeypatch):
         {
             "cantidad": 1,
             "descripcion": "Ajuste",
-            "precio_unitario": 2,
-            "ventas_gravadas": 2,
-            "ventas_exentas": 0,
-            "ventas_no_sujetas": 0,
+            "precio_unitario": Decimal("9"),
         }
     ]
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
-    data = generar_nde_desde_dte(db, dte_origen, detalles, 2, "Ajuste")
+    data = generar_nde_desde_dte(db, dte_origen, detalles, 9, "Ajuste")
+    base, iva = to_base_iva(Decimal("9"))
     item = data["cuerpoDocumento"][0]
-    assert item["ventaGravada"] == 2
-    assert data["resumen"]["totalGravada"] == 2
+    assert item["ventaGravada"] == d4(base)
+    assert data["resumen"]["totalGravada"] == d2(base)
+    assert data["resumen"]["tributos"][0]["valor"] == d2(iva)
+    assert data["resumen"]["montoTotalOperacion"] == Decimal("9")
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
 
@@ -105,5 +106,39 @@ def test_generar_nota_debito_precio_4_decimales(monkeypatch):
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("1.2345")
     assert item["ventaExenta"] == Decimal("1.2345")
-    assert data["resumen"]["montoTotalOperacion"] == Decimal("1.23")
-    assert data["resumen"]["montoTotalOperacion"] == dte_origen["resumen"]["montoTotalOperacion"]
+    subtotal = Decimal("1.2345")
+    expected_total = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    assert data["resumen"]["montoTotalOperacion"] == expected_total
+
+
+def test_iva_no_excesivo_en_nota(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "UUID",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {},
+        "receptor": {},
+        "resumen": {
+            "montoTotalOperacion": Decimal("104.92"),
+            "totalGravada": Decimal("92.85"),
+            "totalExenta": Decimal("0"),
+            "totalNoSuj": Decimal("0"),
+        },
+    }
+    detalles = [
+        {
+            "cantidad": 1,
+            "descripcion": "Prod",
+            "precio_unitario": Decimal("4.42"),
+        }
+    ]
+    nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste")
+    base, iva = to_base_iva(Decimal("4.42"))
+    iva = d2(iva)
+    assert nde["resumen"]["tributos"][0]["valor"] == iva
+    assert nde["resumen"]["montoTotalOperacion"] == Decimal("4.42")
+    assert nde["resumen"]["tributos"][0]["valor"] != Decimal("12.07")

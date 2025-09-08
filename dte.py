@@ -3242,19 +3242,49 @@ def generar_nde_desde_dte(
         total_grav = Decimal("0")
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
+        iva_val = Decimal("0")
         num = 1
         for det in detalles:
-            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
-            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0))
-            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0))
+            precio_raw = det.get("precio_unitario") or det.get("precioUni")
+            cantidad = Decimal(str(det.get("cantidad", 1)))
+            monto_desc = Decimal(str(det.get("montoDescu", 0)))
+            if precio_raw is not None:
+                precio_dec = Decimal(str(precio_raw))
+                total_linea = d4(cantidad * precio_dec - monto_desc)
+                ex_flag = Decimal(
+                    str(det.get("ventas_exentas") or det.get("ventaExenta") or 0)
+                ) > 0
+                nosuj_flag = Decimal(
+                    str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0)
+                ) > 0
+                if ex_flag:
+                    grav = Decimal("0")
+                    exenta = total_linea
+                    nosuj = Decimal("0")
+                    iva_item = Decimal("0")
+                elif nosuj_flag:
+                    grav = Decimal("0")
+                    exenta = Decimal("0")
+                    nosuj = total_linea
+                    iva_item = Decimal("0")
+                else:
+                    grav, iva_item = to_base_iva(total_linea)
+                    exenta = Decimal("0")
+                    nosuj = Decimal("0")
+                    iva_val += iva_item.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+                precio = d4(precio_dec)
+            else:
+                grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
+                exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0))
+                nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0))
+                iva_val += (grav * Decimal("0.13")).quantize(
+                    Decimal("0.01"), rounding=ROUND_HALF_UP
+                )
+                total_linea = grav + exenta + nosuj
+                precio = d4(total_linea / cantidad if cantidad else Decimal("0"))
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
-            precio = det.get("precio_unitario") or det.get("precioUni")
-            if precio is None:
-                precio = grav + exenta + nosuj
-            precio = d4(precio)
-            cantidad = det.get("cantidad", 1)
             items.append(
                 {
                     "numItem": num,
@@ -3264,7 +3294,7 @@ def generar_nde_desde_dte(
                         "descripcion",
                         f"Nota de débito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
                     ),
-                    "cantidad": cantidad,
+                    "cantidad": float(cantidad),
                     "uniMedida": det.get("uniMedida", 59),
                     "precioUni": precio,
                     "montoDescu": d4(det.get("montoDescu", 0.0)),
@@ -3280,6 +3310,9 @@ def generar_nde_desde_dte(
         total_grav = d2(total_grav)
         total_exenta = d2(total_exenta)
         total_nosuj = d2(total_nosuj)
+        iva_val = d2(iva_val)
+        subtotal_ventas = total_grav + total_exenta + total_nosuj
+        monto_total = d2(subtotal_ventas + iva_val)
     else:
         if monto is None:
             raise ValueError("Se requiere monto para nota de débito")
@@ -3357,13 +3390,14 @@ def generar_nde_desde_dte(
                     "codTributo": None,
                 }
             )
+        subtotal_ventas = total_grav + total_exenta + total_nosuj
+        orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (
+            ratio if "ratio" in locals() else Decimal("1")
+        )
+        iva_val = d2(orig_total - subtotal_ventas)
+        monto_total = d2(orig_total)
 
-    subtotal_ventas = total_grav + total_exenta + total_nosuj
-    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (
-        ratio if "ratio" in locals() else Decimal("1")
-    )
-    iva_val = d2(orig_total - subtotal_ventas)
-    tributos_resumen = []
+    tributos_resumen: list[dict] = []
     if iva_val > 0:
         tributos_resumen.append(
             {
@@ -3372,7 +3406,6 @@ def generar_nde_desde_dte(
                 "valor": iva_val,
             }
         )
-    monto_total = d2(orig_total)
     resumen = {
         "totalNoSuj": total_nosuj,
         "totalExenta": total_exenta,

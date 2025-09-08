@@ -20,9 +20,11 @@
           <th>Valor</th>
           <th>Afectación</th>
           <th>IVA inc.</th>
+          <th>Ajuste (USD)</th>
           <th>Base</th>
           <th>IVA</th>
           <th>Total</th>
+          <th>Concepto</th>
         </tr>
       </thead>
       <tbody>
@@ -84,6 +86,17 @@
             />
           </td>
           <td>
+            <input
+              class="ajuste"
+              type="number"
+              :value="item.ajuste"
+              @focus="onFocus(item, 'ajuste')"
+              @input="update(item, 'ajuste', parseFloat($event.target.value))"
+              @keydown.enter.prevent="$event.target.blur()"
+              @keydown.esc.prevent="onEsc(item, 'ajuste'); $event.target.blur()"
+            />
+          </td>
+          <td>
             <select :value="item.afectacion" @change="update(item, 'afectacion', $event.target.value)">
               <option value="gravada">Gravada</option>
               <option value="exenta">Exenta</option>
@@ -93,6 +106,17 @@
           <td>{{ formatNumber(calcBase(item)) }}</td>
           <td>{{ formatNumber(calcIva(item)) }}</td>
           <td>{{ formatNumber(calcTotal(item)) }}</td>
+          <td>
+            <input
+              type="text"
+              :value="item.concepto"
+              placeholder="Concepto opcional"
+              @focus="onFocus(item, 'concepto')"
+              @input="update(item, 'concepto', $event.target.value)"
+              @keydown.enter.prevent="$event.target.blur()"
+              @keydown.esc.prevent="onEsc(item, 'concepto'); $event.target.blur()"
+            />
+          </td>
         </tr>
       </tbody>
     </table>
@@ -102,7 +126,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, defineProps, defineEmits, defineOptions } from 'vue';
-import { toBaseIva } from '../services/useIvaConversion';
+import { toBaseIva, fromBaseIva } from '../services/useIvaConversion';
 
 interface NotaItem {
   id: number;
@@ -117,11 +141,13 @@ interface NotaItem {
   ivaInc: boolean;
   afectacion: 'gravada' | 'exenta' | 'no_sujeta';
   previas?: number;
+  ajuste?: number;
+  concepto?: string;
 }
 
 defineOptions({ name: 'EditableNotaTable' });
 
-const props = defineProps<{ modelValue: NotaItem[]; topeCredito?: number }>();
+const props = defineProps<{ modelValue: NotaItem[]; topeCredito?: number; ivaIncluido: boolean }>();
 const emit = defineEmits(['update:modelValue']);
 
 const items = ref<NotaItem[]>(props.modelValue ? [...props.modelValue] : []);
@@ -170,6 +196,8 @@ function addItem() {
     ivaInc: false,
     afectacion: 'gravada',
     previas: 0,
+    ajuste: 0,
+    concepto: '',
   });
 }
 
@@ -199,10 +227,16 @@ function resolveValor(item: NotaItem) {
   return item.valor;
 }
 
+function getMonto(item: NotaItem) {
+  return item.ajuste !== undefined ? item.ajuste : resolveValor(item);
+}
 function calcBase(item: NotaItem) {
-  const monto = resolveValor(item);
+  const monto = getMonto(item);
   if (item.afectacion !== 'gravada') {
     return monto;
+  }
+  if (item.ajuste !== undefined) {
+    return props.ivaIncluido ? toBaseIva(monto).base : monto;
   }
   if (item.ivaInc) {
     return toBaseIva(monto).base;
@@ -213,15 +247,25 @@ function calcIva(item: NotaItem) {
   if (item.afectacion !== 'gravada') {
     return 0;
   }
-  const monto = resolveValor(item);
+  const monto = getMonto(item);
+  if (item.ajuste !== undefined) {
+    return props.ivaIncluido ? toBaseIva(monto).iva : fromBaseIva(monto).iva;
+  }
   if (item.ivaInc) {
     return toBaseIva(monto).iva;
   }
   return monto * 0.13;
 }
 function calcTotal(item: NotaItem) {
+  const monto = getMonto(item);
+  if (item.afectacion !== 'gravada') {
+    return monto;
+  }
+  if (item.ajuste !== undefined) {
+    return props.ivaIncluido ? monto : fromBaseIva(monto).total;
+  }
   if (item.ivaInc) {
-    return resolveValor(item);
+    return monto;
   }
   return calcBase(item) + calcIva(item);
 }

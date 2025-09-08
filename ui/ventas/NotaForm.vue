@@ -86,11 +86,22 @@
         </div>
       </div>
       <div class="resumen">
-        <div>Base gravada: {{ format(preview.base) }}</div>
-        <div>Exenta: {{ format(preview.exenta) }}</div>
-        <div>No sujeta: {{ format(preview.noSujeta) }}</div>
-        <div>IVA: {{ format(preview.iva) }}</div>
-        <div>Total: {{ format(total) }}</div>
+        <section class="factura-resumen">
+          <h3>Factura original</h3>
+          <div>Base gravada: {{ format(facturaResumen.base) }}</div>
+          <div>Exenta: {{ format(facturaResumen.exenta) }}</div>
+          <div>No sujeta: {{ format(facturaResumen.noSujeta) }}</div>
+          <div>IVA: {{ format(facturaResumen.iva) }}</div>
+          <div>Total: {{ format(facturaResumen.total) }}</div>
+        </section>
+        <section class="nota-resumen">
+          <h3>Nota</h3>
+          <div>Base gravada: {{ format(preview.base) }}</div>
+          <div>Exenta: {{ format(preview.exenta) }}</div>
+          <div>No sujeta: {{ format(preview.noSujeta) }}</div>
+          <div>IVA: {{ format(preview.iva) }}</div>
+          <div>Total: {{ format(total) }}</div>
+        </section>
         <div>Documento relacionado: {{ factura.numero }}</div>
         <span v-if="excedeSaldo" class="badge rojo">Crédito excede saldo</span>
         <div class="acciones">
@@ -153,6 +164,14 @@ interface NotaItem {
 const items = ref<NotaItem[]>([]);
 
 const saldoDisponible = computed(() => props.factura.total ?? 0);
+
+const facturaResumen = computed(() => ({
+  base: props.factura.ventas_gravadas ?? 0,
+  exenta: props.factura.ventas_exentas ?? 0,
+  noSujeta: props.factura.ventas_no_sujetas ?? 0,
+  iva: props.factura.iva ?? 0,
+  total: props.factura.total ?? 0,
+}));
 
 function resolveValor(item: NotaItem) {
   if (item.modo === 'porcentaje') {
@@ -300,6 +319,12 @@ const { factura, tipo } = props;
 }
 .resumen {
   width: 30%;
+}
+.resumen section {
+  margin-bottom: 1rem;
+}
+.resumen h3 {
+  margin: 0 0 0.5rem 0;
 }
 .nota-header {
   display: flex;

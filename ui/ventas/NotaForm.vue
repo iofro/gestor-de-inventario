@@ -54,17 +54,17 @@
                 <th title="Ventas exentas del impuesto">Exenta</th>
                 <th title="Operaciones no sujetas al impuesto">No sujeta</th>
                 <th title="Impuesto calculado al 13%">IVA(13)</th>
-                <th title="Suma de base e IVA">Total</th>
+                <th title="Suma de base, exenta, no sujeta e IVA">Total</th>
               </tr>
             </thead>
             <tbody>
               <tr>
                 <td>Global</td>
                 <td>{{ format(preview.base) }}</td>
-                <td>{{ format(0) }}</td>
-                <td>{{ format(0) }}</td>
+                <td>{{ format(preview.exenta) }}</td>
+                <td>{{ format(preview.noSujeta) }}</td>
                 <td>{{ format(preview.iva) }}</td>
-                <td>{{ format(preview.base + preview.iva) }}</td>
+                <td>{{ format(preview.base + preview.exenta + preview.noSujeta + preview.iva) }}</td>
               </tr>
             </tbody>
           </table>
@@ -98,9 +98,18 @@ import { ref, computed } from 'vue';
 import { previsualizarPdf, previsualizarJson, guardarBorrador, firmarTransmitir } from '../services/notasApi';
 import { toBaseIva } from '../services/useIvaConversion';
 import EditableNotaTable from '../components/EditableNotaTable.vue';
+import { prorratearGlobal } from '../services/prorrateo';
 
 const props = defineProps<{
-  factura: { numero: string; cliente: string; total?: number };
+  factura: {
+    numero: string;
+    cliente: string;
+    total?: number;
+    ventas_gravadas?: number;
+    ventas_exentas?: number;
+    ventas_no_sujetas?: number;
+    iva?: number;
+  };
   tipo: 'credito' | 'debito';
 }>();
 
@@ -130,12 +139,6 @@ interface NotaItem {
 const items = ref<NotaItem[]>([]);
 
 const saldoDisponible = computed(() => props.factura.total ?? 0);
-
-const globalMonto = computed(() => {
-  return modoGlobal.value === 'porcentaje'
-    ? (props.factura.total ?? 0) * (porcentaje.value || 0) / 100
-    : monto.value || 0;
-});
 
 function resolveValor(item: NotaItem) {
   if (item.modo === 'porcentaje') {
@@ -175,12 +178,21 @@ const itemsPreview = computed(() => {
 
 const preview = computed(() => {
   if (activeTab.value === 'global') {
-    const total = globalMonto.value;
-    if (ivaIncluido.value) {
-      const { base, iva } = toBaseIva(total);
-      return { base, exenta: 0, noSujeta: 0, iva };
-    }
-    return { base: total, exenta: 0, noSujeta: 0, iva: total * 0.13 };
+    const ajuste =
+      modoGlobal.value === 'porcentaje'
+        ? { porcentaje: porcentaje.value || 0 }
+        : {
+            monto: ivaIncluido.value
+              ? monto.value || 0
+              : (monto.value || 0) * 1.13,
+          };
+    const res = prorratearGlobal(props.factura, ajuste);
+    return {
+      base: res.ventas_gravadas,
+      exenta: res.ventas_exentas,
+      noSujeta: res.ventas_no_sujetas,
+      iva: res.iva,
+    };
   }
   return itemsPreview.value;
 });

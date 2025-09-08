@@ -185,6 +185,14 @@ def generar_nota_remision_desde_db(
     if nota.get("tipo") != "remision":
         raise ValueError("La nota indicada no es de remisión")
 
+    import json
+
+    detalles_raw = nota.get("detalles") or "{}"
+    try:
+        extra = json.loads(detalles_raw)
+    except Exception:
+        extra = {}
+
     venta_id = nota.get("venta_id")
     if venta_id:
         venta_row = db.cursor.execute(
@@ -199,17 +207,14 @@ def generar_nota_remision_desde_db(
         from dte import generar_dte_json
 
         dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
-        return generar_nota_remision(db, factura=dte_origen, ambiente=ambiente)
+        extension = extra.get("extension") or {}
+        return generar_nota_remision(
+            db, factura=dte_origen, extension=extension, ambiente=ambiente
+        )
 
     # Nota independiente (sin venta asociada)
-    import json
     from dte import _load_datos_negocio
 
-    detalles_raw = nota.get("detalles") or "{}"
-    try:
-        extra = json.loads(detalles_raw)
-    except Exception:
-        extra = {}
     detalles = extra.get("items") or []
     receptor = extra.get("receptor") or {}
     extension = extra.get("extension") or {}

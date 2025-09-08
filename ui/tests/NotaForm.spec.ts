@@ -121,6 +121,43 @@ describe('NotaForm', () => {
     expect(wrapper.find('.badge.rojo').exists()).toBe(true);
   });
 
+  it('muestra badge si créditos por producto exceden saldo', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 50,
+          ventas_gravadas: 50,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'debito'
+      }
+    });
+    const btnProducto = wrapper.findAll('.tabs button')[1];
+    await btnProducto.trigger('click');
+    wrapper.vm.items.push({
+      id: 1,
+      selected: false,
+      codigo: 'A1',
+      descripcion: 'Test',
+      cantidadFacturada: 1,
+      cantidadAjustar: 0,
+      tipo: 'credito',
+      modo: 'monto',
+      valor: 0,
+      ivaInc: false,
+      afectacion: 'gravada',
+      previas: 0,
+      ajuste: 60,
+      concepto: ''
+    });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.badge.rojo').exists()).toBe(true);
+  });
+
   it('llama API tras validación sin motivo', async () => {
     const wrapper = mount(NotaForm, {
       props: {

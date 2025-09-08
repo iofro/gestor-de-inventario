@@ -77,7 +77,7 @@
           </table>
         </div>
         <div v-else>
-          <EditableNotaTable v-model="items" :topeCredito="saldoDisponible" />
+          <EditableNotaTable v-model="items" :topeCredito="saldoDisponible" :ivaIncluido="ivaIncluido" />
         </div>
       </div>
       <div class="resumen">

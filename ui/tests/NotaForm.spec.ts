@@ -184,6 +184,7 @@ describe('NotaForm', () => {
     });
     const btnProducto = wrapper.findAll('.tabs button')[1];
     await btnProducto.trigger('click');
+    wrapper.vm.ivaIncluido = false;
     wrapper.vm.items.push({
       id: 1,
       selected: false,
@@ -196,7 +197,9 @@ describe('NotaForm', () => {
       valor: 100,
       ivaInc: false,
       afectacion: 'gravada',
-      previas: 0
+      previas: 0,
+      ajuste: 100,
+      concepto: ''
     });
     await wrapper.vm.$nextTick();
     const resumen = wrapper.find('.resumen').text();

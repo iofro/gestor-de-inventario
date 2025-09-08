@@ -30,7 +30,7 @@ def test_calculo_iva_item():
     resumen = payload["resumen"]
     assert D(str(item["ventaGravada"])) == D("13.00")
     assert D(str(item["ivaItem"])) == D("1.4956")
-    assert D(str(resumen["totalIva"])) == D("1.50")
+    assert D(str(resumen["totalIva"])) == D("1.4956")
 
 
 def test_serializacion_sin_tributos():
@@ -53,14 +53,14 @@ def test_fc_precio_incluye_iva_default():
     assert D(str(item["ventaGravada"])) == D("13.00")
     assert D(str(item["ivaItem"])) == D("1.4956")
     assert D(str(resumen["totalGravada"])) == D("13.00")
-    assert D(str(resumen["totalIva"])) == D("1.50")
+    assert D(str(resumen["totalIva"])) == D("1.4956")
     assert D(str(resumen["totalPagar"])) == D("13.00")
     assert item.get("codTributo") is None
     assert item.get("tributos") is None
     assert resumen.get("tributos") is None
 
 
-def test_valida_iva_incorrecto_error():
+def test_valida_iva_incorrecto_warning(caplog):
     payload = {
         "identificacion": {"tipoDte": "01"},
         "cuerpoDocumento": [
@@ -75,5 +75,8 @@ def test_valida_iva_incorrecto_error():
         ],
         "resumen": {},
     }
-    with pytest.raises(ValueError):
+    with caplog.at_level("WARNING"):
         recalcular_totales(payload)
+    assert "IVA por ítem incoherente" in caplog.text
+    item = payload["cuerpoDocumento"][0]
+    assert D(str(item["ivaItem"])) == D("1.4956")

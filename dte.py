@@ -1348,18 +1348,19 @@ def recalcular_totales(
             if linea < 0:
                 linea = d4(0)
             _, iva_calc = to_base_iva(linea)
-            esperado_iva = money(iva_calc)
+            esperado_iva = d4(iva_calc)
             iva_raw = item.get("ivaItem")
             actual_iva = money(D(str(iva_raw))) if iva_raw is not None else None
-            if iva_raw is not None:
-                if linea > D("0") and actual_iva != esperado_iva:
-                    raise ValueError(
-                        "IVA por ítem incoherente con modelo de precios con IVA incluido"
-                    )
-                if linea == D("0") and actual_iva != D("0"):
-                    raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
+            if iva_raw is not None and linea > D("0") and actual_iva != esperado_iva:
+                logger.warning(
+                    "IVA por ítem incoherente (%s); se corrige a %s",
+                    actual_iva,
+                    esperado_iva,
+                )
             item["ventaGravada"] = linea
             item["ivaItem"] = esperado_iva
+            if iva_raw is not None and linea == D("0") and actual_iva != D("0"):
+                raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
             item["ventaExenta"] = d4(0)
             item["ventaNoSuj"] = d4(0)
             item["noGravado"] = d4(0)
@@ -1472,7 +1473,7 @@ def recalcular_totales(
                 descu_gravada_sum = money(0)
 
     venta_gravada_sum = venta_gravada_sum
-    total_iva_sum = money(iva_total)
+    total_iva_sum = d4(iva_total)
 
     modificados: list[str] = []
 
@@ -2203,7 +2204,7 @@ def generar_dte_json(
     total_exenta_sum = _zero_or_d4(total_exenta_sum)
     total_gravada_sum = _zero_or_d2(total_gravada_sum)
     total_no_gravado_sum = money(total_no_gravado_sum)
-    total_iva_sum = money(iva_total)
+    total_iva_sum = d4(iva_total)
     sub_total_ventas = money(sub_total_ventas)
     descu_gravada_sum = money(descu_gravada_sum)
 

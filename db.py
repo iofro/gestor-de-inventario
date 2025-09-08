@@ -4,6 +4,7 @@ import json
 import logging
 import threading
 from pathlib import Path
+from decimal import Decimal
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1900,9 +1901,20 @@ class DB:
             raise ValueError("tipo debe ser 'credito', 'debito' o 'remision'")
 
         if venta_id is not None:
-            self.cursor.execute("SELECT id FROM ventas WHERE id=?", (venta_id,))
-            if self.cursor.fetchone() is None:
+            row = self.cursor.execute("SELECT total FROM ventas WHERE id=?", (venta_id,)).fetchone()
+            if row is None:
                 raise ValueError("La venta indicada no existe")
+            if tipo == "credito":
+                total_facturado = Decimal(str(row["total"]))
+                sum_row = self.cursor.execute(
+                    "SELECT COALESCE(SUM(monto),0) AS total FROM notas WHERE venta_id=? AND tipo='credito'",
+                    (venta_id,),
+                ).fetchone()
+                total_creditos = Decimal(str(sum_row["total"]))
+                monto_dec = Decimal(str(monto))
+                saldo = total_facturado - total_creditos
+                if monto_dec > saldo:
+                    raise ValueError("El monto de la nota excede el saldo restante de la venta")
 
         detalles_json = json.dumps(detalles) if detalles is not None else None
         self.cursor.execute(

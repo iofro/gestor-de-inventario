@@ -20,7 +20,10 @@ describe('NotaForm', () => {
     const wrapper = mount(NotaForm, {
       props: {
         factura: {
+          tipo: '01',
           numero: '1',
+          fecha: '2024-01-01',
+          uuid: '1234567890abcdef',
           cliente: 'A',
           total: 1000,
           ventas_gravadas: 1000,
@@ -37,32 +40,62 @@ describe('NotaForm', () => {
     expect(input.attributes('title')).toContain('Monto');
   });
 
-  it('prorratea monto global con prorratearGlobal', async () => {
+  it('muestra datos de factura en encabezado', () => {
     const wrapper = mount(NotaForm, {
       props: {
         factura: {
-          numero: '1',
-          cliente: 'A',
-          total: 188,
-          ventas_gravadas: 100,
-          ventas_exentas: 50,
-          ventas_no_sujetas: 25,
-          iva: 13
+          tipo: '01',
+          numero: 'A-1',
+          fecha: '2024-01-01',
+          uuid: 'abcdef1234567890',
+          cliente: 'Cliente'
         },
+        tipo: 'credito'
+      }
+    });
+    const inputs = wrapper.findAll('.nota-header input[readonly]');
+    expect(inputs[0].element.value).toBe('01');
+    expect(inputs[1].element.value).toBe('A-1');
+    expect(inputs[2].element.value).toBe('2024-01-01');
+    expect(inputs[3].element.value).toBe('abcdef12');
+  });
+
+  it('separa base e IVA cuando ivaIncluido está activo', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: { numero: '1', cliente: 'A', tipo: '01', fecha: '2024-01-01', uuid: 'abc', total: 0 },
         tipo: 'credito'
       }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
     const input = wrapper.find('input[type="number"]');
-    await input.setValue('18.8');
+    await input.setValue('11.3');
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
     expect(cells[1].text()).toBe('10.00');
-    expect(cells[2].text()).toBe('5.00');
-    expect(cells[3].text()).toBe('2.50');
     expect(cells[4].text()).toBe('1.30');
-    expect(cells[5].text()).toBe('18.80');
+    expect(cells[5].text()).toBe('11.30');
+  });
+
+  it('interpreta monto como base cuando ivaIncluido está inactivo', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: { numero: '1', cliente: 'A', tipo: '01', fecha: '2024-01-01', uuid: 'abc', total: 0 },
+        tipo: 'credito'
+      }
+    });
+    const radioMonto = wrapper.find('input[value="monto"]');
+    await radioMonto.setValue();
+    const chk = wrapper.find('.nota-header input[type="checkbox"]');
+    await chk.setValue(false);
+    const input = wrapper.find('input[type="number"]');
+    await input.setValue('10');
+    await wrapper.vm.$nextTick();
+    const cells = wrapper.findAll('tbody td');
+    expect(cells[1].text()).toBe('10.00');
+    expect(cells[4].text()).toBe('1.30');
+    expect(cells[5].text()).toBe('11.30');
   });
 
   it('muestra badge rojo si excede saldo', async () => {

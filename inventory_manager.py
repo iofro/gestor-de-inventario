@@ -860,12 +860,12 @@ class InventoryManager:
         nit,
         dui,
         giro,
-        codActividad,
         telefono,
         email,
         direccion,
         departamento,
         municipio,
+        codActividad=None,
     ):
         """Update an existing client and refresh the cached lists."""
 
@@ -877,12 +877,12 @@ class InventoryManager:
             nit,
             dui,
             giro,
-            codActividad,
             telefono,
             email,
             direccion,
             departamento,
             municipio,
+            codActividad=codActividad,
         )
         self.refresh_data()
 

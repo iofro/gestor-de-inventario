@@ -29,6 +29,9 @@ class NotaDetalleDialog(QDialog):
     def _build_ui(self):
         layout = QVBoxLayout(self)
 
+        table_layout = QHBoxLayout()
+        layout.addLayout(table_layout)
+
         self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels(
             [
@@ -41,7 +44,24 @@ class NotaDetalleDialog(QDialog):
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(self.table)
+        table_layout.addWidget(self.table)
+
+        resumen_layout = QVBoxLayout()
+        self.base_gravada_label = QLabel("Base gravada: 0.00")
+        self.exenta_label = QLabel("Exenta: 0.00")
+        self.nosujeta_label = QLabel("No sujeta: 0.00")
+        self.iva_label = QLabel("IVA (cód. 20): 0.00")
+        self.total_label = QLabel("Total: 0.00")
+        for lbl in [
+            self.base_gravada_label,
+            self.exenta_label,
+            self.nosujeta_label,
+            self.iva_label,
+            self.total_label,
+        ]:
+            resumen_layout.addWidget(lbl)
+        resumen_layout.addStretch()
+        table_layout.addLayout(resumen_layout)
 
         motivo_layout = QHBoxLayout()
         motivo_layout.addWidget(QLabel("Motivo:"))
@@ -49,11 +69,11 @@ class NotaDetalleDialog(QDialog):
         motivo_layout.addWidget(self.motivo_edit)
         layout.addLayout(motivo_layout)
 
-        total_layout = QHBoxLayout()
-        total_layout.addStretch()
-        self.total_label = QLabel("Total: 0.00")
-        total_layout.addWidget(self.total_label)
-        layout.addLayout(total_layout)
+        letras_layout = QHBoxLayout()
+        letras_layout.addWidget(QLabel("Total en letras:"))
+        self.total_letras_edit = QLineEdit()
+        letras_layout.addWidget(self.total_letras_edit)
+        layout.addLayout(letras_layout)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
@@ -99,16 +119,41 @@ class NotaDetalleDialog(QDialog):
             self.table.setCellWidget(row, 5, spin)
 
     def _update_total(self):
-        total = 0.0
-        for row in range(self.table.rowCount()):
+        gravada = exenta = nosujeta = iva = 0.0
+        for row, d in enumerate(self.detalles):
             spin = self.table.cellWidget(row, 5)
-            if isinstance(spin, QDoubleSpinBox):
-                total += abs(spin.value())
+            if not isinstance(spin, QDoubleSpinBox):
+                continue
+            val = abs(spin.value())
+            if d.get("ventas_gravadas"):
+                base = val / 1.13
+                gravada += base
+                iva += val - base
+            elif d.get("ventas_exentas"):
+                exenta += val
+            elif d.get("ventas_no_sujetas"):
+                nosujeta += val
+            else:
+                base = val / 1.13
+                gravada += base
+                iva += val - base
+        total = gravada + exenta + nosujeta + iva
+        self.base_gravada_label.setText(f"Base gravada: {gravada:.2f}")
+        self.exenta_label.setText(f"Exenta: {exenta:.2f}")
+        self.nosujeta_label.setText(f"No sujeta: {nosujeta:.2f}")
+        self.iva_label.setText(f"IVA (cód. 20): {iva:.2f}")
         self.total_label.setText(f"Total: {total:.2f}")
+        self._totals = {
+            "gravada": gravada,
+            "exenta": exenta,
+            "nosujeta": nosujeta,
+            "iva": iva,
+            "total": total,
+        }
 
     def get_data(self) -> Tuple[float, str, List[Dict]]:
+        self._update_total()
         detalles = []
-        total = 0.0
         for row, d in enumerate(self.detalles):
             spin = self.table.cellWidget(row, 5)
             if isinstance(spin, QDoubleSpinBox):
@@ -121,5 +166,5 @@ class NotaDetalleDialog(QDialog):
                             "ajuste": val,
                         }
                     )
-                    total += abs(val)
+        total = self._totals.get("total", 0.0)
         return total, self.motivo_edit.text(), detalles

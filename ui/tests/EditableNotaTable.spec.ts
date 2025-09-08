@@ -55,6 +55,71 @@ describe('EditableNotaTable', () => {
     expect(wrapper.find('span.error').text()).toBe('Excede');
   });
 
+  it('marca error si monto de crédito excede disponible', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 1,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: '',
+            maxMonto: 5
+          }
+        ],
+        topeCredito: 10,
+        ivaIncluido: true,
+        notaTipo: 'debito'
+      }
+    });
+    const ajuste = wrapper.find('input.ajuste');
+    await ajuste.setValue('6');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('span.error').text()).toBe('Excede');
+  });
+
+  it('rechaza ajuste negativo en notas de débito', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 1,
+            cantidadAjustar: 0,
+            tipo: 'debito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'debito'
+      }
+    });
+    const ajuste = wrapper.find('input.ajuste');
+    await ajuste.setValue('-5');
+    await wrapper.vm.$nextTick();
+    // @ts-expect-error accessing internal state for test
+    expect(wrapper.vm.items[0].ajuste).toBe(0);
+  });
+
   it('actualiza base, IVA y total según ivaIncluido', async () => {
     const wrapper = mount(EditableNotaTable, {
       props: {

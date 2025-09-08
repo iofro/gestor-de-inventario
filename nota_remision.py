@@ -79,16 +79,40 @@ def generar_nota_remision(
                 "tipoDoc": ident.get("tipoDte"),
                 "numeroDocumento": ident.get("numeroControl"),
             }
+        # Para notas derivadas de factura la extensión puede omitirse
+        ext = {
+            "nombEntrega": "N/D",
+            "docuEntrega": "ND",
+            "nombRecibe": "N/D",
+            "docuRecibe": "ND",
+            "observaciones": "N/D",
+        }
+        if extension:
+            ext.update({k: v for k, v in extension.items() if v not in (None, "")})
     else:
         if not (emisor and receptor and detalles):
             raise ValueError("emisor, receptor y detalles son obligatorios")
-        if documento_relacionado is None:
+        if not detalles:
+            raise ValueError("Se requiere al menos un detalle")
+        if not extension:
+            raise ValueError("extension es obligatoria")
+        required_ext = [
+            "nombEntrega",
+            "docuEntrega",
+            "nombRecibe",
+            "docuRecibe",
+            "observaciones",
+        ]
+        missing = [k for k in required_ext if not extension.get(k)]
+        if missing:
             raise ValueError(
-                "documento_relacionado requerido cuando no hay factura"
+                "Faltan campos obligatorios en extension: " + ", ".join(missing)
             )
+        ext = {k: extension.get(k) for k in required_ext}
 
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)
+    limpiar_documentos(ext)
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
@@ -108,17 +132,6 @@ def generar_nota_remision(
     }
 
     items = _build_items(detalles)
-
-    ext = {
-        "nombEntrega": "N/D",
-        "docuEntrega": "ND",
-        "nombRecibe": "N/D",
-        "docuRecibe": "ND",
-        "observaciones": "N/D",
-    }
-    if extension:
-        ext.update({k: v for k, v in extension.items() if v not in (None, "")})
-    limpiar_documentos(ext)
 
     resumen = {
         "totalNoSuj": d2(Decimal_0),
@@ -140,7 +153,6 @@ def generar_nota_remision(
 
     data = {
         "identificacion": identificacion,
-        "documentoRelacionado": documento_relacionado,
         "emisor": emisor,
         "receptor": receptor,
         "cuerpoDocumento": items,
@@ -148,9 +160,14 @@ def generar_nota_remision(
         "resumen": resumen,
         "apendice": None,
     }
+    if documento_relacionado:
+        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
-    return sanitize_dte_payload(data, schema)
+    result = sanitize_dte_payload(data, schema)
+    if not documento_relacionado:
+        result.pop("documentoRelacionado", None)
+    return result
 
 
 def generar_nota_remision_desde_db(
@@ -169,19 +186,43 @@ def generar_nota_remision_desde_db(
         raise ValueError("La nota indicada no es de remisión")
 
     venta_id = nota.get("venta_id")
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
+    if venta_id:
+        venta_row = db.cursor.execute(
+            "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+        ).fetchone()
+        tipo_doc = "01"
+        if venta_row:
+            venta = dict(venta_row)
+            if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+                tipo_doc = "03"
 
-    from dte import generar_dte_json
+        from dte import generar_dte_json
 
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
-    return generar_nota_remision(db, factura=dte_origen, ambiente=ambiente)
+        dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+        return generar_nota_remision(db, factura=dte_origen, ambiente=ambiente)
+
+    # Nota independiente (sin venta asociada)
+    import json
+    from dte import _load_datos_negocio
+
+    detalles_raw = nota.get("detalles") or "{}"
+    try:
+        extra = json.loads(detalles_raw)
+    except Exception:
+        extra = {}
+    detalles = extra.get("items") or []
+    receptor = extra.get("receptor") or {}
+    extension = extra.get("extension") or {}
+
+    emisor = _load_datos_negocio()
+    return generar_nota_remision(
+        db,
+        emisor=emisor,
+        receptor=receptor,
+        detalles=detalles,
+        extension=extension,
+        ambiente=ambiente,
+    )
 
 
 __all__ = ["generar_nota_remision", "generar_nota_remision_desde_db"]

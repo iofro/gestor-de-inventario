@@ -3,7 +3,7 @@ from decimal import Decimal
 from db import DB
 from nota_debito_electronica import generar_nde_desde_dte
 from dte import generar_dte_json
-from nota_remision import generar_nota_remision_desde_db
+from nota_remision import generar_nota_remision_desde_db, generar_nota_remision
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
 
 
@@ -232,3 +232,81 @@ def test_nota_remision_pdf(tmp_path):
     with fitz.open(out) as doc:
         text = "".join(p.get_text() for p in doc)
     assert "NOTA DE REMISI" in text
+
+
+def test_generar_nota_remision_sin_documento_relacionado(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    db = create_db()
+    receptor = {
+        "nombre": "Cliente",
+        "tipoDocumento": "13",
+        "numDocumento": "12345678-9",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    detalles = [
+        {"codigo": "P1", "descripcion": "Prod", "cantidad": 1},
+    ]
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    data = generar_nota_remision(
+        db,
+        emisor=datos,
+        receptor=receptor,
+        detalles=detalles,
+        extension=extension,
+    )
+    assert "documentoRelacionado" not in data
+    assert str(data["resumen"]["montoTotalOperacion"]) == "0.00"
+
+
+def test_generar_nota_remision_desde_db_independiente(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    db = create_db()
+    receptor = {
+        "nombre": "Cliente",
+        "tipoDocumento": "13",
+        "numDocumento": "12345678-9",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    detalles = [
+        {"codigo": "P1", "descripcion": "Prod", "cantidad": 1},
+    ]
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    extra = {"items": detalles, "receptor": receptor, "extension": extension}
+    nota_id = db.agregar_nota("remision", None, "2024-01-01", 0, "Envio", detalles=extra)
+    data = generar_nota_remision_desde_db(db, nota_id)
+    assert data["receptor"]["nombre"] == "Cliente"
+    assert "documentoRelacionado" not in data

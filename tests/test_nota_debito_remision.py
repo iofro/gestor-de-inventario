@@ -191,9 +191,9 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "123", "06141407100012", "", "giro", "", "", "", "", "")
+    db.add_cliente("Cliente", "1234567", "06141407100012", "", "giro", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "06141407100012", "giro", descuentos=0)
+    venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "1234567", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     extension = {
         "nombEntrega": "Juan",
@@ -209,7 +209,7 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
 
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "04"
-    assert data["documentoRelacionado"]["tipoDoc"] == "01"
+    assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert data["extension"]["nombEntrega"] == "Juan"
 
 
@@ -335,12 +335,14 @@ def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):
     factura = {
         "identificacion": {
             "tipoDte": "03",
-            "numeroControl": "DTE-03-XYZ-000000000000001",
+            "codigoGeneracion": "DTE-03-XYZ-000000000000001",
+            "fecEmi": "2024-01-01",
         },
         "emisor": datos,
         "receptor": {
             "tipoDocumento": "36",
-            "numDocumento": "1234 567-8",
+            "numDocumento": "0614-140710-001-2",
+            "nrc": "1234567",
             "nombre": "Cliente",
         },
         "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
@@ -355,6 +357,6 @@ def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):
     extra = {"extension": extension, "factura": factura}
     nota_id = db.agregar_nota("remision", None, "2024-01-02", 0, "Envio", detalles=extra)
     data = generar_nota_remision_desde_db(db, nota_id)
-    doc_rel = data["documentoRelacionado"]
+    doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["numeroDocumento"] == "DTE-03-XYZ-000000000000001"
     assert data["receptor"]["nombre"] == "Cliente"

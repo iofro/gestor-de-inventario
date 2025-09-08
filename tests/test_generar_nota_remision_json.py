@@ -13,7 +13,12 @@ def test_generar_nota_remision_json_from_dte(db_conn):
             "fecEmi": "2024-01-01",
         },
         "emisor": {"nombre": "Emisor"},
-        "receptor": {"numDocumento": "0614-123456-102-3", "nombre": "Cliente"},
+        "receptor": {
+            "numDocumento": "0614-123456-102-3",
+            "tipoDocumento": "36",
+            "nrc": "1234567",
+            "nombre": "Cliente",
+        },
         "cuerpoDocumento": [
             {
                 "numItem": 1,
@@ -47,8 +52,12 @@ def test_generar_nota_remision_json_from_dte(db_conn):
     item = nr["cuerpoDocumento"][0]
     assert item["precioUni"] == 0.0
     assert item["cantidad"] == 2
+    assert item["codTributo"] is None
 
     resumen = nr["resumen"]
     assert resumen["montoTotalOperacion"] == Decimal("0.00")
     assert resumen["totalNoSuj"] == Decimal("0.00")
     assert resumen["totalGravada"] == Decimal("0.00")
+    assert resumen["descuNoSuj"] == Decimal("0.00")
+    assert resumen["descuExenta"] == Decimal("0.00")
+    assert resumen["descuGravada"] == Decimal("0.00")

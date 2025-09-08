@@ -11,6 +11,7 @@
       "precioUni": "9.5400",
       "tipoItem": 1,
       "tributos": [],
+      "codTributo": null,
       "uniMedida": 59,
       "ventaExenta": "0.0000",
       "ventaGravada": "23.8500",

@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from db import DB
 from nota_credito_electronica import generar_nce_desde_dte
-from dte import generar_nde_desde_dte
+from nota_debito_electronica import generar_nde_desde_dte
 
 
 def _datos_negocio():

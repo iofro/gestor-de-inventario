@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QCheckBox,
+    QRadioButton,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -33,14 +34,15 @@ from dte import (
     transmitir_dte,
     enviar_nota_credito,
     enviar_nota_debito,
-    generar_nde_desde_dte,
 )
+from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
 import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
+from utils.stable_json import save_file, stable_stringify
 from paths import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
@@ -162,7 +164,8 @@ class FacturacionTab(QWidget):
         left_layout.addWidget(self.table)
 
         btns = QHBoxLayout()
-        self.btn_nota = QPushButton("Nota de crédito y débito")
+        # Botón para crear notas asociadas a la factura seleccionada
+        self.btn_nota = QPushButton("Nota crédito / débito")
         self.btn_nota.clicked.connect(self.abrir_dialogo_tipo_nota)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
@@ -792,19 +795,26 @@ class FacturacionTab(QWidget):
         if not factura:
             QMessageBox.warning(self, "Nota", "Seleccione una factura")
             return
+        # Diálogo inicial para elegir el tipo de nota
         dialog = QDialog(self)
-        dialog.setWindowTitle("Tipo de nota")
+        dialog.setWindowTitle("Nota crédito / débito")
         layout = QVBoxLayout(dialog)
-        tipo_combo = QComboBox(dialog)
-        tipo_combo.addItems(["Crédito", "Débito"])
-        layout.addWidget(tipo_combo)
+
+        radio_credito = QRadioButton("Nota de crédito", dialog)
+        radio_debito = QRadioButton("Nota de débito", dialog)
+        radio_credito.setChecked(True)
+        layout.addWidget(radio_credito)
+        layout.addWidget(radio_debito)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        # Cambiar el texto del botón de aceptación a "Continuar"
+        buttons.button(QDialogButtonBox.Ok).setText("Continuar")
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+
         if dialog.exec_() == QDialog.Accepted:
-            selected = tipo_combo.currentText()
-            tipo = "credito" if selected == "Crédito" else "debito"
+            tipo = "credito" if radio_credito.isChecked() else "debito"
             self.create_nota(tipo, factura)
 
     def create_nota(self, tipo, factura=None):
@@ -986,6 +996,37 @@ class FacturacionTab(QWidget):
             distribuidor or {},
             archivo=pdf_path,
         )
+
+        # Guardar JSON sin firmar para permitir vista previa
+        save_file(json_path, stable_stringify(nota_json, indent=2))
+
+        # Mostrar previsualización del PDF generado
+        try:
+            self._show_pdf_preview(pdf_path)
+        except Exception:
+            pass
+
+        # Permitir al usuario ver PDF/JSON antes de firmar
+        while True:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Firmar nota")
+            msg.setText("¿Desea firmar y transmitir la nota?")
+            btn_firmar = msg.addButton("Firmar", QMessageBox.AcceptRole)
+            btn_pdf = msg.addButton("Ver PDF", QMessageBox.ActionRole)
+            btn_json = msg.addButton("Ver JSON", QMessageBox.ActionRole)
+            msg.addButton(QMessageBox.Cancel)
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == btn_pdf:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
+                continue
+            if clicked == btn_json:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(json_path))
+                continue
+            if clicked == btn_firmar:
+                break
+            return
+
         sign_and_save(nota_json, json_path)
 
         try:

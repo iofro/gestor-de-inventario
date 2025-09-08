@@ -38,6 +38,7 @@ from dte import (
     transmitir_dte,
     enviar_nota_credito,
     enviar_nota_debito,
+    enviar_nota_remision,
 )
 from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
@@ -802,8 +803,10 @@ class FacturacionTab(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
             total = v.get("total")
+            signo = v.get("sign", 1)
             if isinstance(total, (int, float)):
-                self.table.setItem(row, 3, QTableWidgetItem(f"${total:.2f}"))
+                pref = "+" if signo >= 0 else "−"
+                self.table.setItem(row, 3, QTableWidgetItem(f"{pref}${abs(total):.2f}"))
             else:
                 self.table.setItem(row, 3, QTableWidgetItem(""))
             self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
@@ -860,6 +863,7 @@ class FacturacionTab(QWidget):
             fecha = ""
             cliente = ""
             total = None
+            signo = 1
             fdate = None
             codigo = None
             if js and os.path.exists(js):
@@ -871,9 +875,18 @@ class FacturacionTab(QWidget):
                     codigo = ident.get("tipoDte")
                     fecha = ident.get("fecEmi", "")
                     cliente = data.get("receptor", {}).get("nombre", "")
-                    total = data.get("resumen", {}).get("totalPagar")
-                    if codigo:
-                        tipo = TIPO_DTE_DESC.get(codigo, tipo)
+
+                    resumen = data.get("resumen", {})
+                    if tipo in ("Nota de crédito", "Nota de débito"):
+                        total = resumen.get("montoTotalOperacion")
+                        signo = -1 if tipo == "Nota de crédito" else 1
+                    else:
+                        total = resumen.get("totalPagar")
+                    try:
+                        total = abs(float(total))
+                    except (TypeError, ValueError):
+                        total = None
+
                     if fecha:
                         try:
                             fdate = datetime.strptime(fecha, "%Y-%m-%d")
@@ -893,6 +906,7 @@ class FacturacionTab(QWidget):
                     "estado": estado,
                     "cliente": cliente,
                     "total": total,
+                    "sign": signo,
                     "tipo": tipo,
                 }
             )
@@ -1011,9 +1025,11 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
-                    if resp.get("estado") == "Error":
+                    if resp.get("estado") not in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.critical(
-                            self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                            self,
+                            "Enviar a Hacienda",
+                            resp.get("errores") or resp.get("detalle") or "Error",
                         )
                     else:
                         QMessageBox.information(
@@ -1029,9 +1045,11 @@ class FacturacionTab(QWidget):
                 tipo = "03" if rtype == "ticket" else "01"
                 try:
                     resp = transmitir_dte(self.manager.db, entry.get("id"), tipo_dte=tipo)
-                    if resp.get("estado") == "Error":
+                    if resp.get("estado") not in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.critical(
-                            self, "Enviar a Hacienda", resp.get("detalle", "Error")
+                            self,
+                            "Enviar a Hacienda",
+                            resp.get("errores") or resp.get("detalle") or "Error",
                         )
                     else:
                         QMessageBox.information(
@@ -1286,7 +1304,9 @@ class FacturacionTab(QWidget):
             else:
                 self.crear_nota_remision_desde_productos()
 
-    def _guardar_archivos_nota_remision(self, nota_json):
+    def _guardar_archivos_nota_remision(
+        self, nota_json, nota_id=None, transmitir=False
+    ):
         resumen_nota = nota_json.get("resumen", {})
         tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}
         venta_data = {
@@ -1313,19 +1333,29 @@ class FacturacionTab(QWidget):
             )
         cliente = nota_json.get("receptor", {}) or {}
         extension = nota_json.get("extension", {}) or {}
-        out_dir = NOTAS_REMISION_DIR
-        os.makedirs(out_dir, exist_ok=True)
         pdf_path, json_path = get_dte_document_paths(
             nota_json["identificacion"].get("fecEmi"),
             cliente.get("nombre") or cliente.get("nombreComercial") or "",
             nota_json["identificacion"].get("numeroControl"),
             "NotaRemision",
-            out_dir,
         )
         generar_nota_remision_pdf(
             venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
         )
-        save_file(json_path, stable_stringify(nota_json))
+        sign_and_save(nota_json, str(json_path))
+        if transmitir and nota_id is not None:
+            try:
+                resp = enviar_nota_remision(self.manager.db, nota_id)
+                if resp and resp.get("estado") == "Error":
+                    QMessageBox.critical(self, "Nota", resp.get("detalle", "Error"))
+                else:
+                    QMessageBox.information(
+                        self, "Nota", "Nota registrada y transmitida"
+                    )
+            except dte.DTEValidationError as exc:
+                self._show_validation_errors(exc.errors, exc.json_path)
+            except Exception as exc:
+                QMessageBox.critical(self, "Nota", str(exc))
 
     def crear_nota_remision_desde_productos(self):
         dialog = NotaRemisionDialog(self.manager.db, self.manager._products, self)
@@ -1338,8 +1368,10 @@ class FacturacionTab(QWidget):
             "remision", None, fecha, 0, "Remision", detalles=extra
         )
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+
         self._guardar_archivos_nota_remision(nota_json)
         QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")
+
 
     def crear_nota_remision_desde_factura(self):
         factura = self._selected_factura()
@@ -1370,6 +1402,7 @@ class FacturacionTab(QWidget):
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
         self._guardar_archivos_nota_remision(nota_json)
         QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")
+
 
     def create_nota(self, tipo, factura=None):
         factura = factura or self._selected_factura()
@@ -1548,7 +1581,7 @@ class FacturacionTab(QWidget):
             detalles_pdf,
             cliente or {},
             distribuidor or {},
-            archivo=pdf_path,
+            archivo=str(pdf_path),
         )
 
         # Guardar JSON sin firmar para permitir vista previa

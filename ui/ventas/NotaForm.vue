@@ -91,7 +91,6 @@
         <div>No sujeta: {{ format(preview.noSujeta) }}</div>
         <div>IVA: {{ format(preview.iva) }}</div>
         <div>Total: {{ format(total) }}</div>
-        <div>Total en letras: {{ totalLetras }}</div>
         <div>Documento relacionado: {{ factura.numero }}</div>
         <span v-if="excedeSaldo" class="badge rojo">Crédito excede saldo</span>
         <div class="acciones">
@@ -235,8 +234,6 @@ const total = computed(
     preview.value.iva
 );
 
-const totalLetras = computed(() => numeroALetras(total.value));
-
 const totalCredito = computed(() => {
   if (activeTab.value === 'producto') {
     return items.value
@@ -285,10 +282,6 @@ function getPayload() {
     monto: total.value,
     ivaIncluido: ivaIncluido.value,
   };
-}
-
-function numeroALetras(n: number) {
-  return n.toFixed(2) + ' USD';
 }
 
 function format(n: number) {

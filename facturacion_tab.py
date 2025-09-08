@@ -291,7 +291,6 @@ class NotaRemisionExtWidget(QWidget):
             limpiar_doc(self.docu_entrega.text()),
             self.nomb_recibe.text().strip(),
             limpiar_doc(self.docu_recibe.text()),
-            self.ext_obs.toPlainText().strip(),
         ]
         if not all(checks):
             QMessageBox.warning(
@@ -444,6 +443,7 @@ class NotaRemisionDialog(QDialog):
             "nombre": extension.get("nombRecibe"),
             "tipoDocumento": "13",
             "numDocumento": extension.get("docuRecibe"),
+            "bienTitulo": "01",
             "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
         }
         return detalles, extension, receptor

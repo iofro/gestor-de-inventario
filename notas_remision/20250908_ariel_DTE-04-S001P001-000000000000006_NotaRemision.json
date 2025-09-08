@@ -3,11 +3,12 @@
   "cuerpoDocumento": [
     {
       "cantidad": 1.0,
+      "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 3",
+      "descripcion": "Producto Demo 5",
       "montoDescu": 0.0,
       "numItem": 1,
-      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "numeroDocumento": "F95A3306-6337-424C-83D3-CA36A5769817",
       "precioUni": 0.0,
       "tipoItem": 1,
       "tributos": null,
@@ -19,9 +20,9 @@
   ],
   "documentoRelacionado": [
     {
-      "fechaEmision": "2025-09-04",
-      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
-      "tipoDocumento": "03",
+      "fechaEmision": "2025-09-08",
+      "numeroDocumento": "F95A3306-6337-424C-83D3-CA36A5769817",
+      "tipoDocumento": "01",
       "tipoGeneracion": 2
     }
   ],
@@ -50,15 +51,15 @@
     "docuRecibe": "007989352",
     "nombEntrega": "Ana López",
     "nombRecibe": "ariel",
-    "observaciones": "defecti"
+    "observaciones": "s"
   },
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "D1E214C7-5A81-44E4-BB19-17C4E2778ED6",
+    "codigoGeneracion": "C812E7F9-4E6D-4CBD-B0E9-56271262ECB3",
     "fecEmi": "2025-09-08",
-    "horEmi": "15:27:59",
+    "horEmi": "17:23:02",
     "motivoContin": null,
-    "numeroControl": "DTE-04-S001P001-000000000000002",
+    "numeroControl": "DTE-04-S001P001-000000000000006",
     "tipoContingencia": null,
     "tipoDte": "04",
     "tipoModelo": 1,
@@ -77,13 +78,15 @@
       "municipio": "28"
     },
     "nombre": "ariel",
-    "nombreComercial": null,
     "nrc": "2273734",
-    "numDocumento": "007989352",
+    "numDocumento": "13240304791012",
     "telefono": "70000001",
-    "tipoDocumento": "13"
+    "tipoDocumento": "36"
   },
   "resumen": {
+    "descuExenta": 0.00,
+    "descuGravada": 0.00,
+    "descuNoSuj": 0.00,
     "montoTotalOperacion": 0.00,
     "porcentajeDescuento": 0.00,
     "subTotal": 0.00,

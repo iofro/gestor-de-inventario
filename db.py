@@ -336,6 +336,7 @@ class DB:
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 codigo TEXT UNIQUE,
                 nombre TEXT,
+                nombreComercial TEXT,
                 nrc TEXT,
                 nit TEXT,
                 dui TEXT,
@@ -354,6 +355,7 @@ class DB:
 
         )
         self.ensure_column("clientes", "codActividad", "TEXT")
+        self.ensure_column("clientes", "nombreComercial", "TEXT")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS pagos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1285,6 +1287,7 @@ class DB:
         municipio,
         codigo=None,
         codActividad=None,
+        nombreComercial=None,
         commit: bool = True,
     ):
         if codigo is None:
@@ -1295,12 +1298,13 @@ class DB:
             raise ValueError("El NIT ya existe")
         self.cursor.execute(
             """
-            INSERT INTO clientes (codigo, nombre, nrc, nit, dui, giro, codActividad, telefono, email, direccion, departamento, municipio)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clientes (codigo, nombre, nombreComercial, nrc, nit, dui, giro, codActividad, telefono, email, direccion, departamento, municipio)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 codigo,
                 nombre,
+                nombreComercial,
                 nrc,
                 nit,
                 dui,
@@ -1346,6 +1350,7 @@ class DB:
         departamento,
         municipio,
         codActividad=None,
+        nombreComercial=None,
     ):
         nit = nit.strip() if isinstance(nit, str) else nit
         nit = nit or None
@@ -1353,11 +1358,12 @@ class DB:
             raise ValueError("El NIT ya existe")
         self.cursor.execute(
             """
-            UPDATE clientes SET codigo=?, nombre=?, nrc=?, nit=?, dui=?, giro=?, codActividad=?, telefono=?, email=?, direccion=?, departamento=?, municipio=? WHERE id=?
+            UPDATE clientes SET codigo=?, nombre=?, nombreComercial=?, nrc=?, nit=?, dui=?, giro=?, codActividad=?, telefono=?, email=?, direccion=?, departamento=?, municipio=? WHERE id=?
             """,
             (
                 codigo,
                 nombre,
+                nombreComercial,
                 nrc,
                 nit,
                 dui,
@@ -1388,17 +1394,17 @@ class DB:
 
     def get_clientes(self, search=""):
         query = (
-            "SELECT id, codigo, nombre, nrc, nit, dui, giro, codActividad, telefono, email, direccion, departamento, municipio, otros "
+            "SELECT id, codigo, nombre, nombreComercial, nrc, nit, dui, giro, codActividad, telefono, email, direccion, departamento, municipio, otros "
             "FROM clientes"
         )
         params = []
         if search:
             like = f"%{search}%"
             query += (
-                " WHERE nombre LIKE ? OR codigo LIKE ? OR nit LIKE ? OR nrc LIKE ? "
+                " WHERE nombre LIKE ? OR nombreComercial LIKE ? OR codigo LIKE ? OR nit LIKE ? OR nrc LIKE ? "
                 "OR dui LIKE ? OR telefono LIKE ? OR email LIKE ?"
             )
-            params = [like, like, like, like, like, like, like]
+            params = [like, like, like, like, like, like, like, like]
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
 

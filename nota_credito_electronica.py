@@ -174,7 +174,8 @@ def generar_nce_desde_dte(
             total_nosuj += nosuj
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
-                precio = float(grav + exenta + nosuj)
+                # Use Decimal for internal calculations; presentation can cast to float
+                precio = grav + exenta + nosuj
             cantidad = det.get("cantidad", 1)
             items.append(
                 {
@@ -273,7 +274,8 @@ def generar_nce_desde_dte(
             )
 
     subtotal_ventas = total_grav + total_exenta + total_nosuj
-    iva_val = d2(Decimal(str(total_grav)) * IVA)
+    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (ratio or Decimal("1"))
+    iva_val = d2(orig_total - Decimal(str(subtotal_ventas)))
     tributos_resumen = []
     if iva_val > 0:
         tributos_resumen.append(
@@ -283,7 +285,7 @@ def generar_nce_desde_dte(
                 "valor": iva_val,
             }
         )
-    monto_total_operacion = d2(Decimal(str(subtotal_ventas)) + Decimal(str(iva_val)))
+    monto_total_operacion = d2(orig_total)
     resumen = {
         "totalNoSuj": total_nosuj,
         "totalExenta": total_exenta,
@@ -300,7 +302,7 @@ def generar_nce_desde_dte(
         "condicionOperacion": orig_resumen.get("condicionOperacion", 1),
         "tributos": tributos_resumen,
         "montoTotalOperacion": monto_total_operacion,
-        "totalLetras": monto_a_texto_sv(float(monto_total_operacion)),
+    "totalLetras": monto_a_texto_sv(float(monto_total_operacion)),
     }
 
     data = {

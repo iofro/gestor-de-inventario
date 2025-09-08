@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import re
 from typing import Iterable, Optional
 
 from db import DB
@@ -55,6 +56,7 @@ def _build_items(
             "ventaExenta": d2(Decimal_0),
             "ventaGravada": d2(Decimal_0),
             "tributos": None,
+            "codTributo": None,
         }
         if numero_documento:
             item["numeroDocumento"] = numero_documento
@@ -79,6 +81,20 @@ def _generar_base(
     if not receptor.get("tipoDocumento") or not receptor.get("numDocumento"):
         raise ValueError("receptor requiere tipoDocumento y numDocumento")
     limpiar_documentos(receptor)
+    tipo_doc = receptor.get("tipoDocumento")
+    num_doc = receptor.get("numDocumento")
+    nrc = receptor.get("nrc")
+    if tipo_doc == "13":
+        if not re.fullmatch(r"\d{9}", num_doc or ""):
+            raise ValueError("DUI inválido en receptor")
+        receptor.pop("nrc", None)
+    elif tipo_doc == "36":
+        if not re.fullmatch(r"\d{14}", num_doc or ""):
+            raise ValueError("NIT inválido en receptor")
+        if not nrc or not re.fullmatch(r"\d{1,8}", nrc):
+            raise ValueError("NRC inválido en receptor")
+    else:
+        raise ValueError("tipoDocumento inválido en receptor")
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
@@ -121,6 +137,9 @@ def _generar_base(
         "subTotalVentas": d2(Decimal_0),
         "porcentajeDescuento": d2(Decimal_0),
         "totalDescu": d2(Decimal_0),
+        "descuNoSuj": d2(Decimal_0),
+        "descuExenta": d2(Decimal_0),
+        "descuGravada": d2(Decimal_0),
         "tributos": None,
         "montoTotalOperacion": d2(Decimal_0),
         "totalLetras": monto_a_texto_sv(0.0),

@@ -36,8 +36,8 @@ describe('NotaForm', () => {
     await input.setValue('120');
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
-    expect(cells[1].text()).toBe('100.00');
-    expect(cells[4].text()).toBe('20.00');
+    expect(cells[1].text()).toBe('106.19');
+    expect(cells[4].text()).toBe('13.81');
     expect(cells[5].text()).toBe('120.00');
   });
 

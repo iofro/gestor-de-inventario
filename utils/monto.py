@@ -26,6 +26,20 @@ def iva_item(base_gravada):
     return d8(D(base_gravada) * IVA_TASA)
 
 
+def to_base_iva(total):
+    """Return base and IVA portions for ``total`` with IVA included.
+
+    The calculation mirrors the frontend ``toBaseIva`` helper and ensures
+    consistency when separating a total that already contains IVA.  Results
+    are quantized to 8 decimal places to avoid floating point artifacts.
+    """
+
+    total = D(total)
+    base = d8(total / (D("1") + IVA_TASA))
+    iva = d8(total - base)
+    return base, iva
+
+
 try:
     from num2words import num2words
 except ImportError:  # pragma: no cover - fallback for environments without num2words

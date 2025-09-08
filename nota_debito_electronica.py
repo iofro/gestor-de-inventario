@@ -122,7 +122,6 @@ def generar_nde_desde_dte(
         total_grav = Decimal("0")
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
-        iva_val = Decimal("0")
         num = 1
         for det in detalles:
             grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
@@ -131,9 +130,6 @@ def generar_nde_desde_dte(
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
-            iva_val += (grav * Decimal("0.13")).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
                 precio = grav + exenta + nosuj
@@ -161,12 +157,24 @@ def generar_nde_desde_dte(
                 }
             )
             num += 1
+
+        total_grav = d4(total_grav)
+        total_exenta = d4(total_exenta)
+        total_nosuj = d4(total_nosuj)
+        subtotal_ventas = total_grav + total_exenta + total_nosuj
+
+        user_total = Decimal(str(monto)) if monto is not None else None
+        if user_total is not None and user_total >= subtotal_ventas:
+            iva_val = d2(user_total - subtotal_ventas)
+            monto_total = d2(user_total)
+        else:
+            iva_val = d2(total_grav * Decimal("0.13"))
+            monto_total = d2(subtotal_ventas + iva_val)
+
         total_grav = d2(total_grav)
         total_exenta = d2(total_exenta)
         total_nosuj = d2(total_nosuj)
-        iva_val = d2(iva_val)
-        subtotal_ventas = total_grav + total_exenta + total_nosuj
-        monto_total = d2(subtotal_ventas + iva_val)
+        subtotal_ventas = d2(subtotal_ventas)
     else:
         if monto is None:
             raise ValueError("Se requiere monto para nota de débito")

@@ -174,7 +174,8 @@ def generar_nce_desde_dte(
             total_nosuj += nosuj
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
-                precio = float(grav + exenta + nosuj)
+                # Use Decimal for internal calculations; presentation can cast to float
+                precio = grav + exenta + nosuj
             cantidad = det.get("cantidad", 1)
             items.append(
                 {
@@ -301,7 +302,7 @@ def generar_nce_desde_dte(
         "condicionOperacion": orig_resumen.get("condicionOperacion", 1),
         "tributos": tributos_resumen,
         "montoTotalOperacion": monto_total_operacion,
-        "totalLetras": monto_a_texto_sv(float(monto_total_operacion)),
+    "totalLetras": monto_a_texto_sv(float(monto_total_operacion)),
     }
 
     data = {

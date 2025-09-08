@@ -5,13 +5,6 @@
       <label>
         <input type="checkbox" v-model="applyToSelected" /> Aplicar a todas las líneas seleccionadas
       </label>
-      <button
-        v-if="notaTipo === 'debito'"
-        class="add-item"
-        @click="addItem"
-      >
-        + Agregar ítem
-      </button>
     </div>
     <table>
       <thead>
@@ -19,6 +12,7 @@
           <th><input type="checkbox" :checked="allSelected" @change="toggleAll($event.target.checked)" /></th>
           <th>Código</th>
           <th>Descripción</th>
+          <th>Unidad</th>
           <th>Cant. facturada</th>
           <th>Cant. a ajustar</th>
           <th>Tipo</th>
@@ -38,6 +32,7 @@
           <td><input type="checkbox" v-model="item.selected" /></td>
           <td>{{ item.codigo }}</td>
           <td>{{ item.descripcion }}</td>
+          <td>{{ item.unidad }}</td>
           <td>{{ item.cantidadFacturada }}</td>
           <td>
             <input
@@ -131,6 +126,29 @@
         </tr>
       </tbody>
     </table>
+    <button
+      v-if="notaTipo === 'debito'"
+      class="add-item"
+      @click="addItem"
+    >
+      + Agregar ítem
+    </button>
+    <div v-if="showProductDialog" class="product-dialog">
+      <div class="dialog-content">
+        <input v-model="productSearch" placeholder="Buscar producto" />
+        <ul>
+          <li
+            v-for="p in filteredProducts"
+            :key="p.codigo"
+            class="product-option"
+            @click="selectProduct(p)"
+          >
+            {{ p.codigo }} - {{ p.descripcion }}
+          </li>
+        </ul>
+        <button @click="showProductDialog = false">Cerrar</button>
+      </div>
+    </div>
     <p v-if="creditoExcede" class="error">Tope global de crédito excedido</p>
   </div>
 </template>
@@ -156,6 +174,14 @@ interface NotaItem {
   concepto?: string;
   unidad?: string;
   maxMonto?: number;
+  isProduct?: boolean;
+}
+
+interface Producto {
+  codigo: string;
+  descripcion: string;
+  unidad: string;
+  precio: number;
 }
 
 defineOptions({ name: 'EditableNotaTable' });
@@ -164,9 +190,12 @@ const props = defineProps<{
   modelValue: NotaItem[];
   topeCredito?: number;
   ivaIncluido: boolean;
-  notaTipo: 'debito' | 'credito';
+  notaTipo?: 'debito' | 'credito';
+  tipoNota?: 'debito' | 'credito';
 }>();
 const emit = defineEmits(['update:modelValue']);
+
+const notaTipo = computed(() => props.notaTipo ?? props.tipoNota ?? 'debito');
 
 const items = ref<NotaItem[]>(props.modelValue ? [...props.modelValue] : []);
 watch(
@@ -183,6 +212,22 @@ watch(
 
 const search = ref('');
 const applyToSelected = ref(false);
+
+const showProductDialog = ref(false);
+const productSearch = ref('');
+const productos = ref<Producto[]>([
+  { codigo: 'P1', descripcion: 'Producto 1', unidad: 'UND', precio: 1 },
+  { codigo: 'P2', descripcion: 'Producto 2', unidad: 'UND', precio: 2 }
+]);
+
+const filteredProducts = computed(() => {
+  if (!productSearch.value) return productos.value;
+  return productos.value.filter(
+    (p) =>
+      p.codigo.toLowerCase().includes(productSearch.value.toLowerCase()) ||
+      p.descripcion.toLowerCase().includes(productSearch.value.toLowerCase())
+  );
+});
 
 const filteredItems = computed(() => {
   if (!search.value) return items.value;
@@ -201,35 +246,30 @@ function toggleAll(val: boolean) {
 
 let nextId = 1;
 function addItem() {
-  const codigo = prompt('Código del ítem');
-  if (codigo === null) return;
-  const descripcion = prompt('Descripción del ítem') || '';
-  const cantidadStr = prompt('Cantidad');
-  if (cantidadStr === null) return;
-  const cantidad = parseFloat(cantidadStr) || 0;
-  const ajusteStr = prompt('Ajuste (USD)');
-  if (ajusteStr === null) return;
-  let ajuste = parseFloat(ajusteStr) || 0;
-  if (props.notaTipo === 'debito' && ajuste < 0) ajuste = 0;
-  const unidad = prompt('Unidad') || '';
-  const concepto = prompt('Concepto') || '';
+  productSearch.value = '';
+  showProductDialog.value = true;
+}
+
+function selectProduct(p: Producto) {
   items.value.push({
     id: nextId++,
     selected: false,
-    codigo,
-    descripcion,
-    cantidadFacturada: cantidad,
-    cantidadAjustar: cantidad,
+    codigo: p.codigo,
+    descripcion: p.descripcion,
+    cantidadFacturada: 0,
+    cantidadAjustar: 1,
     tipo: 'debito',
     modo: 'monto',
-    valor: 0,
+    valor: p.precio,
     ivaInc: false,
     afectacion: 'gravada',
     previas: 0,
-    ajuste,
-    concepto,
-    unidad,
+    ajuste: p.precio,
+    concepto: '',
+    unidad: p.unidad,
+    isProduct: true
   });
+  showProductDialog.value = false;
 }
 
 const cache = new Map<string, any>();
@@ -242,7 +282,7 @@ function onEsc(item: NotaItem, field: keyof NotaItem) {
 }
 
 function update(item: NotaItem, field: keyof NotaItem, value: any) {
-  if (field === 'ajuste' && props.notaTipo === 'debito' && value < 0) {
+  if (field === 'ajuste' && notaTipo.value === 'debito' && value < 0) {
     value = 0;
   }
   if (applyToSelected.value) {
@@ -251,6 +291,9 @@ function update(item: NotaItem, field: keyof NotaItem, value: any) {
       .forEach((i) => ((i as any)[field] = value));
   } else {
     (item as any)[field] = value;
+  }
+  if (item.isProduct && (field === 'cantidadAjustar' || field === 'valor')) {
+    item.ajuste = item.cantidadAjustar * item.valor;
   }
 }
 
@@ -342,6 +385,27 @@ th,
 .error {
   color: red;
   font-size: 0.8rem;
+}
+.product-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.dialog-content {
+  background: #fff;
+  padding: 1rem;
+  max-height: 80vh;
+  overflow-y: auto;
+}
+.product-option {
+  cursor: pointer;
+  padding: 0.25rem 0;
 }
 </style>
 

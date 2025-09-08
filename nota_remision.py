@@ -20,7 +20,6 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
-import re
 from typing import Iterable, Optional
 
 from db import DB
@@ -28,7 +27,7 @@ from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import monto_a_texto_sv, d2
-from utils.sanitize import limpiar_documentos
+from utils.sanitize import limpiar_documentos, solo_digitos
 
 Decimal_0 = Decimal("0")
 
@@ -61,6 +60,44 @@ def _build_items(
             item["numeroDocumento"] = numero_documento
         items.append(item)
     return items
+
+
+def normalizar_receptor(receptor: dict) -> dict:
+    """Sanitize and validate ``receptor`` according to tipoDocumento."""
+
+    if not receptor or not receptor.get("tipoDocumento"):
+        raise ValueError("receptor requiere tipoDocumento y numDocumento")
+
+    limpiar_documentos(receptor)
+    tipo = receptor.get("tipoDocumento")
+    num = solo_digitos(receptor.get("numDocumento"))
+    if not num:
+        raise ValueError("receptor requiere numDocumento")
+    receptor["numDocumento"] = num
+
+    nrc_raw = receptor.get("nrc")
+    if nrc_raw is not None:
+        nrc = solo_digitos(nrc_raw)
+        if nrc:
+            receptor["nrc"] = nrc
+        else:
+            receptor.pop("nrc", None)
+
+    if tipo == "13":
+        if len(num) != 9:
+            raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
+        receptor.pop("nrc", None)
+        receptor.pop("codActividad", None)
+        receptor.pop("descActividad", None)
+    elif tipo == "36":
+        if len(num) != 14:
+            raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
+        nrc = receptor.get("nrc")
+        if not nrc or len(nrc) not in (6, 7):
+            raise ValueError("NRC requerido (6–7 dígitos)")
+    else:
+        raise ValueError("tipoDocumento inválido en receptor")
+    return receptor
 
 
 def generar_nota_remision(
@@ -127,23 +164,11 @@ def generar_nota_remision(
 
     limpiar_documentos(emisor)
     receptor.setdefault("bienTitulo", "01")
-    if not receptor.get("tipoDocumento") or not receptor.get("numDocumento"):
-        raise ValueError("receptor requiere tipoDocumento y numDocumento")
-    limpiar_documentos(receptor)
-    tipo_doc = receptor.get("tipoDocumento")
-    num_doc = receptor.get("numDocumento")
-    nrc = receptor.get("nrc")
-    if tipo_doc == "13":
-        if not re.fullmatch(r"\d{9}", num_doc or ""):
-            raise ValueError("DUI inválido en receptor")
-        receptor.pop("nrc", None)
-    elif tipo_doc == "36":
-        if not re.fullmatch(r"\d{14}", num_doc or ""):
-            raise ValueError("NIT inválido en receptor")
-        if not nrc or not re.fullmatch(r"\d{1,8}", nrc):
-            raise ValueError("NRC inválido en receptor")
-    else:
-        raise ValueError("tipoDocumento inválido en receptor")
+    receptor = normalizar_receptor(receptor)
+    for key in ("docuEntrega", "docuRecibe"):
+        ext[key] = solo_digitos(ext.get(key))
+        if not ext[key]:
+            raise ValueError(f"{key} requerido")
     limpiar_documentos(ext)
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)

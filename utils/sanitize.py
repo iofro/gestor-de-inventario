@@ -16,6 +16,19 @@ def limpiar_doc(s: str | None) -> str:
     return "".join(ch for ch in str(s) if ch.isalnum())
 
 
+def solo_digitos(s: str | None) -> str:
+    """Return only the digit characters from ``s``.
+
+    Parameters
+    ----------
+    s: str | None
+        Input value possibly containing non-digit characters.
+    """
+    if not s:
+        return ""
+    return "".join(ch for ch in str(s) if ch.isdigit())
+
+
 def limpiar_documentos(data: dict | None) -> None:
     """Sanitize document numbers inside ``data`` in-place."""
     if not isinstance(data, dict):

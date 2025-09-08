@@ -53,7 +53,7 @@
                 <th title="Monto sujeto a IVA">Base gravada</th>
                 <th title="Ventas exentas del impuesto">Exenta</th>
                 <th title="Operaciones no sujetas al impuesto">No sujeta</th>
-                <th title="Impuesto calculado al 20%">IVA(20)</th>
+                <th title="Impuesto calculado al 13%">IVA(13)</th>
                 <th title="Suma de base e IVA">Total</th>
               </tr>
             </thead>
@@ -96,6 +96,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { previsualizarPdf, previsualizarJson, guardarBorrador, firmarTransmitir } from '../services/notasApi';
+import { toBaseIva } from '../services/useIvaConversion';
 
 const props = defineProps<{
   factura: { numero: string; cliente: string; total?: number };
@@ -110,11 +111,6 @@ const modoGlobal = ref<'porcentaje' | 'monto'>('porcentaje');
 const porcentaje = ref(0);
 const monto = ref(0);
 
-function toBaseIva(total: number, tasa = 0.2) {
-  const base = total / (1 + tasa);
-  return { base, iva: total - base };
-}
-
 const globalMonto = computed(() => {
   return modoGlobal.value === 'porcentaje'
     ? (props.factura.total ?? 0) * (porcentaje.value || 0) / 100
@@ -126,7 +122,7 @@ const preview = computed(() => {
   if (ivaIncluido.value) {
     return toBaseIva(total);
   }
-  return { base: total, iva: total * 0.2 };
+  return { base: total, iva: total * 0.13 };
 });
 
 const total = computed(() => preview.value.base + preview.value.iva);

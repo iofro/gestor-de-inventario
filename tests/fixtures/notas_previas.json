@@ -1,0 +1,4 @@
+[
+  {"tipo": "credito", "fecha": "2024-01-02", "monto": 40, "motivo": "Ajuste"},
+  {"tipo": "credito", "fecha": "2024-01-03", "monto": 30, "motivo": "Ajuste2"}
+]

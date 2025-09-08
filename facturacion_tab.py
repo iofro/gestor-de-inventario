@@ -38,6 +38,7 @@ from dte import (
     transmitir_dte,
     enviar_nota_credito,
     enviar_nota_debito,
+    enviar_nota_remision,
 )
 from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
@@ -1286,7 +1287,9 @@ class FacturacionTab(QWidget):
             else:
                 self.crear_nota_remision_desde_productos()
 
-    def _guardar_archivos_nota_remision(self, nota_json):
+    def _guardar_archivos_nota_remision(
+        self, nota_json, nota_id=None, transmitir=False
+    ):
         resumen_nota = nota_json.get("resumen", {})
         tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}
         venta_data = {
@@ -1325,7 +1328,20 @@ class FacturacionTab(QWidget):
         generar_nota_remision_pdf(
             venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
         )
-        save_file(json_path, stable_stringify(nota_json))
+        sign_and_save(nota_json, str(json_path))
+        if transmitir and nota_id is not None:
+            try:
+                resp = enviar_nota_remision(self.manager.db, nota_id)
+                if resp and resp.get("estado") == "Error":
+                    QMessageBox.critical(self, "Nota", resp.get("detalle", "Error"))
+                else:
+                    QMessageBox.information(
+                        self, "Nota", "Nota registrada y transmitida"
+                    )
+            except dte.DTEValidationError as exc:
+                self._show_validation_errors(exc.errors, exc.json_path)
+            except Exception as exc:
+                QMessageBox.critical(self, "Nota", str(exc))
 
     def crear_nota_remision_desde_productos(self):
         dialog = NotaRemisionDialog(self.manager.db, self.manager._products, self)
@@ -1338,7 +1354,7 @@ class FacturacionTab(QWidget):
             "remision", None, fecha, 0, "Remision", detalles=extra
         )
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
-        self._guardar_archivos_nota_remision(nota_json)
+        self._guardar_archivos_nota_remision(nota_json, nota_id)
 
     def crear_nota_remision_desde_factura(self):
         factura = self._selected_factura()
@@ -1367,7 +1383,7 @@ class FacturacionTab(QWidget):
             "remision", venta_id, fecha, 0, "Remision", detalles=extra
         )
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
-        self._guardar_archivos_nota_remision(nota_json)
+        self._guardar_archivos_nota_remision(nota_json, nota_id)
 
     def create_nota(self, tipo, factura=None):
         factura = factura or self._selected_factura()

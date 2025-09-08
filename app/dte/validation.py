@@ -10,6 +10,7 @@ from decimal import Decimal
 from jsonschema import Draft7Validator, validators
 
 SCHEMA_MAP = {
+    "04": "fe-nr-v3.json",
     "06": "fe-nd-v3.json",
 }
 

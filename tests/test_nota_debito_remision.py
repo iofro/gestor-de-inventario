@@ -1,7 +1,8 @@
 import fitz
 from decimal import Decimal
 from db import DB
-from dte import generar_nde_desde_dte, generar_nota_remision_json, generar_dte_json
+from dte import generar_nde_desde_dte, generar_dte_json
+from nota_remision import generar_nota_remision_desde_db
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
 
 
@@ -166,7 +167,7 @@ def test_generar_nde_conserva_total(monkeypatch):
     assert data["resumen"]["montoTotalOperacion"] == Decimal("1.00")
 
 
-def test_generar_nota_remision_json_factura(tmp_path, monkeypatch):
+def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     datos = {
         "nit": "0614-140710-001-2",
         "nrc": "1234567",
@@ -200,7 +201,7 @@ def test_generar_nota_remision_json_factura(tmp_path, monkeypatch):
     nota_id = db.cursor.lastrowid
     db.conn.commit()
 
-    data = generar_nota_remision_json(db, nota_id)
+    data = generar_nota_remision_desde_db(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "04"
     assert data["documentoRelacionado"]["tipoDoc"] == "01"
 

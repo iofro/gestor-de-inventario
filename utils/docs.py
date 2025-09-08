@@ -2,6 +2,7 @@ import json
 import os
 import re
 from datetime import datetime
+from pathlib import Path
 
 from dte import _map_departamento, _map_municipio
 
@@ -60,12 +61,11 @@ def get_document_paths(date, cliente, identifier, doc_type, root=None):
 
 def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
     """Return paths ensuring MH-required naming for DTE notes."""
-    base = root or BASE_DIR
-    folder = FOLDERS.get(doc_type)
+    base = Path(root or BASE_DIR)
+    folder = Path(FOLDERS.get(doc_type))
     if root:
-        name = os.path.basename(folder)
-        folder = os.path.join(root, name)
-    os.makedirs(folder, exist_ok=True)
+        folder = base / folder.name
+    folder.mkdir(parents=True, exist_ok=True)
     if isinstance(fecha, datetime):
         d = fecha
     else:
@@ -79,8 +79,8 @@ def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
         if m:
             numero_control = f"{m.group(1)}{int(m.group(2)):015d}"
     base_name = f"{date_str}_{sanitize_filename(empresa)}_{numero_control}_{sanitize_filename(doc_type)}"
-    pdf_path = os.path.join(folder, base_name + '.pdf')
-    json_path = os.path.join(folder, base_name + '.json')
+    pdf_path = folder / (base_name + '.pdf')
+    json_path = folder / (base_name + '.json')
     return pdf_path, json_path
 
 

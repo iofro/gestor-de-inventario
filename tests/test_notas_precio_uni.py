@@ -1,4 +1,4 @@
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 
 from db import DB
 from nota_credito_electronica import generar_nce_desde_dte
@@ -76,12 +76,22 @@ def test_notas_precio_uni_cuatro_decimales(monkeypatch):
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
     nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste")
 
-    total_original = Decimal(str(dte_origen["resumen"]["montoTotalOperacion"]))
+    expected_subtotal = sum(
+        Decimal(str(d.get("ventaGravada", 0)))
+        + Decimal(str(d.get("ventaExenta", 0)))
+        + Decimal(str(d.get("ventaNoSuj", 0)))
+        for d in detalles
+    )
+    expected_iva = sum(
+        (Decimal(str(d.get("ventaGravada", 0))) * Decimal("0.13")).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        for d in detalles
+    )
+    expected_total = expected_subtotal + expected_iva
     for nota in (nce, nde):
         for det, esperado in zip(nota["cuerpoDocumento"], precios):
             dec = Decimal(str(det["precioUni"]))
             assert dec == esperado
             assert dec.as_tuple().exponent == -4
-        assert (
-            Decimal(str(nota["resumen"]["montoTotalOperacion"])) == total_original
-        )
+        assert Decimal(str(nota["resumen"]["montoTotalOperacion"])) == expected_total

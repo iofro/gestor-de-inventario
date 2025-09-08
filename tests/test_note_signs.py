@@ -39,6 +39,7 @@ def test_scan_and_format_note_totals(qt_app, tmp_path, monkeypatch):
     monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "cf2"))
     monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(nd_dir))
     monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(nc_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(tmp_path / "nr"))
     monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
     monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tmp_path / "tickets"))
 

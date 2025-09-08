@@ -3427,19 +3427,127 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
     return generar_nde_desde_dte(db, dte_origen, detalles, nota.get("monto"), nota.get("motivo"))
 
 
-def generar_nota_remision_json(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
-    """[DEPRECADO] Use ``nota_remision.generar_nota_remision_desde_db``."""
-    import warnings
+def generar_nota_remision_json(
+    db: DB,
+    factura: dict,
+    *,
+    cantidades: dict[int, float] | None = None,
+    extension: dict | None = None,
+    ambiente: str = "00",
+) -> dict:
+    """Genera la estructura JSON para una Nota de Remisión a partir de una factura.
 
-    warnings.warn(
-        "generar_nota_remision_json está deprecado; utiliza "
-        "nota_remision.generar_nota_remision_desde_db",
-        DeprecationWarning,
-        stacklevel=2,
-    )
-    from nota_remision import generar_nota_remision_desde_db
+    Parameters
+    ----------
+    db:
+        Conexión a la base de datos para generar la cabecera del DTE.
+    factura:
+        DTE base del cual se copiarán emisor, receptor e ítems.
+    cantidades:
+        Mapeo opcional ``numItem -> cantidad`` para ajustar cantidades
+        por ítem.
+    extension:
+        Datos adicionales para el bloque ``extension``.  Valores vacíos
+        o ``None`` se omiten.
+    ambiente:
+        Ambiente de generación del DTE (``"00"`` por defecto).
+    """
+    cantidades = cantidades or {}
+    ident_factura = factura.get("identificacion", {})
 
-    return generar_nota_remision_desde_db(db, nota_id, ambiente=ambiente)
+    cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": DTE_VERSIONES["04"],
+        "ambiente": ambiente,
+        "tipoDte": "04",
+        "numeroControl": cabecera["numero_control"],
+        "codigoGeneracion": cabecera["codigo_generacion"],
+        "tipoModelo": cabecera["tipo_modelo"],
+        "tipoOperacion": cabecera["tipo_operacion"],
+        "tipoContingencia": cabecera["tipo_contingencia"],
+        "motivoContin": cabecera["motivo_contin"],
+        "fecEmi": fecha_emision_hoy_str(now),
+        "horEmi": now.strftime("%H:%M:%S"),
+        "tipoMoneda": "USD",
+    }
+
+    documento_relacionado = [
+        {
+            "tipoDocumento": ident_factura.get("tipoDte"),
+            "tipoGeneracion": 2,
+            "numeroDocumento": ident_factura.get("codigoGeneracion"),
+            "fechaEmision": ident_factura.get("fecEmi"),
+        }
+    ]
+
+    emisor = copy.deepcopy(factura.get("emisor") or {})
+    receptor = copy.deepcopy(factura.get("receptor") or {})
+    limpiar_documentos(receptor)
+
+    items: list[dict] = []
+    for num, det in enumerate(factura.get("cuerpoDocumento", []), 1):
+        cantidad = cantidades.get(num, det.get("cantidad", 1))
+        items.append(
+            {
+                "numItem": num,
+                "tipoItem": det.get("tipoItem", 1),
+                "codigo": det.get("codigo", f"NR{num:03d}"),
+                "descripcion": det.get("descripcion", f"Item {num}"),
+                "cantidad": cantidad,
+                "uniMedida": det.get("uniMedida", 59),
+                "precioUni": 0.0,
+                "montoDescu": 0.0,
+                "ventaNoSuj": d2(D(0)),
+                "ventaExenta": d2(D(0)),
+                "ventaGravada": d2(D(0)),
+                "tributos": [],
+                "numeroDocumento": None,
+                "codTributo": None,
+            }
+        )
+
+    ext = {
+        "nombEntrega": "N/D",
+        "docuEntrega": "ND",
+        "nombRecibe": "N/D",
+        "docuRecibe": "ND",
+        "observaciones": "N/D",
+    }
+    if extension:
+        ext.update({k: v for k, v in extension.items() if v not in (None, "")})
+    limpiar_documentos(ext)
+
+    resumen = {
+        "totalNoSuj": d2(D(0)),
+        "totalExenta": d2(D(0)),
+        "totalGravada": d2(D(0)),
+        "subTotal": d2(D(0)),
+        "subTotalVentas": d2(D(0)),
+        "descuNoSuj": 0.0,
+        "descuExenta": 0.0,
+        "descuGravada": 0.0,
+        "totalDescu": 0.0,
+        "ivaPerci1": 0.0,
+        "ivaRete1": 0.0,
+        "reteRenta": 0.0,
+        "montoTotalOperacion": d2(D(0)),
+        "totalLetras": monto_a_texto_sv(0.0),
+        "condicionOperacion": 1,
+    }
+
+    data = {
+        "identificacion": identificacion,
+        "documentoRelacionado": documento_relacionado,
+        "emisor": emisor,
+        "receptor": receptor,
+        "cuerpoDocumento": items,
+        "extension": ext,
+        "resumen": resumen,
+        "apendice": None,
+    }
+    schema = catalogos.get_dte_schema("04")
+    return sanitize_dte_payload(data, schema)
 
 def _normalize_recepcion_url(raw: str) -> str:
     """Normaliza y valida ``raw`` como URL de recepción de Hacienda.

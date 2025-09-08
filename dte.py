@@ -3501,7 +3501,23 @@ def generar_nota_remision_json(
     emisor = copy.deepcopy(factura.get("emisor") or {})
     receptor = copy.deepcopy(factura.get("receptor") or {})
     receptor.setdefault("bienTitulo", "01")
+    if not receptor.get("tipoDocumento") or not receptor.get("numDocumento"):
+        raise ValueError("receptor requiere tipoDocumento y numDocumento")
     limpiar_documentos(receptor)
+    tipo_doc = receptor.get("tipoDocumento")
+    num_doc = receptor.get("numDocumento")
+    nrc = receptor.get("nrc")
+    if tipo_doc == "13":
+        if not re.fullmatch(r"\d{9}", num_doc or ""):
+            raise ValueError("DUI inválido en receptor")
+        receptor.pop("nrc", None)
+    elif tipo_doc == "36":
+        if not re.fullmatch(r"\d{14}", num_doc or ""):
+            raise ValueError("NIT inválido en receptor")
+        if not nrc or not re.fullmatch(r"\d{1,8}", nrc):
+            raise ValueError("NRC inválido en receptor")
+    else:
+        raise ValueError("tipoDocumento inválido en receptor")
 
     numero_doc = documento_relacionado[0]["numeroDocumento"]
     items: list[dict] = []
@@ -3520,6 +3536,7 @@ def generar_nota_remision_json(
             "ventaExenta": d2(D(0)),
             "ventaGravada": d2(D(0)),
             "tributos": None,
+            "codTributo": None,
             "numeroDocumento": numero_doc,
         }
         items.append(item)
@@ -3543,6 +3560,9 @@ def generar_nota_remision_json(
         "subTotalVentas": d2(D(0)),
         "porcentajeDescuento": d2(D(0)),
         "totalDescu": d2(D(0)),
+        "descuNoSuj": d2(D(0)),
+        "descuExenta": d2(D(0)),
+        "descuGravada": d2(D(0)),
         "tributos": None,
         "montoTotalOperacion": d2(D(0)),
         "totalLetras": monto_a_texto_sv(0.0),

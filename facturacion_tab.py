@@ -838,10 +838,43 @@ class FacturacionTab(QWidget):
                 }
             )
 
+        detalle_map = {d["id"]: d for d in detalles_venta}
+
         dialog = NotaDetalleDialog(detalles_venta, tipo, self)
         if dialog.exec_() != QDialog.Accepted:
             return
         monto, motivo, detalles_nota = dialog.get_data()
+        for det in detalles_nota or []:
+            src = detalle_map.get(det.get("detalle_id"))
+            ajuste_total = abs(det.get("ajuste", 0))
+            if src and src.get("ventas_gravadas"):
+                base = ajuste_total / 1.13
+                iva = ajuste_total - base
+                det.update({
+                    "ventas_gravadas": base,
+                    "iva": iva,
+                    "precio_unitario": base,
+                })
+            elif src and src.get("ventas_exentas"):
+                det.update({
+                    "ventas_exentas": ajuste_total,
+                    "iva": 0.0,
+                    "precio_unitario": ajuste_total,
+                })
+            elif src and src.get("ventas_no_sujetas"):
+                det.update({
+                    "ventas_no_sujetas": ajuste_total,
+                    "iva": 0.0,
+                    "precio_unitario": ajuste_total,
+                })
+            else:
+                base = ajuste_total / 1.13
+                iva = ajuste_total - base
+                det.update({
+                    "ventas_gravadas": base,
+                    "iva": iva,
+                    "precio_unitario": base,
+                })
         if monto == 0:
             QMessageBox.warning(self, "Nota", "El monto total debe ser diferente de cero")
             return
@@ -871,20 +904,18 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
-        detalle_map = {d["id"]: d for d in detalles_venta}
         detalles_pdf = []
         for det in detalles_nota or []:
             src = detalle_map.get(det.get("detalle_id"))
             if not src:
                 continue
-            aj = abs(det.get("ajuste", 0))
             detalle = {
                 "cantidad": 1,
                 "descripcion": src.get("descripcion", ""),
-                "precio_unitario": aj,
-                "ventas_gravadas": aj if src.get("ventas_gravadas") else 0,
-                "ventas_exentas": aj if src.get("ventas_exentas") else 0,
-                "ventas_no_sujetas": aj if src.get("ventas_no_sujetas") else 0,
+                "precio_unitario": det.get("precio_unitario", 0),
+                "ventas_gravadas": det.get("ventas_gravadas", 0),
+                "ventas_exentas": det.get("ventas_exentas", 0),
+                "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
             }
             detalles_pdf.append(detalle)
 

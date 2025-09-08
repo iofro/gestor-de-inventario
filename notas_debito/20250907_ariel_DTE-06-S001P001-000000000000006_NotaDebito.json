@@ -1,0 +1,103 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1,
+      "codTributo": null,
+      "codigo": "ND7F7A41AA-1",
+      "descripcion": "Producto Demo 3",
+      "montoDescu": 0.0,
+      "numItem": 1,
+      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "precioUni": 5.0,
+      "tipoItem": 1,
+      "tributos": [
+        "20"
+      ],
+      "uniMedida": 59,
+      "ventaExenta": 0.00,
+      "ventaGravada": 5.00,
+      "ventaNoSuj": 0.00
+    }
+  ],
+  "documentoRelacionado": [
+    {
+      "fechaEmision": "2025-09-04",
+      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "tipoDocumento": "03",
+      "tipoGeneracion": 2
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "14C479D4-D1D1-402C-8604-770905F0E5FB",
+    "fecEmi": "2025-09-07",
+    "horEmi": "17:55:17",
+    "motivoContin": null,
+    "numeroControl": "DTE-06-S001P001-000000000000006",
+    "tipoContingencia": null,
+    "tipoDte": "06",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "receptor": {
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nit": "13240304791012",
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "nrc": "2273734",
+    "telefono": "70000001"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 5.65,
+    "numPagoElectronico": "",
+    "reteRenta": 0.0,
+    "subTotal": 5.00,
+    "subTotalVentas": 5.00,
+    "totalDescu": 0.0,
+    "totalExenta": 0.00,
+    "totalGravada": 5.00,
+    "totalLetras": "CINCO 65/100 DÓLARES",
+    "totalNoSuj": 0.00,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 0.65
+      }
+    ]
+  },
+  "ventaTercero": null
+}

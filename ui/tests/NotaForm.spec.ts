@@ -53,7 +53,7 @@ describe('NotaForm', () => {
     expect(wrapper.find('.badge.rojo').exists()).toBe(true);
   });
 
-  it('llama API tras validación', async () => {
+  it('llama API tras validación sin motivo', async () => {
     const wrapper = mount(NotaForm, {
       props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'debito' }
     });
@@ -61,22 +61,18 @@ describe('NotaForm', () => {
     await radioMonto.setValue();
     const input = wrapper.find('input[type="number"]');
     await input.setValue('10');
-    const motivo = wrapper.find('input[placeholder="Motivo"]');
-    await motivo.setValue('ajuste');
     await wrapper.vm.$nextTick();
     const btn = wrapper.find('.resumen .acciones button');
     await btn.trigger('click');
     expect(api.previsualizarPdf).toHaveBeenCalled();
   });
 
-  it('no llama API si validación falla', async () => {
+  it('no llama API si total es cero', async () => {
     const wrapper = mount(NotaForm, {
       props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'debito' }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
-    const input = wrapper.find('input[type="number"]');
-    await input.setValue('10');
     await wrapper.find('.resumen .acciones button').trigger('click');
     expect(api.previsualizarPdf).not.toHaveBeenCalled();
   });

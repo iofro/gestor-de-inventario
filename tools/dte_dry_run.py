@@ -37,9 +37,10 @@ def main() -> None:
     )
 
     resumen = {
-        "totalGravada": f"{d2(resumen_calc['totalGravada']):.2f}",
-        "montoIva": f"{d2(resumen_calc.get('totalIva', resumen_calc.get('ivaPerci1', 0))):.2f}",
-        "totalPagar": f"{d2(resumen_calc['totalPagar']):.2f}",
+        # Convert to float only when presenting values
+        "totalGravada": f"{float(d2(resumen_calc['totalGravada'])):.2f}",
+        "montoIva": f"{float(d2(resumen_calc.get('totalIva', resumen_calc.get('ivaPerci1', 0)))):.2f}",
+        "totalPagar": f"{float(d2(resumen_calc['totalPagar'])):.2f}",
     }
 
     print("Ítem: venta=", venta)

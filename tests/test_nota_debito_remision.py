@@ -316,3 +316,45 @@ def test_generar_nota_remision_desde_db_independiente(monkeypatch):
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["receptor"]["nombre"] == "Cliente"
     assert "documentoRelacionado" not in data
+
+
+def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    db = create_db()
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-XYZ-000000000000001",
+        },
+        "emisor": datos,
+        "receptor": {
+            "tipoDocumento": "36",
+            "numDocumento": "1234 567-8",
+            "nombre": "Cliente",
+        },
+        "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    extra = {"extension": extension, "factura": factura}
+    nota_id = db.agregar_nota("remision", None, "2024-01-02", 0, "Envio", detalles=extra)
+    data = generar_nota_remision_desde_db(db, nota_id)
+    doc_rel = data["documentoRelacionado"]
+    assert doc_rel["numeroDocumento"] == "DTE-03-XYZ-000000000000001"
+    assert data["receptor"]["nombre"] == "Cliente"

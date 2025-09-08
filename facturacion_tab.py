@@ -1102,15 +1102,23 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Nota", "Seleccione una factura")
             return
         venta_id = factura.get("venta_id")
+        json_path = factura.get("json")
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                factura_json = json.load(fh)
+        except Exception:
+            QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
+            return
         if not venta_id:
             QMessageBox.warning(self, "Nota", "Factura sin venta asociada")
-            return
         dialog = NotaRemisionExtDialog(self)
         if dialog.exec_() != QDialog.Accepted:
             return
         extension = dialog.get_data()
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
         extra = {"extension": extension}
+        if not venta_id:
+            extra["factura"] = factura_json
         nota_id = self.manager.db.agregar_nota(
             "remision", venta_id, fecha, 0, "Remision", detalles=extra
         )

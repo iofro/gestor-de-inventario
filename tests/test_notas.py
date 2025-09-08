@@ -39,3 +39,22 @@ def test_agregar_nota_venta_inexistente():
     db = create_db()
     with pytest.raises(ValueError):
         db.agregar_nota("debito", 999, "2024-01-03", 10, "extra")
+
+
+def test_credito_no_supera_total():
+    db = create_db()
+    db.add_cliente("Ana", "", "", "", "", "", "", "", "", "")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 50, cliente_id=cliente_id)
+    with pytest.raises(ValueError):
+        db.agregar_nota("credito", venta_id, "2024-01-02", 60, "Dev")
+
+
+def test_credito_no_supera_saldo():
+    db = create_db()
+    db.add_cliente("Ana", "", "", "", "", "", "", "", "", "")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 100, cliente_id=cliente_id)
+    db.agregar_nota("credito", venta_id, "2024-01-02", 60, "Parcial")
+    with pytest.raises(ValueError):
+        db.agregar_nota("credito", venta_id, "2024-01-03", 50, "Resto")

@@ -34,8 +34,8 @@ from dte import (
     transmitir_dte,
     enviar_nota_credito,
     enviar_nota_debito,
-    generar_nde_desde_dte,
 )
+from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
 import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths

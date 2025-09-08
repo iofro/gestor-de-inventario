@@ -157,8 +157,17 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
     cleaned = _strip_additional_properties(data, schema)
     limpiar_documentos(cleaned)
     cleaned = _remove_nulls(cleaned)
-    for key in ("documentoRelacionado", "otrosDocumentos", "ventaTercero", "extension", "apendice"):
-        cleaned.setdefault(key, None)
+
+    schema_props = set(schema.get("properties", {}))
+    for key in (
+        "documentoRelacionado",
+        "otrosDocumentos",
+        "ventaTercero",
+        "extension",
+        "apendice",
+    ):
+        if key in schema_props:
+            cleaned.setdefault(key, None)
     return cleaned
 
 

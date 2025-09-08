@@ -3416,27 +3416,18 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
 
 
 def generar_nota_remision_json(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
-    """Genera la estructura JSON para una nota de remisión."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "remision":
-        raise ValueError("La nota indicada no es de remisión")
+    """[DEPRECADO] Use ``nota_remision.generar_nota_remision_desde_db``."""
+    import warnings
 
-    venta_id = nota.get("venta_id")
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
+    warnings.warn(
+        "generar_nota_remision_json está deprecado; utiliza "
+        "nota_remision.generar_nota_remision_desde_db",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    from nota_remision import generar_nota_remision_desde_db
 
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
-    from nota_remision import generar_nota_remision
-    return generar_nota_remision(db, factura=dte_origen, ambiente=ambiente)
+    return generar_nota_remision_desde_db(db, nota_id, ambiente=ambiente)
 
 def _normalize_recepcion_url(raw: str) -> str:
     """Normaliza y valida ``raw`` como URL de recepción de Hacienda.
@@ -4166,7 +4157,9 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
 
 def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
     """Genera y transmite una nota de remisión."""
-    data = generar_nota_remision_json(db, nota_id)
+    from nota_remision import generar_nota_remision_desde_db
+
+    data = generar_nota_remision_desde_db(db, nota_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("04")
     # Validación omitida.

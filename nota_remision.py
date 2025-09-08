@@ -153,4 +153,35 @@ def generar_nota_remision(
     return sanitize_dte_payload(data, schema)
 
 
-__all__ = ["generar_nota_remision"]
+def generar_nota_remision_desde_db(
+    db: DB, nota_id: int, *, ambiente: str = "00"
+) -> dict:
+    """Genera la estructura JSON para una Nota de Remisión desde la BD.
+
+    Obtiene los datos de la nota y la venta asociada para construir la
+    estructura base y delega la construcción final a :func:`generar_nota_remision`.
+    """
+    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
+    if not row:
+        raise ValueError("Nota no encontrada")
+    nota = dict(row)
+    if nota.get("tipo") != "remision":
+        raise ValueError("La nota indicada no es de remisión")
+
+    venta_id = nota.get("venta_id")
+    venta_row = db.cursor.execute(
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+    ).fetchone()
+    tipo_doc = "01"
+    if venta_row:
+        venta = dict(venta_row)
+        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+            tipo_doc = "03"
+
+    from dte import generar_dte_json
+
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+    return generar_nota_remision(db, factura=dte_origen, ambiente=ambiente)
+
+
+__all__ = ["generar_nota_remision", "generar_nota_remision_desde_db"]

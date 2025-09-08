@@ -53,7 +53,7 @@ describe('NotaForm', () => {
         tipo: 'credito'
       }
     });
-    const inputs = wrapper.findAll('.nota-header input[readonly]');
+    const inputs = wrapper.findAll('.factura-data input[readonly]');
     expect(inputs[0].element.value).toBe('01');
     expect(inputs[1].element.value).toBe('A-1');
     expect(inputs[2].element.value).toBe('2024-01-01');
@@ -87,7 +87,7 @@ describe('NotaForm', () => {
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
-    const chk = wrapper.find('.nota-header input[type="checkbox"]');
+    const chk = wrapper.find('.nota-controls input[type="checkbox"]');
     await chk.setValue(false);
     const input = wrapper.find('input[type="number"]');
     await input.setValue('10');
@@ -120,7 +120,7 @@ describe('NotaForm', () => {
     expect(facturaTexto).toContain('Base gravada: 1000.00');
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
-    const chk = wrapper.find('.nota-header input[type="checkbox"]');
+    const chk = wrapper.find('.nota-controls input[type="checkbox"]');
     await chk.setValue(false);
     const input = wrapper.find('input[type="number"]');
     await input.setValue('10');
@@ -210,7 +210,7 @@ describe('NotaForm', () => {
     const input = wrapper.find('input[type="number"]');
     await input.setValue('10');
     await wrapper.vm.$nextTick();
-    const btn = wrapper.find('.resumen .acciones button');
+    const btn = wrapper.find('.nota-resumen .acciones button');
     await btn.trigger('click');
     expect(api.previsualizarPdf).toHaveBeenCalled();
   });
@@ -232,7 +232,7 @@ describe('NotaForm', () => {
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
-    await wrapper.find('.resumen .acciones button').trigger('click');
+    await wrapper.find('.nota-resumen .acciones button').trigger('click');
     expect(api.previsualizarPdf).not.toHaveBeenCalled();
   });
 
@@ -271,7 +271,7 @@ describe('NotaForm', () => {
       concepto: ''
     });
     await wrapper.vm.$nextTick();
-    const resumen = wrapper.find('.resumen').text();
+    const resumen = wrapper.find('.nota-resumen').text();
     expect(resumen).toContain('Base gravada: 100.00');
     expect(resumen).toContain('IVA: 20.00');
     expect(resumen).toContain('Total: 120.00');

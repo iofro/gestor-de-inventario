@@ -521,6 +521,7 @@ class InventoryManager:
                     c.get("municipio", ""),
                     c.get("codigo"),
                     codActividad=c.get("codActividad"),
+                    nombreComercial=c.get("nombreComercial"),
                     commit=False,
                 )
                 self.db.cursor.execute(
@@ -832,6 +833,7 @@ class InventoryManager:
         departamento,
         municipio,
         codigo=None,
+        nombreComercial=None,
     ):
         """Add a new client and refresh the cached lists."""
 
@@ -848,6 +850,7 @@ class InventoryManager:
             municipio,
             codigo=codigo,
             codActividad=codActividad,
+            nombreComercial=nombreComercial,
         )
         self.refresh_data()
 
@@ -866,6 +869,7 @@ class InventoryManager:
         departamento,
         municipio,
         codActividad=None,
+        nombreComercial=None,
     ):
         """Update an existing client and refresh the cached lists."""
 
@@ -883,6 +887,7 @@ class InventoryManager:
             departamento,
             municipio,
             codActividad=codActividad,
+            nombreComercial=nombreComercial,
         )
         self.refresh_data()
 

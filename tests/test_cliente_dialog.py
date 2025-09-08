@@ -49,6 +49,7 @@ def test_invalid_fields(monkeypatch, qt_app, field, value):
     dialog = make_dialog(db)
 
     dialog.nombre_edit.setText('Nombre')
+    dialog.nombre_comercial_edit.setText('Comercial')
     dialog.nrc_edit.setText('1234567')
     dialog.nit_edit.setText('1234-123456-123-1')
     dialog.telefono_edit.setText('1234-5678')
@@ -73,6 +74,7 @@ def test_duplicate_nit(monkeypatch, qt_app):
     dialog = make_dialog(db)
 
     dialog.nombre_edit.setText('Nombre')
+    dialog.nombre_comercial_edit.setText('Comercial')
     dialog.nrc_edit.setText('1234567')
     dialog.nit_edit.setText('1234-123456-123-1')
     dialog.telefono_edit.setText('1234-5678')
@@ -88,3 +90,28 @@ def test_duplicate_nit(monkeypatch, qt_app):
 
     assert warnings.get('called')
     assert not accepted.get('called')
+
+
+def test_nombre_comercial_included(monkeypatch, qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+
+    dialog.nombre_edit.setText('Nombre')
+    dialog.nombre_comercial_edit.setText('Comercial')
+    dialog.nrc_edit.setText('1234567')
+    dialog.nit_edit.setText('1234-123456-123-1')
+    dialog.telefono_edit.setText('1234-5678')
+    dialog.email_edit.setText('test@example.com')
+
+    warnings = {}
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.setdefault('called', True))
+
+    accepted = {}
+    dialog.accept = lambda: accepted.setdefault('called', True)
+
+    dialog._validar_y_accept()
+
+    assert not warnings.get('called')
+    assert accepted.get('called')
+    data = dialog.get_data()
+    assert data['nombreComercial'] == 'Comercial'

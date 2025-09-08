@@ -37,7 +37,8 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
             {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
         ],
     }
-    data = generar_nota_remision_desde_factura(db, factura)
+    extension = {"docuEntrega": "123", "docuRecibe": "456"}
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
@@ -123,18 +124,22 @@ def test_nr_item_validation(monkeypatch):
     emisor = _sample_emisor()
     receptor = _sample_receptor()
     with pytest.raises(ValueError):
+        extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
             receptor=receptor,
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
+            extension=extension,
         )
     with pytest.raises(ValueError):
+        extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
             receptor=receptor,
             detalles=[{"descripcion": "Prod", "cantidad": 1}],
+            extension=extension,
         )
 
 
@@ -155,7 +160,8 @@ def test_receptor_dui_sin_nrc(monkeypatch):
         "receptor": receptor,
         "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
     }
-    data = generar_nota_remision_desde_factura(db, factura)
+    extension = {"docuEntrega": "123", "docuRecibe": "456"}
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     rec = data["receptor"]
     assert rec["tipoDocumento"] == "13"
     assert rec["numDocumento"] == "123456789"

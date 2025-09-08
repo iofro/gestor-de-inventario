@@ -1,4 +1,5 @@
 import dte
+from utils import catalogos
 
 
 def _has_none(data):
@@ -58,3 +59,18 @@ def test_sanitize_dte_payload_adds_required_fields_and_cleans_docs(dte_metadata_
     assert clean["apendice"] is None
     assert clean["emisor"]["nit"] == "06141234560011"
     assert clean["receptor"]["numDocumento"] == "012345678"
+
+
+def test_sanitize_skips_otros_documentos_for_notas():
+    payload = {
+        "identificacion": {},
+        "emisor": {},
+        "receptor": {},
+        "cuerpoDocumento": [],
+        "resumen": {},
+    }
+
+    for tipo in ("05", "06"):
+        schema = catalogos.get_dte_schema(tipo)
+        clean = dte.sanitize_dte_payload(payload, schema)
+        assert "otrosDocumentos" not in clean

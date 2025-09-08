@@ -75,10 +75,12 @@
             />
           </td>
           <td>
+            <!-- Cuando está activo, el valor ingresado se considera total con IVA -->
             <input
               type="checkbox"
               :checked="item.ivaInc"
               @change="update(item, 'ivaInc', $event.target.checked)"
+              title="Si está activo, el valor ingresado se considera total con IVA"
             />
           </td>
           <td>

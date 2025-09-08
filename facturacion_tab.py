@@ -737,8 +737,10 @@ class FacturacionTab(QWidget):
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
             total = v.get("total")
+            signo = v.get("sign", 1)
             if isinstance(total, (int, float)):
-                self.table.setItem(row, 3, QTableWidgetItem(f"${total:.2f}"))
+                pref = "+" if signo >= 0 else "−"
+                self.table.setItem(row, 3, QTableWidgetItem(f"{pref}${abs(total):.2f}"))
             else:
                 self.table.setItem(row, 3, QTableWidgetItem(""))
             self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
@@ -792,6 +794,7 @@ class FacturacionTab(QWidget):
             fecha = ""
             cliente = ""
             total = None
+            signo = 1
             fdate = None
             if js and os.path.exists(js):
                 try:
@@ -802,7 +805,16 @@ class FacturacionTab(QWidget):
                     )
                     fecha = data.get("identificacion", {}).get("fecEmi", "")
                     cliente = data.get("receptor", {}).get("nombre", "")
-                    total = data.get("resumen", {}).get("totalPagar")
+                    resumen = data.get("resumen", {})
+                    if tipo in ("Nota de crédito", "Nota de débito"):
+                        total = resumen.get("montoTotalOperacion")
+                        signo = -1 if tipo == "Nota de crédito" else 1
+                    else:
+                        total = resumen.get("totalPagar")
+                    try:
+                        total = abs(float(total))
+                    except (TypeError, ValueError):
+                        total = None
                     if fecha:
                         try:
                             fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
@@ -821,6 +833,7 @@ class FacturacionTab(QWidget):
                     "estado": estado,
                     "cliente": cliente,
                     "total": total,
+                    "sign": signo,
                     "tipo": tipo,
                 }
             )

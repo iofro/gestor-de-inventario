@@ -37,7 +37,7 @@ from dte import (
     enviar_nota_debito,
 )
 from nota_debito_electronica import generar_nde_desde_dte
-from nota_remision import generar_nota_remision_desde_db
+from nota_remision import generar_nota_remision_desde_db, generar_nota_remision
 import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
@@ -231,6 +231,65 @@ class NotaRemisionDialog(QDialog):
         }
         return detalles, extension, receptor
 
+
+class NotaRemisionExtDialog(QDialog):
+    """Diálogo para capturar los campos de extensión de la NR."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Datos de entrega")
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+        self.nomb_entrega = QLineEdit()
+        self.docu_entrega = QLineEdit()
+        self.nomb_recibe = QLineEdit()
+        self.docu_recibe = QLineEdit()
+        self.ext_obs = QLineEdit()
+        for label, widget in [
+            ("Nombre entrega:", self.nomb_entrega),
+            ("Documento entrega:", self.docu_entrega),
+            ("Nombre recibe:", self.nomb_recibe),
+            ("Documento recibe:", self.docu_recibe),
+            ("Observaciones:", self.ext_obs),
+        ]:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(widget)
+            layout.addLayout(row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_data(self):
+        return {
+            "nombEntrega": self.nomb_entrega.text(),
+            "docuEntrega": self.docu_entrega.text(),
+            "nombRecibe": self.nomb_recibe.text(),
+            "docuRecibe": self.docu_recibe.text(),
+            "observaciones": self.ext_obs.text(),
+        }
+
+    def accept(self):
+        for w in [
+            self.nomb_entrega,
+            self.docu_entrega,
+            self.nomb_recibe,
+            self.docu_recibe,
+            self.ext_obs,
+        ]:
+            if not w.text().strip():
+                QMessageBox.warning(
+                    self,
+                    "Nota",
+                    "Todos los campos de entrega/recepción son obligatorios",
+                )
+                return
+        super().accept()
+
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
 
@@ -308,7 +367,7 @@ class FacturacionTab(QWidget):
         self.btn_nota = QPushButton("Nota crédito / débito")
         self.btn_nota.clicked.connect(self.abrir_dialogo_tipo_nota)
         self.btn_remision = QPushButton("Nota remisión")
-        self.btn_remision.clicked.connect(self.crear_nota_remision)
+        self.btn_remision.clicked.connect(self.abrir_dialogo_nota_remision)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
@@ -960,22 +1019,36 @@ class FacturacionTab(QWidget):
             tipo = "credito" if radio_credito.isChecked() else "debito"
             self.create_nota(tipo, factura)
 
-    def crear_nota_remision(self):
-        dialog = NotaRemisionDialog(self.manager._products, self)
-        if dialog.exec_() != QDialog.Accepted:
-            return
-        detalles, extension, receptor = dialog.get_data()
-        fecha = QDate.currentDate().toString("yyyy-MM-dd")
-        extra = {"items": detalles, "receptor": receptor, "extension": extension}
-        nota_id = self.manager.db.agregar_nota(
-            "remision", None, fecha, 0, "Remision", detalles=extra
-        )
-        nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+    def abrir_dialogo_nota_remision(self):
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Nota de remisión")
+        layout = QVBoxLayout(dialog)
+
+        radio_factura = QRadioButton("Desde factura", dialog)
+        radio_productos = QRadioButton("Desde productos", dialog)
+        radio_factura.setChecked(True)
+        layout.addWidget(radio_factura)
+        layout.addWidget(radio_productos)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.button(QDialogButtonBox.Ok).setText("Continuar")
+        buttons.accepted.connect(dialog.accept)
+        buttons.rejected.connect(dialog.reject)
+        layout.addWidget(buttons)
+
+        if dialog.exec_() == QDialog.Accepted:
+            if radio_factura.isChecked():
+                self.crear_nota_remision_desde_factura()
+            else:
+                self.crear_nota_remision_desde_productos()
+
+    def _guardar_archivos_nota_remision(self, nota_json):
         resumen_nota = nota_json.get("resumen", {})
+        tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}
         venta_data = {
             "sumas": float(resumen_nota.get("subTotalVentas", 0)),
             "descuentos": float(resumen_nota.get("totalDescu", 0)),
-            "iva": 0.0,
+            "iva": float(tributos.get("20", 0)),
             "ventas_exentas": float(resumen_nota.get("totalExenta", 0)),
             "ventas_no_sujetas": float(resumen_nota.get("totalNoSuj", 0)),
             "subtotal": float(resumen_nota.get("subTotal", 0)),
@@ -994,13 +1067,13 @@ class FacturacionTab(QWidget):
                     "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
                 }
             )
-
-        cliente = receptor
+        cliente = nota_json.get("receptor", {}) or {}
+        extension = nota_json.get("extension", {}) or {}
         out_dir = NOTAS_REMISION_DIR
         os.makedirs(out_dir, exist_ok=True)
         pdf_path, json_path = get_dte_document_paths(
             nota_json["identificacion"].get("fecEmi"),
-            cliente.get("nombre") or "",
+            cliente.get("nombre") or cliente.get("nombreComercial") or "",
             nota_json["identificacion"].get("numeroControl"),
             "NotaRemision",
             out_dir,
@@ -1009,6 +1082,51 @@ class FacturacionTab(QWidget):
             venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
         )
         save_file(json_path, stable_stringify(nota_json))
+
+    def crear_nota_remision_desde_productos(self):
+        dialog = NotaRemisionDialog(self.manager._products, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        detalles, extension, receptor = dialog.get_data()
+        fecha = QDate.currentDate().toString("yyyy-MM-dd")
+        extra = {"items": detalles, "receptor": receptor, "extension": extension}
+        nota_id = self.manager.db.agregar_nota(
+            "remision", None, fecha, 0, "Remision", detalles=extra
+        )
+        nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+        self._guardar_archivos_nota_remision(nota_json)
+
+    def crear_nota_remision_desde_factura(self):
+        factura = self._selected_factura()
+        if not factura:
+            QMessageBox.warning(self, "Nota", "Seleccione una factura")
+            return
+        venta_id = factura.get("venta_id")
+        if not venta_id:
+            QMessageBox.warning(self, "Nota", "Factura sin venta asociada")
+        dialog = NotaRemisionExtDialog(self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        extension = dialog.get_data()
+        fecha = QDate.currentDate().toString("yyyy-MM-dd")
+        extra = {"extension": extension}
+        nota_id = self.manager.db.agregar_nota(
+            "remision", venta_id, fecha, 0, "Remision", detalles=extra
+        )
+        if venta_id:
+            nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+        else:
+            json_path = factura.get("json")
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
+                return
+            nota_json = generar_nota_remision(
+                self.manager.db, factura=data, extension=extension
+            )
+        self._guardar_archivos_nota_remision(nota_json)
 
     def create_nota(self, tipo, factura=None):
         factura = factura or self._selected_factura()

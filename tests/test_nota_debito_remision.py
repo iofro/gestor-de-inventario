@@ -195,16 +195,22 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "123", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    db.cursor.execute(
-        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?,?,?,?,?)",
-        (venta_id, "remision", "2024-01-02", 0, "Envio"),
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    extra = {"extension": extension}
+    nota_id = db.agregar_nota(
+        "remision", venta_id, "2024-01-02", 0, "Envio", detalles=extra
     )
-    nota_id = db.cursor.lastrowid
-    db.conn.commit()
 
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "04"
     assert data["documentoRelacionado"]["tipoDoc"] == "01"
+    assert data["extension"]["nombEntrega"] == "Juan"
 
 
 def test_nota_debito_pdf(tmp_path):

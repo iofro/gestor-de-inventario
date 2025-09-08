@@ -42,6 +42,7 @@ from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
+from utils.stable_json import save_file, stable_stringify
 from paths import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
@@ -995,6 +996,37 @@ class FacturacionTab(QWidget):
             distribuidor or {},
             archivo=pdf_path,
         )
+
+        # Guardar JSON sin firmar para permitir vista previa
+        save_file(json_path, stable_stringify(nota_json, indent=2))
+
+        # Mostrar previsualización del PDF generado
+        try:
+            self._show_pdf_preview(pdf_path)
+        except Exception:
+            pass
+
+        # Permitir al usuario ver PDF/JSON antes de firmar
+        while True:
+            msg = QMessageBox(self)
+            msg.setWindowTitle("Firmar nota")
+            msg.setText("¿Desea firmar y transmitir la nota?")
+            btn_firmar = msg.addButton("Firmar", QMessageBox.AcceptRole)
+            btn_pdf = msg.addButton("Ver PDF", QMessageBox.ActionRole)
+            btn_json = msg.addButton("Ver JSON", QMessageBox.ActionRole)
+            msg.addButton(QMessageBox.Cancel)
+            msg.exec_()
+            clicked = msg.clickedButton()
+            if clicked == btn_pdf:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
+                continue
+            if clicked == btn_json:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(json_path))
+                continue
+            if clicked == btn_firmar:
+                break
+            return
+
         sign_and_save(nota_json, json_path)
 
         try:

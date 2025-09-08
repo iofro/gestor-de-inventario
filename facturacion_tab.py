@@ -1440,6 +1440,9 @@ class FacturacionTab(QWidget):
                     "ventas_gravadas": float(d.get("ventaGravada", 0)),
                     "ventas_exentas": float(d.get("ventaExenta", 0)),
                     "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
+                    "precio_unitario_iva": Decimal(str(d.get("ivaItem", 0))),
+                    "descuento_iva": Decimal(str(d.get("montoDescu", 0))),
+                    "total_linea": Decimal(str(d.get("ventaGravada", 0))),
                 }
             )
 

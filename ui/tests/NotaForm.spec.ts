@@ -80,4 +80,31 @@ describe('NotaForm', () => {
     await wrapper.find('.resumen .acciones button').trigger('click');
     expect(api.previsualizarPdf).not.toHaveBeenCalled();
   });
+
+  it('calcula totales para ítems en pestaña producto', async () => {
+    const wrapper = mount(NotaForm, {
+      props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'debito' }
+    });
+    const btnProducto = wrapper.findAll('.tabs button')[1];
+    await btnProducto.trigger('click');
+    wrapper.vm.items.push({
+      id: 1,
+      selected: false,
+      codigo: 'A1',
+      descripcion: 'Test',
+      cantidadFacturada: 1,
+      cantidadAjustar: 0,
+      tipo: 'debito',
+      modo: 'monto',
+      valor: 100,
+      ivaInc: false,
+      afectacion: 'gravada',
+      previas: 0
+    });
+    await wrapper.vm.$nextTick();
+    const resumen = wrapper.find('.resumen').text();
+    expect(resumen).toContain('Base gravada: 100.00');
+    expect(resumen).toContain('IVA: 13.00');
+    expect(resumen).toContain('Total: 113.00');
+  });
 });

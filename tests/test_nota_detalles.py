@@ -71,3 +71,38 @@ def test_generar_nota_debito_detalles(monkeypatch):
     assert data["resumen"]["totalGravada"] == 2
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
+
+
+def test_generar_nota_debito_precio_4_decimales(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "UUID",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {},
+        "receptor": {},
+        "resumen": {
+            "montoTotalOperacion": Decimal("1.23"),
+            "totalGravada": Decimal("0"),
+            "totalExenta": Decimal("1.23"),
+            "totalNoSuj": Decimal("0"),
+        },
+    }
+    detalles = [
+        {
+            "cantidad": 1,
+            "descripcion": "Prod",
+            "ventas_gravadas": 0,
+            "ventas_exentas": Decimal("1.2345"),
+            "ventas_no_sujetas": 0,
+        }
+    ]
+    data = generar_nde_desde_dte(db, dte_origen, detalles, 1.23, "Ajuste")
+    item = data["cuerpoDocumento"][0]
+    assert item["precioUni"] == Decimal("1.2345")
+    assert item["ventaExenta"] == Decimal("1.2345")
+    assert data["resumen"]["montoTotalOperacion"] == Decimal("1.23")
+    assert data["resumen"]["montoTotalOperacion"] == dte_origen["resumen"]["montoTotalOperacion"]

@@ -15,7 +15,8 @@ def _sample_emisor():
 def _sample_receptor():
     return {
         "tipoDocumento": "36",
-        "numDocumento": "1234 567-8",
+        "numDocumento": "0614-140710-001-2",
+        "nrc": "1234567",
         "nombre": "Cliente",
         "bienTitulo": "01",
     }
@@ -42,12 +43,17 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
     item = data["cuerpoDocumento"][0]
     assert item["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
+    assert item["codTributo"] is None
     assert float(item["precioUni"]) == 0.0
     assert float(item["ventaNoSuj"]) == 0.0
     assert float(item["ventaExenta"]) == 0.0
     assert float(item["ventaGravada"]) == 0.0
     assert "-" not in data["emisor"]["nit"]
     assert " " not in data["receptor"]["numDocumento"]
+    resumen = data["resumen"]
+    assert float(resumen["descuNoSuj"]) == 0.0
+    assert float(resumen["descuExenta"]) == 0.0
+    assert float(resumen["descuGravada"]) == 0.0
 
 
 def test_nr_desde_factura_extension(monkeypatch):
@@ -104,6 +110,11 @@ def test_nr_independiente_extension(monkeypatch):
     assert ext["docuRecibe"] == "12345678"
     assert "-" not in data["emisor"]["nit"]
     assert " " not in data["receptor"]["numDocumento"]
+    assert data["cuerpoDocumento"][0]["codTributo"] is None
+    res = data["resumen"]
+    assert float(res["descuNoSuj"]) == 0.0
+    assert float(res["descuExenta"]) == 0.0
+    assert float(res["descuGravada"]) == 0.0
 
 
 def test_nr_item_validation(monkeypatch):
@@ -124,4 +135,55 @@ def test_nr_item_validation(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=[{"descripcion": "Prod", "cantidad": 1}],
+        )
+
+
+def test_receptor_dui_sin_nrc(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = {
+        "tipoDocumento": "13",
+        "numDocumento": "12345678-9",
+        "nrc": "1234567",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+    }
+    factura = {
+        "identificacion": {"tipoDte": "03", "codigoGeneracion": "1", "fecEmi": "2024-01-01"},
+        "emisor": emisor,
+        "receptor": receptor,
+        "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
+    }
+    data = generar_nota_remision_desde_factura(db, factura)
+    rec = data["receptor"]
+    assert rec["tipoDocumento"] == "13"
+    assert rec["numDocumento"] == "123456789"
+    assert "nrc" not in rec
+
+
+def test_receptor_nit_sin_nrc_error(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = {
+        "tipoDocumento": "36",
+        "numDocumento": "0614-140710-001-2",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "0614-140710-001-2",
+        "nombRecibe": "Ana",
+        "docuRecibe": "1234 5678",
+    }
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    with pytest.raises(ValueError):
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=detalles,
+            extension=extension,
         )

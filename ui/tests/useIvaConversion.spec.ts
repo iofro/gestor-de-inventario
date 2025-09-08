@@ -3,14 +3,14 @@ import { toBaseIva, fromBaseIva } from '../services/useIvaConversion';
 
 describe('useIvaConversion', () => {
   it('convierte total a base e iva', () => {
-    const { base, iva } = toBaseIva(113);
+    const { base, iva } = toBaseIva(120);
     expect(base).toBe(100);
-    expect(iva).toBe(13);
+    expect(iva).toBe(20);
   });
 
   it('convierte base a total e iva', () => {
     const { total, iva } = fromBaseIva(100);
-    expect(total).toBe(113);
-    expect(iva).toBe(13);
+    expect(total).toBe(120);
+    expect(iva).toBe(20);
   });
 });

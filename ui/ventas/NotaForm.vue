@@ -2,11 +2,18 @@
   <div class="nota-form">
     <header class="nota-header">
       <div class="factura-data">
-        <div>Factura: {{ factura.numero }}</div>
-        <div>Cliente: {{ factura.cliente }}</div>
+        <input readonly :value="factura.tipo" title="Tipo de documento (01/03)" />
+        <input readonly :value="factura.numero" title="Serie-correlativo" />
+        <input readonly :value="factura.fecha" title="Fecha" />
+        <input
+          readonly
+          :value="factura.uuid ? factura.uuid.slice(0, 8) : ''"
+          title="UUID de la factura origen"
+        />
+        <div>{{ factura.cliente }}</div>
       </div>
       <span class="badge">{{ tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
-      <input v-model="motivo" placeholder="Motivo" />
+      <input v-model="motivo" placeholder="Motivo" maxlength="50" />
       <label>
         IVA Incluido
         <input type="checkbox" v-model="ivaIncluido" />
@@ -96,13 +103,16 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue';
 import { previsualizarPdf, previsualizarJson, guardarBorrador, firmarTransmitir } from '../services/notasApi';
-import { toBaseIva } from '../services/useIvaConversion';
+import { toBaseIva, fromBaseIva } from '../services/useIvaConversion';
 import EditableNotaTable from '../components/EditableNotaTable.vue';
 import { prorratearGlobal } from '../services/prorrateo';
 
 const props = defineProps<{
   factura: {
+    tipo?: string;
     numero: string;
+    fecha?: string;
+    uuid?: string;
     cliente: string;
     total?: number;
     ventas_gravadas?: number;
@@ -158,10 +168,10 @@ const itemsPreview = computed(() => {
           acc.iva += iva;
           acc.total += valor;
         } else {
+          const { total, iva } = fromBaseIva(valor);
           acc.base += valor;
-          const iva = valor * 0.13;
           acc.iva += iva;
-          acc.total += valor + iva;
+          acc.total += total;
         }
       } else if (item.afectacion === 'exenta') {
         acc.exenta += valor;
@@ -178,21 +188,24 @@ const itemsPreview = computed(() => {
 
 const preview = computed(() => {
   if (activeTab.value === 'global') {
-    const ajuste =
-      modoGlobal.value === 'porcentaje'
-        ? { porcentaje: porcentaje.value || 0 }
-        : {
-            monto: ivaIncluido.value
-              ? monto.value || 0
-              : (monto.value || 0) * 1.13,
-          };
-    const res = prorratearGlobal(props.factura, ajuste);
-    return {
-      base: res.ventas_gravadas,
-      exenta: res.ventas_exentas,
-      noSujeta: res.ventas_no_sujetas,
-      iva: res.iva,
-    };
+    if (modoGlobal.value === 'porcentaje') {
+      const res = prorratearGlobal(props.factura, { porcentaje: porcentaje.value || 0 });
+      return {
+        base: res.ventas_gravadas,
+        exenta: res.ventas_exentas,
+        noSujeta: res.ventas_no_sujetas,
+        iva: res.iva,
+      };
+    } else {
+      const valor = monto.value || 0;
+      if (ivaIncluido.value) {
+        const { base, iva } = toBaseIva(valor);
+        return { base, exenta: 0, noSujeta: 0, iva };
+      } else {
+        const { iva } = fromBaseIva(valor);
+        return { base: valor, exenta: 0, noSujeta: 0, iva };
+      }
+    }
   }
   return itemsPreview.value;
 });

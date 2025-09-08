@@ -212,6 +212,13 @@ def generar_nota_remision_desde_db(
             db, factura=dte_origen, extension=extension, ambiente=ambiente
         )
 
+    factura = extra.get("factura")
+    if factura:
+        extension = extra.get("extension") or {}
+        return generar_nota_remision(
+            db, factura=factura, extension=extension, ambiente=ambiente
+        )
+
     # Nota independiente (sin venta asociada)
     from dte import _load_datos_negocio
 

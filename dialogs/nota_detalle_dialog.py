@@ -69,12 +69,6 @@ class NotaDetalleDialog(QDialog):
         motivo_layout.addWidget(self.motivo_edit)
         layout.addLayout(motivo_layout)
 
-        letras_layout = QHBoxLayout()
-        letras_layout.addWidget(QLabel("Total en letras:"))
-        self.total_letras_edit = QLineEdit()
-        letras_layout.addWidget(self.total_letras_edit)
-        layout.addLayout(letras_layout)
-
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)

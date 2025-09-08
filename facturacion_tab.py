@@ -19,8 +19,10 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QRadioButton,
     QSpinBox,
+    QListWidget,
+    QListWidgetItem,
 )
-from PyQt5.QtCore import QDate, Qt, QUrl
+from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent
 from PyQt5.QtGui import QPixmap, QDesktopServices
 import os
 import re
@@ -44,6 +46,7 @@ from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
 from utils.stable_json import save_file, stable_stringify
+from utils.sanitize import limpiar_doc
 from paths import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
@@ -183,20 +186,22 @@ class NotaRemisionDialog(QDialog):
         if self.table.rowCount() == 0:
             QMessageBox.warning(self, "Nota", "Agregue al menos un producto")
             return
-        for w in [
-            self.nomb_entrega,
-            self.docu_entrega,
-            self.nomb_recibe,
-            self.docu_recibe,
-            self.ext_obs,
-            self.receptor_nombre,
-            self.receptor_doc,
-        ]:
-            if not w.text().strip():
-                QMessageBox.warning(
-                    self, "Nota", "Todos los campos de entrega/recepción son obligatorios"
-                )
-                return
+        checks = [
+            self.nomb_entrega.text().strip(),
+            limpiar_doc(self.docu_entrega.text()),
+            self.nomb_recibe.text().strip(),
+            limpiar_doc(self.docu_recibe.text()),
+            self.ext_obs.text().strip(),
+            self.receptor_nombre.text().strip(),
+            limpiar_doc(self.receptor_doc.text()),
+        ]
+        if not all(checks):
+            QMessageBox.warning(
+                self,
+                "Nota",
+                "Todos los campos de entrega/recepción son obligatorios",
+            )
+            return
         super().accept()
 
     def get_data(self):
@@ -218,15 +223,15 @@ class NotaRemisionDialog(QDialog):
             )
         extension = {
             "nombEntrega": self.nomb_entrega.text(),
-            "docuEntrega": self.docu_entrega.text(),
+            "docuEntrega": limpiar_doc(self.docu_entrega.text()),
             "nombRecibe": self.nomb_recibe.text(),
-            "docuRecibe": self.docu_recibe.text(),
+            "docuRecibe": limpiar_doc(self.docu_recibe.text()),
             "observaciones": self.ext_obs.text(),
         }
         receptor = {
             "nombre": self.receptor_nombre.text(),
             "tipoDocumento": "13",
-            "numDocumento": self.receptor_doc.text(),
+            "numDocumento": limpiar_doc(self.receptor_doc.text()),
             "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
         }
         return detalles, extension, receptor
@@ -235,21 +240,54 @@ class NotaRemisionDialog(QDialog):
 class NotaRemisionExtDialog(QDialog):
     """Diálogo para capturar los campos de extensión de la NR."""
 
-    def __init__(self, parent=None):
+    def __init__(self, db, parent=None):
         super().__init__(parent)
+        self.db = db
         self.setWindowTitle("Datos de entrega")
         self._build_ui()
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
+
+        # Persona que entrega
+        layout.addWidget(QLabel("Persona que entrega"))
+        self.emp_search = QLineEdit()
+        self.emp_search.setPlaceholderText(
+            "Buscar empleado por nombre, DUI o NIT…"
+        )
+        layout.addWidget(self.emp_search)
+        self.emp_results = QListWidget()
+        self.emp_results.addItem("Escribe para buscar…")
+        self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+        layout.addWidget(self.emp_results)
+
         self.nomb_entrega = QLineEdit()
         self.docu_entrega = QLineEdit()
+        for label, widget in [
+            ("Nombre entrega:", self.nomb_entrega),
+            ("Documento entrega:", self.docu_entrega),
+        ]:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(widget)
+            layout.addLayout(row)
+
+        # Persona que recibe
+        layout.addWidget(QLabel("Persona que recibe"))
+        self.cli_search = QLineEdit()
+        self.cli_search.setPlaceholderText(
+            "Buscar cliente por nombre, DUI/NIT, NRC…"
+        )
+        layout.addWidget(self.cli_search)
+        self.cli_results = QListWidget()
+        self.cli_results.addItem("Escribe para buscar…")
+        self.cli_results.item(0).setFlags(Qt.NoItemFlags)
+        layout.addWidget(self.cli_results)
+
         self.nomb_recibe = QLineEdit()
         self.docu_recibe = QLineEdit()
         self.ext_obs = QLineEdit()
         for label, widget in [
-            ("Nombre entrega:", self.nomb_entrega),
-            ("Documento entrega:", self.docu_entrega),
             ("Nombre recibe:", self.nomb_recibe),
             ("Documento recibe:", self.docu_recibe),
             ("Observaciones:", self.ext_obs),
@@ -264,30 +302,144 @@ class NotaRemisionExtDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+        # Set up search handlers
+        self.emp_timer = QTimer(self)
+        self.emp_timer.setSingleShot(True)
+        self.emp_timer.setInterval(250)
+        self.emp_search.textChanged.connect(self.emp_timer.start)
+        self.emp_timer.timeout.connect(self._buscar_empleado)
+        self.emp_results.itemActivated.connect(self._seleccionar_empleado)
+        self.emp_results.itemClicked.connect(self._seleccionar_empleado)
+
+        self.cli_timer = QTimer(self)
+        self.cli_timer.setSingleShot(True)
+        self.cli_timer.setInterval(250)
+        self.cli_search.textChanged.connect(self.cli_timer.start)
+        self.cli_timer.timeout.connect(self._buscar_cliente)
+        self.cli_results.itemActivated.connect(self._seleccionar_cliente)
+        self.cli_results.itemClicked.connect(self._seleccionar_cliente)
+
+        # Keyboard navigation
+        for w in [
+            self.emp_search,
+            self.emp_results,
+            self.cli_search,
+            self.cli_results,
+        ]:
+            w.installEventFilter(self)
+
+    def _populate_results(self, widget, items, formatter):
+        widget.clear()
+        if not items:
+            widget.addItem("Sin resultados. Puedes escribir manualmente.")
+            widget.item(0).setFlags(Qt.NoItemFlags)
+            return
+        for itm in items:
+            text, data = formatter(itm)
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, data)
+            widget.addItem(item)
+        widget.setCurrentRow(0)
+
+    def _buscar_empleado(self):
+        text = self.emp_search.text().strip()
+        if not text:
+            self.emp_results.clear()
+            self.emp_results.addItem("Escribe para buscar…")
+            self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        try:
+            empleados = self.db.get_trabajadores(search=text)
+        except Exception:
+            empleados = []
+        self._populate_results(
+            self.emp_results,
+            empleados,
+            lambda e: (
+                f"{e.get('nombre', '')} - {e.get('dui') or e.get('nit') or ''}",
+                e,
+            ),
+        )
+
+    def _seleccionar_empleado(self, item):
+        data = item.data(Qt.UserRole) if item else None
+        if isinstance(data, dict):
+            self.nomb_entrega.setText(data.get("nombre", ""))
+            doc = data.get("dui") or data.get("nit") or ""
+            self.docu_entrega.setText(limpiar_doc(doc))
+
+    def _buscar_cliente(self):
+        text = self.cli_search.text().strip()
+        if not text:
+            self.cli_results.clear()
+            self.cli_results.addItem("Escribe para buscar…")
+            self.cli_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        try:
+            clientes = self.db.get_clientes(search=text)
+        except Exception:
+            clientes = []
+        self._populate_results(
+            self.cli_results,
+            clientes,
+            lambda c: (
+                f"{c.get('nombre', '')} - {c.get('dui') or c.get('nit') or c.get('nrc') or ''}",
+                c,
+            ),
+        )
+
+    def _seleccionar_cliente(self, item):
+        data = item.data(Qt.UserRole) if item else None
+        if isinstance(data, dict):
+            self.nomb_recibe.setText(data.get("nombre", ""))
+            doc = data.get("dui") or data.get("nit") or data.get("nrc") or ""
+            self.docu_recibe.setText(limpiar_doc(doc))
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            if obj in (self.emp_search, self.cli_search) and event.key() in (
+                Qt.Key_Down,
+                Qt.Key_Up,
+            ):
+                lst = self.emp_results if obj is self.emp_search else self.cli_results
+                if lst.count():
+                    lst.setFocus()
+                    lst.setCurrentRow(0)
+                    return True
+            if obj in (self.emp_results, self.cli_results) and event.key() in (
+                Qt.Key_Return,
+                Qt.Key_Enter,
+            ):
+                current = obj.currentItem()
+                if current:
+                    obj.itemActivated.emit(current)
+                    return True
+        return super().eventFilter(obj, event)
+
     def get_data(self):
         return {
             "nombEntrega": self.nomb_entrega.text(),
-            "docuEntrega": self.docu_entrega.text(),
+            "docuEntrega": limpiar_doc(self.docu_entrega.text()),
             "nombRecibe": self.nomb_recibe.text(),
-            "docuRecibe": self.docu_recibe.text(),
+            "docuRecibe": limpiar_doc(self.docu_recibe.text()),
             "observaciones": self.ext_obs.text(),
         }
 
     def accept(self):
-        for w in [
-            self.nomb_entrega,
-            self.docu_entrega,
-            self.nomb_recibe,
-            self.docu_recibe,
-            self.ext_obs,
-        ]:
-            if not w.text().strip():
-                QMessageBox.warning(
-                    self,
-                    "Nota",
-                    "Todos los campos de entrega/recepción son obligatorios",
-                )
-                return
+        checks = [
+            self.nomb_entrega.text().strip(),
+            limpiar_doc(self.docu_entrega.text()),
+            self.nomb_recibe.text().strip(),
+            limpiar_doc(self.docu_recibe.text()),
+            self.ext_obs.text().strip(),
+        ]
+        if not all(checks):
+            QMessageBox.warning(
+                self,
+                "Nota",
+                "Todos los campos de entrega/recepción son obligatorios",
+            )
+            return
         super().accept()
 
 class FacturacionTab(QWidget):
@@ -1111,7 +1263,7 @@ class FacturacionTab(QWidget):
             return
         if not venta_id:
             QMessageBox.warning(self, "Nota", "Factura sin venta asociada")
-        dialog = NotaRemisionExtDialog(self)
+        dialog = NotaRemisionExtDialog(self.manager.db, self)
         if dialog.exec_() != QDialog.Accepted:
             return
         extension = dialog.get_data()

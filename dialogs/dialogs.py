@@ -2491,6 +2491,7 @@ class ClienteDialog(QDialog):
 
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
+        self.nombre_comercial_edit = QLineEdit()
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
         self.dui_edit = QLineEdit()
@@ -2518,6 +2519,7 @@ class ClienteDialog(QDialog):
         form = [
             ("Código:", self.codigo_edit),
             ("Nombre completo:", self.nombre_edit),
+            ("Nombre comercial:", self.nombre_comercial_edit),
             ("NRC:", self.nrc_edit),
             ("NIT:", self.nit_edit),
             ("DUI:", self.dui_edit),
@@ -2552,6 +2554,7 @@ class ClienteDialog(QDialog):
         if cliente:
             self.codigo_edit.setText(cliente.get("codigo", ""))
             self.nombre_edit.setText(cliente.get("nombre", ""))
+            self.nombre_comercial_edit.setText(cliente.get("nombreComercial", ""))
             self.nrc_edit.setText(cliente.get("nrc", ""))
             self.nit_edit.setText(cliente.get("nit", ""))
             self.dui_edit.setText(cliente.get("dui", ""))
@@ -2616,6 +2619,7 @@ class ClienteDialog(QDialog):
         return {
             "codigo": self.codigo_edit.text().strip(),
             "nombre": self.nombre_edit.text().strip(),
+            "nombreComercial": self.nombre_comercial_edit.text().strip(),
             "nrc": self.nrc_edit.text().strip(),
             "nit": self.nit_edit.text().strip(),
             "dui": self.dui_edit.text().strip(),

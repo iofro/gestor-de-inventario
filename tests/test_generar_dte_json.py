@@ -180,12 +180,13 @@ def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
         "123",
         "06141990011019",
         "",
-        "giro",
+        "Cliente Giro",
         "70000001",
         "",
         "C",
         "06",
         "01",
+        codActividad="99999",
     )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta(
@@ -240,12 +241,13 @@ def test_generar_dte_json_tipo_fiscal(tmp_path):
         "123",
         "06141990011019",
         "",
-        "giro",
+        "Cliente Giro",
         "70000001",
         "",
         "C",
         "06",
         "01",
+        codActividad="99999",
     )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta(
@@ -1139,12 +1141,13 @@ def test_receptor_defaults(tmp_path):
         "123",
         "06141990011019",
         "",
-        "giro",
+        "Cliente Giro",
         "70000001",
         "",
         "C",
         "06",
         "01",
+        codActividad="99999",
     )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta(
@@ -1157,8 +1160,8 @@ def test_receptor_defaults(tmp_path):
 
     data = dte_module.generar_dte_json(db, venta_id)
     rec = data["receptor"]
-    assert rec["codActividad"] == datos["cod_giro"]
-    assert rec["descActividad"] == datos["descActividad"]
+    assert rec["codActividad"] == "99999"
+    assert rec["descActividad"] == "Cliente Giro"
     assert rec["correo"] == "no-reply@example.com"
 
 

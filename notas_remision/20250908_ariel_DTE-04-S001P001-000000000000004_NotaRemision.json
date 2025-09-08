@@ -1,0 +1,100 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1.0,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 3",
+      "montoDescu": 0.0,
+      "numItem": 1,
+      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "precioUni": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.00,
+      "ventaGravada": 0.00,
+      "ventaNoSuj": 0.00
+    }
+  ],
+  "documentoRelacionado": [
+    {
+      "fechaEmision": "2025-09-04",
+      "numeroDocumento": "7F7A41AA-6280-4461-BC66-0FB8617CFCF6",
+      "tipoDocumento": "03",
+      "tipoGeneracion": 2
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": {
+    "docuEntrega": "012345678",
+    "docuRecibe": "007989352",
+    "nombEntrega": "Ana López",
+    "nombRecibe": "ariel",
+    "observaciones": "S"
+  },
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "311032EA-8C91-4C4D-B9A6-37019D4F7C8D",
+    "fecEmi": "2025-09-08",
+    "horEmi": "16:23:09",
+    "motivoContin": null,
+    "numeroControl": "DTE-04-S001P001-000000000000004",
+    "tipoContingencia": null,
+    "tipoDte": "04",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "receptor": {
+    "bienTitulo": "01",
+    "correo": "no-reply@example.com",
+    "direccion": {
+      "complemento": "Calle Falsa 1, San Salvador",
+      "departamento": "05",
+      "municipio": "28"
+    },
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "numDocumento": "007989352",
+    "telefono": "70000001",
+    "tipoDocumento": "13"
+  },
+  "resumen": {
+    "descuExenta": 0.00,
+    "descuGravada": 0.00,
+    "descuNoSuj": 0.00,
+    "montoTotalOperacion": 0.00,
+    "porcentajeDescuento": 0.00,
+    "subTotal": 0.00,
+    "subTotalVentas": 0.00,
+    "totalDescu": 0.00,
+    "totalExenta": 0.00,
+    "totalGravada": 0.00,
+    "totalLetras": "CERO 00/100 DÓLARES",
+    "totalNoSuj": 0.00,
+    "tributos": null
+  },
+  "ventaTercero": null
+}

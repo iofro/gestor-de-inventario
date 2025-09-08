@@ -77,7 +77,12 @@
           </table>
         </div>
         <div v-else>
-          <EditableNotaTable v-model="items" :topeCredito="saldoDisponible" :ivaIncluido="ivaIncluido" />
+          <EditableNotaTable
+            v-model="items"
+            :topeCredito="saldoDisponible"
+            :ivaIncluido="ivaIncluido"
+            :notaTipo="tipo"
+          />
         </div>
       </div>
       <div class="resumen">
@@ -160,9 +165,21 @@ function resolveValor(item: NotaItem) {
 const itemsPreview = computed(() => {
   return items.value.reduce(
     (acc, item) => {
-      const valor = resolveValor(item);
+      const valor = item.ajuste !== undefined ? item.ajuste : resolveValor(item);
       if (item.afectacion === 'gravada') {
-        if (item.ivaInc) {
+        if (item.ajuste !== undefined) {
+          if (ivaIncluido.value) {
+            const { base, iva } = toBaseIva(valor);
+            acc.base += base;
+            acc.iva += iva;
+            acc.total += valor;
+          } else {
+            const { total, iva } = fromBaseIva(valor);
+            acc.base += valor;
+            acc.iva += iva;
+            acc.total += total;
+          }
+        } else if (item.ivaInc) {
           const { base, iva } = toBaseIva(valor);
           acc.base += base;
           acc.iva += iva;

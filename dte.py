@@ -1874,6 +1874,7 @@ def generar_dte_json(
         raise ValueError("Teléfono de emisor inválido")
 
     rec = dict(cliente or {})
+    rec.setdefault("correo", rec.get("email"))
     rec_extra = extra.get("receptor") or {}
     for k, v in rec_extra.items():
         if v not in (None, "", []):

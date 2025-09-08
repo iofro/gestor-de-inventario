@@ -3337,7 +3337,10 @@ def generar_nde_desde_dte(
             )
 
     subtotal_ventas = total_grav + total_exenta + total_nosuj
-    iva_val = d2(Decimal(str(total_grav)) * Decimal("0.13"))
+    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (
+        ratio if "ratio" in locals() else Decimal("1")
+    )
+    iva_val = d2(orig_total - subtotal_ventas)
     tributos_resumen = []
     if iva_val > 0:
         tributos_resumen.append(
@@ -3347,7 +3350,7 @@ def generar_nde_desde_dte(
                 "valor": iva_val,
             }
         )
-    monto_total = d2(Decimal(str(subtotal_ventas)) + Decimal(str(iva_val)))
+    monto_total = d2(orig_total)
     resumen = {
         "totalNoSuj": total_nosuj,
         "totalExenta": total_exenta,

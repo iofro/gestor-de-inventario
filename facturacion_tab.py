@@ -18,6 +18,7 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QCheckBox,
     QRadioButton,
+    QSpinBox,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -90,6 +91,145 @@ class SendOptionsDialog(QDialog):
         layout.addWidget(buttons)
 
 
+
+class NotaRemisionDialog(QDialog):
+    """Diálogo simple para construir una Nota de Remisión."""
+
+    def __init__(self, productos, parent=None):
+        super().__init__(parent)
+        self.productos = productos or []
+        self.setWindowTitle("Nota de Remisión")
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+
+        add_layout = QHBoxLayout()
+        self.prod_cb = QComboBox()
+        for p in self.productos:
+            self.prod_cb.addItem(p.get("nombre", ""), p.get("id"))
+        add_layout.addWidget(self.prod_cb)
+        self.qty_spin = QSpinBox()
+        self.qty_spin.setMinimum(1)
+        add_layout.addWidget(self.qty_spin)
+        self.obs_edit = QLineEdit()
+        self.obs_edit.setPlaceholderText("Observación")
+        add_layout.addWidget(self.obs_edit)
+        self.add_btn = QPushButton("Agregar")
+        add_layout.addWidget(self.add_btn)
+        layout.addLayout(add_layout)
+
+        self.table = QTableWidget(0, 3)
+        self.table.setHorizontalHeaderLabels(["Producto", "Cantidad", "Observación"])
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        layout.addWidget(self.table)
+
+        # Campos de extensión obligatorios
+        form_layout = QVBoxLayout()
+        self.nomb_entrega = QLineEdit()
+        self.docu_entrega = QLineEdit()
+        self.nomb_recibe = QLineEdit()
+        self.docu_recibe = QLineEdit()
+        self.ext_obs = QLineEdit()
+        for label, widget in [
+            ("Nombre entrega:", self.nomb_entrega),
+            ("Documento entrega:", self.docu_entrega),
+            ("Nombre recibe:", self.nomb_recibe),
+            ("Documento recibe:", self.docu_recibe),
+            ("Observaciones:", self.ext_obs),
+        ]:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            row.addWidget(widget)
+            form_layout.addLayout(row)
+        layout.addLayout(form_layout)
+
+        # Datos básicos del receptor
+        rec_layout = QHBoxLayout()
+        rec_layout.addWidget(QLabel("Receptor:"))
+        self.receptor_nombre = QLineEdit()
+        rec_layout.addWidget(self.receptor_nombre)
+        rec_layout.addWidget(QLabel("Documento:"))
+        self.receptor_doc = QLineEdit()
+        rec_layout.addWidget(self.receptor_doc)
+        layout.addLayout(rec_layout)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.add_btn.clicked.connect(self._add_item)
+
+    def _add_item(self):
+        idx = self.prod_cb.currentIndex()
+        nombre = self.prod_cb.currentText()
+        pid = self.prod_cb.itemData(idx)
+        qty = self.qty_spin.value()
+        obs = self.obs_edit.text()
+        if qty <= 0:
+            return
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        item = QTableWidgetItem(nombre)
+        item.setData(Qt.UserRole, pid)
+        self.table.setItem(row, 0, item)
+        self.table.setItem(row, 1, QTableWidgetItem(str(qty)))
+        self.table.setItem(row, 2, QTableWidgetItem(obs))
+        self.qty_spin.setValue(1)
+        self.obs_edit.clear()
+
+    def accept(self):
+        if self.table.rowCount() == 0:
+            QMessageBox.warning(self, "Nota", "Agregue al menos un producto")
+            return
+        for w in [
+            self.nomb_entrega,
+            self.docu_entrega,
+            self.nomb_recibe,
+            self.docu_recibe,
+            self.ext_obs,
+            self.receptor_nombre,
+            self.receptor_doc,
+        ]:
+            if not w.text().strip():
+                QMessageBox.warning(
+                    self, "Nota", "Todos los campos de entrega/recepción son obligatorios"
+                )
+                return
+        super().accept()
+
+    def get_data(self):
+        detalles = []
+        for row in range(self.table.rowCount()):
+            prod_item = self.table.item(row, 0)
+            qty_item = self.table.item(row, 1)
+            obs_item = self.table.item(row, 2)
+            desc = prod_item.text()
+            obs = obs_item.text()
+            if obs:
+                desc = f"{desc} - {obs}"
+            detalles.append(
+                {
+                    "codigo": prod_item.data(Qt.UserRole),
+                    "descripcion": desc,
+                    "cantidad": int(qty_item.text()),
+                }
+            )
+        extension = {
+            "nombEntrega": self.nomb_entrega.text(),
+            "docuEntrega": self.docu_entrega.text(),
+            "nombRecibe": self.nomb_recibe.text(),
+            "docuRecibe": self.docu_recibe.text(),
+            "observaciones": self.ext_obs.text(),
+        }
+        receptor = {
+            "nombre": self.receptor_nombre.text(),
+            "tipoDocumento": "13",
+            "numDocumento": self.receptor_doc.text(),
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
+        }
+        return detalles, extension, receptor
 
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
@@ -167,6 +307,8 @@ class FacturacionTab(QWidget):
         # Botón para crear notas asociadas a la factura seleccionada
         self.btn_nota = QPushButton("Nota crédito / débito")
         self.btn_nota.clicked.connect(self.abrir_dialogo_tipo_nota)
+        self.btn_remision = QPushButton("Nota remisión")
+        self.btn_remision.clicked.connect(self.crear_nota_remision)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
@@ -175,6 +317,7 @@ class FacturacionTab(QWidget):
             "background-color: #b71c1c; color: #fff; border-radius: 6px;",
         )
         btns.addWidget(self.btn_nota)
+        btns.addWidget(self.btn_remision)
         btns.addWidget(self.btn_enviar)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
@@ -816,6 +959,56 @@ class FacturacionTab(QWidget):
         if dialog.exec_() == QDialog.Accepted:
             tipo = "credito" if radio_credito.isChecked() else "debito"
             self.create_nota(tipo, factura)
+
+    def crear_nota_remision(self):
+        dialog = NotaRemisionDialog(self.manager._products, self)
+        if dialog.exec_() != QDialog.Accepted:
+            return
+        detalles, extension, receptor = dialog.get_data()
+        fecha = QDate.currentDate().toString("yyyy-MM-dd")
+        extra = {"items": detalles, "receptor": receptor, "extension": extension}
+        nota_id = self.manager.db.agregar_nota(
+            "remision", None, fecha, 0, "Remision", detalles=extra
+        )
+        nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+        resumen_nota = nota_json.get("resumen", {})
+        venta_data = {
+            "sumas": float(resumen_nota.get("subTotalVentas", 0)),
+            "descuentos": float(resumen_nota.get("totalDescu", 0)),
+            "iva": 0.0,
+            "ventas_exentas": float(resumen_nota.get("totalExenta", 0)),
+            "ventas_no_sujetas": float(resumen_nota.get("totalNoSuj", 0)),
+            "subtotal": float(resumen_nota.get("subTotal", 0)),
+            "total": float(resumen_nota.get("montoTotalOperacion", 0)),
+            "total_letras": resumen_nota.get("totalLetras", ""),
+        }
+        detalles_pdf = []
+        for d in nota_json.get("cuerpoDocumento", []) or []:
+            detalles_pdf.append(
+                {
+                    "cantidad": float(d.get("cantidad", 1)),
+                    "descripcion": d.get("descripcion", ""),
+                    "precio_unitario": float(d.get("precioUni", 0)),
+                    "ventas_gravadas": float(d.get("ventaGravada", 0)),
+                    "ventas_exentas": float(d.get("ventaExenta", 0)),
+                    "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
+                }
+            )
+
+        cliente = receptor
+        out_dir = NOTAS_REMISION_DIR
+        os.makedirs(out_dir, exist_ok=True)
+        pdf_path, json_path = get_dte_document_paths(
+            nota_json["identificacion"].get("fecEmi"),
+            cliente.get("nombre") or "",
+            nota_json["identificacion"].get("numeroControl"),
+            "NotaRemision",
+            out_dir,
+        )
+        generar_nota_remision_pdf(
+            venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
+        )
+        save_file(json_path, stable_stringify(nota_json))
 
     def create_nota(self, tipo, factura=None):
         factura = factura or self._selected_factura()

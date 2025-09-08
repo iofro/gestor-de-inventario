@@ -32,6 +32,7 @@ from utils.sanitize import limpiar_documentos
 
 Decimal_0 = Decimal("0")
 Decimal_1 = Decimal("1")
+Q4 = Decimal("0.0001")
 IVA = Decimal("0.13")
 
 
@@ -165,17 +166,29 @@ def generar_nce_desde_dte(
         total_exenta = Decimal_0
         total_nosuj = Decimal_0
         num = 1
+        ratio_val = ratio or Decimal_1
+        orig_items = dte_origen.get("cuerpoDocumento", [])
         for det in detalles:
-            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
-            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0))
-            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0))
+            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0)).quantize(Q4)
+            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0)).quantize(Q4)
+            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0)).quantize(Q4)
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
-                # Use Decimal for internal calculations; presentation can cast to float
-                precio = grav + exenta + nosuj
+                orig = None
+                codigo = det.get("codigo")
+                numitem = det.get("numItem")
+                if codigo:
+                    orig = next((it for it in orig_items if it.get("codigo") == codigo), None)
+                elif numitem:
+                    orig = next((it for it in orig_items if it.get("numItem") == numitem), None)
+                if orig and orig.get("precioUni") is not None:
+                    precio = Decimal(str(orig.get("precioUni"))) * ratio_val
+                else:
+                    precio = grav + exenta + nosuj
+            precio = Decimal(str(precio)).quantize(Q4)
             cantidad = det.get("cantidad", 1)
             items.append(
                 {
@@ -190,26 +203,23 @@ def generar_nce_desde_dte(
                     "uniMedida": det.get("uniMedida", 59),
                     "precioUni": precio,
                     "montoDescu": det.get("montoDescu", 0.0),
-                    "ventaGravada": d2(grav),
-                    "ventaExenta": d2(exenta),
-                    "ventaNoSuj": d2(nosuj),
+                    "ventaGravada": grav,
+                    "ventaExenta": exenta,
+                    "ventaNoSuj": nosuj,
                     "tributos": [TRIBUTO_IVA] if grav > 0 else [],
                     "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
             num += 1
-        total_grav = d2(total_grav)
-        total_exenta = d2(total_exenta)
-        total_nosuj = d2(total_nosuj)
+        total_grav = total_grav.quantize(Q4)
+        total_exenta = total_exenta.quantize(Q4)
+        total_nosuj = total_nosuj.quantize(Q4)
     else:
-        total_grav = Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio
-        total_exenta = Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio
-        total_nosuj = Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio
-
-        total_grav = d2(total_grav)
-        total_exenta = d2(total_exenta)
-        total_nosuj = d2(total_nosuj)
+        ratio_val = ratio or Decimal_1
+        total_grav = (Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio_val).quantize(Q4)
+        total_exenta = (Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio_val).quantize(Q4)
+        total_nosuj = (Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio_val).quantize(Q4)
 
         num = 1
         pct_text = _pct_label(ratio)
@@ -273,9 +283,9 @@ def generar_nce_desde_dte(
                 }
             )
 
-    subtotal_ventas = total_grav + total_exenta + total_nosuj
-    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (ratio or Decimal("1"))
-    iva_val = d2(orig_total - Decimal(str(subtotal_ventas)))
+    subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (ratio or Decimal_1)
+    iva_val = d2(orig_total - subtotal_ventas)
     tributos_resumen = []
     if iva_val > 0:
         tributos_resumen.append(
@@ -287,11 +297,11 @@ def generar_nce_desde_dte(
         )
     monto_total_operacion = d2(orig_total)
     resumen = {
-        "totalNoSuj": total_nosuj,
-        "totalExenta": total_exenta,
-        "totalGravada": total_grav,
-        "subTotal": subtotal_ventas,
-        "subTotalVentas": subtotal_ventas,
+        "totalNoSuj": d2(total_nosuj),
+        "totalExenta": d2(total_exenta),
+        "totalGravada": d2(total_grav),
+        "subTotal": d2(subtotal_ventas),
+        "subTotalVentas": d2(subtotal_ventas),
         "descuNoSuj": 0.0,
         "descuExenta": 0.0,
         "descuGravada": 0.0,

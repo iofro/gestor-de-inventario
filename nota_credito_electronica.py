@@ -312,7 +312,7 @@ def generar_nce_desde_dte(
         "condicionOperacion": orig_resumen.get("condicionOperacion", 1),
         "tributos": tributos_resumen,
         "montoTotalOperacion": monto_total_operacion,
-    "totalLetras": monto_a_texto_sv(float(monto_total_operacion)),
+    "totalLetras": monto_a_texto_sv(monto_total_operacion),
     }
 
     data = {

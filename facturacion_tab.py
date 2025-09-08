@@ -667,19 +667,20 @@ class FacturacionTab(QWidget):
             if not venta or not ruta or not os.path.exists(ruta):
                 to_delete.append((rec["id"],))
                 continue
-            fecha = venta["fecha"] or ""
+            fecha_creacion = rec["fecha_creacion"] or ""
             fdate = None
-            if fecha:
+            if fecha_creacion:
                 try:
-                    fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                    fdate = datetime.strptime(fecha_creacion, "%Y-%m-%d %H:%M:%S")
                 except Exception:
                     fdate = None
+            fecha_str = fdate.strftime("%Y-%m-%d %H:%M") if fdate else fecha_creacion
             rows.append(
                 {
                     "row_type": "venta",
                     "id": venta["id"],
                     "name": os.path.splitext(os.path.basename(ruta))[0],
-                    "fecha": fecha,
+                    "fecha": fecha_str,
                     "_parsed_fecha": fdate,
                     "cliente": venta["cliente"] or "",
                     "total": venta["total"],
@@ -711,10 +712,10 @@ class FacturacionTab(QWidget):
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
-                if d_from and fdate and fdate < d_from:
+                if d_from and fdate and fdate.date() < d_from:
                     rows.remove(r)
                     continue
-                if d_to and fdate and fdate > d_to:
+                if d_to and fdate and fdate.date() > d_to:
                     rows.remove(r)
                     continue
             if tipo != "Todos" and r.get("tipo") != tipo:
@@ -727,7 +728,7 @@ class FacturacionTab(QWidget):
         rows.sort(
             key=lambda r: (
                 r.get("_parsed_fecha") is None,
-                -(r.get("_parsed_fecha").toordinal() if r.get("_parsed_fecha") else 0),
+                -(r.get("_parsed_fecha").timestamp() if r.get("_parsed_fecha") else 0),
             )
         )
 
@@ -805,7 +806,7 @@ class FacturacionTab(QWidget):
                     total = data.get("resumen", {}).get("totalPagar")
                     if fecha:
                         try:
-                            fdate = datetime.strptime(fecha, "%Y-%m-%d").date()
+                            fdate = datetime.strptime(fecha, "%Y-%m-%d")
                         except Exception:
                             fdate = None
                 except Exception:

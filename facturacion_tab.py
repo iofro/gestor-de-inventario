@@ -1313,14 +1313,11 @@ class FacturacionTab(QWidget):
             )
         cliente = nota_json.get("receptor", {}) or {}
         extension = nota_json.get("extension", {}) or {}
-        out_dir = NOTAS_REMISION_DIR
-        os.makedirs(out_dir, exist_ok=True)
         pdf_path, json_path = get_dte_document_paths(
             nota_json["identificacion"].get("fecEmi"),
             cliente.get("nombre") or cliente.get("nombreComercial") or "",
             nota_json["identificacion"].get("numeroControl"),
             "NotaRemision",
-            out_dir,
         )
         generar_nota_remision_pdf(
             venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
@@ -1546,7 +1543,7 @@ class FacturacionTab(QWidget):
             detalles_pdf,
             cliente or {},
             distribuidor or {},
-            archivo=pdf_path,
+            archivo=str(pdf_path),
         )
 
         # Guardar JSON sin firmar para permitir vista previa

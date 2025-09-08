@@ -3500,29 +3500,29 @@ def generar_nota_remision_json(
 
     emisor = copy.deepcopy(factura.get("emisor") or {})
     receptor = copy.deepcopy(factura.get("receptor") or {})
+    receptor.setdefault("bienTitulo", "01")
     limpiar_documentos(receptor)
 
+    numero_doc = documento_relacionado[0]["numeroDocumento"]
     items: list[dict] = []
     for num, det in enumerate(factura.get("cuerpoDocumento", []), 1):
         cantidad = cantidades.get(num, det.get("cantidad", 1))
-        items.append(
-            {
-                "numItem": num,
-                "tipoItem": det.get("tipoItem", 1),
-                "codigo": det.get("codigo", f"NR{num:03d}"),
-                "descripcion": det.get("descripcion", f"Item {num}"),
-                "cantidad": cantidad,
-                "uniMedida": det.get("uniMedida", 59),
-                "precioUni": 0.0,
-                "montoDescu": 0.0,
-                "ventaNoSuj": d2(D(0)),
-                "ventaExenta": d2(D(0)),
-                "ventaGravada": d2(D(0)),
-                "tributos": [],
-                "numeroDocumento": None,
-                "codTributo": None,
-            }
-        )
+        item = {
+            "numItem": num,
+            "tipoItem": det.get("tipoItem", 1),
+            "codigo": det.get("codigo", f"NR{num:03d}"),
+            "descripcion": det.get("descripcion", f"Item {num}"),
+            "cantidad": cantidad,
+            "uniMedida": det.get("uniMedida", 59),
+            "precioUni": 0.0,
+            "montoDescu": 0.0,
+            "ventaNoSuj": d2(D(0)),
+            "ventaExenta": d2(D(0)),
+            "ventaGravada": d2(D(0)),
+            "tributos": None,
+            "numeroDocumento": numero_doc,
+        }
+        items.append(item)
 
     ext = {
         "nombEntrega": "N/D",
@@ -3541,16 +3541,11 @@ def generar_nota_remision_json(
         "totalGravada": d2(D(0)),
         "subTotal": d2(D(0)),
         "subTotalVentas": d2(D(0)),
-        "descuNoSuj": 0.0,
-        "descuExenta": 0.0,
-        "descuGravada": 0.0,
-        "totalDescu": 0.0,
-        "ivaPerci1": 0.0,
-        "ivaRete1": 0.0,
-        "reteRenta": 0.0,
+        "porcentajeDescuento": d2(D(0)),
+        "totalDescu": d2(D(0)),
+        "tributos": None,
         "montoTotalOperacion": d2(D(0)),
         "totalLetras": monto_a_texto_sv(0.0),
-        "condicionOperacion": 1,
     }
 
     data = {

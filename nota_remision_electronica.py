@@ -26,11 +26,13 @@ from utils.sanitize import limpiar_documentos
 Decimal_0 = Decimal("0")
 
 
-def _build_items(detalles: Iterable[dict]) -> list[dict]:
+def _build_items(
+    detalles: Iterable[dict], numero_documento: Optional[str] = None
+) -> list[dict]:
     """Construye los ítems de la NR forzando todos los montos a ``0.00``.
 
     Además valida que ``cantidad`` sea mayor que cero y que ``uniMedida`` esté
-    presente.
+    presente.  Si ``numero_documento`` se proporciona se agrega a cada ítem.
     """
 
     items: list[dict] = []
@@ -40,24 +42,23 @@ def _build_items(detalles: Iterable[dict]) -> list[dict]:
             raise ValueError("cantidad debe ser mayor que cero")
         if det.get("uniMedida") is None:
             raise ValueError("uniMedida requerido en el item")
-        items.append(
-            {
-                "numItem": num,
-                "tipoItem": det.get("tipoItem", 1),
-                "codigo": det.get("codigo", f"NR{num:03d}"),
-                "descripcion": det.get("descripcion", f"Item {num}"),
-                "cantidad": cantidad,
-                "uniMedida": det.get("uniMedida"),
-                "precioUni": 0.0,
-                "montoDescu": 0.0,
-                "ventaNoSuj": d2(Decimal_0),
-                "ventaExenta": d2(Decimal_0),
-                "ventaGravada": d2(Decimal_0),
-                "tributos": [],
-                "numeroDocumento": None,
-                "codTributo": None,
-            }
-        )
+        item = {
+            "numItem": num,
+            "tipoItem": det.get("tipoItem", 1),
+            "codigo": det.get("codigo", f"NR{num:03d}"),
+            "descripcion": det.get("descripcion", f"Item {num}"),
+            "cantidad": cantidad,
+            "uniMedida": det.get("uniMedida"),
+            "precioUni": 0.0,
+            "montoDescu": 0.0,
+            "ventaNoSuj": d2(Decimal_0),
+            "ventaExenta": d2(Decimal_0),
+            "ventaGravada": d2(Decimal_0),
+            "tributos": None,
+        }
+        if numero_documento:
+            item["numeroDocumento"] = numero_documento
+        items.append(item)
     return items
 
 
@@ -68,12 +69,15 @@ def _generar_base(
     receptor: dict,
     detalles: Iterable[dict],
     extension: Optional[dict] = None,
-    documento_relacionado: Optional[dict] = None,
+    documento_relacionado: Optional[list[dict]] = None,
     ambiente: str = "00",
 ) -> dict:
     """Construye la estructura base común de una NR."""
 
     limpiar_documentos(emisor)
+    receptor.setdefault("bienTitulo", "01")
+    if not receptor.get("tipoDocumento") or not receptor.get("numDocumento"):
+        raise ValueError("receptor requiere tipoDocumento y numDocumento")
     limpiar_documentos(receptor)
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
@@ -93,7 +97,10 @@ def _generar_base(
         "tipoMoneda": "USD",
     }
 
-    items = _build_items(detalles)
+    numero_doc = None
+    if documento_relacionado:
+        numero_doc = documento_relacionado[0].get("numeroDocumento")
+    items = _build_items(detalles, numero_doc)
 
     ext = {
         "nombEntrega": "N/D",
@@ -112,21 +119,15 @@ def _generar_base(
         "totalGravada": d2(Decimal_0),
         "subTotal": d2(Decimal_0),
         "subTotalVentas": d2(Decimal_0),
-        "descuNoSuj": 0.0,
-        "descuExenta": 0.0,
-        "descuGravada": 0.0,
-        "totalDescu": 0.0,
-        "ivaPerci1": 0.0,
-        "ivaRete1": 0.0,
-        "reteRenta": 0.0,
+        "porcentajeDescuento": d2(Decimal_0),
+        "totalDescu": d2(Decimal_0),
+        "tributos": None,
         "montoTotalOperacion": d2(Decimal_0),
         "totalLetras": monto_a_texto_sv(0.0),
-        "condicionOperacion": 1,
     }
 
     data = {
         "identificacion": identificacion,
-        "documentoRelacionado": documento_relacionado,
         "emisor": emisor,
         "receptor": receptor,
         "cuerpoDocumento": items,
@@ -134,9 +135,14 @@ def _generar_base(
         "resumen": resumen,
         "apendice": None,
     }
+    if documento_relacionado:
+        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
-    return sanitize_dte_payload(data, schema)
+    result = sanitize_dte_payload(data, schema)
+    if not documento_relacionado:
+        result.pop("documentoRelacionado", None)
+    return result
 
 
 def generar_nota_remision_desde_factura(
@@ -151,12 +157,17 @@ def generar_nota_remision_desde_factura(
 
     emisor = factura.get("emisor", {})
     receptor = factura.get("receptor", {})
+    receptor.setdefault("bienTitulo", "01")
     detalles = detalles or factura.get("cuerpoDocumento", [])
     ident = factura.get("identificacion", {})
-    doc_rel = {
-        "tipoDoc": ident.get("tipoDte"),
-        "numeroDocumento": ident.get("numeroControl"),
-    }
+    doc_rel = [
+        {
+            "tipoDocumento": ident.get("tipoDte"),
+            "tipoGeneracion": 2,
+            "numeroDocumento": ident.get("codigoGeneracion"),
+            "fechaEmision": ident.get("fecEmi"),
+        }
+    ]
     return _generar_base(
         db,
         emisor=emisor,

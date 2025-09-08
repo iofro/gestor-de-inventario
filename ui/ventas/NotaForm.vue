@@ -86,12 +86,23 @@
         </div>
       </div>
       <div class="resumen">
-        <div>Base gravada: {{ format(preview.base) }}</div>
-        <div>Exenta: {{ format(preview.exenta) }}</div>
-        <div>No sujeta: {{ format(preview.noSujeta) }}</div>
-        <div>IVA: {{ format(preview.iva) }}</div>
-        <div>Total: {{ format(total) }}</div>
-        <div>Total en letras: {{ totalLetras }}</div>
+        <div class="factura-resumen">
+          <h3>Factura original</h3>
+          <div>Base gravada: {{ format(facturaResumen.base) }}</div>
+          <div>Exenta: {{ format(facturaResumen.exenta) }}</div>
+          <div>No sujeta: {{ format(facturaResumen.noSujeta) }}</div>
+          <div>IVA: {{ format(facturaResumen.iva) }}</div>
+          <div>Total: {{ format(facturaResumen.total) }}</div>
+        </div>
+        <div class="nota-resumen">
+          <h3>Nota</h3>
+          <div>Base gravada: {{ format(preview.base) }}</div>
+          <div>Exenta: {{ format(preview.exenta) }}</div>
+          <div>No sujeta: {{ format(preview.noSujeta) }}</div>
+          <div>IVA: {{ format(preview.iva) }}</div>
+          <div>Total: {{ format(total) }}</div>
+          <div>Total en letras: {{ totalLetras }}</div>
+        </div>
         <div>Documento relacionado: {{ factura.numero }}</div>
         <span v-if="excedeSaldo" class="badge rojo">Crédito excede saldo</span>
         <div class="acciones">
@@ -252,6 +263,14 @@ const totalCredito = computed(() => {
 const excedeSaldo = computed(
   () => totalCredito.value > (saldoDisponible.value)
 );
+
+const facturaResumen = computed(() => ({
+  base: props.factura.ventas_gravadas ?? 0,
+  exenta: props.factura.ventas_exentas ?? 0,
+  noSujeta: props.factura.ventas_no_sujetas ?? 0,
+  iva: props.factura.iva ?? 0,
+  total: props.factura.total ?? 0,
+}));
 
 function validar() {
   return total.value > 0 && !excedeSaldo.value;

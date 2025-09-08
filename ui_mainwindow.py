@@ -1353,12 +1353,12 @@ class MainWindow(QMainWindow):
                     data["nit"],
                     data["dui"],
                     data["giro"],
-                    data["codActividad"],
                     data["telefono"],
                     data["email"],
                     data["direccion"],
                     data["departamento"],
                     data["municipio"],
+                    codActividad=data["codActividad"],
                 )
             except ValueError as e:
                 QMessageBox.warning(dialog, "Cliente", str(e))

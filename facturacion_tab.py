@@ -798,7 +798,7 @@ class FacturacionTab(QWidget):
         for row, v in enumerate(rows):
             codigo = v.get("codigo", "")
             tipo = v.get("tipo", "")
-            text_id = f"{codigo} {tipo}".strip() if (codigo or tipo) else v.get("name", "")
+            text_id = f"{codigo} {tipo}".strip() if codigo else v.get("name", "")
             self.table.setItem(row, 0, QTableWidgetItem(text_id))
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
@@ -874,6 +874,7 @@ class FacturacionTab(QWidget):
                     numero = ident.get("numeroControl", numero)
                     codigo = ident.get("tipoDte")
                     fecha = ident.get("fecEmi", "")
+                    hora = ident.get("horEmi", "")
                     cliente = data.get("receptor", {}).get("nombre", "")
 
                     resumen = data.get("resumen", {})
@@ -889,7 +890,14 @@ class FacturacionTab(QWidget):
 
                     if fecha:
                         try:
-                            fdate = datetime.strptime(fecha, "%Y-%m-%d")
+                            if hora:
+                                fdate = datetime.strptime(
+                                    f"{fecha} {hora}", "%Y-%m-%d %H:%M:%S"
+                                )
+                                fecha = fdate.strftime("%Y-%m-%d %H:%M")
+                            else:
+                                fdate = datetime.strptime(fecha, "%Y-%m-%d")
+                                fecha = fdate.strftime("%Y-%m-%d")
                         except Exception:
                             fdate = None
                 except Exception:

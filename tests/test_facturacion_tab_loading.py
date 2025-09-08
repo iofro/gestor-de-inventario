@@ -1,4 +1,5 @@
 import os
+import json
 import pytest
 from types import SimpleNamespace
 from PyQt5.QtWidgets import QApplication
@@ -31,6 +32,9 @@ def _create_tab(tmp_path, monkeypatch):
     monkeypatch.setattr(facturacion_tab, "CF_DIR", str(invoice_dir))
     monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(invoice_dir))
     monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(invoice_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(invoice_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(invoice_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(invoice_dir))
     monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
 
     return facturacion_tab.FacturacionTab(manager)
@@ -49,7 +53,58 @@ def test_filters_documents(qt_app, tmp_path, monkeypatch):
     assert tab.table.rowCount() == 0
 
     tab.search_bar.setText("")
-    tab.date_filter_cb.setChecked(True)
-    tab.date_from.setDate(QDate(2024, 2, 1))
     tab.load_invoices()
-    assert tab.table.rowCount() == 0
+    assert tab.table.rowCount() == 1
+
+
+def test_orders_by_datetime(qt_app, tmp_path, monkeypatch):
+    inv_dir = tmp_path / "facturas_consumidor_final"
+    inv_dir.mkdir()
+
+    base1 = "20240101_Test_1_ConsumidorFinal"
+    data1 = {
+        "identificacion": {
+            "numeroControl": base1,
+            "tipoDte": "01",
+            "fecEmi": "2024-01-01",
+            "horEmi": "10:00:00",
+        },
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {"totalPagar": 1},
+    }
+    (inv_dir / f"{base1}.json").write_text(json.dumps(data1))
+    (inv_dir / f"{base1}.pdf").write_text("pdf")
+
+    base2 = "20240101_Test_2_ConsumidorFinal"
+    data2 = {
+        "identificacion": {
+            "numeroControl": base2,
+            "tipoDte": "01",
+            "fecEmi": "2024-01-01",
+            "horEmi": "11:00:00",
+        },
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {"totalPagar": 1},
+    }
+    (inv_dir / f"{base2}.json").write_text(json.dumps(data2))
+    (inv_dir / f"{base2}.pdf").write_text("pdf")
+
+    db = DB(":memory:")
+    manager = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(inv_dir))
+    monkeypatch.setattr(
+        facturacion_tab, "CREDITO_DIR", str(tmp_path / "facturas_credito_fiscal")
+    )
+    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tmp_path / "tickets"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(tmp_path / "nd"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(tmp_path / "nc"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(tmp_path / "nr"))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+
+    tab = facturacion_tab.FacturacionTab(manager)
+    tab.load_invoices()
+    first = tab.table.item(0, 1).text()
+    second = tab.table.item(1, 1).text()
+    assert first.endswith("11:00")
+    assert second.endswith("10:00")

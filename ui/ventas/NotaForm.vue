@@ -70,13 +70,13 @@
           </table>
         </div>
         <div v-else>
-          <!-- Detalle por producto -->
+          <EditableNotaTable v-model="items" :topeCredito="saldoDisponible" />
         </div>
       </div>
       <div class="resumen">
         <div>Base gravada: {{ format(preview.base) }}</div>
-        <div>Exenta: {{ format(0) }}</div>
-        <div>No sujeta: {{ format(0) }}</div>
+        <div>Exenta: {{ format(preview.exenta) }}</div>
+        <div>No sujeta: {{ format(preview.noSujeta) }}</div>
         <div>IVA: {{ format(preview.iva) }}</div>
         <div>Total: {{ format(total) }}</div>
         <div>Total en letras: {{ totalLetras }}</div>
@@ -97,6 +97,7 @@
 import { ref, computed } from 'vue';
 import { previsualizarPdf, previsualizarJson, guardarBorrador, firmarTransmitir } from '../services/notasApi';
 import { toBaseIva } from '../services/useIvaConversion';
+import EditableNotaTable from '../components/EditableNotaTable.vue';
 
 const props = defineProps<{
   factura: { numero: string; cliente: string; total?: number };
@@ -111,21 +112,86 @@ const modoGlobal = ref<'porcentaje' | 'monto'>('porcentaje');
 const porcentaje = ref(0);
 const monto = ref(0);
 
+interface NotaItem {
+  id: number;
+  selected: boolean;
+  codigo: string;
+  descripcion: string;
+  cantidadFacturada: number;
+  cantidadAjustar: number;
+  tipo: 'debito' | 'credito';
+  modo: 'monto' | 'porcentaje';
+  valor: number;
+  ivaInc: boolean;
+  afectacion: 'gravada' | 'exenta' | 'no_sujeta';
+  previas?: number;
+}
+
+const items = ref<NotaItem[]>([]);
+
+const saldoDisponible = computed(() => props.factura.total ?? 0);
+
 const globalMonto = computed(() => {
   return modoGlobal.value === 'porcentaje'
     ? (props.factura.total ?? 0) * (porcentaje.value || 0) / 100
     : monto.value || 0;
 });
 
-const preview = computed(() => {
-  const total = globalMonto.value;
-  if (ivaIncluido.value) {
-    return toBaseIva(total);
+function resolveValor(item: NotaItem) {
+  if (item.modo === 'porcentaje') {
+    return (item.cantidadFacturada * item.valor) / 100;
   }
-  return { base: total, iva: total * 0.13 };
+  return item.valor;
+}
+
+const itemsPreview = computed(() => {
+  return items.value.reduce(
+    (acc, item) => {
+      const valor = resolveValor(item);
+      if (item.afectacion === 'gravada') {
+        if (item.ivaInc) {
+          const { base, iva } = toBaseIva(valor);
+          acc.base += base;
+          acc.iva += iva;
+          acc.total += valor;
+        } else {
+          acc.base += valor;
+          const iva = valor * 0.13;
+          acc.iva += iva;
+          acc.total += valor + iva;
+        }
+      } else if (item.afectacion === 'exenta') {
+        acc.exenta += valor;
+        acc.total += valor;
+      } else {
+        acc.noSujeta += valor;
+        acc.total += valor;
+      }
+      return acc;
+    },
+    { base: 0, exenta: 0, noSujeta: 0, iva: 0, total: 0 }
+  );
 });
 
-const total = computed(() => preview.value.base + preview.value.iva);
+const preview = computed(() => {
+  if (activeTab.value === 'global') {
+    const total = globalMonto.value;
+    if (ivaIncluido.value) {
+      const { base, iva } = toBaseIva(total);
+      return { base, exenta: 0, noSujeta: 0, iva };
+    }
+    return { base: total, exenta: 0, noSujeta: 0, iva: total * 0.13 };
+  }
+  return itemsPreview.value;
+});
+
+const total = computed(
+  () =>
+    preview.value.base +
+    preview.value.exenta +
+    preview.value.noSujeta +
+    preview.value.iva
+);
 
 const totalLetras = computed(() => numeroALetras(total.value));
 

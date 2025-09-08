@@ -4064,6 +4064,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     res = {"estado": estado, "sello": sello}
     if detalle:
         res["detalle"] = detalle
+    if respuesta.get("errores"):
+        res["errores"] = respuesta["errores"]
     return res
 
 
@@ -4204,6 +4206,8 @@ def _enviar_documento(
     res = {"estado": estado, "sello": sello}
     if detalle:
         res["detalle"] = detalle
+    if respuesta.get("errores"):
+        res["errores"] = respuesta["errores"]
     return res
 
 

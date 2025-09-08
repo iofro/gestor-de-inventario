@@ -3242,6 +3242,7 @@ def generar_nde_desde_dte(
         total_grav = Decimal("0")
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
+        iva_val = Decimal("0")
         num = 1
         for det in detalles:
             grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
@@ -3250,6 +3251,9 @@ def generar_nde_desde_dte(
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
+            iva_val += (grav * Decimal("0.13")).quantize(
+                Decimal("0.01"), rounding=ROUND_HALF_UP
+            )
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
                 precio = grav + exenta + nosuj
@@ -3280,6 +3284,9 @@ def generar_nde_desde_dte(
         total_grav = d2(total_grav)
         total_exenta = d2(total_exenta)
         total_nosuj = d2(total_nosuj)
+        iva_val = d2(iva_val)
+        subtotal_ventas = total_grav + total_exenta + total_nosuj
+        monto_total = d2(subtotal_ventas + iva_val)
     else:
         if monto is None:
             raise ValueError("Se requiere monto para nota de débito")
@@ -3357,13 +3364,14 @@ def generar_nde_desde_dte(
                     "codTributo": None,
                 }
             )
+        subtotal_ventas = total_grav + total_exenta + total_nosuj
+        orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (
+            ratio if "ratio" in locals() else Decimal("1")
+        )
+        iva_val = d2(orig_total - subtotal_ventas)
+        monto_total = d2(orig_total)
 
-    subtotal_ventas = total_grav + total_exenta + total_nosuj
-    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (
-        ratio if "ratio" in locals() else Decimal("1")
-    )
-    iva_val = d2(orig_total - subtotal_ventas)
-    tributos_resumen = []
+    tributos_resumen: list[dict] = []
     if iva_val > 0:
         tributos_resumen.append(
             {
@@ -3372,7 +3380,6 @@ def generar_nde_desde_dte(
                 "valor": iva_val,
             }
         )
-    monto_total = d2(orig_total)
     resumen = {
         "totalNoSuj": total_nosuj,
         "totalExenta": total_exenta,

@@ -98,6 +98,8 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     monto_nc = Decimal(str(nota.get("monto", 0)))
     if total_origen <= Decimal_0:
         raise ValueError("El documento de origen no tiene total válido")
+    if monto_nc > total_origen:
+        raise ValueError("Monto excede total del documento de origen")
     ratio = (monto_nc / total_origen).quantize(Decimal("0.0001"))
 
     return generar_nce_desde_dte(
@@ -176,14 +178,20 @@ def generar_nce_desde_dte(
             total_exenta += exenta
             total_nosuj += nosuj
             precio = det.get("precio_unitario") or det.get("precioUni")
+            codigo = det.get("codigo")
+            numitem = det.get("numItem")
+            orig = None
+            if codigo:
+                orig = next((it for it in orig_items if it.get("codigo") == codigo), None)
+            elif numitem:
+                orig = next((it for it in orig_items if it.get("numItem") == numitem), None)
+            if orig:
+                grav_orig = Decimal(str(orig.get("ventaGravada") or 0)).quantize(Q4)
+                exenta_orig = Decimal(str(orig.get("ventaExenta") or 0)).quantize(Q4)
+                nosuj_orig = Decimal(str(orig.get("ventaNoSuj") or 0)).quantize(Q4)
+                if grav > grav_orig or exenta > exenta_orig or nosuj > nosuj_orig:
+                    raise ValueError("Detalle excede montos de línea original")
             if precio is None:
-                orig = None
-                codigo = det.get("codigo")
-                numitem = det.get("numItem")
-                if codigo:
-                    orig = next((it for it in orig_items if it.get("codigo") == codigo), None)
-                elif numitem:
-                    orig = next((it for it in orig_items if it.get("numItem") == numitem), None)
                 if orig and orig.get("precioUni") is not None:
                     precio = Decimal(str(orig.get("precioUni"))) * ratio_val
                 else:
@@ -215,6 +223,9 @@ def generar_nce_desde_dte(
         total_grav = total_grav.quantize(Q4)
         total_exenta = total_exenta.quantize(Q4)
         total_nosuj = total_nosuj.quantize(Q4)
+        orig_total = Decimal(str(dte_origen.get("resumen", {}).get("montoTotalOperacion", 0)))
+        if total_grav + total_exenta + total_nosuj > orig_total:
+            raise ValueError("Monto de la nota excede total del documento de origen")
     else:
         ratio_val = ratio or Decimal_1
         total_grav = (Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio_val).quantize(Q4)

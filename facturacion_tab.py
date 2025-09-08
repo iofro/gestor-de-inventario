@@ -30,12 +30,12 @@ from factura_sv import (
     generar_nota_remision_pdf,
 )
 from dte import (
-    generar_nota_remision_json,
     transmitir_dte,
     enviar_nota_credito,
     enviar_nota_debito,
     generar_nde_desde_dte,
 )
+from nota_remision import generar_nota_remision_desde_db
 import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
@@ -935,7 +935,7 @@ class FacturacionTab(QWidget):
                 self.manager.db, data, detalles_pdf or None, monto, motivo
             )
         else:
-            nota_json = generar_nota_remision_json(self.manager.db, nota_id)
+            nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
 
         resumen_nota = nota_json.get("resumen", {})
         tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}

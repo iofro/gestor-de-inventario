@@ -13,7 +13,12 @@ def _sample_emisor():
 
 
 def _sample_receptor():
-    return {"tipoDocumento": "36", "numDocumento": "1234 567-8", "nombre": "Cliente"}
+    return {
+        "tipoDocumento": "36",
+        "numDocumento": "1234 567-8",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+    }
 
 
 def test_nr_desde_factura_documento_relacionado(monkeypatch):
@@ -22,7 +27,8 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     factura = {
         "identificacion": {
             "tipoDte": "03",
-            "numeroControl": "DTE-03-XYZ-000000000000001",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01",
         },
         "emisor": _sample_emisor(),
         "receptor": _sample_receptor(),
@@ -31,10 +37,11 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
         ],
     }
     data = generar_nota_remision_desde_factura(db, factura)
-    doc_rel = data["documentoRelacionado"]
-    assert doc_rel["tipoDoc"] == "03"
-    assert doc_rel["numeroDocumento"] == "DTE-03-XYZ-000000000000001"
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
     item = data["cuerpoDocumento"][0]
+    assert item["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
     assert float(item["precioUni"]) == 0.0
     assert float(item["ventaNoSuj"]) == 0.0
     assert float(item["ventaExenta"]) == 0.0
@@ -49,7 +56,8 @@ def test_nr_desde_factura_extension(monkeypatch):
     factura = {
         "identificacion": {
             "tipoDte": "03",
-            "numeroControl": "DTE-03-XYZ-000000000000001",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01",
         },
         "emisor": _sample_emisor(),
         "receptor": _sample_receptor(),
@@ -88,7 +96,7 @@ def test_nr_independiente_extension(monkeypatch):
         detalles=detalles,
         extension=extension,
     )
-    assert data["documentoRelacionado"] is None
+    assert "documentoRelacionado" not in data
     ext = data["extension"]
     assert ext["nombEntrega"] == "Juan"
     assert ext["nombRecibe"] == "Ana"

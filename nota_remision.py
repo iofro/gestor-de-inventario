@@ -32,28 +32,32 @@ from utils.sanitize import limpiar_documentos
 Decimal_0 = Decimal("0")
 
 
-def _build_items(detalles: Iterable[dict]) -> list[dict]:
-    """Construye items con montos forzados a ``0.00``."""
+def _build_items(
+    detalles: Iterable[dict], numero_documento: Optional[str] = None
+) -> list[dict]:
+    """Construye items con montos forzados a ``0.00``.
+
+    Si ``numero_documento`` se proporciona se añade a cada ítem.
+    """
     items: list[dict] = []
     for num, det in enumerate(detalles, 1):
-        items.append(
-            {
-                "numItem": num,
-                "tipoItem": det.get("tipoItem", 1),
-                "codigo": det.get("codigo", f"NR{num:03d}"),
-                "descripcion": det.get("descripcion", f"Item {num}"),
-                "cantidad": det.get("cantidad", 1),
-                "uniMedida": det.get("uniMedida", 59),
-                "precioUni": 0.0,
-                "montoDescu": 0.0,
-                "ventaNoSuj": d2(Decimal_0),
-                "ventaExenta": d2(Decimal_0),
-                "ventaGravada": d2(Decimal_0),
-                "tributos": [],
-                "numeroDocumento": None,
-                "codTributo": None,
-            }
-        )
+        item = {
+            "numItem": num,
+            "tipoItem": det.get("tipoItem", 1),
+            "codigo": det.get("codigo", f"NR{num:03d}"),
+            "descripcion": det.get("descripcion", f"Item {num}"),
+            "cantidad": det.get("cantidad", 1),
+            "uniMedida": det.get("uniMedida", 59),
+            "precioUni": 0.0,
+            "montoDescu": 0.0,
+            "ventaNoSuj": d2(Decimal_0),
+            "ventaExenta": d2(Decimal_0),
+            "ventaGravada": d2(Decimal_0),
+            "tributos": None,
+        }
+        if numero_documento:
+            item["numeroDocumento"] = numero_documento
+        items.append(item)
     return items
 
 
@@ -62,7 +66,7 @@ def generar_nota_remision(
     factura: Optional[dict] = None,
     *,
     detalles: Optional[Iterable[dict]] = None,
-    documento_relacionado: Optional[dict] = None,
+    documento_relacionado: Optional[list[dict]] = None,
     emisor: Optional[dict] = None,
     receptor: Optional[dict] = None,
     extension: Optional[dict] = None,
@@ -71,14 +75,18 @@ def generar_nota_remision(
     """Genera la estructura JSON de una Nota de Remisión."""
     if factura:
         emisor = factura.get("emisor")
-        receptor = factura.get("receptor")
+        receptor = factura.get("receptor") or {}
         detalles = detalles or factura.get("cuerpoDocumento", [])
         if documento_relacionado is None:
             ident = factura.get("identificacion", {})
-            documento_relacionado = {
-                "tipoDoc": ident.get("tipoDte"),
-                "numeroDocumento": ident.get("numeroControl"),
-            }
+            documento_relacionado = [
+                {
+                    "tipoDocumento": ident.get("tipoDte"),
+                    "tipoGeneracion": 2,
+                    "numeroDocumento": ident.get("codigoGeneracion"),
+                    "fechaEmision": ident.get("fecEmi"),
+                }
+            ]
         # Para notas derivadas de factura la extensión puede omitirse
         ext = {
             "nombEntrega": "N/D",
@@ -89,6 +97,10 @@ def generar_nota_remision(
         }
         if extension:
             ext.update({k: v for k, v in extension.items() if v not in (None, "")})
+            receptor.setdefault("nombre", extension.get("nombRecibe"))
+            receptor.setdefault("tipoDocumento", "13")
+            receptor.setdefault("numDocumento", extension.get("docuRecibe"))
+        receptor.setdefault("bienTitulo", "01")
     else:
         if not (emisor and receptor and detalles):
             raise ValueError("emisor, receptor y detalles son obligatorios")
@@ -101,7 +113,6 @@ def generar_nota_remision(
             "docuEntrega",
             "nombRecibe",
             "docuRecibe",
-            "observaciones",
         ]
         missing = [k for k in required_ext if not extension.get(k)]
         if missing:
@@ -109,8 +120,13 @@ def generar_nota_remision(
                 "Faltan campos obligatorios en extension: " + ", ".join(missing)
             )
         ext = {k: extension.get(k) for k in required_ext}
+        if extension.get("observaciones"):
+            ext["observaciones"] = extension.get("observaciones")
 
     limpiar_documentos(emisor)
+    receptor.setdefault("bienTitulo", "01")
+    if not receptor.get("tipoDocumento") or not receptor.get("numDocumento"):
+        raise ValueError("receptor requiere tipoDocumento y numDocumento")
     limpiar_documentos(receptor)
     limpiar_documentos(ext)
 
@@ -131,7 +147,10 @@ def generar_nota_remision(
         "tipoMoneda": "USD",
     }
 
-    items = _build_items(detalles)
+    numero_doc = None
+    if documento_relacionado:
+        numero_doc = documento_relacionado[0].get("numeroDocumento")
+    items = _build_items(detalles, numero_doc)
 
     resumen = {
         "totalNoSuj": d2(Decimal_0),
@@ -139,16 +158,11 @@ def generar_nota_remision(
         "totalGravada": d2(Decimal_0),
         "subTotal": d2(Decimal_0),
         "subTotalVentas": d2(Decimal_0),
-        "descuNoSuj": 0.0,
-        "descuExenta": 0.0,
-        "descuGravada": 0.0,
-        "totalDescu": 0.0,
-        "ivaPerci1": 0.0,
-        "ivaRete1": 0.0,
-        "reteRenta": 0.0,
+        "porcentajeDescuento": d2(Decimal_0),
+        "totalDescu": d2(Decimal_0),
+        "tributos": None,
         "montoTotalOperacion": d2(Decimal_0),
         "totalLetras": monto_a_texto_sv(0.0),
-        "condicionOperacion": 1,
     }
 
     data = {

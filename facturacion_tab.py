@@ -1368,7 +1368,10 @@ class FacturacionTab(QWidget):
             "remision", None, fecha, 0, "Remision", detalles=extra
         )
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
-        self._guardar_archivos_nota_remision(nota_json, nota_id)
+
+        self._guardar_archivos_nota_remision(nota_json)
+        QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")
+
 
     def crear_nota_remision_desde_factura(self):
         factura = self._selected_factura()
@@ -1397,7 +1400,9 @@ class FacturacionTab(QWidget):
             "remision", venta_id, fecha, 0, "Remision", detalles=extra
         )
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
-        self._guardar_archivos_nota_remision(nota_json, nota_id)
+        self._guardar_archivos_nota_remision(nota_json)
+        QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")
+
 
     def create_nota(self, tipo, factura=None):
         factura = factura or self._selected_factura()

@@ -43,6 +43,31 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     assert " " not in data["receptor"]["numDocumento"]
 
 
+def test_nr_desde_factura_extension(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-XYZ-000000000000001",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": _sample_receptor(),
+        "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    data = generar_nota_remision_desde_factura(
+        db, factura, extension=extension
+    )
+    assert data["extension"]["nombEntrega"] == "Juan"
+
+
 def test_nr_independiente_extension(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")

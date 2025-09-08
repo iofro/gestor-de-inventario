@@ -69,14 +69,20 @@ class NotaDetalleDialog(QDialog):
             desc = d.get("descuento", 0)
             if d.get("descuento_tipo") == "%":
                 desc = price * qty * d.get("descuento", 0) / 100
-            total = price * qty - desc
+
+            has_iva = bool(d.get("ventas_gravadas"))
+            mult = 1.13 if has_iva else 1
+
+            price_iva = price * mult
+            desc_iva = desc * mult
+            total_iva = (price * qty - desc) * mult
 
             items = [
                 QTableWidgetItem(str(prod)),
                 QTableWidgetItem(f"{qty}"),
-                QTableWidgetItem(f"{price:.2f}"),
-                QTableWidgetItem(f"{desc:.2f}"),
-                QTableWidgetItem(f"{total:.2f}"),
+                QTableWidgetItem(f"{price_iva:.2f}"),
+                QTableWidgetItem(f"{desc_iva:.2f}"),
+                QTableWidgetItem(f"{total_iva:.2f}"),
             ]
             for col, item in enumerate(items):
                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)

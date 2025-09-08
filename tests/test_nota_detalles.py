@@ -1,7 +1,8 @@
 from db import DB
 from decimal import Decimal
 from nota_credito_electronica import generar_nce_desde_dte
-from dte import generar_nde_desde_dte, generar_dte_json
+from nota_debito_electronica import generar_nde_desde_dte
+from dte import generar_dte_json
 
 def create_db():
     return DB(":memory:")

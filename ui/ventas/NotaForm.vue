@@ -1,6 +1,6 @@
 <template>
   <div class="nota-form">
-    <header class="nota-header">
+    <section class="factura-resumen">
       <div class="factura-data">
         <input readonly :value="factura.tipo" title="Tipo de documento (01/03)" />
         <input readonly :value="factura.numero" title="Serie-correlativo" />
@@ -12,106 +12,105 @@
         />
         <div>{{ factura.cliente }}</div>
       </div>
-      <span class="badge">{{ tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
-      <input v-model="motivo" placeholder="Motivo" maxlength="50" />
-      <label>
-        IVA Incluido
-        <input type="checkbox" v-model="ivaIncluido" />
-      </label>
-    </header>
-    <div class="contenido">
-      <div class="detalle">
-        <div class="tabs">
-          <button @click="activeTab = 'global'" :class="{ active: activeTab === 'global' }">Global</button>
-          <button @click="activeTab = 'producto'" :class="{ active: activeTab === 'producto' }">Por producto</button>
+      <div class="factura-totales">
+        <div>Base gravada: {{ format(facturaResumen.base) }}</div>
+        <div>Exenta: {{ format(facturaResumen.exenta) }}</div>
+        <div>No sujeta: {{ format(facturaResumen.noSujeta) }}</div>
+        <div>IVA: {{ format(facturaResumen.iva) }}</div>
+        <div>Total: {{ format(facturaResumen.total) }}</div>
+      </div>
+    </section>
+
+    <section class="detalle">
+      <div class="nota-controls">
+        <span class="badge">{{ tipo === 'credito' ? 'Crédito' : 'Débito' }}</span>
+        <input v-model="motivo" placeholder="Motivo" maxlength="50" />
+        <label>
+          IVA Incluido
+          <input type="checkbox" v-model="ivaIncluido" />
+        </label>
+      </div>
+      <div class="tabs">
+        <button @click="activeTab = 'global'" :class="{ active: activeTab === 'global' }">Global</button>
+        <button @click="activeTab = 'producto'" :class="{ active: activeTab === 'producto' }">Por producto</button>
+      </div>
+      <div v-if="activeTab === 'global'">
+        <div class="global-options">
+          <label title="Aplica un porcentaje del total">
+            <input type="radio" value="porcentaje" v-model="modoGlobal" />
+            Por porcentaje
+          </label>
+          <label title="Aplica un monto fijo">
+            <input type="radio" value="monto" v-model="modoGlobal" />
+            Por monto
+          </label>
         </div>
-        <div v-if="activeTab === 'global'">
-          <div class="global-options">
-            <label title="Aplica un porcentaje del total">
-              <input type="radio" value="porcentaje" v-model="modoGlobal" />
-              Por porcentaje
-            </label>
-            <label title="Aplica un monto fijo">
-              <input type="radio" value="monto" v-model="modoGlobal" />
-              Por monto
-            </label>
-          </div>
-          <div>
-            <input
-              v-if="modoGlobal === 'porcentaje'"
-              type="number"
-              v-model.number="porcentaje"
-              min="0"
-              max="100"
-              title="Porcentaje del total (0-100)"
-            />
-            <input
-              v-else
-              type="number"
-              v-model.number="monto"
-              min="0"
-              title="Monto total de la nota. Se descompone si IVA incluido"
-            />
-          </div>
-          <table class="preview">
-            <thead>
-              <tr>
-                <th title="Descripción del ajuste">Concepto</th>
-                <th title="Monto sujeto a IVA">Base gravada</th>
-                <th title="Ventas exentas del impuesto">Exenta</th>
-                <th title="Operaciones no sujetas al impuesto">No sujeta</th>
-                <th title="Impuesto calculado al 20%">IVA(20)</th>
-                <th title="Suma de base, exenta, no sujeta e IVA">Total</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td>Global</td>
-                <td>{{ format(preview.base) }}</td>
-                <td>{{ format(preview.exenta) }}</td>
-                <td>{{ format(preview.noSujeta) }}</td>
-                <td>{{ format(preview.iva) }}</td>
-                <td>{{ format(preview.base + preview.exenta + preview.noSujeta + preview.iva) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div v-else>
-          <EditableNotaTable
-            v-model="items"
-            :topeCredito="saldoDisponible"
-            :ivaIncluido="ivaIncluido"
-            :notaTipo="tipo"
+        <div>
+          <input
+            v-if="modoGlobal === 'porcentaje'"
+            type="number"
+            v-model.number="porcentaje"
+            min="0"
+            max="100"
+            title="Porcentaje del total (0-100)"
+          />
+          <input
+            v-else
+            type="number"
+            v-model.number="monto"
+            min="0"
+            title="Monto total de la nota. Se descompone si IVA incluido"
           />
         </div>
+        <table class="preview">
+          <thead>
+            <tr>
+              <th title="Descripción del ajuste">Concepto</th>
+              <th title="Monto sujeto a IVA">Base gravada</th>
+              <th title="Ventas exentas del impuesto">Exenta</th>
+              <th title="Operaciones no sujetas al impuesto">No sujeta</th>
+              <th title="Impuesto calculado al 20%">IVA(20)</th>
+              <th title="Suma de base, exenta, no sujeta e IVA">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Global</td>
+              <td>{{ format(preview.base) }}</td>
+              <td>{{ format(preview.exenta) }}</td>
+              <td>{{ format(preview.noSujeta) }}</td>
+              <td>{{ format(preview.iva) }}</td>
+              <td>{{ format(preview.base + preview.exenta + preview.noSujeta + preview.iva) }}</td>
+            </tr>
+          </tbody>
+        </table>
       </div>
-      <div class="resumen">
-        <section class="factura-resumen">
-          <h3>Factura original</h3>
-          <div>Base gravada: {{ format(facturaResumen.base) }}</div>
-          <div>Exenta: {{ format(facturaResumen.exenta) }}</div>
-          <div>No sujeta: {{ format(facturaResumen.noSujeta) }}</div>
-          <div>IVA: {{ format(facturaResumen.iva) }}</div>
-          <div>Total: {{ format(facturaResumen.total) }}</div>
-        </section>
-        <section class="nota-resumen">
-          <h3>Nota</h3>
-          <div>Base gravada: {{ format(preview.base) }}</div>
-          <div>Exenta: {{ format(preview.exenta) }}</div>
-          <div>No sujeta: {{ format(preview.noSujeta) }}</div>
-          <div>IVA: {{ format(preview.iva) }}</div>
-          <div>Total: {{ format(total) }}</div>
-        </section>
-        <div>Documento relacionado: {{ factura.numero }}</div>
-        <span v-if="excedeSaldo" class="badge rojo">Crédito excede saldo</span>
-        <div class="acciones">
-          <button @click="onPreviewPdf">Previsualizar PDF</button>
-          <button @click="onPreviewJson">Previsualizar JSON</button>
-          <button @click="onGuardarBorrador">Guardar borrador</button>
-          <button @click="onFirmarTransmitir">Firmar &amp; Transmitir</button>
-        </div>
+      <div v-else>
+        <EditableNotaTable
+          v-model="items"
+          :topeCredito="saldoDisponible"
+          :ivaIncluido="ivaIncluido"
+          :notaTipo="tipo"
+        />
       </div>
-    </div>
+    </section>
+
+    <section class="nota-resumen">
+      <h3>Nota</h3>
+      <div>Base gravada: {{ format(preview.base) }}</div>
+      <div>Exenta: {{ format(preview.exenta) }}</div>
+      <div>No sujeta: {{ format(preview.noSujeta) }}</div>
+      <div>IVA: {{ format(preview.iva) }}</div>
+      <div>Total: {{ format(total) }}</div>
+      <div>Documento relacionado: {{ factura.numero }}</div>
+      <span v-if="excedeSaldo" class="badge rojo">Crédito excede saldo</span>
+      <div class="acciones">
+        <button @click="onPreviewPdf">Previsualizar PDF</button>
+        <button @click="onPreviewJson">Previsualizar JSON</button>
+        <button @click="onGuardarBorrador">Guardar borrador</button>
+        <button @click="onFirmarTransmitir">Firmar &amp; Transmitir</button>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -311,25 +310,27 @@ const { factura, tipo } = props;
 </script>
 
 <style scoped>
-.contenido {
+.nota-form {
   display: flex;
+  flex-direction: column;
+  gap: 1rem;
 }
-.detalle {
-  width: 70%;
+.factura-data {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
 }
-.resumen {
-  width: 30%;
+.factura-totales {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
 }
-.resumen section {
-  margin-bottom: 1rem;
-}
-.resumen h3 {
-  margin: 0 0 0.5rem 0;
-}
-.nota-header {
+.nota-controls {
   display: flex;
   gap: 1rem;
   align-items: center;
+  margin-bottom: 1rem;
 }
 .badge {
   background-color: #eee;
@@ -348,6 +349,12 @@ const { factura, tipo } = props;
 }
 .tabs button.active {
   font-weight: bold;
+}
+.nota-resumen {
+  margin-top: 1rem;
+}
+.nota-resumen h3 {
+  margin: 0 0 0.5rem 0;
 }
 </style>
 

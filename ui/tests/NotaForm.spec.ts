@@ -18,7 +18,18 @@ describe('NotaForm', () => {
 
   it('cambia input según modo', async () => {
     const wrapper = mount(NotaForm, {
-      props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'credito' }
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 1000,
+          ventas_gravadas: 1000,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'credito'
+      }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
@@ -26,24 +37,48 @@ describe('NotaForm', () => {
     expect(input.attributes('title')).toContain('Monto');
   });
 
-  it('descompone IVA incluido con toBaseIva', async () => {
+  it('prorratea monto global con prorratearGlobal', async () => {
     const wrapper = mount(NotaForm, {
-      props: { factura: { numero: '1', cliente: 'A', total: 0 }, tipo: 'credito' }
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 188,
+          ventas_gravadas: 100,
+          ventas_exentas: 50,
+          ventas_no_sujetas: 25,
+          iva: 13
+        },
+        tipo: 'credito'
+      }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
     const input = wrapper.find('input[type="number"]');
-    await input.setValue('120');
+    await input.setValue('18.8');
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
-    expect(cells[1].text()).toBe('106.19');
-    expect(cells[4].text()).toBe('13.81');
-    expect(cells[5].text()).toBe('120.00');
+    expect(cells[1].text()).toBe('10.00');
+    expect(cells[2].text()).toBe('5.00');
+    expect(cells[3].text()).toBe('2.50');
+    expect(cells[4].text()).toBe('1.30');
+    expect(cells[5].text()).toBe('18.80');
   });
 
   it('muestra badge rojo si excede saldo', async () => {
     const wrapper = mount(NotaForm, {
-      props: { factura: { numero: '1', cliente: 'A', total: 100 }, tipo: 'credito' }
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 100,
+          ventas_gravadas: 100,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'credito'
+      }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
@@ -55,7 +90,18 @@ describe('NotaForm', () => {
 
   it('llama API tras validación sin motivo', async () => {
     const wrapper = mount(NotaForm, {
-      props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'debito' }
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 1000,
+          ventas_gravadas: 1000,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'debito'
+      }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
@@ -69,7 +115,18 @@ describe('NotaForm', () => {
 
   it('no llama API si total es cero', async () => {
     const wrapper = mount(NotaForm, {
-      props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'debito' }
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 1000,
+          ventas_gravadas: 1000,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'debito'
+      }
     });
     const radioMonto = wrapper.find('input[value="monto"]');
     await radioMonto.setValue();
@@ -79,7 +136,18 @@ describe('NotaForm', () => {
 
   it('calcula totales para ítems en pestaña producto', async () => {
     const wrapper = mount(NotaForm, {
-      props: { factura: { numero: '1', cliente: 'A', total: 1000 }, tipo: 'debito' }
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 1000,
+          ventas_gravadas: 1000,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'debito'
+      }
     });
     const btnProducto = wrapper.findAll('.tabs button')[1];
     await btnProducto.trigger('click');

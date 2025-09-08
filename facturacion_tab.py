@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
     QSpinBox,
     QListWidget,
     QListWidgetItem,
+    QPlainTextEdit,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -47,6 +48,7 @@ from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
 from utils.stable_json import save_file, stable_stringify
 from utils.sanitize import limpiar_doc
+from utils import catalogos
 from paths import DATOS_NEGOCIO_PATH
 import tempfile
 import subprocess
@@ -105,155 +107,12 @@ class SendOptionsDialog(QDialog):
 
 
 
-class NotaRemisionDialog(QDialog):
-    """Diálogo simple para construir una Nota de Remisión."""
-
-    def __init__(self, productos, parent=None):
-        super().__init__(parent)
-        self.productos = productos or []
-        self.setWindowTitle("Nota de Remisión")
-        self._build_ui()
-
-    def _build_ui(self):
-        layout = QVBoxLayout(self)
-
-        add_layout = QHBoxLayout()
-        self.prod_cb = QComboBox()
-        for p in self.productos:
-            self.prod_cb.addItem(p.get("nombre", ""), p.get("id"))
-        add_layout.addWidget(self.prod_cb)
-        self.qty_spin = QSpinBox()
-        self.qty_spin.setMinimum(1)
-        add_layout.addWidget(self.qty_spin)
-        self.obs_edit = QLineEdit()
-        self.obs_edit.setPlaceholderText("Observación")
-        add_layout.addWidget(self.obs_edit)
-        self.add_btn = QPushButton("Agregar")
-        add_layout.addWidget(self.add_btn)
-        layout.addLayout(add_layout)
-
-        self.table = QTableWidget(0, 3)
-        self.table.setHorizontalHeaderLabels(["Producto", "Cantidad", "Observación"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        layout.addWidget(self.table)
-
-        # Campos de extensión obligatorios
-        form_layout = QVBoxLayout()
-        self.nomb_entrega = QLineEdit()
-        self.docu_entrega = QLineEdit()
-        self.nomb_recibe = QLineEdit()
-        self.docu_recibe = QLineEdit()
-        self.ext_obs = QLineEdit()
-        for label, widget in [
-            ("Nombre entrega:", self.nomb_entrega),
-            ("Documento entrega:", self.docu_entrega),
-            ("Nombre recibe:", self.nomb_recibe),
-            ("Documento recibe:", self.docu_recibe),
-            ("Observaciones:", self.ext_obs),
-        ]:
-            row = QHBoxLayout()
-            row.addWidget(QLabel(label))
-            row.addWidget(widget)
-            form_layout.addLayout(row)
-        layout.addLayout(form_layout)
-
-        # Datos básicos del receptor
-        rec_layout = QHBoxLayout()
-        rec_layout.addWidget(QLabel("Receptor:"))
-        self.receptor_nombre = QLineEdit()
-        rec_layout.addWidget(self.receptor_nombre)
-        rec_layout.addWidget(QLabel("Documento:"))
-        self.receptor_doc = QLineEdit()
-        rec_layout.addWidget(self.receptor_doc)
-        layout.addLayout(rec_layout)
-
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-        self.add_btn.clicked.connect(self._add_item)
-
-    def _add_item(self):
-        idx = self.prod_cb.currentIndex()
-        nombre = self.prod_cb.currentText()
-        pid = self.prod_cb.itemData(idx)
-        qty = self.qty_spin.value()
-        obs = self.obs_edit.text()
-        if qty <= 0:
-            return
-        row = self.table.rowCount()
-        self.table.insertRow(row)
-        item = QTableWidgetItem(nombre)
-        item.setData(Qt.UserRole, pid)
-        self.table.setItem(row, 0, item)
-        self.table.setItem(row, 1, QTableWidgetItem(str(qty)))
-        self.table.setItem(row, 2, QTableWidgetItem(obs))
-        self.qty_spin.setValue(1)
-        self.obs_edit.clear()
-
-    def accept(self):
-        if self.table.rowCount() == 0:
-            QMessageBox.warning(self, "Nota", "Agregue al menos un producto")
-            return
-        checks = [
-            self.nomb_entrega.text().strip(),
-            limpiar_doc(self.docu_entrega.text()),
-            self.nomb_recibe.text().strip(),
-            limpiar_doc(self.docu_recibe.text()),
-            self.ext_obs.text().strip(),
-            self.receptor_nombre.text().strip(),
-            limpiar_doc(self.receptor_doc.text()),
-        ]
-        if not all(checks):
-            QMessageBox.warning(
-                self,
-                "Nota",
-                "Todos los campos de entrega/recepción son obligatorios",
-            )
-            return
-        super().accept()
-
-    def get_data(self):
-        detalles = []
-        for row in range(self.table.rowCount()):
-            prod_item = self.table.item(row, 0)
-            qty_item = self.table.item(row, 1)
-            obs_item = self.table.item(row, 2)
-            desc = prod_item.text()
-            obs = obs_item.text()
-            if obs:
-                desc = f"{desc} - {obs}"
-            detalles.append(
-                {
-                    "codigo": prod_item.data(Qt.UserRole),
-                    "descripcion": desc,
-                    "cantidad": int(qty_item.text()),
-                }
-            )
-        extension = {
-            "nombEntrega": self.nomb_entrega.text(),
-            "docuEntrega": limpiar_doc(self.docu_entrega.text()),
-            "nombRecibe": self.nomb_recibe.text(),
-            "docuRecibe": limpiar_doc(self.docu_recibe.text()),
-            "observaciones": self.ext_obs.text(),
-        }
-        receptor = {
-            "nombre": self.receptor_nombre.text(),
-            "tipoDocumento": "13",
-            "numDocumento": limpiar_doc(self.receptor_doc.text()),
-            "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
-        }
-        return detalles, extension, receptor
-
-
-class NotaRemisionExtDialog(QDialog):
-    """Diálogo para capturar los campos de extensión de la NR."""
+class NotaRemisionExtWidget(QWidget):
+    """Widget reutilizable para capturar datos de entrega de la NR."""
 
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
-        self.setWindowTitle("Datos de entrega")
         self._build_ui()
 
     def _build_ui(self):
@@ -262,9 +121,7 @@ class NotaRemisionExtDialog(QDialog):
         # Persona que entrega
         layout.addWidget(QLabel("Persona que entrega"))
         self.emp_search = QLineEdit()
-        self.emp_search.setPlaceholderText(
-            "Buscar empleado por nombre, DUI o NIT…"
-        )
+        self.emp_search.setPlaceholderText("Buscar empleado por nombre, DUI o NIT…")
         layout.addWidget(self.emp_search)
         self.emp_results = QListWidget()
         self.emp_results.addItem("Escribe para buscar…")
@@ -285,9 +142,7 @@ class NotaRemisionExtDialog(QDialog):
         # Persona que recibe
         layout.addWidget(QLabel("Persona que recibe"))
         self.cli_search = QLineEdit()
-        self.cli_search.setPlaceholderText(
-            "Buscar cliente por nombre, DUI/NIT, NRC…"
-        )
+        self.cli_search.setPlaceholderText("Buscar cliente por nombre, DUI/NIT, NRC…")
         layout.addWidget(self.cli_search)
         self.cli_results = QListWidget()
         self.cli_results.addItem("Escribe para buscar…")
@@ -296,7 +151,7 @@ class NotaRemisionExtDialog(QDialog):
 
         self.nomb_recibe = QLineEdit()
         self.docu_recibe = QLineEdit()
-        self.ext_obs = QLineEdit()
+        self.ext_obs = QPlainTextEdit()
         for label, widget in [
             ("Nombre recibe:", self.nomb_recibe),
             ("Documento recibe:", self.docu_recibe),
@@ -307,12 +162,7 @@ class NotaRemisionExtDialog(QDialog):
             row.addWidget(widget)
             layout.addLayout(row)
 
-        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
-        buttons.rejected.connect(self.reject)
-        layout.addWidget(buttons)
-
-        # Set up search handlers
+        # Search handlers and timers
         self.emp_timer = QTimer(self)
         self.emp_timer.setSingleShot(True)
         self.emp_timer.setInterval(250)
@@ -329,7 +179,6 @@ class NotaRemisionExtDialog(QDialog):
         self.cli_results.itemActivated.connect(self._seleccionar_cliente)
         self.cli_results.itemClicked.connect(self._seleccionar_cliente)
 
-        # Keyboard navigation
         for w in [
             self.emp_search,
             self.emp_results,
@@ -432,16 +281,16 @@ class NotaRemisionExtDialog(QDialog):
             "docuEntrega": limpiar_doc(self.docu_entrega.text()),
             "nombRecibe": self.nomb_recibe.text(),
             "docuRecibe": limpiar_doc(self.docu_recibe.text()),
-            "observaciones": self.ext_obs.text(),
+            "observaciones": self.ext_obs.toPlainText(),
         }
 
-    def accept(self):
+    def validate(self) -> bool:
         checks = [
             self.nomb_entrega.text().strip(),
             limpiar_doc(self.docu_entrega.text()),
             self.nomb_recibe.text().strip(),
             limpiar_doc(self.docu_recibe.text()),
-            self.ext_obs.text().strip(),
+            self.ext_obs.toPlainText().strip(),
         ]
         if not all(checks):
             QMessageBox.warning(
@@ -449,8 +298,209 @@ class NotaRemisionExtDialog(QDialog):
                 "Nota",
                 "Todos los campos de entrega/recepción son obligatorios",
             )
+            return False
+        return True
+
+
+class NotaRemisionDialog(QDialog):
+    """Diálogo para construir una Nota de Remisión desde productos."""
+
+    def __init__(self, db, productos, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.productos = productos or []
+        self.setWindowTitle("Nota de Remisión")
+        self._build_ui()
+
+    def _build_ui(self):
+        main_layout = QHBoxLayout(self)
+
+        # Left column: productos
+        left = QVBoxLayout()
+        search_layout = QVBoxLayout()
+        self.prod_search = QLineEdit()
+        self.prod_search.setPlaceholderText("Buscar producto…")
+        search_layout.addWidget(self.prod_search)
+        self.prod_cb = QComboBox()
+        search_layout.addWidget(self.prod_cb)
+        self.add_btn = QPushButton("Agregar")
+        search_layout.addWidget(self.add_btn)
+        left.addLayout(search_layout)
+
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["Código", "Descripción", "Cantidad", "Unidad", "Observaciones", ""]
+        )
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        left.addWidget(self.table)
+        main_layout.addLayout(left, 1)
+
+        # Right column: datos de entrega
+        self.ext_widget = NotaRemisionExtWidget(self.db, self)
+        main_layout.addWidget(self.ext_widget, 1)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        main_layout.addWidget(buttons)
+
+        # Search debounce
+        self.prod_timer = QTimer(self)
+        self.prod_timer.setSingleShot(True)
+        self.prod_timer.setInterval(250)
+        self.prod_search.textChanged.connect(self.prod_timer.start)
+        self.prod_timer.timeout.connect(self._buscar_producto)
+
+        self.add_btn.clicked.connect(self._add_item)
+        self._buscar_producto()
+
+    def _buscar_producto(self):
+        text = self.prod_search.text().strip().lower()
+        self.prod_cb.clear()
+        results = []
+        for p in self.productos:
+            nombre = p.get("nombre", "")
+            codigo = p.get("codigo", "")
+            if not text or text in nombre.lower() or text in codigo.lower():
+                results.append(p)
+        if not results:
+            self.prod_cb.addItem("Sin resultados", None)
+            return
+        for p in results:
+            self.prod_cb.addItem(f"{p.get('codigo', '')} - {p.get('nombre', '')}", p)
+        self.prod_cb.setCurrentIndex(0)
+
+    def _add_item(self):
+        data = self.prod_cb.currentData()
+        if not isinstance(data, dict):
+            return
+        row = self.table.rowCount()
+        self.table.insertRow(row)
+        code = data.get("codigo") or data.get("id")
+        desc = data.get("nombre", "")
+        item_code = QTableWidgetItem(str(code))
+        item_code.setData(Qt.UserRole, data)
+        self.table.setItem(row, 0, item_code)
+        self.table.setItem(row, 1, QTableWidgetItem(desc))
+        qty = QSpinBox()
+        qty.setMinimum(1)
+        self.table.setCellWidget(row, 2, qty)
+        uni_cb = QComboBox()
+        for k, v in catalogos.CATALOGS.get("CAT-014", {}).items():
+            uni_cb.addItem(f"{k} - {v}", int(k))
+        self.table.setCellWidget(row, 3, uni_cb)
+        obs = QLineEdit()
+        self.table.setCellWidget(row, 4, obs)
+        del_btn = QPushButton("Eliminar")
+        del_btn.clicked.connect(lambda _, b=del_btn: self._remove_row(b))
+        self.table.setCellWidget(row, 5, del_btn)
+
+    def _remove_row(self, btn):
+        idx = self.table.indexAt(btn.pos())
+        if idx.isValid():
+            self.table.removeRow(idx.row())
+
+    def accept(self):
+        if self.table.rowCount() == 0:
+            QMessageBox.warning(self, "Nota", "Agregue al menos un producto")
+            return
+        for row in range(self.table.rowCount()):
+            qty_widget = self.table.cellWidget(row, 2)
+            uni_widget = self.table.cellWidget(row, 3)
+            if qty_widget.value() <= 0 or uni_widget.currentData() is None:
+                QMessageBox.warning(
+                    self, "Nota", "Cantidad y unidad son obligatorias en cada ítem"
+                )
+                return
+        if not self.ext_widget.validate():
             return
         super().accept()
+
+    def get_data(self):
+        detalles = []
+        for row in range(self.table.rowCount()):
+            prod_item = self.table.item(row, 0)
+            desc_item = self.table.item(row, 1)
+            qty_widget = self.table.cellWidget(row, 2)
+            uni_widget = self.table.cellWidget(row, 3)
+            obs_widget = self.table.cellWidget(row, 4)
+            desc = desc_item.text()
+            obs = obs_widget.text()
+            if obs:
+                desc = f"{desc} - {obs}"
+            data = prod_item.data(Qt.UserRole) or {}
+            codigo = data.get("codigo") or data.get("id")
+            detalles.append(
+                {
+                    "codigo": codigo,
+                    "descripcion": desc,
+                    "cantidad": qty_widget.value(),
+                    "uniMedida": uni_widget.currentData(),
+                }
+            )
+        extension = self.ext_widget.get_data()
+        receptor = {
+            "nombre": extension.get("nombRecibe"),
+            "tipoDocumento": "13",
+            "numDocumento": extension.get("docuRecibe"),
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
+        }
+        return detalles, extension, receptor
+
+
+class NotaRemisionExtDialog(QDialog):
+    """Diálogo que envuelve :class:`NotaRemisionExtWidget` con encabezado."""
+
+    def __init__(self, db, factura=None, parent=None):
+        super().__init__(parent)
+        self.db = db
+        self.factura = factura or {}
+        self.setWindowTitle("Datos de entrega")
+        self._build_ui()
+
+    def _build_ui(self):
+        layout = QVBoxLayout(self)
+
+        if self.factura:
+            ident = self.factura.get("identificacion", {})
+            receptor = self.factura.get("receptor", {})
+            resumen = self.factura.get("resumen", {})
+            tipo = ident.get("tipoDte")
+            numero = ident.get("numeroControl")
+            fecha = ident.get("fecEmi")
+            uuid = (ident.get("codigoGeneracion") or "")[:8]
+            cliente = receptor.get("nombre") or receptor.get("nombreComercial") or ""
+            total = resumen.get("montoTotalOperacion") or resumen.get("totalPagar")
+            header = QHBoxLayout()
+            header.addWidget(QLabel(f"Factura origen: {tipo} {numero} {fecha} {uuid}"))
+            header.addWidget(QLabel(f"Cliente: {cliente}"))
+            if total is not None:
+                header.addWidget(QLabel(f"Total: {total}"))
+            layout.addLayout(header)
+
+        self.panel = NotaRemisionExtWidget(self.db, self)
+        layout.addWidget(self.panel)
+        # Expose fields for backward compatibility/tests
+        self.nomb_entrega = self.panel.nomb_entrega
+        self.docu_entrega = self.panel.docu_entrega
+        self.nomb_recibe = self.panel.nomb_recibe
+        self.docu_recibe = self.panel.docu_recibe
+        self.ext_obs = self.panel.ext_obs
+        self._seleccionar_empleado = self.panel._seleccionar_empleado
+        self._seleccionar_cliente = self.panel._seleccionar_cliente
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def accept(self):
+        if not self.panel.validate():
+            return
+        super().accept()
+
+    def get_data(self):
+        return self.panel.get_data()
 
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
@@ -1278,7 +1328,7 @@ class FacturacionTab(QWidget):
         save_file(json_path, stable_stringify(nota_json))
 
     def crear_nota_remision_desde_productos(self):
-        dialog = NotaRemisionDialog(self.manager._products, self)
+        dialog = NotaRemisionDialog(self.manager.db, self.manager._products, self)
         if dialog.exec_() != QDialog.Accepted:
             return
         detalles, extension, receptor = dialog.get_data()
@@ -1305,7 +1355,7 @@ class FacturacionTab(QWidget):
             return
         if not venta_id:
             QMessageBox.warning(self, "Nota", "Factura sin venta asociada")
-        dialog = NotaRemisionExtDialog(self.manager.db, self)
+        dialog = NotaRemisionExtDialog(self.manager.db, factura=factura_json, parent=self)
         if dialog.exec_() != QDialog.Accepted:
             return
         extension = dialog.get_data()

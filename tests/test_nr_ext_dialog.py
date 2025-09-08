@@ -19,7 +19,7 @@ def test_nr_ext_dialog_autofill_and_sanitize(db_conn, qt_app):
     assert dialog.nomb_recibe.text() == "Ana"
     assert dialog.docu_recibe.text() == "061234567"
 
-    dialog.ext_obs.setText("Obs")
+    dialog.ext_obs.setPlainText("Obs")
     data = dialog.get_data()
     assert data["docuEntrega"] == "061234567"
     assert data["docuRecibe"] == "061234567"

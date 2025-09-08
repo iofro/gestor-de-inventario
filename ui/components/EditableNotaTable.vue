@@ -101,6 +101,11 @@
               @keydown.enter.prevent="$event.target.blur()"
               @keydown.esc.prevent="onEsc(item, 'ajuste'); $event.target.blur()"
             />
+            <span
+              v-if="item.tipo === 'credito' && calcTotal(item) > (item.maxMonto ?? (props.topeCredito ?? 0))"
+              class="error"
+              >Excede</span
+            >
           </td>
           <td>
             <select :value="item.afectacion" @change="update(item, 'afectacion', $event.target.value)">
@@ -150,6 +155,7 @@ interface NotaItem {
   ajuste?: number;
   concepto?: string;
   unidad?: string;
+  maxMonto?: number;
 }
 
 defineOptions({ name: 'EditableNotaTable' });
@@ -203,7 +209,8 @@ function addItem() {
   const cantidad = parseFloat(cantidadStr) || 0;
   const ajusteStr = prompt('Ajuste (USD)');
   if (ajusteStr === null) return;
-  const ajuste = parseFloat(ajusteStr) || 0;
+  let ajuste = parseFloat(ajusteStr) || 0;
+  if (props.notaTipo === 'debito' && ajuste < 0) ajuste = 0;
   const unidad = prompt('Unidad') || '';
   const concepto = prompt('Concepto') || '';
   items.value.push({
@@ -235,6 +242,9 @@ function onEsc(item: NotaItem, field: keyof NotaItem) {
 }
 
 function update(item: NotaItem, field: keyof NotaItem, value: any) {
+  if (field === 'ajuste' && props.notaTipo === 'debito' && value < 0) {
+    value = 0;
+  }
   if (applyToSelected.value) {
     items.value
       .filter((i) => i.selected)

@@ -4114,6 +4114,8 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
     from utils.docs import get_dte_document_paths
+    from utils.jws import sign_json
+    from utils.stable_json import save_file, stable_stringify
 
     ident = data.get("identificacion", {})
     receptor = data.get("receptor", {}) or {}
@@ -4131,6 +4133,11 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
                 jws_token = fh.read()
         except Exception:
             jws_token = None
+    if jws_token is None:
+        save_file(json_path, stable_stringify(data, indent=2))
+        token = sign_json(data)
+        jws_token = token.rstrip("\n")
+        save_file(jws_path, jws_token, add_final_newline=False)
     return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 
@@ -4147,6 +4154,8 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
     from utils.docs import get_dte_document_paths
+    from utils.jws import sign_json
+    from utils.stable_json import save_file, stable_stringify
 
     ident = data.get("identificacion", {})
     receptor = data.get("receptor", {}) or {}
@@ -4164,6 +4173,11 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
                 jws_token = fh.read()
         except Exception:
             jws_token = None
+    if jws_token is None:
+        save_file(json_path, stable_stringify(data, indent=2))
+        token = sign_json(data)
+        jws_token = token.rstrip("\n")
+        save_file(jws_path, jws_token, add_final_newline=False)
     return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 

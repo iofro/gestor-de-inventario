@@ -1,23 +1,13 @@
 import { mount } from '@vue/test-utils';
-import { vi } from 'vitest';
 import EditableNotaTable from '../components/EditableNotaTable.vue';
 
 describe('EditableNotaTable', () => {
-  it('agrega item cuando se hace click', async () => {
-    const originalPrompt = global.prompt;
-    global.prompt = vi
-      .fn()
-      .mockReturnValueOnce('A1')
-      .mockReturnValueOnce('Desc')
-      .mockReturnValueOnce('1')
-      .mockReturnValueOnce('10')
-      .mockReturnValueOnce('UND')
-      .mockReturnValueOnce('Concepto');
+  it('agrega item cuando se selecciona un producto', async () => {
     const wrapper = mount(EditableNotaTable, {
       props: { modelValue: [], topeCredito: 10, ivaIncluido: true, notaTipo: 'debito' }
     });
     await wrapper.find('button.add-item').trigger('click');
-    global.prompt = originalPrompt;
+    await wrapper.find('.product-option').trigger('click');
     const emitted = wrapper.emitted('update:modelValue');
     expect(emitted).toBeTruthy();
     expect(emitted![0][0]).toHaveLength(1);
@@ -134,15 +124,15 @@ describe('EditableNotaTable', () => {
     await ajusteInput.setValue('120');
     await wrapper.vm.$nextTick();
     let cells = wrapper.findAll('tbody td');
-    expect(cells[11].text()).toBe('100.00');
-    expect(cells[12].text()).toBe('20.00');
-    expect(cells[13].text()).toBe('120.00');
+    expect(cells[12].text()).toBe('100.00');
+    expect(cells[13].text()).toBe('20.00');
+    expect(cells[14].text()).toBe('120.00');
     await wrapper.setProps({ ivaIncluido: false });
     await ajusteInput.setValue('100');
     await wrapper.vm.$nextTick();
     cells = wrapper.findAll('tbody td');
-    expect(cells[11].text()).toBe('100.00');
-    expect(cells[12].text()).toBe('20.00');
-    expect(cells[13].text()).toBe('120.00');
+    expect(cells[12].text()).toBe('100.00');
+    expect(cells[13].text()).toBe('20.00');
+    expect(cells[14].text()).toBe('120.00');
   });
 });

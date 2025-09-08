@@ -60,7 +60,7 @@
                 <th title="Monto sujeto a IVA">Base gravada</th>
                 <th title="Ventas exentas del impuesto">Exenta</th>
                 <th title="Operaciones no sujetas al impuesto">No sujeta</th>
-                <th title="Impuesto calculado al 13%">IVA(13)</th>
+                <th title="Impuesto calculado al 20%">IVA(20)</th>
                 <th title="Suma de base, exenta, no sujeta e IVA">Total</th>
               </tr>
             </thead>

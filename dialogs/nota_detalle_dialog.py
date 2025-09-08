@@ -1,4 +1,5 @@
 from typing import List, Dict, Tuple
+from decimal import Decimal
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -79,17 +80,9 @@ class NotaDetalleDialog(QDialog):
         for row, d in enumerate(self.detalles):
             prod = d.get("descripcion", "")
             qty = d.get("cantidad", 0)
-            price = d.get("precio_unitario", 0)
-            desc = d.get("descuento", 0)
-            if d.get("descuento_tipo") == "%":
-                desc = price * qty * d.get("descuento", 0) / 100
-
-            has_iva = bool(d.get("ventas_gravadas"))
-            mult = 1.13 if has_iva else 1
-
-            price_iva = price * mult
-            desc_iva = desc * mult
-            total_iva = (price * qty - desc) * mult
+            price_iva = d.get("precio_unitario_iva", Decimal("0"))
+            desc_iva = d.get("descuento_iva", Decimal("0"))
+            total_iva = d.get("total_linea", Decimal("0"))
 
             items = [
                 QTableWidgetItem(str(prod)),

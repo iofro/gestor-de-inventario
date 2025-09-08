@@ -17,6 +17,7 @@ from PyQt5.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QCheckBox,
+    QRadioButton,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -162,7 +163,8 @@ class FacturacionTab(QWidget):
         left_layout.addWidget(self.table)
 
         btns = QHBoxLayout()
-        self.btn_nota = QPushButton("Nota de crédito y débito")
+        # Botón para crear notas asociadas a la factura seleccionada
+        self.btn_nota = QPushButton("Nota crédito / débito")
         self.btn_nota.clicked.connect(self.abrir_dialogo_tipo_nota)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
@@ -792,19 +794,26 @@ class FacturacionTab(QWidget):
         if not factura:
             QMessageBox.warning(self, "Nota", "Seleccione una factura")
             return
+        # Diálogo inicial para elegir el tipo de nota
         dialog = QDialog(self)
-        dialog.setWindowTitle("Tipo de nota")
+        dialog.setWindowTitle("Nota crédito / débito")
         layout = QVBoxLayout(dialog)
-        tipo_combo = QComboBox(dialog)
-        tipo_combo.addItems(["Crédito", "Débito"])
-        layout.addWidget(tipo_combo)
+
+        radio_credito = QRadioButton("Nota de crédito", dialog)
+        radio_debito = QRadioButton("Nota de débito", dialog)
+        radio_credito.setChecked(True)
+        layout.addWidget(radio_credito)
+        layout.addWidget(radio_debito)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        # Cambiar el texto del botón de aceptación a "Continuar"
+        buttons.button(QDialogButtonBox.Ok).setText("Continuar")
         buttons.accepted.connect(dialog.accept)
         buttons.rejected.connect(dialog.reject)
         layout.addWidget(buttons)
+
         if dialog.exec_() == QDialog.Accepted:
-            selected = tipo_combo.currentText()
-            tipo = "credito" if selected == "Crédito" else "debito"
+            tipo = "credito" if radio_credito.isChecked() else "debito"
             self.create_nota(tipo, factura)
 
     def create_nota(self, tipo, factura=None):

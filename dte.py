@@ -4123,7 +4123,17 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(None, "orphan", "Rechazado", "")
+        db.registrar_envio_dte(
+            None,
+            "orphan",
+            "Rechazado",
+            "",
+            "",
+            meta.get("ambiente"),
+            meta.get("version"),
+            meta.get("tipoDte"),
+            meta.get("codigoGeneracion"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -4132,6 +4142,10 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         estado,
         sello,
         json.dumps(respuesta, ensure_ascii=False),
+        meta.get("ambiente"),
+        meta.get("version"),
+        meta.get("tipoDte"),
+        meta.get("codigoGeneracion"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
@@ -4197,7 +4211,7 @@ def _enviar_documento(
     """
     config = _load_dte_api_config()
     if modo == "contingencia":
-        db.registrar_envio_dte(doc_id, modo, "Pendiente", "")
+        db.registrar_envio_dte(doc_id, modo, "Pendiente", "", "")
         return {"estado": "Pendiente"}
 
     if not data.get("resumen", {}).get("totalLetras"):
@@ -4265,7 +4279,17 @@ def _enviar_documento(
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(doc_id, modo, "Rechazado", "")
+        db.registrar_envio_dte(
+            doc_id,
+            modo,
+            "Rechazado",
+            "",
+            "",
+            meta.get("ambiente"),
+            meta.get("version"),
+            meta.get("tipoDte"),
+            meta.get("codigoGeneracion"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -4274,6 +4298,10 @@ def _enviar_documento(
         estado,
         sello,
         json.dumps(respuesta, ensure_ascii=False),
+        meta.get("ambiente"),
+        meta.get("version"),
+        meta.get("tipoDte"),
+        meta.get("codigoGeneracion"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
@@ -4420,6 +4448,13 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     signed = jws.sign_json(data)
     token = auth.get_token()
 
+    meta = {
+        "ambiente": data.get("ambiente"),
+        "version": data.get("version"),
+        "tipoDte": data.get("tipoDte") or data.get("tipoDocumento"),
+        "codigoGeneracion": data.get("codigoGeneracion") or data.get("codigoGeneracionR"),
+    }
+
     try:
         respuesta = _post_dte(url, token, signed, data)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
@@ -4431,7 +4466,17 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(evento_id, "evento", "Rechazado", "")
+        db.registrar_envio_dte(
+            evento_id,
+            "evento",
+            "Rechazado",
+            "",
+            "",
+            meta.get("ambiente"),
+            meta.get("version"),
+            meta.get("tipoDte"),
+            meta.get("codigoGeneracion"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -4440,6 +4485,10 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         estado,
         sello,
         json.dumps(respuesta, ensure_ascii=False),
+        meta.get("ambiente"),
+        meta.get("version"),
+        meta.get("tipoDte"),
+        meta.get("codigoGeneracion"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)

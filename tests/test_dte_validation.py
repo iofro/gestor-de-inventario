@@ -428,6 +428,18 @@ def test_ident_contingencia_rechazos(dte_metadata_factory, db_fixture):
         validate_dte_json(dte, db=db_fixture)
 
 
+def test_motivo_contin_longitud(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoOperacion"] = 2
+    dte["identificacion"]["tipoContingencia"] = 5
+    dte["identificacion"]["motivoContin"] = "x" * 500
+    validate_dte_json(dte, db=db_fixture)
+
+    dte["identificacion"]["motivoContin"] = "y" * 501
+    with pytest.raises(ValueError):
+        validate_dte_json(dte, db=db_fixture)
+
+
 def test_fecha_hora_format(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     dte["identificacion"]["fecEmi"] = "01-01-2024"

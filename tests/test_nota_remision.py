@@ -84,6 +84,42 @@ def test_nr_desde_factura_extension(monkeypatch):
     assert data["extension"]["nombEntrega"] == "Juan"
 
 
+def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": {
+            "tipoDocumento": "13",
+            "numDocumento": "12345678-9",
+            "nombre": "Cliente",
+            "bienTitulo": "01",
+        },
+        "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "0614-140710-001-2",
+        "tipoDocRecibe": "36",
+        "nrcRecibe": "1234567",
+    }
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    rec = data["receptor"]
+    assert rec["tipoDocumento"] == "36"
+    assert rec["numDocumento"] == "06141407100012"
+    assert rec["nrc"] == "1234567"
+    ext = data["extension"]
+    assert "tipoDocRecibe" not in ext
+    assert "nrcRecibe" not in ext
+
+
 def test_nr_independiente_extension(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")

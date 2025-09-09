@@ -218,12 +218,23 @@ def generar_nota_remision_desde_factura(
             "fechaEmision": ident.get("fecEmi"),
         }
     ]
+    ext = extension.copy() if extension else None
+    if ext:
+        tipo_doc = ext.pop("tipoDocRecibe", None)
+        nrc_recibe = ext.pop("nrcRecibe", None)
+        if tipo_doc:
+            receptor["tipoDocumento"] = tipo_doc
+            doc_recibe = ext.get("docuRecibe")
+            if doc_recibe:
+                receptor["numDocumento"] = doc_recibe
+        if nrc_recibe:
+            receptor["nrc"] = nrc_recibe
     return _generar_base(
         db,
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
-        extension=extension,
+        extension=ext,
         documento_relacionado=doc_rel,
         ambiente=ambiente,
     )

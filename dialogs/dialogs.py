@@ -13,11 +13,12 @@ from PyQt5.QtWidgets import (
     QFileDialog, QDialogButtonBox, QListView, QFrame
 )
 from PyQt5.QtCore import Qt, QDate, QUrl
-from PyQt5.QtGui import QColor, QDesktopServices
+from PyQt5.QtGui import QColor, QDesktopServices, QIntValidator
 import os
 import shutil
 
 from utils import jws
+from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
 
 getcontext().prec = 4
@@ -2883,6 +2884,9 @@ class DatosNegocioDialog(QDialog):
         form = QFormLayout()
         self.nit = QLineEdit()
         self.nrc = QLineEdit()
+        self.dui = QLineEdit()
+        self.dui.setValidator(QIntValidator(0, 999999999))
+        self.dui.setMaxLength(9)
         self.nombre = QLineEdit()
         self.nombre_comercial = QLineEdit()
         self.cod_giro = QLineEdit()
@@ -2908,6 +2912,7 @@ class DatosNegocioDialog(QDialog):
         )
         form.addRow("NIT:", self.nit)
         form.addRow("NRC:", self.nrc)
+        form.addRow("DUI:", self.dui)
         form.addRow("Nombre:", self.nombre)
         form.addRow("Nombre comercial:", self.nombre_comercial)
         form.addRow("Código giro:", self.cod_giro)
@@ -2953,6 +2958,7 @@ class DatosNegocioDialog(QDialog):
         return {
             "nit": self.nit.text(),
             "nrc": self.nrc.text(),
+            "dui": solo_digitos(self.dui.text()),
             "nombre": self.nombre.text(),
             "nombreComercial": self.nombre_comercial.text(),
             "cod_giro": self.cod_giro.text(),
@@ -2971,6 +2977,7 @@ class DatosNegocioDialog(QDialog):
     def set_data(self, datos):
         self.nit.setText(datos.get("nit", ""))
         self.nrc.setText(datos.get("nrc", ""))
+        self.dui.setText(datos.get("dui", ""))
         self.nombre.setText(datos.get("nombre", ""))
         self.nombre_comercial.setText(datos.get("nombreComercial", ""))
         self.cod_giro.setText(datos.get("cod_giro") or datos.get("codActividad", ""))

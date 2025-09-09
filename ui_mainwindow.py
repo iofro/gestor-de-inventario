@@ -1559,7 +1559,7 @@ class MainWindow(QMainWindow):
         ambiente = config.get("ambiente", "pruebas")
         env_conf = config.get(ambiente, {})
         fe_config = env_conf.get("firma_electronica", {})
-        dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self)
+        dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self, db=self.manager.db)
         if dlg.exec_():
             new_dte_api, new_fe, new_urls = dlg.get_data()
             ambiente = new_dte_api["ambiente"]

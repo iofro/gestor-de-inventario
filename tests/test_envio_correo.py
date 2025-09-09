@@ -229,3 +229,30 @@ def test_save_invoice_fail_no_email(
 
     assert "email" not in called
 
+
+def test_save_invoice_handles_generation_error(
+    qt_app, monkeypatch, venta_factory, cliente_factory, producto_factory
+):
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
+
+    def fail(self, vid):
+        raise ValueError("boom")
+
+    monkeypatch.setattr(SalesTab, "_generate_invoice_pdf", fail)
+
+    message = {}
+
+    def fake_warning(parent, title, text):
+        message["text"] = text
+
+    monkeypatch.setattr(QMessageBox, "warning", fake_warning)
+
+    tab.sales_table.selectRow(0)
+    tab.save_invoice()
+
+    assert message["text"] == "boom"
+    assert db.saved is None
+

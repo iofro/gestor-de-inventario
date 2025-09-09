@@ -35,6 +35,17 @@ def _build_dialog(db_conn):
     return dialog
 
 
+def _doc_rel():
+    return [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 2,
+            "numeroDocumento": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
+
+
 def test_nr_dialog_receptor_fields(db_conn, qt_app):
     dialog = _build_dialog(db_conn)
     cli_item = QListWidgetItem("Cli")
@@ -44,7 +55,12 @@ def test_nr_dialog_receptor_fields(db_conn, qt_app):
     assert data is not None
     detalles, extension, receptor = data
     nr = generar_nota_remision_independiente(
-        db_conn, emisor=_sample_emisor(), receptor=receptor, detalles=detalles, extension=extension
+        db_conn,
+        emisor=_sample_emisor(),
+        receptor=receptor,
+        detalles=detalles,
+        documento_relacionado=_doc_rel(),
+        extension=extension,
     )
     rec = nr["receptor"]
     assert rec["codActividad"] == "6201"

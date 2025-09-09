@@ -7,8 +7,9 @@ el Ministerio de Hacienda de El Salvador para una Nota de Remisión (``tipoDte``
 
 * :func:`generar_nota_remision_desde_factura` crea la nota a partir de un DTE de
   origen reutilizando la información de emisor, receptor y detalles.
-* :func:`generar_nota_remision_independiente` permite crear una nota sin
-  documento relacionado especificando manualmente todos los datos.
+* :func:`generar_nota_remision_independiente` permite crear una nota
+  especificando manualmente todos los datos, incluido su documento
+  relacionado.
 """
 from __future__ import annotations
 
@@ -135,8 +136,11 @@ def _generar_base(
     ambiente: str = "00",
 ) -> dict:
     """Construye la estructura base común de una NR."""
+    if not documento_relacionado:
+        raise ValueError("documento_relacionado es obligatorio")
 
     limpiar_documentos(emisor)
+    emisor.setdefault("tipoEstablecimiento", "01")
     receptor.setdefault("bienTitulo", "01")
     receptor = normalizar_receptor(receptor)
 
@@ -157,9 +161,7 @@ def _generar_base(
         "tipoMoneda": "USD",
     }
 
-    numero_doc = None
-    if documento_relacionado:
-        numero_doc = documento_relacionado[0].get("numeroDocumento")
+    numero_doc = documento_relacionado[0].get("numeroDocumento")
     items = _build_items(detalles, numero_doc)
 
     ext = {
@@ -201,15 +203,11 @@ def _generar_base(
         "extension": ext,
         "resumen": resumen,
         "apendice": None,
+        "documentoRelacionado": documento_relacionado,
     }
-    if documento_relacionado:
-        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
-    result = sanitize_dte_payload(data, schema)
-    if not documento_relacionado:
-        result.pop("documentoRelacionado", None)
-    return result
+    return sanitize_dte_payload(data, schema)
 
 
 def generar_nota_remision_desde_factura(
@@ -263,13 +261,16 @@ def generar_nota_remision_independiente(
     emisor: dict,
     receptor: dict,
     detalles: Iterable[dict],
+    documento_relacionado: list[dict],
     extension: Optional[dict] = None,
     ambiente: str = "00",
 ) -> dict:
-    """Genera una NR sin documento relacionado."""
+    """Genera una NR independiente especificando su documento relacionado."""
 
-    if not (emisor and receptor and detalles):
-        raise ValueError("emisor, receptor y detalles son obligatorios")
+    if not (emisor and receptor and detalles and documento_relacionado):
+        raise ValueError(
+            "emisor, receptor, detalles y documento_relacionado son obligatorios"
+        )
     if not extension:
         raise ValueError("extension es obligatoria")
     required_ext = [
@@ -294,7 +295,7 @@ def generar_nota_remision_independiente(
         receptor=receptor,
         detalles=detalles,
         extension=ext,
-        documento_relacionado=None,
+        documento_relacionado=documento_relacionado,
         ambiente=ambiente,
     )
 

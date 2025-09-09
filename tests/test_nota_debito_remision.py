@@ -35,6 +35,17 @@ def _sample_data():
     return venta, detalles
 
 
+def _doc_rel():
+    return [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 2,
+            "numeroDocumento": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
+
+
 def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     datos = {
         "nit": "0614-140710-001-2",
@@ -270,14 +281,16 @@ def test_generar_nota_remision_sin_documento_relacionado(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    doc_rel = _doc_rel()
     data = generar_nota_remision(
         db,
         emisor=datos,
         receptor=receptor,
         detalles=detalles,
+        documento_relacionado=doc_rel,
         extension=extension,
     )
-    assert "documentoRelacionado" not in data
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == doc_rel[0]["numeroDocumento"]
     assert str(data["resumen"]["montoTotalOperacion"]) == "0.00"
 
 
@@ -311,11 +324,16 @@ def test_generar_nota_remision_desde_db_independiente(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
-    extra = {"items": detalles, "receptor": receptor, "extension": extension}
+    extra = {
+        "items": detalles,
+        "receptor": receptor,
+        "extension": extension,
+        "documento_relacionado": _doc_rel(),
+    }
     nota_id = db.agregar_nota("remision", None, "2024-01-01", 0, "Envio", detalles=extra)
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["receptor"]["nombre"] == "Cliente"
-    assert "documentoRelacionado" not in data
+    assert data["documentoRelacionado"]
 
 
 def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):

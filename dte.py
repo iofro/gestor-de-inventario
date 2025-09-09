@@ -4011,13 +4011,16 @@ def _post_dte(
 
 
 def transmitir_dte(
-    db: DB, venta_id: int, modo: str = "normal", tipo_dte: str = "01"
+    db: DB, venta_id: int, modo: str | None = None, tipo_dte: str = "01"
 ) -> dict:
     """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
     ``tipo_dte`` permite especificar el código del documento a transmitir,
     usando ``"01"`` para facturas y ``"03"`` para tickets.
     """
+
+    if modo is None:
+        modo = get_default_modo_transmision()
 
     # For contingency mode, simply register the pending state
     if modo == "contingencia":
@@ -4282,8 +4285,11 @@ def _enviar_documento(
     return res
 
 
-def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
+def enviar_factura(db: DB, venta_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una factura electrónica."""
+    if modo is None:
+        modo = get_default_modo_transmision()
+
     data = generar_dte_json(db, venta_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("01")
@@ -4301,8 +4307,11 @@ def enviar_factura(db: DB, venta_id: int, modo: str = "normal") -> dict:
     return resp
 
 
-def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
+def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una nota de crédito."""
+    if modo is None:
+        modo = get_default_modo_transmision()
+
     data = generar_nota_credito_json(db, nota_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("05")
@@ -4341,8 +4350,11 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 
-def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
+def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una nota de débito."""
+    if modo is None:
+        modo = get_default_modo_transmision()
+
     data = generar_nota_debito_json(db, nota_id)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("06")
@@ -4381,8 +4393,11 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str = "normal") -> dict:
     return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 
-def enviar_nota_remision(db: DB, nota_id: int, modo: str = "normal") -> dict:
+def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una nota de remisión."""
+    if modo is None:
+        modo = get_default_modo_transmision()
+
     from nota_remision import generar_nota_remision_desde_db
 
     data = generar_nota_remision_desde_db(db, nota_id)

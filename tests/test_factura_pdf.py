@@ -3,6 +3,7 @@ import fitz
 from urllib.parse import urlparse, parse_qs
 import factura_sv
 from factura_sv import generar_factura_electronica_pdf, build_qr_value
+import utils.catalogos as catalogos
 
 
 def _sample_data(tipo):
@@ -183,4 +184,41 @@ def test_contingencia_draws_message(tmp_path):
     with fitz.open(out) as doc:
         text = ''.join(p.get_text() for p in doc)
     assert 'TRANSMISIÓN DIFERIDA' in text
+
+
+def test_direccion_includes_municipio(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        catalogos,
+        "get_value",
+        lambda cat, code, default=None: "La Libertad Centro" if code == "0524" else default,
+    )
+    venta, detalles = _sample_data('Crédito Fiscal')
+    direccion = {
+        'departamento': '05',
+        'municipio': '24',
+        'complemento': 'Colonia El Centro con una avenida realmente muy larga para pruebas',
+    }
+    cliente = {'nombre': 'Ana', 'direccion': direccion}
+    datos_negocio = {
+        'nombre': 'Neg',
+        'nit': '',
+        'nrc': '',
+        'descActividad': '',
+        'direccion': direccion,
+    }
+    out = tmp_path / 'dir.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        cliente,
+        {},
+        'Crédito Fiscal',
+        archivo=str(out),
+        datos_negocio=datos_negocio,
+    )
+    with fitz.open(out) as doc:
+        lines = ''.join(p.get_text() for p in doc).splitlines()
+    idx = next(i for i, ln in enumerate(lines) if ln.startswith('Dirección:'))
+    assert 'La Libertad Centro' in lines[idx]
+    assert 'realmente muy larga para pruebas' in lines[idx + 1]
 

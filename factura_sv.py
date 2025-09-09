@@ -8,6 +8,7 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
 
 from utils.pdf_utils import draw_wrapped_text
+import utils.catalogos as catalogos
 from dte import generar_cabecera_dte_data
 from db import DB
 from urllib.parse import urlencode
@@ -36,6 +37,19 @@ def build_qr_value(
     }
 
     return base_url + "?" + urlencode(params)
+
+
+def format_direccion(direccion):
+    """Format a ``direccion`` dict into "Municipio, complemento"."""
+    if not direccion:
+        return ""
+    departamento = str(direccion.get("departamento", "")).zfill(2)
+    municipio = str(direccion.get("municipio", "")).zfill(2)
+    complemento = direccion.get("complemento", "")
+    codigo_municipio = f"{departamento}{municipio}" if departamento or municipio else ""
+    nombre_municipio = catalogos.get_value("CAT-013", codigo_municipio) or ""
+    parts = [p for p in (nombre_municipio, complemento) if p]
+    return ", ".join(parts)
 
 
 def generar_factura_electronica_pdf(
@@ -229,7 +243,7 @@ def generar_factura_electronica_pdf(
         f"Nombre: {datos_negocio.get('nombre', '')}",
         f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}",
         f"Giro: {datos_negocio.get('descActividad', '')}",
-        f"Dirección: {datos_negocio.get('direccion', {}).get('complemento', '')}",
+        f"Dirección: {format_direccion(datos_negocio.get('direccion'))}",
     ]
     if telefono:
         emisor_lines.append(f"Número Teléfono: {telefono}")
@@ -270,12 +284,15 @@ def generar_factura_electronica_pdf(
     text_y -= 12
     c.drawString(emisor_x + 5, text_y, f"Giro: {datos_negocio.get('descActividad', '')}")
     text_y -= 12
-    c.drawString(
+    direccion_emisor = format_direccion(datos_negocio.get("direccion"))
+    text_y = draw_wrapped_text(
+        c,
+        f"Dirección: {direccion_emisor}",
         emisor_x + 5,
         text_y,
-        f"Dirección: {datos_negocio.get('direccion', {}).get('complemento', '')}",
+        box_w - 10,
+        line_h,
     )
-    text_y -= 12
     if telefono:
         c.drawString(emisor_x + 5, text_y, f"Número Teléfono: {telefono}")
         text_y -= 12
@@ -315,7 +332,15 @@ def generar_factura_electronica_pdf(
         text_y -= line_h
 
     text_y -= line_h
-    c.drawString(left_x, text_y, f"Dirección: {cliente.get('direccion', '')}")
+    direccion = format_direccion(cliente.get("direccion"))
+    text_y = draw_wrapped_text(
+        c,
+        f"Dirección: {direccion}",
+        left_x,
+        text_y,
+        box_w - 10,
+        line_h,
+    )
 
     if venta.get('venta_a_cuenta_de') or venta.get('documento_venta_a_cuenta'):
         text_y -= line_h

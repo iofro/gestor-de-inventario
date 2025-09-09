@@ -98,11 +98,22 @@ def generate_invoice_pdf(manager, venta_id):
     if not venta_data.get("documento_venta_a_cuenta"):
         venta_data["documento_venta_a_cuenta"] = extra.get("documento_venta_a_cuenta", "")
     sello_recepcion = venta_data.get("sello_recepcion") or extra.get("selloRecibido", "")
-    tipo_operacion = venta_data.get("tipo_operacion") or extra.get("tipoOperacion") or 1
+    default_tipo = 2 if dte.get_default_modo_transmision() == "contingencia" else 1
+    tipo_operacion = (
+        venta_data.get("tipo_operacion")
+        or extra.get("tipoOperacion")
+        or default_tipo
+    )
     tipo_contingencia = (
         venta_data.get("tipo_contingencia") or extra.get("tipoContingencia")
     )
     motivo_contin = venta_data.get("motivo_contin") or extra.get("motivoContin")
+    if tipo_operacion == 2:
+        cfg = dte._load_datos_negocio().get("dte_api", {})
+        if tipo_contingencia is None:
+            tipo_contingencia = cfg.get("tipo_contingencia")
+        if motivo_contin is None:
+            motivo_contin = cfg.get("motivo_contin")
     ambiente = venta_data.get("ambiente") or extra.get("ambiente") or "00"
     if ambiente not in ("00", "01"):
         amb_cfg = str(ambiente).lower()
@@ -128,6 +139,8 @@ def generate_invoice_pdf(manager, venta_id):
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
         )
+    except AttributeError:
+        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
     except ValueError:
         logger.exception("Error al generar el DTE real")
         raise

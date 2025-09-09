@@ -922,18 +922,25 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
-                    if resp.get("estado") not in {"Transmitido", "Recibido", "PROCESADO"}:
+                    estado = resp.get("estado")
+                    if estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                        QMessageBox.information(
+                            self,
+                            "Enviar a Hacienda",
+                            "Documento enviado y recibido correctamente",
+                        )
+                    else:
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            resp.get("errores") or resp.get("detalle") or "Error",
-                        )
-                    else:
-                        QMessageBox.information(
-                            self, "Enviar a Hacienda", "Documento enviado"
+                            resp.get("errores")
+                            or resp.get("detalle")
+                            or "Fallo al enviar",
                         )
                 except dte.DTEValidationError as exc:
-                    self._show_validation_errors(exc.errors, exc.json_path)
+                    QMessageBox.critical(
+                        self, "Enviar a Hacienda", "\n".join(exc.errors)
+                    )
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
@@ -941,19 +948,28 @@ class FacturacionTab(QWidget):
             else:
                 tipo = "03" if rtype == "ticket" else "01"
                 try:
-                    resp = transmitir_dte(self.manager.db, entry.get("id"), tipo_dte=tipo)
-                    if resp.get("estado") not in {"Transmitido", "Recibido", "PROCESADO"}:
+                    resp = transmitir_dte(
+                        self.manager.db, entry.get("id"), tipo_dte=tipo
+                    )
+                    estado = resp.get("estado")
+                    if estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                        QMessageBox.information(
+                            self,
+                            "Enviar a Hacienda",
+                            "Documento enviado y recibido correctamente",
+                        )
+                    else:
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            resp.get("errores") or resp.get("detalle") or "Error",
-                        )
-                    else:
-                        QMessageBox.information(
-                            self, "Enviar a Hacienda", "Documento enviado"
+                            resp.get("errores")
+                            or resp.get("detalle")
+                            or "Fallo al enviar",
                         )
                 except dte.DTEValidationError as exc:
-                    self._show_validation_errors(exc.errors, exc.json_path)
+                    QMessageBox.critical(
+                        self, "Enviar a Hacienda", "\n".join(exc.errors)
+                    )
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)

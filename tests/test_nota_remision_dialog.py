@@ -44,19 +44,7 @@ def test_nr_dialog_receptor_fields(db_conn, qt_app):
     assert data is not None
     detalles, extension, receptor = data
     nr = generar_nota_remision_independiente(
-        db_conn,
-        emisor=_sample_emisor(),
-        receptor=receptor,
-        detalles=detalles,
-        extension=extension,
-        documento_relacionado=[
-            {
-                "tipoDocumento": "03",
-                "tipoGeneracion": 1,
-                "numeroDocumento": "XYZ",
-                "fechaEmision": "2024-01-01",
-            }
-        ],
+        db_conn, emisor=_sample_emisor(), receptor=receptor, detalles=detalles, extension=extension
     )
     rec = nr["receptor"]
     assert rec["codActividad"] == "6201"

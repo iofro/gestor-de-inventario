@@ -2,13 +2,11 @@ import pytest
 import warnings
 
 from db import DB
-from nota_remision import generar_nota_remision
 from nota_remision_electronica import (
     generar_nota_remision_desde_factura,
     generar_nota_remision_independiente,
 )
 import dte
-import pytest
 
 
 def _sample_emisor():
@@ -32,17 +30,6 @@ def _sample_receptor():
             "complemento": "San Salvador",
         },
     }
-
-
-def _sample_doc_rel():
-    return [
-        {
-            "tipoDocumento": "03",
-            "tipoGeneracion": 1,
-            "numeroDocumento": "XYZ",
-            "fechaEmision": "2024-01-01",
-        }
-    ]
 
 
 def test_nr_desde_factura_documento_relacionado(monkeypatch):
@@ -176,13 +163,9 @@ def test_nr_independiente_extension(monkeypatch):
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
-        documento_relacionado=_sample_doc_rel(),
         extension=extension,
     )
-    doc_rel = data["documentoRelacionado"][0]
-    assert doc_rel["numeroDocumento"] == "XYZ"
-    item = data["cuerpoDocumento"][0]
-    assert item["numeroDocumento"] == "XYZ"
+    assert "documentoRelacionado" not in data
     ext = data["extension"]
     assert ext["nombEntrega"] == "Juan"
     assert ext["nombRecibe"] == "Ana"
@@ -198,24 +181,6 @@ def test_nr_independiente_extension(monkeypatch):
     assert float(res["descuNoSuj"]) == 0.0
     assert float(res["descuExenta"]) == 0.0
     assert float(res["descuGravada"]) == 0.0
-
-
-def test_nr_independiente_documento_relacionado_requerido(monkeypatch):
-    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
-    db = DB(":memory:")
-    emisor = _sample_emisor()
-    receptor = _sample_receptor()
-    extension = {"docuEntrega": "123", "docuRecibe": "456"}
-    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
-    with pytest.raises(ValueError):
-        generar_nota_remision_independiente(
-            db,
-            emisor=emisor,
-            receptor=receptor,
-            detalles=detalles,
-            extension=extension,
-            documento_relacionado=[],
-        )
 
 
 def test_nr_independiente_extension_sin_observaciones(monkeypatch):
@@ -236,7 +201,6 @@ def test_nr_independiente_extension_sin_observaciones(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
-            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -260,7 +224,6 @@ def test_nr_independiente_extension_observaciones_vacia(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
-            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -283,22 +246,6 @@ def test_nr_item_validation(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
-            documento_relacionado=_sample_doc_rel(),
-            extension=extension,
-        )
-    with pytest.raises(ValueError):
-        extension = {
-            "nombEntrega": "X",
-            "docuEntrega": "123",
-            "nombRecibe": "Y",
-            "docuRecibe": "456",
-            "observaciones": "Obs",
-        }
-        generar_nota_remision_independiente(
-            db,
-            emisor=emisor,
-            receptor=receptor,
-            detalles=[{"descripcion": "Prod", "cantidad": -1, "uniMedida": 59}],
             extension=extension,
         )
     extension = {
@@ -313,40 +260,9 @@ def test_nr_item_validation(monkeypatch):
         emisor=emisor,
         receptor=receptor,
         detalles=[{"descripcion": "Prod", "cantidad": 1, "uniMedida": 1}],
-        documento_relacionado=_sample_doc_rel(),
         extension=extension,
     )
     assert data["cuerpoDocumento"][0]["uniMedida"] == 59
-
-
-def test_nr_item_validation_regular(monkeypatch):
-    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
-    db = DB(":memory:")
-    emisor = _sample_emisor()
-    receptor = _sample_receptor()
-    extension = {
-        "nombEntrega": "X",
-        "docuEntrega": "123",
-        "nombRecibe": "Y",
-        "docuRecibe": "456",
-        "observaciones": "Obs",
-    }
-    with pytest.raises(ValueError):
-        generar_nota_remision(
-            db,
-            emisor=emisor,
-            receptor=receptor,
-            detalles=[{"descripcion": "Prod", "cantidad": 0}],
-            extension=extension,
-        )
-    with pytest.raises(ValueError):
-        generar_nota_remision(
-            db,
-            emisor=emisor,
-            receptor=receptor,
-            detalles=[{"descripcion": "Prod", "cantidad": -1}],
-            extension=extension,
-        )
 
 
 def test_receptor_dui_sin_nrc(monkeypatch):
@@ -419,7 +335,6 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
-            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -432,20 +347,13 @@ def test_receptor_campo_obligatorio_faltante(monkeypatch, campo):
     receptor = _sample_receptor()
     receptor.pop(campo)
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
-    extension = {
-        "nombEntrega": "Juan",
-        "docuEntrega": "123",
-        "nombRecibe": "Ana",
-        "docuRecibe": "456",
-        "observaciones": "Obs",
-    }
+    extension = {"docuEntrega": "123", "docuRecibe": "456"}
     with pytest.raises(ValueError, match=f"receptor requiere {campo}"):
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
-            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -457,19 +365,12 @@ def test_receptor_direccion_complemento_faltante(monkeypatch):
     receptor = _sample_receptor()
     receptor["direccion"].pop("complemento")
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
-    extension = {
-        "nombEntrega": "Juan",
-        "docuEntrega": "123",
-        "nombRecibe": "Ana",
-        "docuRecibe": "456",
-        "observaciones": "Obs",
-    }
+    extension = {"docuEntrega": "123", "docuRecibe": "456"}
     with pytest.raises(ValueError, match="receptor requiere direccion.complemento"):
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
-            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )

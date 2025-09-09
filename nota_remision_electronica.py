@@ -148,9 +148,9 @@ def _generar_base(
         "tipoMoneda": "USD",
     }
 
-    numero_doc = None
-    if documento_relacionado:
-        numero_doc = documento_relacionado[0].get("numeroDocumento")
+    if not documento_relacionado:
+        raise ValueError("documento_relacionado es obligatorio")
+    numero_doc = documento_relacionado[0].get("numeroDocumento")
     items = _build_items(detalles, numero_doc)
 
     ext = {
@@ -192,14 +192,11 @@ def _generar_base(
         "extension": ext,
         "resumen": resumen,
         "apendice": None,
+        "documentoRelacionado": documento_relacionado,
     }
-    if documento_relacionado:
-        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
     result = sanitize_dte_payload(data, schema)
-    if not documento_relacionado:
-        result.pop("documentoRelacionado", None)
     return result
 
 
@@ -255,12 +252,15 @@ def generar_nota_remision_independiente(
     receptor: dict,
     detalles: Iterable[dict],
     extension: Optional[dict] = None,
+    documento_relacionado: Optional[list[dict]] = None,
     ambiente: str = "00",
 ) -> dict:
-    """Genera una NR sin documento relacionado."""
+    """Genera una NR especificando manualmente todos los datos."""
 
     if not (emisor and receptor and detalles):
         raise ValueError("emisor, receptor y detalles son obligatorios")
+    if not documento_relacionado:
+        raise ValueError("documento_relacionado es obligatorio")
 
     return _generar_base(
         db,
@@ -268,7 +268,7 @@ def generar_nota_remision_independiente(
         receptor=receptor,
         detalles=detalles,
         extension=extension,
-        documento_relacionado=None,
+        documento_relacionado=documento_relacionado,
         ambiente=ambiente,
     )
 

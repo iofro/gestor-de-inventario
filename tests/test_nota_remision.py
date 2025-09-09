@@ -32,6 +32,17 @@ def _sample_receptor():
     }
 
 
+def _sample_doc_rel():
+    return [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 2,
+            "numeroDocumento": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
+
+
 def test_nr_desde_factura_documento_relacionado(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
@@ -158,20 +169,25 @@ def test_nr_independiente_extension(monkeypatch):
         "observaciones": "Obs",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    doc_rel = _sample_doc_rel()
     data = generar_nota_remision_independiente(
         db,
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
+        documento_relacionado=doc_rel,
         extension=extension,
     )
-    assert "documentoRelacionado" not in data
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == doc_rel[0]["numeroDocumento"]
+    item = data["cuerpoDocumento"][0]
+    assert item["numeroDocumento"] == doc_rel[0]["numeroDocumento"]
     ext = data["extension"]
     assert ext["nombEntrega"] == "Juan"
     assert ext["nombRecibe"] == "Ana"
     assert ext["docuEntrega"] == "06141407100012"
     assert ext["docuRecibe"] == "12345678"
     assert "-" not in data["emisor"]["nit"]
+    assert data["emisor"]["tipoEstablecimiento"] == "01"
     assert " " not in data["receptor"]["numDocumento"]
     rec = data["receptor"]
     assert "nombreComercial" in rec
@@ -201,6 +217,7 @@ def test_nr_independiente_extension_sin_observaciones(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
+            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -224,6 +241,7 @@ def test_nr_independiente_extension_observaciones_vacia(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
+            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -246,6 +264,7 @@ def test_nr_item_validation(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
+            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
     extension = {
@@ -260,6 +279,7 @@ def test_nr_item_validation(monkeypatch):
         emisor=emisor,
         receptor=receptor,
         detalles=[{"descripcion": "Prod", "cantidad": 1, "uniMedida": 1}],
+        documento_relacionado=_sample_doc_rel(),
         extension=extension,
     )
     assert data["cuerpoDocumento"][0]["uniMedida"] == 59
@@ -335,6 +355,7 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
+            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -354,6 +375,7 @@ def test_receptor_campo_obligatorio_faltante(monkeypatch, campo):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
+            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
 
@@ -372,5 +394,6 @@ def test_receptor_direccion_complemento_faltante(monkeypatch):
             emisor=emisor,
             receptor=receptor,
             detalles=detalles,
+            documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )

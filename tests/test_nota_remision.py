@@ -52,6 +52,9 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     assert float(item["ventaGravada"]) == 0.0
     assert "-" not in data["emisor"]["nit"]
     assert " " not in data["receptor"]["numDocumento"]
+    rec = data["receptor"]
+    assert "nombreComercial" in rec
+    assert rec["nombreComercial"] is None
     resumen = data["resumen"]
     assert float(resumen["descuNoSuj"]) == 0.0
     assert float(resumen["descuExenta"]) == 0.0
@@ -82,6 +85,9 @@ def test_nr_desde_factura_extension(monkeypatch):
         db, factura, extension=extension
     )
     assert data["extension"]["nombEntrega"] == "Juan"
+    rec = data["receptor"]
+    assert "nombreComercial" in rec
+    assert rec["nombreComercial"] is None
 
 
 def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
@@ -115,6 +121,7 @@ def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
     assert rec["tipoDocumento"] == "36"
     assert rec["numDocumento"] == "06141407100012"
     assert rec["nrc"] == "1234567"
+    assert "nombreComercial" in rec
     ext = data["extension"]
     assert "tipoDocRecibe" not in ext
     assert "nrcRecibe" not in ext
@@ -148,6 +155,9 @@ def test_nr_independiente_extension(monkeypatch):
     assert ext["docuRecibe"] == "12345678"
     assert "-" not in data["emisor"]["nit"]
     assert " " not in data["receptor"]["numDocumento"]
+    rec = data["receptor"]
+    assert "nombreComercial" in rec
+    assert rec["nombreComercial"] is None
     assert data["cuerpoDocumento"][0]["codTributo"] is None
     res = data["resumen"]
     assert float(res["descuNoSuj"]) == 0.0
@@ -169,15 +179,15 @@ def test_nr_item_validation(monkeypatch):
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
             extension=extension,
         )
-    with pytest.raises(ValueError):
-        extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
-        generar_nota_remision_independiente(
-            db,
-            emisor=emisor,
-            receptor=receptor,
-            detalles=[{"descripcion": "Prod", "cantidad": 1}],
-            extension=extension,
-        )
+    extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
+    data = generar_nota_remision_independiente(
+        db,
+        emisor=emisor,
+        receptor=receptor,
+        detalles=[{"descripcion": "Prod", "cantidad": 1, "uniMedida": 1}],
+        extension=extension,
+    )
+    assert data["cuerpoDocumento"][0]["uniMedida"] == 59
 
 
 def test_receptor_dui_sin_nrc(monkeypatch):
@@ -204,6 +214,7 @@ def test_receptor_dui_sin_nrc(monkeypatch):
     assert rec["tipoDocumento"] == "13"
     assert rec["numDocumento"] == "123456789"
     assert "nrc" not in rec
+    assert rec["nombreComercial"] is None
     assert any("Se removió NRC" in str(warn.message) for warn in w)
 
 

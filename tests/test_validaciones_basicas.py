@@ -98,9 +98,9 @@ def test_receptor_documentos(monkeypatch, db_fixture):
 
     data = _load_fc()
     data["receptor"]["tipoDocumento"] = 13
-    data["receptor"]["numDocumento"] = "12345678-9"
-    validate_dte_json(data, db=db_fixture)
     data["receptor"]["numDocumento"] = "123456789"
+    validate_dte_json(data, db=db_fixture)
+    data["receptor"]["numDocumento"] = "12345678"
     with pytest.raises(ValueError):
         validate_dte_json(data, db=db_fixture)
 

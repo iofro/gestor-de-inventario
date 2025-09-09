@@ -48,7 +48,7 @@ from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
 from utils.stable_json import save_file, stable_stringify
-from utils.sanitize import limpiar_doc
+from utils.sanitize import limpiar_doc, solo_digitos
 from utils import catalogos
 from paths import DATOS_NEGOCIO_PATH
 import tempfile
@@ -152,16 +152,20 @@ class NotaRemisionExtWidget(QWidget):
 
         self.nomb_recibe = QLineEdit()
         self.docu_recibe = QLineEdit()
+        self.nrc_recibe = QLineEdit()
         self.ext_obs = QPlainTextEdit()
         for label, widget in [
             ("Nombre recibe:", self.nomb_recibe),
             ("Documento recibe:", self.docu_recibe),
+            ("NRC:", self.nrc_recibe),
             ("Observaciones:", self.ext_obs),
         ]:
             row = QHBoxLayout()
             row.addWidget(QLabel(label))
             row.addWidget(widget)
             layout.addLayout(row)
+
+        self.tipo_doc_recibe = "13"
 
         # Search handlers and timers
         self.emp_timer = QTimer(self)
@@ -252,8 +256,16 @@ class NotaRemisionExtWidget(QWidget):
         data = item.data(Qt.UserRole) if item else None
         if isinstance(data, dict):
             self.nomb_recibe.setText(data.get("nombre", ""))
-            doc = data.get("dui") or data.get("nit") or data.get("nrc") or ""
-            self.docu_recibe.setText(limpiar_doc(doc))
+            nrc = data.get("nrc") or ""
+            if nrc:
+                self.docu_recibe.setText(limpiar_doc(data.get("nit") or ""))
+                self.nrc_recibe.setText(limpiar_doc(nrc))
+                self.tipo_doc_recibe = "36"
+            else:
+                doc = data.get("dui") or data.get("nit") or ""
+                self.docu_recibe.setText(limpiar_doc(doc))
+                self.nrc_recibe.clear()
+                self.tipo_doc_recibe = "13"
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
@@ -282,6 +294,8 @@ class NotaRemisionExtWidget(QWidget):
             "docuEntrega": limpiar_doc(self.docu_entrega.text()),
             "nombRecibe": self.nomb_recibe.text(),
             "docuRecibe": limpiar_doc(self.docu_recibe.text()),
+            "nrcRecibe": limpiar_doc(self.nrc_recibe.text()),
+            "tipoDocRecibe": self.tipo_doc_recibe,
             "observaciones": self.ext_obs.toPlainText(),
         }
 
@@ -299,6 +313,25 @@ class NotaRemisionExtWidget(QWidget):
                 "Todos los campos de entrega/recepción son obligatorios",
             )
             return False
+        doc = solo_digitos(self.docu_recibe.text())
+        if self.tipo_doc_recibe == "36":
+            if len(doc) != 14:
+                QMessageBox.warning(
+                    self, "Nota", "NIT debe tener 14 dígitos (sin guiones)"
+                )
+                return False
+            nrc = solo_digitos(self.nrc_recibe.text())
+            if len(nrc) not in (6, 7):
+                QMessageBox.warning(
+                    self, "Nota", "NRC requerido (6–7 dígitos)"
+                )
+                return False
+        else:
+            if len(doc) != 9:
+                QMessageBox.warning(
+                    self, "Nota", "DUI debe tener 9 dígitos (sin guiones)"
+                )
+                return False
         return True
 
 
@@ -442,13 +475,17 @@ class NotaRemisionDialog(QDialog):
                 }
             )
         extension = self.ext_widget.get_data()
+        tipo_doc = extension.pop("tipoDocRecibe")
+        nrc = extension.pop("nrcRecibe", "")
         receptor = {
             "nombre": extension.get("nombRecibe"),
-            "tipoDocumento": "13",
+            "tipoDocumento": tipo_doc,
             "numDocumento": extension.get("docuRecibe"),
             "bienTitulo": "01",
             "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
         }
+        if tipo_doc == "36" and nrc:
+            receptor["nrc"] = nrc
         return detalles, extension, receptor
 
 

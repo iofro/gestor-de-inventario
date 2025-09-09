@@ -7,8 +7,8 @@ export function sanitizeDocs<T>(data: T): T {
         walk(val);
       } else if (typeof val === 'string') {
         const kl = key.toLowerCase();
-        if (kl === 'nit' || kl === 'dui' || kl === 'numdocumento' || kl.includes('documento')) {
-          obj[key] = val.replace(/[-\s]/g, '');
+        if (kl === 'nit' || kl === 'dui' || kl === 'nrc' || kl === 'numdocumento' || kl.includes('documento')) {
+          obj[key] = val.replace(/\D+/g, '');
         }
       }
     }

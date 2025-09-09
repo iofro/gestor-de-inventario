@@ -51,8 +51,24 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
         "2024-01-01", 10, cliente_id=cliente_id, vendedor_id=vend, Distribuidor_id=dist
     )
     db.cursor.execute(
-        "INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta) VALUES (?, ?, ?, ?, ?, ?)",
-        (venta_id, "envio", "PROCESADO", "abc", "2024-01-01T00:00:00", "ok"),
+        """
+        INSERT INTO dte_envios (
+            venta_id, modo, estado, sello, ambiente, version, tipo_dte,
+            codigo_generacion, fecha_hora, respuesta
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            venta_id,
+            "envio",
+            "PROCESADO",
+            "abc",
+            "00",
+            "1",
+            "01",
+            "ABC",
+            "2024-01-01T00:00:00",
+            "ok",
+        ),
     )
     db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo, detalles) VALUES (?, ?, ?, ?, ?, ?)",
@@ -76,15 +92,29 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
 
     cur = man2.db.cursor
     row = cur.execute(
-        "SELECT modo, estado, sello, fecha_hora, respuesta FROM dte_envios"
+        "SELECT modo, estado, sello, ambiente, version, tipo_dte, codigo_generacion, fecha_hora, respuesta FROM dte_envios"
     ).fetchone()
     assert (
         row["modo"],
         row["estado"],
         row["sello"],
+        row["ambiente"],
+        row["version"],
+        row["tipo_dte"],
+        row["codigo_generacion"],
         row["fecha_hora"],
         row["respuesta"],
-    ) == ("envio", "PROCESADO", "abc", "2024-01-01T00:00:00", "ok")
+    ) == (
+        "envio",
+        "PROCESADO",
+        "abc",
+        "00",
+        "1",
+        "01",
+        "ABC",
+        "2024-01-01T00:00:00",
+        "ok",
+    )
 
     row = cur.execute(
         "SELECT tipo, fecha, monto, motivo, detalles FROM notas"
@@ -113,3 +143,4 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
         "/tmp/ticket.pdf",
         "2024-01-01",
     )
+

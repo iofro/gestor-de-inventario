@@ -53,7 +53,18 @@ class FakeDB:
     def get_factura_pdf(self, vid):
         return self.factura_path
 
-    def registrar_envio_dte(self, venta_id, modo, estado, sello, respuesta_json=""):
+    def registrar_envio_dte(
+        self,
+        venta_id,
+        modo,
+        estado,
+        sello,
+        respuesta_json="",
+        ambiente=None,
+        version=None,
+        tipo_dte=None,
+        codigo_generacion=None,
+    ):
         self.envios.append(
             {"venta_id": venta_id, "modo": modo, "estado": estado, "sello": sello}
         )

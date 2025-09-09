@@ -1,0 +1,93 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1,
+      "codTributo": null,
+      "codigo": "PD002",
+      "descripcion": "Producto Demo 2",
+      "montoDescu": 0.0,
+      "numItem": 1,
+      "precioUni": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.00,
+      "ventaGravada": 0.00,
+      "ventaNoSuj": 0.00
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456"
+  },
+  "extension": {
+    "docuEntrega": "012345678",
+    "docuRecibe": "13240304791012",
+    "nombEntrega": "Ana López",
+    "nombRecibe": "ariel",
+    "observaciones": "s"
+  },
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "467435A2-6C93-4C13-9940-CDE7B2C6A105",
+    "fecEmi": "2025-09-08",
+    "horEmi": "21:20:53",
+    "motivoContin": null,
+    "numeroControl": "DTE-04-S001P001-000000000000012",
+    "tipoContingencia": null,
+    "tipoDte": "04",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "receptor": {
+    "bienTitulo": "01",
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Cliente de demostración",
+    "direccion": {
+      "complemento": "6a calle oriente",
+      "departamento": "05",
+      "municipio": "25"
+    },
+    "nombre": "ariel",
+    "nombreComercial": null,
+    "nrc": "2273734",
+    "numDocumento": "13240304791012",
+    "telefono": "74154027",
+    "tipoDocumento": "36"
+  },
+  "resumen": {
+    "descuExenta": 0.00,
+    "descuGravada": 0.00,
+    "descuNoSuj": 0.00,
+    "montoTotalOperacion": 0.00,
+    "porcentajeDescuento": 0.00,
+    "subTotal": 0.00,
+    "subTotalVentas": 0.00,
+    "totalDescu": 0.00,
+    "totalExenta": 0.00,
+    "totalGravada": 0.00,
+    "totalLetras": "CERO 00/100 DÓLARES",
+    "totalNoSuj": 0.00,
+    "tributos": null
+  },
+  "ventaTercero": null
+}

@@ -20,6 +20,15 @@ def _sample_receptor():
         "nrc": "1234567",
         "nombre": "Cliente",
         "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "01",
+            "complemento": "San Salvador",
+        },
     }
 
 
@@ -105,6 +114,15 @@ def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
             "numDocumento": "12345678-9",
             "nombre": "Cliente",
             "bienTitulo": "01",
+            "codActividad": "6201",
+            "descActividad": "Servicios de software",
+            "telefono": "70000001",
+            "correo": "cliente@example.com",
+            "direccion": {
+                "departamento": "05",
+                "municipio": "01",
+                "complemento": "San Salvador",
+            },
         },
         "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
     }
@@ -200,6 +218,15 @@ def test_receptor_dui_sin_nrc(monkeypatch):
         "nrc": "1234567",
         "nombre": "Cliente",
         "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "01",
+            "complemento": "San Salvador",
+        },
     }
     factura = {
         "identificacion": {"tipoDte": "03", "codigoGeneracion": "1", "fecEmi": "2024-01-01"},
@@ -227,6 +254,15 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         "numDocumento": "0614-140710-001-2",
         "nombre": "Cliente",
         "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "01",
+            "complemento": "San Salvador",
+        },
     }
     extension = {
         "nombEntrega": "Juan",
@@ -236,6 +272,43 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
     with pytest.raises(ValueError):
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=detalles,
+            extension=extension,
+        )
+
+
+@pytest.mark.parametrize("campo", ["codActividad", "descActividad", "telefono", "correo"])
+def test_receptor_campo_obligatorio_faltante(monkeypatch, campo):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = _sample_receptor()
+    receptor.pop(campo)
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    extension = {"docuEntrega": "123", "docuRecibe": "456"}
+    with pytest.raises(ValueError, match=f"receptor requiere {campo}"):
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=detalles,
+            extension=extension,
+        )
+
+
+def test_receptor_direccion_complemento_faltante(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = _sample_receptor()
+    receptor["direccion"].pop("complemento")
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    extension = {"docuEntrega": "123", "docuRecibe": "456"}
+    with pytest.raises(ValueError, match="receptor requiere direccion.complemento"):
         generar_nota_remision_independiente(
             db,
             emisor=emisor,

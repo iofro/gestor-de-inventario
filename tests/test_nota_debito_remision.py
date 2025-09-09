@@ -269,6 +269,10 @@ def test_generar_nota_remision_sin_documento_relacionado(monkeypatch):
         "nombre": "Cliente",
         "tipoDocumento": "13",
         "numDocumento": "12345678-9",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "cliente@example.com",
         "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
     }
     detalles = [
@@ -281,16 +285,15 @@ def test_generar_nota_remision_sin_documento_relacionado(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
-    doc_rel = _doc_rel()
     data = generar_nota_remision(
         db,
         emisor=datos,
         receptor=receptor,
         detalles=detalles,
-        documento_relacionado=doc_rel,
         extension=extension,
     )
-    assert data["documentoRelacionado"][0]["numeroDocumento"] == doc_rel[0]["numeroDocumento"]
+    assert "documentoRelacionado" not in data
+    assert "numeroDocumento" not in data["cuerpoDocumento"][0]
     assert str(data["resumen"]["montoTotalOperacion"]) == "0.00"
 
 

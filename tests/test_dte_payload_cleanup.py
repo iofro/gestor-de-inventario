@@ -52,12 +52,14 @@ def test_sanitize_dte_payload_adds_required_fields_and_cleans_docs(dte_metadata_
     payload.pop("extension", None)
     payload.pop("apendice", None)
     payload["emisor"]["nit"] = "0614-123456-001-1"
+    payload["emisor"]["dui"] = "01234567-8"
     payload["receptor"]["numDocumento"] = "01234567-8"
     clean = dte.sanitize_dte_payload(payload)
     assert clean["ventaTercero"] is None
     assert clean["extension"] is None
     assert clean["apendice"] is None
     assert clean["emisor"]["nit"] == "06141234560011"
+    assert clean["emisor"]["dui"] == "012345678"
     assert clean["receptor"]["numDocumento"] == "012345678"
 
 

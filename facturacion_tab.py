@@ -891,6 +891,30 @@ class FacturacionTab(QWidget):
                     fh.write(f"- {e}\n")
             QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
 
+    def _show_hacienda_response(self, resp: dict) -> None:
+        """Show a message box summarizing Hacienda's response."""
+        resp = resp or {}
+        estado = resp.get("estado", "").upper()
+        if estado in {"PROCESADO", "RECIBIDO"}:
+            QMessageBox.information(
+                self,
+                "Enviar a Hacienda",
+                "Documento enviado y recibido correctamente",
+            )
+        elif estado == "TRANSMITIDO":
+            QMessageBox.information(
+                self,
+                "Enviar a Hacienda",
+                "Documento transmitido correctamente",
+            )
+        else:
+            detalle = resp.get("errores") or resp.get("detalle") or "Error"
+            QMessageBox.critical(
+                self,
+                "Enviar a Hacienda",
+                f"Fallo: {detalle}",
+            )
+
     def send_selected_invoice(self):
         entry = self._selected_entry()
         if not entry:
@@ -922,16 +946,7 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
-                    if resp.get("estado") not in {"Transmitido", "Recibido", "PROCESADO"}:
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
-                            resp.get("errores") or resp.get("detalle") or "Error",
-                        )
-                    else:
-                        QMessageBox.information(
-                            self, "Enviar a Hacienda", "Documento enviado"
-                        )
+                    self._show_hacienda_response(resp)
                 except dte.DTEValidationError as exc:
                     self._show_validation_errors(exc.errors, exc.json_path)
                 except Exception as exc:
@@ -941,17 +956,10 @@ class FacturacionTab(QWidget):
             else:
                 tipo = "03" if rtype == "ticket" else "01"
                 try:
-                    resp = transmitir_dte(self.manager.db, entry.get("id"), tipo_dte=tipo)
-                    if resp.get("estado") not in {"Transmitido", "Recibido", "PROCESADO"}:
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
-                            resp.get("errores") or resp.get("detalle") or "Error",
-                        )
-                    else:
-                        QMessageBox.information(
-                            self, "Enviar a Hacienda", "Documento enviado"
-                        )
+                    resp = transmitir_dte(
+                        self.manager.db, entry.get("id"), tipo_dte=tipo
+                    )
+                    self._show_hacienda_response(resp)
                 except dte.DTEValidationError as exc:
                     self._show_validation_errors(exc.errors, exc.json_path)
                 except Exception as exc:

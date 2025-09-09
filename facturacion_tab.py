@@ -1439,7 +1439,11 @@ class FacturacionTab(QWidget):
         nota_id = self.manager.db.agregar_nota(
             "remision", None, fecha, 0, "Remision", detalles=extra
         )
-        nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+        try:
+            nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+        except ValueError as exc:
+            QMessageBox.critical(self, "Nota", str(exc))
+            return
 
         self._guardar_archivos_nota_remision(nota_json)
         QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")

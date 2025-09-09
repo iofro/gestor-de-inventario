@@ -8,6 +8,8 @@ from db import DB
 from dte import (
     enviar_factura,
     enviar_nota_credito,
+    enviar_nota_debito,
+    enviar_nota_remision,
     enviar_evento_contingencia,
     enviar_evento_anulacion,
     _post_dte,
@@ -554,4 +556,129 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
     assert headers["User-Agent"] == "Vertex-DTE/1.0"
+
+
+def test_enviar_factura_default_contingencia(monkeypatch):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr("dte.generar_dte_json", lambda db_obj, vid: {})
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(
+        "dte.requests.post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
+    )
+
+    res = enviar_factura(db, venta_id)
+    assert res["estado"] == "Pendiente"
+    row = db.cursor.execute(
+        "SELECT estado, modo FROM dte_envios WHERE venta_id=?", (venta_id,)
+    ).fetchone()
+    assert row["estado"] == "Pendiente"
+    assert row["modo"] == "contingencia"
+
+
+def test_enviar_nota_credito_default_contingencia(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
+
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(
+        "dte.generar_nota_credito_json",
+        lambda db_obj, nid: {
+            "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
+            "receptor": {"nombre": "C"},
+            "resumen": {"totalLetras": "X"},
+        },
+    )
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(
+        "utils.docs.get_dte_document_paths",
+        lambda *a, **k: (tmp_path / "x.pdf", tmp_path / "x.json"),
+    )
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+    monkeypatch.setattr("utils.stable_json.save_file", lambda *a, **k: None)
+    monkeypatch.setattr("utils.stable_json.stable_stringify", lambda d, indent=2: "{}")
+    monkeypatch.setattr(
+        "dte.requests.post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
+    )
+
+    res = enviar_nota_credito(db, nota_id)
+    assert res["estado"] == "Pendiente"
+    row = db.cursor.execute(
+        "SELECT estado, modo FROM dte_envios WHERE venta_id=?", (nota_id,)
+    ).fetchone()
+    assert row["estado"] == "Pendiente"
+    assert row["modo"] == "contingencia"
+
+
+def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "debito", "2024-01-02", 10, "motivo")
+
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(
+        "dte.generar_nota_debito_json",
+        lambda db_obj, nid: {
+            "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
+            "receptor": {"nombre": "C"},
+            "resumen": {"totalLetras": "X"},
+        },
+    )
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(
+        "utils.docs.get_dte_document_paths",
+        lambda *a, **k: (tmp_path / "x.pdf", tmp_path / "x.json"),
+    )
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+    monkeypatch.setattr("utils.stable_json.save_file", lambda *a, **k: None)
+    monkeypatch.setattr("utils.stable_json.stable_stringify", lambda d, indent=2: "{}")
+    monkeypatch.setattr(
+        "dte.requests.post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
+    )
+
+    res = enviar_nota_debito(db, nota_id)
+    assert res["estado"] == "Pendiente"
+    row = db.cursor.execute(
+        "SELECT estado, modo FROM dte_envios WHERE venta_id=?", (nota_id,)
+    ).fetchone()
+    assert row["estado"] == "Pendiente"
+    assert row["modo"] == "contingencia"
+
+
+def test_enviar_nota_remision_default_contingencia(monkeypatch):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "remision", "2024-01-02", 10, "motivo")
+
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(
+        "nota_remision.generar_nota_remision_desde_db", lambda db_obj, nid: {}
+    )
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(
+        "dte.requests.post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
+    )
+
+    res = enviar_nota_remision(db, nota_id)
+    assert res["estado"] == "Pendiente"
+    row = db.cursor.execute(
+        "SELECT estado, modo FROM dte_envios WHERE venta_id=?", (nota_id,)
+    ).fetchone()
+    assert row["estado"] == "Pendiente"
+    assert row["modo"] == "contingencia"
 

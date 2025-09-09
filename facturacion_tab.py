@@ -21,6 +21,8 @@ from PyQt5.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QPlainTextEdit,
+    QSizePolicy,
+    QScrollArea,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices
@@ -491,9 +493,12 @@ class FacturacionTab(QWidget):
         self.preview_label = QLabel("Previsualización del PDF")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
-        self.preview_label.setFixedSize(QSize(600, 800))
-        self.preview_label.setScaledContents(False)
-        preview_layout.addWidget(self.preview_label)
+        self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.preview_label.setScaledContents(True)
+        preview_scroll = QScrollArea()
+        preview_scroll.setWidgetResizable(True)
+        preview_scroll.setWidget(self.preview_label)
+        preview_layout.addWidget(preview_scroll)
         main_layout.addLayout(preview_layout, 2)
 
         # Connect signals

@@ -158,14 +158,24 @@ def test_nr_independiente_extension(monkeypatch):
         "observaciones": "Obs",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    doc_rel = [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 1,
+            "numeroDocumento": "ABC123",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
     data = generar_nota_remision_independiente(
         db,
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
         extension=extension,
+        documento_relacionado=doc_rel,
     )
-    assert "documentoRelacionado" not in data
+    doc = data["documentoRelacionado"][0]
+    assert doc["numeroDocumento"] == "ABC123"
     ext = data["extension"]
     assert ext["nombEntrega"] == "Juan"
     assert ext["nombRecibe"] == "Ana"
@@ -188,6 +198,14 @@ def test_nr_item_validation(monkeypatch):
     db = DB(":memory:")
     emisor = _sample_emisor()
     receptor = _sample_receptor()
+    doc_rel = [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 1,
+            "numeroDocumento": "XYZ",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
     with pytest.raises(ValueError):
         extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
         generar_nota_remision_independiente(
@@ -196,6 +214,7 @@ def test_nr_item_validation(monkeypatch):
             receptor=receptor,
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
             extension=extension,
+            documento_relacionado=doc_rel,
         )
     extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
     data = generar_nota_remision_independiente(
@@ -204,6 +223,7 @@ def test_nr_item_validation(monkeypatch):
         receptor=receptor,
         detalles=[{"descripcion": "Prod", "cantidad": 1, "uniMedida": 1}],
         extension=extension,
+        documento_relacionado=doc_rel,
     )
     assert data["cuerpoDocumento"][0]["uniMedida"] == 59
 
@@ -271,6 +291,14 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         "docuRecibe": "1234 5678",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    doc_rel = [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 1,
+            "numeroDocumento": "NIT1",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
     with pytest.raises(ValueError):
         generar_nota_remision_independiente(
             db,
@@ -278,6 +306,7 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
             receptor=receptor,
             detalles=detalles,
             extension=extension,
+            documento_relacionado=doc_rel,
         )
 
 

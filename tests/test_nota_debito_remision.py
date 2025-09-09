@@ -270,14 +270,24 @@ def test_generar_nota_remision_sin_documento_relacionado(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    doc_rel = [
+        {
+            "tipoDocumento": "01",
+            "tipoGeneracion": 1,
+            "numeroDocumento": "DOC1",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
     data = generar_nota_remision(
         db,
         emisor=datos,
         receptor=receptor,
         detalles=detalles,
         extension=extension,
+        documento_relacionado=doc_rel,
     )
-    assert "documentoRelacionado" not in data
+    doc = data["documentoRelacionado"][0]
+    assert doc["numeroDocumento"] == "DOC1"
     assert str(data["resumen"]["montoTotalOperacion"]) == "0.00"
 
 
@@ -311,11 +321,25 @@ def test_generar_nota_remision_desde_db_independiente(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
-    extra = {"items": detalles, "receptor": receptor, "extension": extension}
+    doc_rel = [
+        {
+            "tipoDocumento": "01",
+            "tipoGeneracion": 1,
+            "numeroDocumento": "DOC1",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
+    extra = {
+        "items": detalles,
+        "receptor": receptor,
+        "extension": extension,
+        "documentoRelacionado": doc_rel,
+    }
     nota_id = db.agregar_nota("remision", None, "2024-01-01", 0, "Envio", detalles=extra)
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["receptor"]["nombre"] == "Cliente"
-    assert "documentoRelacionado" not in data
+    doc = data["documentoRelacionado"][0]
+    assert doc["numeroDocumento"] == "DOC1"
 
 
 def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):

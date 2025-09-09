@@ -2,6 +2,7 @@ import pytest
 import warnings
 
 from db import DB
+from nota_remision import generar_nota_remision
 from nota_remision_electronica import (
     generar_nota_remision_desde_factura,
     generar_nota_remision_independiente,
@@ -248,6 +249,21 @@ def test_nr_item_validation(monkeypatch):
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
             extension=extension,
         )
+    with pytest.raises(ValueError):
+        extension = {
+            "nombEntrega": "X",
+            "docuEntrega": "123",
+            "nombRecibe": "Y",
+            "docuRecibe": "456",
+            "observaciones": "Obs",
+        }
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=[{"descripcion": "Prod", "cantidad": -1, "uniMedida": 59}],
+            extension=extension,
+        )
     extension = {
         "nombEntrega": "X",
         "docuEntrega": "123",
@@ -263,6 +279,36 @@ def test_nr_item_validation(monkeypatch):
         extension=extension,
     )
     assert data["cuerpoDocumento"][0]["uniMedida"] == 59
+
+
+def test_nr_item_validation_regular(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = _sample_receptor()
+    extension = {
+        "nombEntrega": "X",
+        "docuEntrega": "123",
+        "nombRecibe": "Y",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    with pytest.raises(ValueError):
+        generar_nota_remision(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=[{"descripcion": "Prod", "cantidad": 0}],
+            extension=extension,
+        )
+    with pytest.raises(ValueError):
+        generar_nota_remision(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=[{"descripcion": "Prod", "cantidad": -1}],
+            extension=extension,
+        )
 
 
 def test_receptor_dui_sin_nrc(monkeypatch):

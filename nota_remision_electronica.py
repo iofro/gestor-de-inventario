@@ -21,6 +21,8 @@ from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
+import warnings
+
 from utils.sanitize import limpiar_documentos, solo_digitos
 
 Decimal_0 = Decimal("0")
@@ -87,6 +89,10 @@ def normalizar_receptor(receptor: dict) -> dict:
     if tipo == "13":
         if len(num) != 9:
             raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
+        if nrc_raw:
+            warnings.warn(
+                "Se removió NRC porque el documento es DUI", UserWarning
+            )
         receptor.pop("nrc", None)
     elif tipo == "36":
         if len(num) != 14:
@@ -94,6 +100,8 @@ def normalizar_receptor(receptor: dict) -> dict:
         nrc = receptor.get("nrc")
         if not nrc or len(nrc) not in (6, 7):
             raise ValueError("NRC requerido (6–7 dígitos)")
+    elif tipo in {"37", "03", "02"}:
+        receptor.pop("nrc", None)
     else:
         raise ValueError("tipoDocumento inválido en receptor")
     return receptor

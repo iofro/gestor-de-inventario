@@ -111,6 +111,15 @@ def normalizar_receptor(receptor: dict) -> dict:
         receptor.pop("nrc", None)
     else:
         raise ValueError("tipoDocumento inválido en receptor")
+    # Campos adicionales requeridos para receptores
+    for campo in ("codActividad", "descActividad", "telefono", "correo"):
+        if not receptor.get(campo):
+            raise ValueError(f"receptor requiere {campo}")
+
+    direccion = receptor.get("direccion") or {}
+    if not direccion.get("complemento"):
+        raise ValueError("receptor requiere direccion.complemento")
+
     receptor.setdefault("nombreComercial", None)
     return receptor
 
@@ -261,13 +270,30 @@ def generar_nota_remision_independiente(
 
     if not (emisor and receptor and detalles):
         raise ValueError("emisor, receptor y detalles son obligatorios")
+    if not extension:
+        raise ValueError("extension es obligatoria")
+    required_ext = [
+        "nombEntrega",
+        "docuEntrega",
+        "nombRecibe",
+        "docuRecibe",
+        "observaciones",
+    ]
+    missing = [k for k in required_ext if not extension.get(k)]
+    if missing:
+        raise ValueError(
+            "Faltan campos obligatorios en extension: " + ", ".join(missing)
+        )
+    ext = {k: extension.get(k) for k in required_ext}
+    if not str(ext.get("observaciones", "")).strip():
+        raise ValueError("observaciones es obligatoria")
 
     return _generar_base(
         db,
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
-        extension=extension,
+        extension=ext,
         documento_relacionado=None,
         ambiente=ambiente,
     )

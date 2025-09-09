@@ -18,6 +18,15 @@ def test_generar_nota_remision_json_from_dte(db_conn):
             "tipoDocumento": "36",
             "nrc": "1234567",
             "nombre": "Cliente",
+            "codActividad": "6201",
+            "descActividad": "Servicios de software",
+            "telefono": "70000001",
+            "correo": "cliente@example.com",
+            "direccion": {
+                "departamento": "05",
+                "municipio": "01",
+                "complemento": "San Salvador",
+            },
         },
         "cuerpoDocumento": [
             {

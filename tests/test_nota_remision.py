@@ -205,6 +205,29 @@ def test_nr_independiente_extension_sin_observaciones(monkeypatch):
         )
 
 
+def test_nr_independiente_extension_observaciones_vacia(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = _sample_receptor()
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "0614-140710-001-2",
+        "nombRecibe": "Ana",
+        "docuRecibe": "1234 5678",
+        "observaciones": "   ",
+    }
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    with pytest.raises(ValueError):
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=detalles,
+            extension=extension,
+        )
+
+
 def test_nr_item_validation(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")

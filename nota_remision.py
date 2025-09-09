@@ -206,6 +206,8 @@ def generar_nota_remision(
                 "Faltan campos obligatorios en extension: " + ", ".join(missing)
             )
         ext = {k: extension.get(k) for k in required_ext}
+        if not str(ext.get("observaciones", "")).strip():
+            raise ValueError("observaciones es obligatoria")
 
     ext = {k: v for k, v in ext.items() if k in allowed_ext_keys}
     limpiar_documentos(emisor)

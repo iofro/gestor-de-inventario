@@ -270,13 +270,28 @@ def generar_nota_remision_independiente(
 
     if not (emisor and receptor and detalles):
         raise ValueError("emisor, receptor y detalles son obligatorios")
+    if not extension:
+        raise ValueError("extension es obligatoria")
+    required_ext = [
+        "nombEntrega",
+        "docuEntrega",
+        "nombRecibe",
+        "docuRecibe",
+        "observaciones",
+    ]
+    missing = [k for k in required_ext if not extension.get(k)]
+    if missing:
+        raise ValueError(
+            "Faltan campos obligatorios en extension: " + ", ".join(missing)
+        )
+    ext = {k: extension.get(k) for k in required_ext}
 
     return _generar_base(
         db,
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
-        extension=extension,
+        extension=ext,
         documento_relacionado=None,
         ambiente=ambiente,
     )

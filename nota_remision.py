@@ -39,12 +39,17 @@ def _build_items(
 ) -> list[dict]:
     """Construye items con montos forzados a ``0.00``.
 
-    Además normaliza ``uniMedida`` contra el catálogo CAT-014, usando ``59``
-    (Unidad) cuando el detalle no provee una unidad válida.  Si
-    ``numero_documento`` se proporciona se añade a cada ítem.
+    Además valida que ``cantidad`` sea mayor que cero y normaliza
+    ``uniMedida`` contra el catálogo CAT-014, usando ``59`` (Unidad) cuando el
+    detalle no provee una unidad válida.  Si ``numero_documento`` se
+    proporciona se añade a cada ítem.
     """
     items: list[dict] = []
     for num, det in enumerate(detalles, 1):
+        cantidad = det.get("cantidad", 1)
+        if cantidad <= 0:
+            raise ValueError("cantidad debe ser mayor que cero")
+
         uni = det.get("uniMedida", 59)
         try:
             uni = int(uni)
@@ -57,7 +62,7 @@ def _build_items(
             "tipoItem": det.get("tipoItem", 1),
             "codigo": det.get("codigo", f"NR{num:03d}"),
             "descripcion": det.get("descripcion", f"Item {num}"),
-            "cantidad": det.get("cantidad", 1),
+            "cantidad": cantidad,
             "uniMedida": uni,
             "precioUni": 0.0,
             "montoDescu": 0.0,
@@ -211,6 +216,12 @@ def generar_nota_remision(
 
     ext = {k: v for k, v in ext.items() if k in allowed_ext_keys}
     limpiar_documentos(emisor)
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    tipo_est = emisor.get("tipoEstablecimiento")
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else default_est
+    if tipo_est not in catalogos.TIPO_ESTABLEC:
+        tipo_est = default_est
+    emisor["tipoEstablecimiento"] = tipo_est
     receptor.setdefault("bienTitulo", "01")
     receptor = normalizar_receptor(receptor)
     for key in ("docuEntrega", "docuRecibe"):
@@ -218,6 +229,12 @@ def generar_nota_remision(
         if not ext[key]:
             raise ValueError(f"{key} requerido")
     limpiar_documentos(ext)
+
+    if not documento_relacionado:
+        raise ValueError("documento_relacionado es obligatorio")
+    numero_doc = documento_relacionado[0].get("numeroDocumento")
+    if not numero_doc:
+        raise ValueError("documento_relacionado requiere numeroDocumento")
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
@@ -236,9 +253,6 @@ def generar_nota_remision(
         "tipoMoneda": "USD",
     }
 
-    numero_doc = None
-    if documento_relacionado:
-        numero_doc = documento_relacionado[0].get("numeroDocumento")
     items = _build_items(detalles, numero_doc)
 
     resumen = {
@@ -265,14 +279,11 @@ def generar_nota_remision(
         "extension": ext,
         "resumen": resumen,
         "apendice": None,
+        "documentoRelacionado": documento_relacionado,
     }
-    if documento_relacionado:
-        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
     result = sanitize_dte_payload(data, schema)
-    if not documento_relacionado:
-        result.pop("documentoRelacionado", None)
     return result
 
 
@@ -331,14 +342,23 @@ def generar_nota_remision_desde_db(
     detalles = extra.get("items") or []
     receptor = extra.get("receptor") or {}
     extension = extra.get("extension") or {}
+    documento_relacionado = extra.get("documento_relacionado")
 
     emisor = _load_datos_negocio()
+    limpiar_documentos(emisor)
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    tipo_est = emisor.get("tipoEstablecimiento")
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else default_est
+    if tipo_est not in catalogos.TIPO_ESTABLEC:
+        tipo_est = default_est
+    emisor["tipoEstablecimiento"] = tipo_est
     return generar_nota_remision(
         db,
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
         extension=extension,
+        documento_relacionado=documento_relacionado,
         ambiente=ambiente,
     )
 

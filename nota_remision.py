@@ -187,8 +187,10 @@ def generar_nota_remision(
                 receptor.setdefault("numDocumento", ext.get("docuRecibe"))
         receptor.setdefault("bienTitulo", "01")
     else:
-        if not (emisor and receptor and detalles):
-            raise ValueError("emisor, receptor y detalles son obligatorios")
+        if not (emisor and receptor and detalles and documento_relacionado):
+            raise ValueError(
+                "emisor, receptor, detalles y documento_relacionado son obligatorios"
+            )
         if not detalles:
             raise ValueError("Se requiere al menos un detalle")
         if not extension:
@@ -211,6 +213,7 @@ def generar_nota_remision(
 
     ext = {k: v for k, v in ext.items() if k in allowed_ext_keys}
     limpiar_documentos(emisor)
+    emisor.setdefault("tipoEstablecimiento", "01")
     receptor.setdefault("bienTitulo", "01")
     receptor = normalizar_receptor(receptor)
     for key in ("docuEntrega", "docuRecibe"):
@@ -236,9 +239,7 @@ def generar_nota_remision(
         "tipoMoneda": "USD",
     }
 
-    numero_doc = None
-    if documento_relacionado:
-        numero_doc = documento_relacionado[0].get("numeroDocumento")
+    numero_doc = documento_relacionado[0].get("numeroDocumento") if documento_relacionado else None
     items = _build_items(detalles, numero_doc)
 
     resumen = {
@@ -265,15 +266,11 @@ def generar_nota_remision(
         "extension": ext,
         "resumen": resumen,
         "apendice": None,
+        "documentoRelacionado": documento_relacionado,
     }
-    if documento_relacionado:
-        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
-    result = sanitize_dte_payload(data, schema)
-    if not documento_relacionado:
-        result.pop("documentoRelacionado", None)
-    return result
+    return sanitize_dte_payload(data, schema)
 
 
 def generar_nota_remision_desde_db(
@@ -331,6 +328,7 @@ def generar_nota_remision_desde_db(
     detalles = extra.get("items") or []
     receptor = extra.get("receptor") or {}
     extension = extra.get("extension") or {}
+    doc_rel = extra.get("documento_relacionado")
 
     emisor = _load_datos_negocio()
     return generar_nota_remision(
@@ -338,6 +336,7 @@ def generar_nota_remision_desde_db(
         emisor=emisor,
         receptor=receptor,
         detalles=detalles,
+        documento_relacionado=doc_rel,
         extension=extension,
         ambiente=ambiente,
     )

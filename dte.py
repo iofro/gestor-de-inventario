@@ -1860,8 +1860,10 @@ def generar_dte_json(
         if tipo_contingencia not in catalogos.CONTINGENCIA:
             raise ValueError("tipoContingencia debe estar entre 1 y 5")
         if tipo_contingencia == 5:
-            if not (motivo_contin and 5 <= len(motivo_contin) <= 150):
-                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
+            if not (motivo_contin and 5 <= len(motivo_contin) <= 500):
+                raise ValueError(
+                    "motivoContin debe tener entre 5 y 500 caracteres cuando tipoContingencia=5"
+                )
         else:
             motivo_contin = None
     else:
@@ -2579,8 +2581,10 @@ def validate_dte_json(
             raise ValueError("tipoContingencia debe estar entre 1 y 5")
         ident["tipoContingencia"] = tipo_cont
         if tipo_cont == 5:
-            if not (motivo and 5 <= len(motivo) <= 150):
-                raise ValueError("motivoContin requerido cuando tipoContingencia=5")
+            if not (motivo and 5 <= len(motivo) <= 500):
+                raise ValueError(
+                    "motivoContin debe tener entre 5 y 500 caracteres cuando tipoContingencia=5"
+                )
             ident["motivoContin"] = motivo
         else:
             ident["motivoContin"] = None

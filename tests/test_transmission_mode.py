@@ -1,5 +1,6 @@
 import pytest
 from pathlib import Path
+import json
 import dte
 from utils.docs import build_invoice_json
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
@@ -86,4 +87,51 @@ def test_generate_ticket_registers_pending(tmp_path, monkeypatch):
 
     generate_ticket_pdf(man, 1)
     assert db.pending == [(1, "2")]
+
+
+def test_get_default_modo_transmision_reads_file(tmp_path, monkeypatch):
+    datos = {"dte_api": {"modo_transmision": "contingencia"}}
+    cfg = tmp_path / "datos_negocio.json"
+    cfg.write_text(json.dumps(datos), encoding="utf-8")
+    monkeypatch.setattr(dte, "DATOS_NEGOCIO_PATH", str(cfg))
+    assert dte.get_default_modo_transmision() == "contingencia"
+    datos["dte_api"]["modo_transmision"] = "normal"
+    cfg.write_text(json.dumps(datos), encoding="utf-8")
+    assert dte.get_default_modo_transmision() == "normal"
+
+
+def test_generate_ticket_pdf_applies_contingency_flags(tmp_path, monkeypatch):
+    db = FakeDB()
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 5}
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 5, "descripcion": "P"}]
+    db.cursor = object()
+    man = Manager(db)
+    pdf = tmp_path / "ticket.pdf"
+    js = tmp_path / "ticket.json"
+
+    def fake_paths(date, cliente, identifier, doc_type, root=None):
+        pdf.parent.mkdir(parents=True, exist_ok=True)
+        return str(pdf), str(js)
+
+    def fake_gen(venta, detalles, fname, dte_data=None):
+        Path(fname).write_text("PDF")
+
+    called = {}
+
+    def fake_ticket_json(db_obj, vid, *, tipo_operacion, tipo_contingencia=None, motivo_contin=None, **k):
+        called["args"] = (tipo_operacion, tipo_contingencia, motivo_contin)
+        return {"resumen": {"totalLetras": "X"}}
+
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.generar_ticket_personalizado", fake_gen)
+    monkeypatch.setattr("utils.doc_generation.generar_ticket_json", fake_ticket_json)
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(
+        dte, "_load_datos_negocio", lambda: {"dte_api": {"tipo_contingencia": 3, "motivo_contin": "fallo"}}
+    )
+
+    generate_ticket_pdf(man, 1)
+
+    assert called["args"] == (2, 3, "fallo")
 

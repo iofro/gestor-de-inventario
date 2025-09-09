@@ -482,7 +482,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == dte.DEFAULT_RECEPCION_URL
+    assert url == dte.DEFAULT_EVENTO_URL
     assert body["documento"] == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"
@@ -550,7 +550,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == dte.DEFAULT_RECEPCION_URL
+    assert url == dte.DEFAULT_EVENTO_URL
     assert body["documento"] == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"
@@ -564,9 +564,16 @@ def test_enviar_factura_default_contingencia(monkeypatch):
 
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
-    monkeypatch.setattr("dte.generar_dte_json", lambda db_obj, vid: {})
+    monkeypatch.setattr(
+        "dte.generar_dte_json",
+        lambda db_obj, vid: {"resumen": {"totalLetras": "X"}},
+    )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+    monkeypatch.setattr("dte._save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
     monkeypatch.setattr(
         "dte.requests.post",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
@@ -598,6 +605,9 @@ def test_enviar_nota_credito_default_contingencia(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+    monkeypatch.setattr("dte._save_signed_dte", lambda *a, **k: None)
     monkeypatch.setattr(
         "utils.docs.get_dte_document_paths",
         lambda *a, **k: (tmp_path / "x.pdf", tmp_path / "x.json"),
@@ -636,6 +646,8 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
     monkeypatch.setattr(
         "utils.docs.get_dte_document_paths",
         lambda *a, **k: (tmp_path / "x.pdf", tmp_path / "x.json"),
@@ -665,10 +677,15 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
-        "nota_remision.generar_nota_remision_desde_db", lambda db_obj, nid: {}
+        "nota_remision.generar_nota_remision_desde_db",
+        lambda db_obj, nid: {"resumen": {"totalLetras": "X"}},
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+    monkeypatch.setattr("dte._save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
     monkeypatch.setattr(
         "dte.requests.post",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),

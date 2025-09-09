@@ -366,14 +366,14 @@ def test_post_dte_invalid_tipo(monkeypatch):
 def test_consultar_envio_dte():
     db = DB(":memory:")
     venta = create_sale(db)
-    db.registrar_envio_dte(venta, "normal", "Transmitido", "S", '{"ok": true}')
+    db.registrar_envio_dte(venta, "normal", "Transmitido", "S", "01", "ABC", '{"ok": true}')
     assert db.consultar_envio_dte(venta) == {"ok": True}
 
 
 def test_consultar_envio_dte_texto():
     db = DB(":memory:")
     venta = create_sale(db)
-    db.registrar_envio_dte(venta, "normal", "Rechazado", "", "error")
+    db.registrar_envio_dte(venta, "normal", "Rechazado", "", "01", "XYZ", "error")
     assert db.consultar_envio_dte(venta) == {}
 
 
@@ -381,8 +381,8 @@ def test_listar_dtes():
     db = DB(":memory:")
     v1 = create_sale(db)
     v2 = create_sale(db)
-    db.registrar_envio_dte(v1, "normal", "Transmitido", "S", '{"ok": true}')
-    db.registrar_envio_dte(v2, "normal", "Rechazado", "", "error")
+    db.registrar_envio_dte(v1, "normal", "Transmitido", "S", "01", "AAA", '{"ok": true}')
+    db.registrar_envio_dte(v2, "normal", "Rechazado", "", "01", "BBB", "error")
     today = datetime.now().date().isoformat()
     rows = db.listar_dtes(today, today, "Transmitido")
     assert len(rows) == 1

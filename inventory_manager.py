@@ -682,14 +682,19 @@ class InventoryManager:
                     ),
                 )
 
+            if data.get("dte_envios"):
+                self.db.ensure_column("dte_envios", "tipo_dte", "TEXT")
+                self.db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
             for de in data.get("dte_envios", []):
                 self.db.cursor.execute(
-                    "INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta) VALUES (?, ?, ?, ?, ?, ?)",
+                    "INSERT INTO dte_envios (venta_id, modo, estado, sello, tipo_dte, codigo_generacion, fecha_hora, respuesta) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                     (
                         venta_id_map.get(de.get("venta_id")),
                         de.get("modo"),
                         de.get("estado"),
                         de.get("sello"),
+                        de.get("tipo_dte"),
+                        de.get("codigo_generacion"),
                         de.get("fecha_hora"),
                         de.get("respuesta"),
                     ),

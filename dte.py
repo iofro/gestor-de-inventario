@@ -4317,7 +4317,14 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(None, "orphan", "Rechazado", "")
+        db.registrar_envio_dte(
+            None,
+            "orphan",
+            "Rechazado",
+            "",
+            meta.get("tipoDte"),
+            meta.get("codigoGeneracion"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -4325,6 +4332,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         "orphan",
         estado,
         sello,
+        meta.get("tipoDte"),
+        meta.get("codigoGeneracion"),
         json.dumps(respuesta, ensure_ascii=False),
     )
     if estado == "Rechazado":
@@ -4439,6 +4448,8 @@ def _enviar_documento(
             modo,
             "Pendiente",
             "",
+            meta.get("tipoDte"),
+            meta.get("codigoGeneracion"),
             json.dumps({"jws": signed}, ensure_ascii=False),
         )
         return {"estado": "Pendiente"}
@@ -4470,7 +4481,14 @@ def _enviar_documento(
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(doc_id, modo, "Rechazado", "")
+        db.registrar_envio_dte(
+            doc_id,
+            modo,
+            "Rechazado",
+            "",
+            meta.get("tipoDte"),
+            meta.get("codigoGeneracion"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -4478,6 +4496,8 @@ def _enviar_documento(
         modo,
         estado,
         sello,
+        meta.get("tipoDte"),
+        meta.get("codigoGeneracion"),
         json.dumps(respuesta, ensure_ascii=False),
     )
     if estado == "Rechazado":
@@ -4625,6 +4645,9 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     url = f"{pu.scheme}://{pu.netloc}/fesv/contingencia"
     signed = jws.sign_json(data)
     token = auth.get_token()
+    ident = data.get("identificacion") or {}
+    tipo = ident.get("tipoDte") or ident.get("tipoDocumento")
+    codigo = ident.get("codigoGeneracion")
 
     try:
         respuesta = _post_evento(url, token, signed, data)
@@ -4637,7 +4660,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(evento_id, "evento", "Rechazado", "")
+        db.registrar_envio_dte(evento_id, "evento", "Rechazado", "", tipo, codigo)
         raise
 
     db.registrar_envio_dte(
@@ -4645,6 +4668,8 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         "evento",
         estado,
         sello,
+        tipo,
+        codigo,
         json.dumps(respuesta, ensure_ascii=False),
     )
     if estado == "Rechazado":

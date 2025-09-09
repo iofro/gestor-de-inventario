@@ -510,6 +510,8 @@ class DB:
                 modo TEXT,
                 estado TEXT,
                 sello TEXT,
+                tipo_dte TEXT,
+                codigo_generacion TEXT,
                 fecha_hora TEXT,
                 respuesta TEXT,
 
@@ -2030,21 +2032,43 @@ class DB:
                     pass
         return rows
 
-    def registrar_envio_dte(self, venta_id, modo, estado, sello, respuesta_json=""):
+    def registrar_envio_dte(
+        self,
+        venta_id,
+        modo,
+        estado,
+        sello,
+        tipo_dte="",
+        codigo_generacion="",
+        respuesta_json="",
+    ):
         """Guarda un registro del estado de transmisión de un DTE."""
+        self.ensure_column("dte_envios", "tipo_dte", "TEXT")
+        self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
         self.ensure_column("dte_envios", "respuesta", "TEXT")
         fecha_hora = datetime.now().isoformat()
         self.cursor.execute(
             """
-            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO dte_envios (venta_id, modo, estado, sello, tipo_dte, codigo_generacion, fecha_hora, respuesta)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
             """,
-            (venta_id, modo, estado, sello, fecha_hora, respuesta_json),
+            (
+                venta_id,
+                modo,
+                estado,
+                sello,
+                tipo_dte,
+                codigo_generacion,
+                fecha_hora,
+                respuesta_json,
+            ),
         )
         self.conn.commit()
 
     def consultar_envio_dte(self, venta_id):
         """Devuelve el JSON almacenado en ``dte_envios.respuesta``."""
+        self.ensure_column("dte_envios", "tipo_dte", "TEXT")
+        self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
         self.ensure_column("dte_envios", "respuesta", "TEXT")
         row = self.cursor.execute(
             "SELECT respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
@@ -2059,6 +2083,8 @@ class DB:
 
     def listar_dtes(self, fecha_inicio=None, fecha_fin=None, estado=None):
         """Lista registros de ``dte_envios`` filtrando por fecha y estado."""
+        self.ensure_column("dte_envios", "tipo_dte", "TEXT")
+        self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
         self.ensure_column("dte_envios", "respuesta", "TEXT")
         query = "SELECT * FROM dte_envios WHERE 1=1"
         params = []

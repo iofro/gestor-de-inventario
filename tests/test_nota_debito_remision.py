@@ -5,6 +5,7 @@ from nota_debito_electronica import generar_nde_desde_dte
 from dte import generar_dte_json
 from nota_remision import generar_nota_remision_desde_db, generar_nota_remision
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
+from utils import catalogos
 
 
 def create_db():
@@ -360,3 +361,110 @@ def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["numeroDocumento"] == "DTE-03-XYZ-000000000000001"
     assert data["receptor"]["nombre"] == "Cliente"
+
+
+def _sample_emisor():
+    return {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir",
+        },
+    }
+
+
+def _sample_receptor():
+    return {
+        "nombre": "Cliente",
+        "tipoDocumento": "13",
+        "numDocumento": "12345678-9",
+        "codActividad": "6201",
+        "descActividad": "Servicios",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir",
+        },
+    }
+
+
+def _sample_extension():
+    return {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+
+
+def test_generar_nota_remision_default_tipo_establecimiento():
+    db = create_db()
+    emisor = _sample_emisor()  # sin tipoEstablecimiento
+    receptor = _sample_receptor()
+    detalles = [{"codigo": "P1", "descripcion": "Prod", "cantidad": 1}]
+    extension = _sample_extension()
+    data = generar_nota_remision(
+        db,
+        emisor=emisor,
+        receptor=receptor,
+        detalles=detalles,
+        extension=extension,
+    )
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    assert data["emisor"]["tipoEstablecimiento"] == default_est
+
+
+def test_generar_nota_remision_tipo_establecimiento_valido_e_invalido():
+    db = create_db()
+    receptor = _sample_receptor()
+    detalles = [{"codigo": "P1", "descripcion": "Prod", "cantidad": 1}]
+    extension = _sample_extension()
+    keys = list(catalogos.TIPO_ESTABLEC.keys())
+    valido = keys[-1]
+    default_est = keys[0]
+    emisor_valido = _sample_emisor()
+    emisor_valido["tipoEstablecimiento"] = valido
+    data = generar_nota_remision(
+        db,
+        emisor=emisor_valido,
+        receptor=receptor,
+        detalles=detalles,
+        extension=extension,
+    )
+    assert data["emisor"]["tipoEstablecimiento"] == valido
+
+    emisor_invalido = _sample_emisor()
+    emisor_invalido["tipoEstablecimiento"] = "99"
+    data = generar_nota_remision(
+        db,
+        emisor=emisor_invalido,
+        receptor=receptor,
+        detalles=detalles,
+        extension=extension,
+    )
+    assert data["emisor"]["tipoEstablecimiento"] == default_est
+
+
+def test_generar_nota_remision_desde_db_default_tipo_establecimiento(monkeypatch):
+    datos = _sample_emisor()  # sin tipoEstablecimiento
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    db = create_db()
+    receptor = _sample_receptor()
+    detalles = [{"codigo": "P1", "descripcion": "Prod", "cantidad": 1}]
+    extension = _sample_extension()
+    extra = {"items": detalles, "receptor": receptor, "extension": extension}
+    nota_id = db.agregar_nota("remision", None, "2024-01-01", 0, "Envio", detalles=extra)
+    data = generar_nota_remision_desde_db(db, nota_id)
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    assert data["emisor"]["tipoEstablecimiento"] == default_est

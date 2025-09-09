@@ -216,6 +216,12 @@ def generar_nota_remision(
 
     ext = {k: v for k, v in ext.items() if k in allowed_ext_keys}
     limpiar_documentos(emisor)
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    tipo_est = emisor.get("tipoEstablecimiento")
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else default_est
+    if tipo_est not in catalogos.TIPO_ESTABLEC:
+        tipo_est = default_est
+    emisor["tipoEstablecimiento"] = tipo_est
     receptor.setdefault("bienTitulo", "01")
     receptor = normalizar_receptor(receptor)
     for key in ("docuEntrega", "docuRecibe"):
@@ -338,6 +344,13 @@ def generar_nota_remision_desde_db(
     extension = extra.get("extension") or {}
 
     emisor = _load_datos_negocio()
+    limpiar_documentos(emisor)
+    default_est = next(iter(catalogos.TIPO_ESTABLEC))
+    tipo_est = emisor.get("tipoEstablecimiento")
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else default_est
+    if tipo_est not in catalogos.TIPO_ESTABLEC:
+        tipo_est = default_est
+    emisor["tipoEstablecimiento"] = tipo_est
     return generar_nota_remision(
         db,
         emisor=emisor,

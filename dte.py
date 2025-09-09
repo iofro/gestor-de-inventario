@@ -4010,6 +4010,92 @@ def _post_dte(
     return result
 
 
+def _post_lote(url: str, token: str, documentos: list[str]) -> dict:
+    """Envía un lote de DTE ya firmados.
+
+    ``documentos`` debe ser una lista de tokens JWS. El resultado devuelto por
+    Hacienda suele incluir un ``codigoLote`` que identifica el envío.
+    """
+    token = token or ""
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}" if token else "",
+    }
+    payload = {"dtes": documentos}
+    try:
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+    except requests.RequestException as exc:  # pragma: no cover - defensive
+        return {"estado": "Error", "detalle": str(exc)}
+
+    text = getattr(resp, "text", "")
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else text
+        return {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+
+    return data if data is not None else {"estado": "Recibido", "detalle": text}
+
+
+def enviar_lote_dtes(pendientes: list[dict]) -> list[dict]:
+    """Agrupa ``pendientes`` en lotes de hasta 100 DTE y los envía.
+
+    Cada elemento de ``pendientes`` debe incluir la clave ``dte_json`` con el
+    payload del documento. Tras el envío, a cada elemento se le asignará el
+    ``codigoLote`` devuelto por el servicio.
+    """
+    if not pendientes:
+        return []
+
+    config = _load_dte_api_config()
+    url = config["url"].replace("recepciondte", "recepcionlote")
+    token = auth.get_token()
+
+    respuestas = []
+    for i in range(0, len(pendientes), 100):
+        batch = pendientes[i : i + 100]
+        documentos = [jws.sign_json(p["dte_json"]) for p in batch]
+        resp = _post_lote(url, token, documentos)
+        codigo_lote = resp.get("codigoLote")
+        if codigo_lote:
+            for p in batch:
+                p["codigoLote"] = codigo_lote
+        respuestas.append(resp)
+    return respuestas
+
+
+def consultar_estado_lote(codigo_lote: str) -> dict:
+    """Consulta el estado de un lote previamente enviado.
+
+    Devuelve el JSON de respuesta tal como lo proporciona el servicio.
+    """
+    config = _load_dte_api_config()
+    base = config["url"].replace("recepciondte", "consultalote")
+    url = f"{base}/{codigo_lote}"
+    token = auth.get_token()
+
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}" if token else "",
+        "User-Agent": detect_user_agent(),
+    }
+    resp = requests.get(url, headers=headers, timeout=20)
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else resp.text
+        return {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+
+    return data if data is not None else {"estado": "Recibido", "detalle": resp.text}
+
+
 def transmitir_dte(
     db: DB, venta_id: int, modo: str | None = None, tipo_dte: str = "01"
 ) -> dict:

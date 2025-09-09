@@ -14,12 +14,15 @@ def test_nr_ext_dialog_autofill_and_sanitize(db_conn, qt_app):
     assert dialog.docu_entrega.text() == "061234567"
 
     cli_item = QListWidgetItem("Cli")
-    cli_item.setData(Qt.UserRole, {"nombre": "Ana", "nit": "0612 34567"})
+    cli_item.setData(Qt.UserRole, {"nombre": "Ana", "dui": "0612 34567"})
     dialog._seleccionar_cliente(cli_item)
     assert dialog.nomb_recibe.text() == "Ana"
     assert dialog.docu_recibe.text() == "061234567"
+    assert dialog.nrc_recibe.text() == ""
 
     dialog.ext_obs.setPlainText("Obs")
     data = dialog.get_data()
     assert data["docuEntrega"] == "061234567"
     assert data["docuRecibe"] == "061234567"
+    assert data["nrcRecibe"] == ""
+    assert data["tipoDocRecibe"] == "13"

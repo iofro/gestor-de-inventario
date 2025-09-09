@@ -45,6 +45,7 @@ logger = logging.getLogger(__name__)
 
 CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
+DEFAULT_EVENTO_URL = "https://apitest.dtes.mh.gob.sv/fesv/contingencia"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
 
 SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
@@ -3641,6 +3642,127 @@ def generar_nota_remision_json(
     schema = catalogos.get_dte_schema("04")
     return sanitize_dte_payload(data, schema)
 
+
+def generar_evento_contingencia(
+    detalle_dte: list[dict],
+    f_inicio: str,
+    f_fin: str,
+    h_inicio: str,
+    h_fin: str,
+    tipo_contingencia: int,
+    motivo_contingencia: str | None = None,
+    ambiente: str | None = None,
+) -> dict:
+    """Genera la estructura JSON para un evento de contingencia."""
+
+    datos = _load_datos_negocio()
+
+    if ambiente not in ("00", "01"):
+        amb_cfg = str(
+            ambiente or datos.get("dte_api", {}).get("ambiente", "")
+        ).lower()
+        ambiente = "01" if amb_cfg.startswith("produc") else "00"
+
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": 3,
+        "ambiente": ambiente,
+        "codigoGeneracion": str(uuid.uuid4()).upper(),
+        "fTransmision": fecha_emision_hoy_str(now),
+        "hTransmision": now.strftime("%H:%M:%S"),
+    }
+
+    nit = solo_digitos(datos.get("nit"))
+    if not nit:
+        raise ValueError("nit requerido")
+    nombre = datos.get("nombre") or datos.get("nombreComercial")
+    if not nombre:
+        raise ValueError("nombre requerido")
+    telefono = str(datos.get("telefono", "")).strip()
+    if not PHONE_RE.fullmatch(telefono):
+        raise ValueError("telefono inválido")
+    correo = datos.get("correo", "")
+    if not EMAIL_RE.fullmatch(correo):
+        raise ValueError("correo inválido")
+
+    numero_doc = datos.get("dui") or datos.get("nit")
+    tipo_doc = datos.get("tipoDocResponsable") or (
+        "13" if datos.get("dui") else "36"
+    )
+
+    emisor = {
+        "nit": nit,
+        "nombre": nombre,
+        "nombreResponsable": datos.get("nombreResponsable") or nombre,
+        "tipoDocResponsable": tipo_doc,
+        "numeroDocResponsable": solo_digitos(numero_doc),
+        "tipoEstablecimiento": str(datos.get("tipoEstablecimiento") or "01").zfill(2),
+        "telefono": telefono,
+        "correo": correo,
+    }
+    if datos.get("codEstableMH"):
+        emisor["codEstableMH"] = datos.get("codEstableMH")
+    if datos.get("codPuntoVenta"):
+        emisor["codPuntoVenta"] = datos.get("codPuntoVenta")
+
+    if not detalle_dte:
+        raise ValueError("detalleDTE requerido")
+    detalle = []
+    for idx, item in enumerate(detalle_dte, 1):
+        codigo = item.get("codigoGeneracion")
+        tipo = item.get("tipoDoc")
+        if not codigo or not tipo:
+            raise ValueError("detalleDTE incompleto")
+        detalle.append(
+            {
+                "noItem": idx,
+                "codigoGeneracion": codigo,
+                "tipoDoc": str(tipo).zfill(2),
+            }
+        )
+
+    try:
+        datetime.strptime(f_inicio, "%Y-%m-%d")
+        datetime.strptime(f_fin, "%Y-%m-%d")
+        datetime.strptime(h_inicio, "%H:%M:%S")
+        datetime.strptime(h_fin, "%H:%M:%S")
+    except Exception as exc:  # pragma: no cover - defensive
+        raise ValueError("fechas u horas inválidas") from exc
+    if tipo_contingencia not in {1, 2, 3, 4, 5}:
+        raise ValueError("tipoContingencia inválido")
+    if tipo_contingencia == 5 and not motivo_contingencia:
+        raise ValueError("motivoContingencia requerido para tipo 5")
+
+    motivo = {
+        "fInicio": f_inicio,
+        "fFin": f_fin,
+        "hInicio": h_inicio,
+        "hFin": h_fin,
+        "tipoContingencia": tipo_contingencia,
+        "motivoContingencia": motivo_contingencia if motivo_contingencia else None,
+    }
+
+    evento = {
+        "identificacion": identificacion,
+        "emisor": emisor,
+        "detalleDTE": detalle,
+        "motivo": motivo,
+    }
+
+    schema_path = SCHEMAS_DIR / "contingencia-schema-v3.json"
+    try:
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = json.load(fh)
+        from jsonschema import validate
+
+        validate(evento, schema)
+    except ValidationError as exc:  # pragma: no cover - best effort
+        raise ValueError(exc.message) from exc
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+    return evento
+
 def _normalize_recepcion_url(raw: str) -> str:
     """Normaliza y valida ``raw`` como URL de recepción de Hacienda.
 
@@ -3994,6 +4116,78 @@ def _post_dte(
     try:
         print(json.dumps(sobre, ensure_ascii=False))
         resp = requests.post(url, headers=headers, json=sobre, timeout=20)
+    except requests.RequestException as exc:
+        return {"estado": "Error", "detalle": str(exc)}
+
+    text = getattr(resp, "text", "")
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else text
+        result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
+
+
+def _post_evento(
+    url: str,
+    token: str,
+    evento: str,
+    evento_data: dict | None = None,
+    user_agent: str | None = None,
+    auth: dict | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    dui: str | None = None,
+    client_id: str | None = None,
+) -> dict:
+    token = token or ""
+    if token:
+        logger.debug("Token: %s...%s", token[:5], token[-5:])
+    else:
+        logger.debug("Token: <empty>")
+
+    pu = urlparse(url)
+    assert pu.netloc in {
+        "apitest.dtes.mh.gob.sv",
+        "api.dtes.mh.gob.sv",
+    }, f"Host inválido: {url}"
+    assert pu.path.rstrip("/") == "/fesv/contingencia", f"Path inválido: {url}"
+
+    body = {"documento": evento}
+    if evento_data:
+        ident = evento_data.get("identificacion", {})
+        ambiente = ident.get("ambiente")
+        version = ident.get("version")
+        if ambiente:
+            body["ambiente"] = ambiente
+        if version:
+            body["version"] = version
+
+    client_id = client_id or format_cliente_id_from_dui(dui)
+    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
+    auth_headers = build_auth_header(
+        auth if auth is not None else {"access_token": token},
+        app_version=app_version or APP_VERSION,
+        client_id=client_id,
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": ua,
+        **auth_headers,
+    }
+
+    try:
+        print(json.dumps(body, ensure_ascii=False))
+        resp = requests.post(url, headers=headers, json=body, timeout=20)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
@@ -4427,12 +4621,13 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
 def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     """Firma y envía un evento a Hacienda."""
     config = _load_dte_api_config()
-    url = config["url"]
+    pu = urlparse(config["url"])
+    url = f"{pu.scheme}://{pu.netloc}/fesv/contingencia"
     signed = jws.sign_json(data)
     token = auth.get_token()
 
     try:
-        respuesta = _post_dte(url, token, signed, data)
+        respuesta = _post_evento(url, token, signed, data)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")

@@ -16,6 +16,9 @@ from PyQt5.QtCore import Qt, QDate, QUrl
 from PyQt5.QtGui import QColor, QDesktopServices, QIntValidator
 import os
 import shutil
+import re
+
+from db import DB
 
 from utils import jws
 from utils.sanitize import solo_digitos
@@ -3099,8 +3102,9 @@ def prompt_auth_credentials(parent=None, user="", password=""):
 
 
 class DTEConfigDialog(QDialog):
-    def __init__(self, dte_api=None, fe_config=None, env_config=None, parent=None):
+    def __init__(self, dte_api=None, fe_config=None, env_config=None, parent=None, db=None):
         super().__init__(parent)
+        self.db = db or DB()
         self.setWindowTitle("Configuración de Facturación Electrónica")
         layout = QVBoxLayout()
         form = QFormLayout()
@@ -3160,6 +3164,19 @@ class DTEConfigDialog(QDialog):
         form.addRow(self.incluir_sello_pdf)
         form.addRow(self.guardar_respuesta_bd)
         layout.addLayout(form)
+
+        self.correlativos_group = QGroupBox("Correlativos DTE")
+        cor_layout = QVBoxLayout()
+        self.correlativos_table = QTableWidget(0, 3)
+        self.correlativos_table.setHorizontalHeaderLabels(["Tipo", "Correlativo", ""])
+        self.correlativos_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.correlativos_table.verticalHeader().setVisible(False)
+        cor_layout.addWidget(self.correlativos_table)
+        self.correlativos_group.setLayout(cor_layout)
+        layout.addWidget(self.correlativos_group)
+        self.prefijo_control.textChanged.connect(self._load_correlativos)
+        self._load_correlativos()
+
         btns = QHBoxLayout()
         guardar = QPushButton("Guardar")
         restaurar = QPushButton("Restaurar")
@@ -3181,6 +3198,64 @@ class DTEConfigDialog(QDialog):
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
         else:
             self._set_default_urls()
+
+    def _get_sucursal_punto(self):
+        pref = self.prefijo_control.text()
+        m = re.search(r"S(\d{3})P(\d{3})", pref)
+        if m:
+            return m.group(1), m.group(2)
+        return "001", "001"
+
+    def _load_correlativos(self):
+        sucursal, punto = self._get_sucursal_punto()
+        self.correlativos_table.setRowCount(0)
+        self._correlativo_spins = {}
+        for tipo in ["01", "03", "04", "05", "06"]:
+            row = self.correlativos_table.rowCount()
+            self.correlativos_table.insertRow(row)
+            self.correlativos_table.setItem(row, 0, QTableWidgetItem(tipo))
+            spin = QSpinBox()
+            spin.setMaximum(999999999)
+            spin.setValue(
+                self.db.get_dte_correlativo(tipo, sucursal, punto)
+            )
+            self.correlativos_table.setCellWidget(row, 1, spin)
+            btn = QPushButton("Reiniciar")
+            btn.clicked.connect(lambda _, t=tipo: self._reset_correlativo(t))
+            self.correlativos_table.setCellWidget(row, 2, btn)
+            self._correlativo_spins[tipo] = spin
+
+    def _reset_correlativo(self, tipo):
+        if (
+            QMessageBox.warning(
+                self,
+                "Advertencia",
+                "Modificar el correlativo puede generar inconsistencias con Hacienda. ¿Desea continuar?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        sucursal, punto = self._get_sucursal_punto()
+        self.db.set_dte_correlativo(tipo, sucursal, punto, 0)
+        self._load_correlativos()
+
+    def accept(self):
+        if (
+            QMessageBox.warning(
+                self,
+                "Advertencia",
+                "Modificar el correlativo puede generar inconsistencias con Hacienda. ¿Desea continuar?",
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            != QMessageBox.Yes
+        ):
+            return
+        sucursal, punto = self._get_sucursal_punto()
+        for tipo, spin in self._correlativo_spins.items():
+            self.db.set_dte_correlativo(tipo, sucursal, punto, spin.value())
+        self._load_correlativos()
+        super().accept()
 
     def set_data(self, dte_api, fe_config, env_config):
         auth_conf = env_config.get("auth", {})

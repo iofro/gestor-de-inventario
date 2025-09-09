@@ -215,6 +215,9 @@ def generate_ticket_pdf(manager, venta_id):
         except Exception:
             extra = {}
 
+    default_tipo = 2 if dte.get_default_modo_transmision() == "contingencia" else 1
+    tipo_operacion = extra.get("tipoOperacion") or default_tipo
+
     cliente = None
     if venta.get("cliente_id"):
         cliente = next((c for c in manager._clientes if c["id"] == venta["cliente_id"]), None)
@@ -226,14 +229,20 @@ def generate_ticket_pdf(manager, venta_id):
 
     generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
     if hasattr(manager.db, "cursor"):
-        ticket_json = generar_ticket_json(manager.db, venta_id)
+        ticket_json = generar_ticket_json(
+            manager.db, venta_id, tipo_operacion=tipo_operacion
+        )
     else:
         venta_data = dict(venta)
+        if tipo_operacion == 2:
+            venta_data["tipo_operacion"] = 2
         if not venta_data.get("codigo_generacion"):
             venta_data["codigo_generacion"] = uuid.uuid4().hex
         if not venta_data.get("numero_control"):
             venta_data["numero_control"] = uuid.uuid4().hex[:8].upper()
         ticket_json = build_invoice_json(venta_data, cliente or {}, detalles)
+    if tipo_operacion == 2:
+        manager.db.add_dte_pendiente(venta_id, ticket_json, "2")
     try:
         resumen = ticket_json.get("resumen", {})
         condicion = normalize_condicion_operacion(

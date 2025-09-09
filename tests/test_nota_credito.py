@@ -5,6 +5,7 @@ from dte import generar_dte_json
 from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_nota
 import pytest
 from factura_sv import generar_nota_credito_pdf
+import utils.catalogos as catalogos
 
 
 def create_db():
@@ -224,3 +225,31 @@ def test_nota_credito_pdf(tmp_path):
     assert "Tipo Modelo:" in text
     assert "Tipo Operación:" in text
     assert "Fecha Generación:" in text
+
+
+def test_nota_credito_direccion(tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        catalogos,
+        "get_value",
+        lambda cat, code, default=None: "La Libertad Centro" if code == "0524" else default,
+    )
+    venta, detalles = _sample_data()
+    direccion = {
+        'departamento': '05',
+        'municipio': '24',
+        'complemento': 'Colonia El Centro con una avenida realmente muy larga para pruebas',
+    }
+    out = tmp_path / 'nc_dir.pdf'
+    generar_nota_credito_pdf(
+        venta,
+        detalles,
+        {'direccion': direccion},
+        {},
+        archivo=str(out),
+        datos_negocio={'direccion': direccion},
+    )
+    with fitz.open(out) as doc:
+        lines = ''.join(p.get_text() for p in doc).splitlines()
+    idx = next(i for i, ln in enumerate(lines) if ln.startswith('Dirección:'))
+    assert 'La Libertad Centro' in lines[idx]
+    assert 'realmente muy larga para pruebas' in lines[idx + 1]

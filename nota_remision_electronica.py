@@ -111,6 +111,15 @@ def normalizar_receptor(receptor: dict) -> dict:
         receptor.pop("nrc", None)
     else:
         raise ValueError("tipoDocumento inválido en receptor")
+    # Campos adicionales requeridos para receptores
+    for campo in ("codActividad", "descActividad", "telefono", "correo"):
+        if not receptor.get(campo):
+            raise ValueError(f"receptor requiere {campo}")
+
+    direccion = receptor.get("direccion") or {}
+    if not direccion.get("complemento"):
+        raise ValueError("receptor requiere direccion.complemento")
+
     receptor.setdefault("nombreComercial", None)
     return receptor
 

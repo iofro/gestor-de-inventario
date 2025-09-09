@@ -235,7 +235,15 @@ def test_save_invoice_ignores_config_transmission(
 
     datos_file = tmp_path / "datos_negocio.json"
     datos_file.write_text(
-        json.dumps({"dte_api": {"modo_transmision": "2 - Contingencia"}}),
+        json.dumps(
+            {
+                "dte_api": {
+                    "modo_transmision": "2 - Contingencia",
+                    "tipo_contingencia": 1,
+                    "motivo_contin": "",
+                }
+            }
+        ),
         encoding="utf-8",
     )
     monkeypatch.setattr("sales_tab.DATOS_NEGOCIO_PATH", str(datos_file))

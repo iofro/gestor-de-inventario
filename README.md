@@ -255,10 +255,16 @@ otros parámetros dentro de `datos_negocio.json` bajo el bloque `dte_api`:
   "dte_api": {
     "token": "TOKEN",
     "prefijo_control": "DTE-01-S001P001",
-    "modo_transmision": "1 - Normal"
+    "modo_transmision": "1 - Normal",
+    "tipo_contingencia": 1,
+    "motivo_contin": ""
   }
 }
 ```
+
+Cuando `modo_transmision` es "2 - Contingencia", debe definirse también
+`tipo_contingencia` (valores del 1 al 5). Si se utiliza el valor `5` es
+obligatorio proporcionar un `motivo_contin` con al menos cinco caracteres.
 
 Las facturas generadas desde la pestaña **Ventas** se guardan automáticamente en
 `facturas_consumidor_final` o `facturas_credito_fiscal` dependiendo del tipo de

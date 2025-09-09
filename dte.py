@@ -4022,10 +4022,6 @@ def transmitir_dte(
     if modo is None:
         modo = get_default_modo_transmision()
 
-    # For contingency mode, simply register the pending state
-    if modo == "contingencia":
-        return _enviar_documento(db, venta_id, {}, modo)
-
     if tipo_dte == "03":
         data = generar_ticket_json(db, venta_id)
     else:
@@ -4196,9 +4192,6 @@ def _enviar_documento(
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
     config = _load_dte_api_config()
-    if modo == "contingencia":
-        db.registrar_envio_dte(doc_id, modo, "Pendiente", "")
-        return {"estado": "Pendiente"}
 
     if not data.get("resumen", {}).get("totalLetras"):
         raise ValueError("El total en letras es obligatorio")
@@ -4237,6 +4230,20 @@ def _enviar_documento(
         raise ValueError(f"DTE inválido: {exc}") from exc
 
     signed = jws_token or jws.sign_json(data)
+
+    if modo == "contingencia":
+        try:
+            _save_signed_dte(data, signed)
+        except Exception:
+            pass
+        db.registrar_envio_dte(
+            doc_id,
+            modo,
+            "Pendiente",
+            "",
+            json.dumps({"jws": signed}, ensure_ascii=False),
+        )
+        return {"estado": "Pendiente"}
 
     # Verify that metadata matches the signed payload and update it
     payload = _decode_jws_payload(signed)

@@ -411,6 +411,23 @@ def _load_datos_negocio():
     return {}
 
 
+def get_default_modo_transmision() -> str:
+    """Return the default transmission mode.
+
+    This reads ``dte_api.modo_transmision`` from ``datos_negocio.json`` and
+    normalizes the value to ``"contingencia"`` or ``"normal"``. If the value
+    is missing or unrecognized, ``"normal"`` is returned.
+    """
+
+    datos = _load_datos_negocio()
+    modo = datos.get("dte_api", {}).get("modo_transmision", "")
+    if isinstance(modo, str):
+        modo_norm = modo.strip().lower()
+        if modo_norm.startswith("2") or "contingencia" in modo_norm:
+            return "contingencia"
+    return "normal"
+
+
 DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(0, 15)}
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -1732,7 +1749,7 @@ def generar_dte_json(
     tipo_dte: str = "01",
     *,
     ambiente: str = "00",
-    tipo_operacion: int = 1,
+    tipo_operacion: int | None = None,
     tipo_contingencia: int | None = None,
     motivo_contin: str | None = None,
     tipo_modelo: int | None = None,
@@ -1747,6 +1764,10 @@ def generar_dte_json(
     if not row:
         raise ValueError("Venta no encontrada")
     venta = dict(row)
+
+    if tipo_operacion is None:
+        modo = get_default_modo_transmision()
+        tipo_operacion = 2 if modo == "contingencia" else 1
 
     if ambiente not in ("00", "01"):
         ambiente_cfg = str(ambiente).lower()
@@ -1807,6 +1828,13 @@ def generar_dte_json(
     motivo_contin = kwargs.get(
         "motivoContin", kwargs.get("motivo_contin", motivo_contin)
     )
+
+    if tipo_operacion == 2:
+        cfg = datos.get("dte_api", {})
+        if tipo_contingencia in (None, ""):
+            tipo_contingencia = cfg.get("tipo_contingencia", tipo_contingencia)
+        if motivo_contin in (None, ""):
+            motivo_contin = cfg.get("motivo_contin", motivo_contin)
 
     # Normalización de tipos
     try:

@@ -125,6 +125,35 @@ def normalizar_receptor(receptor: dict) -> dict:
     return receptor
 
 
+def _normalizar_documento_relacionado(doc_rel: list[dict]) -> list[dict]:
+    """Valida y normaliza ``documento_relacionado`` si está presente."""
+
+    if not isinstance(doc_rel, list) or not doc_rel:
+        raise ValueError("documento_relacionado debe ser una lista no vacía")
+    doc = doc_rel[0] or {}
+    tipo = doc.get("tipoDocumento")
+    numero = doc.get("numeroDocumento")
+    fecha = doc.get("fechaEmision")
+    if tipo not in {"01", "03", "11"}:
+        raise ValueError("tipoDocumento inválido en documento_relacionado")
+    if not numero or not fecha:
+        raise ValueError(
+            "documento_relacionado requiere numeroDocumento y fechaEmision"
+        )
+    try:
+        datetime.fromisoformat(fecha)
+    except Exception as exc:
+        raise ValueError("fechaEmision inválida en documento_relacionado") from exc
+    return [
+        {
+            "tipoDocumento": tipo,
+            "tipoGeneracion": 2,
+            "numeroDocumento": numero,
+            "fechaEmision": fecha,
+        }
+    ]
+
+
 def generar_nota_remision(
     db: DB,
     factura: Optional[dict] = None,
@@ -187,10 +216,8 @@ def generar_nota_remision(
                 receptor.setdefault("numDocumento", ext.get("docuRecibe"))
         receptor.setdefault("bienTitulo", "01")
     else:
-        if not (emisor and receptor and detalles and documento_relacionado):
-            raise ValueError(
-                "emisor, receptor, detalles y documento_relacionado son obligatorios"
-            )
+        if not (emisor and receptor and detalles):
+            raise ValueError("emisor, receptor y detalles son obligatorios")
         if not detalles:
             raise ValueError("Se requiere al menos un detalle")
         if not extension:
@@ -239,7 +266,13 @@ def generar_nota_remision(
         "tipoMoneda": "USD",
     }
 
-    numero_doc = documento_relacionado[0].get("numeroDocumento") if documento_relacionado else None
+    if documento_relacionado:
+        documento_relacionado = _normalizar_documento_relacionado(documento_relacionado)
+    numero_doc = (
+        documento_relacionado[0].get("numeroDocumento")
+        if documento_relacionado
+        else None
+    )
     items = _build_items(detalles, numero_doc)
 
     resumen = {
@@ -266,11 +299,15 @@ def generar_nota_remision(
         "extension": ext,
         "resumen": resumen,
         "apendice": None,
-        "documentoRelacionado": documento_relacionado,
     }
+    if documento_relacionado:
+        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
-    return sanitize_dte_payload(data, schema)
+    data = sanitize_dte_payload(data, schema)
+    if data.get("documentoRelacionado") is None:
+        data.pop("documentoRelacionado", None)
+    return data
 
 
 def generar_nota_remision_desde_db(

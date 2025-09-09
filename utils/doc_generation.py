@@ -217,6 +217,19 @@ def generate_ticket_pdf(manager, venta_id):
 
     default_tipo = 2 if dte.get_default_modo_transmision() == "contingencia" else 1
     tipo_operacion = extra.get("tipoOperacion") or default_tipo
+    tipo_contingencia = extra.get("tipoContingencia")
+    motivo_contin = extra.get("motivoContin")
+    if tipo_operacion == 2:
+        cfg = dte._load_datos_negocio().get("dte_api", {})
+        if tipo_contingencia is None:
+            tipo_contingencia = cfg.get("tipo_contingencia")
+        if motivo_contin is None:
+            motivo_contin = cfg.get("motivo_contin")
+        extra.setdefault("tipoOperacion", 2)
+        if tipo_contingencia is not None:
+            extra.setdefault("tipoContingencia", tipo_contingencia)
+        if motivo_contin is not None:
+            extra.setdefault("motivoContin", motivo_contin)
 
     cliente = None
     if venta.get("cliente_id"):
@@ -230,7 +243,11 @@ def generate_ticket_pdf(manager, venta_id):
     generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
     if hasattr(manager.db, "cursor"):
         ticket_json = generar_ticket_json(
-            manager.db, venta_id, tipo_operacion=tipo_operacion
+            manager.db,
+            venta_id,
+            tipo_operacion=tipo_operacion,
+            tipo_contingencia=tipo_contingencia,
+            motivo_contin=motivo_contin,
         )
     else:
         venta_data = dict(venta)

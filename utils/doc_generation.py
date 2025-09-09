@@ -114,6 +114,12 @@ def generate_invoice_pdf(manager, venta_id):
             tipo_contingencia = cfg.get("tipo_contingencia")
         if motivo_contin is None:
             motivo_contin = cfg.get("motivo_contin")
+        if tipo_contingencia is None:
+            logger.warning(
+                "Tipo de operación 'contingencia' requiere 'tipo_contingencia'; se "
+                "cambiará a modo normal"
+            )
+            tipo_operacion = 1
     ambiente = venta_data.get("ambiente") or extra.get("ambiente") or "00"
     if ambiente not in ("00", "01"):
         amb_cfg = str(ambiente).lower()

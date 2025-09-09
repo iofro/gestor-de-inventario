@@ -561,11 +561,19 @@ class SalesTab(QWidget):
                 file_path = self._generate_ticket_pdf(venta_id)
                 doc_type = "Ticket"
             elif clicked == factura_btn:
-                file_path = self._generate_invoice_pdf(venta_id)
+                try:
+                    file_path = self._generate_invoice_pdf(venta_id)
+                except ValueError as e:
+                    QMessageBox.warning(self, "Guardar factura", str(e))
+                    return
             else:
                 return
         else:
-            file_path = self._generate_invoice_pdf(venta_id)
+            try:
+                file_path = self._generate_invoice_pdf(venta_id)
+            except ValueError as e:
+                QMessageBox.warning(self, "Guardar factura", str(e))
+                return
         if not file_path:
             QMessageBox.warning(self, "Guardar factura", "No se pudo generar el documento.")
             return

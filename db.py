@@ -1504,6 +1504,12 @@ class DB:
 
     def next_dte_correlativo(self, tipo: str, sucursal: str, punto: str) -> int:
         """Obtiene y actualiza el correlativo para la combinación dada."""
+        logger.debug(
+            "next_dte_correlativo llamado tipo=%s sucursal=%s punto=%s",
+            tipo,
+            sucursal,
+            punto,
+        )
         with self.lock:
             with self.conn:
                 self.cursor.execute(
@@ -1523,7 +1529,8 @@ class DB:
                         "INSERT INTO dte_correlativos (tipo, sucursal, punto, correlativo) VALUES (?, ?, ?, ?)",
                         (tipo, sucursal, punto, correlativo),
                     )
-            return correlativo
+        logger.debug("Correlativo asignado %s", correlativo)
+        return correlativo
 
     def add_dte_pendiente(self, venta_id, dte_json, modo):
         """Registra un DTE pendiente de transmisión a Hacienda."""

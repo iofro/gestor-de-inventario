@@ -1649,11 +1649,19 @@ def recalcular_totales(
 
 
 
-def generar_numero_control(db: DB, tipo: str, sucursal: str, punto: str) -> str:
-    """Genera un número de control secuencial."""
-    correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
+def _format_numero_control(tipo: str, sucursal: str, punto: str, correlativo: int) -> str:
+    """Formatea el número de control usando ``correlativo``."""
     secuencia = str(correlativo).zfill(15)
     return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
+
+
+def generar_numero_control(
+    db: DB, tipo: str, sucursal: str, punto: str
+) -> tuple[str, int]:
+    """Genera un número de control secuencial y devuelve también el correlativo."""
+    correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
+    numero_control = _format_numero_control(tipo, sucursal, punto, correlativo)
+    return numero_control, correlativo
 
 
 def identificacion_a_xml(ident: dict) -> str:
@@ -1702,11 +1710,12 @@ def generar_cabecera_dte_data(
     sucursal = _norm3(sucursal)
     punto = _norm3(punto)
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(db, tipo_dte, sucursal, punto)
+    numero_control, correlativo = generar_numero_control(db, tipo_dte, sucursal, punto)
     fecha_generacion = datetime.now().strftime("%d/%m/%Y, %I:%M %p")
     return {
         "codigo_generacion": codigo_generacion,
         "numero_control": numero_control,
+        "correlativo": correlativo,
         "sello_recepcion": None,
         "tipo_modelo": tipo_modelo,
         "tipo_operacion": tipo_operacion,
@@ -1778,7 +1787,7 @@ def generar_dte_json(
     pto = _norm3(cod_punto)
     # Generar identificadores con formatos oficiales
     codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control = generar_numero_control(db, tipo_dte, suc, pto)
+    numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
 
 
     now = datetime.now(TZ_EL_SALVADOR)
@@ -2448,7 +2457,13 @@ def generar_dte_json(
         "extension": extension,
     }
 
-    validate_dte_json(result, db=db, precios_incluyen_iva=False)
+    try:
+        validate_dte_json(
+            result, db=db, precios_incluyen_iva=False, correlativo=correlativo
+        )
+    except TypeError:
+        # Compatibilidad con versiones parcheadas sin parámetro ``correlativo``
+        validate_dte_json(result, db=db, precios_incluyen_iva=False)
     result.pop("extra", None)
     return json.loads(stable_stringify(result), parse_float=Decimal)
 
@@ -2458,6 +2473,7 @@ def validate_dte_json(
     *,
     db: DB,
     precios_incluyen_iva: bool | None = None,
+    correlativo: int | None = None,
 ) -> None:
     """Basic validation and normalization for DTE payload antes de firmar."""
     # Normalización omitida para preservar códigos con ceros a la izquierda
@@ -2629,7 +2645,11 @@ def validate_dte_json(
     numero_control = ident.get("numeroControl")
     regex_nc = r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$"
     if not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
-        ident["numeroControl"] = generar_numero_control(db, tipo, suc, pto)
+        if correlativo is None:
+            numero_control, correlativo = generar_numero_control(db, tipo, suc, pto)
+        else:
+            numero_control = _format_numero_control(tipo, suc, pto, correlativo)
+        ident["numeroControl"] = numero_control
     numero_control = ident.get("numeroControl")
     if not re.fullmatch(regex_nc, numero_control):
         raise ValueError("numeroControl inválido")

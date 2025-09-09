@@ -40,9 +40,19 @@ def build_qr_value(
 
 
 def format_direccion(direccion):
-    """Format a ``direccion`` dict into "Municipio, complemento"."""
+    """Format a ``direccion`` into "Municipio, complemento".
+
+    ``direccion`` can be either a mapping with ``departamento`` and
+    ``municipio`` codes plus a ``complemento`` field or a plain string. When a
+    string is provided it is returned unchanged.
+    """
+
     if not direccion:
         return ""
+
+    if isinstance(direccion, str):
+        return direccion
+
     departamento = str(direccion.get("departamento", "")).zfill(2)
     municipio = str(direccion.get("municipio", "")).zfill(2)
     complemento = direccion.get("complemento", "")
@@ -332,7 +342,12 @@ def generar_factura_electronica_pdf(
         text_y -= line_h
 
     text_y -= line_h
-    direccion = format_direccion(cliente.get("direccion"))
+    cliente_dir = {
+        "departamento": cliente.get("departamento"),
+        "municipio": cliente.get("municipio"),
+        "complemento": cliente.get("direccion"),
+    }
+    direccion = format_direccion(cliente_dir)
     text_y = draw_wrapped_text(
         c,
         f"Dirección: {direccion}",

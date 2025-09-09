@@ -30,6 +30,26 @@ def test_transmitir_dte_contingencia(tmp_path):
     assert row["estado"] == "Pendiente"
 
 
+def test_transmitir_dte_default_contingencia(monkeypatch):
+    db = DB(":memory:")
+    venta = create_sale(db)
+
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(
+        "dte.requests.post",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
+    )
+
+    res = transmitir_dte(db, venta)
+    assert res["estado"] == "Pendiente"
+    row = db.cursor.execute(
+        "SELECT estado, modo FROM dte_envios WHERE venta_id=?", (venta,)
+    ).fetchone()
+    assert row["estado"] == "Pendiente"
+    assert row["modo"] == "contingencia"
+
+
 def test_transmitir_dte_normal(monkeypatch, tmp_path):
     ambiente = "pruebas"
     db = DB(":memory:")

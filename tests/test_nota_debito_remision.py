@@ -1,5 +1,6 @@
 import fitz
 from decimal import Decimal
+import pytest
 from db import DB
 from nota_debito_electronica import generar_nde_desde_dte
 from dte import generar_dte_json
@@ -271,15 +272,14 @@ def test_generar_nota_remision_sin_documento_relacionado(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
-    data = generar_nota_remision(
-        db,
-        emisor=datos,
-        receptor=receptor,
-        detalles=detalles,
-        extension=extension,
-    )
-    assert "documentoRelacionado" not in data
-    assert str(data["resumen"]["montoTotalOperacion"]) == "0.00"
+    with pytest.raises(ValueError):
+        generar_nota_remision(
+            db,
+            emisor=datos,
+            receptor=receptor,
+            detalles=detalles,
+            extension=extension,
+        )
 
 
 def test_generar_nota_remision_desde_db_independiente(monkeypatch):
@@ -312,11 +312,24 @@ def test_generar_nota_remision_desde_db_independiente(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
-    extra = {"items": detalles, "receptor": receptor, "extension": extension}
+    doc_rel = [
+        {
+            "tipoDocumento": "03",
+            "tipoGeneracion": 1,
+            "numeroDocumento": "ABC",
+            "fechaEmision": "2024-01-01",
+        }
+    ]
+    extra = {
+        "items": detalles,
+        "receptor": receptor,
+        "extension": extension,
+        "documento_relacionado": doc_rel,
+    }
     nota_id = db.agregar_nota("remision", None, "2024-01-01", 0, "Envio", detalles=extra)
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["receptor"]["nombre"] == "Cliente"
-    assert "documentoRelacionado" not in data
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == "ABC"
 
 
 def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):

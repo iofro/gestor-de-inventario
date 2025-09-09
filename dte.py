@@ -4362,6 +4362,102 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
     return respuesta
 
 
+def enviar_lote_dtes(pendientes, db: DB | None = None):
+    """Agrupa ``pendientes`` y envía lotes de hasta 100 DTE.
+
+    ``pendientes`` debe ser un iterable de pares ``(venta_id, dte_data)``.
+    Cada lote se firma individualmente y se envía en una única petición.
+    El ``codigoLote`` devuelto se almacena en ``dte_envios`` para cada DTE.
+    """
+
+    db = db or DB()
+    pendientes = list(pendientes)
+    if not pendientes:
+        return []
+
+    cfg = _load_dte_api_config()
+    url = cfg["url"].rstrip("/") + "/lote"
+    token = auth.get_token()
+
+    resultados = []
+    for i in range(0, len(pendientes), 100):
+        bloque = pendientes[i : i + 100]
+        detalle = []
+        ambiente = version = None
+        for venta_id, data in bloque:
+            ident = data.get("identificacion") or data.get("identificador") or {}
+            ambiente = ambiente or ident.get("ambiente")
+            version = version or ident.get("version")
+            firmado = jws.sign_json(data)
+            detalle.append(
+                {
+                    "venta_id": venta_id,
+                    "codigoGeneracion": ident.get("codigoGeneracion"),
+                    "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+                    "documento": firmado,
+                }
+            )
+
+        body = {
+            "ambiente": ambiente,
+            "version": version,
+            "idEnvio": 1,
+            "cantidadDocumentos": len(detalle),
+            "detalle": [
+                {
+                    "codigoGeneracion": d["codigoGeneracion"],
+                    "tipoDte": d["tipoDte"],
+                    "documento": d["documento"],
+                }
+                for d in detalle
+            ],
+        }
+
+        headers = {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": f"Bearer {token}",
+        }
+
+        try:
+            resp = requests.post(url, headers=headers, json=body, timeout=20)
+            data_resp = resp.json() if resp.content else {}
+        except Exception as exc:  # pragma: no cover - defensive
+            data_resp = {"estado": "Error", "detalle": str(exc)}
+
+        codigo_lote = data_resp.get("codigoLote") or data_resp.get("codigoGeneracion")
+        estado = data_resp.get("estado") or data_resp.get("estadoLote") or ""
+        for d in detalle:
+            db.registrar_envio_dte(
+                d["venta_id"],
+                "lote",
+                estado or "Pendiente",
+                "",
+                json.dumps(data_resp, ensure_ascii=False),
+                codigo_lote=codigo_lote,
+            )
+        resultados.append(data_resp)
+
+    return resultados
+
+
+def consultar_estado_lote(codigo_lote: str) -> dict:
+    """Consulta el estado de un lote previamente enviado."""
+
+    cfg = _load_dte_api_config()
+    url = cfg["url"].rstrip("/") + f"/lote/{codigo_lote}"
+    token = auth.get_token()
+    headers = {
+        "Accept": "application/json",
+        "Authorization": f"Bearer {token}",
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=20)
+        return resp.json()
+    except Exception as exc:  # pragma: no cover - defensive
+        return {"estado": "Error", "detalle": str(exc)}
+
+
 def _parse_error_response(respuesta: dict) -> str:
     """Construye un mensaje de error a partir de ``descripcionMsg`` y ``observaciones``."""
     partes = []

@@ -2030,16 +2030,33 @@ class DB:
                     pass
         return rows
 
-    def registrar_envio_dte(self, venta_id, modo, estado, sello, respuesta_json=""):
+    def registrar_envio_dte(
+        self,
+        venta_id,
+        modo,
+        estado,
+        sello,
+        respuesta_json="",
+        codigo_lote=None,
+    ):
         """Guarda un registro del estado de transmisión de un DTE."""
         self.ensure_column("dte_envios", "respuesta", "TEXT")
+        self.ensure_column("dte_envios", "codigo_lote", "TEXT")
         fecha_hora = datetime.now().isoformat()
         self.cursor.execute(
             """
-            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta, codigo_lote)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (venta_id, modo, estado, sello, fecha_hora, respuesta_json),
+            (
+                venta_id,
+                modo,
+                estado,
+                sello,
+                fecha_hora,
+                respuesta_json,
+                codigo_lote,
+            ),
         )
         self.conn.commit()
 

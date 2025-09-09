@@ -29,7 +29,7 @@ import logging
 import warnings
 import xml.etree.ElementTree as ET
 from utils.monto import monto_a_texto_sv, to_base_iva
-from utils.sanitize import limpiar_documentos, limpiar_doc
+from utils.sanitize import limpiar_documentos, limpiar_doc, solo_digitos
 from num2words import num2words
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
@@ -2662,47 +2662,46 @@ def validate_dte_json(
     nit_field = receptor.get("nit")
     tipo_doc = receptor.get("tipoDocumento")
     if tipo_dte != "03":
-        if tipo_doc is not None:
-            tipo_doc = str(tipo_doc)
         if nit_field is not None:
             receptor["numDocumento"] = _clean_nit(nit_field)
             if tipo_doc is None:
                 tipo_doc = "36"
-        num_doc = receptor.get("numDocumento")
-        if tipo_doc == "36":
-            num_doc = _clean_nit(num_doc)
-            if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
-                raise ValueError("NIT inválido en receptor")
-        elif tipo_doc == "13":
-            if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-                raise ValueError("DUI inválido en receptor")
-        receptor["tipoDocumento"] = tipo_doc if tipo_doc is not None else None
+        limpiar_documentos(receptor)
+        num_doc = solo_digitos(receptor.get("numDocumento"))
+        nrc_raw = receptor.get("nrc")
+        nrc_digits = solo_digitos(nrc_raw) if nrc_raw is not None else ""
+        if nrc_digits:
+            receptor["nrc"] = nrc_digits
+        else:
+            receptor.pop("nrc", None)
+        if tipo_doc is None:
+            tipo_doc = "36" if receptor.get("nrc") else "13"
+        else:
+            tipo_doc = str(tipo_doc)
+        allowed = {"36", "13", "37", "03", "02"}
+        if tipo_doc not in allowed:
+            raise ValueError("tipoDocumento inválido en receptor")
+        if tipo_doc == "13":
+            if len(num_doc) != 9:
+                raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
+            if nrc_raw:
+                warnings.warn(
+                    "Se removió NRC porque el documento es DUI", UserWarning,
+                )
+            receptor.pop("nrc", None)
+        elif tipo_doc == "36":
+            if len(num_doc) != 14:
+                raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
+            if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
+                raise ValueError("NRC requerido (6–7 dígitos)")
+        else:
+            receptor.pop("nrc", None)
+        receptor["tipoDocumento"] = tipo_doc
         receptor["numDocumento"] = num_doc
     else:
         receptor["nit"] = _clean_nit(nit_field)
         receptor.pop("tipoDocumento", None)
         receptor.pop("numDocumento", None)
-
-    nrc_schema = (
-        FC_SCHEMA.get("properties", {})
-        .get("receptor", {})
-        .get("properties", {})
-        .get("nrc", {})
-    )
-    # ``nrc`` must always be present: if schema allows null we keep ``None``;
-    # otherwise we strip non-digits and pad with zeros to the minimum length.
-    nrc_types = nrc_schema.get("type", [])
-    if not isinstance(nrc_types, list):
-        nrc_types = [nrc_types]
-    if "null" in nrc_types:
-        nrc_val = _clean_nrc(receptor.get("nrc"))
-        receptor["nrc"] = nrc_val if nrc_val is not None else None
-    else:
-        nrc_val = _clean_nrc(receptor.get("nrc")) or ""
-        if not nrc_val:
-            min_len = nrc_schema.get("minLength", 1)
-            nrc_val = "0" * min_len
-        receptor["nrc"] = nrc_val
 
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")

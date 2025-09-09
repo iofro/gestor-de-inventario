@@ -1,4 +1,5 @@
 import pytest
+import warnings
 
 from db import DB
 from nota_remision_electronica import (
@@ -161,11 +162,13 @@ def test_receptor_dui_sin_nrc(monkeypatch):
         "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
     }
     extension = {"docuEntrega": "123", "docuRecibe": "456"}
-    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    with warnings.catch_warnings(record=True) as w:
+        data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     rec = data["receptor"]
     assert rec["tipoDocumento"] == "13"
     assert rec["numDocumento"] == "123456789"
     assert "nrc" not in rec
+    assert any("Se removió NRC" in str(warn.message) for warn in w)
 
 
 def test_receptor_nit_sin_nrc_error(monkeypatch):

@@ -39,17 +39,26 @@ def _build_items(
 ) -> list[dict]:
     """Construye items con montos forzados a ``0.00``.
 
-    Si ``numero_documento`` se proporciona se añade a cada ítem.
+    Además normaliza ``uniMedida`` contra el catálogo CAT-014, usando ``59``
+    (Unidad) cuando el detalle no provee una unidad válida.  Si
+    ``numero_documento`` se proporciona se añade a cada ítem.
     """
     items: list[dict] = []
     for num, det in enumerate(detalles, 1):
+        uni = det.get("uniMedida", 59)
+        try:
+            uni = int(uni)
+        except Exception:
+            uni = 59
+        if uni not in catalogos.UNIDADES_MEDIDA_PERMITIDAS:
+            uni = 59
         item = {
             "numItem": num,
             "tipoItem": det.get("tipoItem", 1),
             "codigo": det.get("codigo", f"NR{num:03d}"),
             "descripcion": det.get("descripcion", f"Item {num}"),
             "cantidad": det.get("cantidad", 1),
-            "uniMedida": det.get("uniMedida", 59),
+            "uniMedida": uni,
             "precioUni": 0.0,
             "montoDescu": 0.0,
             "ventaNoSuj": d2(Decimal_0),
@@ -103,6 +112,7 @@ def normalizar_receptor(receptor: dict) -> dict:
         receptor.pop("nrc", None)
     else:
         raise ValueError("tipoDocumento inválido en receptor")
+    receptor.setdefault("nombreComercial", None)
     return receptor
 
 

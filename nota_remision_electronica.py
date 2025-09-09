@@ -33,8 +33,10 @@ def _build_items(
 ) -> list[dict]:
     """Construye los ítems de la NR forzando todos los montos a ``0.00``.
 
-    Además valida que ``cantidad`` sea mayor que cero y que ``uniMedida`` esté
-    presente.  Si ``numero_documento`` se proporciona se agrega a cada ítem.
+    Además valida que ``cantidad`` sea mayor que cero y normaliza
+    ``uniMedida`` contra el catálogo CAT-014.  Si el ítem no provee una unidad
+    válida se utiliza por defecto ``59`` (Unidad).  Si
+    ``numero_documento`` se proporciona se agrega a cada ítem.
     """
 
     items: list[dict] = []
@@ -42,15 +44,20 @@ def _build_items(
         cantidad = det.get("cantidad", 1)
         if cantidad <= 0:
             raise ValueError("cantidad debe ser mayor que cero")
-        if det.get("uniMedida") is None:
-            raise ValueError("uniMedida requerido en el item")
+        uni = det.get("uniMedida", 59)
+        try:
+            uni = int(uni)
+        except Exception:
+            uni = 59
+        if uni not in catalogos.UNIDADES_MEDIDA_PERMITIDAS:
+            uni = 59
         item = {
             "numItem": num,
             "tipoItem": det.get("tipoItem", 1),
             "codigo": det.get("codigo", f"NR{num:03d}"),
             "descripcion": det.get("descripcion", f"Item {num}"),
             "cantidad": cantidad,
-            "uniMedida": det.get("uniMedida"),
+            "uniMedida": uni,
             "precioUni": 0.0,
             "montoDescu": 0.0,
             "ventaNoSuj": d2(Decimal_0),
@@ -104,6 +111,7 @@ def normalizar_receptor(receptor: dict) -> dict:
         receptor.pop("nrc", None)
     else:
         raise ValueError("tipoDocumento inválido en receptor")
+    receptor.setdefault("nombreComercial", None)
     return receptor
 
 

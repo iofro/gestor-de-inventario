@@ -19,9 +19,17 @@ def create_sale(db):
     return venta_id
 
 
-def test_transmitir_dte_contingencia(tmp_path):
+def test_transmitir_dte_contingencia(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
+    monkeypatch.setattr(dte, "generar_dte_json", lambda *a, **k: {"resumen": {"totalLetras": "X"}})
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     res = transmitir_dte(db, venta, modo="contingencia")
     assert res["estado"] == "Pendiente"
     row = db.cursor.execute(
@@ -35,11 +43,18 @@ def test_transmitir_dte_default_contingencia(monkeypatch):
     venta = create_sale(db)
 
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+    monkeypatch.setattr(dte, "generar_dte_json", lambda *a, **k: {"resumen": {"totalLetras": "X"}})
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
     monkeypatch.setattr(
         "dte.requests.post",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
     )
+    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
 
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Pendiente"

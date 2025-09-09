@@ -114,6 +114,7 @@ class NotaRemisionExtWidget(QWidget):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
+        self.cli_data = None
         self._build_ui()
 
     def _build_ui(self):
@@ -255,6 +256,7 @@ class NotaRemisionExtWidget(QWidget):
     def _seleccionar_cliente(self, item):
         data = item.data(Qt.UserRole) if item else None
         if isinstance(data, dict):
+            self.cli_data = data
             self.nomb_recibe.setText(data.get("nombre", ""))
             nrc = data.get("nrc") or ""
             if nrc:
@@ -266,6 +268,8 @@ class NotaRemisionExtWidget(QWidget):
                 self.docu_recibe.setText(limpiar_doc(doc))
                 self.nrc_recibe.clear()
                 self.tipo_doc_recibe = "13"
+        else:
+            self.cli_data = None
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
@@ -477,12 +481,29 @@ class NotaRemisionDialog(QDialog):
         extension = self.ext_widget.get_data()
         tipo_doc = extension.pop("tipoDocRecibe")
         nrc = extension.pop("nrcRecibe", "")
+        cli = self.ext_widget.cli_data or {}
+        complemento = cli.get("direccion") or cli.get("otros") or ""
+        if not cli or not complemento:
+            QMessageBox.warning(
+                self,
+                "Nota",
+                "Seleccione un cliente con dirección válida",
+            )
+            return None
         receptor = {
             "nombre": extension.get("nombRecibe"),
             "tipoDocumento": tipo_doc,
             "numDocumento": extension.get("docuRecibe"),
             "bienTitulo": "01",
-            "direccion": {"departamento": "05", "municipio": "24", "complemento": ""},
+            "codActividad": cli.get("codActividad"),
+            "descActividad": cli.get("giro"),
+            "telefono": cli.get("telefono"),
+            "correo": cli.get("email"),
+            "direccion": {
+                "departamento": cli.get("departamento"),
+                "municipio": cli.get("municipio"),
+                "complemento": complemento,
+            },
         }
         if tipo_doc == "36" and nrc:
             receptor["nrc"] = nrc
@@ -1409,7 +1430,10 @@ class FacturacionTab(QWidget):
         dialog = NotaRemisionDialog(self.manager.db, self.manager._products, self)
         if dialog.exec_() != QDialog.Accepted:
             return
-        detalles, extension, receptor = dialog.get_data()
+        data = dialog.get_data()
+        if not data:
+            return
+        detalles, extension, receptor = data
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
         extra = {"items": detalles, "receptor": receptor, "extension": extension}
         nota_id = self.manager.db.agregar_nota(

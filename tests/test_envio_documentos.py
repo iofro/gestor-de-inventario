@@ -482,7 +482,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == dte.DEFAULT_RECEPCION_URL
+    assert url == dte.DEFAULT_EVENTO_URL
     assert body["documento"] == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"
@@ -550,7 +550,7 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == dte.DEFAULT_RECEPCION_URL
+    assert url == dte.DEFAULT_EVENTO_URL
     assert body["documento"] == sign_calls["token"]
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"

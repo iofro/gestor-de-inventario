@@ -99,6 +99,10 @@ La función `transmitir_dte(db, venta_id)` utilizará la URL resultante para
 enviar el DTE inmediatamente después de firmarlo en modo normal, o registrará
 un evento pendiente en modo de contingencia.
 
+Cuando se use el modo de contingencia con `tipoContingencia` igual a `5`, el
+campo `motivo_contin` permite describir la causa de la contingencia con una
+longitud de entre 5 y 500 caracteres.
+
 ### Condición de operación
 
 El campo `resumen.condicionOperacion` se normaliza siguiendo el catálogo

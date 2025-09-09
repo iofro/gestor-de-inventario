@@ -1,6 +1,8 @@
 import pytest
+from pathlib import Path
+import dte
 from utils.docs import build_invoice_json
-from utils.doc_generation import generate_invoice_pdf
+from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
 
 class FakeDB:
     def __init__(self):
@@ -60,4 +62,28 @@ def test_generate_invoice_registers_pending(tmp_path, monkeypatch):
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
     generate_invoice_pdf(man, 1)
     assert db.pending
+
+
+def test_generate_ticket_registers_pending(tmp_path, monkeypatch):
+    db = FakeDB()
+    venta = {"id": 1, "fecha": "2024-01-01", "total": 5}
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 5, "descripcion": "P"}]
+    man = Manager(db)
+    pdf = tmp_path / "ticket.pdf"
+    js = tmp_path / "ticket.json"
+
+    def fake_paths(date, cliente, identifier, doc_type, root=None):
+        pdf.parent.mkdir(parents=True, exist_ok=True)
+        return str(pdf), str(js)
+
+    def fake_gen(venta, detalles, fname, dte_data=None):
+        Path(fname).write_text("PDF")
+
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.generar_ticket_personalizado", fake_gen)
+    monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
+
+    generate_ticket_pdf(man, 1)
+    assert db.pending == [(1, "2")]
 

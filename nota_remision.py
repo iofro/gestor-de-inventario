@@ -118,6 +118,13 @@ def generar_nota_remision(
     ambiente: str = "00",
 ) -> dict:
     """Genera la estructura JSON de una Nota de Remisión."""
+    allowed_ext_keys = {
+        "nombEntrega",
+        "docuEntrega",
+        "nombRecibe",
+        "docuRecibe",
+        "observaciones",
+    }
     if factura:
         emisor = factura.get("emisor")
         receptor = factura.get("receptor") or {}
@@ -141,10 +148,24 @@ def generar_nota_remision(
             "observaciones": "N/D",
         }
         if extension:
-            ext.update({k: v for k, v in extension.items() if v not in (None, "")})
-            receptor.setdefault("nombre", extension.get("nombRecibe"))
-            receptor.setdefault("tipoDocumento", "13")
-            receptor.setdefault("numDocumento", extension.get("docuRecibe"))
+            tipo_doc_recibe = extension.pop("tipoDocRecibe", None)
+            nrc_recibe = extension.pop("nrcRecibe", None)
+            ext.update(
+                {
+                    k: v
+                    for k, v in extension.items()
+                    if k in allowed_ext_keys and v not in (None, "")
+                }
+            )
+            receptor.setdefault("nombre", ext.get("nombRecibe"))
+            if tipo_doc_recibe == "36":
+                receptor["tipoDocumento"] = "36"
+                receptor["numDocumento"] = ext.get("docuRecibe")
+                if nrc_recibe:
+                    receptor["nrc"] = nrc_recibe
+            else:
+                receptor.setdefault("tipoDocumento", "13")
+                receptor.setdefault("numDocumento", ext.get("docuRecibe"))
         receptor.setdefault("bienTitulo", "01")
     else:
         if not (emisor and receptor and detalles):
@@ -168,6 +189,7 @@ def generar_nota_remision(
         if extension.get("observaciones"):
             ext["observaciones"] = extension.get("observaciones")
 
+    ext = {k: v for k, v in ext.items() if k in allowed_ext_keys}
     limpiar_documentos(emisor)
     receptor.setdefault("bienTitulo", "01")
     receptor = normalizar_receptor(receptor)

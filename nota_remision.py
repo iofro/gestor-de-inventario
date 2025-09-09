@@ -219,6 +219,12 @@ def generar_nota_remision(
             raise ValueError(f"{key} requerido")
     limpiar_documentos(ext)
 
+    if not documento_relacionado:
+        raise ValueError("documento_relacionado es obligatorio")
+    numero_doc = documento_relacionado[0].get("numeroDocumento")
+    if not numero_doc:
+        raise ValueError("documento_relacionado requiere numeroDocumento")
+
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     identificacion = {
@@ -236,9 +242,6 @@ def generar_nota_remision(
         "tipoMoneda": "USD",
     }
 
-    numero_doc = None
-    if documento_relacionado:
-        numero_doc = documento_relacionado[0].get("numeroDocumento")
     items = _build_items(detalles, numero_doc)
 
     resumen = {
@@ -265,14 +268,11 @@ def generar_nota_remision(
         "extension": ext,
         "resumen": resumen,
         "apendice": None,
+        "documentoRelacionado": documento_relacionado,
     }
-    if documento_relacionado:
-        data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
     result = sanitize_dte_payload(data, schema)
-    if not documento_relacionado:
-        result.pop("documentoRelacionado", None)
     return result
 
 
@@ -331,6 +331,7 @@ def generar_nota_remision_desde_db(
     detalles = extra.get("items") or []
     receptor = extra.get("receptor") or {}
     extension = extra.get("extension") or {}
+    documento_relacionado = extra.get("documento_relacionado")
 
     emisor = _load_datos_negocio()
     return generar_nota_remision(
@@ -339,6 +340,7 @@ def generar_nota_remision_desde_db(
         receptor=receptor,
         detalles=detalles,
         extension=extension,
+        documento_relacionado=documento_relacionado,
         ambiente=ambiente,
     )
 

@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QListWidgetItem,
     QPlainTextEdit,
 )
-from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent
+from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices
 import os
 import re
@@ -491,6 +491,8 @@ class FacturacionTab(QWidget):
         self.preview_label = QLabel("Previsualización del PDF")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
+        self.preview_label.setFixedSize(QSize(600, 800))
+        self.preview_label.setScaledContents(False)
         preview_layout.addWidget(self.preview_label)
         main_layout.addLayout(preview_layout, 2)
 
@@ -1665,8 +1667,8 @@ class FacturacionTab(QWidget):
             if pixmap.isNull():
                 raise RuntimeError("failed to load image")
             scaled = pixmap.scaled(
-                int(self.preview_label.width() * 0.9),
-                int(self.preview_label.height() * 0.9),
+                600,
+                800,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )

@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
 )
-from PyQt5.QtCore import Qt, QDate, QUrl
+from PyQt5.QtCore import Qt, QDate, QUrl, QSize
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime, date, timedelta
 from factura_sv import generar_factura_electronica_pdf
@@ -124,6 +124,7 @@ class SalesTab(QWidget):
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
         # Avoid stretching the image so the aspect ratio of the PDF is preserved
+        self.preview_label.setFixedSize(QSize(600, 800))
         self.preview_label.setScaledContents(False)
         preview_layout.addWidget(self.preview_label)
 
@@ -511,10 +512,10 @@ class SalesTab(QWidget):
             pixmap = QPixmap(png_path)
             if pixmap.isNull():
                 raise RuntimeError("failed to load image")
-            # Scale down a bit but keep the PDF aspect ratio intact
+            # Scale to fixed dimensions while preserving the PDF aspect ratio
             scaled = pixmap.scaled(
-                int(self.preview_label.width() * 0.9),
-                int(self.preview_label.height() * 0.9),
+                600,
+                800,
                 Qt.KeepAspectRatio,
                 Qt.SmoothTransformation,
             )

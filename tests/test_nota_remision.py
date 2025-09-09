@@ -183,13 +183,41 @@ def test_nr_independiente_extension(monkeypatch):
     assert float(res["descuGravada"]) == 0.0
 
 
+def test_nr_independiente_extension_sin_observaciones(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = _sample_receptor()
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "0614-140710-001-2",
+        "nombRecibe": "Ana",
+        "docuRecibe": "1234 5678",
+    }
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    with pytest.raises(ValueError):
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=detalles,
+            extension=extension,
+        )
+
+
 def test_nr_item_validation(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
     emisor = _sample_emisor()
     receptor = _sample_receptor()
     with pytest.raises(ValueError):
-        extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
+        extension = {
+            "nombEntrega": "X",
+            "docuEntrega": "123",
+            "nombRecibe": "Y",
+            "docuRecibe": "456",
+            "observaciones": "Obs",
+        }
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
@@ -197,7 +225,13 @@ def test_nr_item_validation(monkeypatch):
             detalles=[{"descripcion": "Prod", "cantidad": 0, "uniMedida": 59}],
             extension=extension,
         )
-    extension = {"nombEntrega": "X", "docuEntrega": "123", "nombRecibe": "Y", "docuRecibe": "456"}
+    extension = {
+        "nombEntrega": "X",
+        "docuEntrega": "123",
+        "nombRecibe": "Y",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
     data = generar_nota_remision_independiente(
         db,
         emisor=emisor,
@@ -269,6 +303,7 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         "docuEntrega": "0614-140710-001-2",
         "nombRecibe": "Ana",
         "docuRecibe": "1234 5678",
+        "observaciones": "Obs",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
     with pytest.raises(ValueError):

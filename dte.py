@@ -483,6 +483,13 @@ def _clean_nrc(nrc):
     return None
 
 
+def _clean_dui(dui):
+    if not dui:
+        return None
+    digits = "".join(c for c in str(dui) if c.isdigit())
+    return digits or None
+
+
 # --- Dirección --------------------------------------------------------------
 
 # Mapeos básicos de departamentos y municipios utilizados para normalizar la
@@ -2577,6 +2584,7 @@ def validate_dte_json(
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
+    emisor["dui"] = _clean_dui(emisor.get("dui") or negocio.get("dui"))
     emisor.setdefault("nombre", negocio.get("nombre"))
     emisor.setdefault("nombreComercial", negocio.get("nombreComercial"))
     emisor.setdefault(

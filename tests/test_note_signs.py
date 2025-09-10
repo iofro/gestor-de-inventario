@@ -25,17 +25,31 @@ def _make_note(dir_path, base, tipo, total):
     (dir_path / f"{base}.json").write_text(json.dumps(js))
 
 
+def _make_invoice(dir_path, base, total):
+    pdf_path = dir_path / f"{base}.pdf"
+    pdf_path.write_text("pdf")
+    js = {
+        "identificacion": {"numeroControl": base, "fecEmi": "2024-01-01"},
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {"totalPagar": total},
+    }
+    (dir_path / f"{base}.json").write_text(json.dumps(js))
+
+
 def test_scan_and_format_note_totals(qt_app, tmp_path, monkeypatch):
     nd_dir = tmp_path / "notas_debito"
     nd_dir.mkdir()
     nc_dir = tmp_path / "notas_credito"
     nc_dir.mkdir()
+    cf_dir = tmp_path / "cf"
+    cf_dir.mkdir()
     _make_note(nc_dir, "20240101_Test_1_NotaCredito", "NotaCredito", 5)
     _make_note(nd_dir, "20240102_Test_1_NotaDebito", "NotaDebito", 7)
+    _make_invoice(cf_dir, "20240103_Test_1_ConsumidorFinal", 10)
 
     db = DB(":memory:")
     man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
-    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(tmp_path / "cf"))
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(cf_dir))
     monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "cf2"))
     monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(nd_dir))
     monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(nc_dir))
@@ -50,8 +64,11 @@ def test_scan_and_format_note_totals(qt_app, tmp_path, monkeypatch):
     assert docs["20240101_Test_1_NotaCredito"]["sign"] == -1
     assert docs["20240102_Test_1_NotaDebito"]["total"] == 7
     assert docs["20240102_Test_1_NotaDebito"]["sign"] == 1
+    assert docs["20240103_Test_1_ConsumidorFinal"]["total"] == 10
+    assert docs["20240103_Test_1_ConsumidorFinal"]["sign"] == 1
 
     tab.load_invoices()
     totals = {tab.table.item(r, 0).text(): tab.table.item(r, 3).text() for r in range(tab.table.rowCount())}
     assert totals["20240101_Test_1_NotaCredito"] == "−$5.00"
     assert totals["20240102_Test_1_NotaDebito"] == "+$7.00"
+    assert totals["20240103_Test_1_ConsumidorFinal"] == "$10.00"

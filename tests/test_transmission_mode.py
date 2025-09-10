@@ -119,13 +119,19 @@ def test_generate_ticket_pdf_applies_contingency_flags(tmp_path, monkeypatch):
 
     called = {}
 
-    def fake_ticket_json(db_obj, vid, *, tipo_operacion, tipo_contingencia=None, motivo_contin=None, **k):
-        called["args"] = (tipo_operacion, tipo_contingencia, motivo_contin)
+    def fake_dte_json(db_obj, vid, *, tipo_dte, tipo_operacion, tipo_contingencia=None, motivo_contin=None, extra=None, **k):
+        called["args"] = (
+            tipo_dte,
+            tipo_operacion,
+            tipo_contingencia,
+            motivo_contin,
+            extra,
+        )
         return {"resumen": {"totalLetras": "X"}}
 
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
     monkeypatch.setattr("utils.doc_generation.generar_ticket_personalizado", fake_gen)
-    monkeypatch.setattr("utils.doc_generation.generar_ticket_json", fake_ticket_json)
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_dte_json)
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(
         dte, "_load_datos_negocio", lambda: {"dte_api": {"tipo_contingencia": 3, "motivo_contin": "fallo"}}
@@ -133,5 +139,10 @@ def test_generate_ticket_pdf_applies_contingency_flags(tmp_path, monkeypatch):
 
     generate_ticket_pdf(man, 1)
 
-    assert called["args"] == (2, 3, "fallo")
+    tipo_dte, tipo_op, tipo_cont, motivo, extra = called["args"]
+    assert tipo_dte == "01"
+    assert tipo_op == 2
+    assert tipo_cont == 3
+    assert motivo == "fallo"
+    assert extra.get("es_ticket")
 

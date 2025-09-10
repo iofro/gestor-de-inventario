@@ -6,7 +6,7 @@ import logging
 import dte
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
-from dte import generar_ticket_json, generar_dte_json
+from dte import generar_dte_json
 from utils.monto import monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
@@ -258,6 +258,7 @@ def generate_ticket_pdf(manager, venta_id):
             extra.setdefault("tipoContingencia", tipo_contingencia)
         if motivo_contin is not None:
             extra.setdefault("motivoContin", motivo_contin)
+    extra.setdefault("es_ticket", True)
 
     cliente = None
     if venta.get("cliente_id"):
@@ -270,12 +271,14 @@ def generate_ticket_pdf(manager, venta_id):
 
     generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
     if hasattr(manager.db, "cursor"):
-        ticket_json = generar_ticket_json(
+        ticket_json = generar_dte_json(
             manager.db,
             venta_id,
+            tipo_dte="01",
             tipo_operacion=tipo_operacion,
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
+            extra=extra,
         )
     else:
         venta_data = dict(venta)
@@ -286,6 +289,8 @@ def generate_ticket_pdf(manager, venta_id):
         if not venta_data.get("numero_control"):
             venta_data["numero_control"] = uuid.uuid4().hex[:8].upper()
         ticket_json = build_invoice_json(venta_data, cliente or {}, detalles)
+        ticket_json.setdefault("identificacion", {})["tipoDte"] = "01"
+        ticket_json.setdefault("extra", {})["es_ticket"] = True
     if tipo_operacion == 2:
         manager.db.add_dte_pendiente(venta_id, ticket_json, "2")
     try:

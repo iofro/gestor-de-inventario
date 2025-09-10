@@ -2007,19 +2007,22 @@ def generar_dte_json(
 
     # Campos obligatorios y limpieza de campos no permitidos
     if tipo_dte == "01":
-        required_rec_fields = [
-            "nrc",
-            "nombre",
-            "codActividad",
-            "descActividad",
-            "telefono",
-            "correo",
-            "direccion",
-            "tipoDocumento",
-            "numDocumento",
-        ]
         for f in ("nit", "nombreComercial"):
             receptor.pop(f, None)
+        if extra.get("es_ticket"):
+            required_rec_fields = ["direccion"]
+        else:
+            required_rec_fields = [
+                "nrc",
+                "nombre",
+                "codActividad",
+                "descActividad",
+                "telefono",
+                "correo",
+                "direccion",
+                "tipoDocumento",
+                "numDocumento",
+            ]
     else:
         required_rec_fields = [
             "nit",

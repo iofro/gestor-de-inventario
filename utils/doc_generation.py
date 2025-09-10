@@ -7,7 +7,7 @@ import dte
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
 from dte import generar_ticket_json, generar_dte_json
-from utils.monto import monto_a_texto_sv, iva_item
+from utils.monto import monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -29,6 +29,16 @@ def generate_invoice_pdf(manager, venta_id):
     if credito_info:
         venta_data.update(credito_info)
 
+    # Parse extra information early to know if prices include IVA
+    extra = venta_data.get("extra") or {}
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except Exception:
+            extra = {}
+    venta_data["extra"] = extra
+    precios_incluyen_iva = bool(extra.get("precios_incluyen_iva"))
+
     if venta_data.get("vendedor_id"):
         trabajador = manager.db.get_trabajador(venta_data["vendedor_id"])
         if trabajador:
@@ -37,30 +47,44 @@ def generate_invoice_pdf(manager, venta_id):
     sumas = descuentos = 0
     ventas_exentas = ventas_no_sujetas = iva = 0
     for d in detalles:
-        base_total = d.get("precio_unitario", 0) * d.get("cantidad", 0)
+        unit = d.get("precio_unitario", 0)
+        cantidad = d.get("cantidad", 0)
+        line_total = unit * cantidad
         desc = d.get("descuento", 0)
         if d.get("descuento_tipo") == "%":
-            desc = base_total * d.get("descuento", 0) / 100
-        base = base_total - desc
+            desc = line_total * d.get("descuento", 0) / 100
+        line_total_desc = line_total - desc
         iva_item_val = d.get("iva", 0)
         tipo = d.get("tipo_fiscal", "").lower()
         if tipo == "venta exenta":
-            d["ventas_exentas"] = base
-            ventas_exentas += base
+            d["ventas_exentas"] = line_total_desc
+            ventas_exentas += line_total_desc
         elif tipo == "venta no sujeta":
-            d["ventas_no_sujetas"] = base
-            ventas_no_sujetas += base
+            d["ventas_no_sujetas"] = line_total_desc
+            ventas_no_sujetas += line_total_desc
         else:
-            if credito_info and not iva_item_val:
-                iva_item_val = float(iva_item(base))
+            if precios_incluyen_iva:
+                base_total_dec, _ = to_base_iva(line_total)
+                base_dec, iva_dec = to_base_iva(line_total_desc)
+                base_total = float(base_total_dec)
+                base = float(base_dec)
+                iva_item_val = float(iva_dec)
                 d["iva"] = iva_item_val
+                sumas += base_total
+                descuentos += base_total - base
+            else:
+                base_total = line_total
+                base = line_total_desc
+                if credito_info and not iva_item_val:
+                    iva_item_val = float(iva_item(base))
+                    d["iva"] = iva_item_val
+                sumas += base_total
+                descuentos += desc
             d["ventas_gravadas"] = base
-            sumas += base_total
-            descuentos += desc
             iva += iva_item_val
 
-    subtotal = (sumas - descuentos) + iva
-    total = subtotal + ventas_exentas + ventas_no_sujetas
+    subtotal = sumas - descuentos
+    total = subtotal + iva + ventas_exentas + ventas_no_sujetas
     venta_data.update(
         {
             "sumas": sumas,
@@ -88,12 +112,6 @@ def generate_invoice_pdf(manager, venta_id):
             None,
         )
 
-    extra = venta_data.get("extra") or {}
-    if isinstance(extra, str):
-        try:
-            extra = json.loads(extra)
-        except Exception:
-            extra = {}
     if not venta_data.get("venta_a_cuenta_de"):
         venta_data["venta_a_cuenta_de"] = extra.get("venta_a_cuenta_de", "")
     if not venta_data.get("documento_venta_a_cuenta"):

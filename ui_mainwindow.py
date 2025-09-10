@@ -88,24 +88,42 @@ class MainWindow(QMainWindow):
     def iniciar_firmador(self):
         """Lanza el servicio externo de firmado de documentos."""
         if self.firmador_proc and self.firmador_proc.poll() is None:
-            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+            QMessageBox.information(
+                self,
+                "Firmador",
+                "El firmador ya está corriendo, no es necesario volver a ejecutarlo.",
+            )
             return
         if firmador_activo():
-            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+            QMessageBox.information(
+                self,
+                "Firmador",
+                "El firmador ya está corriendo, no es necesario volver a ejecutarlo.",
+            )
             return
         try:
             self.firmador_proc = iniciar_firmador()
-            QMessageBox.information(self, "Firmador", "Firmador iniciado correctamente.")
+            QMessageBox.information(
+                self, "Firmador", "El firmador está corriendo."
+            )
         except FileNotFoundError as exc:
             QMessageBox.critical(self, "Error", f"No se encontró el firmador:\n{exc}")
         except RuntimeError:
-            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+            QMessageBox.information(
+                self,
+                "Firmador",
+                "El firmador ya está corriendo, no es necesario volver a ejecutarlo.",
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo iniciar el firmador:\n{exc}")
 
     def _verificar_firmador(self):
         if firmador_activo():
-            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+            QMessageBox.information(
+                self,
+                "Firmador",
+                "El firmador ya está corriendo, no es necesario volver a ejecutarlo.",
+            )
         else:
             resp = QMessageBox.question(
                 self,

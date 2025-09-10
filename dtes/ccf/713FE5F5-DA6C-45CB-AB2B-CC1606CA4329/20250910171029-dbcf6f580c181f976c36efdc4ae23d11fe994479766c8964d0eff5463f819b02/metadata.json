@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "713FE5F5-DA6C-45CB-AB2B-CC1606CA4329",
+  "estado": "borrador",
+  "firmas": [
+    {
+      "archivo": "documento-20250910171029.jws",
+      "estado": "borrador",
+      "fechaFirma": "20250910171029",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "dbcf6f580c181f976c36efdc4ae23d11fe994479766c8964d0eff5463f819b02",
+  "timestamp": "20250910171029"
+}

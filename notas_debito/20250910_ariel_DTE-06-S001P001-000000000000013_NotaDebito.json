@@ -2,32 +2,34 @@
   "apendice": null,
   "cuerpoDocumento": [
     {
-      "cantidad": 1.0,
+      "cantidad": 1,
       "codTributo": null,
-      "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 3",
-      "montoDescu": 0.0,
-      "noGravado": 0.0,
+      "codigo": "NDBBBA4FED-1",
+      "descripcion": "Producto Demo 8",
+      "montoDescu": 0.0000,
       "numItem": 1,
-      "precioUni": 7.96,
-      "psv": 0.0,
+      "numeroDocumento": "BBBA4FED-4102-4F11-B642-EC3599705A0F",
+      "precioUni": 0.8850,
       "tipoItem": 1,
       "tributos": [
         "20"
       ],
       "uniMedida": 59,
-      "ventaExenta": 0.0,
-      "ventaGravada": 7.96,
-      "ventaNoSuj": 0.0
+      "ventaExenta": 0.0000,
+      "ventaGravada": 0.8850,
+      "ventaNoSuj": 0.0000
     }
   ],
-  "documentoRelacionado": null,
+  "documentoRelacionado": [
+    {
+      "fechaEmision": "2025-09-10",
+      "numeroDocumento": "BBBA4FED-4102-4F11-B642-EC3599705A0F",
+      "tipoDocumento": "03",
+      "tipoGeneracion": 2
+    }
+  ],
   "emisor": {
     "codActividad": "46484",
-    "codEstable": "0001",
-    "codEstableMH": "0001",
-    "codPuntoVenta": "0001",
-    "codPuntoVentaMH": "0001",
     "correo": "farmaciasantacatalina7@gmail.com",
     "descActividad": "Venta de productos farmaceuticos",
     "direccion": {
@@ -45,63 +47,54 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "BAC2BB90-7067-44ED-AA0E-4794B6BFD29A",
-    "fecEmi": "2025-09-08",
-    "horEmi": "11:42:31",
+    "codigoGeneracion": "3B0AAB00-DA6D-46B3-A6DB-E061F371D54C",
+    "fecEmi": "2025-09-10",
+    "horEmi": "17:09:53",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000151",
+    "numeroControl": "DTE-06-S001P001-000000000000013",
     "tipoContingencia": null,
-    "tipoDte": "03",
+    "tipoDte": "06",
     "tipoModelo": 1,
     "tipoMoneda": "USD",
     "tipoOperacion": 1,
     "version": 3
   },
-  "otrosDocumentos": null,
   "receptor": {
-    "codActividad": "46484",
-    "correo": "no-reply@example.com",
-    "descActividad": "Venta de productos farmaceuticos",
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Cliente de demostración",
     "direccion": {
-      "complemento": "Calle Falsa 1, San Salvador",
+      "complemento": "6a calle oriente",
       "departamento": "05",
-      "municipio": "28"
+      "municipio": "25"
     },
     "nombre": "ariel",
+    "nombreComercial": null,
     "nrc": "2273734",
-    "telefono": "70000001"
+    "telefono": "74154027"
   },
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 9.0,
+    "montoTotalOperacion": 1.00,
     "numPagoElectronico": "",
-    "pagos": [
-      {
-        "codigo": "01",
-        "montoPago": 9.0
-      }
-    ],
-    "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
-    "saldoFavor": 0.0,
-    "subTotal": 7.96,
-    "subTotalVentas": 7.96,
+    "subTotal": 0.89,
+    "subTotalVentas": 0.89,
     "totalDescu": 0.0,
-    "totalExenta": 0.0,
-    "totalGravada": 7.96,
-    "totalLetras": "NUEVE 00/100 DÓLARES",
-    "totalNoGravado": 0.0,
-    "totalNoSuj": 0.0,
-    "totalPagar": 9.0,
+    "totalExenta": 0.00,
+    "totalGravada": 0.89,
+    "totalLetras": "UNO 00/100 DÓLARES",
+    "totalNoSuj": 0.00,
     "tributos": [
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.04
+        "valor": 0.11
       }
     ]
   },

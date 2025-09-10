@@ -5,19 +5,20 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 7",
-      "ivaItem": 1.38,
-      "montoDescu": 1.04,
+      "descripcion": "Producto Demo 8",
+      "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 13.0000,
+      "precioUni": 12.3900,
       "psv": 0.0,
       "tipoItem": 1,
-      "tributos": null,
+      "tributos": [
+        "20"
+      ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 11.9600,
+      "ventaGravada": 12.3900,
       "ventaNoSuj": 0.0
     }
   ],
@@ -45,46 +46,47 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "745F092B-01AF-4029-8AC7-B0C147A1DD15",
-    "fecEmi": "2025-09-03",
-    "horEmi": "23:56:28",
+    "codigoGeneracion": "713FE5F5-DA6C-45CB-AB2B-CC1606CA4329",
+    "fecEmi": "2025-09-10",
+    "horEmi": "17:10:28",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000179",
+    "numeroControl": "DTE-03-S001P001-000000000000211",
     "tipoContingencia": null,
-    "tipoDte": "01",
+    "tipoDte": "03",
     "tipoModelo": 1,
     "tipoMoneda": "USD",
     "tipoOperacion": 1,
-    "version": 1
+    "version": 3
   },
   "otrosDocumentos": null,
   "receptor": {
-    "codActividad": "46484",
-    "correo": "no-reply@example.com",
-    "descActividad": "Venta de productos farmaceuticos",
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Cliente de demostración",
     "direccion": {
-      "complemento": "Calle Falsa 1, San Salvador",
+      "complemento": "6a calle oriente",
       "departamento": "05",
-      "municipio": "28"
+      "municipio": "25"
     },
+    "nit": "13240304791012",
     "nombre": "ariel",
+    "nombreComercial": "Vertex",
     "nrc": "2273734",
-    "numDocumento": "13240304791012",
-    "telefono": "70000001",
-    "tipoDocumento": "36"
+    "telefono": "74154027"
   },
   "resumen": {
     "condicionOperacion": 1,
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 11.96,
+    "montoTotalOperacion": 14.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 11.96,
+        "montoPago": 14.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -93,17 +95,22 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 11.96,
-    "subTotalVentas": 11.96,
-    "totalDescu": 1.04,
+    "subTotal": 12.39,
+    "subTotalVentas": 12.39,
+    "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 11.96,
-    "totalIva": 1.38,
-    "totalLetras": "Once Dolares con noventa y seis centavos",
+    "totalGravada": 12.39,
+    "totalLetras": "CATORCE 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 11.96,
-    "tributos": null
+    "totalPagar": 14.00,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 1.61
+      }
+    ]
   },
   "ventaTercero": null
 }

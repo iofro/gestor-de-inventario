@@ -1,5 +1,5 @@
 import fitz
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from db import DB
 from dte import generar_dte_json
 from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_nota
@@ -127,7 +127,10 @@ def test_nota_credito_precio_uni(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")
-    assert data["resumen"]["montoTotalOperacion"] == 9.0
+    iva = Decimal("7.96") * Decimal("0.13")
+    iva = iva.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    expected_total = Decimal("7.96") + iva
+    assert data["resumen"]["montoTotalOperacion"] == expected_total
 
 
 def test_generar_nce_rechaza_monto_excedido(monkeypatch):

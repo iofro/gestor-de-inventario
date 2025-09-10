@@ -433,6 +433,7 @@ DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(0, 15)}
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 PHONE_RE = re.compile(r"^\+?\d{8,15}$")
+DUI_RE = re.compile(r"^[0-9]{8}-[0-9]$")
 
 
 def _map_departamento(nombre: str | None) -> str:
@@ -2021,8 +2022,11 @@ def generar_dte_json(
             "correo",
             "direccion",
         ]
-        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        for f in ("noRemision", "ordenNo"):
             receptor.pop(f, None)
+        if not receptor.get("numDocumento"):
+            receptor.pop("numDocumento", None)
+            receptor.pop("tipoDocumento", None)
 
     for f in required_rec_fields:
         receptor.setdefault(f, None)
@@ -2725,6 +2729,13 @@ def validate_dte_json(
     receptor = payload.get("receptor", {})
     nit_field = receptor.get("nit")
     tipo_doc = receptor.get("tipoDocumento")
+    raw_num_doc = receptor.get("numDocumento")
+    if isinstance(raw_num_doc, str):
+        raw_num_doc = "".join(c for c in raw_num_doc if c.isdigit() or c == "-")
+    else:
+        raw_num_doc = ""
+    if tipo_doc is None and DUI_RE.fullmatch(raw_num_doc):
+        tipo_doc = "13"
     if tipo_dte != "03":
         if nit_field is not None:
             receptor["numDocumento"] = _clean_nit(nit_field)
@@ -2764,8 +2775,15 @@ def validate_dte_json(
         receptor["numDocumento"] = num_doc
     else:
         receptor["nit"] = _clean_nit(nit_field)
-        receptor.pop("tipoDocumento", None)
-        receptor.pop("numDocumento", None)
+        limpiar_documentos(receptor)
+        num_doc = solo_digitos(receptor.get("numDocumento"))
+        if tipo_doc or num_doc:
+            tipo_doc = str(tipo_doc or "13")
+            receptor["tipoDocumento"] = tipo_doc
+            receptor["numDocumento"] = num_doc
+        else:
+            receptor.pop("tipoDocumento", None)
+            receptor.pop("numDocumento", None)
 
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
@@ -2808,8 +2826,11 @@ def validate_dte_json(
         ]
         for f in required_rec_fields:
             receptor.setdefault(f, None)
-        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        for f in ("noRemision", "ordenNo"):
             receptor.pop(f, None)
+        if not receptor.get("numDocumento"):
+            receptor.pop("numDocumento", None)
+            receptor.pop("tipoDocumento", None)
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])

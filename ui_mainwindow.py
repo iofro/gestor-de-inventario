@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy,
     QInputDialog
 )
-from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QColor
 import os
 import json
@@ -35,7 +35,7 @@ from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
 from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
-from utils.firmador import iniciar_firmador, detener_firmador
+from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
 import logging
 
 logger = logging.getLogger(__name__)
@@ -83,10 +83,14 @@ class MainWindow(QMainWindow):
         self._mark_saved()
         self._setup_ui()
         self._apply_styles()
+        QTimer.singleShot(0, self._verificar_firmador)
 
     def iniciar_firmador(self):
         """Lanza el servicio externo de firmado de documentos."""
         if self.firmador_proc and self.firmador_proc.poll() is None:
+            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+            return
+        if firmador_activo():
             QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
             return
         try:
@@ -94,8 +98,22 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Firmador", "Firmador iniciado correctamente.")
         except FileNotFoundError as exc:
             QMessageBox.critical(self, "Error", f"No se encontró el firmador:\n{exc}")
+        except RuntimeError:
+            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo iniciar el firmador:\n{exc}")
+
+    def _verificar_firmador(self):
+        if firmador_activo():
+            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+        else:
+            resp = QMessageBox.question(
+                self,
+                "Firmador",
+                "El firmador no está corriendo y es necesario para generar facturas. ¿Desea iniciarlo?",
+            )
+            if resp == QMessageBox.Yes:
+                self.iniciar_firmador()
 
     def generar_factura_pdf(self):
         """Función de generación de facturas no disponible."""

@@ -1,4 +1,5 @@
 import os
+import socket
 import subprocess
 from pathlib import Path
 from typing import Optional
@@ -6,8 +7,22 @@ from typing import Optional
 # Almacena el proceso para poder detenerlo posteriormente
 _FIRMADOR_PROC: Optional[subprocess.Popen] = None
 
+FIRMADOR_HOST = "127.0.0.1"
+FIRMADOR_PORT = 8080
+
+
+def firmador_activo() -> bool:
+    """Comprueba si el firmador ya está en ejecución."""
+    try:
+        with socket.create_connection((FIRMADOR_HOST, FIRMADOR_PORT), timeout=1):
+            return True
+    except OSError:
+        return False
+
 def iniciar_firmador() -> subprocess.Popen:
     """Inicia el servicio ``svfe-api-firmador`` usando el JDK empaquetado."""
+    if firmador_activo():
+        raise RuntimeError("El firmador ya está en ejecución")
     base = Path(__file__).resolve().parent.parent / "svfe-api-firmador"
     java_home = base / "vendor" / "jdk"
     env = os.environ.copy()

@@ -189,6 +189,39 @@ def test_generar_nce_detalle_excede(monkeypatch):
         generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
 
 
+def test_nota_credito_un_dolar(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 1, '')",
+        (venta_id,),
+    ).lastrowid
+    # El monto debe almacenarse exactamente como se ingresó
+    stored = Decimal(
+        str(db.cursor.execute("SELECT monto FROM notas WHERE id=?", (nota_id,)).fetchone()["monto"])
+    )
+    assert stored == Decimal("1")
+    nce = generar_nce_desde_nota(db, nota_id)
+    resumen = nce["resumen"]
+    assert resumen["montoTotalOperacion"] == Decimal("1.00")
+    iva = resumen["tributos"][0]["valor"] if resumen["tributos"] else Decimal("0")
+    assert resumen["totalGravada"] + iva == resumen["montoTotalOperacion"]
+
+
 def _sample_data():
     venta = {
         "sumas": 10,

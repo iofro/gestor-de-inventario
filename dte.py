@@ -1791,6 +1791,10 @@ def generar_dte_json(
         except Exception:
             extra = {}
 
+    extra_param = kwargs.get("extra")
+    if isinstance(extra_param, dict):
+        extra.update(extra_param)
+
     cliente = None
     if venta.get("cliente_id"):
         cliente = db.get_cliente(venta["cliente_id"])
@@ -1954,23 +1958,24 @@ def generar_dte_json(
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
-        "numDocumento": num_doc,
-        "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
-        "nombre": rec.get("nombre"),
+        "numDocumento": num_doc or None,
+        "nrc": ((fiscal.get("nrc") if fiscal else None) or rec.get("nrc")) or None,
+        "nombre": rec.get("nombre") or None,
         "nit": nit,
-        "nombreComercial": rec.get("nombreComercial"),
-        "codActividad": rec.get("codActividad"),
-        "descActividad": rec.get("giro") or rec.get("descActividad"),
-        "telefono": rec.get("telefono"),
-        "correo": rec.get("correo"),
+        "nombreComercial": rec.get("nombreComercial") or None,
+        "codActividad": rec.get("codActividad") or None,
+        "descActividad": (rec.get("giro") or rec.get("descActividad")) or None,
+        "telefono": rec.get("telefono") or None,
+        "correo": rec.get("correo") or None,
     }
     direccion_src = rec.get("direccion")
     if not isinstance(direccion_src, dict):
         direccion_src = rec
     receptor["direccion"] = _build_receptor_direccion(direccion_src)
     compl = receptor["direccion"].get("complemento")
-    if not compl or len(str(compl)) < 5:
-        receptor["direccion"]["complemento"] = "SIN DIRECCION"
+    if not extra.get("es_ticket"):
+        if not compl or len(str(compl)) < 5:
+            receptor["direccion"]["complemento"] = "SIN DIRECCION"
     if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
@@ -1981,18 +1986,19 @@ def generar_dte_json(
         if fiscal.get("orden_no"):
             receptor["ordenNo"] = fiscal.get("orden_no")
 
-    if not receptor.get("codActividad"):
-        receptor["codActividad"] = (
-            emisor.get("codActividad") or datos.get("cod_giro") or "00000"
-        )
-    if not receptor.get("descActividad"):
-        receptor["descActividad"] = (
-            emisor.get("descActividad")
-            or datos.get("descActividad")
-            or "SIN GIRO"
-        )
-    if not receptor.get("correo"):
-        receptor["correo"] = "no-reply@example.com"
+    if not extra.get("es_ticket"):
+        if not receptor.get("codActividad"):
+            receptor["codActividad"] = (
+                emisor.get("codActividad") or datos.get("cod_giro") or "00000"
+            )
+        if not receptor.get("descActividad"):
+            receptor["descActividad"] = (
+                emisor.get("descActividad")
+                or datos.get("descActividad")
+                or "SIN GIRO"
+            )
+        if not receptor.get("correo"):
+            receptor["correo"] = "no-reply@example.com"
 
     # Campos obligatorios y limpieza de campos no permitidos
     if tipo_dte == "01":
@@ -3227,6 +3233,12 @@ def generar_ticket_json(
     if ambiente not in ("00", "01"):
         ambiente_cfg = str(ambiente).lower()
         ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
+
+    extra_kwargs = kwargs.get("extra")
+    if isinstance(extra_kwargs, dict):
+        kwargs["extra"] = {**extra_kwargs, "es_ticket": True}
+    else:
+        kwargs["extra"] = {"es_ticket": True}
 
     data = generar_dte_json(
         db,

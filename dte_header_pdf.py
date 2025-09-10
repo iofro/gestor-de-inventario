@@ -7,7 +7,8 @@ from reportlab.lib.units import mm
 from reportlab.lib import colors
 
 from utils.pdf_utils import draw_wrapped_text
-from factura_sv import build_qr_value
+from factura_sv import build_qr_url
+from datetime import datetime
 
 
 def generar_cabecera_dte(
@@ -83,13 +84,21 @@ def generar_cabecera_dte(
     # QR en el centro
     qr_x = 40 + box_w + col_margin + 3
     qr_y = box_y + (box_h - qr_size) / 2
-    qr_env = 1 if ambiente in ("00", "produccion") else 2
-    qr_value = build_qr_value(
-        qr_env,
-        codigo_generacion,
-        tipo_dte,
-        numero_control,
-    )
+    if not fecha_emision and fecha_generacion:
+        try:
+            fecha_emision = datetime.strptime(
+                fecha_generacion.split(",")[0].strip(), "%d/%m/%Y"
+            ).strftime("%Y-%m-%d")
+        except Exception:
+            fecha_emision = datetime.now().strftime("%Y-%m-%d")
+    dte = {
+        "identificacion": {
+            "ambiente": ambiente,
+            "codigoGeneracion": codigo_generacion,
+            "fecEmi": fecha_emision,
+        }
+    }
+    qr_value = build_qr_url(dte)
     qr_code = qr.QrCodeWidget(qr_value)
     bounds = qr_code.getBounds()
     w = bounds[2] - bounds[0]
@@ -97,6 +106,8 @@ def generar_cabecera_dte(
     d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
     d.add(qr_code)
     renderPDF.draw(d, c, qr_x, qr_y)
+    c.setFont("Helvetica", 6)
+    c.drawCentredString(qr_x + qr_size / 2, qr_y - 8, qr_value)
 
     # --- Caja derecha ---
     right_x = 40 + box_w + col_margin + qr_size + col_margin

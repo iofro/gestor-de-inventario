@@ -907,6 +907,10 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Enviar", "Seleccione un documento")
             return
 
+        token_msg = (
+            "El token está desactualizado. Debe generar uno nuevo desde la configuración de facturación."
+        )
+
         factura = None
         rtype = entry.get("row_type")
         if rtype in ("venta", "orphan"):
@@ -932,6 +936,9 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
+                    if resp.get("http_status") in {401, 403}:
+                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        return
                     estado = resp.get("estado")
                     if estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.information(
@@ -951,6 +958,8 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
+                except RuntimeError:
+                    QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
@@ -961,6 +970,9 @@ class FacturacionTab(QWidget):
                     resp = transmitir_dte(
                         self.manager.db, entry.get("id"), tipo_dte=tipo
                     )
+                    if resp.get("http_status") in {401, 403}:
+                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        return
                     estado = resp.get("estado")
                     if estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.information(
@@ -980,6 +992,8 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
+                except RuntimeError:
+                    QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)

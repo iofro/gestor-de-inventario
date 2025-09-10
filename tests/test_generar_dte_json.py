@@ -61,7 +61,8 @@ def test_generar_dte_json_basic(tmp_path):
 
     datos = {
         "nit": "06141990011019",
-        "nrc": "12345678",
+        "nrc": "1234567",
+        "dui": "01234567-8",
         "nombre": "Mi Negocio",
         "nombreComercial": "Mi Negocio",
         "cod_giro": "123456",
@@ -91,7 +92,7 @@ def test_generar_dte_json_basic(tmp_path):
     prod_id = db.cursor.lastrowid
     db.add_cliente(
         "Cliente",
-        "123",
+        "1234567",
         "06141990011019",
         "",
         "giro",
@@ -107,13 +108,14 @@ def test_generar_dte_json_basic(tmp_path):
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
 
     idf = data["identificacion"]
     res = data["resumen"]
 
     assert idf["tipoDte"] == "01"
     assert idf["ambiente"] in ("00", "01")
+    assert "dui" not in data["emisor"]
 
     def q2(x):
         return Decimal(str(x)).quantize(Decimal("0.01"))

@@ -2499,6 +2499,10 @@ def generar_dte_json(
         "apendice": None,
         "ventaTercero": None,
         "extension": extension,
+        # ``extra`` se utiliza únicamente durante la validación para
+        # transmitir banderas internas como ``es_ticket``.  No forma parte
+        # del DTE final y se eliminará después de la validación.
+        "extra": extra,
     }
 
     try:
@@ -2646,10 +2650,8 @@ def validate_dte_json(
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
-    if tipo_dte != "03":
-        emisor["dui"] = _clean_dui(emisor.get("dui") or negocio.get("dui"))
-    else:
-        emisor.pop("dui", None)
+    # ``dui`` is not permitted for the emisor by the DTE schema
+    emisor.pop("dui", None)
     emisor.setdefault("nombre", negocio.get("nombre"))
     emisor.setdefault("nombreComercial", negocio.get("nombreComercial"))
     emisor.setdefault(

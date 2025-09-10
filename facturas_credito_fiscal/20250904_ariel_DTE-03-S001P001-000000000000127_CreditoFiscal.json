@@ -9,8 +9,7 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
-      "numeroDocumento": null,
-      "precioUni": 7.9600,
+      "precioUni": 7.96,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +17,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 7.9600,
+      "ventaGravada": 7.96,
       "ventaNoSuj": 0.0
     }
   ],
@@ -68,9 +67,7 @@
       "departamento": "05",
       "municipio": "28"
     },
-    "nit": "13240304791012",
     "nombre": "ariel",
-    "nombreComercial": null,
     "nrc": "2273734",
     "telefono": "70000001"
   },
@@ -79,17 +76,13 @@
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
-    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 9.00,
+    "montoTotalOperacion": 9.0,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 9.00,
-        "periodo": null,
-        "plazo": null,
-        "referencia": null
+        "montoPago": 9.0
       }
     ],
     "porcentajeDescuento": 0.0,
@@ -103,7 +96,7 @@
     "totalLetras": "NUEVE 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 9.00,
+    "totalPagar": 9.0,
     "tributos": [
       {
         "codigo": "20",

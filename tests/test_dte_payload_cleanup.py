@@ -40,6 +40,7 @@ def test_sanitize_dte_payload_removes_none_recursively(dte_metadata_factory):
         item.pop("codTributo", None)
         item.pop("tributos", None)
     clean_no_required.get("resumen", {}).pop("tributos", None)
+    clean_no_required.get("resumen", {}).pop("numPagoElectronico", None)
     clean_no_required.get("identificacion", {}).pop("tipoContingencia", None)
     clean_no_required.get("identificacion", {}).pop("motivoContin", None)
     clean_no_required.get("emisor", {}).pop("nombreComercial", None)
@@ -59,7 +60,7 @@ def test_sanitize_dte_payload_adds_required_fields_and_cleans_docs(dte_metadata_
     assert clean["extension"] is None
     assert clean["apendice"] is None
     assert clean["emisor"]["nit"] == "06141234560011"
-    assert clean["emisor"]["dui"] == "012345678"
+    assert "dui" not in clean["emisor"]
     assert clean["receptor"]["numDocumento"] == "012345678"
 
 
@@ -76,3 +77,11 @@ def test_sanitize_skips_otros_documentos_for_notas():
         schema = catalogos.get_dte_schema(tipo)
         clean = dte.sanitize_dte_payload(payload, schema)
         assert "otrosDocumentos" not in clean
+
+
+def test_emisor_dui_omitted_for_credito_fiscal(dte_metadata_factory):
+    payload = dte_metadata_factory()
+    payload["identificacion"]["tipoDte"] = "03"
+    payload["emisor"]["dui"] = "01234567-8"
+    clean = dte.sanitize_dte_payload(payload)
+    assert "dui" not in clean["emisor"]

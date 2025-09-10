@@ -3101,6 +3101,90 @@ def prompt_auth_credentials(parent=None, user="", password=""):
     return None, None
 
 
+class DTECorrelativoConfigDialog(QDialog):
+    def __init__(self, db=None, prefijo="DTE-01-S001P001", parent=None):
+        super().__init__(parent)
+        self.db = db or DB()
+        self.prefijo = prefijo
+        self.setWindowTitle("Configuración de correlativo")
+
+        layout = QVBoxLayout(self)
+        self.correlativos_table = QTableWidget(0, 3)
+        self.correlativos_table.setHorizontalHeaderLabels([
+            "Tipo",
+            "Correlativo",
+            "",
+        ])
+        self.correlativos_table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.Stretch
+        )
+        self.correlativos_table.verticalHeader().setVisible(False)
+        layout.addWidget(self.correlativos_table)
+
+        btns = QHBoxLayout()
+        guardar = QPushButton("Guardar")
+        cancelar = QPushButton("Cancelar")
+        btns.addWidget(guardar)
+        btns.addWidget(cancelar)
+        layout.addLayout(btns)
+
+        guardar.clicked.connect(self.accept)
+        cancelar.clicked.connect(self.reject)
+
+        self._load_correlativos()
+
+    def _get_sucursal_punto(self):
+        m = re.search(r"S(\d{3})P(\d{3})", self.prefijo)
+        if m:
+            return m.group(1), m.group(2)
+        return "001", "001"
+
+    def _load_correlativos(self):
+        sucursal, punto = self._get_sucursal_punto()
+        self.correlativos_table.setRowCount(0)
+        self._correlativo_spins = {}
+        self._original_correlativos = {}
+        for tipo in ["01", "03", "04", "05", "06"]:
+            row = self.correlativos_table.rowCount()
+            self.correlativos_table.insertRow(row)
+            self.correlativos_table.setItem(row, 0, QTableWidgetItem(tipo))
+            spin = QSpinBox()
+            spin.setMaximum(999999999)
+            valor = self.db.get_dte_correlativo(tipo, sucursal, punto)
+            spin.setValue(valor)
+            self._original_correlativos[tipo] = valor
+            self.correlativos_table.setCellWidget(row, 1, spin)
+            btn = QPushButton("Reiniciar")
+            btn.clicked.connect(lambda _, t=tipo: self._reset_correlativo(t))
+            self.correlativos_table.setCellWidget(row, 2, btn)
+            self._correlativo_spins[tipo] = spin
+
+    def _reset_correlativo(self, tipo):
+        self._correlativo_spins[tipo].setValue(0)
+
+    def accept(self):
+        sucursal, punto = self._get_sucursal_punto()
+        cambios = []
+        for tipo, spin in self._correlativo_spins.items():
+            valor = spin.value()
+            if valor != self._original_correlativos.get(tipo, 0):
+                cambios.append((tipo, valor))
+        if cambios:
+            if (
+                QMessageBox.warning(
+                    self,
+                    "Advertencia",
+                    "Modificar el correlativo puede generar inconsistencias con Hacienda. ¿Desea continuar?",
+                    QMessageBox.Yes | QMessageBox.No,
+                )
+                != QMessageBox.Yes
+            ):
+                return
+            for tipo, valor in cambios:
+                self.db.set_dte_correlativo(tipo, sucursal, punto, valor)
+        super().accept()
+
+
 class DTEConfigDialog(QDialog):
     def __init__(self, dte_api=None, fe_config=None, env_config=None, parent=None, db=None):
         super().__init__(parent)
@@ -3165,17 +3249,8 @@ class DTEConfigDialog(QDialog):
         form.addRow(self.guardar_respuesta_bd)
         layout.addLayout(form)
 
-        self.correlativos_group = QGroupBox("Correlativos DTE")
-        cor_layout = QVBoxLayout()
-        self.correlativos_table = QTableWidget(0, 3)
-        self.correlativos_table.setHorizontalHeaderLabels(["Tipo", "Correlativo", ""])
-        self.correlativos_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.correlativos_table.verticalHeader().setVisible(False)
-        cor_layout.addWidget(self.correlativos_table)
-        self.correlativos_group.setLayout(cor_layout)
-        layout.addWidget(self.correlativos_group)
-        self.prefijo_control.textChanged.connect(self._load_correlativos)
-        self._load_correlativos()
+        self.correlativos_btn = QPushButton("Configuración de correlativo")
+        layout.addWidget(self.correlativos_btn)
 
         btns = QHBoxLayout()
         guardar = QPushButton("Guardar")
@@ -3194,68 +3269,17 @@ class DTEConfigDialog(QDialog):
         self.cert_btn.clicked.connect(self._select_cert)
         self.ambiente_hacienda.currentTextChanged.connect(self._set_default_urls)
         self.endpoint_hacienda.textChanged.connect(self._set_default_urls)
+        self.correlativos_btn.clicked.connect(self._open_correlativos)
         if dte_api or fe_config or env_config:
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
         else:
             self._set_default_urls()
 
-    def _get_sucursal_punto(self):
-        pref = self.prefijo_control.text()
-        m = re.search(r"S(\d{3})P(\d{3})", pref)
-        if m:
-            return m.group(1), m.group(2)
-        return "001", "001"
-
-    def _load_correlativos(self):
-        sucursal, punto = self._get_sucursal_punto()
-        self.correlativos_table.setRowCount(0)
-        self._correlativo_spins = {}
-        for tipo in ["01", "03", "04", "05", "06"]:
-            row = self.correlativos_table.rowCount()
-            self.correlativos_table.insertRow(row)
-            self.correlativos_table.setItem(row, 0, QTableWidgetItem(tipo))
-            spin = QSpinBox()
-            spin.setMaximum(999999999)
-            spin.setValue(
-                self.db.get_dte_correlativo(tipo, sucursal, punto)
-            )
-            self.correlativos_table.setCellWidget(row, 1, spin)
-            btn = QPushButton("Reiniciar")
-            btn.clicked.connect(lambda _, t=tipo: self._reset_correlativo(t))
-            self.correlativos_table.setCellWidget(row, 2, btn)
-            self._correlativo_spins[tipo] = spin
-
-    def _reset_correlativo(self, tipo):
-        if (
-            QMessageBox.warning(
-                self,
-                "Advertencia",
-                "Modificar el correlativo puede generar inconsistencias con Hacienda. ¿Desea continuar?",
-                QMessageBox.Yes | QMessageBox.No,
-            )
-            != QMessageBox.Yes
-        ):
-            return
-        sucursal, punto = self._get_sucursal_punto()
-        self.db.set_dte_correlativo(tipo, sucursal, punto, 0)
-        self._load_correlativos()
-
-    def accept(self):
-        if (
-            QMessageBox.warning(
-                self,
-                "Advertencia",
-                "Modificar el correlativo puede generar inconsistencias con Hacienda. ¿Desea continuar?",
-                QMessageBox.Yes | QMessageBox.No,
-            )
-            != QMessageBox.Yes
-        ):
-            return
-        sucursal, punto = self._get_sucursal_punto()
-        for tipo, spin in self._correlativo_spins.items():
-            self.db.set_dte_correlativo(tipo, sucursal, punto, spin.value())
-        self._load_correlativos()
-        super().accept()
+    def _open_correlativos(self):
+        dlg = DTECorrelativoConfigDialog(
+            db=self.db, prefijo=self.prefijo_control.text(), parent=self
+        )
+        dlg.exec_()
 
     def set_data(self, dte_api, fe_config, env_config):
         auth_conf = env_config.get("auth", {})

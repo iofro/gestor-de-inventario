@@ -217,8 +217,42 @@ def test_nota_credito_un_dolar(monkeypatch):
     assert stored == Decimal("1")
     nce = generar_nce_desde_nota(db, nota_id)
     resumen = nce["resumen"]
+    item = nce["cuerpoDocumento"][0]
     assert resumen["montoTotalOperacion"] == Decimal("1.00")
+    assert item["precioUni"] == Decimal("0.8800")
+    assert resumen["totalGravada"] == Decimal("0.88")
     iva = resumen["tributos"][0]["valor"] if resumen["tributos"] else Decimal("0")
+    assert iva == Decimal("0.12")
+    assert resumen["totalGravada"] + iva == resumen["montoTotalOperacion"]
+
+
+def test_nota_credito_dos_centavos(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 0.02, '')",
+        (venta_id,),
+    ).lastrowid
+    nce = generar_nce_desde_nota(db, nota_id)
+    resumen = nce["resumen"]
+    assert resumen["montoTotalOperacion"] == Decimal("0.02")
+    assert resumen["totalGravada"] == Decimal("0.02")
+    iva = resumen["tributos"][0]["valor"] if resumen["tributos"] else Decimal("0")
+    assert iva == Decimal("0.00")
     assert resumen["totalGravada"] + iva == resumen["montoTotalOperacion"]
 
 

@@ -3904,10 +3904,10 @@ def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
     return path
 
 
-def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
+def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
     try:
-        base_dir = _dte_base_dir(dte_data)
+        base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
@@ -4572,7 +4572,7 @@ def _enviar_documento(
 
     if modo == "contingencia":
         try:
-            _save_signed_dte(data, signed)
+            _save_signed_dte(data, signed, fallido=False)
         except Exception:
             pass
         db.registrar_envio_dte(
@@ -4621,6 +4621,10 @@ def _enviar_documento(
         sello,
         json.dumps(respuesta, ensure_ascii=False),
     )
+    try:
+        _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
+    except Exception:
+        pass
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
     res = {"estado": estado, "sello": sello}

@@ -1544,7 +1544,8 @@ class FacturacionTab(QWidget):
         if not data:
             QMessageBox.warning(self, "Eliminar", "Seleccione una venta")
             return
-        paths = []
+        # Collect base paths for associated files
+        base_paths = set()
         pdf_path = None
         ticket_path = None
         row_type = data.get("row_type")
@@ -1553,23 +1554,28 @@ class FacturacionTab(QWidget):
             if row_type == "venta":
                 pdf_path = self.manager.db.get_factura_pdf(venta_id)
                 if pdf_path:
-                    paths.append(pdf_path)
-                    paths.append(os.path.splitext(pdf_path)[0] + ".json")
+                    base_paths.add(os.path.splitext(pdf_path)[0])
                 ticket_path = self.manager.db.get_ticket_pdf(venta_id)
                 if ticket_path:
-                    paths.append(ticket_path)
-                    paths.append(os.path.splitext(ticket_path)[0] + ".json")
+                    base_paths.add(os.path.splitext(ticket_path)[0])
             else:
                 ticket_path = data.get("pdf")
                 if ticket_path:
-                    paths.append(ticket_path)
+                    base_paths.add(os.path.splitext(ticket_path)[0])
                     json_path = data.get("json") or os.path.splitext(ticket_path)[0] + ".json"
-                    paths.append(json_path)
+                    base_paths.add(os.path.splitext(json_path)[0])
         else:
             for p in [data.get("pdf"), data.get("json")]:
                 if p:
-                    paths.append(p)
-        paths = [p for p in paths if os.path.exists(p)]
+                    base_paths.add(os.path.splitext(p)[0])
+
+        # Build list of files to remove for all relevant extensions
+        paths = []
+        for base in base_paths:
+            for ext in (".pdf", ".json", ".jws"):
+                candidate = base + ext
+                if os.path.exists(candidate):
+                    paths.append(candidate)
         if not paths:
             if row_type in ("venta", "ticket"):
                 confirm = QMessageBox.question(

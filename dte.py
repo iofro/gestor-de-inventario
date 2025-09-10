@@ -3874,20 +3874,40 @@ def _write_json(path: str, data):
         save_file(path, stable_stringify(data, indent=2))
 
 
-def _dte_base_dir(dte_data: dict) -> str:
-    """Return destination directory for ``dte_data`` grouped by tipoDte."""
+def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
+    """Return destination directory for ``dte_data`` grouped by tipoDte.
+
+    The ``fallido`` flag controls whether the DTE should be stored under the
+    accepted directory (``dtes/``) or the rejected one (``dte_fallidos/``).
+    """
+
     ident = dte_data.get("identificacion", {})
     tipo = str(ident.get("tipoDte", "")).zfill(2)
-    base = os.path.join(os.path.dirname(__file__), "dtes")
-    mapping = {"01": "fcf", "03": "ccf"}
+    root = "dte_fallidos" if fallido else "dtes"
+    base = os.path.join(os.path.dirname(__file__), root)
+    mapping = {
+        "01": "fcf",  # Factura consumidor final
+        "03": "ccf",  # Comprobante de crédito fiscal
+        "04": "nr",   # Nota de remisión
+        "05": "nc",   # Nota de crédito
+        "06": "nd",   # Nota de débito
+        "07": "cr",   # Comprobante de retención
+        "08": "cl",   # Comprobante de liquidación
+        "09": "dcl",  # Documento contable de liquidación
+        "11": "fex",  # Factura de exportación
+        "14": "fse",  # Factura de sujeto excluido
+        "15": "cd",   # Comprobante de donación
+    }
     folder = mapping.get(tipo)
-    return os.path.join(base, folder) if folder else base
+    path = os.path.join(base, folder) if folder else base
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
-def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
+def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
     try:
-        base_dir = _dte_base_dir(dte_data)
+        base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
@@ -4552,7 +4572,7 @@ def _enviar_documento(
 
     if modo == "contingencia":
         try:
-            _save_signed_dte(data, signed)
+            _save_signed_dte(data, signed, fallido=False)
         except Exception:
             pass
         db.registrar_envio_dte(
@@ -4601,6 +4621,10 @@ def _enviar_documento(
         sello,
         json.dumps(respuesta, ensure_ascii=False),
     )
+    try:
+        _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
+    except Exception:
+        pass
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
     res = {"estado": estado, "sello": sello}

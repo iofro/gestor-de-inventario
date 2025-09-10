@@ -26,7 +26,7 @@ from dte import (
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
-from utils.monto import d2, monto_a_texto_sv
+from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import limpiar_documentos
 
 
@@ -108,6 +108,7 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
         ratio,
         ambiente=ambiente,
         motivo=nota.get("motivo"),
+        monto=monto_nc,
     )
 
 
@@ -119,6 +120,7 @@ def generar_nce_desde_dte(
     detalles: Optional[list] = None,
     ambiente: str = "00",
     motivo: Optional[str] = None,
+    monto: Decimal | None = None,
 ) -> dict:
     """Genera la estructura JSON de una NCE."""
     if detalles is None:
@@ -231,76 +233,111 @@ def generar_nce_desde_dte(
         iva_val = d2(total_grav * IVA)
         monto_total_operacion = d2(subtotal_ventas + iva_val)
     else:
-        ratio_val = ratio or Decimal_1
-        total_grav = (Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio_val).quantize(Q4)
-        total_exenta = (Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio_val).quantize(Q4)
-        total_nosuj = (Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio_val).quantize(Q4)
+        if monto is not None:
+            monto_abs = Decimal(str(monto)).copy_abs()
+            monto_total_operacion = d2(monto_abs)
+            base, _ = to_base_iva(monto_abs)
+            total_grav = base.quantize(Q4)
+            total_exenta = Decimal_0
+            total_nosuj = Decimal_0
+            subtotal_ventas = total_grav
+            iva_val = d2(monto_total_operacion - d2(total_grav))
+            num = 1
+            pct_text = _pct_label(ratio) if ratio is not None else "100"
+            if total_grav > 0:
+                items.append(
+                    {
+                        "numItem": num,
+                        "tipoItem": 1,
+                        "codigo": f"NC{pct_text}-{uuid_origen[:8]}-G",
+                        "descripcion": (
+                            f"Nota de crédito {pct_text}% sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}"
+                            if ratio is not None
+                            else f"Nota de crédito sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}"
+                        ),
+                        "cantidad": 1,
+                        "uniMedida": 59,
+                        "precioUni": total_grav,
+                        "montoDescu": 0.0,
+                        "ventaGravada": total_grav,
+                        "ventaExenta": 0.0,
+                        "ventaNoSuj": 0.0,
+                        "tributos": [TRIBUTO_IVA],
+                        "numeroDocumento": uuid_origen,
+                        "codTributo": None,
+                    }
+                )
+        else:
+            ratio_val = ratio or Decimal_1
+            total_grav = (Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio_val).quantize(Q4)
+            total_exenta = (Decimal(str(orig_resumen.get("totalExenta", 0))) * ratio_val).quantize(Q4)
+            total_nosuj = (Decimal(str(orig_resumen.get("totalNoSuj", 0))) * ratio_val).quantize(Q4)
 
-        num = 1
-        pct_text = _pct_label(ratio)
-        if total_grav > 0:
-            items.append(
-                {
-                    "numItem": num,
-                    "tipoItem": 1,
-                    "codigo": f"NC{pct_text}-{uuid_origen[:8]}-G",
-                    "descripcion": f"Nota de crédito {pct_text}% sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}",
-                    "cantidad": 1,
-                    "uniMedida": 59,
-                    "precioUni": total_grav,
-                    "montoDescu": 0.0,
-                    "ventaGravada": total_grav,
-                    "ventaExenta": 0.0,
-                    "ventaNoSuj": 0.0,
-                    "tributos": [TRIBUTO_IVA],
-                    "numeroDocumento": uuid_origen,
-                    "codTributo": None,
-                }
-            )
-            num += 1
-        if total_exenta > 0:
-            items.append(
-                {
-                    "numItem": num,
-                    "tipoItem": 1,
-                    "codigo": f"NC{pct_text}-{uuid_origen[:8]}-E",
-                    "descripcion": f"Nota de crédito {pct_text}% sobre operaciones exentas del {tipo_doc_desc} relacionado{extra_desc}",
-                    "cantidad": 1,
-                    "uniMedida": 59,
-                    "precioUni": total_exenta,
-                    "montoDescu": 0.0,
-                    "ventaGravada": 0.0,
-                    "ventaExenta": total_exenta,
-                    "ventaNoSuj": 0.0,
-                    "tributos": [],
-                    "numeroDocumento": uuid_origen,
-                    "codTributo": None,
-                }
-            )
-            num += 1
-        if total_nosuj > 0:
-            items.append(
-                {
-                    "numItem": num,
-                    "tipoItem": 1,
-                    "codigo": f"NC{pct_text}-{uuid_origen[:8]}-N",
-                    "descripcion": f"Nota de crédito {pct_text}% sobre operaciones no sujetas del {tipo_doc_desc} relacionado{extra_desc}",
-                    "cantidad": 1,
-                    "uniMedida": 59,
-                    "precioUni": total_nosuj,
-                    "montoDescu": 0.0,
-                    "ventaGravada": 0.0,
-                    "ventaExenta": 0.0,
-                    "ventaNoSuj": total_nosuj,
-                    "tributos": [],
-                    "numeroDocumento": uuid_origen,
-                    "codTributo": None,
-                }
-            )
-        subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-        orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * ratio_val
-        iva_val = d2(orig_total - subtotal_ventas)
-        monto_total_operacion = d2(orig_total)
+            num = 1
+            pct_text = _pct_label(ratio)
+            if total_grav > 0:
+                items.append(
+                    {
+                        "numItem": num,
+                        "tipoItem": 1,
+                        "codigo": f"NC{pct_text}-{uuid_origen[:8]}-G",
+                        "descripcion": f"Nota de crédito {pct_text}% sobre operaciones gravadas del {tipo_doc_desc} relacionado{extra_desc}",
+                        "cantidad": 1,
+                        "uniMedida": 59,
+                        "precioUni": total_grav,
+                        "montoDescu": 0.0,
+                        "ventaGravada": total_grav,
+                        "ventaExenta": 0.0,
+                        "ventaNoSuj": 0.0,
+                        "tributos": [TRIBUTO_IVA],
+                        "numeroDocumento": uuid_origen,
+                        "codTributo": None,
+                    }
+                )
+                num += 1
+            if total_exenta > 0:
+                items.append(
+                    {
+                        "numItem": num,
+                        "tipoItem": 1,
+                        "codigo": f"NC{pct_text}-{uuid_origen[:8]}-E",
+                        "descripcion": f"Nota de crédito {pct_text}% sobre operaciones exentas del {tipo_doc_desc} relacionado{extra_desc}",
+                        "cantidad": 1,
+                        "uniMedida": 59,
+                        "precioUni": total_exenta,
+                        "montoDescu": 0.0,
+                        "ventaGravada": 0.0,
+                        "ventaExenta": total_exenta,
+                        "ventaNoSuj": 0.0,
+                        "tributos": [],
+                        "numeroDocumento": uuid_origen,
+                        "codTributo": None,
+                    }
+                )
+                num += 1
+            if total_nosuj > 0:
+                items.append(
+                    {
+                        "numItem": num,
+                        "tipoItem": 1,
+                        "codigo": f"NC{pct_text}-{uuid_origen[:8]}-N",
+                        "descripcion": f"Nota de crédito {pct_text}% sobre operaciones no sujetas del {tipo_doc_desc} relacionado{extra_desc}",
+                        "cantidad": 1,
+                        "uniMedida": 59,
+                        "precioUni": total_nosuj,
+                        "montoDescu": 0.0,
+                        "ventaGravada": 0.0,
+                        "ventaExenta": 0.0,
+                        "ventaNoSuj": total_nosuj,
+                        "tributos": [],
+                        "numeroDocumento": uuid_origen,
+                        "codTributo": None,
+                    }
+                )
+            subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+            orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * ratio_val
+            iva_val = d2(orig_total - subtotal_ventas)
+            monto_total_operacion = d2(orig_total)
 
     tributos_resumen = []
     if iva_val > 0:

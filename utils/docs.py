@@ -4,7 +4,7 @@ import re
 from datetime import datetime
 from pathlib import Path
 
-from dte import _map_departamento, _map_municipio
+from dte import _map_departamento, _map_municipio, _build_receptor_direccion
 
 # Base path is repository root two levels up from this file
 BASE_DIR = os.path.dirname(os.path.dirname(__file__))
@@ -123,10 +123,34 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
     if cliente:
         if cliente.get('nombre'):
             rec['nombre'] = cliente['nombre']
-        if cliente.get('direccion'):
-            rec['direccion'] = cliente['direccion']
         if cliente.get('nit'):
             rec['nit'] = cliente['nit']
+        if cliente.get('nrc'):
+            rec['nrc'] = cliente['nrc']
+        if cliente.get('telefono'):
+            rec['telefono'] = cliente['telefono']
+        correo = cliente.get('correo') or cliente.get('email')
+        if correo:
+            rec['correo'] = correo
+        if cliente.get('nombre_comercial'):
+            rec['nombreComercial'] = cliente['nombre_comercial']
+        if cliente.get('nombreComercial'):
+            rec['nombreComercial'] = cliente['nombreComercial']
+        if cliente.get('codActividad'):
+            rec['codActividad'] = cliente['codActividad']
+        if cliente.get('giro'):
+            rec['descActividad'] = cliente['giro']
+        direccion = cliente.get('direccion')
+        if direccion or cliente.get('departamento') or cliente.get('municipio'):
+            if isinstance(direccion, dict):
+                dir_src = direccion.copy()
+            else:
+                dir_src = {'complemento': direccion} if direccion else {}
+            if cliente.get('departamento') is not None and 'departamento' not in dir_src:
+                dir_src['departamento'] = cliente.get('departamento')
+            if cliente.get('municipio') is not None and 'municipio' not in dir_src:
+                dir_src['municipio'] = cliente.get('municipio')
+            rec['direccion'] = _build_receptor_direccion(dir_src)
     data['receptor'] = rec
 
     cuerpo = []

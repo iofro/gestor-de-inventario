@@ -933,7 +933,13 @@ class FacturacionTab(QWidget):
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
                     estado = resp.get("estado")
-                    if estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                    if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
+                        QMessageBox.critical(
+                            self,
+                            "Enviar a Hacienda",
+                            "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                        )
+                    elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
@@ -962,7 +968,13 @@ class FacturacionTab(QWidget):
                         self.manager.db, entry.get("id"), tipo_dte=tipo
                     )
                     estado = resp.get("estado")
-                    if estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                    if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
+                        QMessageBox.critical(
+                            self,
+                            "Enviar a Hacienda",
+                            "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                        )
+                    elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",

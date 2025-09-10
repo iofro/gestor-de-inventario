@@ -4146,6 +4146,8 @@ def _post_dte(
     try:
         print(json.dumps(sobre, ensure_ascii=False))
         resp = requests.post(url, headers=headers, json=sobre, timeout=20)
+    except (requests.ConnectionError, requests.Timeout):
+        return {"estado": "Error", "detalle": "Sin conexión a Internet"}
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 

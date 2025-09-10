@@ -14,28 +14,20 @@ from db import DB
 from urllib.parse import urlencode
 import json
 import os
+from datetime import datetime
 from paths import DATOS_NEGOCIO_PATH
 
 
-def build_qr_value(
-    ambiente: int,
-    codigo_generacion: str,
-    tipo_dte: str,
-    numero_documento: str,
-) -> str:
-    """Return the URL used for the DTE QR code."""
+def build_qr_url(dte: dict) -> str:
+    """Return the public consultation URL for a DTE."""
 
-    base_url = (
-        "https://www.mh.gob.sv/consulta-dte" if ambiente == 1 else "https://apitest.mh.gob.sv/consulta-dte"
-    )
-
-    params = {
-        "ambiente": ambiente,
-        "codigoGeneracion": codigo_generacion,
-        "tipoDte": tipo_dte,
-        "numeroDocumento": numero_documento,
-    }
-
+    ident = dte.get("identificacion", {}) if isinstance(dte, dict) else {}
+    ambiente = str(ident.get("ambiente", "00")).strip()
+    ambiente = "01" if ambiente == "01" else "00"
+    codigo = ident.get("codigoGeneracion")
+    fecha = ident.get("fecEmi") or ident.get("fechaEmi")
+    base_url = "https://admin.factura.gob.sv/consultaPublica"
+    params = {"ambiente": ambiente, "codGen": codigo, "fechaEmi": fecha}
     return base_url + "?" + urlencode(params)
 
 
@@ -115,6 +107,13 @@ def generar_factura_electronica_pdf(
         fecha_generacion = fecha_generacion or cab["fecha_generacion"]
         sello_recepcion = sello_recepcion or cab["sello_recepcion"]
 
+    try:
+        fecha_emision = datetime.strptime(
+            fecha_generacion.split(",")[0].strip(), "%d/%m/%Y"
+        ).strftime("%Y-%m-%d")
+    except Exception:
+        fecha_emision = datetime.now().strftime("%Y-%m-%d")
+
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
     x_margin = 30
@@ -179,20 +178,22 @@ def generar_factura_electronica_pdf(
     # --- Código QR ---
     qr_x = x_margin + box_w + col_margin + 5
     qr_y = box_y + (box_h - qr_size) / 2
-    qr_env = 1 if ambiente == "01" else 2
-    qr_value = build_qr_value(
-        qr_env,
-        codigo_generacion,
-        tipo_dte,
-        numero_control,
+    qr_url = build_qr_url(
+        {"identificacion": {
+            "ambiente": ambiente,
+            "codigoGeneracion": codigo_generacion,
+            "fecEmi": fecha_emision,
+        }}
     )
-    qr_code = qr.QrCodeWidget(qr_value)
+    qr_code = qr.QrCodeWidget(qr_url)
     bounds = qr_code.getBounds()
     w = bounds[2] - bounds[0]
     h = bounds[3] - bounds[1]
     d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
     d.add(qr_code)
     renderPDF.draw(d, c, qr_x, qr_y)
+    c.setFont("Helvetica", 6)
+    c.drawCentredString(qr_x + qr_size / 2, qr_y - 10, qr_url)
 
     # --- Caja derecha con datos de operación ---
     right_x = x_margin + box_w + col_margin + qr_size + col_margin

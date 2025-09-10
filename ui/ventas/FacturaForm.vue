@@ -1,5 +1,11 @@
 <template>
   <div>
+    <div v-if="props.config?.modoContingencia">
+      <select v-model.number="tipoContingencia">
+        <option v-for="n in 5" :key="n" :value="n">{{ n }}</option>
+      </select>
+      <input v-if="tipoContingencia === 5" v-model="motivoContin" />
+    </div>
     <button @click="onSave">Guardar y Enviar</button>
     <ConfirmDialog
       v-model="confirmVisible"
@@ -29,6 +35,8 @@ const props = defineProps<{ facturaId: string; config: { modoContingencia: boole
 
 const confirmVisible = ref(false);
 const errorVisible = ref(false);
+const tipoContingencia = ref(1);
+const motivoContin = ref('');
 
 async function onSave() {
   if (props.config?.modoContingencia) {
@@ -43,7 +51,11 @@ async function onSave() {
 }
 
 async function saveContingencia() {
-  await guardarEnContingencia(props.facturaId);
+  await guardarEnContingencia(
+    props.facturaId,
+    tipoContingencia.value,
+    motivoContin.value
+  );
 }
 
 function enviarAHacienda() {

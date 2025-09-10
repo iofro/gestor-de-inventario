@@ -20,7 +20,7 @@ describe('FacturaForm', () => {
     const dialog = wrapper.findComponent({ name: 'ConfirmDialog' });
     expect(dialog.exists()).toBe(true);
     await dialog.vm.$emit('confirm');
-    expect(api.guardarEnContingencia).toHaveBeenCalledWith('1');
+    expect(api.guardarEnContingencia).toHaveBeenCalledWith('1', 1, '');
   });
 
   it('muestra diálogo de error y guarda en contingencia tras fallo', async () => {
@@ -32,7 +32,7 @@ describe('FacturaForm', () => {
     const errorDialog = dialogs.find(d => d.props('title') === 'Error al enviar a Hacienda');
     expect(errorDialog).toBeTruthy();
     await errorDialog!.vm.$emit('confirm');
-    expect(api.guardarEnContingencia).toHaveBeenCalledWith('2');
+    expect(api.guardarEnContingencia).toHaveBeenCalledWith('2', 1, '');
   });
 
   it('no llama API al cancelar', async () => {
@@ -43,5 +43,25 @@ describe('FacturaForm', () => {
     const dialog = wrapper.findComponent({ name: 'ConfirmDialog' });
     await dialog.vm.$emit('cancel');
     expect(api.guardarEnContingencia).not.toHaveBeenCalled();
+  });
+
+  it('muestra controles de contingencia y envía los datos seleccionados', async () => {
+    const wrapper = mount(FacturaForm, {
+      props: { facturaId: '4', config: { modoContingencia: true } }
+    });
+    const select = wrapper.find('select');
+    expect(select.exists()).toBe(true);
+    await select.setValue('5');
+    const input = wrapper.find('input');
+    expect(input.exists()).toBe(true);
+    await input.setValue('fallo electrico');
+    await wrapper.find('button').trigger('click');
+    const dialog = wrapper.findComponent({ name: 'ConfirmDialog' });
+    await dialog.vm.$emit('confirm');
+    expect(api.guardarEnContingencia).toHaveBeenCalledWith(
+      '4',
+      5,
+      'fallo electrico'
+    );
   });
 });

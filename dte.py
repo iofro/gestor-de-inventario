@@ -2499,6 +2499,10 @@ def generar_dte_json(
         "apendice": None,
         "ventaTercero": None,
         "extension": extension,
+        # ``extra`` se utiliza únicamente durante la validación para
+        # transmitir banderas internas como ``es_ticket``.  No forma parte
+        # del DTE final y se eliminará después de la validación.
+        "extra": extra,
     }
 
     try:

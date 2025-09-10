@@ -223,6 +223,13 @@ def generar_nce_desde_dte(
         total_grav = total_grav.quantize(Q4)
         total_exenta = total_exenta.quantize(Q4)
         total_nosuj = total_nosuj.quantize(Q4)
+        subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+        # Cuando los montos se calculan a partir de ``detalles`` evitamos
+        # recurrir al total original del documento de origen. El IVA se obtiene
+        # directamente de las ventas gravadas parciales y el total de la
+        # operación se compone sumando dicho IVA al subtotal calculado.
+        iva_val = d2(total_grav * IVA)
+        monto_total_operacion = d2(subtotal_ventas + iva_val)
     else:
         ratio_val = ratio or Decimal_1
         total_grav = (Decimal(str(orig_resumen.get("totalGravada", 0))) * ratio_val).quantize(Q4)
@@ -290,9 +297,11 @@ def generar_nce_desde_dte(
                     "codTributo": None,
                 }
             )
+        subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+        orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * ratio_val
+        iva_val = d2(orig_total - subtotal_ventas)
+        monto_total_operacion = d2(orig_total)
 
-    subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-    iva_val = d2(total_grav * IVA)
     tributos_resumen = []
     if iva_val > 0:
         tributos_resumen.append(
@@ -302,7 +311,6 @@ def generar_nce_desde_dte(
                 "valor": iva_val,
             }
         )
-    monto_total_operacion = d2(subtotal_ventas + iva_val)
     resumen = {
         "totalNoSuj": d2(total_nosuj),
         "totalExenta": d2(total_exenta),

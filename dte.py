@@ -2633,7 +2633,10 @@ def validate_dte_json(
     emisor = payload.get("emisor", {})
     emisor["nit"] = _clean_nit(emisor.get("nit") or negocio.get("nit"))
     emisor["nrc"] = _clean_nrc(emisor.get("nrc") or negocio.get("nrc"))
-    emisor["dui"] = _clean_dui(emisor.get("dui") or negocio.get("dui"))
+    if tipo_dte != "03":
+        emisor["dui"] = _clean_dui(emisor.get("dui") or negocio.get("dui"))
+    else:
+        emisor.pop("dui", None)
     emisor.setdefault("nombre", negocio.get("nombre"))
     emisor.setdefault("nombreComercial", negocio.get("nombreComercial"))
     emisor.setdefault(

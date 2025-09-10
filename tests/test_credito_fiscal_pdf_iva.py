@@ -13,6 +13,25 @@ class FakeDB:
         self._ventas = []
         self.detalles = {}
         self.credito = {}
+        self.clientes = {}
+        self.cursor = self.FakeCursor(self)
+
+    class FakeCursor:
+        def __init__(self, db):
+            self.db = db
+
+        def execute(self, _query, params):
+            vid = params[0]
+            row = next((v for v in self.db._ventas if v["id"] == vid), None)
+
+            class Result:
+                def __init__(self, row):
+                    self.row = row
+
+                def fetchone(self):
+                    return self.row
+
+            return Result(row)
 
     def get_ventas(self):
         return self._ventas
@@ -23,11 +42,17 @@ class FakeDB:
     def get_detalles_venta(self, vid):
         return self.detalles.get(vid, [])
 
+    def get_cliente(self, cid):
+        return self.clientes.get(cid)
+
     def get_trabajador(self, vid):
         return None
 
     def add_factura_pdf(self, *a):
         pass
+
+    def next_dte_correlativo(self, *a, **k):
+        return 1
 
 
 class Manager:
@@ -151,3 +176,22 @@ def test_pdf_total_precios_incluyen_iva(tmp_path, monkeypatch):
     assert pytest.approx(captured["venta"]["total"], 0.01) == 15
     assert pytest.approx(captured["detalles"][0]["iva"], 0.01) == float(iva)
     assert pytest.approx(captured["detalles"][0]["ventas_gravadas"], 0.01) == float(base)
+
+
+def test_credito_fiscal_resumen_iva(tmp_path):
+    from decimal import Decimal
+    from dte import calcular_resumen
+
+    resumen = calcular_resumen(
+        Decimal("18"),
+        {"total": 18},
+        fiscal={},
+        extra={"precios_incluyen_iva": True},
+        tipo_dte="03",
+    )
+    sumas = float(resumen.get("totalGravada"))
+    iva = float(resumen.get("tributos")[0]["valor"]) if resumen.get("tributos") else 0
+    total = float(resumen.get("totalPagar"))
+    assert pytest.approx(sumas, 0.01) == 15.93
+    assert pytest.approx(iva, 0.01) == 2.07
+    assert pytest.approx(total, 0.01) == 18.00

@@ -46,6 +46,34 @@ def test_generar_nce_detalles(monkeypatch):
     assert data["resumen"]["totalGravada"] == 10
 
 
+def test_nce_detalles_monto_total(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    detalles = [
+        {
+            "cantidad": 1,
+            "descripcion": "Prod",
+            "precio_unitario": 5,
+            "ventas_gravadas": 5,
+            "ventas_exentas": 0,
+            "ventas_no_sujetas": 0,
+        }
+    ]
+    nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles, motivo="Dev")
+    resumen = nce["resumen"]
+    expected_iva = Decimal("5") * Decimal("0.13")
+    expected_iva = expected_iva.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    assert resumen["montoTotalOperacion"] == Decimal("5") + expected_iva
+    assert resumen["montoTotalOperacion"] != dte_origen["resumen"]["montoTotalOperacion"]
+
+
 def test_generar_nota_debito_detalles(monkeypatch):
     _prep(monkeypatch)
     db = create_db()

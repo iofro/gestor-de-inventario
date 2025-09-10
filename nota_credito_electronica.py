@@ -295,8 +295,13 @@ def generar_nce_desde_dte(
             )
 
     subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-    orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (ratio or Decimal_1)
-    iva_val = d2(orig_total - subtotal_ventas)
+    if detalles:
+        iva_val = d2(total_grav * IVA)
+        monto_total_operacion = d2(subtotal_ventas + iva_val)
+    else:
+        orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * (ratio or Decimal_1)
+        iva_val = d2(orig_total - subtotal_ventas)
+        monto_total_operacion = d2(orig_total)
     tributos_resumen = []
     if iva_val > 0:
         tributos_resumen.append(
@@ -306,7 +311,6 @@ def generar_nce_desde_dte(
                 "valor": iva_val,
             }
         )
-    monto_total_operacion = d2(orig_total)
     resumen = {
         "totalNoSuj": d2(total_nosuj),
         "totalExenta": d2(total_exenta),

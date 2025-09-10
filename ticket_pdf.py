@@ -1,10 +1,14 @@
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
+from reportlab.graphics.barcode import qr
+from reportlab.graphics.shapes import Drawing
+from reportlab.graphics import renderPDF
 from datetime import datetime
 import json
 import os
 from paths import DATOS_NEGOCIO_PATH
+from factura_sv import build_qr_url
 
 
 def _with_falta(value):
@@ -101,6 +105,8 @@ def generar_ticket_personalizado(
 
     sello = dte_data.get("selloRecibido", "falta")
     firma = dte_data.get("firmaElectronica", "falta")
+    dte_json = dte_data.get("dteJson", {})
+    qr_url = build_qr_url(dte_json) if dte_json else None
 
     def _flatten(data, prefix=""):
         lines = []
@@ -207,6 +213,20 @@ def generar_ticket_personalizado(
     for line in dte_lines:
         c.drawString(5 * mm, y, _with_falta(line))
         y -= line_height
+    y -= line_height
+    if qr_url:
+        qr_size = 20 * mm
+        qr_code = qr.QrCodeWidget(qr_url)
+        bounds = qr_code.getBounds()
+        w = bounds[2] - bounds[0]
+        h = bounds[3] - bounds[1]
+        d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
+        d.add(qr_code)
+        qr_x = (width - qr_size) / 2
+        qr_y = max(5 * mm, y - qr_size)
+        renderPDF.draw(d, c, qr_x, qr_y)
+        c.setFont("Helvetica", 5)
+        c.drawCentredString(width / 2, qr_y - 4, qr_url)
 
     c.showPage()
     c.save()

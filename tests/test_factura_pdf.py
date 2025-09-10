@@ -2,7 +2,7 @@ import pytest
 import fitz
 from urllib.parse import urlparse, parse_qs
 import factura_sv
-from factura_sv import generar_factura_electronica_pdf, build_qr_value
+from factura_sv import generar_factura_electronica_pdf, build_qr_url
 import utils.catalogos as catalogos
 
 
@@ -118,37 +118,39 @@ def test_total_letras_is_wrapped(tmp_path):
     assert any('71/100 DÓLARES' in ln for ln in lines)
 
 
-def test_qr_value_contains_params():
-    url = build_qr_value(
-        2,
-        'ABC',
-        '01',
-        'NC-1',
+def test_qr_url_contains_params():
+    url = build_qr_url(
+        {
+            'identificacion': {
+                'ambiente': '00',
+                'codigoGeneracion': 'ABC',
+                'fecEmi': '2025-01-01',
+            }
+        }
     )
-    assert url.startswith('https://apitest.mh.gob.sv/consulta-dte?')
-    assert 'codigoGeneracion=ABC' in url
-    assert 'numeroDocumento=NC-1' in url
-    assert 'tipoDte=01' in url
-    assert 'ambiente=2' in url
+    assert url.startswith('https://admin.factura.gob.sv/consultaPublica?')
+    assert 'codGen=ABC' in url
+    assert 'fechaEmi=2025-01-01' in url
+    assert 'ambiente=00' in url
 
 
 def test_qr_url_matches_environment(tmp_path, monkeypatch):
     venta, detalles = _sample_data('Crédito Fiscal')
     captured = []
 
-    def fake_build_qr_value(ambiente, codigo_generacion, tipo_dte, numero_documento):
-        url = build_qr_value(ambiente, codigo_generacion, tipo_dte, numero_documento)
+    def fake_build_qr_url(dte):
+        url = build_qr_url(dte)
         captured.append(url)
         return url
 
-    monkeypatch.setattr(factura_sv, 'build_qr_value', fake_build_qr_value)
+    monkeypatch.setattr(factura_sv, 'build_qr_url', fake_build_qr_url)
 
     scenarios = [
-        ('01', 'https://www.mh.gob.sv/consulta-dte', '1'),
-        ('00', 'https://apitest.mh.gob.sv/consulta-dte', '2'),
+        ('01', '01'),
+        ('00', '00'),
     ]
 
-    for env, expected_base, expected_param in scenarios:
+    for env, expected_param in scenarios:
         captured.clear()
         out = tmp_path / f'fact_{env}.pdf'
         generar_factura_electronica_pdf(
@@ -163,7 +165,7 @@ def test_qr_url_matches_environment(tmp_path, monkeypatch):
         )
         assert captured, 'QR value not generated'
         url = captured[0]
-        assert url.startswith(expected_base)
+        assert url.startswith('https://admin.factura.gob.sv/consultaPublica')
         qs = parse_qs(urlparse(url).query)
         assert qs.get('ambiente') == [expected_param]
 

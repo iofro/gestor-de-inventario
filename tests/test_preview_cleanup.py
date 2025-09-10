@@ -10,7 +10,7 @@ class FakeDB:
         self._ventas = []
         self.detalles = {}
         self.pdfs = {}
-    def get_ventas(self):
+    def get_ventas(self, *a, **k):
         return self._ventas
     def get_venta_credito_fiscal(self, vid):
         return None

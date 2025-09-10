@@ -1791,6 +1791,10 @@ def generar_dte_json(
         except Exception:
             extra = {}
 
+    extra_param = kwargs.get("extra")
+    if isinstance(extra_param, dict):
+        extra.update(extra_param)
+
     cliente = None
     if venta.get("cliente_id"):
         cliente = db.get_cliente(venta["cliente_id"])
@@ -1934,6 +1938,10 @@ def generar_dte_json(
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
     num_doc = rec.get("numDocumento")
+    if isinstance(num_doc, str):
+        num_doc = num_doc.strip()
+        if tipo_doc is None and re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            tipo_doc = "13"
     nit = _clean_nit(rec.get("nit"))
     if fiscal:
         tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
@@ -1954,23 +1962,24 @@ def generar_dte_json(
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
-        "numDocumento": num_doc,
-        "nrc": (fiscal.get("nrc") if fiscal else None) or rec.get("nrc"),
-        "nombre": rec.get("nombre"),
+        "numDocumento": num_doc or None,
+        "nrc": ((fiscal.get("nrc") if fiscal else None) or rec.get("nrc")) or None,
+        "nombre": rec.get("nombre") or None,
         "nit": nit,
-        "nombreComercial": rec.get("nombreComercial"),
-        "codActividad": rec.get("codActividad"),
-        "descActividad": rec.get("giro") or rec.get("descActividad"),
-        "telefono": rec.get("telefono"),
-        "correo": rec.get("correo"),
+        "nombreComercial": rec.get("nombreComercial") or None,
+        "codActividad": rec.get("codActividad") or None,
+        "descActividad": (rec.get("giro") or rec.get("descActividad")) or None,
+        "telefono": rec.get("telefono") or None,
+        "correo": rec.get("correo") or None,
     }
     direccion_src = rec.get("direccion")
     if not isinstance(direccion_src, dict):
         direccion_src = rec
     receptor["direccion"] = _build_receptor_direccion(direccion_src)
     compl = receptor["direccion"].get("complemento")
-    if not compl or len(str(compl)) < 5:
-        receptor["direccion"]["complemento"] = "SIN DIRECCION"
+    if not extra.get("es_ticket"):
+        if not compl or len(str(compl)) < 5:
+            receptor["direccion"]["complemento"] = "SIN DIRECCION"
     if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
@@ -1981,18 +1990,19 @@ def generar_dte_json(
         if fiscal.get("orden_no"):
             receptor["ordenNo"] = fiscal.get("orden_no")
 
-    if not receptor.get("codActividad"):
-        receptor["codActividad"] = (
-            emisor.get("codActividad") or datos.get("cod_giro") or "00000"
-        )
-    if not receptor.get("descActividad"):
-        receptor["descActividad"] = (
-            emisor.get("descActividad")
-            or datos.get("descActividad")
-            or "SIN GIRO"
-        )
-    if not receptor.get("correo"):
-        receptor["correo"] = "no-reply@example.com"
+    if not extra.get("es_ticket"):
+        if not receptor.get("codActividad"):
+            receptor["codActividad"] = (
+                emisor.get("codActividad") or datos.get("cod_giro") or "00000"
+            )
+        if not receptor.get("descActividad"):
+            receptor["descActividad"] = (
+                emisor.get("descActividad")
+                or datos.get("descActividad")
+                or "SIN GIRO"
+            )
+        if not receptor.get("correo"):
+            receptor["correo"] = "no-reply@example.com"
 
     # Campos obligatorios y limpieza de campos no permitidos
     if tipo_dte == "01":
@@ -2021,7 +2031,10 @@ def generar_dte_json(
             "correo",
             "direccion",
         ]
-        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        fields_to_remove = ["noRemision", "ordenNo"]
+        if tipo_dte != "03":
+            fields_to_remove.extend(["numDocumento", "tipoDocumento"])
+        for f in fields_to_remove:
             receptor.pop(f, None)
 
     for f in required_rec_fields:
@@ -2764,8 +2777,11 @@ def validate_dte_json(
         receptor["numDocumento"] = num_doc
     else:
         receptor["nit"] = _clean_nit(nit_field)
-        receptor.pop("tipoDocumento", None)
-        receptor.pop("numDocumento", None)
+        if receptor.get("numDocumento") or receptor.get("tipoDocumento"):
+            limpiar_documentos(receptor)
+        else:
+            receptor.pop("tipoDocumento", None)
+            receptor.pop("numDocumento", None)
 
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
@@ -2808,7 +2824,10 @@ def validate_dte_json(
         ]
         for f in required_rec_fields:
             receptor.setdefault(f, None)
-        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        fields_to_remove = ["noRemision", "ordenNo"]
+        if tipo_dte != "03":
+            fields_to_remove.extend(["numDocumento", "tipoDocumento"])
+        for f in fields_to_remove:
             receptor.pop(f, None)
     payload["receptor"] = receptor
 
@@ -3219,6 +3238,12 @@ def generar_ticket_json(
         ambiente_cfg = str(ambiente).lower()
         ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
 
+    extra_kwargs = kwargs.get("extra")
+    if isinstance(extra_kwargs, dict):
+        kwargs["extra"] = {**extra_kwargs, "es_ticket": True}
+    else:
+        kwargs["extra"] = {"es_ticket": True}
+
     data = generar_dte_json(
         db,
         venta_id,
@@ -3306,7 +3331,6 @@ def generar_nde_desde_dte(
         total_grav = Decimal("0")
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
-        iva_val = Decimal("0")
         num = 1
         for det in detalles:
             grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
@@ -3315,9 +3339,6 @@ def generar_nde_desde_dte(
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
-            iva_val += (grav * Decimal("0.13")).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
                 precio = grav + exenta + nosuj
@@ -3345,12 +3366,15 @@ def generar_nde_desde_dte(
                 }
             )
             num += 1
-        total_grav = d2(total_grav)
-        total_exenta = d2(total_exenta)
-        total_nosuj = d2(total_nosuj)
-        iva_val = d2(iva_val)
-        subtotal_ventas = total_grav + total_exenta + total_nosuj
-        monto_total = d2(subtotal_ventas + iva_val)
+        total_grav = d4(total_grav)
+        total_exenta = d4(total_exenta)
+        total_nosuj = d4(total_nosuj)
+        subtotal_ventas_q4 = total_grav + total_exenta + total_nosuj
+        subtotal_ventas = d2(subtotal_ventas_q4)
+        monto_total = d2(
+            total_grav * Decimal("1.13") + total_exenta + total_nosuj
+        )
+        iva_val = d2(monto_total - subtotal_ventas)
     else:
         if monto is None:
             raise ValueError("Se requiere monto para nota de débito")
@@ -3445,9 +3469,9 @@ def generar_nde_desde_dte(
             }
         )
     resumen = {
-        "totalNoSuj": total_nosuj,
-        "totalExenta": total_exenta,
-        "totalGravada": total_grav,
+        "totalNoSuj": d2(total_nosuj),
+        "totalExenta": d2(total_exenta),
+        "totalGravada": d2(total_grav),
         "subTotal": subtotal_ventas,
         "subTotalVentas": subtotal_ventas,
         "descuNoSuj": 0.0,

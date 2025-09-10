@@ -258,16 +258,17 @@ def generar_nce_desde_dte(
                         Decimal(str(items[first_idx]["precioUni"])) + diff
                     ).quantize(Q4)
             total_grav = base_q4
-            subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+            subtotal_ventas_q4 = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+            subtotal_ventas = d2(subtotal_ventas_q4)
             monto_total_operacion = d2(monto_abs)
+            iva_val = d2(monto_total_operacion - subtotal_ventas)
         else:
-            subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-            # Cuando los montos se calculan a partir de ``detalles`` evitamos
-            # recurrir al total original del documento de origen. El IVA se obtiene
-            # directamente de las ventas gravadas parciales y el total de la
-            # operación se compone sumando dicho IVA al subtotal calculado.
-            iva_val = d2(total_grav * IVA)
-            monto_total_operacion = d2(subtotal_ventas + iva_val)
+            subtotal_ventas_q4 = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+            subtotal_ventas = d2(subtotal_ventas_q4)
+            monto_total_operacion = d2(
+                total_grav * (Decimal("1") + IVA) + total_exenta + total_nosuj
+            )
+            iva_val = d2(monto_total_operacion - subtotal_ventas)
     else:
         if monto is not None:
             monto_abs = Decimal(str(monto)).copy_abs()
@@ -283,8 +284,8 @@ def generar_nce_desde_dte(
             total_grav = base_redondeada.quantize(Q4)
             total_exenta = Decimal_0
             total_nosuj = Decimal_0
-            subtotal_ventas = total_grav
-            iva_val = d2(monto_total_operacion - base_redondeada)
+            subtotal_ventas = d2(total_grav)
+            iva_val = d2(monto_total_operacion - subtotal_ventas)
             num = 1
             pct_text = _pct_label(ratio) if ratio is not None else "100"
             if total_grav > 0:

@@ -83,8 +83,8 @@ def generate_invoice_pdf(manager, venta_id):
             d["ventas_gravadas"] = base
             iva += iva_item_val
 
-    subtotal = sumas - descuentos
-    total = subtotal + iva + ventas_exentas + ventas_no_sujetas
+    subtotal = sumas - descuentos + iva
+    total = subtotal + ventas_exentas + ventas_no_sujetas
     venta_data.update(
         {
             "sumas": sumas,

@@ -2021,7 +2021,10 @@ def generar_dte_json(
             "correo",
             "direccion",
         ]
-        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        fields_to_remove = ["noRemision", "ordenNo"]
+        if tipo_dte != "03":
+            fields_to_remove.extend(["numDocumento", "tipoDocumento"])
+        for f in fields_to_remove:
             receptor.pop(f, None)
 
     for f in required_rec_fields:
@@ -2764,8 +2767,11 @@ def validate_dte_json(
         receptor["numDocumento"] = num_doc
     else:
         receptor["nit"] = _clean_nit(nit_field)
-        receptor.pop("tipoDocumento", None)
-        receptor.pop("numDocumento", None)
+        if receptor.get("numDocumento") or receptor.get("tipoDocumento"):
+            limpiar_documentos(receptor)
+        else:
+            receptor.pop("tipoDocumento", None)
+            receptor.pop("numDocumento", None)
 
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
@@ -2808,7 +2814,10 @@ def validate_dte_json(
         ]
         for f in required_rec_fields:
             receptor.setdefault(f, None)
-        for f in ("noRemision", "ordenNo", "numDocumento", "tipoDocumento"):
+        fields_to_remove = ["noRemision", "ordenNo"]
+        if tipo_dte != "03":
+            fields_to_remove.extend(["numDocumento", "tipoDocumento"])
+        for f in fields_to_remove:
             receptor.pop(f, None)
     payload["receptor"] = receptor
 

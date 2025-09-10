@@ -17,3 +17,19 @@ def test_get_document_paths_and_list(tmp_path):
         f.write('{}')
     res = docs.list_documents(root=tmp_path)
     assert {'tipo': 'Ticket', 'pdf': pdf, 'json': js} in res
+
+
+def test_build_invoice_json_preserves_address():
+    cliente = {
+        'nombre': 'Ariel',
+        'direccion': '6a calle oriente',
+        'nrc': '123456-7',
+        'telefono': '2222-3333',
+        'correo': 'ariel@example.com',
+    }
+    data = docs.build_invoice_json({'fecha': '2024-01-01'}, cliente, [])
+    rec = data.get('receptor', {})
+    assert rec.get('direccion', {}).get('complemento') == '6a calle oriente'
+    assert rec.get('nrc') == '123456-7'
+    assert rec.get('telefono') == '2222-3333'
+    assert rec.get('correo') == 'ariel@example.com'

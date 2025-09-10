@@ -121,18 +121,18 @@ describe('EditableNotaTable', () => {
       }
     });
     const ajusteInput = wrapper.find('input.ajuste');
-    await ajusteInput.setValue('120');
+    await ajusteInput.setValue('113');
     await wrapper.vm.$nextTick();
     let cells = wrapper.findAll('tbody td');
     expect(cells[12].text()).toBe('100.00');
-    expect(cells[13].text()).toBe('20.00');
-    expect(cells[14].text()).toBe('120.00');
+    expect(cells[13].text()).toBe('13.00');
+    expect(cells[14].text()).toBe('113.00');
     await wrapper.setProps({ ivaIncluido: false });
     await ajusteInput.setValue('100');
     await wrapper.vm.$nextTick();
     cells = wrapper.findAll('tbody td');
     expect(cells[12].text()).toBe('100.00');
-    expect(cells[13].text()).toBe('20.00');
-    expect(cells[14].text()).toBe('120.00');
+    expect(cells[13].text()).toBe('13.00');
+    expect(cells[14].text()).toBe('113.00');
   });
 });

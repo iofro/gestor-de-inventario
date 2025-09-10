@@ -9,8 +9,7 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
-      "numeroDocumento": null,
-      "precioUni": 14.6100,
+      "precioUni": 14.61,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +17,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 14.6100,
+      "ventaGravada": 14.61,
       "ventaNoSuj": 0.0
     },
     {
@@ -29,7 +28,6 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 2,
-      "numeroDocumento": null,
       "precioUni": 13.6575,
       "psv": 0.0,
       "tipoItem": 1,
@@ -38,7 +36,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 54.6300,
+      "ventaGravada": 54.63,
       "ventaNoSuj": 0.0
     },
     {
@@ -49,8 +47,7 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 3,
-      "numeroDocumento": null,
-      "precioUni": 16.6600,
+      "precioUni": 16.66,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
@@ -58,7 +55,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 66.6400,
+      "ventaGravada": 66.64,
       "ventaNoSuj": 0.0
     },
     {
@@ -69,7 +66,6 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 4,
-      "numeroDocumento": null,
       "precioUni": 17.4925,
       "psv": 0.0,
       "tipoItem": 1,
@@ -78,7 +74,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 69.9700,
+      "ventaGravada": 69.97,
       "ventaNoSuj": 0.0
     }
   ],
@@ -128,9 +124,7 @@
       "departamento": "05",
       "municipio": "28"
     },
-    "nit": "13240304791012",
     "nombre": "ariel",
-    "nombreComercial": null,
     "nrc": "2273734",
     "telefono": "70000001"
   },
@@ -139,17 +133,13 @@
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
-    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
     "montoTotalOperacion": 232.61,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 232.61,
-        "periodo": null,
-        "plazo": null,
-        "referencia": null
+        "montoPago": 232.61
       }
     ],
     "porcentajeDescuento": 0.0,

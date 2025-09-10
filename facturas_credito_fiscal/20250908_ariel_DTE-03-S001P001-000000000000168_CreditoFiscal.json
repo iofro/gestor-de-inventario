@@ -9,8 +9,7 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
-      "numeroDocumento": null,
-      "precioUni": 13.5900,
+      "precioUni": 13.59,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +17,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 13.5900,
+      "ventaGravada": 13.59,
       "ventaNoSuj": 0.0
     }
   ],
@@ -68,9 +67,7 @@
       "departamento": "05",
       "municipio": "25"
     },
-    "nit": "13240304791012",
     "nombre": "ariel",
-    "nombreComercial": "Vertex",
     "nrc": "2273734",
     "telefono": "74154027"
   },
@@ -79,17 +76,13 @@
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
-    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
     "montoTotalOperacion": 15.36,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 15.36,
-        "periodo": null,
-        "plazo": null,
-        "referencia": null
+        "montoPago": 15.36
       }
     ],
     "porcentajeDescuento": 0.0,

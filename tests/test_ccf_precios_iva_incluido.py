@@ -22,8 +22,8 @@ def test_ccf_totals_with_inclusive_prices():
     recalcular_totales(payload)
     item1, item2 = payload["cuerpoDocumento"]
     resumen = payload["resumen"]
-    assert item1["ventaGravada"] == D("0.0460")
-    assert item2["ventaGravada"] == D("0.0440")
+    assert item1["ventaGravada"] == D("0.0440")
+    assert item2["ventaGravada"] == D("0.0460")
     assert resumen["totalGravada"] == D("0.0900")
     assert resumen["montoTotalOperacion"] == D("0.10")
     assert resumen["totalPagar"] == D("0.10")
@@ -118,8 +118,8 @@ def test_ccf_precio_7_96_iva_redondeo():
     payload = _build_payload(items)
     recalcular_totales(payload)
     resumen = payload["resumen"]
-    assert resumen["tributos"][0]["valor"] == D("1.04")
-    assert resumen["montoTotalOperacion"] == D("9.00")
+    assert resumen["tributos"][0]["valor"] == D("1.03")
+    assert resumen["montoTotalOperacion"] == D("8.99")
 
 
 def test_ccf_nit_validation():

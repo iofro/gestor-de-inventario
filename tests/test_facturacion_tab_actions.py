@@ -143,6 +143,8 @@ def test_delete_files_removes(qt_app, tmp_path, monkeypatch):
     pdf.write_text("p")
     js = pdf.with_suffix(".json")
     js.write_text("{}")
+    jws = pdf.with_suffix(".jws")
+    jws.write_text("TOKEN")
     db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf))
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
@@ -156,3 +158,4 @@ def test_delete_files_removes(qt_app, tmp_path, monkeypatch):
     tab.delete_files()
     assert not pdf.exists()
     assert not js.exists()
+    assert not jws.exists()

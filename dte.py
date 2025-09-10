@@ -1794,6 +1794,8 @@ def generar_dte_json(
     extra_param = kwargs.get("extra")
     if isinstance(extra_param, dict):
         extra.update(extra_param)
+    if extra.get("es_ticket"):
+        tipo_dte = "01"
 
     cliente = None
     if venta.get("cliente_id"):
@@ -1936,11 +1938,13 @@ def generar_dte_json(
 
     tipo_doc = rec.get("tipoDocumento")
     if tipo_doc is not None:
-        tipo_doc = str(tipo_doc)
+        tipo_doc = str(tipo_doc).strip() or None
     num_doc = rec.get("numDocumento")
     if isinstance(num_doc, str):
         num_doc = num_doc.strip()
-        if tipo_doc is None and re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+        if not num_doc:
+            num_doc = None
+        if tipo_doc is None and num_doc and re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
             tipo_doc = "13"
     nit = _clean_nit(rec.get("nit"))
     if fiscal:
@@ -1973,13 +1977,18 @@ def generar_dte_json(
         "correo": rec.get("correo") or None,
     }
     direccion_src = rec.get("direccion")
-    if not isinstance(direccion_src, dict):
-        direccion_src = rec
-    receptor["direccion"] = _build_receptor_direccion(direccion_src)
-    compl = receptor["direccion"].get("complemento")
-    if not extra.get("es_ticket"):
-        if not compl or len(str(compl)) < 5:
-            receptor["direccion"]["complemento"] = "SIN DIRECCION"
+    dir_keys = {"departamento", "municipio", "complemento", "direccion", "direccionDetalle"}
+    dir_present = isinstance(direccion_src, dict) or any(k in rec for k in dir_keys)
+    if dir_present:
+        if not isinstance(direccion_src, dict):
+            direccion_src = rec
+        receptor["direccion"] = _build_receptor_direccion(direccion_src)
+        compl = receptor["direccion"].get("complemento")
+        if not extra.get("es_ticket"):
+            if not compl or len(str(compl)) < 5:
+                receptor["direccion"]["complemento"] = "SIN DIRECCION"
+    elif not extra.get("es_ticket"):
+        raise ValidationError("receptor.direccion faltante")
     if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
@@ -2003,13 +2012,29 @@ def generar_dte_json(
             )
         if not receptor.get("correo"):
             receptor["correo"] = "no-reply@example.com"
+    else:
+        if not receptor.get("nombre"):
+            receptor["nombre"] = "Consumidor Final"
+        if not receptor.get("nrc") or len(str(receptor.get("nrc"))) not in (6, 7):
+            receptor.pop("nrc", None)
+        for fld in (
+            "tipoDocumento",
+            "numDocumento",
+            "codActividad",
+            "descActividad",
+            "telefono",
+            "correo",
+            "direccion",
+        ):
+            if not receptor.get(fld):
+                receptor.pop(fld, None)
 
     # Campos obligatorios y limpieza de campos no permitidos
     if tipo_dte == "01":
         for f in ("nit", "nombreComercial"):
             receptor.pop(f, None)
         if extra.get("es_ticket"):
-            required_rec_fields = ["direccion"]
+            required_rec_fields = []
         else:
             required_rec_fields = [
                 "nrc",
@@ -2516,6 +2541,7 @@ def generar_dte_json(
         # Compatibilidad con versiones parcheadas sin parámetro ``correlativo``
         validate_dte_json(result, db=db, precios_incluyen_iva=False)
     result.pop("extra", None)
+    result = sanitize_dte_payload(result)
     return json.loads(stable_stringify(result), parse_float=Decimal)
 
 
@@ -2743,43 +2769,56 @@ def validate_dte_json(
     receptor = payload.get("receptor", {})
     nit_field = receptor.get("nit")
     tipo_doc = receptor.get("tipoDocumento")
+    es_ticket = (payload.get("extra") or {}).get("es_ticket")
     if tipo_dte != "03":
-        if nit_field is not None:
-            receptor["numDocumento"] = _clean_nit(nit_field)
+        if es_ticket:
+            if nit_field:
+                receptor["numDocumento"] = _clean_nit(nit_field)
+                receptor["tipoDocumento"] = "36"
+                limpiar_documentos(receptor)
+            else:
+                receptor.pop("nit", None)
+                receptor.pop("numDocumento", None)
+                receptor.pop("tipoDocumento", None)
+                if not receptor.get("nrc") or len(str(receptor.get("nrc"))) not in (6, 7):
+                    receptor.pop("nrc", None)
+        else:
+            if nit_field is not None:
+                receptor["numDocumento"] = _clean_nit(nit_field)
+                if tipo_doc is None:
+                    tipo_doc = "36"
+            limpiar_documentos(receptor)
+            num_doc = solo_digitos(receptor.get("numDocumento"))
+            nrc_raw = receptor.get("nrc")
+            nrc_digits = solo_digitos(nrc_raw) if nrc_raw is not None else ""
+            if nrc_digits:
+                receptor["nrc"] = nrc_digits
+            else:
+                receptor.pop("nrc", None)
             if tipo_doc is None:
-                tipo_doc = "36"
-        limpiar_documentos(receptor)
-        num_doc = solo_digitos(receptor.get("numDocumento"))
-        nrc_raw = receptor.get("nrc")
-        nrc_digits = solo_digitos(nrc_raw) if nrc_raw is not None else ""
-        if nrc_digits:
-            receptor["nrc"] = nrc_digits
-        else:
-            receptor.pop("nrc", None)
-        if tipo_doc is None:
-            tipo_doc = "36" if receptor.get("nrc") else "13"
-        else:
-            tipo_doc = str(tipo_doc)
-        allowed = {"36", "13", "37", "03", "02"}
-        if tipo_doc not in allowed:
-            raise ValueError("tipoDocumento inválido en receptor")
-        if tipo_doc == "13":
-            if len(num_doc) != 9:
-                raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
-            if nrc_raw:
-                warnings.warn(
-                    "Se removió NRC porque el documento es DUI", UserWarning,
-                )
-            receptor.pop("nrc", None)
-        elif tipo_doc == "36":
-            if len(num_doc) != 14:
-                raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
-            if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
-                raise ValueError("NRC requerido (6–7 dígitos)")
-        else:
-            receptor.pop("nrc", None)
-        receptor["tipoDocumento"] = tipo_doc
-        receptor["numDocumento"] = num_doc
+                tipo_doc = "36" if receptor.get("nrc") else "13"
+            else:
+                tipo_doc = str(tipo_doc)
+            allowed = {"36", "13", "37", "03", "02"}
+            if tipo_doc not in allowed:
+                raise ValueError("tipoDocumento inválido en receptor")
+            if tipo_doc == "13":
+                if len(num_doc) != 9:
+                    raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
+                if nrc_raw:
+                    warnings.warn(
+                        "Se removió NRC porque el documento es DUI", UserWarning,
+                    )
+                receptor.pop("nrc", None)
+            elif tipo_doc == "36":
+                if len(num_doc) != 14:
+                    raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
+                if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
+                    raise ValueError("NRC requerido (6–7 dígitos)")
+            else:
+                receptor.pop("nrc", None)
+            receptor["tipoDocumento"] = tipo_doc
+            receptor["numDocumento"] = num_doc
     else:
         receptor["nit"] = _clean_nit(nit_field)
         if receptor.get("numDocumento") or receptor.get("tipoDocumento"):
@@ -2791,30 +2830,48 @@ def validate_dte_json(
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
     if dir_rec is None:
-        raise ValidationError("receptor.direccion faltante")
-    receptor["direccion"] = _build_receptor_direccion(dir_rec)
+        if not (es_ticket and tipo_dte == "01"):
+            raise ValidationError("receptor.direccion faltante")
+    else:
+        receptor["direccion"] = _build_receptor_direccion(dir_rec)
     if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
         raise ValueError("Teléfono de receptor inválido")
     if tipo_dte == "01":
-        required_rec_fields = [
-            "nrc",
-            "nombre",
-            "codActividad",
-            "descActividad",
-            "telefono",
-            "correo",
-            "direccion",
-            "tipoDocumento",
-            "numDocumento",
-        ]
-        for f in ("nit", "nombreComercial"):
-            receptor.pop(f, None)
-        for f in required_rec_fields:
-            receptor.setdefault(f, None)
-        for f in ("noRemision", "ordenNo"):
-            receptor.pop(f, None)
+        if es_ticket:
+            for f in (
+                "nit",
+                "nombreComercial",
+                "nrc",
+                "codActividad",
+                "descActividad",
+                "telefono",
+                "correo",
+                "tipoDocumento",
+                "numDocumento",
+                "noRemision",
+                "ordenNo",
+            ):
+                receptor.pop(f, None)
+        else:
+            required_rec_fields = [
+                "nrc",
+                "nombre",
+                "codActividad",
+                "descActividad",
+                "telefono",
+                "correo",
+                "direccion",
+                "tipoDocumento",
+                "numDocumento",
+            ]
+            for f in ("nit", "nombreComercial"):
+                receptor.pop(f, None)
+            for f in required_rec_fields:
+                receptor.setdefault(f, None)
+            for f in ("noRemision", "ordenNo"):
+                receptor.pop(f, None)
     else:
         required_rec_fields = [
             "nit",

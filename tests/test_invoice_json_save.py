@@ -8,6 +8,7 @@ import dte
 from sales_tab import SalesTab
 from utils.doc_generation import generate_invoice_pdf
 import facturacion_tab
+from utils import docs
 
 class FakeDB:
     def __init__(self):
@@ -94,8 +95,18 @@ def test_facturacion_tab_generate_invoice_creates_json(tmp_path):
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
         return str(pdf_path), str(json_path)
 
+    def fake_generar(db_, vid, **_):
+        venta = next(v for v in db_.get_ventas() if v["id"] == vid)
+        detalles = db_.get_detalles_venta(vid)
+        data = docs.build_invoice_json(venta, {}, detalles)
+        ident = data.setdefault("identificacion", {})
+        ident.setdefault("codigoGeneracion", uuid.uuid4().hex)
+        ident.setdefault("numeroControl", uuid.uuid4().hex[:8].upper())
+        return data
+
     monkeypatch = pytest.MonkeyPatch()
     monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_generar)
 
     tab._generate_invoice_pdf(1)
     monkeypatch.undo()

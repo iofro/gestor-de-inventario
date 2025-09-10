@@ -9,8 +9,7 @@
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
-      "numeroDocumento": null,
-      "precioUni": 14.5900,
+      "precioUni": 14.59,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +17,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 14.5900,
+      "ventaGravada": 14.59,
       "ventaNoSuj": 0.0
     }
   ],
@@ -68,9 +67,7 @@
       "departamento": "05",
       "municipio": "28"
     },
-    "nit": "13240304791012",
     "nombre": "ariel",
-    "nombreComercial": null,
     "nrc": "2273734",
     "telefono": "70000001"
   },
@@ -79,17 +76,13 @@
     "descuExenta": 0.0,
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
-    "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
     "montoTotalOperacion": 16.49,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 16.49,
-        "periodo": null,
-        "plazo": null,
-        "referencia": null
+        "montoPago": 16.49
       }
     ],
     "porcentajeDescuento": 0.0,
@@ -108,7 +101,7 @@
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.90
+        "valor": 1.9
       }
     ]
   },

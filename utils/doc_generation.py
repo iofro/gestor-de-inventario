@@ -44,8 +44,6 @@ def generate_invoice_pdf(manager, venta_id):
         if trabajador:
             venta_data["vendedor_nombre"] = trabajador.get("nombre", "")
 
-    sumas = descuentos = 0
-    ventas_exentas = ventas_no_sujetas = iva = 0
     for d in detalles:
         unit = d.get("precio_unitario", 0)
         cantidad = d.get("cantidad", 0)
@@ -58,49 +56,24 @@ def generate_invoice_pdf(manager, venta_id):
         tipo = d.get("tipo_fiscal", "").lower()
         if tipo == "venta exenta":
             d["ventas_exentas"] = line_total_desc
-            ventas_exentas += line_total_desc
         elif tipo == "venta no sujeta":
             d["ventas_no_sujetas"] = line_total_desc
-            ventas_no_sujetas += line_total_desc
         else:
             if precios_incluyen_iva:
-                base_total_dec, _ = to_base_iva(line_total)
-                base_dec, iva_dec = to_base_iva(line_total_desc)
-                base_total = float(base_total_dec)
-                base = float(base_dec)
-                iva_item_val = float(iva_dec)
-                d["iva"] = iva_item_val
-                sumas += base_total
-                descuentos += base_total - base
+                if iva_item_val:
+                    base = line_total_desc - iva_item_val
+                else:
+                    base_dec, iva_dec = to_base_iva(line_total_desc)
+                    base = float(base_dec)
+                    iva_item_val = float(iva_dec)
+                    d["iva"] = iva_item_val
             else:
-                base_total = line_total
                 base = line_total_desc
                 if credito_info and not iva_item_val:
                     iva_item_val = float(iva_item(base))
                     d["iva"] = iva_item_val
-                sumas += base_total
-                descuentos += desc
             d["ventas_gravadas"] = base
-            iva += iva_item_val
 
-    subtotal = sumas - descuentos + iva
-    total = subtotal + ventas_exentas + ventas_no_sujetas
-    venta_data.update(
-        {
-            "sumas": sumas,
-            "descuentos": descuentos,
-            "iva": iva,
-            "ventas_exentas": ventas_exentas,
-            "ventas_no_sujetas": ventas_no_sujetas,
-            "subtotal": subtotal,
-            "total": total,
-        }
-    )
-    if not venta_data.get("total_letras"):
-        try:
-            venta_data["total_letras"] = monto_a_texto_sv(total)
-        except Exception:
-            venta_data["total_letras"] = ""
 
     cliente = None
     if venta.get("cliente_id"):
@@ -181,6 +154,24 @@ def generate_invoice_pdf(manager, venta_id):
     except ValueError:
         logger.exception("Error al generar el DTE real")
         raise
+    resumen = json_data.get("resumen", {})
+    venta_data.update(
+        {
+            "sumas": resumen.get("sumas", 0),
+            "descuentos": resumen.get("descuentos", 0),
+            "iva": resumen.get("iva", 0),
+            "subtotal": resumen.get("subtotal", 0),
+            "ventas_exentas": resumen.get("ventasExentas", 0),
+            "ventas_no_sujetas": resumen.get("ventasNoSujetas", 0),
+            "total": resumen.get("totalPagar", 0),
+        }
+    )
+    if not venta_data.get("total_letras"):
+        try:
+            venta_data["total_letras"] = monto_a_texto_sv(venta_data.get("total", 0))
+        except Exception:
+            venta_data["total_letras"] = ""
+
     ident = json_data.get("identificacion", {})
     codigo_generacion = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")

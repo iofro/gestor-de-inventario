@@ -42,7 +42,7 @@ def test_credito_fiscal_pdf_calcula_iva(tmp_path, monkeypatch):
     db = FakeDB()
     venta = {"id": 1, "fecha": "2024-01-01", "total": 11.3}
     db._ventas.append(venta)
-    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10}]
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 10, "iva": 1.3}]
     db.credito[1] = {"sumas": 10, "descuentos": 0, "iva": 0, "subtotal": 0, "ventas_exentas": 0, "ventas_no_sujetas": 0}
     man = Manager(db)
 
@@ -60,7 +60,16 @@ def test_credito_fiscal_pdf_calcula_iva(tmp_path, monkeypatch):
         ident = data.setdefault("identificacion", {})
         ident["codigoGeneracion"] = uuid.uuid4().hex
         ident["numeroControl"] = uuid.uuid4().hex[:8].upper()
-        data.setdefault("resumen", {})["totalPagar"] = venta.get("total")
+        resumen = {
+            "sumas": 10,
+            "descuentos": 0,
+            "iva": 1.3,
+            "subtotal": 11.3,
+            "ventasExentas": 0,
+            "ventasNoSujetas": 0,
+            "totalPagar": venta.get("total"),
+        }
+        data["resumen"] = resumen
         return data
 
     captured = {}
@@ -91,7 +100,7 @@ def test_pdf_total_precios_incluyen_iva(tmp_path, monkeypatch):
         "extra": json.dumps({"precios_incluyen_iva": True}),
     }
     db._ventas.append(venta)
-    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 15}]
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 15, "iva": 1.72566372}]
     man = Manager(db)
 
     pdf_path = tmp_path / "fact.pdf"
@@ -108,7 +117,18 @@ def test_pdf_total_precios_incluyen_iva(tmp_path, monkeypatch):
         ident = data.setdefault("identificacion", {})
         ident["codigoGeneracion"] = uuid.uuid4().hex
         ident["numeroControl"] = uuid.uuid4().hex[:8].upper()
-        data.setdefault("resumen", {})["totalPagar"] = venta.get("total")
+        base = 13.27433628
+        iva = 1.72566372
+        resumen = {
+            "sumas": base,
+            "descuentos": 0,
+            "iva": iva,
+            "subtotal": base + iva,
+            "ventasExentas": 0,
+            "ventasNoSujetas": 0,
+            "totalPagar": venta.get("total"),
+        }
+        data["resumen"] = resumen
         return data
 
     captured = {}
@@ -125,8 +145,8 @@ def test_pdf_total_precios_incluyen_iva(tmp_path, monkeypatch):
 
     generate_invoice_pdf(man, 1)
 
-    base, iva = to_base_iva(15)
-    assert pytest.approx(captured["venta"]["subtotal"], 0.01) == float(base)
+    base, iva = 13.27433628, 1.72566372
+    assert pytest.approx(captured["venta"]["subtotal"], 0.01) == 15
     assert pytest.approx(captured["venta"]["iva"], 0.01) == float(iva)
     assert pytest.approx(captured["venta"]["total"], 0.01) == 15
     assert pytest.approx(captured["detalles"][0]["iva"], 0.01) == float(iva)

@@ -5,16 +5,24 @@ from nota_credito_electronica import generar_nce_desde_dte
 
 
 def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
-    # Mock dependencies for business data and validation
-    monkeypatch.setattr(
-        "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
-    )
-    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
-    monkeypatch.setattr(
-        "dte._build_receptor_direccion",
-        lambda src: {"departamento": "05", "municipio": "24", "complemento": None},
-    )
+    # Mock dependencies for business data
+    negocio_data = {
+        "nit": "06142816991014",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Comercial",
+        "codActividad": "12345",
+        "descActividad": "Giro",
+        "telefono": "12345678",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir",
+        },
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio_data)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: negocio_data)
 
     db = DB(":memory:")
     db.add_vendedor("V1")

@@ -3306,7 +3306,6 @@ def generar_nde_desde_dte(
         total_grav = Decimal("0")
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
-        iva_val = Decimal("0")
         num = 1
         for det in detalles:
             grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
@@ -3315,9 +3314,6 @@ def generar_nde_desde_dte(
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
-            iva_val += (grav * Decimal("0.13")).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
             precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
                 precio = grav + exenta + nosuj
@@ -3345,12 +3341,15 @@ def generar_nde_desde_dte(
                 }
             )
             num += 1
-        total_grav = d2(total_grav)
-        total_exenta = d2(total_exenta)
-        total_nosuj = d2(total_nosuj)
-        iva_val = d2(iva_val)
-        subtotal_ventas = total_grav + total_exenta + total_nosuj
-        monto_total = d2(subtotal_ventas + iva_val)
+        total_grav = d4(total_grav)
+        total_exenta = d4(total_exenta)
+        total_nosuj = d4(total_nosuj)
+        subtotal_ventas_q4 = total_grav + total_exenta + total_nosuj
+        subtotal_ventas = d2(subtotal_ventas_q4)
+        monto_total = d2(
+            total_grav * Decimal("1.13") + total_exenta + total_nosuj
+        )
+        iva_val = d2(monto_total - subtotal_ventas)
     else:
         if monto is None:
             raise ValueError("Se requiere monto para nota de débito")
@@ -3445,9 +3444,9 @@ def generar_nde_desde_dte(
             }
         )
     resumen = {
-        "totalNoSuj": total_nosuj,
-        "totalExenta": total_exenta,
-        "totalGravada": total_grav,
+        "totalNoSuj": d2(total_nosuj),
+        "totalExenta": d2(total_exenta),
+        "totalGravada": d2(total_grav),
         "subTotal": subtotal_ventas,
         "subTotalVentas": subtotal_ventas,
         "descuNoSuj": 0.0,

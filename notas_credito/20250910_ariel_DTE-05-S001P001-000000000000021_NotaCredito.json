@@ -4,11 +4,11 @@
     {
       "cantidad": 1,
       "codTributo": null,
-      "codigo": "NCCB4C35CA-1",
-      "descripcion": "Producto Demo 15",
+      "codigo": "NCBEF8B84B-1",
+      "descripcion": "Producto Demo 9",
       "montoDescu": 0.0,
       "numItem": 1,
-      "numeroDocumento": "CB4C35CA-9BA8-42D3-A313-E1B8237852B4",
+      "numeroDocumento": "BEF8B84B-A5B9-4307-BF97-D9F634E5B478",
       "precioUni": 0.8850,
       "tipoItem": 1,
       "tributos": [
@@ -22,9 +22,9 @@
   ],
   "documentoRelacionado": [
     {
-      "fechaEmision": "2025-09-08",
-      "numeroDocumento": "CB4C35CA-9BA8-42D3-A313-E1B8237852B4",
-      "tipoDocumento": "03",
+      "fechaEmision": "2025-09-09",
+      "numeroDocumento": "BEF8B84B-A5B9-4307-BF97-D9F634E5B478",
+      "tipoDocumento": "01",
       "tipoGeneracion": 2
     }
   ],
@@ -47,11 +47,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "B23F5D59-6DA0-4E2A-99D8-244F7918BDBC",
+    "codigoGeneracion": "0EFADBA1-B849-4867-B386-760D2B3BC2BF",
     "fecEmi": "2025-09-10",
-    "horEmi": "13:41:10",
+    "horEmi": "14:11:01",
     "motivoContin": null,
-    "numeroControl": "DTE-05-S001P001-000000000000019",
+    "numeroControl": "DTE-05-S001P001-000000000000021",
     "tipoContingencia": null,
     "tipoDte": "05",
     "tipoModelo": 1,
@@ -60,19 +60,17 @@
     "version": 3
   },
   "receptor": {
-    "codActividad": "46484",
-    "correo": "no-reply@example.com",
-    "descActividad": "Venta de productos farmaceuticos",
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Cliente de demostración",
     "direccion": {
-      "complemento": "Calle Falsa 1, San Salvador",
+      "complemento": "6a calle oriente",
       "departamento": "05",
-      "municipio": "28"
+      "municipio": "25"
     },
-    "nit": "13240304791012",
     "nombre": "ariel",
-    "nombreComercial": null,
     "nrc": "2273734",
-    "telefono": "70000001"
+    "telefono": "74154027"
   },
   "resumen": {
     "condicionOperacion": 1,

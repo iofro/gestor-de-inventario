@@ -2,6 +2,8 @@ import json
 import uuid
 import pytest
 
+from utils.monto import to_base_iva
+
 from utils.doc_generation import generate_invoice_pdf
 from utils.docs import build_invoice_json
 
@@ -78,3 +80,54 @@ def test_credito_fiscal_pdf_calcula_iva(tmp_path, monkeypatch):
     assert pytest.approx(captured["venta"]["iva"], 0.01) == 1.3
     assert pytest.approx(captured["detalles"][0]["iva"], 0.01) == 1.3
     assert pytest.approx(captured["detalles"][0]["ventas_gravadas"], 0.01) == 10
+
+
+def test_pdf_total_precios_incluyen_iva(tmp_path, monkeypatch):
+    db = FakeDB()
+    venta = {
+        "id": 1,
+        "fecha": "2024-01-01",
+        "total": 15,
+        "extra": json.dumps({"precios_incluyen_iva": True}),
+    }
+    db._ventas.append(venta)
+    db.detalles[1] = [{"cantidad": 1, "precio_unitario": 15}]
+    man = Manager(db)
+
+    pdf_path = tmp_path / "fact.pdf"
+    json_path = tmp_path / "fact.json"
+
+    def fake_paths(date, cliente, identifier, doc_type, root=None):
+        pdf_path.parent.mkdir(parents=True, exist_ok=True)
+        return str(pdf_path), str(json_path)
+
+    def fake_generar(db_, vid, **_):
+        venta = next(v for v in db_.get_ventas() if v["id"] == vid)
+        detalles = db_.get_detalles_venta(vid)
+        data = build_invoice_json(venta, {}, detalles)
+        ident = data.setdefault("identificacion", {})
+        ident["codigoGeneracion"] = uuid.uuid4().hex
+        ident["numeroControl"] = uuid.uuid4().hex[:8].upper()
+        data.setdefault("resumen", {})["totalPagar"] = venta.get("total")
+        return data
+
+    captured = {}
+
+    def fake_pdf(venta_d, detalles_d, cliente, distribuidor, tipo_doc, archivo="", **_):
+        captured["venta"] = venta_d
+        captured["detalles"] = detalles_d
+        with open(archivo, "wb") as fh:
+            fh.write(b"pdf")
+
+    monkeypatch.setattr("utils.doc_generation.get_document_paths", fake_paths)
+    monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_generar)
+    monkeypatch.setattr("utils.doc_generation.generar_factura_electronica_pdf", fake_pdf)
+
+    generate_invoice_pdf(man, 1)
+
+    base, iva = to_base_iva(15)
+    assert pytest.approx(captured["venta"]["subtotal"], 0.01) == float(base)
+    assert pytest.approx(captured["venta"]["iva"], 0.01) == float(iva)
+    assert pytest.approx(captured["venta"]["total"], 0.01) == 15
+    assert pytest.approx(captured["detalles"][0]["iva"], 0.01) == float(iva)
+    assert pytest.approx(captured["detalles"][0]["ventas_gravadas"], 0.01) == float(base)

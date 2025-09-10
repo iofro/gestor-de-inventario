@@ -35,6 +35,7 @@ from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
 from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
+from utils.firmador import iniciar_firmador, detener_firmador
 import logging
 
 logger = logging.getLogger(__name__)
@@ -77,10 +78,24 @@ class MainWindow(QMainWindow):
         self.resize(1200, 700)
         self.manager = InventoryManager()
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        self.firmador_proc = None
         # Contador de cambios en la base de datos para detectar si hay datos sin guardar
         self._mark_saved()
         self._setup_ui()
         self._apply_styles()
+
+    def iniciar_firmador(self):
+        """Lanza el servicio externo de firmado de documentos."""
+        if self.firmador_proc and self.firmador_proc.poll() is None:
+            QMessageBox.information(self, "Firmador", "El firmador ya está en ejecución.")
+            return
+        try:
+            self.firmador_proc = iniciar_firmador()
+            QMessageBox.information(self, "Firmador", "Firmador iniciado correctamente.")
+        except FileNotFoundError as exc:
+            QMessageBox.critical(self, "Error", f"No se encontró el firmador:\n{exc}")
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo iniciar el firmador:\n{exc}")
 
     def generar_factura_pdf(self):
         """Función de generación de facturas no disponible."""
@@ -122,6 +137,9 @@ class MainWindow(QMainWindow):
             config_menu.addAction(user_action)
         else:
             config_menu.menuAction().setVisible(False)
+        abrir_firmador_action = QAction("Iniciar firmador", self)
+        abrir_firmador_action.triggered.connect(self.iniciar_firmador)
+        config_menu.addAction(abrir_firmador_action)
         config_menu.addAction(firmar_dte_action)
 
         logout_action = QAction("Cerrar sesión", self)
@@ -1830,6 +1848,7 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event):
         if self.manager.db.conn.total_changes == self._db_change_counter:
+            detener_firmador()
             event.accept()
             return
         reply = QMessageBox.question(
@@ -1841,8 +1860,10 @@ class MainWindow(QMainWindow):
         )
         if reply == QMessageBox.Yes:
             self.guardar_rapido()
+            detener_firmador()
             event.accept()
         elif reply == QMessageBox.No:
+            detener_firmador()
             event.accept()
         else:
             event.ignore()

@@ -236,12 +236,19 @@ def generar_nce_desde_dte(
         if monto is not None:
             monto_abs = Decimal(str(monto)).copy_abs()
             monto_total_operacion = d2(monto_abs)
-            base, _ = to_base_iva(monto_abs)
-            total_grav = base.quantize(Q4)
+            base_precisa, _ = to_base_iva(monto_abs)
+            # El monto de la nota ya incluye IVA, por lo que se separa la
+            # porción gravada manteniendo mayor precisión (8 decimales) y
+            # posteriormente se redondea a 2 decimales para las secciones que
+            # lo requieren.  El IVA se obtiene como la diferencia entre el
+            # total ingresado por el usuario y la base gravada redondeada,
+            # asegurando que ambos componentes sumen el total original.
+            base_redondeada = d2(base_precisa)
+            total_grav = base_redondeada.quantize(Q4)
             total_exenta = Decimal_0
             total_nosuj = Decimal_0
             subtotal_ventas = total_grav
-            iva_val = d2(monto_total_operacion - d2(total_grav))
+            iva_val = d2(monto_total_operacion - base_redondeada)
             num = 1
             pct_text = _pct_label(ratio) if ratio is not None else "100"
             if total_grav > 0:

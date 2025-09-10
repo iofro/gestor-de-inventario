@@ -1938,6 +1938,10 @@ def generar_dte_json(
     if tipo_doc is not None:
         tipo_doc = str(tipo_doc)
     num_doc = rec.get("numDocumento")
+    if isinstance(num_doc, str):
+        num_doc = num_doc.strip()
+        if tipo_doc is None and re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            tipo_doc = "13"
     nit = _clean_nit(rec.get("nit"))
     if fiscal:
         tipo_doc = fiscal.get("tipoDocumento") or tipo_doc

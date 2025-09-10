@@ -1073,7 +1073,13 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         )
         total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
         if tipo_dte in {"03", "05", "06"}:
-            if "sumas" in fiscal:
+            if tipo_dte == "03" and (
+                "sumas" not in fiscal or "iva" not in fiscal
+            ):
+                base_calc, iva_calc = to_base_iva(items_total)
+                total_gravada = money(fiscal.get("sumas", base_calc))
+                total_iva = money(fiscal.get("iva", iva_calc))
+            elif "sumas" in fiscal:
                 total_gravada = money(fiscal["sumas"])
                 total_iva = money(fiscal.get("iva", 0))
             else:
@@ -2031,9 +2037,7 @@ def generar_dte_json(
             "correo",
             "direccion",
         ]
-        fields_to_remove = ["noRemision", "ordenNo"]
-        if tipo_dte != "03":
-            fields_to_remove.extend(["numDocumento", "tipoDocumento"])
+        fields_to_remove = ["noRemision", "ordenNo", "numDocumento", "tipoDocumento"]
         for f in fields_to_remove:
             receptor.pop(f, None)
 
@@ -2159,15 +2163,17 @@ def generar_dte_json(
                     bruto_final = d4(bruto - descu_total)
                     if bruto_final < 0:
                         bruto_final = D("0")
-                    base_pre = money(bruto / D("1.13"))
-                    base_final = money(bruto_final / D("1.13"))
+                    base_pre_prec, iva_pre_prec = to_base_iva(bruto)
+                    base_fin_prec, iva_fin_prec = to_base_iva(bruto_final)
+                    base_pre = money(base_pre_prec)
+                    base_final = money(base_fin_prec)
+                    iva_val_pre = money(iva_pre_prec)
+                    iva_val = money(iva_fin_prec)
                     descuento_base = money(base_pre - base_final)
+                    iva_desc = money(iva_val_pre - iva_val)
                     precio = d4(money(base_pre / cant))
                     monto_descu = descuento_base
                     venta_gravada = base_final
-                    iva_val_pre = money(base_pre * D("0.13"))
-                    iva_desc = money(descuento_base * D("0.13"))
-                    iva_val = money(iva_val_pre - iva_desc)
                     line_total = money(base_final + iva_val)
                     bruto_total += bruto
                     descuentos_total += descuento_base
@@ -2739,8 +2745,12 @@ def validate_dte_json(
 
     receptor = payload.get("receptor", {})
     nit_field = receptor.get("nit")
-    tipo_doc = receptor.get("tipoDocumento")
-    if tipo_dte != "03":
+    if tipo_dte == "03":
+        receptor["nit"] = _clean_nit(nit_field)
+        receptor.pop("tipoDocumento", None)
+        receptor.pop("numDocumento", None)
+    else:
+        tipo_doc = receptor.get("tipoDocumento")
         if nit_field is not None:
             receptor["numDocumento"] = _clean_nit(nit_field)
             if tipo_doc is None:
@@ -2777,13 +2787,6 @@ def validate_dte_json(
             receptor.pop("nrc", None)
         receptor["tipoDocumento"] = tipo_doc
         receptor["numDocumento"] = num_doc
-    else:
-        receptor["nit"] = _clean_nit(nit_field)
-        if receptor.get("numDocumento") or receptor.get("tipoDocumento"):
-            limpiar_documentos(receptor)
-        else:
-            receptor.pop("tipoDocumento", None)
-            receptor.pop("numDocumento", None)
 
     receptor.pop("giro", None)
     dir_rec = receptor.get("direccion")
@@ -2826,9 +2829,7 @@ def validate_dte_json(
         ]
         for f in required_rec_fields:
             receptor.setdefault(f, None)
-        fields_to_remove = ["noRemision", "ordenNo"]
-        if tipo_dte != "03":
-            fields_to_remove.extend(["numDocumento", "tipoDocumento"])
+        fields_to_remove = ["noRemision", "ordenNo", "numDocumento", "tipoDocumento"]
         for f in fields_to_remove:
             receptor.pop(f, None)
     payload["receptor"] = receptor

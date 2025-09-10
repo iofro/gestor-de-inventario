@@ -22,7 +22,9 @@ def firmador_activo() -> bool:
 def iniciar_firmador() -> subprocess.Popen:
     """Inicia el servicio ``svfe-api-firmador`` usando el JDK empaquetado."""
     if firmador_activo():
-        raise RuntimeError("El firmador ya está en ejecución")
+        raise RuntimeError(
+            "El firmador ya está corriendo, no es necesario volver a ejecutarlo."
+        )
     base = Path(__file__).resolve().parent.parent / "svfe-api-firmador"
     java_home = base / "vendor" / "jdk"
     env = os.environ.copy()

@@ -56,6 +56,10 @@ def format_direccion(direccion):
     departamento = str(direccion.get("departamento", "")).zfill(2)
     municipio = str(direccion.get("municipio", "")).zfill(2)
     complemento = direccion.get("complemento", "")
+    if isinstance(complemento, dict):
+        complemento = format_direccion(complemento)
+    elif not isinstance(complemento, str):
+        complemento = str(complemento)
     codigo_municipio = f"{departamento}{municipio}" if departamento or municipio else ""
     nombre_municipio = catalogos.get_value("CAT-013", codigo_municipio) or ""
     parts = [p for p in (nombre_municipio, complemento) if p]
@@ -342,11 +346,15 @@ def generar_factura_electronica_pdf(
         text_y -= line_h
 
     text_y -= line_h
-    cliente_dir = {
-        "departamento": cliente.get("departamento"),
-        "municipio": cliente.get("municipio"),
-        "complemento": cliente.get("direccion"),
-    }
+    direccion_cliente = cliente.get("direccion")
+    if isinstance(direccion_cliente, dict):
+        cliente_dir = direccion_cliente
+    else:
+        cliente_dir = {
+            "departamento": cliente.get("departamento"),
+            "municipio": cliente.get("municipio"),
+            "complemento": direccion_cliente,
+        }
     direccion = format_direccion(cliente_dir)
     text_y = draw_wrapped_text(
         c,

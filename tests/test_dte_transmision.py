@@ -89,6 +89,7 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     monkeypatch.setattr(auth, "get_token", fake_get_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
         lambda db_obj, vid: {

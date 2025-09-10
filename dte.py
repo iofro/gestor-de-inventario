@@ -3874,20 +3874,25 @@ def _write_json(path: str, data):
         save_file(path, stable_stringify(data, indent=2))
 
 
-def _dte_base_dir(dte_data: dict) -> str:
-    """Return destination directory for ``dte_data`` grouped by tipoDte."""
+def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
+    """Return destination directory for ``dte_data`` grouped by tipoDte.
+
+    Cuando ``fallido`` es ``True`` los documentos se guardan bajo
+    ``dte_fallidos`` en lugar de ``dtes``.
+    """
     ident = dte_data.get("identificacion", {})
     tipo = str(ident.get("tipoDte", "")).zfill(2)
-    base = os.path.join(os.path.dirname(__file__), "dtes")
+    base_name = "dte_fallidos" if fallido else "dtes"
+    base = os.path.join(os.path.dirname(__file__), base_name)
     mapping = {"01": "fcf", "03": "ccf"}
     folder = mapping.get(tipo)
     return os.path.join(base, folder) if folder else base
 
 
-def _save_signed_dte(dte_data: dict, jws_token: str) -> None:
+def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
     try:
-        base_dir = _dte_base_dir(dte_data)
+        base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
@@ -4552,7 +4557,7 @@ def _enviar_documento(
 
     if modo == "contingencia":
         try:
-            _save_signed_dte(data, signed)
+            _save_signed_dte(data, signed, fallido=False)
         except Exception:
             pass
         db.registrar_envio_dte(
@@ -4601,6 +4606,10 @@ def _enviar_documento(
         sello,
         json.dumps(respuesta, ensure_ascii=False),
     )
+    try:
+        _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
+    except Exception:
+        pass
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
     res = {"estado": estado, "sello": sello}

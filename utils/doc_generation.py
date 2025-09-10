@@ -11,6 +11,7 @@ from utils.monto import monto_a_texto_sv, iva_item
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
+from utils.sanitize import limpiar_documentos
 
 
 logger = logging.getLogger(__name__)
@@ -145,8 +146,20 @@ def generate_invoice_pdf(manager, venta_id):
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
         )
-    except AttributeError:
-        json_data = build_invoice_json(venta_data, cliente or {}, detalles)
+    except AttributeError as exc:
+        logger.warning(
+            "Fallo generar_dte_json; se utilizará build_invoice_json",
+            exc_info=True,
+        )
+        cliente_norm = dict(cliente or {})
+        try:
+            limpiar_documentos(cliente_norm)
+            dir_info = cliente_norm.get("direccion")
+            if isinstance(dir_info, dict):
+                cliente_norm["direccion"] = dte._build_receptor_direccion(dir_info)
+        except Exception:
+            logger.debug("Normalización de receptor fallida", exc_info=True)
+        json_data = build_invoice_json(venta_data, cliente_norm, detalles)
     except ValueError:
         logger.exception("Error al generar el DTE real")
         raise

@@ -701,8 +701,11 @@ class FacturacionTab(QWidget):
             total = v.get("total")
             signo = v.get("sign", 1)
             if isinstance(total, (int, float)):
-                pref = "+" if signo >= 0 else "−"
-                self.table.setItem(row, 3, QTableWidgetItem(f"{pref}${abs(total):.2f}"))
+                display = f"${abs(total):.2f}"
+                if v.get("tipo") in ("Nota de crédito", "Nota de débito"):
+                    pref = "+" if signo >= 0 else "−"
+                    display = f"{pref}{display}"
+                self.table.setItem(row, 3, QTableWidgetItem(display))
             else:
                 self.table.setItem(row, 3, QTableWidgetItem(""))
             self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))

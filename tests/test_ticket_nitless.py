@@ -53,10 +53,10 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
     recalcular_totales(data)
 
     rec = data["receptor"]
-    assert "codActividad" not in rec
-    assert "descActividad" not in rec
-    assert "correo" not in rec
-    assert "complemento" not in rec["direccion"]
+    assert rec["codActividad"] is None
+    assert rec["descActividad"] is None
+    assert rec["correo"] is None
+    assert rec["direccion"].get("complemento") is None
 
     nce = generar_nce_desde_dte(db, data, Decimal("1"), motivo="Dev")
     assert nce["identificacion"]["tipoDte"] == "05"
@@ -92,7 +92,17 @@ def test_generar_factura_cf_es_ticket_flexible(monkeypatch):
 
     data = generar_dte_json(db, venta_id, tipo_dte="01", extra={"es_ticket": True})
     rec = data["receptor"]
-    assert rec == {"nombre": "Consumidor Final"}
+    assert rec == {
+        "tipoDocumento": None,
+        "numDocumento": None,
+        "nrc": None,
+        "nombre": "Consumidor Final",
+        "codActividad": None,
+        "descActividad": None,
+        "telefono": None,
+        "correo": None,
+        "direccion": None,
+    }
 
 
 def test_generar_ticket_cf_con_identificacion(monkeypatch):
@@ -142,13 +152,54 @@ def test_generar_ticket_cf_con_identificacion(monkeypatch):
     assert rec == {
         "tipoDocumento": "13",
         "numDocumento": "012345678",
+        "nrc": None,
         "nombre": "Héctor Rosales",
+        "codActividad": None,
+        "descActividad": None,
+        "telefono": None,
+        "correo": None,
         "direccion": {
             "departamento": "05",
             "municipio": "10",
             "complemento": "Domicilio registrado.",
         },
     }
+
+
+def test_generar_ticket_receptor_nulo(monkeypatch):
+    negocio_data = {
+        "nit": "06142816991014",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Comercial",
+        "codActividad": "12345",
+        "descActividad": "Giro",
+        "telefono": "12345678",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir",
+        },
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio_data)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: negocio_data)
+
+    db = DB(":memory:")
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    data = generar_dte_json(
+        db,
+        venta_id,
+        tipo_dte="01",
+        extra={"es_ticket": True, "receptor": None},
+    )
+    assert data["receptor"] is None
 
 
 def test_ticket_totales_cierran(monkeypatch):

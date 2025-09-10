@@ -92,6 +92,7 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
             detalles=detalles,
             ambiente=ambiente,
             motivo=nota.get("motivo"),
+            monto=Decimal(str(nota.get("monto"))) if nota.get("monto") is not None else None,
         )
 
     total_origen = Decimal(str(dte_origen.get("resumen", {}).get("montoTotalOperacion", 0)))
@@ -225,13 +226,48 @@ def generar_nce_desde_dte(
         total_grav = total_grav.quantize(Q4)
         total_exenta = total_exenta.quantize(Q4)
         total_nosuj = total_nosuj.quantize(Q4)
-        subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-        # Cuando los montos se calculan a partir de ``detalles`` evitamos
-        # recurrir al total original del documento de origen. El IVA se obtiene
-        # directamente de las ventas gravadas parciales y el total de la
-        # operación se compone sumando dicho IVA al subtotal calculado.
-        iva_val = d2(total_grav * IVA)
-        monto_total_operacion = d2(subtotal_ventas + iva_val)
+        if monto is not None:
+            monto_abs = Decimal(str(monto)).copy_abs()
+            base_precisa, iva_precisa = to_base_iva(monto_abs)
+            base_redondeada = d2(base_precisa)
+            iva_val = d2(iva_precisa)
+            base_q4 = base_redondeada.quantize(Q4)
+            if total_grav > 0:
+                ratio_adj = base_q4 / total_grav if total_grav != Decimal_0 else Decimal_0
+                grav_sum = Decimal_0
+                first_idx = None
+                for idx, item in enumerate(items):
+                    grav_it = Decimal(str(item.get("ventaGravada") or 0))
+                    if grav_it > 0:
+                        new_grav = (grav_it * ratio_adj).quantize(Q4)
+                        item["ventaGravada"] = new_grav
+                        item["precioUni"] = (
+                            new_grav
+                            + Decimal(str(item.get("ventaExenta") or 0))
+                            + Decimal(str(item.get("ventaNoSuj") or 0))
+                        ).quantize(Q4)
+                        if first_idx is None:
+                            first_idx = idx
+                        grav_sum += new_grav
+                diff = base_q4 - grav_sum
+                if diff != Decimal_0 and first_idx is not None:
+                    items[first_idx]["ventaGravada"] = (
+                        Decimal(str(items[first_idx]["ventaGravada"])) + diff
+                    ).quantize(Q4)
+                    items[first_idx]["precioUni"] = (
+                        Decimal(str(items[first_idx]["precioUni"])) + diff
+                    ).quantize(Q4)
+            total_grav = base_q4
+            subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+            monto_total_operacion = d2(monto_abs)
+        else:
+            subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+            # Cuando los montos se calculan a partir de ``detalles`` evitamos
+            # recurrir al total original del documento de origen. El IVA se obtiene
+            # directamente de las ventas gravadas parciales y el total de la
+            # operación se compone sumando dicho IVA al subtotal calculado.
+            iva_val = d2(total_grav * IVA)
+            monto_total_operacion = d2(subtotal_ventas + iva_val)
     else:
         if monto is not None:
             monto_abs = Decimal(str(monto)).copy_abs()

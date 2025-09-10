@@ -193,18 +193,22 @@ def test_direccion_includes_municipio(tmp_path, monkeypatch):
         lambda cat, code, default=None: "La Libertad Centro" if code == "0524" else default,
     )
     venta, detalles = _sample_data('Crédito Fiscal')
-    direccion = {
+    cliente = {
+        'nombre': 'Ana',
         'departamento': '05',
         'municipio': '24',
-        'complemento': 'Colonia El Centro con una avenida realmente muy larga para pruebas',
+        'direccion': 'Colonia El Centro con una avenida realmente muy larga para pruebas',
     }
-    cliente = {'nombre': 'Ana', 'direccion': direccion}
     datos_negocio = {
         'nombre': 'Neg',
         'nit': '',
         'nrc': '',
         'descActividad': '',
-        'direccion': direccion,
+        'direccion': {
+            'departamento': '05',
+            'municipio': '24',
+            'complemento': 'Colonia El Centro con una avenida realmente muy larga para pruebas',
+        },
     }
     out = tmp_path / 'dir.pdf'
     generar_factura_electronica_pdf(
@@ -221,4 +225,20 @@ def test_direccion_includes_municipio(tmp_path, monkeypatch):
     idx = next(i for i, ln in enumerate(lines) if ln.startswith('Dirección:'))
     assert 'La Libertad Centro' in lines[idx]
     assert 'realmente muy larga para pruebas' in lines[idx + 1]
+
+
+def test_direccion_as_text(tmp_path):
+    venta, detalles = _sample_data('Crédito Fiscal')
+    cliente = {'nombre': 'Ana', 'direccion': 'Colonia Escalón, calle 1'}
+    out = tmp_path / 'dir_text.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        cliente,
+        {},
+        'Crédito Fiscal',
+        archivo=str(out),
+        datos_negocio={},
+    )
+    assert out.exists()
 

@@ -63,7 +63,7 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
     assert nce["documentoRelacionado"][0]["tipoDocumento"] == "01"
 
 
-def test_generar_factura_cf_es_ticket_flexible(monkeypatch):
+def test_generar_ticket_cf_sin_receptor(monkeypatch):
     negocio_data = {
         "nit": "06142816991014",
         "nrc": "1234567",
@@ -91,12 +91,42 @@ def test_generar_factura_cf_es_ticket_flexible(monkeypatch):
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
     data = generar_dte_json(db, venta_id, tipo_dte="01", extra={"es_ticket": True})
+    assert data["receptor"] is None
+
+
+def test_ticket_respects_provided_name(monkeypatch):
+    negocio_data = {
+        "nit": "06142816991014",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Comercial",
+        "codActividad": "12345",
+        "descActividad": "Giro",
+        "telefono": "12345678",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir",
+        },
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio_data)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: negocio_data)
+
+    db = DB(":memory:")
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    extra = {"es_ticket": True, "receptor": {"nombre": "Consumidor Final"}}
+    data = generar_dte_json(db, venta_id, tipo_dte="01", extra=extra)
     rec = data["receptor"]
     assert rec == {
-        "tipoDocumento": None,
-        "numDocumento": None,
-        "nrc": None,
         "nombre": "Consumidor Final",
+        "nrc": None,
         "codActividad": None,
         "descActividad": None,
         "telefono": None,

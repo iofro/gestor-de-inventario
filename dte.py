@@ -127,8 +127,6 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         "nombreComercial",
         "numPagoElectronico",
         "receptor",
-        "tipoDocumento",
-        "numDocumento",
         "codActividad",
         "descActividad",
         "telefono",
@@ -2043,13 +2041,12 @@ def generar_dte_json(
             if not receptor.get("correo"):
                 receptor["correo"] = "no-reply@example.com"
         else:
-            if not receptor.get("nombre"):
-                receptor["nombre"] = "Consumidor Final"
             if not receptor.get("nrc") or len(str(receptor.get("nrc"))) not in (6, 7):
                 receptor["nrc"] = None
+            if not (receptor.get("tipoDocumento") and receptor.get("numDocumento")):
+                receptor.pop("tipoDocumento", None)
+                receptor.pop("numDocumento", None)
             for fld in (
-                "tipoDocumento",
-                "numDocumento",
                 "codActividad",
                 "descActividad",
                 "telefono",
@@ -2072,8 +2069,6 @@ def generar_dte_json(
                     "telefono",
                     "correo",
                     "direccion",
-                    "tipoDocumento",
-                    "numDocumento",
                 ]
             else:
                 required_rec_fields = [

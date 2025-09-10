@@ -224,6 +224,10 @@ def generar_nce_desde_dte(
         total_exenta = total_exenta.quantize(Q4)
         total_nosuj = total_nosuj.quantize(Q4)
         subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+        # Cuando los montos se calculan a partir de ``detalles`` evitamos
+        # recurrir al total original del documento de origen. El IVA se obtiene
+        # directamente de las ventas gravadas parciales y el total de la
+        # operación se compone sumando dicho IVA al subtotal calculado.
         iva_val = d2(total_grav * IVA)
         monto_total_operacion = d2(subtotal_ventas + iva_val)
     else:

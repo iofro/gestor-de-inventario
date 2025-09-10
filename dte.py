@@ -8,7 +8,7 @@ import sys
 import re
 import requests as _requests
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP, ROUND_UP, getcontext
+from decimal import Decimal, ROUND_HALF_UP, getcontext
 from urllib.parse import urlparse
 from db import DB
 import requests
@@ -227,11 +227,6 @@ def money(value) -> D:
     Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
     """
     return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
-
-
-def money_round_up(value) -> D:
-    """Return ``value`` rounded up to 2 decimal places."""
-    return D(str(value)).quantize(D("0.01"), rounding=ROUND_UP)
 
 
 def _precios_incluyen_iva_from(
@@ -1414,14 +1409,14 @@ def recalcular_totales(
             base = d4(base_pre - monto_descu)
             if base < 0:
                 base = d4(0)
-            bruto_desc = money_round_up(base * D("1.13"))
-            iva_val = money(bruto_desc - base)
-            bruto_linea = money_round_up(base_pre * D("1.13"))
+            pf_line = d4(base * D("1.13"))
+            iva_val = d4(pf_line - base)
+            pf_line_pre = d4(base_pre * D("1.13"))
             bases_pre.append(base_pre)
             bases.append(base)
             ivas.append(iva_val)
-            bruto_sum += bruto_desc
-            bruto_linea_sum += bruto_linea
+            bruto_sum += pf_line
+            bruto_linea_sum += pf_line_pre
             descu_sum += money(monto_descu)
             cantidades.append(cant)
             item.pop("ivaItem", None)
@@ -1462,8 +1457,8 @@ def recalcular_totales(
             base_res = base_total - sum(bases)
             iva_res = iva_total_calc - sum(ivas)
             if base_res or iva_res:
-                bases[0] = d4(bases[0] + base_res)
-                ivas[0] = money(ivas[0] + iva_res)
+                bases[-1] = d4(bases[-1] + base_res)
+                ivas[-1] = d4(ivas[-1] + iva_res)
             for idx, item in enumerate(cuerpo):
                 if idx < len(bases):
                     base_val = d4(bases[idx])

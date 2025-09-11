@@ -1326,34 +1326,19 @@ def recalcular_totales(
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
-    colapso_desc = False
-    if tipo_dte == "03":
-        bruto_desc = D("0")
-        desc_sum = D("0")
+    colapso_desc = tipo_dte == "03" and precios_flag
+    if colapso_desc:
         for _it in cuerpo:
             _cant = D(str(_it.get("cantidad") or 0))
             _precio = D(str(_it.get("precioUni") or 0))
             _descu = D(str(_it.get("montoDescu") or 0))
-            bruto_desc += _cant * _precio
-            desc_sum += _descu
-        porcentaje = d2(desc_sum * D("100") / bruto_desc) if bruto_desc else D("0")
-        if porcentaje != D("1"):
-            colapso_desc = True
-            for _it in cuerpo:
-                _cant = D(str(_it.get("cantidad") or 0))
-                _precio = D(str(_it.get("precioUni") or 0))
-                _descu = D(str(_it.get("montoDescu") or 0))
-                if _descu:
-                    total_final_base = (_cant * _precio) - _descu
-                    if _cant:
-                        base_unit = d4(total_final_base / _cant)
-                    else:
-                        base_unit = d4(0)
-                    _it["precioUni"] = base_unit
-                    _it["montoDescu"] = d4(0)
-                    _it["ventaGravada"] = d4(base_unit * _cant)
-            resumen["descuNoSuj"] = resumen["descuExenta"] = resumen["descuGravada"] = resumen["totalDescu"] = money(0)
-            resumen["porcentajeDescuento"] = money(0)
+            if _descu:
+                total_final = d4(_cant * _precio - _descu)
+                unit_pf = d4(total_final / _cant) if _cant else d4(0)
+                _it["precioUni"] = unit_pf
+                _it["montoDescu"] = d4(0)
+        resumen["descuNoSuj"] = resumen["descuExenta"] = resumen["descuGravada"] = resumen["totalDescu"] = money(0)
+        resumen["porcentajeDescuento"] = money(0)
 
     iva_total = D("0")
     venta_gravada_sum = D("0")
@@ -1405,24 +1390,42 @@ def recalcular_totales(
             iva_total += esperado_iva
             venta_gravada_sum += linea
         elif tipo_dte == "03":
-            base_pre = d4(cant * precio)
-            base = d4(base_pre - monto_descu)
-            if base < 0:
-                base = d4(0)
-            pf_line = d4(base * D("1.13"))
-            iva_val = d4(pf_line - base)
-            pf_line_pre = d4(base_pre * D("1.13"))
-            bases_pre.append(base_pre)
-            bases.append(base)
-            ivas.append(iva_val)
-            bruto_sum += pf_line
-            bruto_linea_sum += pf_line_pre
-            descu_sum += money(monto_descu)
-            cantidades.append(cant)
-            item.pop("ivaItem", None)
-            item["ventaExenta"] = d4(0)
-            item["ventaNoSuj"] = d4(0)
-            item["noGravado"] = d4(0)
+            if precios_flag:
+                pf_line = d4(cant * precio - monto_descu)
+                if pf_line < 0:
+                    pf_line = d4(0)
+                base = d4(pf_line / D("1.13"))
+                iva_val = d4(pf_line - base)
+                bases_pre.append(base)
+                bases.append(base)
+                ivas.append(iva_val)
+                bruto_sum += pf_line
+                bruto_linea_sum += d4(cant * precio)
+                cantidades.append(cant)
+                item["montoDescu"] = d4(0)
+                item.pop("ivaItem", None)
+                item["ventaExenta"] = d4(0)
+                item["ventaNoSuj"] = d4(0)
+                item["noGravado"] = d4(0)
+            else:
+                base_pre = d4(cant * precio)
+                base = d4(base_pre - monto_descu)
+                if base < 0:
+                    base = d4(0)
+                pf_line = d4(base * D("1.13"))
+                iva_val = d4(pf_line - base)
+                pf_line_pre = d4(base_pre * D("1.13"))
+                bases_pre.append(base_pre)
+                bases.append(base)
+                ivas.append(iva_val)
+                bruto_sum += pf_line
+                bruto_linea_sum += pf_line_pre
+                descu_sum += money(monto_descu)
+                cantidades.append(cant)
+                item.pop("ivaItem", None)
+                item["ventaExenta"] = d4(0)
+                item["ventaNoSuj"] = d4(0)
+                item["noGravado"] = d4(0)
         else:
             bruto_linea = money(cant * precio)
             bruto_linea_sum += bruto_linea
@@ -1466,7 +1469,10 @@ def recalcular_totales(
                     iva_val = ivas[idx]
                     item["ventaGravada"] = base_val
                     if cant > 0:
-                        item["precioUni"] = d4(base_val / cant)
+                        if tipo_dte == "03" and precios_flag:
+                            item["precioUni"] = d4((base_val + iva_val) / cant)
+                        else:
+                            item["precioUni"] = d4(base_val / cant)
                     else:
                         item["precioUni"] = d4(0)
                     trib_list: list[str] = []
@@ -1639,7 +1645,10 @@ def recalcular_totales(
         for item in cuerpo:
             cant = D(str(item.get("cantidad") or 0))
             precio_u = D(str(item.get("precioUni") or 0))
-            esperado = money(precio_u * cant)
+            if precios_flag and tipo_dte == "03":
+                esperado = money(precio_u * cant / D("1.13"))
+            else:
+                esperado = money(precio_u * cant)
             if esperado != money(item.get("ventaGravada", 0)):
                 warnings.warn(
                     "precioUni * cantidad incoherente con ventaGravada"
@@ -1661,6 +1670,30 @@ def recalcular_totales(
                     modificados.append("totalPagar")
             if "montoTotalOperacion" not in modificados:
                 modificados.append("montoTotalOperacion")
+
+        if tipo_dte == "03" and precios_flag:
+            pf_total = money(
+                sum(
+                    D(str(i.get("precioUni") or 0)) * D(str(i.get("cantidad") or 0))
+                    for i in cuerpo
+                )
+            )
+            monto_total = money(resumen.get("montoTotalOperacion", 0))
+            diff = money(pf_total - monto_total)
+            if diff != D("0"):
+                if abs(diff) <= D("0.01"):
+                    if resumen.get("tributos"):
+                        resumen["tributos"][0]["valor"] = money(
+                            D(str(resumen["tributos"][0]["valor"])) + diff
+                        )
+                        if "tributos" not in modificados:
+                            modificados.append("tributos")
+                    _set_resumen("montoTotalOperacion", pf_total)
+                    _set_resumen("totalPagar", pf_total)
+                else:
+                    warnings.warn(
+                        f"pf_neto {pf_total} difiere de montoTotalOperacion {monto_total}"
+                    )
 
     data["resumen"] = resumen
     return modificados
@@ -2158,22 +2191,14 @@ def generar_dte_json(
                     bruto_final = d4(bruto - descu_total)
                     if bruto_final < 0:
                         bruto_final = D("0")
-                    base_pre_prec, iva_pre_prec = to_base_iva(bruto)
-                    base_fin_prec, iva_fin_prec = to_base_iva(bruto_final)
-                    base_pre = money(base_pre_prec)
-                    base_final = money(base_fin_prec)
-                    iva_val_pre = money(iva_pre_prec)
-                    iva_val = money(iva_fin_prec)
-                    descuento_base = money(base_pre - base_final)
-                    iva_desc = money(iva_val_pre - iva_val)
-                    precio = d4(money(base_pre / cant))
-                    monto_descu = descuento_base
+                    base_final = money(bruto_final / D("1.13"))
+                    iva_val = d4(bruto_final - base_final)
+                    precio = d4(money(bruto_final / cant))
+                    monto_descu = D("0")
                     venta_gravada = base_final
-                    line_total = money(base_final + iva_val)
-                    bruto_total += bruto
-                    descuentos_total += descuento_base
-                    sub_total_ventas += base_pre
-                    descu_gravada_sum += descuento_base
+                    line_total = bruto_final
+                    bruto_total += bruto_final
+                    sub_total_ventas += base_final
                 else:
                     bruto = d4(cant * precio_raw)
                     monto_descu = _calc_desc(bruto)
@@ -2514,7 +2539,32 @@ def generar_dte_json(
         # Compatibilidad con versiones parcheadas sin parámetro ``correlativo``
         validate_dte_json(result, db=db, precios_incluyen_iva=False)
     result.pop("extra", None)
-    return json.loads(stable_stringify(result), parse_float=Decimal)
+    final = json.loads(stable_stringify(result), parse_float=Decimal)
+    try:
+        for idx, det in enumerate(detalles):
+            if idx >= len(final.get("cuerpoDocumento", [])):
+                break
+            item = final["cuerpoDocumento"][idx]
+            qty = D(str(det.get("cantidad") or 0))
+            unit = D(str(det.get("precio_unitario") or 0))
+            desc = D(str(det.get("descuento") or 0))
+            if det.get("descuento_tipo") == "%":
+                desc_line = d4(qty * unit * desc / D("100"))
+            else:
+                desc_line = d4(desc)
+            pf_line = d4(qty * unit)
+            pf_neto = d4(pf_line - desc_line)
+            logger.debug(
+                "Venta→DTE idx=%s pf_neto=%.4f => precioUni=%s cantidad=%s ventaGravada=%s",
+                idx + 1,
+                pf_neto,
+                item.get("precioUni"),
+                item.get("cantidad"),
+                item.get("ventaGravada"),
+            )
+    except Exception:
+        logger.debug("No se pudo registrar mapeo Venta→DTE", exc_info=True)
+    return final
 
 
 def validate_dte_json(

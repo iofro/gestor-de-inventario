@@ -40,7 +40,7 @@ def main() -> None:
 
     logging.basicConfig(level=getattr(logging, args.level.upper(), logging.INFO))
     db = DB(args.db_path)
-    manager = InventoryManager(db)
+    manager = InventoryManager(db=db)
     log_venta_vs_dte(manager, args.venta_id)
 
 

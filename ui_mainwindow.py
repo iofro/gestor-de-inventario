@@ -11,6 +11,7 @@ import os
 import json
 import sys
 from inventory_manager import InventoryManager
+from db import DB
 from paths import DATOS_NEGOCIO_PATH
 from dialogs import (
     RegisterSaleDialog,
@@ -61,7 +62,7 @@ class ExportThread(QThread):
         main application's connection.
         """
         try:
-            manager = InventoryManager()
+            manager = InventoryManager(DB())
             manager.exportar_inventario_json(
                 self.filename, tab_order=self.tab_order
             )
@@ -76,7 +77,8 @@ class MainWindow(QMainWindow):
         self.user = user or {"username": "admin", "role": "admin"}
         self.setWindowTitle("Inventario Farmacia")
         self.resize(1200, 700)
-        self.manager = InventoryManager()
+        self.db = DB()
+        self.manager = InventoryManager(self.db)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
         self.firmador_proc = None
         # Contador de cambios en la base de datos para detectar si hay datos sin guardar

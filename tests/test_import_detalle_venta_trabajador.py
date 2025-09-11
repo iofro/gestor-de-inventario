@@ -7,9 +7,8 @@ class MemoryDB(im.DB):
         super().__init__(db_name=":memory:")
 
 
-def test_import_maps_detalle_trabajador(tmp_path, monkeypatch):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    manager = im.InventoryManager()
+def test_import_maps_detalle_trabajador(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
 
     data = {
         "Distribuidores": [],

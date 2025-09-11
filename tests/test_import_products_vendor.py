@@ -7,9 +7,8 @@ class MemoryDB(im.DB):
         super().__init__(db_name=":memory:")
 
 
-def test_import_product_vendor_mapping(tmp_path, monkeypatch, producto_factory):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    manager = im.InventoryManager()
+def test_import_product_vendor_mapping(tmp_path, producto_factory):
+    manager = im.InventoryManager(MemoryDB())
 
     producto = producto_factory(
         id=10,

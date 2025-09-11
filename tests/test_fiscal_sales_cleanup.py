@@ -28,9 +28,8 @@ def make_inv(path):
     return p
 
 
-def test_import_resets_fiscal_sales(tmp_path, monkeypatch):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    man = im.InventoryManager()
+def test_import_resets_fiscal_sales(tmp_path):
+    man = im.InventoryManager(MemoryDB())
     path = make_inv(tmp_path)
 
     man.importar_inventario_json(str(path))

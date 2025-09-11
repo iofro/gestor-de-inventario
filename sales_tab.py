@@ -336,6 +336,31 @@ class SalesTab(QWidget):
         self.preview_pdf_file = None
         self.preview_image_file = None
 
+    def _is_ticket_sale(self, venta):
+        """Return True if the sale should be treated as a ticket."""
+        getter_cf = getattr(self.manager.db, "get_venta_credito_fiscal", None)
+        if getter_cf:
+            try:
+                if getter_cf(venta["id"]):
+                    return False
+            except Exception:
+                pass
+        cid = venta.get("cliente_id")
+        if not cid:
+            return True
+        cliente = None
+        getter = getattr(self.manager.db, "get_cliente", None)
+        if getter:
+            try:
+                cliente = getter(cid)
+            except Exception:
+                cliente = None
+        if not cliente:
+            return True
+        nit = (cliente.get("nit") or "").strip()
+        dui = (cliente.get("dui") or "").strip()
+        return not nit and not dui
+
     def _update_email_preview(self):
         self.email_subject_edit.setText(self.email_subject)
         self.email_body_edit.setPlainText(self.email_body)
@@ -482,7 +507,7 @@ class SalesTab(QWidget):
 
         self._clear_preview_files()
 
-        is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
+        is_ticket = self._is_ticket_sale(venta)
         if is_ticket:
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
         else:
@@ -546,31 +571,13 @@ class SalesTab(QWidget):
         if not venta or int(venta.get("id", 0)) != venta_id:
             QMessageBox.warning(self, "Guardar factura", "No se encontró la venta seleccionada.")
             return
-        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
-        doc_type = "Factura"
-        if not credito_info and not venta.get("cliente_id"):
-            box = QMessageBox(self)
-            box.setWindowTitle("Tipo de documento")
-            box.setText("¿Desea generar ticket o factura de consumidor final?")
-            ticket_btn = box.addButton("Ticket", QMessageBox.AcceptRole)
-            factura_btn = box.addButton("Factura", QMessageBox.AcceptRole)
-            box.addButton(QMessageBox.Cancel)
-            box.exec_()
-            clicked = box.clickedButton()
-            if clicked == ticket_btn:
-                file_path = self._generate_ticket_pdf(venta_id)
-                doc_type = "Ticket"
-            elif clicked == factura_btn:
-                try:
-                    file_path = self._generate_invoice_pdf(venta_id)
-                except ValueError as e:
-                    QMessageBox.warning(self, "Guardar factura", str(e))
-                    return
-            else:
-                return
+        if self._is_ticket_sale(venta):
+            file_path = self._generate_ticket_pdf(venta_id)
+            doc_type = "Ticket"
         else:
             try:
                 file_path = self._generate_invoice_pdf(venta_id)
+                doc_type = "Factura"
             except ValueError as e:
                 QMessageBox.warning(self, "Guardar factura", str(e))
                 return
@@ -608,7 +615,7 @@ class SalesTab(QWidget):
 
             return
 
-        is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
+        is_ticket = self._is_ticket_sale(venta)
         if is_ticket:
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
         else:
@@ -655,17 +662,16 @@ class SalesTab(QWidget):
             "body": self.email_body_edit.toPlainText(),
         }
 
-        credito_info = self.manager.db.get_venta_credito_fiscal(venta_id)
-        if credito_info or venta.get("cliente_id"):
-            doc_type = "factura"
-            pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_invoice_pdf(venta_id)
-        else:
+        if self._is_ticket_sale(venta):
             doc_type = "ticket"
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_ticket_pdf(venta_id)
+        else:
+            doc_type = "factura"
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el documento.")
             return

@@ -180,6 +180,11 @@ class MainWindow(QMainWindow):
         config_menu.addAction(abrir_firmador_action)
         config_menu.addAction(firmar_dte_action)
 
+        # DEBUG: Acción temporal para depurar Venta vs DTE
+        debug_venta_dte_action = QAction("Debug Venta vs DTE", self)
+        debug_venta_dte_action.triggered.connect(self._debug_venta_vs_dte)
+        config_menu.addAction(debug_venta_dte_action)
+
         logout_action = QAction("Cerrar sesión", self)
         logout_action.triggered.connect(self.cerrar_sesion)
         menubar.addAction(logout_action)
@@ -1874,6 +1879,48 @@ class MainWindow(QMainWindow):
             if self.tabs.tabText(i) == title:
                 return i
         return -1
+
+    # DEBUG: Método temporal para pruebas de Venta vs DTE
+    def _debug_venta_vs_dte(self):  # pragma: no cover - debug helper
+        """Compara cálculos de una venta con su DTE correspondiente."""
+        venta_id, ok = QInputDialog.getInt(
+            self,
+            "Debug Venta vs DTE",
+            "ID de la venta:",
+        )
+        if not ok:
+            return
+        db_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar base de datos",
+            "",
+            "DB Files (*.db);;All Files (*)",
+        )
+        if not db_path:
+            return
+        try:
+            from utils.doc_generation import log_venta_vs_dte
+
+            db = DB(db_path)
+            manager = InventoryManager(db=db)
+
+            import io
+            import logging
+
+            log_stream = io.StringIO()
+            handler = logging.StreamHandler(log_stream)
+            logger = logging.getLogger("utils.doc_generation")
+            logger.addHandler(handler)
+            logger.setLevel(logging.INFO)
+
+            log_venta_vs_dte(manager, venta_id)
+
+            logger.removeHandler(handler)
+            handler.flush()
+            output = log_stream.getvalue() or "Sin resultados"
+            QMessageBox.information(self, "Debug Venta vs DTE", output)
+        except Exception as exc:  # pragma: no cover - debug helper
+            QMessageBox.critical(self, "Error", str(exc))
 
     def _mark_saved(self):
         """Registra el estado actual de la base de datos como guardado.

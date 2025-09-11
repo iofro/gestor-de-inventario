@@ -24,7 +24,10 @@ from utils import jws
 from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
 
-getcontext().prec = 4
+getcontext().prec = 28
+getcontext().rounding = ROUND_HALF_UP
+IVA_RATE = Decimal("0.13")
+IVA_FACTOR = Decimal("1") + IVA_RATE
 
 
 class LoginDialog(QDialog):
@@ -642,7 +645,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         left_layout.addLayout(descuento_layout)
 
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
-        self.descuento_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
+        self.descuento_tipo_combo.currentIndexChanged.connect(self._on_descuento_tipo_changed)
 
         # IVA eliminado: ya no se muestran opciones para aplicar IVA
 
@@ -1800,7 +1803,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         descuento_layout.addWidget(self.descuento_tipo_combo)
         left_layout.addLayout(descuento_layout)
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
-        self.descuento_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
+        self.descuento_tipo_combo.currentIndexChanged.connect(self._on_descuento_tipo_changed)
 
         # IVA eliminado: ya no se muestran opciones para aplicar IVA
 
@@ -1812,15 +1815,27 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         tipo_fiscal_layout.addWidget(self.tipo_fiscal_combo)
         left_layout.addLayout(tipo_fiscal_layout)
 
+        # Resumen del producto actual
+        self.item_precio_label = QLabel("Precio U. sin IVA: $0.00")
+        self.item_sumas_label = QLabel("Sumas sin IVA: $0.00")
+        self.item_total_sin_desc_label = QLabel("Total con IVA sin descuento: $0.00")
+        self.item_descuento_label = QLabel("Descuento: -$0.00")
+        self.item_subtotal_label = QLabel("Subtotal final (con IVA): $0.00")
+        left_layout.addWidget(self.item_precio_label)
+        left_layout.addWidget(self.item_sumas_label)
+        left_layout.addWidget(self.item_total_sin_desc_label)
+        left_layout.addWidget(self.item_descuento_label)
+        left_layout.addWidget(self.item_subtotal_label)
+
         # Botón agregar a venta
         self.btn_agregar = QPushButton("Agregar a venta")
         left_layout.addWidget(self.btn_agregar)
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
 
         # Tabla de productos agregados
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 6)
         self.table.setHorizontalHeaderLabels([
-            "Producto", "Cantidad", "Precio U.", "Descuento", "IVA", "Tipo fiscal", "Eliminar"
+            "Cantidad", "Producto", "P. Unit. (IVA inc.)", "Descuento", "Total", "Eliminar"
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1829,14 +1844,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
 
-        # Resumen de la venta (sin IVA visible)
-        self.precio_label = QLabel("Precio U.: $0.00")
-        self.sumas_label = QLabel("Sumas: $0.00")
-        self.subtotal_label = QLabel("Subtotal: $0.00")
-        self.total_label = QLabel("TOTAL: $0.00")
-        left_layout.addWidget(self.precio_label)
-        left_layout.addWidget(self.sumas_label)
-        left_layout.addWidget(self.subtotal_label)
+        # Resumen de la venta
+        self.total_label = QLabel("Total venta (con IVA): $0.00")
         left_layout.addWidget(self.total_label)
 
         # Botón para registrar la venta
@@ -1965,6 +1974,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.product_list.setCurrentRow(0)
             self._actualizar_precio_defecto()
         self._actualizar_resumen()
+        self._on_descuento_tipo_changed()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -2015,70 +2025,80 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.precio_total_spin.setEnabled(True)
         self._recalcular_totales()
 
-    def _recalcular_totales(self):
-        cantidad = self.cantidad_spin.value()
+    def _on_descuento_tipo_changed(self):
+        tipo = self.descuento_tipo_combo.currentText()
+        if tipo == "%":
+            self.descuento_spin.setMaximum(100)
+        else:
+            self.descuento_spin.setMaximum(1000000)
+        self._recalcular_totales()
 
-        # --- Sincroniza precio unitario y total en modo mayorista total ---
+    def _recalcular_totales(self):
+        cantidad = Decimal(self.cantidad_spin.value())
+
         if self.tipo_mayorista_total.isChecked():
-            precio_total = self.precio_total_spin.value()
-            precio_unitario = round(precio_total / cantidad, 6) if cantidad > 0 else 0
+            precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
+            precio_unitario_con_iva = precio_total_con_iva / cantidad if cantidad > 0 else Decimal("0")
             self.precio_spin.blockSignals(True)
-            self.precio_spin.setValue(precio_unitario)
+            self.precio_spin.setValue(float(precio_unitario_con_iva))
             self.precio_spin.blockSignals(False)
         else:
-            precio_unitario = self.precio_spin.value()
-            precio_total = precio_unitario * cantidad
+            precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
+            precio_total_con_iva = precio_unitario_con_iva * cantidad
             self.precio_total_spin.blockSignals(True)
-            self.precio_total_spin.setValue(precio_total)
+            self.precio_total_spin.setValue(float(precio_total_con_iva))
             self.precio_total_spin.blockSignals(False)
 
-        descuento_valor = self.descuento_spin.value()
+        descuento_valor = Decimal(str(self.descuento_spin.value()))
         descuento_tipo = self.descuento_tipo_combo.currentText()
-        subtotal = precio_total
-
-        # Cálculo del descuento
         if descuento_tipo == "%":
-            descuento_monto = subtotal * (descuento_valor / 100)
+            descuento_monto = precio_total_con_iva * descuento_valor / Decimal("100")
         else:
-            descuento_monto = descuento_valor
+            descuento_monto = min(descuento_valor, precio_total_con_iva)
+        total_con_descuento = precio_total_con_iva - descuento_monto
+        if total_con_descuento < 0:
+            total_con_descuento = Decimal("0")
 
-        subtotal_con_descuento = max(subtotal - descuento_monto, 0)
-
-        comision_pct = self.comision_pct_spin.value() if self.comision_chk.isChecked() else 0
+        comision_pct = Decimal(str(self.comision_pct_spin.value())) if self.comision_chk.isChecked() else Decimal("0")
         comision_tipo = self.comision_tipo_combo.currentText()
         if comision_tipo == "Añadida al total":
-            comision_monto = subtotal_con_descuento * (comision_pct / 100)
+            # La comisión se considera un cargo no gravado; no altera la base del IVA
+            comision_monto = total_con_descuento * comision_pct / Decimal("100")
+            importe_con_iva_para_desglose = total_con_descuento
+            total_final = total_con_descuento + comision_monto
         elif comision_tipo == "Desglosada (incluida en el precio)":
-            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+            comision_monto = total_con_descuento * comision_pct / (Decimal("100") + comision_pct) if comision_pct > 0 else Decimal("0")
+            importe_con_iva_para_desglose = total_con_descuento - comision_monto
+            total_final = total_con_descuento
         else:
-            comision_monto = 0
+            comision_monto = Decimal("0")
+            importe_con_iva_para_desglose = total_con_descuento
+            total_final = total_con_descuento
 
-        base_iva = subtotal_con_descuento
-        if comision_tipo == "Desglosada (incluida en el precio)":
-            base_iva = subtotal_con_descuento - comision_monto
-
-        iva = 0
-        total = subtotal_con_descuento
-        if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
-            if self.iva_agregado_radio.isChecked():
-                iva = base_iva * 0.13
-                total = subtotal_con_descuento + iva
-            elif self.iva_desglosado_radio.isChecked():
-                iva = base_iva * 13 / 113
-                total = subtotal_con_descuento
-                subtotal = base_iva - iva
-            else:
-                total = subtotal_con_descuento
+        tipo_fiscal = self.tipo_fiscal_combo.currentText()
+        if tipo_fiscal == "Venta gravada":
+            precio_unitario_sin_iva = precio_unitario_con_iva / IVA_FACTOR
+            subtotal_con_descuento_sin_iva = importe_con_iva_para_desglose / IVA_FACTOR
         else:
-            total = subtotal_con_descuento
+            precio_unitario_sin_iva = precio_unitario_con_iva
+            subtotal_con_descuento_sin_iva = importe_con_iva_para_desglose
 
-        if comision_tipo == "Añadida al total":
-            total_final = total + comision_monto
-        else:
-            total_final = total
+        sumas = precio_unitario_sin_iva * cantidad
 
-        self.precio_label.setText(f"Precio U.: ${precio_unitario:.2f}")
-        self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
+        precio_unitario_sin_iva_disp = precio_unitario_sin_iva.quantize(Decimal("0.01"))
+        # Sumas visuales basadas en el precio unitario mostrado para coincidir con la percepción del usuario
+        sumas_disp = (precio_unitario_sin_iva_disp * cantidad).quantize(Decimal("0.01"))
+        total_sin_desc_disp = precio_total_con_iva.quantize(Decimal("0.01"))
+        descuento_disp = descuento_monto.quantize(Decimal("0.01"))
+        subtotal_final_disp = total_final.quantize(Decimal("0.01"))
+        comision_disp = comision_monto.quantize(Decimal("0.01"))
+
+        self.item_precio_label.setText(f"Precio U. sin IVA: ${precio_unitario_sin_iva_disp:.2f}")
+        self.item_sumas_label.setText(f"Sumas sin IVA: ${sumas_disp:.2f}")
+        self.item_total_sin_desc_label.setText(f"Total con IVA sin descuento: ${total_sin_desc_disp:.2f}")
+        self.item_descuento_label.setText(f"Descuento: -${descuento_disp:.2f}")
+        self.item_subtotal_label.setText(f"Subtotal final (con IVA): ${subtotal_final_disp:.2f}")
+        self.comision_label.setText(f"Comisión: ${comision_disp:.2f}")
 
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
@@ -2086,91 +2106,70 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             QMessageBox.warning(self, "Validación", "Seleccione un producto del inventario actual.")
             return
         lote = self.productos[idx]
-        cantidad = self.cantidad_spin.value()
+        cantidad = Decimal(self.cantidad_spin.value())
 
-        # --- Cálculo de precio unitario según tipo de venta ---
         if self.tipo_mayorista_total.isChecked():
-            precio_total = self.precio_total_spin.value()
-            precio = round(precio_total / cantidad, 6) if cantidad > 0 else 0
+            precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
+            precio_unitario_con_iva = precio_total_con_iva / cantidad if cantidad > 0 else Decimal("0")
         else:
-            precio = self.precio_spin.value()
-            precio_total = precio * cantidad
+            precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
+            precio_total_con_iva = precio_unitario_con_iva * cantidad
 
-        descuento_valor = self.descuento_spin.value()
+        descuento_valor = Decimal(str(self.descuento_spin.value()))
         descuento_tipo = self.descuento_tipo_combo.currentText()
-        subtotal = precio_total
-
         if descuento_tipo == "%":
-            descuento_monto = subtotal * (descuento_valor / 100)
+            descuento_monto = precio_total_con_iva * descuento_valor / Decimal("100")
         else:
-            descuento_monto = descuento_valor
+            descuento_monto = min(descuento_valor, precio_total_con_iva)
+        total_con_descuento = precio_total_con_iva - descuento_monto
+        if total_con_descuento < 0:
+            total_con_descuento = Decimal("0")
 
-        subtotal_con_descuento = max(subtotal - descuento_monto, 0)
-
-
-        comision_pct = self.comision_pct_spin.value() if self.comision_chk.isChecked() else 0
+        comision_pct = Decimal(str(self.comision_pct_spin.value())) if self.comision_chk.isChecked() else Decimal("0")
         comision_tipo = self.comision_tipo_combo.currentText()
         if comision_tipo == "Añadida al total":
-            comision_monto = subtotal_con_descuento * (comision_pct / 100)
+            # Comisión tratada como cargo no gravado
+            comision_monto = total_con_descuento * comision_pct / Decimal("100")
+            importe_con_iva_para_desglose = total_con_descuento
+            total_final = total_con_descuento + comision_monto
         elif comision_tipo == "Desglosada (incluida en el precio)":
-            comision_monto = subtotal_con_descuento * (comision_pct / (100 + comision_pct)) if comision_pct > 0 else 0
+            comision_monto = total_con_descuento * comision_pct / (Decimal("100") + comision_pct) if comision_pct > 0 else Decimal("0")
+            importe_con_iva_para_desglose = total_con_descuento - comision_monto
+            total_final = total_con_descuento
         else:
-            comision_monto = 0
+            comision_monto = Decimal("0")
+            importe_con_iva_para_desglose = total_con_descuento
+            total_final = total_con_descuento
 
-        base_iva = subtotal_con_descuento
-        if comision_tipo == "Desglosada (incluida en el precio)":
-            base_iva = subtotal_con_descuento - comision_monto
-
-        iva = 0
-        iva_tipo = "ninguno"
-        precio_sin_iva = precio
-        precio_con_iva = precio
-
-        if hasattr(self, "iva_checkbox") and self.iva_checkbox.isChecked():
-            if self.iva_agregado_radio.isChecked():
-                iva = round(base_iva * 0.13, 2)
-                iva_tipo = "agregado"
-                iva_unitario = iva / cantidad if cantidad > 0 else 0
-                precio_con_iva = round(precio + iva_unitario, 2)
-                total = subtotal_con_descuento + iva
-            elif self.iva_desglosado_radio.isChecked():
-                iva = round(base_iva * 13 / 113, 2)
-                iva_tipo = "desglosado"
-                precio_sin_iva_total = base_iva - iva
-                precio = round(precio_sin_iva_total / cantidad, 6) if cantidad > 0 else 0
-                iva_unitario = iva / cantidad if cantidad > 0 else 0
-                precio_con_iva = round(precio + iva_unitario, 2)
-                subtotal = precio_sin_iva_total
-                total = subtotal_con_descuento
-            else:
-                total = subtotal_con_descuento
-                iva_tipo = "ninguno"
-        else:
-            total = subtotal_con_descuento
-            iva_tipo = "ninguno"
-
-        if comision_tipo == "Añadida al total":
-            total_final = total + comision_monto
-        else:
-            total_final = total
         tipo_fiscal = self.tipo_fiscal_combo.currentText()
+        if tipo_fiscal == "Venta gravada":
+            precio_unitario_sin_iva = precio_unitario_con_iva / IVA_FACTOR
+            subtotal_sin_iva = precio_unitario_sin_iva * cantidad
+            subtotal_con_descuento_sin_iva = importe_con_iva_para_desglose / IVA_FACTOR
+            iva = importe_con_iva_para_desglose - subtotal_con_descuento_sin_iva
+        else:
+            precio_unitario_sin_iva = precio_unitario_con_iva
+            subtotal_sin_iva = precio_unitario_sin_iva * cantidad
+            subtotal_con_descuento_sin_iva = importe_con_iva_para_desglose
+            iva = Decimal("0")
 
+        q8 = Decimal("0.00000001")
         self.venta_items.append({
             "lote_id": lote["lote_id"],
             "producto_id": lote["producto_id"],
             "producto": lote["nombre"],
-            "cantidad": cantidad,
-            "precio": precio,  # sin IVA si es desglosado
-            "precio_con_iva": precio_con_iva,  # <--- NUEVO
-            "descuento": descuento_valor,
+            "cantidad": int(cantidad),
+            "precio": float(precio_unitario_sin_iva.quantize(q8)),
+            "precio_con_iva": float(precio_unitario_con_iva.quantize(q8)),
+            "descuento": float(descuento_valor),
             "descuento_tipo": descuento_tipo,
-            "descuento_monto": descuento_monto,
-            "subtotal": subtotal,
-            "subtotal_con_descuento": subtotal_con_descuento,
-            "iva": iva,
-            "iva_tipo": iva_tipo,
-            "comision_monto": comision_monto,
-            "total": total_final,
+            "descuento_monto": float(descuento_monto.quantize(q8)),
+            "subtotal": float(subtotal_sin_iva.quantize(q8)),
+            "subtotal_con_descuento": float(subtotal_con_descuento_sin_iva.quantize(q8)),
+            "iva": float(iva.quantize(q8)),
+            "iva_tipo": "incluido",
+            "comision_monto": float(comision_monto.quantize(q8)),
+            "total": float(total_final.quantize(q8)),
             "tipo_fiscal": tipo_fiscal,
             "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
@@ -2185,38 +2184,25 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
     def _actualizar_tabla(self):
         self.table.setRowCount(len(self.venta_items))
         for i, item in enumerate(self.venta_items):
-            self.table.setItem(i, 0, QTableWidgetItem(item["producto"]))
-            self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
-            self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio']:.2f}"))
+            self.table.setItem(i, 0, QTableWidgetItem(str(item["cantidad"])))
+            self.table.setItem(i, 1, QTableWidgetItem(item["producto"]))
+            self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio_con_iva']:.2f}"))
             self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
-            self.table.setItem(i, 4, QTableWidgetItem(str(item.get("iva", ""))))
-            self.table.setItem(i, 5, QTableWidgetItem(item.get("tipo_fiscal", "")))
+            self.table.setItem(i, 4, QTableWidgetItem(f"${item['total']:.2f}"))
             btn = QPushButton("Eliminar")
             btn.setStyleSheet(
                 "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
                 "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
             )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
-            self.table.setCellWidget(i, 6, btn)
+            self.table.setCellWidget(i, 5, btn)
 
     def _actualizar_resumen(self):
-        sumas = sum(item.get("subtotal", 0) for item in self.venta_items)
-        descuentos = sum(item.get("descuento_monto", 0) for item in self.venta_items)
-        subtotal = sumas - descuentos
         total = sum(item.get("total", 0) for item in self.venta_items)
-
-        label = self.__dict__.get("sumas_label")
-        if label:
-            label.setText(f"Sumas: ${sumas:.2f}")
-        label = self.__dict__.get("subtotal_label")
-        if label:
-            label.setText(f"Subtotal: ${subtotal:.2f}")
-        label = self.__dict__.get("total_label")
-        if label:
-            label.setText(f"TOTAL: ${total:.2f}")
+        self.total_label.setText(f"Total venta (con IVA): ${total:.2f}")
 
     def _eliminar_fila(self, row, col):
-        if col == 6:
+        if col == 5:
             self._eliminar_item(row)
 
     def _eliminar_item(self, row):

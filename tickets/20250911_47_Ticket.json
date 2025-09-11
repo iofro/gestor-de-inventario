@@ -5,12 +5,12 @@
       "cantidad": 1.0,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 4",
+      "descripcion": "Producto Demo 8",
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 8.8500,
+      "precioUni": 14.0000,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": [
@@ -18,7 +18,7 @@
       ],
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 8.8500,
+      "ventaGravada": 12.3900,
       "ventaNoSuj": 0.0
     }
   ],
@@ -49,11 +49,11 @@
   },
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "29850DEB-C9DA-4BE3-95DB-199D9B5CF78A",
+    "codigoGeneracion": "5EB92C5E-60D8-4108-B03B-53A6E03FEB0B",
     "fecEmi": "2025-09-11",
-    "horEmi": "00:41:53",
+    "horEmi": "01:18:56",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000229",
+    "numeroControl": "DTE-03-S001P001-000000000000234",
     "tipoContingencia": null,
     "tipoDte": "03",
     "tipoModelo": 1,
@@ -84,12 +84,12 @@
     "descuNoSuj": 0.0,
     "ivaPerci1": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 10.00,
+    "montoTotalOperacion": 14.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 10.00,
+        "montoPago": 14.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -98,20 +98,20 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 8.85,
-    "subTotalVentas": 8.85,
+    "subTotal": 12.39,
+    "subTotalVentas": 12.39,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 8.85,
-    "totalLetras": "DIEZ 00/100 DÓLARES",
+    "totalGravada": 12.39,
+    "totalLetras": "CATORCE 00/100 DÓLARES",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 10.00,
+    "totalPagar": 14.00,
     "tributos": [
       {
         "codigo": "20",
         "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.15
+        "valor": 1.61
       }
     ]
   },

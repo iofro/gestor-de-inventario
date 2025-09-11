@@ -22,8 +22,8 @@ def test_ccf_totals_with_inclusive_prices():
     recalcular_totales(payload)
     item1, item2 = payload["cuerpoDocumento"]
     resumen = payload["resumen"]
-    assert item1["precioUni"] == D("0.05")
-    assert item2["precioUni"] == D("0.05")
+    assert item1["precioUni"] == D("0.0442")
+    assert item2["precioUni"] == D("0.0458")
     assert resumen["montoTotalOperacion"] == D("0.10")
     assert resumen["totalPagar"] == D("0.10")
     assert resumen["tributos"][0]["codigo"] == "20"
@@ -43,8 +43,8 @@ def test_ccf_descuento_no_permitido():
     recalcular_totales(payload)
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert item["precioUni"] == D("8.00")
-    assert item["montoDescu"] == D("0")
+    assert item["precioUni"] == D("7.0796")
+    assert "montoDescu" not in item
     assert resumen["subTotalVentas"] == D("7.08")
     assert resumen["subTotal"] == D("7.08")
     assert resumen["totalDescu"] == D("0")
@@ -68,8 +68,8 @@ def test_ccf_descuento_un_por_ciento():
     recalcular_totales(payload)
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert item["precioUni"] == D("99.00")
-    assert item["montoDescu"] == D("0")
+    assert item["precioUni"] == D("87.6106")
+    assert "montoDescu" not in item
     assert resumen["totalDescu"] == D("0")
     assert resumen["porcentajeDescuento"] == D("0")
     assert resumen["tributos"][0]["valor"] == D("11.39")
@@ -90,9 +90,9 @@ def test_ccf_descuento_colapsado_consistente():
     recalcular_totales(payload)
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
-    assert item["precioUni"] == D("14.29")
-    assert item["montoDescu"] == D("0")
-    assert item["ventaGravada"] == D("12.65")
+    assert item["precioUni"] == D("12.6469")
+    assert "montoDescu" not in item
+    assert item["ventaGravada"] == D("12.6469")
     assert resumen["subTotalVentas"] == D("12.65")
     assert resumen["subTotal"] == D("12.65")
     assert resumen["totalGravada"] == D("12.65")

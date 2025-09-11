@@ -1869,6 +1869,97 @@ def test_generar_dte_json_dte03_descuento_colapsado(tmp_path):
     assert D(str(res["totalGravada"])) == D("14.29")
 
 
+def test_generar_dte_json_dte03_iva_incluido_descuentos(tmp_path):
+    import dte as dte_module
+    from decimal import Decimal as D
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod1", "P1", None, vid, None, 0, 0, 0, 10)
+    p1 = db.cursor.lastrowid
+    db.add_producto("Prod2", "P2", None, vid, None, 0, 0, 0, 10)
+    p2 = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "70000001",
+        "",
+        "C",
+        "06",
+        "01",
+    )
+    cid = db.cursor.lastrowid
+
+    pf1_bruto = d4(D("3") * D("4.03"))
+    desc1 = d4(pf1_bruto * D("5") / D("100"))
+    pf1_net = d4(pf1_bruto - desc1)
+    pf2_bruto = d4(D("2") * D("10.50"))
+    desc2 = D("1.00")
+    pf2_net = d4(pf2_bruto - desc2)
+    total_pf = money(pf1_net + pf2_net)
+
+    venta_id = db.add_venta_credito_fiscal(
+        cid,
+        "2024-01-01",
+        float(total_pf),
+        "12345678",
+        "06141990011019",
+        "giro",
+        extra={"precios_incluyen_iva": True},
+    )
+    db.add_detalle_venta(
+        venta_id,
+        p1,
+        3,
+        4.03,
+        descuento=5,
+        descuento_tipo="%",
+        vendedor_id=vid,
+    )
+    db.add_detalle_venta(
+        venta_id,
+        p2,
+        2,
+        10.50,
+        descuento=1,
+        vendedor_id=vid,
+    )
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    items = data["cuerpoDocumento"]
+    resumen = data["resumen"]
+
+    assert all(D(str(i["montoDescu"])) == D("0") for i in items)
+    pf_sum = money(
+        sum(D(str(i["precioUni"])) * D(str(i["cantidad"])) for i in items)
+    )
+    assert pf_sum == D(str(resumen["montoTotalOperacion"]))
+    assert pf_sum == total_pf
+
+
 def test_cliente_email_alias(tmp_path):
     import dte as dte_module
 

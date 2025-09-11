@@ -733,13 +733,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.Distribuidor_combo.addItems(Distribuidores)
         right_layout.addWidget(self.Distribuidor_combo)
 
-        # Resumen
+        # Resumen (sin IVA para consumidor final)
         self.sumas_label = QLabel("Sumas: $0.00")
-        self.iva_label = QLabel("IVA: $0.00")
         self.subtotal_label = QLabel("Subtotal: $0.00")
         self.total_label = QLabel("Venta total: $0.00")
         right_layout.addWidget(self.sumas_label)
-        right_layout.addWidget(self.iva_label)
         right_layout.addWidget(self.subtotal_label)
         right_layout.addWidget(self.total_label)
 
@@ -1088,12 +1086,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
     def _actualizar_resumen(self):
         sumas = sum(i["subtotal"] for i in self.venta_items)
         descuentos = sum(i.get("descuento_monto", 0) for i in self.venta_items)
-        iva = sum(i.get("iva", 0) for i in self.venta_items)
         subtotal = sumas - descuentos
         total = sum(i.get("total", 0) for i in self.venta_items)
 
         self.sumas_label.setText(f"Sumas: ${sumas:.2f}")
-        self.iva_label.setText(f"IVA: ${iva:.2f}")
         self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
         self.total_label.setText(f"Venta total: ${total:.2f}")
 
@@ -1850,10 +1846,14 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
 
-        # Resumen de la venta
+        # Resumen de la venta (con IVA visible)
+        self.sumas_label = QLabel("Sumas: $0.00")
         self.iva_label = QLabel("IVA: $0.00")
+        self.subtotal_label = QLabel("Subtotal: $0.00")
         self.total_label = QLabel("TOTAL: $0.00")
+        left_layout.addWidget(self.sumas_label)
         left_layout.addWidget(self.iva_label)
+        left_layout.addWidget(self.subtotal_label)
         left_layout.addWidget(self.total_label)
 
         # Botón para registrar la venta
@@ -2219,10 +2219,24 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.table.setCellWidget(i, 6, btn)
 
     def _actualizar_resumen(self):
+        sumas = sum(item.get("subtotal", 0) for item in self.venta_items)
+        descuentos = sum(item.get("descuento_monto", 0) for item in self.venta_items)
         iva_total = sum(item.get("iva", 0) for item in self.venta_items)
+        subtotal = sumas - descuentos
         total = sum(item.get("total", 0) for item in self.venta_items)
-        self.iva_label.setText(f"IVA: ${iva_total:.2f}")
-        self.total_label.setText(f"TOTAL: ${total:.2f}")
+
+        label = self.__dict__.get("sumas_label")
+        if label:
+            label.setText(f"Sumas: ${sumas:.2f}")
+        label = self.__dict__.get("iva_label")
+        if label:
+            label.setText(f"IVA: ${iva_total:.2f}")
+        label = self.__dict__.get("subtotal_label")
+        if label:
+            label.setText(f"Subtotal: ${subtotal:.2f}")
+        label = self.__dict__.get("total_label")
+        if label:
+            label.setText(f"TOTAL: ${total:.2f}")
 
     def _eliminar_fila(self, row, col):
         if col == 6:

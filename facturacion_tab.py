@@ -612,15 +612,7 @@ class FacturacionTab(QWidget):
         rows = []
         to_delete = []
         for rec in records:
-            venta = cur.execute(
-                """
-                SELECT v.id, v.fecha, v.total, v.estado, c.nombre AS cliente
-                FROM ventas v
-                LEFT JOIN clientes c ON c.id = v.cliente_id
-                WHERE v.id=?
-                """,
-                (rec["venta_id"],),
-            ).fetchone()
+            venta = self.manager.db.get_venta_by_id(rec["venta_id"])
             ruta = rec["ruta"]
             if not venta or not ruta or not os.path.exists(ruta):
                 to_delete.append((rec["id"],))
@@ -633,14 +625,22 @@ class FacturacionTab(QWidget):
                 except Exception:
                     fdate = None
             fecha_str = fdate.strftime("%Y-%m-%d %H:%M") if fdate else fecha_creacion
+            getter = getattr(self.manager.db, "get_cliente", None)
+            cliente = None
+            if venta.get("cliente_id") and getter:
+                try:
+                    cliente = getter(venta.get("cliente_id"))
+                except Exception:
+                    cliente = None
+            row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
             rows.append(
                 {
-                    "row_type": "venta",
+                    "row_type": row_type,
                     "id": venta["id"],
                     "name": os.path.splitext(os.path.basename(ruta))[0],
                     "fecha": fecha_str,
                     "_parsed_fecha": fdate,
-                    "cliente": venta["cliente"] or "",
+                    "cliente": cliente.get("nombre", "") if cliente else "",
                     "total": venta["total"],
                     "estado": venta["estado"],
                     "tipo": rec["tipo"],
@@ -1584,15 +1584,11 @@ class FacturacionTab(QWidget):
                 pdf_path = self.manager.db.get_factura_pdf(venta_id)
                 if pdf_path:
                     base_paths.add(os.path.splitext(pdf_path)[0])
-                ticket_path = self.manager.db.get_ticket_pdf(venta_id)
-                if ticket_path:
-                    base_paths.add(os.path.splitext(ticket_path)[0])
-            else:
-                ticket_path = data.get("pdf")
-                if ticket_path:
-                    base_paths.add(os.path.splitext(ticket_path)[0])
-                    json_path = data.get("json") or os.path.splitext(ticket_path)[0] + ".json"
-                    base_paths.add(os.path.splitext(json_path)[0])
+            ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+            if ticket_path:
+                base_paths.add(os.path.splitext(ticket_path)[0])
+                json_path = data.get("json") or os.path.splitext(ticket_path)[0] + ".json"
+                base_paths.add(os.path.splitext(json_path)[0])
         else:
             for p in [data.get("pdf"), data.get("json")]:
                 if p:
@@ -1638,12 +1634,9 @@ class FacturacionTab(QWidget):
                 os.remove(p)
             except OSError:
                 pass
-        if row_type == "venta":
-            if pdf_path:
+        if row_type in ("venta", "ticket"):
+            if row_type == "venta" and pdf_path:
                 self.manager.db.delete_factura_pdf(venta_id)
-            if ticket_path:
-                self.manager.db.delete_ticket_pdf(venta_id)
-        elif row_type == "ticket":
             if ticket_path:
                 self.manager.db.delete_ticket_pdf(venta_id)
         QMessageBox.information(self, "Eliminar", "Archivos eliminados")
@@ -1662,7 +1655,7 @@ class FacturacionTab(QWidget):
             self.preview_label.setText("Previsualización del PDF")
             self._clear_preview_files()
             return
-        if data.get("row_type") == "venta":
+        if data.get("row_type") in ("venta", "ticket"):
             self._update_preview(data.get("id"))
         else:
             pdf = data.get("pdf")
@@ -1682,6 +1675,31 @@ class FacturacionTab(QWidget):
                 pass
         self.preview_pdf_file = None
         self.preview_image_file = None
+
+    def _is_ticket_sale(self, venta):
+        """Return True if the sale should be treated as a ticket."""
+        getter_cf = getattr(self.manager.db, "get_venta_credito_fiscal", None)
+        if getter_cf:
+            try:
+                if getter_cf(venta["id"]):
+                    return False
+            except Exception:
+                pass
+        cid = venta.get("cliente_id")
+        if not cid:
+            return True
+        cliente = None
+        getter = getattr(self.manager.db, "get_cliente", None)
+        if getter:
+            try:
+                cliente = getter(cid)
+            except Exception:
+                cliente = None
+        if not cliente:
+            return True
+        nit = (cliente.get("nit") or "").strip()
+        dui = (cliente.get("dui") or "").strip()
+        return not nit and not dui
 
     def _show_pdf_preview(self, pdf_path):
         self._clear_preview_files()
@@ -1729,7 +1747,7 @@ class FacturacionTab(QWidget):
 
         self._clear_preview_files()
 
-        is_ticket = not venta.get("cliente_id") and not self.manager.db.get_venta_credito_fiscal(venta_id)
+        is_ticket = self._is_ticket_sale(venta)
         if is_ticket:
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):

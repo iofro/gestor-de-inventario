@@ -59,6 +59,15 @@ def validar_nit(nit):
         or re.match(dui_pattern, nit)
     )
 
+def validar_dui(dui):
+    """Valida un número de DUI salvadoreño."""
+    import re
+    if not dui:
+        return False
+    # Formato ########-# o #########
+    dui_pattern = r"^\d{8}-?\d$"
+    return bool(re.match(dui_pattern, dui))
+
 def validar_email(email):
     import re
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
@@ -2591,50 +2600,31 @@ class ClienteDialog(QDialog):
 
 
     def _validar_y_accept(self):
-        if not self.nombre_edit.text().strip():
-            QMessageBox.warning(self, "Validación", "El nombre es obligatorio.")
-            return
         nrc = self.nrc_edit.text().strip()
-        if not nrc:
-            QMessageBox.warning(self, "Validación", "El NRC es obligatorio.")
-            return
-        if not validar_nrc(nrc):
+        if nrc and not validar_nrc(nrc):
             QMessageBox.warning(self, "Validación", "Ingrese un NRC válido.")
             return
         nit = self.nit_edit.text().strip()
-        if not nit:
-            QMessageBox.warning(self, "Validación", "El NIT es obligatorio.")
-            return
-        if not validar_nit(nit):
+        if nit and not validar_nit(nit):
             QMessageBox.warning(self, "Validación", "Ingrese un NIT válido.")
             return
-        telefono = self.telefono_edit.text().strip()
-        if not telefono:
-            QMessageBox.warning(self, "Validación", "El teléfono es obligatorio.")
+        dui = self.dui_edit.text().strip()
+        if dui and not validar_dui(dui):
+            QMessageBox.warning(self, "Validación", "Ingrese un DUI válido.")
             return
-        if not validar_telefono(telefono):
+        telefono = self.telefono_edit.text().strip()
+        if telefono and not validar_telefono(telefono):
             QMessageBox.warning(self, "Validación", "Ingrese un teléfono válido.")
             return
         email = self.email_edit.text().strip()
-        if not email:
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "El correo electrónico es obligatorio.",
-            )
+        if email and not validar_email(email):
+            QMessageBox.warning(self, "Validación", "Ingrese un correo electrónico válido.")
             return
-        if not validar_email(email):
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "Ingrese un correo electrónico válido.",
-            )
-            return
-        nit = self.nit_edit.text().strip()
-        db = getattr(getattr(self.parent(), "manager", None), "db", None)
-        if db and db.nit_exists(nit, exclude_id=self._cliente_id):
-            QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
-            return
+        if nit:
+            db = getattr(getattr(self.parent(), "manager", None), "db", None)
+            if db and db.nit_exists(nit, exclude_id=self._cliente_id):
+                QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
+                return
         self.accept()
 
     def get_data(self):

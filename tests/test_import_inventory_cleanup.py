@@ -27,9 +27,8 @@ def _empty_inventory(path):
     return p
 
 
-def test_import_inventory_clears_related_tables(tmp_path, monkeypatch):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    manager = im.InventoryManager()
+def test_import_inventory_clears_related_tables(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
     db = manager.db
 
     cliente_id = db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")

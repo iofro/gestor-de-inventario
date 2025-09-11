@@ -37,8 +37,7 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
         inventory_manager.InventoryManager, "refresh_data", dummy_refresh
     )
 
-    monkeypatch.setattr(inventory_manager, "DB", lambda: DB(":memory:"))
-    man1 = inventory_manager.InventoryManager()
+    man1 = inventory_manager.InventoryManager(DB(":memory:"))
     db = man1.db
     db.add_Distribuidor("D1")
     dist = db.cursor.lastrowid
@@ -71,7 +70,7 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
     export_file = tmp_path / "export.json"
     man1.exportar_inventario_json(str(export_file))
 
-    man2 = inventory_manager.InventoryManager()
+    man2 = inventory_manager.InventoryManager(DB(":memory:"))
     man2.importar_inventario_json(str(export_file))
 
     cur = man2.db.cursor

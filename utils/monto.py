@@ -5,25 +5,32 @@ from decimal import Decimal, ROUND_HALF_UP, getcontext
 
 getcontext().prec = 28
 
+# Helper aliases and quantization constants
 D = Decimal
 Q8 = D("0.00000001")
+Q4 = D("0.0001")
 Q2 = D("0.01")
 IVA_TASA = D("0.13")
 
 
 def d8(value):
-    """Return value quantized to 8 decimal places."""
-    return D(value).quantize(Q8, rounding=ROUND_HALF_UP)
+    """Return ``value`` quantized to 8 decimal places."""
+    return D(str(value)).quantize(Q8, rounding=ROUND_HALF_UP)
 
 
 def d2(value):
-    """Return value quantized to 2 decimal places."""
-    return D(value).quantize(Q2, rounding=ROUND_HALF_UP)
+    """Return ``value`` quantized to 2 decimal places."""
+    return D(str(value)).quantize(Q2, rounding=ROUND_HALF_UP)
+
+
+def d4(value):
+    """Return ``value`` quantized to 4 decimal places."""
+    return D(str(value)).quantize(Q4, rounding=ROUND_HALF_UP)
 
 
 def iva_item(base_gravada):
     """Return IVA amount for an item based on taxable base."""
-    return d8(D(base_gravada) * IVA_TASA)
+    return d8(D(str(base_gravada)) * IVA_TASA)
 
 
 def to_base_iva(total):
@@ -34,7 +41,7 @@ def to_base_iva(total):
     are quantized to 8 decimal places to avoid floating point artifacts.
     """
 
-    total = D(total)
+    total = D(str(total))
     base = d8(total / (D("1") + IVA_TASA))
     iva = d8(total - base)
     return base, iva

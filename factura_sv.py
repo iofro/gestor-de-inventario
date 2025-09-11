@@ -377,19 +377,32 @@ def generar_factura_electronica_pdf(
     tabla_x = x_margin
     tabla_y = box_y - 20
     row_h = 18
-    tabla_columnas = ["Cantidad", "Descripción", "Precio Unitario", "No sujetas", "Exentas", "Gravadas"]
+    tabla_columnas = [
+        "Cantidad",
+        "Descripción",
+        "Precio Unitario",
+        "IVA",
+        "No sujetas",
+        "Exentas",
+        "Gravadas",
+    ]
     tabla_data = [tabla_columnas]
     for d in detalles:
         tabla_data.append([
             str(d.get("cantidad", "")),
             d.get("descripcion", ""),
             f"{d.get('precio_unitario', 0):.4f}",
+            f"{d.get('iva', 0):.2f}",
             f"{d.get('ventas_no_sujetas', 0):.2f}",
             f"{d.get('ventas_exentas', 0):.2f}",
             f"{d.get('ventas_gravadas', 0):.2f}",
         ])
 
-    tabla = Table(tabla_data, colWidths=[44, 200, 70, 60, 60, 70], repeatRows=1)
+    tabla = Table(
+        tabla_data,
+        colWidths=[44, 180, 60, 50, 60, 60, 70],
+        repeatRows=1,
+    )
     tabla.setStyle(TableStyle([
         ('GRID', (0,0), (-1,-1), 0.7, colors.black),
         ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),

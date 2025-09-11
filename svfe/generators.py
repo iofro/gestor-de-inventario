@@ -267,6 +267,7 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         item["ivaItem"] = iva_item
         item["tributos"] = None
     elif tipo == "ccf":
+        item.pop("montoDescu", None)
         item["codTributo"] = None
         item["tributos"] = [TRIBUTO_IVA] if base > D("0") else []
     else:
@@ -334,6 +335,7 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         data["totalIva"] = iva
         data["tributos"] = None
     elif tipo == "ccf":
+        data["totalIva"] = iva
         if venta > D("0"):
             data["tributos"] = [
                 {

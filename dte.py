@@ -1311,7 +1311,7 @@ def recalcular_totales(
     cuerpo = data.get("cuerpoDocumento", [])
     resumen = data.get("resumen", {})
 
-    colapso_desc = tipo_dte == "03" and precios_flag
+    colapso_desc = tipo_dte == "03"
     if colapso_desc:
         for _it in cuerpo:
             _cant = D(str(_it.get("cantidad") or 0))
@@ -1321,7 +1321,7 @@ def recalcular_totales(
                 total_final = d4(_cant * _precio - _descu)
                 unit_pf = d4(total_final / _cant) if _cant else d4(0)
                 _it["precioUni"] = unit_pf
-                _it["montoDescu"] = d4(0)
+                _it.pop("montoDescu", None)
         resumen["descuNoSuj"] = resumen["descuExenta"] = resumen["descuGravada"] = resumen["totalDescu"] = money(0)
         resumen["porcentajeDescuento"] = money(0)
 
@@ -1334,6 +1334,8 @@ def recalcular_totales(
     bases_pre: list[D] = []
     ivas: list[D] = []
     cantidades: list[D] = []
+    prices: list[D] = []
+    venta_total_sum = D("0")
     sub_total_ventas = D("0")
     descu_gravada_sum = D("0")
 
@@ -1375,42 +1377,26 @@ def recalcular_totales(
             iva_total += esperado_iva
             venta_gravada_sum += linea
         elif tipo_dte == "03":
-            if precios_flag:
-                pf_line = d4(cant * precio - monto_descu)
-                if pf_line < 0:
-                    pf_line = d4(0)
-                base = d4(pf_line / D("1.13"))
-                iva_val = d4(pf_line - base)
-                bases_pre.append(base)
-                bases.append(base)
-                ivas.append(iva_val)
-                bruto_sum += pf_line
-                bruto_linea_sum += d4(cant * precio)
-                cantidades.append(cant)
-                item["montoDescu"] = d4(0)
-                item.pop("ivaItem", None)
-                item["ventaExenta"] = d4(0)
-                item["ventaNoSuj"] = d4(0)
-                item["noGravado"] = d4(0)
-            else:
-                base_pre = d4(cant * precio)
-                base = d4(base_pre - monto_descu)
-                if base < 0:
-                    base = d4(0)
-                pf_line = d4(base * D("1.13"))
-                iva_val = d4(pf_line - base)
-                pf_line_pre = d4(base_pre * D("1.13"))
-                bases_pre.append(base_pre)
-                bases.append(base)
-                ivas.append(iva_val)
-                bruto_sum += pf_line
-                bruto_linea_sum += pf_line_pre
-                descu_sum += money(monto_descu)
-                cantidades.append(cant)
-                item.pop("ivaItem", None)
-                item["ventaExenta"] = d4(0)
-                item["ventaNoSuj"] = d4(0)
-                item["noGravado"] = d4(0)
+            pf_line = d8(cant * precio - monto_descu)
+            if pf_line < 0:
+                pf_line = d8(0)
+            base_8d = pf_line / D("1.13")
+            precio_u = d4(base_8d / cant) if cant > 0 else d4(0)
+            base_line = d4(precio_u * cant)
+            iva_val = d4(pf_line - base_line)
+            bases_pre.append(base_line)
+            bases.append(base_line)
+            ivas.append(iva_val)
+            pf_line_q = d4(base_line + iva_val)
+            bruto_sum += pf_line_q
+            bruto_linea_sum += d4(cant * precio)
+            cantidades.append(cant)
+            prices.append(precio_u)
+            item.pop("montoDescu", None)
+            item.pop("ivaItem", None)
+            item["ventaExenta"] = d4(0)
+            item["ventaNoSuj"] = d4(0)
+            item["noGravado"] = d4(0)
         else:
             bruto_linea = money(cant * precio)
             bruto_linea_sum += bruto_linea
@@ -1447,19 +1433,38 @@ def recalcular_totales(
             if base_res or iva_res:
                 bases[-1] = d4(bases[-1] + base_res)
                 ivas[-1] = d4(ivas[-1] + iva_res)
+                if cantidades:
+                    prices[-1] = d4(bases[-1] / cantidades[-1]) if cantidades[-1] > 0 else d4(0)
+                    bases[-1] = d4(prices[-1] * cantidades[-1])
+                    ivas[-1] = d4(bruto_total - sum(bases) - sum(ivas[:-1]))
+            total_venta = D("0")
             for idx, item in enumerate(cuerpo):
                 if idx < len(bases):
                     base_val = d4(bases[idx])
                     cant = cantidades[idx]
-                    iva_val = ivas[idx]
+                    iva_val = d4(ivas[idx])
+                    pf_neto = d4(base_val + iva_val)
                     item["ventaGravada"] = base_val
-                    if cant > 0:
-                        if tipo_dte == "03" and precios_flag:
-                            item["precioUni"] = d4((base_val + iva_val) / cant)
-                        else:
-                            item["precioUni"] = d4(base_val / cant)
+                    precio_u = prices[idx] if idx < len(prices) else d4(0)
+                    item["precioUni"] = precio_u if cant > 0 else d4(0)
+                    item.pop("ivaItem", None)
+                    item.pop("montoDescu", None)
+                    if base_val + iva_val != pf_neto:
+                        logger.warning(
+                            "Línea %s: base %s + iva %s != pf_neto %s",
+                            idx + 1,
+                            base_val,
+                            iva_val,
+                            pf_neto,
+                        )
                     else:
-                        item["precioUni"] = d4(0)
+                        logger.debug(
+                            "Línea %s: base %s + iva %s = pf_neto %s",
+                            idx + 1,
+                            base_val,
+                            iva_val,
+                            pf_neto,
+                        )
                     trib_list: list[str] = []
                     tipo_item = int(item.get("tipoItem", 1))
                     if base_val > 0:
@@ -1473,11 +1478,14 @@ def recalcular_totales(
                     item["tributos"] = trib_list or None
                     if "montoIva" in item:
                         item["montoIva"] = iva_val
+                    total_venta += pf_neto
             venta_gravada_sum = sum(bases)
             iva_total = sum(ivas)
+            venta_total_sum = total_venta
         else:
             venta_gravada_sum = D("0")
             iva_total = D("0")
+            venta_total_sum = D("0")
 
         if tipo_dte in {"03", "05", "06"}:
             if colapso_desc:
@@ -1530,7 +1538,7 @@ def recalcular_totales(
     else:
         _set_resumen("totalNoSuj", d4(0))
         _set_resumen("totalExenta", d4(0))
-        _set_resumen("totalGravada", d4(venta_gravada_sum))
+        _set_resumen("totalGravada", money(venta_gravada_sum))
         if tipo_dte in {"03", "05", "06"}:
             _set_resumen("subTotalVentas", sub_total_ventas)
             _set_resumen("descuNoSuj", money(0))
@@ -1545,9 +1553,22 @@ def recalcular_totales(
             _set_resumen("porcentajeDescuento", porcentaje_desc)
             _set_resumen("subTotal", money(venta_gravada_sum))
             _set_resumen("totalNoGravado", money(0))
-            monto_total_operacion = money(venta_gravada_sum + total_iva_sum)
+            _set_resumen("totalIva", money(total_iva_sum))
+            monto_total_operacion = money(venta_total_sum)
             _set_resumen("montoTotalOperacion", monto_total_operacion)
             _set_resumen("totalPagar", monto_total_operacion)
+            if money(venta_total_sum) != monto_total_operacion:
+                logger.warning(
+                    "TotalVenta %s != montoTotalOperacion %s",
+                    money(venta_total_sum),
+                    monto_total_operacion,
+                )
+            else:
+                logger.debug(
+                    "TotalVenta %s = montoTotalOperacion %s",
+                    monto_total_operacion,
+                    monto_total_operacion,
+                )
         else:
             _set_resumen("subTotalVentas", money(venta_gravada_sum))
             _set_resumen("descuNoSuj", money(0))
@@ -1627,22 +1648,30 @@ def recalcular_totales(
             first["montoPago"] = money(first_val + delta)
 
     if tipo_dte in {"03", "05", "06"}:
+        total_gravada_calc = D("0")
         for item in cuerpo:
             cant = D(str(item.get("cantidad") or 0))
             precio_u = D(str(item.get("precioUni") or 0))
-            if precios_flag and tipo_dte == "03":
-                esperado = money(precio_u * cant / D("1.13"))
-            else:
-                esperado = money(precio_u * cant)
-            if esperado != money(item.get("ventaGravada", 0)):
-                warnings.warn(
-                    "precioUni * cantidad incoherente con ventaGravada"
-                )
-                item["ventaGravada"] = esperado
-        sub_total = money(resumen.get("totalGravada", 0))
-        suma_trib = money(
+            linea_base = d4(precio_u * cant)
+            item["ventaGravada"] = linea_base
+            total_gravada_calc += linea_base
+
+        total_gravada_calc = money(total_gravada_calc)
+        _set_resumen("totalGravada", total_gravada_calc)
+
+        total_iva_calc = money(
             sum(D(str(t.get("valor") or 0)) for t in resumen.get("tributos") or [])
         )
+        _set_resumen("totalIva", total_iva_calc)
+        if resumen.get("tributos"):
+            resumen["tributos"][0]["valor"] = total_iva_calc
+
+        monto_total = money(total_gravada_calc + total_iva_calc)
+        _set_resumen("montoTotalOperacion", monto_total)
+        _set_resumen("totalPagar", monto_total)
+
+        sub_total = total_gravada_calc
+        suma_trib = total_iva_calc
         esperado_total = money(sub_total + suma_trib)
         if esperado_total != money(resumen.get("montoTotalOperacion", 0)):
             warnings.warn(
@@ -1656,12 +1685,13 @@ def recalcular_totales(
             if "montoTotalOperacion" not in modificados:
                 modificados.append("montoTotalOperacion")
 
-        if tipo_dte == "03" and precios_flag:
+        if tipo_dte == "03":
             pf_total = money(
                 sum(
                     D(str(i.get("precioUni") or 0)) * D(str(i.get("cantidad") or 0))
                     for i in cuerpo
                 )
+                + total_iva_calc
             )
             monto_total = money(resumen.get("montoTotalOperacion", 0))
             diff = money(pf_total - monto_total)
@@ -1677,7 +1707,7 @@ def recalcular_totales(
                     _set_resumen("totalPagar", pf_total)
                 else:
                     warnings.warn(
-                        f"pf_neto {pf_total} difiere de montoTotalOperacion {monto_total}"
+                        f"pf_base+iva {pf_total} difiere de montoTotalOperacion {monto_total}"
                     )
 
     data["resumen"] = resumen

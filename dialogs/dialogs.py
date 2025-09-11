@@ -1085,6 +1085,18 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 5, btn)
 
+    def _actualizar_resumen(self):
+        sumas = sum(i["subtotal"] for i in self.venta_items)
+        descuentos = sum(i.get("descuento_monto", 0) for i in self.venta_items)
+        iva = sum(i.get("iva", 0) for i in self.venta_items)
+        subtotal = sumas - descuentos
+        total = sum(i.get("total", 0) for i in self.venta_items)
+
+        self.sumas_label.setText(f"Sumas: ${sumas:.2f}")
+        self.iva_label.setText(f"IVA: ${iva:.2f}")
+        self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
+        self.total_label.setText(f"Venta total: ${total:.2f}")
+
     def _eliminar_fila(self, row, col):
         if col == 5:
             self._eliminar_item(row)

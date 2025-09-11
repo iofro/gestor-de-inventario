@@ -34,26 +34,16 @@ def qt_app(monkeypatch):
 
 @pytest.mark.parametrize(
     'field,value', [
-        ('nrc_edit', ''),
         ('nrc_edit', 'bad'),
-        ('nit_edit', ''),
         ('nit_edit', 'bad'),
-        ('telefono_edit', ''),
+        ('dui_edit', 'bad'),
         ('telefono_edit', '12345'),
-        ('email_edit', ''),
         ('email_edit', 'bademail'),
     ],
 )
 def test_invalid_fields(monkeypatch, qt_app, field, value):
     db = DummyDB()
     dialog = make_dialog(db)
-
-    dialog.nombre_edit.setText('Nombre')
-    dialog.nombre_comercial_edit.setText('Comercial')
-    dialog.nrc_edit.setText('1234567')
-    dialog.nit_edit.setText('1234-123456-123-1')
-    dialog.telefono_edit.setText('1234-5678')
-    dialog.email_edit.setText('test@example.com')
 
     getattr(dialog, field).setText(value)
 
@@ -69,16 +59,27 @@ def test_invalid_fields(monkeypatch, qt_app, field, value):
     assert not accepted.get('called')
 
 
+def test_optional_fields(monkeypatch, qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+
+    warnings = {}
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.setdefault('called', True))
+
+    accepted = {}
+    dialog.accept = lambda: accepted.setdefault('called', True)
+
+    dialog._validar_y_accept()
+
+    assert not warnings.get('called')
+    assert accepted.get('called')
+
+
 def test_duplicate_nit(monkeypatch, qt_app):
     db = DummyDB(existing_nits={'1234-123456-123-1'})
     dialog = make_dialog(db)
 
-    dialog.nombre_edit.setText('Nombre')
-    dialog.nombre_comercial_edit.setText('Comercial')
-    dialog.nrc_edit.setText('1234567')
     dialog.nit_edit.setText('1234-123456-123-1')
-    dialog.telefono_edit.setText('1234-5678')
-    dialog.email_edit.setText('test@example.com')
 
     warnings = {}
     monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.setdefault('called', True))
@@ -96,12 +97,7 @@ def test_nombre_comercial_included(monkeypatch, qt_app):
     db = DummyDB()
     dialog = make_dialog(db)
 
-    dialog.nombre_edit.setText('Nombre')
     dialog.nombre_comercial_edit.setText('Comercial')
-    dialog.nrc_edit.setText('1234567')
-    dialog.nit_edit.setText('1234-123456-123-1')
-    dialog.telefono_edit.setText('1234-5678')
-    dialog.email_edit.setText('test@example.com')
 
     warnings = {}
     monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.setdefault('called', True))

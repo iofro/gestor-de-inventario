@@ -4172,9 +4172,22 @@ def _post_dte(
     except Exception:
         data = None
 
+    if resp.status_code in {401, 403}:
+        result = {
+            "estado": "Rechazado",
+            "http_status": 401,
+            "detalle": "Token inválido o caducado",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
     if isinstance(resp.status_code, int) and resp.status_code >= 400:
         detalle = data if data is not None else text
-        result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": detalle,
+        }
         print(json.dumps(result, ensure_ascii=False))
         return result
 

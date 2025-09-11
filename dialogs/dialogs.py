@@ -1107,8 +1107,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self._actualizar_tabla()
             self._recalcular_totales()
             self._actualizar_resumen()
-            self._actualizar_resumen()
-            self._actualizar_resumen()
 
     def _validar_y_accept(self):
         if not self.product_list.currentItem():

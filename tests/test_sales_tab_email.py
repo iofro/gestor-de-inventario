@@ -255,3 +255,39 @@ def test_save_invoice_ignores_config_transmission(
     tab.save_invoice()
 
     assert "tx" not in called
+
+
+def test_save_invoice_without_docs_generates_ticket(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+):
+    pdf, json_path = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"], nit="", dui="")
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
+
+    def fake_ticket(manager, vid):
+        pdf.write_bytes(b"%PDF")
+        json_path.write_text("{}", encoding="utf-8")
+        manager.db.add_ticket_pdf(vid, str(pdf))
+        return str(pdf)
+
+    monkeypatch.setattr("sales_tab.generate_ticket_pdf", fake_ticket)
+    monkeypatch.setattr(
+        "sales_tab.generate_invoice_pdf",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no invoice")),
+    )
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+
+    tab.sales_table.selectRow(0)
+    tab.save_invoice()
+
+    assert pdf.exists()
+    assert json_path.exists()
+    assert db.saved == (venta["id"], str(pdf))

@@ -907,6 +907,10 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Enviar", "Seleccione un documento")
             return
 
+        token_msg = (
+            "El token está desactualizado. Debe generar uno nuevo desde la configuración de facturación."
+        )
+
         factura = None
         rtype = entry.get("row_type")
         if rtype in ("venta", "orphan"):
@@ -932,8 +936,17 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
+                    if resp.get("http_status") in {401, 403}:
+                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        return
                     estado = resp.get("estado")
-                    if estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                    if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
+                        QMessageBox.critical(
+                            self,
+                            "Enviar a Hacienda",
+                            "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                        )
+                    elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
@@ -951,6 +964,8 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
+                except RuntimeError:
+                    QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
@@ -961,8 +976,17 @@ class FacturacionTab(QWidget):
                     resp = transmitir_dte(
                         self.manager.db, entry.get("id"), tipo_dte=tipo
                     )
+                    if resp.get("http_status") in {401, 403}:
+                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        return
                     estado = resp.get("estado")
-                    if estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                    if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
+                        QMessageBox.critical(
+                            self,
+                            "Enviar a Hacienda",
+                            "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                        )
+                    elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
@@ -980,6 +1004,8 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
+                except RuntimeError:
+                    QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
@@ -1244,6 +1270,7 @@ class FacturacionTab(QWidget):
                     "cantidad": float(d.get("cantidad", 1)),
                     "descripcion": d.get("descripcion", ""),
                     "precio_unitario": float(d.get("precioUni", 0)),
+                    "iva": float(d.get("ivaItem", 0)),
                     "ventas_gravadas": float(d.get("ventaGravada", 0)),
                     "ventas_exentas": float(d.get("ventaExenta", 0)),
                     "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
@@ -1415,6 +1442,7 @@ class FacturacionTab(QWidget):
                 "cantidad": 1,
                 "descripcion": src.get("descripcion", ""),
                 "precio_unitario": det.get("precio_unitario", 0),
+                "iva": det.get("iva", 0),
                 "ventas_gravadas": det.get("ventas_gravadas", 0),
                 "ventas_exentas": det.get("ventas_exentas", 0),
                 "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
@@ -1459,6 +1487,7 @@ class FacturacionTab(QWidget):
                         "cantidad": float(d.get("cantidad", 1)),
                         "descripcion": d.get("descripcion", ""),
                         "precio_unitario": float(d.get("precioUni", 0)),
+                        "iva": float(d.get("ivaItem", 0)),
                         "ventas_gravadas": float(d.get("ventaGravada", 0)),
                         "ventas_exentas": float(d.get("ventaExenta", 0)),
                         "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),

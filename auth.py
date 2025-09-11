@@ -243,10 +243,17 @@ def _request_new_token(nit: str, pwd: str, url: Optional[str] = None) -> Tuple[s
         if token_type.lower() == "bearer":
             token_type = "Bearer"
         return token, expires_in, token_type
+    except requests.HTTPError as exc:
+        status_code = exc.response.status_code if exc.response is not None else None
+        if status_code in {401, 403}:
+            raise RuntimeError("Token inválido o caducado") from exc
+        report = f"Error de autenticación al solicitar token en {url}: {exc}"
+        if exc.response is not None:
+            report += f"\nRespuesta: {exc.response.text[:200]}"
+        print(report)
+        raise
     except Exception as exc:
         report = f"Error de autenticación al solicitar token en {url}: {exc}"
-        if isinstance(exc, requests.HTTPError) and exc.response is not None:
-            report += f"\nRespuesta: {exc.response.text[:200]}"
         print(report)
         raise
 

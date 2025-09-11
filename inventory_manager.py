@@ -19,8 +19,8 @@ class InventoryManagerError(Exception):
 
 
 class InventoryManager:
-    def __init__(self, page_size=50):
-        self.db = DB()
+    def __init__(self, db: DB | None = None, page_size: int = 50):
+        self.db = db or DB()
         self.page_size = page_size
         self.current_page = 0
         self._filter_vendedor_id = None

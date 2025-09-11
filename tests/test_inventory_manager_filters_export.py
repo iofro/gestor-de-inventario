@@ -3,9 +3,9 @@ import inventory_manager
 from db import DB
 
 
-def create_manager(monkeypatch):
-    monkeypatch.setattr(inventory_manager, "DB", lambda: DB(":memory:"))
-    man = inventory_manager.InventoryManager()
+def create_manager():
+    db = DB(":memory:")
+    man = inventory_manager.InventoryManager(db)
     db = man.db
     db.add_Distribuidor("D1")
     dist1 = db.cursor.lastrowid
@@ -21,8 +21,8 @@ def create_manager(monkeypatch):
     return man, db, vend1, vend2, dist1, dist2
 
 
-def test_filters_modify_product_set(monkeypatch):
-    man, db, vend1, vend2, dist1, dist2 = create_manager(monkeypatch)
+def test_filters_modify_product_set():
+    man, db, vend1, vend2, dist1, dist2 = create_manager()
 
     assert {p["codigo"] for p in man._products} == {"C1", "C2"}
 
@@ -41,8 +41,8 @@ def test_filters_modify_product_set(monkeypatch):
     assert [p["codigo"] for p in man._products] == ["C2"]
 
 
-def test_export_json_contains_sections(monkeypatch, tmp_path):
-    man, db, vend1, vend2, dist1, dist2 = create_manager(monkeypatch)
+def test_export_json_contains_sections(tmp_path):
+    man, db, vend1, vend2, dist1, dist2 = create_manager()
     db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")
     cliente_id = db.cursor.lastrowid
     db.add_venta("2024-01-01", 10, cliente_id=cliente_id, vendedor_id=vend1, Distribuidor_id=dist1)

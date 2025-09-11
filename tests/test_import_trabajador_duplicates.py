@@ -32,9 +32,8 @@ def _inventory_with_duplicate(path):
     return p
 
 
-def test_import_trabajador_duplicate_codigo(tmp_path, monkeypatch):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    manager = im.InventoryManager()
+def test_import_trabajador_duplicate_codigo(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
     path = _inventory_with_duplicate(tmp_path)
 
     manager.importar_inventario_json(str(path))

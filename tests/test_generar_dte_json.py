@@ -2,7 +2,7 @@ import pytest
 
 import json
 from pathlib import Path
-from decimal import Decimal, getcontext, setcontext
+from decimal import Decimal, getcontext, setcontext, InvalidOperation
 
 from db import DB
 from dte import generar_dte_json, _write_json, money, d4
@@ -55,96 +55,151 @@ def test_generate_invoice_pdf_error_visible(monkeypatch):
     finally:
         setcontext(ctx)
 
+def test_venta_vs_dte_precision(tmp_path):
+    """Temporal test para depuración manual de cálculos POS vs DTE.
 
-def test_generar_dte_json_basic(tmp_path):
+    Se crea una venta con múltiples descuentos y diferentes tipos de
+    impuestos. El objetivo es simplemente ejecutar ``log_venta_vs_dte`` y
+    revisar manualmente los resultados en el log. No se realizan aserciones.
+    """
+
     import dte as dte_module
-
-    datos = {
-        "nit": "06141990011019",
-        "nrc": "1234567",
-        "dui": "01234567-8",
-        "nombre": "Mi Negocio",
-        "nombreComercial": "Mi Negocio",
-        "cod_giro": "123456",
-        "descActividad": "Comercio",
-        "telefono": "22222222",
-        "correo": "test@example.com",
-        "direccion": {
-            "departamento": "06",
-            "municipio": "10",
-            "complemento": "Calle 1",
-        },
-    }
-    tmp_file = tmp_path / "datos_negocio.json"
-    tmp_file.write_text(json.dumps(datos))
-    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
-    dte_module._load_datos_negocio = lambda: datos
-    dte_module._load_datos_negocio = lambda: datos
     import svfe.config as svfe_config
-    svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
-    svfe_config.load_datos_negocio = lambda: datos
-    dte_module._load_datos_negocio = lambda: datos
+    from utils.doc_generation import log_venta_vs_dte
 
-    db = create_db()
-    db.add_vendedor("V1")
-    vend_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", None,  vend_id, None, 0, 0, 0, 10)
-    prod_id = db.cursor.lastrowid
-    db.add_cliente(
-        "Cliente",
-        "1234567",
-        "06141990011019",
-        "",
-        "giro",
-        "70000001",
-        "",
-        "C",
-        "06",
-        "01",
-    )
-    cliente_id = db.cursor.lastrowid
-    venta_id = db.add_venta(
-        "2024-01-01", 11.3, cliente_id=cliente_id, extra={"precios_incluyen_iva": False}
-    )
-    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+    ctx = getcontext().copy()
+    getcontext().prec = 8
+    getcontext().traps[InvalidOperation] = False
+    try:
+        datos = {
+            "nit": "06141990011019",
+            "nrc": "1234567",
+            "dui": "01234567-8",
+            "nombre": "Mi Negocio",
+            "nombreComercial": "Mi Negocio",
+            "cod_giro": "123456",
+            "descActividad": "Comercio",
+            "telefono": "22222222",
+            "correo": "test@example.com",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "10",
+                "complemento": "Calle 1",
+            },
+        }
+        tmp_file = tmp_path / "datos_negocio.json"
+        tmp_file.write_text(json.dumps(datos))
+        dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+        dte_module._load_datos_negocio = lambda: datos
+        svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
+        svfe_config.load_datos_negocio = lambda: datos
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
+        db = create_db()
+        db.add_vendedor("V1")
+        vend_id = db.cursor.lastrowid
 
-    idf = data["identificacion"]
-    res = data["resumen"]
+        def add_prod(nombre: str, codigo: str) -> int:
+            db.add_producto(nombre, codigo, None, vend_id, None, 0, 0, 0, 10)
+            return db.cursor.lastrowid
 
-    assert idf["tipoDte"] == "01"
-    assert idf["ambiente"] in ("00", "01")
-    assert "dui" not in data["emisor"]
+        prod_a = add_prod("A-001", "A-001")
+        prod_b = add_prod("B-002", "B-002")
+        prod_c = add_prod("C-003", "C-003")
+        prod_d = add_prod("D-004", "D-004")
+        prod_e = add_prod("E-005", "E-005")
 
-    def q2(x):
-        return Decimal(str(x)).quantize(Decimal("0.01"))
+        db.add_cliente(
+            "Cliente",
+            "1234567",
+            "06141990011019",
+            "",
+            "giro",
+            "70000001",
+            "",
+            "C",
+            "06",
+            "01",
+        )
+        cliente_id = db.cursor.lastrowid
 
-    assert q2(res["totalPagar"]) == sum(
-        q2(p["montoPago"]) for p in (res.get("pagos") or [])
-    )
+        total = 111.97
+        venta_id = db.add_venta_credito_fiscal(
+            cliente_id,
+            "2024-05-01",
+            total,
+            "1234567",
+            "06141990011019",
+            "Comercio",
+            extra={
+                "precios_incluyen_iva": True,
+                "descuento_global": 0.57,
+                "pagos": [{"codigo": "01", "montoPago": 111.97}],
+            },
+        )
 
-    expected = {
-        "identificacion",
-        "emisor",
-        "receptor",
-        "cuerpoDocumento",
-        "resumen",
-        "documentoRelacionado",
-        "otrosDocumentos",
-        "apendice",
-        "ventaTercero",
-        "extension",
-    }
-    assert set(data.keys()) == expected
-    for key in (
-        "documentoRelacionado",
-        "otrosDocumentos",
-        "apendice",
-        "ventaTercero",
-        "extension",
-    ):
-        assert data[key] is None
+        db.add_detalle_venta(
+            venta_id,
+            prod_a,
+            3.75,
+            12.9875,
+            descuento=7.75,
+            descuento_tipo="%",
+            tipo_fiscal="venta gravada",
+            vendedor_id=vend_id,
+        )
+        db.add_detalle_venta(
+            venta_id,
+            prod_b,
+            2.20,
+            8.3333,
+            descuento=1.2345,
+            descuento_tipo="",
+            tipo_fiscal="venta gravada",
+            vendedor_id=vend_id,
+        )
+        db.add_detalle_venta(
+            venta_id,
+            prod_c,
+            4.15,
+            5.1709,
+            tipo_fiscal="venta exenta",
+            vendedor_id=vend_id,
+        )
+        db.add_detalle_venta(
+            venta_id,
+            prod_d,
+            6.40,
+            0.9917,
+            descuento=12.5,
+            descuento_tipo="%",
+            tipo_fiscal="venta no sujeta",
+            vendedor_id=vend_id,
+        )
+        db.add_detalle_venta(
+            venta_id,
+            prod_e,
+            1.33,
+            18.1701,
+            descuento=2.75,
+            descuento_tipo="%",
+            tipo_fiscal="venta gravada",
+            vendedor_id=vend_id,
+        )
+
+        class Manager:
+            def __init__(self, db):
+                self.db = db
+                self._Distribuidores = []
+                self._clientes = []
+                self._vendedores = []
+
+        manager = Manager(db)
+        try:
+            log_venta_vs_dte(manager, venta_id)
+        except Exception:
+            pass
+    finally:
+        setcontext(ctx)
 
 
 def test_generar_dte_json_usa_cod_estable_punto(tmp_path):

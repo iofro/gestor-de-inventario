@@ -28,7 +28,7 @@ from utils.catalogos import (
 import logging
 import warnings
 import xml.etree.ElementTree as ET
-from utils.monto import monto_a_texto_sv, to_base_iva
+from utils.monto import monto_a_texto_sv, to_base_iva, d2, d4, d8
 from utils.sanitize import limpiar_documentos, limpiar_doc, solo_digitos
 from num2words import num2words
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -197,28 +197,13 @@ def apply_schema_patch(data: dict) -> dict:
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_UP
 
-# Helper aliases for precise Decimal arithmetic
+# Helper alias for ``Decimal``
 D = Decimal
 
 
 def d1(value: "object") -> D:
     """Return ``value`` as :class:`Decimal` with 1 decimal place."""
     return D(str(value)).quantize(D("0.1"), rounding=ROUND_HALF_UP)
-
-
-def d2(value: "object") -> D:
-    """Return ``value`` as :class:`Decimal` with 2 decimal places."""
-    return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
-
-
-def d8(value: "object") -> D:
-    """Return ``value`` as :class:`Decimal` with 8 decimal places."""
-    return D(str(value)).quantize(D("0.00000000"), rounding=ROUND_HALF_UP)
-
-
-def d4(value: "object") -> D:
-    """Return ``value`` as :class:`Decimal` with 4 decimal places."""
-    return D(str(value)).quantize(D("0.0001"), rounding=ROUND_HALF_UP)
 
 
 def money(value) -> D:
@@ -2419,6 +2404,46 @@ def generar_dte_json(
         print(
             f"Advertencia: el total a pagar {resumen.get('totalPagar',0):.2f} difiere del calculado {calc_total_commission:.2f}"
         )
+
+    # Aplicar regla de cierre por centavo para alinear Venta vs DTE
+    venta_total = d2(D(str(venta.get("total") or 0)))
+    dte_total = d2(D(str(resumen.get("montoTotalOperacion", 0))))
+    diff = venta_total - dte_total
+    if abs(diff) == D("0.01"):
+        logger.debug("Aplicando cierre por centavo: diff=%s", diff)
+        # Buscar última línea gravada
+        last_grav = None
+        for idx, item in enumerate(cuerpo):
+            if D(str(item.get("ventaGravada") or 0)) > 0:
+                last_grav = idx
+        if last_grav is not None:
+            item = cuerpo[last_grav]
+            iva_val = D(str(item.get("ivaItem") or 0))
+            item["ivaItem"] = d4(iva_val + diff)
+            resumen["totalIva"] = d2(D(str(resumen.get("totalIva", 0))) + diff)
+            resumen["montoTotalOperacion"] = d2(dte_total + diff)
+            resumen["totalPagar"] = resumen.get("totalPagar", resumen["montoTotalOperacion"])
+            resumen["totalPagar"] = d2(D(str(resumen["totalPagar"])) + diff)
+        else:
+            # Sin líneas gravadas; ajustar precio de la última línea
+            if cuerpo:
+                item = cuerpo[-1]
+                qty = D(str(item.get("cantidad") or 1))
+                unit_adj = d4(diff / qty)
+                item["precioUni"] = d4(D(str(item.get("precioUni"))) + unit_adj)
+                if D(str(item.get("ventaExenta") or 0)) > 0:
+                    campo = "ventaExenta"
+                    resumen_key = "totalExenta"
+                elif D(str(item.get("ventaNoSuj") or 0)) > 0:
+                    campo = "ventaNoSuj"
+                    resumen_key = "totalNoSuj"
+                else:
+                    campo = "ventaGravada"
+                    resumen_key = "totalGravada"
+                item[campo] = d4(D(str(item.get(campo))) + diff)
+                resumen[resumen_key] = d2(D(str(resumen.get(resumen_key, 0))) + diff)
+                resumen["montoTotalOperacion"] = d2(dte_total + diff)
+                resumen["totalPagar"] = d2(D(str(resumen.get("totalPagar", dte_total))) + diff)
     # SERIALIZE-GUARD BEGIN
     special_d4_fields = {"totalExenta", "totalNoSuj"}
     for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):

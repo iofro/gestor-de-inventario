@@ -7,9 +7,8 @@ class MemoryDB(im.DB):
         super().__init__(db_name=":memory:")
 
 
-def test_importar_json_malformado(tmp_path, monkeypatch):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    manager = im.InventoryManager()
+def test_importar_json_malformado(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
     bad_file = tmp_path / "malformado.json"
     bad_file.write_text("{", encoding="utf-8")
 

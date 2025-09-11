@@ -7,9 +7,8 @@ class MemoryDB(im.DB):
         super().__init__(db_name=":memory:")
 
 
-def test_export_skips_unsynced_sales(monkeypatch, tmp_path):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    man = im.InventoryManager()
+def test_export_skips_unsynced_sales(tmp_path):
+    man = im.InventoryManager(MemoryDB())
     db = man.db
 
     db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")

@@ -18,10 +18,9 @@ def test_detalle_venta_con_vendedor():
     assert detalles[0]["vendedor_id"] == vendedor_id
 
 
-def test_import_detalles_venta_uses_vendedor_map(tmp_path, monkeypatch):
+def test_import_detalles_venta_uses_vendedor_map(tmp_path):
     import inventory_manager
-    monkeypatch.setattr(inventory_manager, 'DB', lambda: DB(":memory:"))
-    man = inventory_manager.InventoryManager()
+    man = inventory_manager.InventoryManager(DB(":memory:"))
 
     data = {
         "vendedores": [{"id": 1, "nombre": "Luis"}],

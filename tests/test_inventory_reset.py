@@ -21,7 +21,7 @@ def qt_app():
 
 
 def test_inventory_reset_removes_dependencies(qt_app, monkeypatch, tmp_path):
-    monkeypatch.setattr(im, "DB", MemoryDB)
+    monkeypatch.setattr(ui_mainwindow, "DB", MemoryDB)
     monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(ui_mainwindow, "LAST_INVENTORY_PATH", tmp_path / "last.json")
     monkeypatch.setattr(im, "DATOS_NEGOCIO_PATH", tmp_path / "datos_negocio.json")
@@ -73,9 +73,8 @@ def test_inventory_reset_removes_dependencies(qt_app, monkeypatch, tmp_path):
         assert db.cursor.fetchone()[0] == 0
 
 
-def test_import_inventory_creates_relations(tmp_path, monkeypatch):
-    monkeypatch.setattr(im, "DB", MemoryDB)
-    manager = im.InventoryManager()
+def test_import_inventory_creates_relations(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
 
     data = {
         "Distribuidores": [],

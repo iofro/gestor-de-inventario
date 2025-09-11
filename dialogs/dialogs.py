@@ -655,14 +655,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         fiscal_layout.addWidget(self.tipo_fiscal_combo)
         left_layout.addLayout(fiscal_layout)
 
-        # Labels de vista previa del item actual
-        self.item_subtotal_label = QLabel("Subtotal: $0.00")
-        self.item_iva_label = QLabel("IVA: $0.00")
-        left_layout.addWidget(self.item_subtotal_label)
-        left_layout.addWidget(self.item_iva_label)
-        self.item_total_label = QLabel("TOTAL: $0.00")
-        left_layout.addWidget(self.item_total_label)
-
         # Botón agregar a venta
         self.btn_agregar = QPushButton("Agregar a venta")
         left_layout.addWidget(self.btn_agregar)
@@ -734,9 +726,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         right_layout.addWidget(self.Distribuidor_combo)
 
         # Resumen (sin IVA para consumidor final)
+        self.precio_label = QLabel("Precio U.: $0.00")
         self.sumas_label = QLabel("Sumas: $0.00")
         self.subtotal_label = QLabel("Subtotal: $0.00")
         self.total_label = QLabel("Venta total: $0.00")
+        right_layout.addWidget(self.precio_label)
         right_layout.addWidget(self.sumas_label)
         right_layout.addWidget(self.subtotal_label)
         right_layout.addWidget(self.total_label)
@@ -919,10 +913,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         else:
             total_final = total
 
-        self.item_subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
-        self.item_iva_label.setText(f"IVA: ${iva:.2f}")
+        self.precio_label.setText(f"Precio U.: ${precio_unitario:.2f}")
         self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
-        self.item_total_label.setText(f"TOTAL: ${total_final:.2f}")
 
 
     def get_data(self):
@@ -1820,15 +1812,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         tipo_fiscal_layout.addWidget(self.tipo_fiscal_combo)
         left_layout.addLayout(tipo_fiscal_layout)
 
-        # Labels de vista previa del item actual
-        self.item_subtotal_label = QLabel("Subtotal: $0.00")
-        self.item_iva_label = QLabel("IVA: $0.00")
-        left_layout.addWidget(self.item_subtotal_label)
-        left_layout.addWidget(self.item_iva_label)
-
-        self.item_total_label = QLabel("TOTAL: $0.00")
-        left_layout.addWidget(self.item_total_label)
-
         # Botón agregar a venta
         self.btn_agregar = QPushButton("Agregar a venta")
         left_layout.addWidget(self.btn_agregar)
@@ -1846,13 +1829,13 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
 
-        # Resumen de la venta (con IVA visible)
+        # Resumen de la venta (sin IVA visible)
+        self.precio_label = QLabel("Precio U.: $0.00")
         self.sumas_label = QLabel("Sumas: $0.00")
-        self.iva_label = QLabel("IVA: $0.00")
         self.subtotal_label = QLabel("Subtotal: $0.00")
         self.total_label = QLabel("TOTAL: $0.00")
+        left_layout.addWidget(self.precio_label)
         left_layout.addWidget(self.sumas_label)
-        left_layout.addWidget(self.iva_label)
         left_layout.addWidget(self.subtotal_label)
         left_layout.addWidget(self.total_label)
 
@@ -2094,10 +2077,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         else:
             total_final = total
 
-        self.item_subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
-        self.item_iva_label.setText(f"IVA: ${iva:.2f}")
+        self.precio_label.setText(f"Precio U.: ${precio_unitario:.2f}")
         self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
-        self.item_total_label.setText(f"TOTAL: ${total_final:.2f}")
 
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
@@ -2221,16 +2202,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
     def _actualizar_resumen(self):
         sumas = sum(item.get("subtotal", 0) for item in self.venta_items)
         descuentos = sum(item.get("descuento_monto", 0) for item in self.venta_items)
-        iva_total = sum(item.get("iva", 0) for item in self.venta_items)
         subtotal = sumas - descuentos
         total = sum(item.get("total", 0) for item in self.venta_items)
 
         label = self.__dict__.get("sumas_label")
         if label:
             label.setText(f"Sumas: ${sumas:.2f}")
-        label = self.__dict__.get("iva_label")
-        if label:
-            label.setText(f"IVA: ${iva_total:.2f}")
         label = self.__dict__.get("subtotal_label")
         if label:
             label.setText(f"Subtotal: ${subtotal:.2f}")

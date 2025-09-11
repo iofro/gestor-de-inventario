@@ -435,7 +435,10 @@ class FacturacionTab(QWidget):
             "Todos",
             "Consumidor final",
             "Crédito fiscal",
+            "Ticket",
             "Nota de débito",
+            "Nota de crédito",
+            "Nota de remisión",
         ])
         filter_layout.addWidget(self.tipo_filter)
 
@@ -722,6 +725,7 @@ class FacturacionTab(QWidget):
         folders = [
             CF_DIR,
             CREDITO_DIR,
+            TICKETS_DIR,
             NOTAS_DEBITO_DIR,
             NOTAS_CREDITO_DIR,
             NOTAS_REMISION_DIR,
@@ -734,6 +738,8 @@ class FacturacionTab(QWidget):
                 tipo = "Consumidor final"
             elif folder == CREDITO_DIR or "credito_fiscal" in folder:
                 tipo = "Crédito fiscal"
+            elif folder == TICKETS_DIR or "tickets" in folder:
+                tipo = "Ticket"
             elif folder == NOTAS_DEBITO_DIR or "notas_debito" in folder:
                 tipo = "Nota de débito"
             elif folder == NOTAS_CREDITO_DIR or "notas_credito" in folder:

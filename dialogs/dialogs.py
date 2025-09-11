@@ -655,6 +655,14 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         fiscal_layout.addWidget(self.tipo_fiscal_combo)
         left_layout.addLayout(fiscal_layout)
 
+        # Labels de vista previa del item actual
+        self.item_subtotal_label = QLabel("Subtotal: $0.00")
+        self.item_iva_label = QLabel("IVA: $0.00")
+        left_layout.addWidget(self.item_subtotal_label)
+        left_layout.addWidget(self.item_iva_label)
+        self.item_total_label = QLabel("TOTAL: $0.00")
+        left_layout.addWidget(self.item_total_label)
+
         # Botón agregar a venta
         self.btn_agregar = QPushButton("Agregar a venta")
         left_layout.addWidget(self.btn_agregar)

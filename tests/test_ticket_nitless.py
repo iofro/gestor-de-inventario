@@ -49,6 +49,9 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
     # No debe lanzar error al recalcular totales aunque no haya NIT
     recalcular_totales(data)
 
+    assert data["identificacion"]["tipoDte"] == "01"
+    assert "extra" not in data
+
     rec = data["receptor"]
     assert rec["codActividad"] is None
     assert rec["descActividad"] is None
@@ -57,4 +60,4 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
 
     nce = generar_nce_desde_dte(db, data, Decimal("1"), motivo="Dev")
     assert nce["identificacion"]["tipoDte"] == "05"
-    assert nce["documentoRelacionado"][0]["tipoDocumento"] == "03"
+    assert nce["documentoRelacionado"][0]["tipoDocumento"] == "01"

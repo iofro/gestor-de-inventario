@@ -6,8 +6,8 @@ import logging
 import dte
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
-from dte import generar_ticket_json, generar_dte_json
-from utils.monto import monto_a_texto_sv, iva_item, to_base_iva
+from dte import generar_ticket_json, generar_dte_json, d4
+from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -15,6 +15,152 @@ from utils.sanitize import limpiar_documentos
 
 
 logger = logging.getLogger(__name__)
+
+
+def log_venta_vs_dte(manager, venta_id):
+    """Log line-by-line comparisons between Venta and DTE calculations.
+
+    This helper runs both the Venta calculation (used for PDF generation)
+    and the DTE calculation for the given ``venta_id`` and emits detailed
+    logging for each line.  It highlights per-line differences greater than
+    ``0.01`` and checks basic invariants for totals.
+    """
+
+    venta = next((v for v in manager.db.get_ventas() if v["id"] == venta_id), None)
+    if not venta:
+        logger.error("Venta %s no encontrada", venta_id)
+        return
+
+    credito_info = manager.db.get_venta_credito_fiscal(venta_id)
+    tipo_dte = "03" if credito_info else "01"
+
+    detalles = manager.db.get_detalles_venta(venta_id)
+    json_data = generar_dte_json(manager.db, venta_id, tipo_dte=tipo_dte)
+    dte_items = json_data.get("cuerpoDocumento", [])
+
+    tot_pf = D("0")
+    tot_base = D("0")
+    tot_iva = D("0")
+    tot_pf_dte = D("0")
+    tot_base_dte = D("0")
+    tot_iva_dte = D("0")
+    last_gravada_idx = None
+
+    for idx, d in enumerate(detalles):
+        qty = D(str(d.get("cantidad") or 0))
+        unit = D(str(d.get("precio_unitario") or 0))
+        pf_line = d4(qty * unit)
+        desc = D(str(d.get("descuento") or 0))
+        if d.get("descuento_tipo") == "%":
+            desc_line = d4(pf_line * desc / D("100"))
+        else:
+            desc_line = d4(desc)
+        pf_neto = d4(pf_line - desc_line)
+        base = D(
+            str(
+                d.get("ventas_gravadas")
+                or d.get("ventas_exentas")
+                or d.get("ventas_no_sujetas")
+                or 0
+            )
+        )
+        iva = D(str(d.get("iva") or 0))
+        if base > 0:
+            last_gravada_idx = idx
+        logger.info(
+            "Venta idx=%s qty=%s pf_unit=%.4f desc=%.4f pf_line=%.4f "
+            "desc_line=%.4f pf_neto=%.4f base=%.4f iva=%.4f",
+            idx + 1,
+            qty,
+            unit,
+            desc,
+            pf_line,
+            desc_line,
+            pf_neto,
+            base,
+            iva,
+        )
+        tot_pf += pf_neto
+        tot_base += base
+        tot_iva += iva
+
+        if idx < len(dte_items):
+            item = dte_items[idx]
+            dte_qty = D(str(item.get("cantidad") or 0))
+            dte_unit = D(str(item.get("precioUni") or 0))
+            pf_line_dte = d4(dte_qty * dte_unit)
+            desc_dte = D(str(item.get("montoDescu") or 0))
+            pf_neto_dte = d4(pf_line_dte - desc_dte)
+            base_dte = D(
+                str(
+                    item.get("ventaGravada")
+                    or item.get("ventaExenta")
+                    or item.get("ventaNoSuj")
+                    or 0
+                )
+            )
+            iva_dte = D(str(item.get("ivaItem") or 0))
+            logger.info(
+                "DTE   idx=%s qty=%s pf_unit=%.4f desc=%.4f pf_line=%.4f "
+                "desc_line=%.4f pf_neto=%.4f base=%.4f iva=%.4f",
+                idx + 1,
+                dte_qty,
+                dte_unit,
+                desc_dte,
+                pf_line_dte,
+                desc_dte,
+                pf_neto_dte,
+                base_dte,
+                iva_dte,
+            )
+            tot_pf_dte += pf_neto_dte
+            tot_base_dte += base_dte
+            tot_iva_dte += iva_dte
+            diff_pf = abs(pf_neto - pf_neto_dte)
+            diff_base = abs(base - base_dte)
+            diff_iva = abs(iva - iva_dte)
+            if max(diff_pf, diff_base, diff_iva) > D("0.01"):
+                logger.warning(
+                    "Diferencia idx=%s pf=%.4f base=%.4f iva=%.4f",
+                    idx + 1,
+                    diff_pf,
+                    diff_base,
+                    diff_iva,
+                )
+
+    total_venta = D(str(venta.get("total") or 0))
+    if d2(tot_pf) != d2(total_venta):
+        logger.warning(
+            "Invariante Venta falló: sum pf_neto=%s total=%s",
+            d2(tot_pf),
+            d2(total_venta),
+        )
+    if d2(tot_base + tot_iva) != d2(tot_pf):
+        logger.warning(
+            "Invariante Venta base+iva=%s pf=%s",
+            d2(tot_base + tot_iva),
+            d2(tot_pf),
+        )
+        diff = d2(tot_pf) - d2(tot_base + tot_iva)
+        if abs(diff) == D("0.01") and last_gravada_idx is not None:
+            logger.warning(
+                "Ajustar IVA de línea %s en %.2f",
+                last_gravada_idx + 1,
+                float(diff),
+            )
+
+    if d2(tot_pf_dte) != d2(total_venta):
+        logger.warning(
+            "Invariante DTE falló: sum pf_neto=%s total=%s",
+            d2(tot_pf_dte),
+            d2(total_venta),
+        )
+    if d2(tot_base_dte + tot_iva_dte) != d2(tot_pf_dte):
+        logger.warning(
+            "Invariante DTE base+iva=%s pf=%s",
+            d2(tot_base_dte + tot_iva_dte),
+            d2(tot_pf_dte),
+        )
 
 def generate_invoice_pdf(manager, venta_id):
     """Generate and store the invoice PDF for the given sale."""

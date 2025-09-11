@@ -59,6 +59,15 @@ def validar_nit(nit):
         or re.match(dui_pattern, nit)
     )
 
+def validar_dui(dui):
+    """Valida un número de DUI salvadoreño."""
+    import re
+    if not dui:
+        return False
+    # Formato ########-# o #########
+    dui_pattern = r"^\d{8}-?\d$"
+    return bool(re.match(dui_pattern, dui))
+
 def validar_email(email):
     import re
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
@@ -904,10 +913,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         else:
             total_final = total
 
-        self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
-        self.iva_label.setText(f"IVA: ${iva:.2f}")
+        self.item_subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
+        self.item_iva_label.setText(f"IVA: ${iva:.2f}")
         self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
-        self.total_label.setText(f"TOTAL: ${total_final:.2f}")
+        self.item_total_label.setText(f"TOTAL: ${total_final:.2f}")
 
 
     def get_data(self):
@@ -1049,6 +1058,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         })
         self._actualizar_tabla()
         self._recalcular_totales()
+        self._actualizar_resumen()
 
     def _actualizar_tabla(self):
         self.table.setRowCount(len(self.venta_items))
@@ -1076,6 +1086,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             del self.venta_items[row]
             self._actualizar_tabla()
             self._recalcular_totales()
+            self._actualizar_resumen()
+            self._actualizar_resumen()
+            self._actualizar_resumen()
 
     def _validar_y_accept(self):
         if not self.product_list.currentItem():
@@ -1793,15 +1806,14 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         tipo_fiscal_layout.addWidget(self.tipo_fiscal_combo)
         left_layout.addLayout(tipo_fiscal_layout)
 
-        self.subtotal_label = QLabel("Subtotal: $0.00")
-        self.iva_label = QLabel("IVA: $0.00")
-        left_layout.addWidget(self.subtotal_label)
-        left_layout.addWidget(self.iva_label)
+        # Labels de vista previa del item actual
+        self.item_subtotal_label = QLabel("Subtotal: $0.00")
+        self.item_iva_label = QLabel("IVA: $0.00")
+        left_layout.addWidget(self.item_subtotal_label)
+        left_layout.addWidget(self.item_iva_label)
 
-
-
-        self.total_label = QLabel("TOTAL: $0.00")
-        left_layout.addWidget(self.total_label)
+        self.item_total_label = QLabel("TOTAL: $0.00")
+        left_layout.addWidget(self.item_total_label)
 
         # Botón agregar a venta
         self.btn_agregar = QPushButton("Agregar a venta")
@@ -1819,6 +1831,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
+
+        # Resumen de la venta
+        self.iva_label = QLabel("IVA: $0.00")
+        self.total_label = QLabel("TOTAL: $0.00")
+        left_layout.addWidget(self.iva_label)
+        left_layout.addWidget(self.total_label)
 
         # Botón para registrar la venta
         self.btn_ok = QPushButton("Registrar")
@@ -1945,6 +1963,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if productos:
             self.product_list.setCurrentRow(0)
             self._actualizar_precio_defecto()
+        self._actualizar_resumen()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -2057,10 +2076,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         else:
             total_final = total
 
-        self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
-        self.iva_label.setText(f"IVA: ${iva:.2f}")
+        self.item_subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
+        self.item_iva_label.setText(f"IVA: ${iva:.2f}")
         self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
-        self.total_label.setText(f"TOTAL: ${total_final:.2f}")
+        self.item_total_label.setText(f"TOTAL: ${total_final:.2f}")
 
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
@@ -2161,6 +2180,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         self._actualizar_tabla()
         self._recalcular_totales()
+        self._actualizar_resumen()
 
 
     def _actualizar_tabla(self):
@@ -2180,6 +2200,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, 6, btn)
 
+    def _actualizar_resumen(self):
+        iva_total = sum(item.get("iva", 0) for item in self.venta_items)
+        total = sum(item.get("total", 0) for item in self.venta_items)
+        self.iva_label.setText(f"IVA: ${iva_total:.2f}")
+        self.total_label.setText(f"TOTAL: ${total:.2f}")
+
     def _eliminar_fila(self, row, col):
         if col == 6:
             self._eliminar_item(row)
@@ -2189,6 +2215,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             del self.venta_items[row]
             self._actualizar_tabla()
             self._recalcular_totales()
+            self._actualizar_resumen()
 
     def _validar_y_accept(self):
         if not self.selected_cliente or "id" not in self.selected_cliente:
@@ -2573,50 +2600,31 @@ class ClienteDialog(QDialog):
 
 
     def _validar_y_accept(self):
-        if not self.nombre_edit.text().strip():
-            QMessageBox.warning(self, "Validación", "El nombre es obligatorio.")
-            return
         nrc = self.nrc_edit.text().strip()
-        if not nrc:
-            QMessageBox.warning(self, "Validación", "El NRC es obligatorio.")
-            return
-        if not validar_nrc(nrc):
+        if nrc and not validar_nrc(nrc):
             QMessageBox.warning(self, "Validación", "Ingrese un NRC válido.")
             return
         nit = self.nit_edit.text().strip()
-        if not nit:
-            QMessageBox.warning(self, "Validación", "El NIT es obligatorio.")
-            return
-        if not validar_nit(nit):
+        if nit and not validar_nit(nit):
             QMessageBox.warning(self, "Validación", "Ingrese un NIT válido.")
             return
-        telefono = self.telefono_edit.text().strip()
-        if not telefono:
-            QMessageBox.warning(self, "Validación", "El teléfono es obligatorio.")
+        dui = self.dui_edit.text().strip()
+        if dui and not validar_dui(dui):
+            QMessageBox.warning(self, "Validación", "Ingrese un DUI válido.")
             return
-        if not validar_telefono(telefono):
+        telefono = self.telefono_edit.text().strip()
+        if telefono and not validar_telefono(telefono):
             QMessageBox.warning(self, "Validación", "Ingrese un teléfono válido.")
             return
         email = self.email_edit.text().strip()
-        if not email:
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "El correo electrónico es obligatorio.",
-            )
+        if email and not validar_email(email):
+            QMessageBox.warning(self, "Validación", "Ingrese un correo electrónico válido.")
             return
-        if not validar_email(email):
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "Ingrese un correo electrónico válido.",
-            )
-            return
-        nit = self.nit_edit.text().strip()
-        db = getattr(getattr(self.parent(), "manager", None), "db", None)
-        if db and db.nit_exists(nit, exclude_id=self._cliente_id):
-            QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
-            return
+        if nit:
+            db = getattr(getattr(self.parent(), "manager", None), "db", None)
+            if db and db.nit_exists(nit, exclude_id=self._cliente_id):
+                QMessageBox.warning(self, "Validación", "El NIT ya está registrado.")
+                return
         self.accept()
 
     def get_data(self):

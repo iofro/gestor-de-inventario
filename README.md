@@ -64,6 +64,18 @@ Hacienda, ejecuta:
 python -m tests.manual_e2e
 ```
 
+### Depurar Venta vs DTE
+
+Para comparar los cálculos de una venta contra su DTE y detectar
+diferencias mayores a 0.01, ejecuta:
+
+```bash
+python tools/venta_vs_dte_debug.py <venta_id> --db ruta/a/tu.db
+```
+
+El comando registrará por línea los valores de cantidad, precio,
+descuento, base e IVA, resaltando las discrepancias.
+
 ### Generar DTE
 
 El método `generar_dte_json(venta_id)` crea un diccionario con el formato que

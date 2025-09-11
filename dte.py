@@ -4161,6 +4161,8 @@ def _post_dte(
     try:
         print(json.dumps(sobre, ensure_ascii=False))
         resp = requests.post(url, headers=headers, json=sobre, timeout=20)
+    except (requests.ConnectionError, requests.Timeout):
+        return {"estado": "Error", "detalle": "Sin conexión a Internet"}
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
@@ -4170,9 +4172,22 @@ def _post_dte(
     except Exception:
         data = None
 
+    if resp.status_code in {401, 403}:
+        result = {
+            "estado": "Rechazado",
+            "http_status": 401,
+            "detalle": "Token inválido o caducado",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
     if isinstance(resp.status_code, int) and resp.status_code >= 400:
         detalle = data if data is not None else text
-        result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": detalle,
+        }
         print(json.dumps(result, ensure_ascii=False))
         return result
 

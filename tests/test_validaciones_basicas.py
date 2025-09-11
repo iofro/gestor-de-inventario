@@ -9,12 +9,13 @@ from pathlib import Path
 try:
     from dialogs import (
         validar_nit,
+        validar_dui,
         validar_nrc,
         validar_email,
         validar_telefono,
     )
 except Exception:  # pragma: no cover - missing UI deps
-    validar_nit = validar_nrc = validar_email = validar_telefono = None
+    validar_nit = validar_dui = validar_nrc = validar_email = validar_telefono = None
     _dialog_import_error = True
 else:  # pragma: no cover
     _dialog_import_error = False
@@ -37,6 +38,17 @@ from utils import catalogos
 @pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
 def test_validar_nit(nit, expected):
     assert validar_nit(nit) is expected
+
+
+@pytest.mark.parametrize("dui, expected", [
+    ("12345678-9", True),
+    ("123456789", True),
+    ("1234567-89", False),
+    ("abcd", False),
+])
+@pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
+def test_validar_dui(dui, expected):
+    assert validar_dui(dui) is expected
 
 
 @pytest.mark.parametrize("nrc, expected", [

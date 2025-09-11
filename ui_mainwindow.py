@@ -10,6 +10,7 @@ from PyQt5.QtGui import QColor
 import os
 import json
 import sys
+import subprocess
 from inventory_manager import InventoryManager
 from db import DB
 from paths import DATOS_NEGOCIO_PATH
@@ -1883,42 +1884,47 @@ class MainWindow(QMainWindow):
     # DEBUG: Método temporal para pruebas de Venta vs DTE
     def _debug_venta_vs_dte(self):  # pragma: no cover - debug helper
         """Compara cálculos de una venta con su DTE correspondiente."""
-        venta_id, ok = QInputDialog.getInt(
-            self,
-            "Debug Venta vs DTE",
-            "ID de la venta:",
-        )
-        if not ok:
+        row = self.sales_tab.sales_table.currentRow()
+        venta_id = None
+        if row >= 0:
+            item = self.sales_tab.sales_table.item(row, 0)
+            if item is not None:
+                try:
+                    venta_id = int(item.text())
+                except ValueError:
+                    venta_id = None
+        else:
+            text = self.sales_tab.search_bar.text().strip()
+            if text.isdigit():
+                venta_id = int(text)
+
+        if venta_id is None:
+            QMessageBox.warning(
+                self,
+                "Debug Venta vs DTE",
+                "Seleccione una venta o ingrese un ID válido en el campo de búsqueda.",
+            )
             return
-        db_path, _ = QFileDialog.getOpenFileName(
-            self,
-            "Seleccionar base de datos",
-            "",
-            "DB Files (*.db);;All Files (*)",
-        )
-        if not db_path:
-            return
+
         try:
             from utils.doc_generation import log_venta_vs_dte
 
-            db = DB(db_path)
-            manager = InventoryManager(db=db)
+            log_venta_vs_dte(self.manager, venta_id)
 
-            import io
-            import logging
-
-            log_stream = io.StringIO()
-            handler = logging.StreamHandler(log_stream)
-            logger = logging.getLogger("utils.doc_generation")
-            logger.addHandler(handler)
-            logger.setLevel(logging.INFO)
-
-            log_venta_vs_dte(manager, venta_id)
-
-            logger.removeHandler(handler)
-            handler.flush()
-            output = log_stream.getvalue() or "Sin resultados"
-            QMessageBox.information(self, "Debug Venta vs DTE", output)
+            db_path = self.manager.db.conn.execute("PRAGMA database_list").fetchone()[2]
+            script = os.path.join(
+                os.path.dirname(__file__), "tools", "venta_vs_dte_debug.py"
+            )
+            popen_kwargs = {}
+            creationflag = getattr(subprocess, "CREATE_NEW_CONSOLE", None)
+            if creationflag is not None:
+                popen_kwargs["creationflags"] = creationflag
+            else:
+                popen_kwargs["start_new_session"] = True
+            subprocess.Popen(
+                [sys.executable, script, str(venta_id), "--db", db_path],
+                **popen_kwargs,
+            )
         except Exception as exc:  # pragma: no cover - debug helper
             QMessageBox.critical(self, "Error", str(exc))
 

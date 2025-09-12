@@ -1146,6 +1146,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         }
     )
 
+    if tipo_dte == "01":
+        resumen["totalIva"] = total_iva
+
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
 
@@ -1342,18 +1345,18 @@ def recalcular_totales(
                 linea = d4(0)
             _, iva_calc = to_base_iva(linea)
             esperado_iva = d4(iva_calc)
-            iva_raw = item.get("ivaItem")
-            actual_iva = money(D(str(iva_raw))) if iva_raw is not None else None
-            if iva_raw is not None and linea > D("0") and actual_iva != esperado_iva:
-                logger.warning(
-                    "IVA por ítem incoherente (%s); se corrige a %s",
-                    actual_iva,
-                    esperado_iva,
-                )
+            iva_raw = item.pop("ivaItem", None)
+            if iva_raw is not None:
+                actual_iva = money(D(str(iva_raw)))
+                if linea > D("0") and actual_iva != esperado_iva:
+                    logger.warning(
+                        "IVA por ítem incoherente (%s); se esperaba %s",
+                        actual_iva,
+                        esperado_iva,
+                    )
+                if linea == D("0") and actual_iva != D("0"):
+                    raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
             item["ventaGravada"] = linea
-            item["ivaItem"] = esperado_iva
-            if iva_raw is not None and linea == D("0") and actual_iva != D("0"):
-                raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
             item["ventaExenta"] = d4(0)
             item["ventaNoSuj"] = d4(0)
             item["noGravado"] = d4(0)
@@ -1478,9 +1481,7 @@ def recalcular_totales(
         iva_total = sum(ivas)
         venta_total_sum = bruto_sum
     else:
-        venta_gravada_sum = D("0")
-        iva_total = D("0")
-        venta_total_sum = D("0")
+        venta_total_sum = bruto_sum
 
     if tipo_dte in {"03", "05", "06"}:
         if colapso_desc:
@@ -1513,6 +1514,8 @@ def recalcular_totales(
             return
         resumen[key] = value
         modificados.append(key)
+
+    resumen.pop("totalIva", None)
 
     if tipo_dte == "01":
         _set_resumen("totalNoSuj", d4(0))
@@ -2131,7 +2134,6 @@ def generar_dte_json(
                 receptor.setdefault(f, None)
 
     cuerpo = []
-    items_total = D("0")
     commission_total = D("0")
     iva_total = D("0")
     total_gravada_sum = D("0")
@@ -2156,7 +2158,6 @@ def generar_dte_json(
     q_qty = d8 if tipo_dte == "03" else d4
     # Quantizers per field (por tipo de DTE)
     q_field_item = d8 if tipo_dte == "03" else d4  # ventaGravada/Exenta/NoSuj por ítem
-    q_field_iva = d8 if tipo_dte == "03" else d2   # ivaItem por ítem
 
     def _zero_or_item(value: D) -> D:
         dec = q_item(value)
@@ -2305,7 +2306,6 @@ def generar_dte_json(
                 descuentos_total += monto_descu
             venta_exenta = D("0")
             venta_no_suj = D("0")
-        items_total += line_total
         if tipo_dte not in {"03", "05", "06"}:
             iva_total += iva_val
         try:
@@ -2349,10 +2349,6 @@ def generar_dte_json(
             "noGravado": q_item(0),
             "tributos": [],
         }
-        if tipo_dte in {"01", "03"}:
-            item_data["ivaItem"] = (
-                q_field_iva(iva_val) if tipo_dte == "03" else money(iva_val)
-            )
         if tipo_dte == "01":
             item_data["codTributo"] = None
             item_data["tributos"] = None
@@ -2374,7 +2370,6 @@ def generar_dte_json(
         total_no_gravado_sum += D(str(item_data["noGravado"]))
         cuerpo.append(item_data)
 
-    items_total = money(items_total)
     bruto_total = money(bruto_total)
     descuentos_total = money(descuentos_total)
     total_no_suj_sum = _zero_or_item(total_no_suj_sum)
@@ -2384,6 +2379,12 @@ def generar_dte_json(
     total_iva_sum = money(iva_total)
     sub_total_ventas = money(sub_total_ventas)
     descu_gravada_sum = money(descu_gravada_sum)
+    if tipo_dte == "01":
+        items_total = money(total_gravada_sum + total_exenta_sum + total_no_suj_sum)
+    else:
+        items_total = money(
+            total_gravada_sum + total_exenta_sum + total_no_suj_sum + total_iva_sum
+        )
 
     fiscal_data = {
         **(fiscal or {}),
@@ -3043,25 +3044,18 @@ def validate_dte_json(
             "tributos",
             "psv",
             "noGravado",
-            "ivaItem",
         }
-    if tipo_dte == "03":
-        allowed_item_keys.add("ivaItem")
     precio_key = "precioUni"
-    iva_key = "ivaItem" if "ivaItem" in allowed_item_keys else None
+    iva_key = None
 
     for item in cuerpo:
         # --- Normalización de nombres ---
         if "precioUnitario" in item:
             raise ValueError("Usar 'precioUni' en lugar de 'precioUnitario'")
 
-        iva_val = None
         for k in ("montoIva", "iva", "ivaItem"):
             if k in item:
-                iva_val = item.pop(k)
-                break
-        if iva_key and iva_val is not None:
-            item[iva_key] = iva_val
+                item.pop(k)
 
         # --- Filtrar claves no permitidas ---
         for key in list(item.keys()):
@@ -3241,14 +3235,11 @@ def validate_dte_json(
                 * D(str(i.get("precioUni") or 0))
                 - D(str(i.get("montoDescu") or 0))
             )
-            iva_chk = money(linea * D("0.13") / D("1.13"))
-            if i.get("ventaGravada") != linea or i.get("ivaItem") != iva_chk:
+            if i.get("ventaGravada") != linea:
                 logger.warning(
-                    "ventaGravada/ivaItem incoherente: %s/%s esperado %s/%s",
+                    "ventaGravada incoherente: %s esperado %s",
                     i.get("ventaGravada"),
-                    i.get("ivaItem"),
                     linea,
-                    iva_chk,
                 )
 
     resumen["pagos"] = normalizar_pagos(

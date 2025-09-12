@@ -122,7 +122,6 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
                     "totalNoGravado": 0,
                     "totalPagar": 10,
                     "totalLetras": "DIEZ",
-                    "totalIva": 0,
                     "saldoFavor": 0,
                     "condicionOperacion": 1,
                     "pagos": None,

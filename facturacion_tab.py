@@ -1092,8 +1092,18 @@ class FacturacionTab(QWidget):
             return
         items = data.get("cuerpoDocumento") or []
         resumen = data.get("resumen") or {}
-        dlg = InvoiceDetailDialog(items, resumen, self)
+        ident = data.get("identificacion") or {}
+        dlg = InvoiceDetailDialog(
+            items,
+            resumen,
+            venta_id=factura.get("id"),
+            numero_control=ident.get("numeroControl"),
+            factura=data,
+            parent=self,
+        )
         dlg.exec_()
+        if getattr(dlg, "anulacion_result", None):
+            self.refresh_and_reload()
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

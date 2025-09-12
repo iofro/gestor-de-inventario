@@ -7,7 +7,12 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QDialogButtonBox,
     QMessageBox,
+    QListWidget,
+    QListWidgetItem,
+    QPushButton,
 )
+from PyQt5.QtCore import QTimer, Qt, QEvent
+import dte
 
 DOC_TYPES = [
     ("NIT", "36"),
@@ -47,6 +52,16 @@ class AnularFacturaDialog(QDialog):
 
         # Responsable
         layout.addWidget(QLabel("Responsable"))
+        self.emp_search = QLineEdit()
+        self.emp_search.setPlaceholderText(
+            "Buscar empleado por nombre, DUI o NIT…"
+        )
+        layout.addWidget(self.emp_search)
+        self.emp_results = QListWidget()
+        self.emp_results.addItem("Escribe para buscar…")
+        self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+        layout.addWidget(self.emp_results)
+
         row = QHBoxLayout()
         row.addWidget(QLabel("Nombre:"))
         self.nom_resp = QLineEdit()
@@ -62,6 +77,13 @@ class AnularFacturaDialog(QDialog):
         self.ndoc_resp = QLineEdit()
         row.addWidget(self.ndoc_resp)
         layout.addLayout(row)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch()
+        self.negocio_btn = QPushButton("Usar datos del negocio")
+        self.negocio_btn.clicked.connect(self._usar_datos_negocio)
+        btn_row.addWidget(self.negocio_btn)
+        layout.addLayout(btn_row)
 
         # Solicitante
         layout.addWidget(QLabel("Solicitante"))
@@ -81,24 +103,18 @@ class AnularFacturaDialog(QDialog):
         row.addWidget(self.ndoc_sol)
         layout.addLayout(row)
 
-        def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
-            if not data:
-                return
-            name_edit.setText(data.get("nombre", ""))
-            doc = data.get("dui")
-            doc_type = "13" if doc else None
-            if not doc:
-                doc = data.get("nit")
-                doc_type = "36" if doc else doc_type
-            if doc_type:
-                idx = combo.findData(doc_type)
-                if idx >= 0:
-                    combo.setCurrentIndex(idx)
-            if doc:
-                doc_edit.setText(doc)
+        self.emp_timer = QTimer(self)
+        self.emp_timer.setSingleShot(True)
+        self.emp_timer.setInterval(250)
+        self.emp_search.textChanged.connect(self.emp_timer.start)
+        self.emp_timer.timeout.connect(self._buscar_empleado)
+        self.emp_results.itemActivated.connect(self._seleccionar_empleado)
+        self.emp_results.itemClicked.connect(self._seleccionar_empleado)
+        for w in [self.emp_search, self.emp_results]:
+            w.installEventFilter(self)
 
-        _prefill(responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp)
-        _prefill(solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
+        self._prefill(responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp)
+        self._prefill(solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)
@@ -109,6 +125,102 @@ class AnularFacturaDialog(QDialog):
         if not self._validate():
             return
         self.accept()
+
+    def _prefill(
+        self,
+        data: dict | None,
+        name_edit: QLineEdit,
+        combo: QComboBox,
+        doc_edit: QLineEdit,
+    ) -> None:
+        if not data:
+            return
+        name_edit.setText(data.get("nombre", ""))
+        doc = data.get("dui")
+        doc_type = "13" if doc else None
+        if not doc:
+            doc = data.get("nit")
+            doc_type = "36" if doc else doc_type
+        if doc_type:
+            idx = combo.findData(doc_type)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        if doc:
+            doc_edit.setText(doc)
+
+    def _get_db(self):
+        parent = self.parent()
+        while parent is not None:
+            db = getattr(getattr(parent, "manager", None), "db", None)
+            if db:
+                return db
+            parent = parent.parent()
+        return None
+
+    def _populate_results(self, items):
+        self.emp_results.clear()
+        if not items:
+            self.emp_results.addItem("Sin resultados. Puedes escribir manualmente.")
+            self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        for emp in items:
+            text = f"{emp.get('nombre', '')} - {emp.get('dui') or emp.get('nit') or ''}"
+            item = QListWidgetItem(text)
+            item.setData(Qt.UserRole, emp)
+            self.emp_results.addItem(item)
+        self.emp_results.setCurrentRow(0)
+
+    def _buscar_empleado(self):
+        text = self.emp_search.text().strip()
+        if not text:
+            self.emp_results.clear()
+            self.emp_results.addItem("Escribe para buscar…")
+            self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        db = self._get_db()
+        try:
+            empleados = db.get_trabajadores(search=text) if db else []
+        except Exception:
+            empleados = []
+        self._populate_results(empleados)
+
+    def _seleccionar_empleado(self, item):
+        data = item.data(Qt.UserRole) if item else None
+        if isinstance(data, dict):
+            self.nom_resp.setText(data.get("nombre", ""))
+            doc = data.get("dui") or data.get("nit") or ""
+            if data.get("dui"):
+                doc_type = "13"
+            elif data.get("nit"):
+                doc_type = "36"
+            else:
+                doc_type = None
+            if doc_type:
+                idx = self.tdoc_resp.findData(doc_type)
+                if idx >= 0:
+                    self.tdoc_resp.setCurrentIndex(idx)
+            self.ndoc_resp.setText(doc)
+
+    def _usar_datos_negocio(self):
+        negocio = dte._load_datos_negocio()
+        self._prefill(negocio, self.nom_resp, self.tdoc_resp, self.ndoc_resp)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            if obj is self.emp_search and event.key() in (Qt.Key_Down, Qt.Key_Up):
+                if self.emp_results.count():
+                    self.emp_results.setFocus()
+                    self.emp_results.setCurrentRow(0)
+                    return True
+            if obj is self.emp_results and event.key() in (
+                Qt.Key_Return,
+                Qt.Key_Enter,
+            ):
+                current = self.emp_results.currentItem()
+                if current:
+                    self.emp_results.itemActivated.emit(current)
+                    return True
+        return super().eventFilter(obj, event)
 
     def _validate(self) -> bool:
         motivo = self.motivo_edit.text().strip()

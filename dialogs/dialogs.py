@@ -18,6 +18,7 @@ from PyQt5.QtGui import (
     QDesktopServices,
     QIntValidator,
     QRegularExpressionValidator,
+)
 
 import os
 import shutil
@@ -59,12 +60,11 @@ def validar_nit(nit):
     return bool(re.match(nit_pattern, nit))
 
 def validar_dui(dui):
-    """Valida un número de DUI salvadoreño."""
+    """Valida que el DUI contenga exactamente 9 dígitos."""
     import re
     if not dui:
         return False
-    # Formato ########-# o #########
-    dui_pattern = r"^\d{8}-?\d$"
+    dui_pattern = r"^\d{9}$"
     return bool(re.match(dui_pattern, dui))
 
 def validar_email(email):
@@ -2538,9 +2538,7 @@ class ClienteDialog(QDialog):
         self.nit_edit.setValidator(nit_validator)
         self.nit_edit.setMaxLength(14)
         self.dui_edit = QLineEdit()
-        self.dui_edit.setValidator(
-            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
-        )
+        self.dui_edit.setValidator(QIntValidator(0, 999999999))
         self.dui_edit.setMaxLength(9)
         self.giro_edit = QLineEdit()
         self.codActividad_edit = QLineEdit()
@@ -2669,9 +2667,7 @@ class VendedorDialog(QDialog):
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.dui_edit = QLineEdit()
-        self.dui_edit.setValidator(
-            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
-        )
+        self.dui_edit.setValidator(QIntValidator(0, 999999999))
         self.dui_edit.setMaxLength(9)
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()

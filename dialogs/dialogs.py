@@ -53,8 +53,13 @@ def get_field(obj, key, default=0):
     return default
 
 def validar_nit(nit):
-    """Valida que el NIT contenga exactamente 14 dígitos."""
+    """Valida que el NIT contenga exactamente 14 dígitos.
+
+    Una cadena vacía se considera válida para permitir que el campo sea opcional.
+    """
     import re
+    if nit == "":
+        return True
     if not nit:
         return False
     nit_pattern = r"^\d{14}$"
@@ -69,7 +74,15 @@ def validar_dui(dui):
     return bool(re.match(dui_pattern, dui))
 
 def validar_email(email):
+    """Valida un formato básico de correo electrónico.
+
+    Una cadena vacía se considera válida para permitir que el campo sea opcional.
+    """
     import re
+    if email == "":
+        return True
+    if not email:
+        return False
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
 
 def validar_nrc(nrc):

@@ -216,7 +216,6 @@ def dte_metadata_factory():
                     "tributos": [],
                     "psv": 0,
                     "noGravado": 0,
-                    "ivaItem": 0,
                 }
             ],
             "resumen": {
@@ -237,7 +236,6 @@ def dte_metadata_factory():
                 "totalNoGravado": 0,
                 "totalPagar": 10.0,
                 "totalLetras": "diez",
-                "totalIva": 0,
                 "saldoFavor": 0,
                 "condicionOperacion": 1,
                 "pagos": [

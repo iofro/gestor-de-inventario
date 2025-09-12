@@ -398,9 +398,9 @@ def test_generar_dte_json_precios_incluyen_iva_default(tmp_path):
     res = data["resumen"]
     D = Decimal
     assert D(str(item["ventaGravada"])) == D("8.85")
-    assert D(str(item["ivaItem"])) == D("1.15")
+    assert "ivaItem" not in item
     assert D(str(res["totalGravada"])) == D("8.85")
-    assert D(str(res["totalIva"])) == D("1.15")
+    assert "totalIva" not in res
 
 
 def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
@@ -452,9 +452,9 @@ def test_generar_dte_json_precios_incluyen_iva_unitario(tmp_path):
     D = Decimal
     assert D(str(item["precioUni"])) == D("13.00")
     assert D(str(item["ventaGravada"])) == D("13.00")
-    assert D(str(item["ivaItem"])) == D("1.50")
     assert D(str(res["totalPagar"])) == D("13.00")
     assert D(str(res["totalGravada"])) == D("13.00")
+    assert "ivaItem" not in item
 
 
 def test_generar_dte_json_cons_final_precio_neto(tmp_path):
@@ -506,9 +506,9 @@ def test_generar_dte_json_cons_final_precio_neto(tmp_path):
     D = Decimal
     assert D(str(item["precioUni"])) == D("9.00")
     assert D(str(item["ventaGravada"])) == D("9.00")
-    assert D(str(item["ivaItem"])) == D("1.04")
     assert D(str(res["totalPagar"])) == D("9.00")
     assert D(str(res["totalGravada"])) == D("9.00")
+    assert "ivaItem" not in item
 
 
 def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
@@ -560,9 +560,9 @@ def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
     D = Decimal
     assert D(str(item["precioUni"])) == D("5.50")
     assert D(str(item["ventaGravada"])) == D("11.00")
-    assert D(str(item["ivaItem"])) == D("1.27")
     assert D(str(res["totalPagar"])) == D("11.00")
     assert D(str(res["totalGravada"])) == D("11.00")
+    assert "ivaItem" not in item
 
 
 def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
@@ -614,9 +614,9 @@ def test_generar_dte_json_precios_incluyen_iva_origen_neto(tmp_path):
     D = Decimal
     assert D(str(item["precioUni"])) == D("5.50")
     assert D(str(item["ventaGravada"])) == D("11.00")
-    assert D(str(item["ivaItem"])) == D("1.27")
     assert D(str(res["totalPagar"])) == D("11.00")
     assert D(str(res["totalGravada"])) == D("11.00")
+    assert "ivaItem" not in item
 
 
 @pytest.mark.parametrize("descuento", [Decimal("0.01"), Decimal("0.02")])
@@ -676,14 +676,14 @@ def test_generar_dte_json_cf_descuento_cant(tmp_path, descuento):
 
     assert Decimal(str(item["precioUni"])) == Decimal("5.50")
     assert Decimal(str(item["ventaGravada"])) == line_total_dec
-    assert Decimal(str(item["ivaItem"])) == money(iva_item)
+    assert "ivaItem" not in item
 
     assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalDescu"])) == money(descuento)
     assert Decimal(str(res["subTotal"])) == line_total
-    assert Decimal(str(res["totalIva"])) == money(iva_item)
     assert Decimal(str(res["montoTotalOperacion"])) == line_total
     assert Decimal(str(res["totalPagar"])) == line_total
+    assert "totalIva" not in res
     assert res["tributos"] is None
 
 
@@ -752,14 +752,14 @@ def test_generar_dte_json_cf_descuento_pct(tmp_path):
     assert Decimal(str(item["precioUni"])) == Decimal("5.50")
     assert Decimal(str(item["montoDescu"])) == desc_monto
     assert Decimal(str(item["ventaGravada"])) == line_total_dec
-    assert Decimal(str(item["ivaItem"])) == money(iva_item)
+    assert "ivaItem" not in item
 
     assert Decimal(str(res["subTotalVentas"])) == line_total
     assert Decimal(str(res["totalDescu"])) == money(desc_monto)
     assert Decimal(str(res["subTotal"])) == line_total
-    assert Decimal(str(res["totalIva"])) == money(iva_item)
     assert Decimal(str(res["montoTotalOperacion"])) == line_total
     assert Decimal(str(res["totalPagar"])) == line_total
+    assert "totalIva" not in res
     assert res["tributos"] is None
 
 
@@ -1338,8 +1338,8 @@ def test_item_tributo_guard(tmp_path):
     assert item.get("tributos") in (None, [])
     assert "tributos" in resumen
     assert resumen["tributos"] is None
-    from decimal import Decimal as D
-    assert D(str(resumen["totalIva"])) == D(str(item["ivaItem"]))
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
 
 
 def test_consumer_invoice_preserves_tributos_in_final_json(tmp_path):
@@ -2066,6 +2066,6 @@ def test_generar_dte_json_total_venta_cero(tmp_path):
     D = Decimal
     assert D(str(res["totalPagar"])) == D("13.00")
     assert D(str(res["subTotalVentas"])) == D("13.00")
-    assert D(str(res["totalIva"])) == D("1.50")
     assert D(str(item["ventaGravada"])) == D("13.00")
-    assert D(str(item["ivaItem"])) == D("1.50")
+    assert "totalIva" not in res
+    assert "ivaItem" not in item

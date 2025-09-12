@@ -8,17 +8,36 @@ from PyQt5.QtWidgets import (
     QDialogButtonBox,
     QHeaderView,
     QAbstractItemView,
+    QMessageBox,
 )
 from PyQt5.QtCore import Qt
 
 from utils.catalogos import TRIBUTO_IVA
+from .anular_factura_dialog import AnularFacturaDialog
+import dte
 
 
 class InvoiceDetailDialog(QDialog):
-    """Simple read-only dialog showing invoice items and totals."""
+    """Simple read-only dialog showing invoice items and totals.
 
-    def __init__(self, items: List[Dict], resumen: Dict, parent=None):
+    When ``venta_id`` and ``numero_control`` are provided an additional
+    button allows the user to start the invoice cancellation flow.
+    """
+
+    def __init__(
+        self,
+        items: List[Dict],
+        resumen: Dict,
+        venta_id: int | None = None,
+        numero_control: str | None = None,
+        factura: Dict | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
+        self.venta_id = venta_id
+        self.numero_control = numero_control
+        self.factura = factura or {}
+        self.anulacion_result = None
         self.setWindowTitle("Detalle de factura")
         layout = QVBoxLayout(self)
 
@@ -74,5 +93,40 @@ class InvoiceDetailDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.button(QDialogButtonBox.Ok).setText("Cerrar")
+        if self.venta_id and self.numero_control:
+            anular_btn = buttons.addButton(
+                "Anular factura", QDialogButtonBox.ActionRole
+            )
+            anular_btn.clicked.connect(self._anular)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
+
+    def _anular(self):
+        dlg = AnularFacturaDialog(self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        form = dlg.get_data()
+        parent = self.parent()
+        db = getattr(getattr(parent, "manager", None), "db", None)
+        if not db:
+            QMessageBox.warning(self, "Anulación", "Base de datos no disponible")
+            return
+        row = db.cursor.execute(
+            "SELECT sello FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+            (self.venta_id,),
+        ).fetchone()
+        sello = row["sello"] if row and row["sello"] else None
+        if not sello:
+            QMessageBox.warning(
+                self, "Anulación", "No se encontró sello de recepción"
+            )
+            return
+        try:
+            evento = dte.generar_evento_anulacion(self.factura, form, sello)
+            res = dte.enviar_evento_anulacion(db, self.venta_id, evento)
+        except Exception as exc:  # pragma: no cover - UI feedback
+            QMessageBox.warning(self, "Anulación", str(exc))
+            return
+        QMessageBox.information(self, "Anulación", res.get("estado", ""))
+        self.anulacion_result = res
+        self.accept()

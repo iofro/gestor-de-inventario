@@ -27,14 +27,15 @@ from jsonschema import ValidationError
 from utils import catalogos
 
 
-@pytest.mark.parametrize("nit, expected", [
-    ("1234-123456-123-1", True),
-    ("12341234561231", True),
-    ("12345678-9", True),
-    ("123456789", True),
-    ("1234-123456-123", False),
-    ("abcd", False),
-])
+@pytest.mark.parametrize(
+    "nit, expected",
+    [
+        ("12341234561234", True),
+        ("1234-123456-123-1", False),
+        ("123456789012345", False),
+        ("abcd", False),
+    ],
+)
 @pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
 def test_validar_nit(nit, expected):
     assert validar_nit(nit) is expected

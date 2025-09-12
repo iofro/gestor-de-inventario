@@ -3985,6 +3985,102 @@ def generar_evento_contingencia(
 
     return evento
 
+
+def generar_evento_anulacion(
+    factura: dict, motivo: dict, sello_recibido: str, ambiente: str | None = None
+) -> dict:
+    """Construye el JSON para un evento de anulación.
+
+    ``factura`` debe contener al menos las claves ``identificacion``,
+    ``emisor``, ``receptor`` y ``resumen``.
+    """
+
+    if not sello_recibido:
+        raise ValueError("selloRecibido requerido")
+
+    ident = factura.get("identificacion", {})
+    emisor_src = factura.get("emisor", {})
+    receptor = factura.get("receptor", {})
+    resumen = factura.get("resumen", {})
+
+    if ambiente not in ("00", "01"):
+        ambiente = ident.get("ambiente", "00")
+
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": 2,
+        "ambiente": ambiente,
+        "codigoGeneracion": str(uuid.uuid4()).upper(),
+        "fecAnula": fecha_emision_hoy_str(now),
+        "horAnula": now.strftime("%H:%M:%S"),
+    }
+
+    emisor = {
+        "nit": emisor_src.get("nit"),
+        "nombre": emisor_src.get("nombre"),
+        "tipoEstablecimiento": emisor_src.get("tipoEstablecimiento"),
+        "telefono": emisor_src.get("telefono"),
+        "correo": emisor_src.get("correo"),
+        "codEstable": emisor_src.get("codEstable"),
+        "codPuntoVenta": emisor_src.get("codPuntoVenta"),
+        "nomEstablecimiento": emisor_src.get("nombreComercial"),
+    }
+
+    tribs = resumen.get("tributos") or []
+    monto_iva = float(
+        next((t.get("valor", 0) for t in tribs if t.get("codigo") == TRIBUTO_IVA), 0)
+    )
+
+    tipo_doc = receptor.get("tipoDocumento")
+    num_doc = receptor.get("numDocumento")
+    if not tipo_doc:
+        if receptor.get("nit"):
+            tipo_doc = "36"
+            num_doc = receptor.get("nit")
+        elif receptor.get("dui"):
+            tipo_doc = "13"
+            num_doc = receptor.get("dui")
+        else:
+            tipo_doc = "37"
+
+    documento = {
+        "tipoDte": ident.get("tipoDte"),
+        "codigoGeneracion": ident.get("codigoGeneracion"),
+        "selloRecibido": sello_recibido,
+        "numeroControl": ident.get("numeroControl"),
+        "fecEmi": ident.get("fecEmi"),
+        "montoIva": round(monto_iva, 2),
+        "codigoGeneracionR": None,
+        "tipoDocumento": tipo_doc,
+        "numDocumento": num_doc,
+        "nombre": receptor.get("nombre"),
+    }
+    if receptor.get("telefono"):
+        documento["telefono"] = receptor.get("telefono")
+    if receptor.get("correo"):
+        documento["correo"] = receptor.get("correo")
+
+    evento = {
+        "identificacion": identificacion,
+        "emisor": emisor,
+        "documento": documento,
+        "motivo": motivo,
+    }
+
+    schema_path = SCHEMAS_DIR / "anulacion-schema-v2.json"
+    try:
+        with open(schema_path, "r", encoding="utf-8") as fh:
+            schema = json.load(fh)
+        from jsonschema import validate
+
+        validate(evento, schema)
+    except ValidationError as exc:  # pragma: no cover - best effort
+        raise ValueError(exc.message) from exc
+    except Exception:  # pragma: no cover - best effort
+        pass
+
+    return evento
+
 def _normalize_recepcion_url(raw: str) -> str:
     """Normaliza y valida ``raw`` como URL de recepción de Hacienda.
 

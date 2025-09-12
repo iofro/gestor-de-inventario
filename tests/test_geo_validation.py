@@ -29,3 +29,13 @@ def test_norm_receptor_ticket_fallback():
     assert res["direccion"]["municipio"] == DEFAULT_ADDRESS["municipio"]
     assert res["direccion"]["complemento"] == "abcdef"
 
+
+def test_norm_receptor_missing_geo_keeps_none():
+    r = {"direccion": {"complemento": "abc"}}
+    res = norm_receptor(r)
+    assert res["direccion"] == {
+        "departamento": None,
+        "municipio": None,
+        "complemento": None,
+    }
+

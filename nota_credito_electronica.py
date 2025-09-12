@@ -13,6 +13,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
+import copy
 import json
 from typing import Optional
 
@@ -156,9 +157,19 @@ def generar_nce_desde_dte(
     ]
 
     emisor = dte_origen.get("emisor")
-    receptor = dte_origen.get("receptor")
+    receptor = copy.deepcopy(dte_origen.get("receptor", {}))
+    receptor.setdefault("nit", "")
+    receptor.setdefault("nombreComercial", "")
+    if not receptor["nit"]:
+        receptor["nit"] = "000000000"
+    if not receptor["nombreComercial"]:
+        receptor["nombreComercial"] = receptor.get("nombre", "")
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)
+    receptor["nit"] = str(receptor.get("nit", ""))
+    receptor["nombreComercial"] = str(
+        receptor.get("nombreComercial", "")
+    )
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []

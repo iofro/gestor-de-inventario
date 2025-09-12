@@ -96,9 +96,10 @@ def generar_fc_ejemplo(
     }
     if gravado:
         item["ventaGravada"] = venta
-        item["ivaItem"] = iva
+        item["tributos"] = [TRIBUTO_IVA]
     else:
         item["ventaExenta"] = venta
+        item["tributos"] = []
 
     dte = {
         "identificacion": {
@@ -135,10 +136,15 @@ def generar_fc_ejemplo(
             "totalNoSuj": d2(D("0")),
             "totalExenta": total_base if not gravado else d2(D("0")),
             "totalGravada": total_base if gravado else d2(D("0")),
-            "totalIva": total_iva,
             "montoTotalOperacion": total_pagar,
             "totalPagar": total_pagar,
-            "tributos": None,
+            "tributos": [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": total_iva,
+                }
+            ] if gravado else [],
         },
     }
     return dte
@@ -228,9 +234,9 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     cantidad = Decimal("2.5")
     if tipo == "fc":
         precio = Decimal("10.78")  # precio con IVA incluido
+        base_unit = d2(precio / Decimal("1.13"))
+        base = d4(base_unit * cantidad)
         venta = d4(cantidad * precio)
-        iva_item = d2(venta - (venta / Decimal("1.13")))
-        base = venta
         precio_uni = d4(precio)
     elif tipo == "ccf":
         precio = Decimal("10.78")  # precio con IVA incluido
@@ -241,7 +247,6 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
     else:
         precio = Decimal("9.54")
         venta = d4(cantidad * precio)
-        iva_item = d4(venta * Decimal("0.13"))
         base = venta
         precio_uni = d4(precio)
     numero_documento = None
@@ -264,8 +269,7 @@ def _cuerpo_documento(tipo: str) -> List[Dict[str, Any]]:
         "noGravado": d4(Decimal("0")),
     }
     if tipo == "fc":
-        item["ivaItem"] = iva_item
-        item["tributos"] = None
+        item["tributos"] = [TRIBUTO_IVA] if base > D("0") else []
     elif tipo == "ccf":
         item.pop("montoDescu", None)
         item["codTributo"] = None
@@ -281,8 +285,8 @@ def _resumen(tipo: str) -> Dict[str, Any]:
     if tipo == "fc":
         precio = Decimal("10.78")
         bruto = d2(cantidad * precio)
-        iva = d2(bruto - (bruto / Decimal("1.13")))
-        venta = bruto
+        venta = d2(bruto / Decimal("1.13"))
+        iva = d2(bruto - venta)
         total = bruto
     elif tipo == "ccf":
         precio = Decimal("10.78")
@@ -331,34 +335,17 @@ def _resumen(tipo: str) -> Dict[str, Any]:
         ],
         "numPagoElectronico": None,
     }
-    if tipo == "fc":
-        data["totalIva"] = iva
-        data["tributos"] = None
-    elif tipo == "ccf":
-        data["totalIva"] = iva
-        if venta > D("0"):
-            data["tributos"] = [
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA),
-                    "valor": iva,
-                }
-            ]
-        else:
-            data["tributos"] = None
+    data["ivaPerci1"] = d2(Decimal("0"))
+    if venta > D("0"):
+        data["tributos"] = [
+            {
+                "codigo": TRIBUTO_IVA,
+                "descripcion": TRIBUTOS.get(TRIBUTO_IVA),
+                "valor": iva,
+            }
+        ]
     else:
-        data["totalIva"] = iva
-        data["ivaPerci1"] = d2(Decimal("0"))
-        if venta > D("0"):
-            data["tributos"] = [
-                {
-                    "codigo": TRIBUTO_IVA,
-                    "descripcion": TRIBUTOS.get(TRIBUTO_IVA),
-                    "valor": iva,
-                }
-            ]
-        else:
-            data["tributos"] = None
+        data["tributos"] = None
     return data
 
 

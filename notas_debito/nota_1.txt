@@ -1,4 +1,0 @@
-Venta ID: 10
-Fecha: 2025-08-11
-Monto: 8.0
-Motivo: hj

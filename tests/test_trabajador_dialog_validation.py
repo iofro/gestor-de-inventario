@@ -38,7 +38,7 @@ def test_missing_fields(monkeypatch, qt_app):
     dialog = make_dialog(db)
     dialog.codigo.setText('')
     dialog.nombre.setText('Nombre')
-    dialog.nit.setText('1234-123456-123-1')
+    dialog.nit.setText('12341234561234')
     dialog.email.setText('test@example.com')
 
     accepted = {}
@@ -71,7 +71,7 @@ def test_duplicate_codigo(monkeypatch, qt_app):
     dialog = make_dialog(db)
     dialog.codigo.setText('T001')
     dialog.nombre.setText('Nombre')
-    dialog.nit.setText('1234-123456-123-1')
+    dialog.nit.setText('12341234561234')
     dialog.email.setText('test@example.com')
 
     accepted = {}

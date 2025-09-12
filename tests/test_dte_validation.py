@@ -69,6 +69,19 @@ def test_longitud_num_documento_invalida(dte_metadata_factory, db_fixture):
         validate_dte_json(dte, db=db_fixture)
 
 
+def test_receptor_dui_ignores_empty_nit(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    rec = dte["receptor"]
+    rec["tipoDocumento"] = "13"
+    rec["numDocumento"] = "01234567-8"
+    rec["nit"] = ""
+    validate_dte_json(dte, db=db_fixture)
+    rec = dte["receptor"]
+    assert "nit" not in rec
+    assert rec["numDocumento"] == "012345678"
+    assert rec["tipoDocumento"] == "13"
+
+
 def test_codigo_generacion_debe_ser_uuid_v4(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     dte["identificacion"]["codigoGeneracion"] = "not-a-uuid"

@@ -42,6 +42,7 @@ def db_fixture(tmp_path, monkeypatch):
     db = DB()
     yield db
 
+
 def test_dte_valido_pasa(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     validate_dte_json(dte, db=db_fixture)
@@ -96,6 +97,17 @@ def test_receptor_dui_only(dte_metadata_factory, db_fixture):
     assert "dui" not in rec
 
 
+def test_tipo03_receptor_dui_only(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    dte["identificacion"]["tipoDte"] = "03"
+    rec = dte["receptor"]
+    rec.pop("numDocumento", None)
+    rec.pop("tipoDocumento", None)
+    rec.pop("nrc", None)
+    rec["dui"] = "01234567-8"
+    validate_dte_json(dte, db=db_fixture)
+
+
 def test_codigo_generacion_debe_ser_uuid_v4(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     dte["identificacion"]["codigoGeneracion"] = "not-a-uuid"
@@ -111,7 +123,9 @@ def test_codigo_generacion_rechaza_uuids_no_v4(dte_metadata_factory, db_fixture)
     dte["identificacion"]["codigoGeneracion"] = str(uuid.uuid1()).upper()
     with pytest.raises(ValueError):
         validate_dte_json(dte, db=db_fixture)
-    dte["identificacion"]["codigoGeneracion"] = str(uuid.uuid3(uuid.NAMESPACE_DNS, "test")).upper()
+    dte["identificacion"]["codigoGeneracion"] = str(
+        uuid.uuid3(uuid.NAMESPACE_DNS, "test")
+    ).upper()
     with pytest.raises(ValueError):
         validate_dte_json(dte, db=db_fixture)
 
@@ -174,7 +188,6 @@ def test_missing_emisor_fields_listed(dte_metadata_factory, monkeypatch, db_fixt
         "correo",
     ]:
         assert key in msg
-
 
 
 def test_recalcula_totales(dte_metadata_factory, db_fixture):
@@ -256,7 +269,9 @@ def test_numero_control_regex(dte_metadata_factory, tmp_path, monkeypatch, db_fi
         "DTE-01-S001P001-000000000000000",
     ],
 )
-def test_numero_control_validos(dte_metadata_factory, numero, tmp_path, monkeypatch, db_fixture):
+def test_numero_control_validos(
+    dte_metadata_factory, numero, tmp_path, monkeypatch, db_fixture
+):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = numero
     _patch_datos_negocio(tmp_path, monkeypatch)
@@ -271,7 +286,9 @@ def test_numero_control_validos(dte_metadata_factory, numero, tmp_path, monkeypa
         "dte-01-S001P001-123456789012345",
     ],
 )
-def test_numero_control_invalidos(dte_metadata_factory, numero, tmp_path, monkeypatch, db_fixture):
+def test_numero_control_invalidos(
+    dte_metadata_factory, numero, tmp_path, monkeypatch, db_fixture
+):
     dte = dte_metadata_factory()
     dte["identificacion"]["numeroControl"] = numero
     _patch_datos_negocio(tmp_path, monkeypatch)
@@ -282,7 +299,9 @@ def test_numero_control_invalidos(dte_metadata_factory, numero, tmp_path, monkey
     )
 
 
-def test_numero_control_regenerates_from_emisor_codes(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
+def test_numero_control_regenerates_from_emisor_codes(
+    dte_metadata_factory, tmp_path, monkeypatch, db_fixture
+):
     _patch_datos_negocio(tmp_path, monkeypatch)
     dte = dte_metadata_factory()
     dte["emisor"]["codEstable"] = "123"
@@ -298,7 +317,9 @@ def test_numero_control_regenerates_from_emisor_codes(dte_metadata_factory, tmp_
     assert ident["numeroControl"].startswith("DTE-01-S123P456")
 
 
-def test_numero_control_fallback_default(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
+def test_numero_control_fallback_default(
+    dte_metadata_factory, tmp_path, monkeypatch, db_fixture
+):
     _patch_datos_negocio(tmp_path, monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
     dte = dte_metadata_factory()
@@ -338,7 +359,9 @@ def test_numero_control_secuencial_por_combinacion(
     assert n3.endswith("000000000000001")
 
 
-def test_numero_control_idempotencia(dte_metadata_factory, tmp_path, monkeypatch, db_fixture):
+def test_numero_control_idempotencia(
+    dte_metadata_factory, tmp_path, monkeypatch, db_fixture
+):
     _patch_datos_negocio(tmp_path, monkeypatch)
     monkeypatch.setenv("HOME", str(tmp_path))
     numero = "DTE-01-S123P456-000000000000123"

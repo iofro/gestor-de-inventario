@@ -7,7 +7,11 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QDialogButtonBox,
     QMessageBox,
+    QListWidget,
+    QListWidgetItem,
 )
+from PyQt5.QtCore import Qt, QTimer, QEvent
+from db import DB
 
 DOC_TYPES = [
     ("NIT", "36"),
@@ -20,9 +24,16 @@ DOC_TYPES = [
 class AnularFacturaDialog(QDialog):
     """Formulario para capturar datos de anulación."""
 
-    def __init__(self, parent=None, responsable: dict | None = None, solicitante: dict | None = None):
+    def __init__(
+        self,
+        parent=None,
+        responsable: dict | None = None,
+        solicitante: dict | None = None,
+        db: DB | None = None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Anular factura")
+        self.db = db
         layout = QVBoxLayout(self)
 
         # Tipo de anulación
@@ -65,6 +76,15 @@ class AnularFacturaDialog(QDialog):
 
         # Solicitante
         layout.addWidget(QLabel("Solicitante"))
+        self.cli_search = QLineEdit()
+        self.cli_search.setPlaceholderText(
+            "Buscar cliente por nombre, DUI o NIT"
+        )
+        layout.addWidget(self.cli_search)
+        self.cli_results = QListWidget()
+        self.cli_results.addItem("Escribe para buscar…")
+        self.cli_results.item(0).setFlags(Qt.NoItemFlags)
+        layout.addWidget(self.cli_results)
         row = QHBoxLayout()
         row.addWidget(QLabel("Nombre:"))
         self.nom_sol = QLineEdit()
@@ -80,6 +100,17 @@ class AnularFacturaDialog(QDialog):
         self.ndoc_sol = QLineEdit()
         row.addWidget(self.ndoc_sol)
         layout.addLayout(row)
+
+        # Timer and search connections
+        self.cli_timer = QTimer(self)
+        self.cli_timer.setSingleShot(True)
+        self.cli_timer.setInterval(250)
+        self.cli_search.textChanged.connect(self.cli_timer.start)
+        self.cli_timer.timeout.connect(self._buscar_cliente)
+        self.cli_results.itemActivated.connect(self._seleccionar_cliente)
+        self.cli_results.itemClicked.connect(self._seleccionar_cliente)
+        for w in [self.cli_search, self.cli_results]:
+            w.installEventFilter(self)
 
         def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
             if not data:
@@ -132,6 +163,63 @@ class AnularFacturaDialog(QDialog):
                 QMessageBox.warning(self, "Anulación", f"Número de {name} inválido")
                 return False
         return True
+
+    # --- Cliente search helpers -------------------------------------------------
+
+    def _populate_results(self, items):
+        self.cli_results.clear()
+        if not items:
+            self.cli_results.addItem("Sin resultados. Puedes escribir manualmente.")
+            self.cli_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        for c in items:
+            doc = c.get("dui") or c.get("nit") or c.get("nrc") or ""
+            item = QListWidgetItem(f"{c.get('nombre', '')} - {doc}")
+            item.setData(Qt.UserRole, c)
+            self.cli_results.addItem(item)
+        self.cli_results.setCurrentRow(0)
+
+    def _buscar_cliente(self):
+        text = self.cli_search.text().strip()
+        if not text:
+            self.cli_results.clear()
+            self.cli_results.addItem("Escribe para buscar…")
+            self.cli_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        try:
+            db = self.db or DB()
+            clientes = db.get_clientes(search=text)
+            if self.db is None:
+                db.conn.close()
+        except Exception:
+            clientes = []
+        self._populate_results(clientes)
+
+    def _seleccionar_cliente(self, item):
+        data = item.data(Qt.UserRole) if item else None
+        if isinstance(data, dict):
+            self.nom_sol.setText(data.get("nombre", ""))
+            doc = data.get("dui") or data.get("nit") or data.get("nrc") or ""
+            self.ndoc_sol.setText(doc)
+            doc_type = "13" if data.get("dui") else "36" if data.get("nit") or data.get("nrc") else None
+            if doc_type:
+                idx = self.tdoc_sol.findData(doc_type)
+                if idx >= 0:
+                    self.tdoc_sol.setCurrentIndex(idx)
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.KeyPress:
+            if obj is self.cli_search and event.key() in (Qt.Key_Down, Qt.Key_Up):
+                if self.cli_results.count():
+                    self.cli_results.setFocus()
+                    self.cli_results.setCurrentRow(0)
+                    return True
+            if obj is self.cli_results and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                current = self.cli_results.currentItem()
+                if current:
+                    self.cli_results.itemActivated.emit(current)
+                    return True
+        return super().eventFilter(obj, event)
 
     def get_data(self) -> dict:
         return {

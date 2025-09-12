@@ -1250,7 +1250,10 @@ class FacturacionTab(QWidget):
         )
         if not fname:
             return
-        generar_ticket_personalizado(venta, detalles, fname, dte_data=extra)
+        ticket_json = dte.generar_ticket_json(self.manager.db, venta_id)
+        data = dict(extra)
+        data["dteJson"] = ticket_json
+        generar_ticket_personalizado(venta, detalles, fname, dte_data=data)
         QMessageBox.information(self, "Ticket", "Ticket generado correctamente")
 
     def abrir_dialogo_tipo_nota(self):
@@ -1813,7 +1816,10 @@ class FacturacionTab(QWidget):
             venta.get("fecha"), cliente_nombre, venta_id, "Ticket"
         )
 
-        generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
+        ticket_json = dte.generar_ticket_json(self.manager.db, venta_id)
+        data = dict(extra)
+        data["dteJson"] = ticket_json
+        generar_ticket_personalizado(venta, detalles, filename, dte_data=data)
         with open(json_path, "w", encoding="utf-8") as fh:
             json.dump({"venta": venta, "detalles": detalles}, fh, ensure_ascii=False, indent=2)
         self.manager.db.add_ticket_pdf(venta_id, filename)

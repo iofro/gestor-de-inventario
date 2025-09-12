@@ -26,7 +26,7 @@ def test_generar_ticket_pdf_qr(tmp_path):
         "identificacion": {
             "ambiente": "01",
             "codigoGeneracion": "ABC",
-            "fechaEmi": "2020-01-01",
+            "fecEmi": "2020-01-01",
         }
     }
     dte_data = {"dteJson": dte_json}
@@ -48,7 +48,7 @@ def test_generar_ticket_personalizado_qr(tmp_path):
         "identificacion": {
             "ambiente": "00",
             "codigoGeneracion": "XYZ",
-            "fechaEmi": "2020-02-02",
+            "fecEmi": "2020-02-02",
         }
     }
     dte_data = {"dteJson": dte_json}

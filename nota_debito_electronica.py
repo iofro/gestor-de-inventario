@@ -107,15 +107,22 @@ def generar_nde_desde_dte(
 
     emisor = copy.deepcopy(dte_origen.get("emisor", {}))
     receptor = copy.deepcopy(dte_origen.get("receptor", {}))
-    receptor.setdefault("nit", "")
     receptor.setdefault("nombreComercial", "")
-    if not receptor["nit"]:
-        receptor["nit"] = "000000000"
     if not receptor["nombreComercial"]:
         receptor["nombreComercial"] = receptor.get("nombre", "")
+    nit_val = str(receptor.get("nit") or "")
+    num_doc = str(receptor.get("numDocumento") or "")
+    if not nit_val:
+        if num_doc.isdigit() and len(num_doc) == 14 and num_doc != "00000000000000":
+            receptor["nit"] = num_doc
+        else:
+            receptor.pop("nit", None)
+    else:
+        receptor["nit"] = nit_val
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)
-    receptor["nit"] = str(receptor.get("nit", ""))
+    if "nit" in receptor:
+        receptor["nit"] = str(receptor["nit"])
     receptor["nombreComercial"] = str(
         receptor.get("nombreComercial", "")
     )

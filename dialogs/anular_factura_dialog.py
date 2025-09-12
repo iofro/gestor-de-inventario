@@ -7,7 +7,9 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QDialogButtonBox,
     QMessageBox,
+    QPushButton,
 )
+from dialogs import ClienteSelectorDialog
 
 DOC_TYPES = [
     ("NIT", "36"),
@@ -20,8 +22,15 @@ DOC_TYPES = [
 class AnularFacturaDialog(QDialog):
     """Formulario para capturar datos de anulación."""
 
-    def __init__(self, parent=None):
+    def __init__(
+        self,
+        parent=None,
+        responsable: dict | None = None,
+        solicitante: dict | None = None,
+        db=None,
+    ):
         super().__init__(parent)
+        self.db = db
         self.setWindowTitle("Anular factura")
         layout = QVBoxLayout(self)
 
@@ -69,6 +78,9 @@ class AnularFacturaDialog(QDialog):
         row.addWidget(QLabel("Nombre:"))
         self.nom_sol = QLineEdit()
         row.addWidget(self.nom_sol)
+        self.sel_sol_btn = QPushButton("Seleccionar")
+        self.sel_sol_btn.clicked.connect(self._select_solicitante)
+        row.addWidget(self.sel_sol_btn)
         layout.addLayout(row)
         row = QHBoxLayout()
         row.addWidget(QLabel("Tipo doc:"))
@@ -81,10 +93,55 @@ class AnularFacturaDialog(QDialog):
         row.addWidget(self.ndoc_sol)
         layout.addLayout(row)
 
+        self._prefill(responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp, prefer_nit=True)
+        self._prefill(solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
+
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
+
+    def _prefill(
+        self,
+        data: dict | None,
+        name_edit: QLineEdit,
+        combo: QComboBox,
+        doc_edit: QLineEdit,
+        *,
+        prefer_nit: bool = False,
+    ) -> None:
+        if not data:
+            return
+        name_edit.setText(data.get("nombre", ""))
+        doc = None
+        doc_type = None
+        if prefer_nit and data.get("nit"):
+            doc = data.get("nit")
+            doc_type = "36"
+        elif data.get("dui"):
+            doc = data.get("dui")
+            doc_type = "13"
+        elif data.get("nit"):
+            doc = data.get("nit")
+            doc_type = "36"
+        if doc_type is not None:
+            idx = combo.findData(doc_type)
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+        if doc:
+            doc_edit.setText(doc)
+
+    def _select_solicitante(self) -> None:
+        if not self.db:
+            QMessageBox.warning(self, "Anulación", "Base de datos no disponible")
+            return
+        dlg = ClienteSelectorDialog(self.db, self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        cli = dlg.get_selected_cliente()
+        if not cli:
+            return
+        self._prefill(cli, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
 
     def _on_accept(self):
         if not self._validate():

@@ -102,12 +102,16 @@ class InvoiceDetailDialog(QDialog):
         layout.addWidget(buttons)
 
     def _anular(self):
-        dlg = AnularFacturaDialog(self)
+        negocio = dte._load_datos_negocio()
+        receptor = self.factura.get("receptor", {})
+        parent = self.parent()
+        db = getattr(getattr(parent, "manager", None), "db", None)
+        dlg = AnularFacturaDialog(
+            self, responsable=negocio, solicitante=receptor, db=db
+        )
         if dlg.exec_() != QDialog.Accepted:
             return
         form = dlg.get_data()
-        parent = self.parent()
-        db = getattr(getattr(parent, "manager", None), "db", None)
         if not db:
             QMessageBox.warning(self, "Anulación", "Base de datos no disponible")
             return

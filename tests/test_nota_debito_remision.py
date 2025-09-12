@@ -113,6 +113,7 @@ def test_generar_nde_consumidor_final_sin_nit(monkeypatch):
     }
     data = generar_nde_desde_dte(db, dte_origen, None, 10, "Ajuste")
     assert data["identificacion"]["tipoDte"] == "06"
+    assert "nit" not in data["receptor"]
 
 
 def test_generar_nde_ticket_minimo(monkeypatch):

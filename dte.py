@@ -749,17 +749,36 @@ def norm_receptor(
     comp = (d.get("complemento") or "").strip()
     dep = d.get("departamento")
     mun = d.get("municipio")
-    try:
-        dep, mun = validar_dep_muni_por_catalogo(dep, mun, strict=strict_geo)
-    except GeoValidationError as e:
+
+    if dep is None or mun is None:
         if es_ticket:
-            warnings.warn(f"{e}; usando dirección por defecto", UserWarning)
+            warnings.warn(
+                "Dirección incompleta; usando dirección por defecto",
+                UserWarning,
+            )
             dep = DEFAULT_ADDRESS["departamento"]
             mun = DEFAULT_ADDRESS["municipio"]
         else:
-            raise
-    if len(comp) < 5:
-        comp = DEFAULT_ADDRESS["complemento"]
+            if dep is not None or mun is not None:
+                warnings.warn(
+                    "Dirección incompleta; validación omitida", UserWarning
+                )
+    else:
+        try:
+            dep, mun = validar_dep_muni_por_catalogo(
+                dep, mun, strict=strict_geo
+            )
+        except GeoValidationError as e:
+            if es_ticket:
+                warnings.warn(f"{e}; usando dirección por defecto", UserWarning)
+                dep = DEFAULT_ADDRESS["departamento"]
+                mun = DEFAULT_ADDRESS["municipio"]
+            else:
+                raise
+
+    if not comp or len(comp) < 5:
+        comp = DEFAULT_ADDRESS["complemento"] if es_ticket else None
+
     r["direccion"] = {
         "departamento": dep,
         "municipio": mun,

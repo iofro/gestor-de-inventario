@@ -33,12 +33,14 @@ def qt_app(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    'field,value', [
-        ('nrc_edit', 'bad'),
-        ('nit_edit', 'bad'),
-        ('dui_edit', 'bad'),
-        ('telefono_edit', '12345'),
-        ('email_edit', 'bademail'),
+    "field,value",
+    [
+        ("nrc_edit", "bad"),
+        ("nit_edit", "bad"),
+        ("nit_edit", "1234-123456-123-1"),
+        ("dui_edit", "bad"),
+        ("telefono_edit", "12345"),
+        ("email_edit", "bademail"),
     ],
 )
 def test_invalid_fields(monkeypatch, qt_app, field, value):
@@ -59,6 +61,27 @@ def test_invalid_fields(monkeypatch, qt_app, field, value):
     assert not accepted.get('called')
 
 
+def test_nit_max_length(qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+    dialog.nit_edit.setText("1" * 15)
+    assert dialog.nit_edit.text() == "1" * 14
+
+
+def test_dui_max_length(qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+    dialog.dui_edit.insert("1" * 10)
+    assert dialog.dui_edit.text() == "1" * 9
+
+
+def test_dui_only_digits(qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+    dialog.dui_edit.insert("abcd")
+    assert dialog.dui_edit.text() == ""
+
+
 def test_optional_fields(monkeypatch, qt_app):
     db = DummyDB()
     dialog = make_dialog(db)
@@ -76,10 +99,10 @@ def test_optional_fields(monkeypatch, qt_app):
 
 
 def test_duplicate_nit(monkeypatch, qt_app):
-    db = DummyDB(existing_nits={'1234-123456-123-1'})
+    db = DummyDB(existing_nits={"12341234561234"})
     dialog = make_dialog(db)
 
-    dialog.nit_edit.setText('1234-123456-123-1')
+    dialog.nit_edit.setText("12341234561234")
 
     warnings = {}
     monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.setdefault('called', True))

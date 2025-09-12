@@ -12,8 +12,14 @@ from PyQt5.QtWidgets import (
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame
 )
-from PyQt5.QtCore import Qt, QDate, QUrl
-from PyQt5.QtGui import QColor, QDesktopServices, QIntValidator
+from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression
+from PyQt5.QtGui import (
+    QColor,
+    QDesktopServices,
+    QIntValidator,
+    QRegularExpressionValidator,
+)
+
 import os
 import shutil
 import re
@@ -46,29 +52,19 @@ def get_field(obj, key, default=0):
     return default
 
 def validar_nit(nit):
-    """Valida NIT salvadoreño con o sin guiones o un DUI."""
+    """Valida que el NIT contenga exactamente 14 dígitos."""
     import re
     if not nit:
         return False
-    # NIT con guiones: ####-######-###-#
-    nit_pattern = r"^\d{4}-\d{6}-\d{3}-\d$"
-    # NIT sin guiones: 14 dígitos
-    nit_plain_pattern = r"^\d{14}$"
-    # DUI: ########-# o #########
-    dui_pattern = r"^\d{8}-?\d$"
-    return bool(
-        re.match(nit_pattern, nit)
-        or re.match(nit_plain_pattern, nit)
-        or re.match(dui_pattern, nit)
-    )
+    nit_pattern = r"^\d{14}$"
+    return bool(re.match(nit_pattern, nit))
 
 def validar_dui(dui):
-    """Valida un número de DUI salvadoreño."""
+    """Valida que el DUI contenga exactamente 9 dígitos."""
     import re
     if not dui:
         return False
-    # Formato ########-# o #########
-    dui_pattern = r"^\d{8}-?\d$"
+    dui_pattern = r"^\d{9}$"
     return bool(re.match(dui_pattern, dui))
 
 def validar_email(email):
@@ -1910,6 +1906,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         right_layout.addWidget(QLabel("NIT:"))
         self.nit_edit = QLineEdit()
+        nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
+        self.nit_edit.setValidator(nit_validator)
+        self.nit_edit.setMaxLength(14)
         self.nit_edit.setPlaceholderText("NIT del cliente")
         right_layout.addWidget(self.nit_edit)
 
@@ -2349,6 +2348,9 @@ class DistribuidorDialog(QDialog):
         self.comisiones_especificas_edit = QLineEdit()
         self.metodo_pago_edit = QLineEdit()
         self.nit_edit = QLineEdit()
+        nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
+        self.nit_edit.setValidator(nit_validator)
+        self.nit_edit.setMaxLength(14)
         self.nrc_edit = QLineEdit()
         self.cuenta_bancaria_edit = QLineEdit()
         self.notas_edit = QLineEdit()
@@ -2532,7 +2534,12 @@ class ClienteDialog(QDialog):
         self.nombre_comercial_edit = QLineEdit()
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
+        nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
+        self.nit_edit.setValidator(nit_validator)
+        self.nit_edit.setMaxLength(14)
         self.dui_edit = QLineEdit()
+        self.dui_edit.setValidator(QIntValidator(0, 999999999))
+        self.dui_edit.setMaxLength(9)
         self.giro_edit = QLineEdit()
         self.codActividad_edit = QLineEdit()
         self.telefono_edit = QLineEdit()
@@ -2660,6 +2667,8 @@ class VendedorDialog(QDialog):
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.dui_edit = QLineEdit()
+        self.dui_edit.setValidator(QIntValidator(0, 999999999))
+        self.dui_edit.setMaxLength(9)
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
@@ -2903,7 +2912,9 @@ class DatosNegocioDialog(QDialog):
         self.nit = QLineEdit()
         self.nrc = QLineEdit()
         self.dui = QLineEdit()
-        self.dui.setValidator(QIntValidator(0, 999999999))
+        self.dui.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
+        )
         self.dui.setMaxLength(9)
         self.nombre = QLineEdit()
         self.nombre_comercial = QLineEdit()
@@ -3479,6 +3490,10 @@ class TrabajadorDialog(QDialog):
         self.codigo = QLineEdit()
         self.nombre = QLineEdit()
         self.dui = QLineEdit()
+        self.dui.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
+        )
+        self.dui.setMaxLength(9)
         self.nit = QLineEdit()
         self.fecha_nacimiento = QDateEdit(QDate.currentDate())
         self.fecha_nacimiento.setCalendarPopup(True)

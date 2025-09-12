@@ -68,6 +68,20 @@ def test_nit_max_length(qt_app):
     assert dialog.nit_edit.text() == "1" * 14
 
 
+def test_dui_max_length(qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+    dialog.dui_edit.insert("1" * 10)
+    assert dialog.dui_edit.text() == "1" * 9
+
+
+def test_dui_only_digits(qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+    dialog.dui_edit.insert("abcd")
+    assert dialog.dui_edit.text() == ""
+
+
 def test_optional_fields(monkeypatch, qt_app):
     db = DummyDB()
     dialog = make_dialog(db)

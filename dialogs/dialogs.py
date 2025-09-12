@@ -3617,31 +3617,20 @@ class TrabajadorDialog(QDialog):
         nit = self.nit.text().strip()
         email = self.email.text().strip()
 
-        if not codigo:
-            QMessageBox.warning(self, "Validación", "El código es obligatorio.")
+        if nit and not validar_nit(nit):
+            QMessageBox.warning(self, "Validación", "El NIT ingresado no es válido.")
             return
-        if not nombre:
-            QMessageBox.warning(self, "Validación", "El nombre es obligatorio.")
-            return
-        if not nit:
-            QMessageBox.warning(self, "Validación", "El NIT es obligatorio.")
-            return
-        if not validar_nit(nit):
-            QMessageBox.warning(self, "Validación", "Ingrese un NIT válido.")
-            return
-        if not email:
-            QMessageBox.warning(self, "Validación", "El correo electrónico es obligatorio.")
-            return
-        if not validar_email(email):
-            QMessageBox.warning(self, "Validación", "Ingrese un correo electrónico válido.")
+        if email and not validar_email(email):
+            QMessageBox.warning(self, "Validación", "El correo electrónico ingresado no es válido.")
             return
 
-        db = getattr(getattr(self.parent(), "manager", None), "db", None)
-        if db:
-            for t in db.get_trabajadores():
-                if t.get("codigo") == codigo and t.get("id") != self._trabajador_id:
-                    QMessageBox.warning(self, "Validación", "El código ya está registrado.")
-                    return
+        if codigo:
+            db = getattr(getattr(self.parent(), "manager", None), "db", None)
+            if db:
+                for t in db.get_trabajadores():
+                    if t.get("codigo") == codigo and t.get("id") != self._trabajador_id:
+                        QMessageBox.warning(self, "Validación", "El código ya está registrado.")
+                        return
 
         self.accept()
 

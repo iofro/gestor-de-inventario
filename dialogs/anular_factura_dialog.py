@@ -20,7 +20,7 @@ DOC_TYPES = [
 class AnularFacturaDialog(QDialog):
     """Formulario para capturar datos de anulación."""
 
-    def __init__(self, parent=None):
+    def __init__(self, parent=None, responsable: dict | None = None, solicitante: dict | None = None):
         super().__init__(parent)
         self.setWindowTitle("Anular factura")
         layout = QVBoxLayout(self)
@@ -80,6 +80,25 @@ class AnularFacturaDialog(QDialog):
         self.ndoc_sol = QLineEdit()
         row.addWidget(self.ndoc_sol)
         layout.addLayout(row)
+
+        def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
+            if not data:
+                return
+            name_edit.setText(data.get("nombre", ""))
+            doc = data.get("dui")
+            doc_type = "13" if doc else None
+            if not doc:
+                doc = data.get("nit")
+                doc_type = "36" if doc else doc_type
+            if doc_type:
+                idx = combo.findData(doc_type)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            if doc:
+                doc_edit.setText(doc)
+
+        _prefill(responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp)
+        _prefill(solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)

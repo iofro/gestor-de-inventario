@@ -446,7 +446,7 @@ class FacturacionTab(QWidget):
 
         self.date_filter_cb = QCheckBox("Filtrar por fecha")
         self.quick_range = QComboBox()
-        self.quick_range.addItems(["Personalizado", "Esta semana", "Este mes", "Este año"])
+        self.quick_range.addItems(["Personalizado", "Hoy", "Esta semana", "Este mes", "Este año"])
         self.date_from = QDateEdit(QDate.currentDate().addYears(-2))
         self.date_from.setCalendarPopup(True)
         self.date_to = QDateEdit(QDate.currentDate())
@@ -524,7 +524,7 @@ class FacturacionTab(QWidget):
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)
-        custom = self.quick_range.currentIndex() == 0
+        custom = self.quick_range.currentText() == "Personalizado"
         self.date_from.setEnabled(checked and custom)
         self.date_to.setEnabled(checked and custom)
         if checked:
@@ -537,7 +537,12 @@ class FacturacionTab(QWidget):
             return
         option = self.quick_range.currentText()
         today = date.today()
-        if option == "Esta semana":
+        if option == "Hoy":
+            self.date_from.setDate(QDate(today))
+            self.date_to.setDate(QDate(today))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Esta semana":
             start = today - timedelta(days=today.weekday())
             end = start + timedelta(days=6)
             self.date_from.setDate(QDate(start))
@@ -561,7 +566,7 @@ class FacturacionTab(QWidget):
             self.date_to.setDate(QDate(end))
             self.date_from.setEnabled(False)
             self.date_to.setEnabled(False)
-        else:
+        else:  # Personalizado
             self.date_from.setEnabled(True)
             self.date_to.setEnabled(True)
         self.load_invoices()

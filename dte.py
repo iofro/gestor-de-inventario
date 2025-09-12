@@ -686,7 +686,7 @@ def _build_receptor_direccion(src: dict) -> dict:
 
 DEFAULT_ADDRESS = {
     "departamento": "06",
-    "municipio": "01",
+    "municipio": "23",
     "complemento": "San Salvador",
 }
 
@@ -750,8 +750,11 @@ def norm_receptor(
     dep = d.get("departamento")
     mun = d.get("municipio")
 
+    is_cf = tipo == "37" and num == "CONSUMIDOR"
+    fallback_addr = es_ticket or is_cf
+
     if dep is None or mun is None:
-        if es_ticket:
+        if fallback_addr:
             warnings.warn(
                 "Dirección incompleta; usando dirección por defecto",
                 UserWarning,
@@ -769,7 +772,7 @@ def norm_receptor(
                 dep, mun, strict=strict_geo
             )
         except GeoValidationError as e:
-            if es_ticket:
+            if fallback_addr:
                 warnings.warn(f"{e}; usando dirección por defecto", UserWarning)
                 dep = DEFAULT_ADDRESS["departamento"]
                 mun = DEFAULT_ADDRESS["municipio"]
@@ -777,7 +780,7 @@ def norm_receptor(
                 raise
 
     if not comp or len(comp) < 5:
-        comp = DEFAULT_ADDRESS["complemento"] if es_ticket else None
+        comp = DEFAULT_ADDRESS["complemento"] if fallback_addr else None
 
     r["direccion"] = {
         "departamento": dep,

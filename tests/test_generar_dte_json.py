@@ -242,7 +242,7 @@ def test_generar_dte_json_usa_cod_estable_punto(tmp_path):
         "",
         "C",
         "06",
-        "01",
+        "23",
         codActividad="99999",
     )
     cliente_id = db.cursor.lastrowid
@@ -1100,7 +1100,7 @@ def test_generar_dte_json_receptor_extra_preserva_direccion(tmp_path):
         "",
         "Calle",
         "06",
-        "01",
+        "23",
     )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta(
@@ -1117,7 +1117,7 @@ def test_generar_dte_json_receptor_extra_preserva_direccion(tmp_path):
     data = generar_dte_json(db, venta_id)
     direccion = data["receptor"]["direccion"]
     assert direccion["departamento"] == "06"
-    assert direccion["municipio"] == "01"
+    assert direccion["municipio"] == "23"
     assert direccion["complemento"] == "Calle"
 
 

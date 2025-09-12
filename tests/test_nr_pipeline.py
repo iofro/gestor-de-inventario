@@ -45,7 +45,7 @@ def test_nr_minimum_pipeline():
         "codPuntoVentaMH": "0001",
         "direccion": {
             "departamento": "06",
-            "municipio": "01",
+            "municipio": "23",
             "complemento": "Calle X",
         },
     }
@@ -62,8 +62,8 @@ def test_nr_minimum_pipeline():
         "numDocumento": "12345678901234",
         "tipoDocumento": "36",
         "direccion": {
-            "departamento": "05",
-            "municipio": "01",
+            "departamento": "06",
+            "municipio": "23",
             "complemento": "San Salvador",
         },
     }

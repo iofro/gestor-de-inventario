@@ -46,10 +46,13 @@ def get_field(obj, key, default=0):
     return default
 
 def validar_nit(nit):
-    """Valida NIT salvadoreño con o sin guiones o un DUI."""
+    """Valida NIT salvadoreño con o sin guiones o un DUI.
+
+    Cadenas vacías se consideran válidas.
+    """
     import re
     if not nit:
-        return False
+        return True
     # NIT con guiones: ####-######-###-#
     nit_pattern = r"^\d{4}-\d{6}-\d{3}-\d$"
     # NIT sin guiones: 14 dígitos
@@ -72,7 +75,13 @@ def validar_dui(dui):
     return bool(re.match(dui_pattern, dui))
 
 def validar_email(email):
+    """Valida un correo electrónico con un patrón básico.
+
+    Cadenas vacías se consideran válidas.
+    """
     import re
+    if not email:
+        return True
     return bool(re.match(r"^[^@]+@[^@]+\.[^@]+$", email))
 
 def validar_nrc(nrc):

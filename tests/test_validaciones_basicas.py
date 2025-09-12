@@ -34,6 +34,7 @@ from utils import catalogos
     ("123456789", True),
     ("1234-123456-123", False),
     ("abcd", False),
+    ("", True),
 ])
 @pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
 def test_validar_nit(nit, expected):
@@ -67,6 +68,7 @@ def test_validar_nrc(nrc, expected):
     ("test@domain.co", True),
     ("invalid@domain", False),
     ("userexample.com", False),
+    ("", True),
 ])
 @pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
 def test_validar_email(email, expected):

@@ -108,3 +108,6 @@ def test_generar_ticket_con_receptor_valido(monkeypatch):
     assert "extra" not in data
     assert data["receptor"] is not None
     assert data["receptor"].get("direccion", {}).get("complemento") == "Colonia ABC"
+    rec = data["receptor"]
+    assert "nit" not in rec
+    assert "nombreComercial" not in rec

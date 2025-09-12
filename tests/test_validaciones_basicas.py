@@ -30,6 +30,7 @@ from utils import catalogos
 @pytest.mark.parametrize(
     "nit, expected",
     [
+        ("", True),
         ("12341234561234", True),
         ("1234-123456-123-1", False),
         ("123456789012345", False),
@@ -67,6 +68,7 @@ def test_validar_nrc(nrc, expected):
 
 
 @pytest.mark.parametrize("email, expected", [
+    ("", True),
     ("user@example.com", True),
     ("test@domain.co", True),
     ("invalid@domain", False),

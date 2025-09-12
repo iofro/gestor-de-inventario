@@ -1,5 +1,6 @@
 import json
 import logging
+from decimal import Decimal
 import pytest
 import requests
 import auth
@@ -168,7 +169,8 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     )
     assert payload["resumen"]["subTotalVentas"] == pytest.approx(items_total)
     assert payload["resumen"]["totalPagar"] == pytest.approx(items_total)
-    assert "totalIva" not in payload["resumen"]
+    expected_iva = (Decimal(str(items_total)) * Decimal("0.13") / Decimal("1.13")).quantize(Decimal("0.01"))
+    assert Decimal(str(payload["resumen"]["totalIva"])) == expected_iva
     assert payload["identificacion"]["tipoDte"] == "01"
 
     assert tokens["count"] == 1

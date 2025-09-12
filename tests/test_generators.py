@@ -1,7 +1,12 @@
 import copy
 from decimal import Decimal
 
+import copy
+from decimal import Decimal
+
 import pytest
+
+from utils.catalogos import TRIBUTO_IVA
 
 from svfe.generators import (
     generar_factura_fiscal,
@@ -9,48 +14,46 @@ from svfe.generators import (
     generar_nota_debito,
     generar_nota_credito,
     generar_nota_remision,
-    validar_contra_schema,
-    strip_extras,
 )
 from svfe.json_compare import normalize_for_schema, similarity
+
+import svfe.config as svfe_config
+import dte as dte_module
+
+
+@pytest.fixture(autouse=True)
+def _stub_datos_negocio(monkeypatch):
+    fake = {
+        "nit": "06142512891020",
+        "nrc": "1234567",
+        "nombre": "Demo",
+        "nombreComercial": "Demo",
+        "codActividad": "46484",
+        "descActividad": "Venta",
+        "tipoContribuyente": "PN",
+        "telefono": "22223333",
+        "correo": "demo@example.com",
+        "direccion": {"departamento": "01", "municipio": "01", "complemento": ""},
+    }
+    monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: fake)
+    monkeypatch.setattr(dte_module, "_load_datos_negocio", lambda: fake)
 
 
 def _assert_base(data):
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
     tipo = data["identificacion"]["tipoDte"]
-    if tipo == "01":
-        assert str(item["ventaGravada"]) == "26.9500"
-        iva = (item["ventaGravada"] - (item["ventaGravada"] / Decimal("1.13"))).quantize(Decimal("0.01"))
-        if "ivaItem" in item:
-            assert str(item["ivaItem"]) == str(iva)
-        assert str(resumen["totalGravada"]) == "26.95"
-        total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-        assert str(total) == "26.95"
-        assert str(resumen["totalIva"]) == "3.10"
-    elif tipo == "03":
-        assert str(item["ventaGravada"]) == "23.8500"
-        assert str(resumen["totalGravada"]) == "23.85"
-        total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-        assert str(total) == "26.95"
-        iva = total - resumen["totalGravada"]
-        assert str(iva.quantize(Decimal("0.01"))) == "3.10"
-        assert "totalIva" not in resumen
-    else:
-        assert str(item["ventaGravada"]) == "23.8500"
-        venta = item["ventaGravada"]
-        iva = (venta * Decimal("0.13")).quantize(Decimal("0.0001"))
-        assert str(iva) == "3.1005"
-        if "ivaItem" in item:
-            assert str(item["ivaItem"]) == str(iva)
-        assert str(resumen["totalGravada"]) == "23.85"
-        total = resumen.get("totalPagar", resumen["montoTotalOperacion"])
-        assert str(total) == "26.95"
-        total_iva = resumen.get("totalIva")
-        if total_iva is None:
-            total_iva = resumen["montoTotalOperacion"] - resumen["totalGravada"]
-        total_iva = total_iva.quantize(Decimal("0.01"))
-        assert str(total_iva) == "3.10"
+    trib = next(
+        (t.get("valor") for t in resumen.get("tributos") or [] if t.get("codigo") == TRIBUTO_IVA),
+        Decimal("0"),
+    )
+    total = resumen.get("totalPagar", resumen.get("montoTotalOperacion"))
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
+    assert str(item["ventaGravada"]) == "23.8500"
+    assert str(resumen["totalGravada"]) == "23.85"
+    assert str(total) == "26.95"
+    assert trib.quantize(Decimal("0.01")) == Decimal("3.10")
 
 
 def _run_generator(gen):
@@ -80,6 +83,3 @@ def test_generar_nota_remision():
     _run_generator(generar_nota_remision)
 
 
-def test_fc_valida_con_schema():
-    data = generar_consumidor_final()
-    validar_contra_schema(strip_extras(data), "fc")

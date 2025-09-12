@@ -99,7 +99,7 @@ def log_venta_vs_dte(manager, venta_id):
                     or 0
                 )
             )
-            iva_dte = D(str(item.get("ivaItem") or 0))
+            iva_dte = iva_item(base_dte)
             logger.info(
                 "DTE   idx=%s qty=%s pf_unit=%.4f desc=%.4f pf_line=%.4f "
                 "desc_line=%.4f pf_neto=%.4f base=%.4f iva=%.4f",

@@ -59,6 +59,8 @@ import dte
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from decimal import Decimal
+from utils.monto import iva_item
+from utils.catalogos import TRIBUTO_IVA
 
 # Directory where debit notes will be stored
 NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
@@ -1276,7 +1278,7 @@ class FacturacionTab(QWidget):
                     "cantidad": float(d.get("cantidad", 1)),
                     "descripcion": d.get("descripcion", ""),
                     "precio_unitario": float(d.get("precioUni", 0)),
-                    "iva": float(d.get("ivaItem", 0)),
+                    "iva": float(iva_item(Decimal(str(d.get("ventaGravada", 0)))) if TRIBUTO_IVA in (d.get("tributos") or []) else 0),
                     "ventas_gravadas": float(d.get("ventaGravada", 0)),
                     "ventas_exentas": float(d.get("ventaExenta", 0)),
                     "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
@@ -1367,7 +1369,7 @@ class FacturacionTab(QWidget):
                     "ventas_gravadas": float(d.get("ventaGravada", 0)),
                     "ventas_exentas": float(d.get("ventaExenta", 0)),
                     "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
-                    "precio_unitario_iva": Decimal(str(d.get("ivaItem", 0))),
+                    "precio_unitario_iva": iva_item(Decimal(str(d.get("ventaGravada", 0)))) if TRIBUTO_IVA in (d.get("tributos") or []) else Decimal("0"),
                     "descuento_iva": Decimal(str(d.get("montoDescu", 0))),
                     "total_linea": Decimal(str(d.get("ventaGravada", 0))),
                 }
@@ -1493,7 +1495,7 @@ class FacturacionTab(QWidget):
                         "cantidad": float(d.get("cantidad", 1)),
                         "descripcion": d.get("descripcion", ""),
                         "precio_unitario": float(d.get("precioUni", 0)),
-                        "iva": float(d.get("ivaItem", 0)),
+                        "iva": float(iva_item(Decimal(str(d.get("ventaGravada", 0)))) if TRIBUTO_IVA in (d.get("tributos") or []) else 0),
                         "ventas_gravadas": float(d.get("ventaGravada", 0)),
                         "ventas_exentas": float(d.get("ventaExenta", 0)),
                         "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),

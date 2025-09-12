@@ -82,6 +82,20 @@ def test_receptor_dui_ignores_empty_nit(dte_metadata_factory, db_fixture):
     assert rec["tipoDocumento"] == "13"
 
 
+def test_receptor_dui_only(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    rec = dte["receptor"]
+    rec.pop("numDocumento", None)
+    rec.pop("tipoDocumento", None)
+    rec.pop("nrc", None)
+    rec["dui"] = "01234567-8"
+    validate_dte_json(dte, db=db_fixture)
+    rec = dte["receptor"]
+    assert rec["numDocumento"] == "012345678"
+    assert rec["tipoDocumento"] == "13"
+    assert "dui" not in rec
+
+
 def test_codigo_generacion_debe_ser_uuid_v4(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     dte["identificacion"]["codigoGeneracion"] = "not-a-uuid"

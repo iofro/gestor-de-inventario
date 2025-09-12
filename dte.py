@@ -2082,11 +2082,14 @@ def generar_dte_json(
         raise ValueError("Teléfono de emisor inválido")
 
     rec = dict(cliente or {})
-    rec.setdefault("correo", rec.get("email"))
     rec_extra = extra.get("receptor") or {}
     for k, v in rec_extra.items():
         if v not in (None, "", []):
             rec[k] = v
+    if rec.get("email") and not rec.get("correo"):
+        rec["correo"] = rec["email"]
+    for field in ("codigo", "id", "email"):
+        rec.pop(field, None)
 
     def _drop_empty(obj):
         if isinstance(obj, dict):
@@ -2909,7 +2912,24 @@ def validate_dte_json(
     receptor = payload.get("receptor") or {}
     es_ticket = tipo_dte == "01" and extra_conf.get("es_ticket")
     receptor = norm_receptor(receptor, es_ticket=es_ticket)
-    if tipo_dte != "01":
+    if tipo_dte == "01":
+        allowed = {
+            "tipoDocumento",
+            "numDocumento",
+            "nrc",
+            "nombre",
+            "codActividad",
+            "descActividad",
+            "direccion",
+            "telefono",
+            "correo",
+            "noRemision",
+            "ordenNo",
+        }
+        for k in list(receptor.keys()):
+            if k not in allowed:
+                receptor.pop(k, None)
+    else:
         for f in ["noRemision", "ordenNo"]:
             receptor.pop(f, None)
     payload["receptor"] = receptor

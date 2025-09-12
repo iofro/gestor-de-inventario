@@ -472,7 +472,6 @@ def test_totales_rechazan_mas_de_dos_decimales(dte_metadata_factory, db_fixture)
     item = dte["cuerpoDocumento"][0]
     item["precioUni"] = D("1.2345")
     item["ventaGravada"] = D("1.2345")
-    item["ivaItem"] = D("0.14")
     dte.setdefault("extra", {})["precios_incluyen_iva"] = True
     with pytest.raises(ValidationError):
         validate_dte_json(dte, db=db_fixture)

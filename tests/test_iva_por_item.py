@@ -29,8 +29,8 @@ def test_calculo_iva_item():
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
     assert D(str(item["ventaGravada"])) == D("13.00")
-    assert D(str(item["ivaItem"])) == D("1.4956")
-    assert D(str(resumen["totalIva"])) == D("1.4956")
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
 
 
 def test_serializacion_sin_tributos():
@@ -40,8 +40,8 @@ def test_serializacion_sin_tributos():
     assert item.get("tributos") is None
     assert item.get("codTributo") is None
     assert resumen.get("tributos") is None
-    iva_suma = sum(D(str(i["ivaItem"])) for i in payload["cuerpoDocumento"])
-    assert D(str(resumen["totalIva"])) == iva_suma
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
     json_str = stable_stringify(payload)
     assert "-0.00" not in json_str
 
@@ -51,10 +51,10 @@ def test_fc_precio_incluye_iva_default():
     item = payload["cuerpoDocumento"][0]
     resumen = payload["resumen"]
     assert D(str(item["ventaGravada"])) == D("13.00")
-    assert D(str(item["ivaItem"])) == D("1.4956")
     assert D(str(resumen["totalGravada"])) == D("13.00")
-    assert D(str(resumen["totalIva"])) == D("1.4956")
     assert D(str(resumen["totalPagar"])) == D("13.00")
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
     assert item.get("codTributo") is None
     assert item.get("tributos") is None
     assert resumen.get("tributos") is None
@@ -79,4 +79,4 @@ def test_valida_iva_incorrecto_warning(caplog):
         recalcular_totales(payload)
     assert "IVA por ítem incoherente" in caplog.text
     item = payload["cuerpoDocumento"][0]
-    assert D(str(item["ivaItem"])) == D("1.4956")
+    assert "ivaItem" not in item

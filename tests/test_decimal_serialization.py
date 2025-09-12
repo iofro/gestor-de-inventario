@@ -67,11 +67,11 @@ def test_trailing_zeros_preserved(tmp_path):
 
     assert isinstance(item["precioUni"], D)
     assert isinstance(item["montoDescu"], D)
-    assert isinstance(item["ivaItem"], D)
-    assert isinstance(resumen["totalIva"], D)
+    assert "ivaItem" not in item
+    assert "totalIva" not in resumen
 
     json_str = stable_stringify(data)
     assert "\"montoDescu\":0.0" in json_str
     assert "\"precioUni\":13.0000" in json_str
-    assert "\"ivaItem\":1.50" in json_str
-    assert "\"totalIva\":1.50" in json_str
+    assert "ivaItem" not in json_str
+    assert "totalIva" not in json_str

@@ -1116,7 +1116,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             venta_total = money(venta)
         except Exception:
             venta_total = None
-    if venta_total is not None:
+    if venta_total is not None and venta_total > D("0"):
         diff = money(venta_total - total_pagar)
         if diff != 0:
             total_iva = money(total_iva + diff)

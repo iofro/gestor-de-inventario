@@ -414,7 +414,6 @@ def generate_ticket_pdf(manager, venta_id):
         venta.get("fecha"), cliente_nombre, venta_id, "Ticket"
     )
 
-    generar_ticket_personalizado(venta, detalles, filename, dte_data=extra)
     if hasattr(manager.db, "cursor"):
         ticket_json = generar_ticket_json(
             manager.db,
@@ -449,6 +448,9 @@ def generate_ticket_pdf(manager, venta_id):
         sign_and_save(ticket_json, json_path)
     except Exception:
         pass
+    dte_data = dict(extra)
+    dte_data["dteJson"] = ticket_json
+    generar_ticket_personalizado(venta, detalles, filename, dte_data=dte_data)
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     manager.db.add_ticket_pdf(venta_id, filename)

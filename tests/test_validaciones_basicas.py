@@ -41,12 +41,15 @@ def test_validar_nit(nit, expected):
     assert validar_nit(nit) is expected
 
 
-@pytest.mark.parametrize("dui, expected", [
-    ("12345678-9", True),
-    ("123456789", True),
-    ("1234567-89", False),
-    ("abcd", False),
-])
+@pytest.mark.parametrize(
+    "dui, expected",
+    [
+        ("123456789", True),
+        ("12345678-9", False),
+        ("1234567890", False),
+        ("abcd", False),
+    ],
+)
 @pytest.mark.skipif(_dialog_import_error, reason="UI dependencies not available")
 def test_validar_dui(dui, expected):
     assert validar_dui(dui) is expected

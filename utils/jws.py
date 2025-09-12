@@ -118,11 +118,12 @@ def sign_json(
         if tipo_dte is None:
             tipo_dte = ident.get("tipoDte")
 
+    dte_json = json.loads(payload_str) if SEND_DTEJSON_AS_OBJECT else payload_str
     body = {
         "nit": nit,
         "activo": activo,
         "passwordPri": passwordPri,
-        "dteJson": payload_obj if SEND_DTEJSON_AS_OBJECT else payload_str,
+        "dteJson": dte_json,
     }
     if version is not None:
         body["version"] = version

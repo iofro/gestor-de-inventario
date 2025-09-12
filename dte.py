@@ -2954,6 +2954,13 @@ def validate_dte_json(
                         tipo_doc = "36"
             receptor.pop("nit", None)
             limpiar_documentos(receptor)
+            dui = receptor.get("dui")
+            num_doc_val = receptor.get("numDocumento")
+            if dui and not num_doc_val:
+                receptor["numDocumento"] = dui
+                if not tipo_doc:
+                    tipo_doc = "13"
+            receptor.pop("dui", None)
             num_doc = solo_digitos(receptor.get("numDocumento"))
             nrc_raw = receptor.get("nrc")
             nrc_digits = solo_digitos(nrc_raw) if nrc_raw is not None else ""

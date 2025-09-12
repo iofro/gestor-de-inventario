@@ -121,7 +121,8 @@ def test_venta_vs_dte_caso_dificil_cf03(tmp_path):
     assert d2(str(resumen["montoTotalOperacion"])) == total_venta
 
     iva_sum = d2(sum(D(str(it.get("ivaItem", 0))) for it in data["cuerpoDocumento"]))
-    assert iva_sum == d2(str(resumen.get("totalIva", 0)))
+    assert iva_sum == D("0")
+    assert "totalIva" not in resumen
 
     for calc, item in zip(calcs, data["cuerpoDocumento"]):
         base = item.get("ventaGravada") or item.get("ventaExenta") or item.get("ventaNoSuj")

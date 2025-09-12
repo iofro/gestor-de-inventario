@@ -20,7 +20,6 @@ def _sample_doc():
             "totalDescu": 0,
             "subTotal": 5.0,
             "montoTotalOperacion": 5.0,
-            "totalIva": 0.0,
             "totalPagar": 5.0,
         },
     }

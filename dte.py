@@ -1146,6 +1146,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         }
     )
 
+    if tipo_dte == "01":
+        resumen["totalIva"] = total_iva
+
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
 
@@ -2131,7 +2134,6 @@ def generar_dte_json(
                 receptor.setdefault(f, None)
 
     cuerpo = []
-    items_total = D("0")
     commission_total = D("0")
     iva_total = D("0")
     total_gravada_sum = D("0")
@@ -2304,7 +2306,6 @@ def generar_dte_json(
                 descuentos_total += monto_descu
             venta_exenta = D("0")
             venta_no_suj = D("0")
-        items_total += line_total
         if tipo_dte not in {"03", "05", "06"}:
             iva_total += iva_val
         try:
@@ -2369,7 +2370,6 @@ def generar_dte_json(
         total_no_gravado_sum += D(str(item_data["noGravado"]))
         cuerpo.append(item_data)
 
-    items_total = money(items_total)
     bruto_total = money(bruto_total)
     descuentos_total = money(descuentos_total)
     total_no_suj_sum = _zero_or_item(total_no_suj_sum)
@@ -2379,6 +2379,12 @@ def generar_dte_json(
     total_iva_sum = money(iva_total)
     sub_total_ventas = money(sub_total_ventas)
     descu_gravada_sum = money(descu_gravada_sum)
+    if tipo_dte == "01":
+        items_total = money(total_gravada_sum + total_exenta_sum + total_no_suj_sum)
+    else:
+        items_total = money(
+            total_gravada_sum + total_exenta_sum + total_no_suj_sum + total_iva_sum
+        )
 
     fiscal_data = {
         **(fiscal or {}),

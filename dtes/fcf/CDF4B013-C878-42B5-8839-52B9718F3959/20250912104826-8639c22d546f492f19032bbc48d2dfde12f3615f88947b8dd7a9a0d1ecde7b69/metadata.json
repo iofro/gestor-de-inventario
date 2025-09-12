@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "CDF4B013-C878-42B5-8839-52B9718F3959",
+  "estado": "borrador",
+  "firmas": [
+    {
+      "archivo": "documento-20250912104826.jws",
+      "estado": "borrador",
+      "fechaFirma": "20250912104826",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "8639c22d546f492f19032bbc48d2dfde12f3615f88947b8dd7a9a0d1ecde7b69",
+  "timestamp": "20250912104826"
+}

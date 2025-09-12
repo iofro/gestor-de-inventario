@@ -1,0 +1,102 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1,
+      "codTributo": null,
+      "codigo": "NCFCA58759-1",
+      "descripcion": "Producto Demo 11",
+      "montoDescu": 0.0,
+      "numItem": 1,
+      "numeroDocumento": "FCA58759-CC33-4E97-8252-8710E8C9F249",
+      "precioUni": 1.7699,
+      "tipoItem": 1,
+      "tributos": [
+        "20"
+      ],
+      "uniMedida": 59,
+      "ventaExenta": 0.0000,
+      "ventaGravada": 1.7699,
+      "ventaNoSuj": 0.0000
+    }
+  ],
+  "documentoRelacionado": [
+    {
+      "fechaEmision": "2025-09-12",
+      "numeroDocumento": "FCA58759-CC33-4E97-8252-8710E8C9F249",
+      "tipoDocumento": "03",
+      "tipoGeneracion": 2
+    }
+  ],
+  "emisor": {
+    "codActividad": "46484",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "02BFD1B2-DB5C-44ED-A109-FAFC0153E719",
+    "fecEmi": "2025-09-12",
+    "horEmi": "14:02:52",
+    "motivoContin": null,
+    "numeroControl": "DTE-05-S001P001-000000000000033",
+    "tipoContingencia": null,
+    "tipoDte": "05",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "receptor": {
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "6a calle oriente",
+      "departamento": "05",
+      "municipio": "25"
+    },
+    "nit": "000000000",
+    "nombre": "ariel",
+    "nombreComercial": "ariel",
+    "nrc": "2273734",
+    "telefono": "74154027"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 2.00,
+    "reteRenta": 0.0,
+    "subTotal": 1.77,
+    "subTotalVentas": 1.77,
+    "totalDescu": 0.0,
+    "totalExenta": 0.00,
+    "totalGravada": 1.77,
+    "totalLetras": "DOS 00/100 DÓLARES",
+    "totalNoSuj": 0.00,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 0.23
+      }
+    ]
+  },
+  "ventaTercero": null
+}

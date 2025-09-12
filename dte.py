@@ -2006,91 +2006,102 @@ def generar_dte_json(
             and len(str(comp)) >= 5
         ):
             rec = {}
+        if not rec:
+            rec = {
+                "tipoDocumento": "36",
+                "numDocumento": "00000000-0",
+                "nombre": "CONSUMIDOR FINAL",
+                "direccion": {
+                    "departamento": "06",
+                    "municipio": "20",
+                    "complemento": "San Salvador",
+                },
+            }
 
-    if extra.get("es_ticket") and not rec:
-        receptor = None
-    else:
-        def _clean_nit(nit):
-            return "".join(c for c in str(nit) if c.isdigit()) if nit else None
+    def _clean_nit(nit):
+        return "".join(c for c in str(nit) if c.isdigit()) if nit else None
 
-        tipo_doc = rec.get("tipoDocumento")
-        if tipo_doc is not None:
-            tipo_doc = str(tipo_doc)
-        num_doc = rec.get("numDocumento")
-        if isinstance(num_doc, str):
-            num_doc = num_doc.strip()
-            if tipo_doc is None and re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-                tipo_doc = "13"
-        nit = _clean_nit(rec.get("nit"))
-        if fiscal:
-            tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
-            num_doc = fiscal.get("numDocumento") or num_doc
-            nit = _clean_nit(fiscal.get("nit") or nit)
-        if nit and not num_doc:
-            num_doc = nit
-        if nit and not tipo_doc:
-            tipo_doc = "36"
+    tipo_doc = rec.get("tipoDocumento")
+    if tipo_doc is not None:
+        tipo_doc = str(tipo_doc)
+    num_doc = rec.get("numDocumento")
+    if isinstance(num_doc, str):
+        num_doc = num_doc.strip()
+        if tipo_doc is None and re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            tipo_doc = "13"
+    nit = _clean_nit(rec.get("nit"))
+    if fiscal:
+        tipo_doc = fiscal.get("tipoDocumento") or tipo_doc
+        num_doc = fiscal.get("numDocumento") or num_doc
+        nit = _clean_nit(fiscal.get("nit") or nit)
+    if nit and not num_doc:
+        num_doc = nit
+    if nit and not tipo_doc:
+        tipo_doc = "36"
 
-        if tipo_doc == "36":
-            num_doc = _clean_nit(num_doc)
-            if num_doc and not re.fullmatch(r"[0-9]{14}", num_doc):
+    if tipo_doc == "36":
+        num_doc = _clean_nit(num_doc)
+        if num_doc:
+            if num_doc == "000000000":
+                num_doc = "00000000000000"
+            elif not re.fullmatch(r"[0-9]{14}", num_doc):
                 raise ValueError("NIT inválido")
-        elif tipo_doc == "13":
-            if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-                raise ValueError("DUI inválido")
+    elif tipo_doc == "13":
+        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
+            raise ValueError("DUI inválido")
 
-        receptor = {
-            "tipoDocumento": tipo_doc if tipo_doc is not None else None,
-            "numDocumento": num_doc or None,
-            "nrc": ((fiscal.get("nrc") if fiscal else None) or rec.get("nrc")) or None,
-            "nombre": rec.get("nombre") or None,
-            "nit": nit,
-            "nombreComercial": rec.get("nombreComercial") or None,
-            "codActividad": rec.get("codActividad") or None,
-            "descActividad": (rec.get("giro") or rec.get("descActividad")) or None,
-            "telefono": rec.get("telefono") or None,
-            "correo": rec.get("correo") or None,
-        }
-        direccion_src = rec.get("direccion")
-        if not isinstance(direccion_src, dict):
-            direccion_src = rec
-        receptor["direccion"] = _build_receptor_direccion(direccion_src)
-        compl = receptor["direccion"].get("complemento")
-        if extra.get("es_ticket"):
-            dir_ok = (
-                receptor["direccion"].get("departamento")
-                and receptor["direccion"].get("municipio")
-                and compl
-                and len(str(compl)) >= 5
+    receptor = {
+        "tipoDocumento": tipo_doc if tipo_doc is not None else None,
+        "numDocumento": num_doc or None,
+        "nrc": ((fiscal.get("nrc") if fiscal else None) or rec.get("nrc")) or None,
+        "nombre": rec.get("nombre") or None,
+        "nit": nit,
+        "nombreComercial": rec.get("nombreComercial") or None,
+        "codActividad": rec.get("codActividad") or None,
+        "descActividad": (rec.get("giro") or rec.get("descActividad")) or None,
+        "telefono": rec.get("telefono") or None,
+        "correo": rec.get("correo") or None,
+    }
+    direccion_src = rec.get("direccion")
+    if not isinstance(direccion_src, dict):
+        direccion_src = rec
+    receptor["direccion"] = _build_receptor_direccion(direccion_src)
+    compl = receptor["direccion"].get("complemento")
+    if extra.get("es_ticket"):
+        dir_ok = (
+            receptor["direccion"].get("departamento")
+            and receptor["direccion"].get("municipio")
+            and compl
+            and len(str(compl)) >= 5
+        )
+        if not dir_ok:
+            receptor = None
+    else:
+        if not compl or len(str(compl)) < 5:
+            receptor["direccion"]["complemento"] = "SIN DIRECCION"
+    if receptor and receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
+        raise ValueError("Correo de receptor inválido")
+    if receptor and receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
+        raise ValueError("Teléfono de receptor inválido")
+    if fiscal and receptor:
+        if fiscal.get("no_remision"):
+            receptor["noRemision"] = fiscal.get("no_remision")
+        if fiscal.get("orden_no"):
+            receptor["ordenNo"] = fiscal.get("orden_no")
+
+    if receptor and not extra.get("es_ticket"):
+        if not receptor.get("codActividad"):
+            receptor["codActividad"] = (
+                emisor.get("codActividad") or datos.get("cod_giro") or "00000"
             )
-            if not dir_ok:
-                receptor = None
-        else:
-            if not compl or len(str(compl)) < 5:
-                receptor["direccion"]["complemento"] = "SIN DIRECCION"
-        if receptor and receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
-            raise ValueError("Correo de receptor inválido")
-        if receptor and receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
-            raise ValueError("Teléfono de receptor inválido")
-        if fiscal and receptor:
-            if fiscal.get("no_remision"):
-                receptor["noRemision"] = fiscal.get("no_remision")
-            if fiscal.get("orden_no"):
-                receptor["ordenNo"] = fiscal.get("orden_no")
-
-        if receptor and not extra.get("es_ticket"):
-            if not receptor.get("codActividad"):
-                receptor["codActividad"] = (
-                    emisor.get("codActividad") or datos.get("cod_giro") or "00000"
-                )
-            if not receptor.get("descActividad"):
-                receptor["descActividad"] = (
-                    emisor.get("descActividad")
-                    or datos.get("descActividad")
-                    or "SIN GIRO"
-                )
-            if not receptor.get("correo"):
-                receptor["correo"] = "no-reply@example.com"
+        if not receptor.get("descActividad"):
+            receptor["descActividad"] = (
+                emisor.get("descActividad")
+                or datos.get("descActividad")
+                or "SIN GIRO"
+            )
+        if not receptor.get("correo"):
+            receptor["correo"] = "no-reply@example.com"
 
         if receptor:
             # Campos obligatorios y limpieza de campos no permitidos

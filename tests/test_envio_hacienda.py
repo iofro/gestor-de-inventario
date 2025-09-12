@@ -103,7 +103,6 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
                 "totalNoGravado": 0,
                 "totalPagar": 10,
                 "totalLetras": "diez",
-                "totalIva": 0,
                 "saldoFavor": 0,
                 "condicionOperacion": 1,
                 "pagos": None,
@@ -168,8 +167,8 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
         for i in payload["cuerpoDocumento"]
     )
     assert payload["resumen"]["subTotalVentas"] == pytest.approx(items_total)
-    assert payload["resumen"]["totalIva"] == pytest.approx(0)
     assert payload["resumen"]["totalPagar"] == pytest.approx(items_total)
+    assert "totalIva" not in payload["resumen"]
     assert payload["identificacion"]["tipoDte"] == "01"
 
     assert tokens["count"] == 1

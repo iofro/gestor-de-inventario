@@ -1256,7 +1256,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
 
 
 def recalcular_totales(
-    data: dict, *, precios_incluyen_iva: bool | None = None
+    data: dict, *, precios_incluyen_iva: bool | None = None, incluir_iva: bool = False
 ) -> list[str]:
     """Recalcula y corrige los totales del resumen en ``data``.
 
@@ -1268,6 +1268,10 @@ def recalcular_totales(
     ``precios_incluyen_iva`` indica si los precios de los ítems incluyen IVA.
     Cuando se omite (``None``), el valor se obtiene de ``extra`` o de la
     configuración global.
+
+    Cuando ``incluir_iva`` es ``True`` y el DTE es de tipo ``01`` se agregan los
+    campos ``ivaItem`` en cada ítem y ``totalIva`` en el resumen, requeridos por
+    el esquema oficial.
     """
 
     has_extra = "extra" in data and data.get("extra") is not None
@@ -1345,7 +1349,7 @@ def recalcular_totales(
                 linea = d4(0)
             _, iva_calc = to_base_iva(linea)
             esperado_iva = d4(iva_calc)
-            iva_raw = item.pop("ivaItem", None)
+            iva_raw = item.get("ivaItem")
             if iva_raw is not None:
                 actual_iva = money(D(str(iva_raw)))
                 if linea > D("0") and actual_iva != esperado_iva:
@@ -1356,6 +1360,10 @@ def recalcular_totales(
                     )
                 if linea == D("0") and actual_iva != D("0"):
                     raise ValueError("ivaItem debe ser 0 cuando ventaGravada es 0")
+            if incluir_iva:
+                item["ivaItem"] = esperado_iva
+            else:
+                item.pop("ivaItem", None)
             item["ventaGravada"] = linea
             item["ventaExenta"] = d4(0)
             item["ventaNoSuj"] = d4(0)
@@ -1532,6 +1540,8 @@ def recalcular_totales(
         monto_total_operacion = money(venta_gravada_sum)
         _set_resumen("montoTotalOperacion", monto_total_operacion)
         _set_resumen("totalPagar", monto_total_operacion)
+        if incluir_iva:
+            _set_resumen("totalIva", money(total_iva_sum))
     else:
         _set_resumen("totalNoSuj", d4(0))
         _set_resumen("totalExenta", d4(0))
@@ -4462,6 +4472,8 @@ def transmitir_dte(
         data = generar_ticket_json(db, venta_id)
     else:
         data = generar_dte_json(db, venta_id)
+        if data.get("identificacion", {}).get("tipoDte") == "01":
+            recalcular_totales(data, incluir_iva=True)
 
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
@@ -4508,6 +4520,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             or data.get("identificador")
             or {}
         ).get("tipoDte")
+        if str(tipo) == "01":
+            recalcular_totales(data, incluir_iva=True)
         schema = catalogos.get_dte_schema(str(tipo))
         # Se omite la validación para permitir la transmisión aun cuando el
         # payload no cumpla estrictamente con el esquema.

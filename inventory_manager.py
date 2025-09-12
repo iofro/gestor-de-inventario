@@ -6,8 +6,11 @@ from datetime import datetime, timedelta
 import os
 import logging
 import sqlite3
+from decimal import Decimal as D
 from paths import DATOS_NEGOCIO_PATH
 from utils.stable_json import DecimalEncoder
+from utils.line_totals import compute_line_totals
+from utils.monto import d8
 
 logger = logging.getLogger(__name__)
 
@@ -904,7 +907,51 @@ class InventoryManager:
         self.refresh_data()
 
     def registrar_venta_detallada(self, venta_data):
-        self.db.add_venta_detallada(venta_data)
+        detalles = []
+        total = D("0")
+        for item in venta_data.get("detalles", []):
+            cantidad = D(str(item.get("cantidad") or 0))
+            precio_con_iva = D(
+                str(
+                    item.get("precio_unit_con_iva")
+                    or item.get("precio_con_iva")
+                    or item.get("precio_unitario")
+                    or 0
+                )
+            )
+            descuento_valor = D(
+                str(item.get("descuento_valor") or item.get("descuento") or 0)
+            )
+            descuento_tipo = item.get("descuento_tipo", "$")
+            tipo_fiscal = item.get("tipo_fiscal", "Venta gravada")
+            iva_rate = D("0.13") if tipo_fiscal == "Venta gravada" else D("0")
+            calcs = compute_line_totals(
+                cantidad,
+                precio_con_iva,
+                descuento_valor,
+                descuento_tipo,
+                iva_rate,
+            )
+            detalle = {
+                "producto_id": item.get("producto_id"),
+                "cantidad": float(d8(cantidad)),
+                "precio_unitario": float(d8(calcs["base"] / cantidad)) if cantidad else 0,
+                "descuento": float(d8(descuento_valor)),
+                "descuento_tipo": descuento_tipo,
+                "iva": float(calcs["iva"]),
+                "tipo_fiscal": tipo_fiscal,
+                "precio_con_iva": float(d8(precio_con_iva)),
+                "desc_con_iva": float(calcs["desc_con_iva"]),
+                "base": float(calcs["base"]),
+                "total": float(calcs["total_con_iva"]),
+                "unit_con_iva_efectivo": float(calcs["unit_con_iva_efectivo"]),
+            }
+            detalles.append(detalle)
+            total += calcs["total_con_iva"]
+        data = dict(venta_data)
+        data["detalles"] = detalles
+        data["total"] = float(d8(total))
+        self.db.add_venta_detallada(data)
         self.refresh_data()
 
 class ProductTableModel(QAbstractTableModel):

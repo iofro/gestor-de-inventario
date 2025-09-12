@@ -102,7 +102,9 @@ class InvoiceDetailDialog(QDialog):
         layout.addWidget(buttons)
 
     def _anular(self):
-        dlg = AnularFacturaDialog(self)
+        negocio = dte._load_datos_negocio()
+        receptor = self.factura.get("receptor", {})
+        dlg = AnularFacturaDialog(self, responsable=negocio, solicitante=receptor)
         if dlg.exec_() != QDialog.Accepted:
             return
         form = dlg.get_data()

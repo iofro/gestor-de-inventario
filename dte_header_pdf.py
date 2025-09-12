@@ -106,8 +106,7 @@ def generar_cabecera_dte(
     d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
     d.add(qr_code)
     renderPDF.draw(d, c, qr_x, qr_y)
-    c.setFont("Helvetica", 6)
-    c.drawCentredString(qr_x + qr_size / 2, qr_y - 8, qr_value)
+    c.linkURL(qr_value, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 
     # --- Caja derecha ---
     right_x = 40 + box_w + col_margin + qr_size + col_margin

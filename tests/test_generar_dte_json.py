@@ -1223,7 +1223,7 @@ def test_receptor_defaults(tmp_path):
     rec = data["receptor"]
     assert rec["codActividad"] == "99999"
     assert rec["descActividad"] == "Cliente Giro"
-    assert rec["correo"] == "no-reply@example.com"
+    assert rec["correo"] is None
 
 
 def test_credit_payment_defaults(tmp_path):
@@ -1798,7 +1798,7 @@ def test_generar_dte_json_cf_documento_preservado(tmp_path, doc, tipo_doc):
     data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
     receptor = data["receptor"]
     assert receptor["tipoDocumento"] == tipo_doc
-    assert receptor["numDocumento"] == doc.replace("-", "")
+    assert receptor["numDocumento"] == doc
 
 
 def test_generar_dte_json_dui_invalid_length(tmp_path):

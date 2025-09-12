@@ -2,6 +2,8 @@ from __future__ import annotations
 
 """Utilities for sanitizing document numbers."""
 
+import re
+
 
 def limpiar_doc(s: str | None) -> str:
     """Return ``s`` without hyphens or spaces.
@@ -40,7 +42,10 @@ def limpiar_documentos(data: dict | None) -> None:
             kl = key.lower()
             if kl in {"nit", "nrc", "numdocumento", "dui", "pasaporte"} or "doc" in kl:
                 if kl not in {"numerocontrol", "codigogeneracion"} and key != "numeroDocumento":
-                    if kl in {"nrc", "numdocumento"}:
+                    if key == "numDocumento" and re.fullmatch(r"\d{8}-\d", value):
+                        # Preserve DUI format #######-#
+                        data[key] = value
+                    elif kl in {"nrc", "numdocumento"}:
                         data[key] = solo_digitos(value)
                     else:
                         data[key] = limpiar_doc(value)

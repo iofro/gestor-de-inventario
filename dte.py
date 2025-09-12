@@ -1293,11 +1293,12 @@ def recalcular_totales(
         # o si ``extra['es_ticket']`` está definido y es verdadero.
         receptor = data.get("receptor")
         if receptor and not extra_conf.get("es_ticket"):
-            nit = str(receptor.get("nit") or "")
-            if not (len(nit) == 14 and nit.isdigit()):
-                raise ValueError(
-                    "receptor.nit debe tener 14 dígitos sin guiones"
-                )
+            if not (receptor.get("dui") or receptor.get("numDocumento")):
+                nit = str(receptor.get("nit") or "")
+                if nit and not (len(nit) == 14 and nit.isdigit()):
+                    raise ValueError(
+                        "receptor.nit debe tener 14 dígitos sin guiones"
+                    )
     else:
         precios_flag = _precios_incluyen_iva_from(extra_conf, precios_incluyen_iva)
 

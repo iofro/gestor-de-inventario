@@ -61,7 +61,7 @@ def test_sanitize_dte_payload_adds_required_fields_and_cleans_docs(dte_metadata_
     assert clean["apendice"] is None
     assert clean["emisor"]["nit"] == "06141234560011"
     assert "dui" not in clean["emisor"]
-    assert clean["receptor"]["numDocumento"] == "012345678"
+    assert clean["receptor"]["numDocumento"] == "01234567-8"
 
 
 def test_sanitize_skips_otros_documentos_for_notas():

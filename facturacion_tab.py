@@ -102,6 +102,8 @@ class SendOptionsDialog(QDialog):
         layout = QVBoxLayout(self)
         self.email_cb = QCheckBox("Enviar por correo")
         self.hacienda_cb = QCheckBox("Enviar a Hacienda")
+        self.email_cb.setChecked(True)
+        self.hacienda_cb.setChecked(True)
         layout.addWidget(self.email_cb)
         layout.addWidget(self.hacienda_cb)
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -959,6 +961,7 @@ class FacturacionTab(QWidget):
 
         dialog = SendOptionsDialog(self)
         dialog.email_cb.setChecked(True)
+        dialog.hacienda_cb.setChecked(True)
         if dialog.exec_() != QDialog.Accepted:
             return
 

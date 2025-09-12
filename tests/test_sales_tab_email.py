@@ -4,6 +4,7 @@ import json
 import pytest
 from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
+import sales_tab
 from sales_tab import SalesTab
 
 warnings.filterwarnings(
@@ -126,6 +127,54 @@ def test_send_email_builds_message_and_marks_status(
         pdf.name,
         json_path.name,
     }
+
+
+def test_send_email_persists_defaults(
+    qt_app,
+    pdf_json_files,
+    monkeypatch,
+    venta_factory,
+    cliente_factory,
+    producto_factory,
+    tmp_path,
+):
+    pdf, json_path = pdf_json_files
+    venta = venta_factory()
+    cliente = cliente_factory(id=venta["cliente_id"])
+    producto = producto_factory()
+    db, tab = _setup_tab(venta, cliente, producto, monkeypatch)
+    db.factura_path = str(pdf)
+
+    data_path = tmp_path / "datos.json"
+    monkeypatch.setattr(sales_tab, "DATOS_NEGOCIO_PATH", str(data_path))
+
+    tab.sales_table.selectRow(0)
+    tab.email_subject_edit.setText("Hola")
+    tab.email_body_edit.setText("Adios")
+
+    monkeypatch.setattr(
+        SalesTab,
+        "_check_smtp_credentials",
+        lambda self: {"server": "s", "port": 25, "user": "u", "password": "p"},
+    )
+    monkeypatch.setattr(
+        "utils.email_sender.EmailSender.send",
+        lambda self: self.finished.emit(True, "ok"),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        "utils.email_sender.EmailSender.start", lambda self: self.send()
+    )
+    monkeypatch.setattr(QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "critical", lambda *a, **k: None)
+    monkeypatch.setattr(QMessageBox, "information", lambda *a, **k: None)
+
+    tab.send_email()
+    qt_app.processEvents()
+
+    data = json.loads(data_path.read_text())
+    assert data["default_email_subject"] == "Hola"
+    assert data["default_email_body"] == "Adios"
 
 
 def test_save_invoice_generates_files_and_registers(

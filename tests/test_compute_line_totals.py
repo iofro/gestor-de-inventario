@@ -190,10 +190,11 @@ def test_dte_fc_absorbs_discount_in_unit_price(tmp_path):
         expected_precio = d8(calcs['base'] / qty) if qty > 0 else d8(0)
         assert D(str(item['precioUni'])) == expected_precio
         assert D(str(item['ventaGravada'])) == d8(calcs['base'])
-        assert D(str(item['ivaItem'])) == d8(calcs['iva'])
+        assert 'ivaItem' not in item
     assert D(str(resumen['totalPagar'])) == D('22.68')
     assert D(str(resumen['montoTotalOperacion'])) == D('22.68')
-    assert D(str(resumen['totalIva'])) == D('2.61')
+    assert resumen['tributos'][0]['valor'] == D('2.61')
+    assert 'totalIva' not in resumen
 
 
 

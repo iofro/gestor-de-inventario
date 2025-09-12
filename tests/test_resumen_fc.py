@@ -16,7 +16,7 @@ def test_resumen_formulas_fc():
     assert D(str(resumen['subTotal'])) == D('13.00')
     assert D(str(resumen['montoTotalOperacion'])) == D('13.00')
     assert D(str(resumen['totalPagar'])) == D('13.00')
-    assert D(str(resumen['totalIva'])) == D('1.50')
+    assert 'totalIva' not in resumen
 
 
 def test_resumen_credito_fiscal_suma_iva():
@@ -52,7 +52,7 @@ def test_resumen_sin_gravada_sin_tributos():
     fiscal = {'sumas': D('0'), 'ventas_exentas': D('5'), 'iva': D('0')}
     resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='01')
     assert D(str(resumen['totalGravada'])) == D('0.00')
-    assert D(str(resumen['totalIva'])) == D('0.00')
+    assert 'totalIva' not in resumen
     assert resumen['tributos'] is None
 
 
@@ -240,7 +240,6 @@ def test_resumen_centavos_multiplo():
 
 def test_serializacion_sin_neg_zero():
     resumen = {
-        'totalIva': D('-0.00'),
         'montoTotalOperacion': D('-0.00'),
         'totalPagar': D('-0.00'),
         'pagos': [{'codigo': '01', 'montoPago': D('-0.00'), 'referencia': None, 'periodo': None, 'plazo': None}],
@@ -283,7 +282,6 @@ def test_serializacion_sin_neg_zero():
                 mp = 0.0
             p['montoPago'] = mp
 
-    assert resumen['totalIva'] == 0.0
     assert resumen['montoTotalOperacion'] == 0.0
     assert resumen['totalPagar'] == 0.0
     assert resumen['pagos'][0]['montoPago'] == 0.0

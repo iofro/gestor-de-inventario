@@ -560,6 +560,72 @@ CONDICION_OPERACION = {int(k): v for k, v in _CATS["CAT-016"].items()}
 
 FORMA_PAGO = _CATS["CAT-017"]
 
+# Catálogos geográficos
+CAT_DEPTOS = _CATS["CAT-012"]
+
+# Subconjunto representativo de municipios-44.
+# Cada código está asociado a un departamento según CAT-013.
+CAT_MUNI44 = {
+    "00": {"dep": "00", "name": "OTRO"},
+    "01": {"dep": "06", "name": "SAN SALVADOR CENTRO"},
+    "10": {"dep": "06", "name": "SAN SALVADOR SUR"},
+    "13": {"dep": "01", "name": "AHUACHAPAN NORTE"},
+    # La Libertad (dep = 05)
+    "25": {"dep": "05", "name": "LA LIBERTAD OESTE"},
+    "26": {"dep": "05", "name": "LA LIBERTAD ESTE"},
+    "27": {"dep": "05", "name": "LA LIBERTAD COSTA"},
+    "28": {"dep": "05", "name": "LA LIBERTAD SUR"},
+    # San Salvador (dep = 06)
+    "20": {"dep": "06", "name": "SAN SALVADOR NORTE"},
+    "21": {"dep": "06", "name": "SAN SALVADOR OESTE"},
+    "22": {"dep": "06", "name": "SAN SALVADOR ESTE"},
+    "23": {"dep": "06", "name": "SAN SALVADOR CENTRO"},
+    "24": {"dep": "06", "name": "SAN SALVADOR SUR"},
+}
+
+
+class GeoValidationError(ValueError):
+    """Raised when a department/municipality combination is invalid."""
+
+
+def validar_dep_muni_por_catalogo(
+    dep: str | int | None, muni: str | int | None, strict: bool = True
+) -> tuple[str, str]:
+    """Validate ``departamento`` and ``municipio`` against CAT-012/013.
+
+    Parameters
+    ----------
+    dep, muni:
+        Códigos de departamento y municipio a validar.
+    strict:
+        Si ``True`` lanza :class:`GeoValidationError` cuando el municipio no
+        pertenece al departamento.
+
+    Returns
+    -------
+    tuple[str, str]
+        Códigos normalizados de departamento y municipio.
+    """
+
+    try:
+        dep_code = f"{int(dep):02d}"
+    except Exception:
+        raise GeoValidationError("Departamento inválido")
+    if dep_code not in CAT_DEPTOS:
+        raise GeoValidationError("Departamento no existe en CAT-012")
+
+    muni_code = str(muni).zfill(2)
+    info = CAT_MUNI44.get(muni_code)
+    if not info:
+        raise GeoValidationError("Municipio-44 no existe en CAT-013")
+    dep_owner = info["dep"]
+    if strict and dep_owner != dep_code:
+        raise GeoValidationError(
+            f"Municipio {muni_code} ({info['name']}) no pertenece a {dep_code} ({CAT_DEPTOS[dep_code]})"
+        )
+
+    return dep_code, muni_code
+
 # Conjuntos derivados
 # Códigos permitidos en el resumen según el esquema oficial del DTE
 TRIBUTOS_PERMITIDOS_RESUMEN_SCHEMA = {

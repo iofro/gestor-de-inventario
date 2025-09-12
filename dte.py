@@ -1216,6 +1216,9 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
             resumen.pop("tributos", None)
             resumen.pop("totalIva", None)
 
+    if tipo_dte == "01":
+        resumen.pop("tributos", None)
+
     if "pagos" in resumen:
         resumen["pagos"] = normalizar_pagos(
             extra.get("pagos"),
@@ -1284,22 +1287,24 @@ def recalcular_totales(
     configuración global.
     """
 
+    has_extra = "extra" in data and data.get("extra") is not None
     extra_conf = data.get("extra") or {}
     tipo_dte = str(data.get("identificacion", {}).get("tipoDte", ""))
     if tipo_dte == "01":
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
-        if data.get("extra") is not None:
+        if has_extra:
             data["extra"] = extra_conf
     elif tipo_dte in {"03", "05", "06"}:
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
-        data["extra"] = extra_conf
+        if has_extra:
+            data["extra"] = extra_conf
         # ``03`` se usa tanto para comprobantes de crédito fiscal como para
         # tickets.  Solo los primeros requieren un NIT receptor válido; los
         # tickets pueden omitirlo.  Se omite la validación si no hay receptor
         # o si ``extra['es_ticket']`` está definido y es verdadero.
-        receptor = data.get("receptor") or {}
+        receptor = data.get("receptor")
         if receptor and not extra_conf.get("es_ticket"):
             nit = str(receptor.get("nit") or "")
             if not (len(nit) == 14 and nit.isdigit()):
@@ -1589,18 +1594,15 @@ def recalcular_totales(
             _set_resumen("totalPagar", monto_total_operacion)
     trib_raw = resumen.get("tributos")
     if tipo_dte == "01":
-        suma: dict[str, D] = {}
-        for t in trib_raw or []:
-            codigo = str(t.get("codigo", "")).upper()
-            if codigo == TRIBUTO_IVA:
-                raise ValueError(
-                    "Código 20 (IVA) no permitido en resumen.tributos para consumidor final"
-                )
-            if not codigo:
-                continue
-            valor = money(t.get("valor", 0))
-            suma[codigo] = money(suma.get(codigo, D("0")) + valor)
-        trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
+        if trib_raw:
+            for t in trib_raw or []:
+                codigo = str(t.get("codigo", "")).upper()
+                if codigo == TRIBUTO_IVA:
+                    raise ValueError("Código 20 (IVA) no permitido en resumen.tributos para consumidor final")
+        if trib_raw is not None:
+            resumen.pop("tributos", None)
+            modificados.append("tributos")
+        trib = None
     else:
         if tipo_dte in {"03", "05", "06"}:
             trib = (
@@ -1625,7 +1627,7 @@ def recalcular_totales(
             if venta_gravada_sum > D("0"):
                 suma[TRIBUTO_IVA] = total_iva_sum
             trib = armar_tributos([{ "codigo": c, "valor": v} for c, v in suma.items()], tipo_dte)
-    if resumen.get("tributos") != trib:
+    if tipo_dte != "01" and resumen.get("tributos") != trib:
         resumen["tributos"] = trib
         modificados.append("tributos")
     total_pagar = resumen["totalPagar"]
@@ -1984,6 +1986,34 @@ def generar_dte_json(
         if v not in (None, "", []):
             rec[k] = v
 
+    def _drop_empty(obj):
+        if isinstance(obj, dict):
+            return {
+                k: _drop_empty(v)
+                for k, v in obj.items()
+                if _drop_empty(v) not in (None, "", [], {})
+            }
+        return obj
+
+    rec = _drop_empty(rec)
+
+    if extra.get("es_ticket"):
+        dir_src = rec.get("direccion") if isinstance(rec.get("direccion"), dict) else rec
+        comp = (
+            (dir_src.get("complemento") or dir_src.get("direccionDetalle") or dir_src.get("direccion"))
+            if rec
+            else None
+        )
+        comp = comp.strip() if isinstance(comp, str) else comp
+        if not (
+            rec
+            and dir_src.get("departamento")
+            and dir_src.get("municipio")
+            and comp
+            and len(str(comp)) >= 5
+        ):
+            rec = {}
+
     if extra.get("es_ticket") and not rec:
         receptor = None
     else:
@@ -2033,20 +2063,29 @@ def generar_dte_json(
             direccion_src = rec
         receptor["direccion"] = _build_receptor_direccion(direccion_src)
         compl = receptor["direccion"].get("complemento")
-        if not extra.get("es_ticket"):
+        if extra.get("es_ticket"):
+            dir_ok = (
+                receptor["direccion"].get("departamento")
+                and receptor["direccion"].get("municipio")
+                and compl
+                and len(str(compl)) >= 5
+            )
+            if not dir_ok:
+                receptor = None
+        else:
             if not compl or len(str(compl)) < 5:
                 receptor["direccion"]["complemento"] = "SIN DIRECCION"
-        if receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
+        if receptor and receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
             raise ValueError("Correo de receptor inválido")
-        if receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
+        if receptor and receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
             raise ValueError("Teléfono de receptor inválido")
-        if fiscal:
+        if fiscal and receptor:
             if fiscal.get("no_remision"):
                 receptor["noRemision"] = fiscal.get("no_remision")
             if fiscal.get("orden_no"):
                 receptor["ordenNo"] = fiscal.get("orden_no")
 
-        if not extra.get("es_ticket"):
+        if receptor and not extra.get("es_ticket"):
             if not receptor.get("codActividad"):
                 receptor["codActividad"] = (
                     emisor.get("codActividad") or datos.get("cod_giro") or "00000"
@@ -2060,39 +2099,40 @@ def generar_dte_json(
             if not receptor.get("correo"):
                 receptor["correo"] = "no-reply@example.com"
 
-        # Campos obligatorios y limpieza de campos no permitidos
-        if tipo_dte == "01":
-            required_rec_fields = [
-                "nrc",
-                "nombre",
-                "codActividad",
-                "descActividad",
-                "telefono",
-                "correo",
-                "direccion",
-                "tipoDocumento",
-                "numDocumento",
-            ]
-            for f in ("nit", "nombreComercial"):
-                receptor.pop(f, None)
-        else:
-            required_rec_fields = [
-                "nit",
-                "nrc",
-                "nombre",
-                "nombreComercial",
-                "codActividad",
-                "descActividad",
-                "telefono",
-                "correo",
-                "direccion",
-            ]
-            fields_to_remove = ["noRemision", "ordenNo", "numDocumento", "tipoDocumento"]
-            for f in fields_to_remove:
-                receptor.pop(f, None)
+        if receptor:
+            # Campos obligatorios y limpieza de campos no permitidos
+            if tipo_dte == "01":
+                required_rec_fields = [
+                    "nrc",
+                    "nombre",
+                    "codActividad",
+                    "descActividad",
+                    "telefono",
+                    "correo",
+                    "direccion",
+                    "tipoDocumento",
+                    "numDocumento",
+                ]
+                for f in ("nit", "nombreComercial"):
+                    receptor.pop(f, None)
+            else:
+                required_rec_fields = [
+                    "nit",
+                    "nrc",
+                    "nombre",
+                    "nombreComercial",
+                    "codActividad",
+                    "descActividad",
+                    "telefono",
+                    "correo",
+                    "direccion",
+                ]
+                fields_to_remove = ["noRemision", "ordenNo", "numDocumento", "tipoDocumento"]
+                for f in fields_to_remove:
+                    receptor.pop(f, None)
 
-        for f in required_rec_fields:
-            receptor.setdefault(f, None)
+            for f in required_rec_fields:
+                receptor.setdefault(f, None)
 
     cuerpo = []
     items_total = D("0")
@@ -2600,6 +2640,8 @@ def generar_dte_json(
     except TypeError:
         # Compatibilidad con versiones parcheadas sin parámetro ``correlativo``
         validate_dte_json(result, db=db, precios_incluyen_iva=False)
+    if result.get("receptor") is None:
+        result.pop("receptor", None)
     result.pop("extra", None)
     final = json.loads(stable_stringify(result), parse_float=Decimal)
     try:
@@ -2856,7 +2898,9 @@ def validate_dte_json(
             dir_rec = receptor.get("direccion")
             if isinstance(dir_rec, dict):
                 receptor["direccion"] = _build_receptor_direccion(dir_rec)
-        payload["receptor"] = receptor
+            payload["receptor"] = receptor
+        else:
+            payload.pop("receptor", None)
     else:
         receptor = receptor or {}
         nit_field = receptor.get("nit")
@@ -3332,11 +3376,7 @@ def validate_dte_json(
         for p in resumen["pagos"]:
             p["montoPago"] = _zero_or(p["montoPago"], money)
 
-    if (
-        payload.get("identificacion", {}).get("tipoDte") == "01"
-        and extra_conf.get("es_ticket")
-    ):
-        payload.pop("extra", None)
+    payload.pop("extra", None)
     payload["resumen"] = resumen
 
 

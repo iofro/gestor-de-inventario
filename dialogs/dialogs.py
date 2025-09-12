@@ -67,8 +67,8 @@ def validar_dui(dui):
     import re
     if not dui:
         return False
-    # Formato ########-# o #########
-    dui_pattern = r"^\d{8}-?\d$"
+    # Formato exactamente 9 dígitos
+    dui_pattern = r"^\d{9}$"
     return bool(re.match(dui_pattern, dui))
 
 def validar_email(email):
@@ -2533,6 +2533,8 @@ class ClienteDialog(QDialog):
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
         self.dui_edit = QLineEdit()
+        self.dui_edit.setValidator(QIntValidator(0, 999999999))
+        self.dui_edit.setMaxLength(9)
         self.giro_edit = QLineEdit()
         self.codActividad_edit = QLineEdit()
         self.telefono_edit = QLineEdit()
@@ -2660,6 +2662,8 @@ class VendedorDialog(QDialog):
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.dui_edit = QLineEdit()
+        self.dui_edit.setValidator(QIntValidator(0, 999999999))
+        self.dui_edit.setMaxLength(9)
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores

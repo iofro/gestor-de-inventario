@@ -37,8 +37,6 @@ from factura_sv import (
 )
 from dte import (
     transmitir_dte,
-    enviar_nota_credito,
-    enviar_nota_debito,
     enviar_nota_remision,
 )
 from nota_debito_electronica import generar_nde_desde_dte
@@ -48,7 +46,8 @@ from utils.docs import get_document_paths, get_dte_document_paths
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
-from utils.stable_json import save_file, stable_stringify
+# ``sign_and_save`` generates both JSON and JWS files so no manual
+# stable JSON utilities are required here.
 from utils.sanitize import limpiar_doc, solo_digitos
 from utils import catalogos
 from paths import DATOS_NEGOCIO_PATH
@@ -1569,45 +1568,19 @@ class FacturacionTab(QWidget):
             archivo=str(pdf_path),
         )
 
-        # Guardar JSON sin firmar para permitir vista previa
-        save_file(json_path, stable_stringify(nota_json, indent=2))
-
         # Mostrar previsualización del PDF generado
         try:
             self._show_pdf_preview(pdf_path)
         except Exception:
             pass
 
-        # Permitir al usuario ver PDF/JSON antes de firmar
-        while True:
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Firmar nota")
-            msg.setText("¿Desea firmar y transmitir la nota?")
-            btn_firmar = msg.addButton("Firmar", QMessageBox.AcceptRole)
-            btn_pdf = msg.addButton("Ver PDF", QMessageBox.ActionRole)
-            btn_json = msg.addButton("Ver JSON", QMessageBox.ActionRole)
-            msg.addButton(QMessageBox.Cancel)
-            msg.exec_()
-            clicked = msg.clickedButton()
-            if clicked == btn_pdf:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
-                continue
-            if clicked == btn_json:
-                QDesktopServices.openUrl(QUrl.fromLocalFile(json_path))
-                continue
-            if clicked == btn_firmar:
-                break
-            return
-
-        sign_and_save(nota_json, json_path)
+        # Firmar y transmitir automáticamente reutilizando el mismo JSON
+        _, token = sign_and_save(nota_json, str(json_path), return_token=True)
 
         try:
-            if tipo == "debito":
-                resp = enviar_nota_debito(self.manager.db, nota_id)
-            elif tipo == "credito":
-                resp = enviar_nota_credito(self.manager.db, nota_id)
-            else:
-                resp = None
+            resp = dte._enviar_documento(
+                self.manager.db, nota_id, nota_json, jws_token=token
+            )
             if resp and resp.get("estado") == "Error":
                 QMessageBox.critical(self, "Nota", resp.get("detalle", "Error"))
             else:

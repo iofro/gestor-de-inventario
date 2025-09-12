@@ -1096,7 +1096,7 @@ class FacturacionTab(QWidget):
         dlg = InvoiceDetailDialog(
             items,
             resumen,
-            venta_id=factura.get("id"),
+            venta_id=factura.get("venta_id"),
             numero_control=ident.get("numeroControl"),
             factura=data,
             parent=self,

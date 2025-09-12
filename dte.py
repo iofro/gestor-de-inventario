@@ -2294,10 +2294,9 @@ def generar_dte_json(
                         total_final = D("0")
                     base_total = money(total_final / D("1.13"))
                     iva_val = d4(total_final - base_total)
-                    base_total = money(total_final - iva_val)
-                    precio = d4(money(base_total / cant))
-                    venta_gravada = base_total
-                    line_total = base_total + iva_val
+                    precio = q_item(money(total_final / cant)) if cant > 0 else q_item(D("0"))
+                    venta_gravada = q_item(total_final)
+                    line_total = venta_gravada
                     bruto_total += bruto
                     descuentos_total += monto_descu
             else:

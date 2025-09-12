@@ -688,7 +688,6 @@ class FacturacionTab(QWidget):
         tipo = self.tipo_filter.currentText()
 
         rows = self._scan_documents()
-        accepted_states = {"TRANSMITIDO", "RECIBIDO", "PROCESADO"}
         envio_estado = {}
         if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked():
             for env in self.manager.db.listar_dtes():
@@ -714,9 +713,10 @@ class FacturacionTab(QWidget):
                     rows.remove(r)
                     continue
                 estado = envio_estado.get(r.get("id"))
-                if (estado or "").upper() not in accepted_states:
+                if not estado:
                     rows.remove(r)
                     continue
+                r["estado"] = estado
 
         rows.sort(
             key=lambda r: (

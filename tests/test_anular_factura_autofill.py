@@ -18,6 +18,35 @@ def test_anular_dialog_prefills_fields(qt_app):
     assert dlg.nom_resp.text() == "Otro"
 
 
+def test_anular_dialog_negocio_button(monkeypatch, qt_app):
+    negocio = {"nombre": "Dueño", "nit": "9999"}
+    monkeypatch.setattr(dte, "_load_datos_negocio", lambda: negocio)
+    dlg = AnularFacturaDialog()
+    dlg.nom_resp.clear()
+    dlg.ndoc_resp.clear()
+    dlg.negocio_btn.click()
+    assert dlg.nom_resp.text() == "Dueño"
+    assert dlg.ndoc_resp.text() == "9999"
+    assert dlg.tdoc_resp.currentData() == "36"
+
+
+def test_anular_dialog_buscar_empleado(monkeypatch, qt_app):
+    class FakeDB:
+        def get_trabajadores(self, search):
+            return [{"nombre": "Trabajador", "dui": "12345678-9"}]
+
+    dlg = AnularFacturaDialog()
+    monkeypatch.setattr(dlg, "_get_db", lambda: FakeDB())
+    dlg.emp_search.setText("Tra")
+    dlg.emp_timer.stop()
+    dlg._buscar_empleado()
+    item = dlg.emp_results.item(0)
+    dlg._seleccionar_empleado(item)
+    assert dlg.nom_resp.text() == "Trabajador"
+    assert dlg.ndoc_resp.text() == "12345678-9"
+    assert dlg.tdoc_resp.currentData() == "13"
+
+
 def test_invoice_detail_uses_negocio_and_cliente(monkeypatch, qt_app):
     negocio = {"nombre": "Dueño", "nit": "1111"}
     factura = {"receptor": {"nombre": "Comprador", "nit": "2222"}}

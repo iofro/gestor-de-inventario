@@ -469,6 +469,9 @@ class FacturacionTab(QWidget):
         self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.update_btn = QPushButton("Actualizar")
         filter_layout.addWidget(self.update_btn)
+        self.sent_filter_cb = QCheckBox("Ver solo DTE enviados")
+        filter_layout.addWidget(self.sent_filter_cb)
+        self.sent_filter_cb.toggled.connect(self.load_invoices)
         filter_layout.addStretch(1)
         left_layout.addLayout(filter_layout)
 
@@ -685,6 +688,11 @@ class FacturacionTab(QWidget):
         tipo = self.tipo_filter.currentText()
 
         rows = self._scan_documents()
+        accepted_states = {"TRANSMITIDO", "RECIBIDO", "PROCESADO"}
+        envio_estado = {}
+        if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked():
+            for env in self.manager.db.listar_dtes():
+                envio_estado[env.get("venta_id")] = env.get("estado")
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
@@ -700,6 +708,15 @@ class FacturacionTab(QWidget):
             cliente = r.get("cliente", "")
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
+                continue
+            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked():
+                if r.get("row_type") not in ("venta", "ticket"):
+                    rows.remove(r)
+                    continue
+                estado = envio_estado.get(r.get("id"))
+                if (estado or "").upper() not in accepted_states:
+                    rows.remove(r)
+                    continue
 
         rows.sort(
             key=lambda r: (

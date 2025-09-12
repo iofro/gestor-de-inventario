@@ -2053,8 +2053,7 @@ def generar_dte_json(
             elif not re.fullmatch(r"[0-9]{14}", num_doc):
                 raise ValueError("NIT inválido")
     elif tipo_doc == "13":
-        if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-            raise ValueError("DUI inválido")
+        pass
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
@@ -2977,8 +2976,6 @@ def validate_dte_json(
             if tipo_doc not in allowed:
                 raise ValueError("tipoDocumento inválido en receptor")
             if tipo_doc == "13":
-                if len(num_doc) != 9:
-                    raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
                 if nrc_raw:
                     warnings.warn(
                         "Se removió NRC porque el documento es DUI", UserWarning,
@@ -3796,8 +3793,6 @@ def generar_nota_remision_json(
     num_doc = receptor.get("numDocumento")
     nrc = receptor.get("nrc")
     if tipo_doc == "13":
-        if not re.fullmatch(r"\d{9}", num_doc or ""):
-            raise ValueError("DUI inválido en receptor")
         receptor.pop("nrc", None)
     elif tipo_doc == "36":
         if not re.fullmatch(r"\d{14}", num_doc or ""):

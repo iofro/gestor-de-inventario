@@ -409,6 +409,14 @@ class FacturacionTab(QWidget):
         # deleted sales or missing files from showing as "Sin venta".
         self._get_invoices_from_db()
         self.load_invoices()
+        # Periodically refresh to show newly generated invoices without
+        # requiring the user to press the "Actualizar" button. This keeps
+        # the table in sync with the underlying data and any invoices
+        # created from other parts of the application.
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(10000)  # 10 seconds
+        self._refresh_timer.timeout.connect(self.refresh_and_reload)
+        self._refresh_timer.start()
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)

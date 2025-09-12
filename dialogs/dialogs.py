@@ -804,6 +804,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
         # --- FIN BLOQUE NUEVO ---
 
+        # Ajusta el máximo del descuento según el tipo seleccionado
+        self._on_descuento_tipo_changed()
+
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
 
@@ -850,6 +853,15 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         elif self.tipo_mayorista_total.isChecked():
             self.precio_spin.setEnabled(False)
             self.precio_total_spin.setEnabled(True)
+        self._recalcular_totales()
+
+
+    def _on_descuento_tipo_changed(self):
+        tipo = self.descuento_tipo_combo.currentText()
+        if tipo == "%":
+            self.descuento_spin.setMaximum(100)
+        else:
+            self.descuento_spin.setMaximum(1000000)
         self._recalcular_totales()
 
 

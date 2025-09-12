@@ -9,8 +9,10 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QListWidget,
     QListWidgetItem,
+    QPushButton,
 )
 from PyQt5.QtCore import Qt, QTimer, QEvent
+import dte
 from db import DB
 
 DOC_TYPES = [
@@ -58,6 +60,17 @@ class AnularFacturaDialog(QDialog):
 
         # Responsable
         layout.addWidget(QLabel("Responsable"))
+        self.emp_search = QLineEdit()
+        self.emp_search.setPlaceholderText(
+            "Buscar trabajador por nombre, DUI o NIT"
+        )
+        layout.addWidget(self.emp_search)
+        self.emp_results = QListWidget()
+        self.emp_results.addItem("Escribe para buscar…")
+        self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+        layout.addWidget(self.emp_results)
+        self.negocio_btn = QPushButton("Usar datos del negocio")
+        layout.addWidget(self.negocio_btn)
         row = QHBoxLayout()
         row.addWidget(QLabel("Nombre:"))
         self.nom_resp = QLineEdit()
@@ -102,6 +115,14 @@ class AnularFacturaDialog(QDialog):
         layout.addLayout(row)
 
         # Timer and search connections
+        self.emp_timer = QTimer(self)
+        self.emp_timer.setSingleShot(True)
+        self.emp_timer.setInterval(250)
+        self.emp_search.textChanged.connect(self.emp_timer.start)
+        self.emp_timer.timeout.connect(self._buscar_empleado)
+        self.emp_results.itemActivated.connect(self._seleccionar_empleado)
+        self.emp_results.itemClicked.connect(self._seleccionar_empleado)
+
         self.cli_timer = QTimer(self)
         self.cli_timer.setSingleShot(True)
         self.cli_timer.setInterval(250)
@@ -109,8 +130,15 @@ class AnularFacturaDialog(QDialog):
         self.cli_timer.timeout.connect(self._buscar_cliente)
         self.cli_results.itemActivated.connect(self._seleccionar_cliente)
         self.cli_results.itemClicked.connect(self._seleccionar_cliente)
-        for w in [self.cli_search, self.cli_results]:
+        for w in [
+            self.emp_search,
+            self.emp_results,
+            self.cli_search,
+            self.cli_results,
+        ]:
             w.installEventFilter(self)
+
+        self.negocio_btn.clicked.connect(self._usar_datos_negocio)
 
         def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
             if not data:
@@ -164,6 +192,60 @@ class AnularFacturaDialog(QDialog):
                 return False
         return True
 
+    # --- Empleado search helpers -----------------------------------------------
+
+    def _populate_emp_results(self, items):
+        self.emp_results.clear()
+        if not items:
+            self.emp_results.addItem("Sin resultados. Puedes escribir manualmente.")
+            self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        for e in items:
+            doc = e.get("dui") or e.get("nit") or ""
+            item = QListWidgetItem(f"{e.get('nombre', '')} - {doc}")
+            item.setData(Qt.UserRole, e)
+            self.emp_results.addItem(item)
+        self.emp_results.setCurrentRow(0)
+
+    def _buscar_empleado(self):
+        text = self.emp_search.text().strip()
+        if not text:
+            self.emp_results.clear()
+            self.emp_results.addItem("Escribe para buscar…")
+            self.emp_results.item(0).setFlags(Qt.NoItemFlags)
+            return
+        try:
+            db = self.db or DB()
+            empleados = db.get_trabajadores(search=text)
+            if self.db is None:
+                db.conn.close()
+        except Exception:
+            empleados = []
+        self._populate_emp_results(empleados)
+
+    def _seleccionar_empleado(self, item):
+        data = item.data(Qt.UserRole) if item else None
+        if isinstance(data, dict):
+            self.nom_resp.setText(data.get("nombre", ""))
+            doc = data.get("dui") or data.get("nit") or ""
+            self.ndoc_resp.setText(doc)
+            doc_type = "13" if data.get("dui") else "36" if data.get("nit") else None
+            if doc_type:
+                idx = self.tdoc_resp.findData(doc_type)
+                if idx >= 0:
+                    self.tdoc_resp.setCurrentIndex(idx)
+
+    def _usar_datos_negocio(self):
+        datos = dte._load_datos_negocio()
+        self.nom_resp.setText(datos.get("nombre", ""))
+        doc = datos.get("dui") or datos.get("nit") or ""
+        self.ndoc_resp.setText(doc)
+        doc_type = "13" if datos.get("dui") else "36" if datos.get("nit") else None
+        if doc_type:
+            idx = self.tdoc_resp.findData(doc_type)
+            if idx >= 0:
+                self.tdoc_resp.setCurrentIndex(idx)
+
     # --- Cliente search helpers -------------------------------------------------
 
     def _populate_results(self, items):
@@ -209,6 +291,16 @@ class AnularFacturaDialog(QDialog):
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:
+            if obj is self.emp_search and event.key() in (Qt.Key_Down, Qt.Key_Up):
+                if self.emp_results.count():
+                    self.emp_results.setFocus()
+                    self.emp_results.setCurrentRow(0)
+                    return True
+            if obj is self.emp_results and event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                current = self.emp_results.currentItem()
+                if current:
+                    self.emp_results.itemActivated.emit(current)
+                    return True
             if obj is self.cli_search and event.key() in (Qt.Key_Down, Qt.Key_Up):
                 if self.cli_results.count():
                     self.cli_results.setFocus()

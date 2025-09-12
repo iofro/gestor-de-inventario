@@ -11,6 +11,8 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt
 
+from utils.catalogos import TRIBUTO_IVA
+
 
 class InvoiceDetailDialog(QDialog):
     """Simple read-only dialog showing invoice items and totals."""
@@ -56,7 +58,8 @@ class InvoiceDetailDialog(QDialog):
         total_gravada = float(resumen.get("totalGravada", 0))
         total_exenta = float(resumen.get("totalExenta", 0))
         total_no_suj = float(resumen.get("totalNoSuj", 0))
-        total_iva = float(resumen.get("totalIva", 0))
+        tribs = resumen.get("tributos") or []
+        total_iva = float(next((t.get("valor", 0) for t in tribs if t.get("codigo") == TRIBUTO_IVA), 0))
         total = float(resumen.get("totalPagar", resumen.get("montoTotalOperacion", 0)))
         for text in [
             f"Gravada: {total_gravada:.2f}",

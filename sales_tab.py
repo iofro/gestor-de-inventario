@@ -571,6 +571,9 @@ class SalesTab(QWidget):
         if not venta or int(venta.get("id", 0)) != venta_id:
             QMessageBox.warning(self, "Guardar factura", "No se encontró la venta seleccionada.")
             return
+        self.email_subject = self.email_subject_edit.text()
+        self.email_body = self.email_body_edit.toPlainText()
+        self._save_email_config()
         if self._is_ticket_sale(venta):
             file_path = self._generate_ticket_pdf(venta_id)
             doc_type = "Ticket"
@@ -661,6 +664,9 @@ class SalesTab(QWidget):
             "subject": self.email_subject_edit.text(),
             "body": self.email_body_edit.toPlainText(),
         }
+        self.email_subject = dte_meta["subject"]
+        self.email_body = dte_meta["body"]
+        self._save_email_config()
 
         if self._is_ticket_sale(venta):
             doc_type = "ticket"

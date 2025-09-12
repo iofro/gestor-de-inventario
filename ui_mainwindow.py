@@ -73,6 +73,11 @@ class ExportThread(QThread):
 
 
 class MainWindow(QMainWindow):
+    # Generic signal emitted whenever sales or payment data changes. Tabs
+    # that need to stay in sync can listen for this signal to refresh
+    # immediately instead of waiting for the periodic timers.
+    data_changed = pyqtSignal()
+
     def __init__(self, user=None):
         super().__init__()
         self.user = user or {"username": "admin", "role": "admin"}
@@ -87,6 +92,18 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._apply_styles()
         QTimer.singleShot(0, self._verificar_firmador)
+
+        # Timer to periodically refresh the "Estados de cuenta" table so it
+        # stays synchronized with new sales or payments made from any tab.
+        self._historial_timer = QTimer(self)
+        self._historial_timer.setInterval(10000)  # 10 seconds
+        self._historial_timer.timeout.connect(self._mostrar_historial_general)
+        self._historial_timer.start()
+
+        # When data changes elsewhere emit a signal so the tabs refresh
+        # immediately instead of waiting for the timer interval.
+        self.data_changed.connect(self.facturacion_tab.refresh_and_reload)
+        self.data_changed.connect(self._mostrar_historial_general)
 
     def iniciar_firmador(self):
         """Lanza el servicio externo de firmado de documentos."""
@@ -792,6 +809,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Venta", f"Venta registrada correctamente.\nTotal: ${total:.2f}")
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AQUÍ
+                # Notify other tabs that the underlying data changed so they
+                # can refresh immediately.
+                self.data_changed.emit()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta", str(e))
@@ -942,6 +962,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Venta a Crédito Fiscal", f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}")
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
+                # Trigger refresh in other tabs immediately
+                self.data_changed.emit()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))

@@ -2081,6 +2081,9 @@ def generar_dte_json(
         )
         if not dir_ok:
             receptor = None
+        elif receptor:
+            for f in ("nit", "nombreComercial"):
+                receptor.pop(f, None)
     else:
         if not compl or len(str(compl)) < 5:
             receptor["direccion"]["complemento"] = "SIN DIRECCION"

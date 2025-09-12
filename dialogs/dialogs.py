@@ -12,8 +12,8 @@ from PyQt5.QtWidgets import (
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame
 )
-from PyQt5.QtCore import Qt, QDate, QUrl
-from PyQt5.QtGui import QColor, QDesktopServices, QIntValidator
+from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression
+from PyQt5.QtGui import QColor, QDesktopServices, QRegularExpressionValidator
 import os
 import shutil
 import re
@@ -2533,6 +2533,10 @@ class ClienteDialog(QDialog):
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
         self.dui_edit = QLineEdit()
+        self.dui_edit.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
+        )
+        self.dui_edit.setMaxLength(9)
         self.giro_edit = QLineEdit()
         self.codActividad_edit = QLineEdit()
         self.telefono_edit = QLineEdit()
@@ -2660,6 +2664,10 @@ class VendedorDialog(QDialog):
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.dui_edit = QLineEdit()
+        self.dui_edit.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
+        )
+        self.dui_edit.setMaxLength(9)
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidores = Distribuidores
@@ -2903,7 +2911,9 @@ class DatosNegocioDialog(QDialog):
         self.nit = QLineEdit()
         self.nrc = QLineEdit()
         self.dui = QLineEdit()
-        self.dui.setValidator(QIntValidator(0, 999999999))
+        self.dui.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
+        )
         self.dui.setMaxLength(9)
         self.nombre = QLineEdit()
         self.nombre_comercial = QLineEdit()
@@ -3479,6 +3489,10 @@ class TrabajadorDialog(QDialog):
         self.codigo = QLineEdit()
         self.nombre = QLineEdit()
         self.dui = QLineEdit()
+        self.dui.setValidator(
+            QRegularExpressionValidator(QRegularExpression(r"^\d{0,9}$"))
+        )
+        self.dui.setMaxLength(9)
         self.nit = QLineEdit()
         self.fecha_nacimiento = QDateEdit(QDate.currentDate())
         self.fecha_nacimiento.setCalendarPopup(True)

@@ -409,6 +409,14 @@ class FacturacionTab(QWidget):
         # deleted sales or missing files from showing as "Sin venta".
         self._get_invoices_from_db()
         self.load_invoices()
+        # Periodically refresh to show newly generated invoices without
+        # requiring the user to press the "Actualizar" button. This keeps
+        # the table in sync with the underlying data and any invoices
+        # created from other parts of the application.
+        self._refresh_timer = QTimer(self)
+        self._refresh_timer.setInterval(10000)  # 10 seconds
+        self._refresh_timer.timeout.connect(self.refresh_and_reload)
+        self._refresh_timer.start()
 
     def _setup_ui(self):
         main_layout = QHBoxLayout(self)
@@ -446,7 +454,7 @@ class FacturacionTab(QWidget):
 
         self.date_filter_cb = QCheckBox("Filtrar por fecha")
         self.quick_range = QComboBox()
-        self.quick_range.addItems(["Personalizado", "Esta semana", "Este mes", "Este año"])
+        self.quick_range.addItems(["Personalizado", "Hoy", "Esta semana", "Este mes", "Este año"])
         self.date_from = QDateEdit(QDate.currentDate().addYears(-2))
         self.date_from.setCalendarPopup(True)
         self.date_to = QDateEdit(QDate.currentDate())
@@ -524,7 +532,7 @@ class FacturacionTab(QWidget):
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)
-        custom = self.quick_range.currentIndex() == 0
+        custom = self.quick_range.currentText() == "Personalizado"
         self.date_from.setEnabled(checked and custom)
         self.date_to.setEnabled(checked and custom)
         if checked:
@@ -537,7 +545,12 @@ class FacturacionTab(QWidget):
             return
         option = self.quick_range.currentText()
         today = date.today()
-        if option == "Esta semana":
+        if option == "Hoy":
+            self.date_from.setDate(QDate(today))
+            self.date_to.setDate(QDate(today))
+            self.date_from.setEnabled(False)
+            self.date_to.setEnabled(False)
+        elif option == "Esta semana":
             start = today - timedelta(days=today.weekday())
             end = start + timedelta(days=6)
             self.date_from.setDate(QDate(start))
@@ -561,7 +574,7 @@ class FacturacionTab(QWidget):
             self.date_to.setDate(QDate(end))
             self.date_from.setEnabled(False)
             self.date_to.setEnabled(False)
-        else:
+        else:  # Personalizado
             self.date_from.setEnabled(True)
             self.date_to.setEnabled(True)
         self.load_invoices()

@@ -3,6 +3,7 @@ import json
 import logging
 import base64
 import requests
+from datetime import date, timedelta
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
@@ -308,9 +309,16 @@ class EstadoCuentaDialog(QDialog):
         # Filtros comunes
         filtros = QHBoxLayout()
         self.filtrar_fechas_chk = QCheckBox("Filtrar por fechas")
-        self.anio_actual = QCheckBox("Año en curso")
+        self.quick_range = QComboBox()
+        self.quick_range.addItems([
+            "Personalizado",
+            "Hoy",
+            "Esta semana",
+            "Este mes",
+            "Este año",
+        ])
         filtros.addWidget(self.filtrar_fechas_chk)
-        filtros.addWidget(self.anio_actual)
+        filtros.addWidget(self.quick_range)
         filtros.addWidget(QLabel("Desde"))
         self.fecha_inicio = QDateEdit(QDate.currentDate())
         self.fecha_inicio.setCalendarPopup(True)
@@ -320,6 +328,10 @@ class EstadoCuentaDialog(QDialog):
         self.fecha_fin.setCalendarPopup(True)
         filtros.addWidget(self.fecha_fin)
         layout.addLayout(filtros)
+
+        self.quick_range.setEnabled(False)
+        self.fecha_inicio.setEnabled(False)
+        self.fecha_fin.setEnabled(False)
 
         self.incluir_pagos = QCheckBox("Incluir abonos/pagos realizados")
         self.agrupar_factura = QCheckBox("Agrupar por factura")
@@ -339,8 +351,11 @@ class EstadoCuentaDialog(QDialog):
         self.setLayout(layout)
 
         self.modo_combo.currentIndexChanged.connect(self.stack.setCurrentIndex)
-        self.anio_actual.toggled.connect(self._toggle_fechas)
         self.filtrar_fechas_chk.toggled.connect(self._toggle_filtro_fechas)
+        self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
+        self.filtrar_fechas_chk.toggled.connect(self._apply_quick_range)
+        self.fecha_inicio.dateChanged.connect(lambda *_: self._collect_params())
+        self.fecha_fin.dateChanged.connect(lambda *_: self._collect_params())
         self.cliente_search.textChanged.connect(self._filtrar_clientes)
         self.vendedor_search.textChanged.connect(self._filtrar_vendedores)
         self.cliente_table.itemSelectionChanged.connect(self._seleccionar_cliente)
@@ -351,17 +366,56 @@ class EstadoCuentaDialog(QDialog):
 
         self._toggle_filtro_fechas(False)
 
-    def _toggle_fechas(self, checked):
-        if checked:
-            self.fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
-            self.fecha_fin.setDate(QDate.currentDate())
-        self._toggle_filtro_fechas(self.filtrar_fechas_chk.isChecked())
-
     def _toggle_filtro_fechas(self, checked):
-        self.anio_actual.setEnabled(checked)
-        manual = checked and not self.anio_actual.isChecked()
-        self.fecha_inicio.setEnabled(manual)
-        self.fecha_fin.setEnabled(manual)
+        self.quick_range.setEnabled(checked)
+        custom = self.quick_range.currentIndex() == 0
+        self.fecha_inicio.setEnabled(checked and custom)
+        self.fecha_fin.setEnabled(checked and custom)
+        if checked:
+            self._apply_quick_range()
+        else:
+            self._collect_params()
+
+    def _apply_quick_range(self):
+        if not self.filtrar_fechas_chk.isChecked():
+            self._collect_params()
+            return
+        option = self.quick_range.currentText()
+        today = date.today()
+        if option == "Hoy":
+            start = end = today
+            self.fecha_inicio.setDate(QDate(start))
+            self.fecha_fin.setDate(QDate(end))
+            self.fecha_inicio.setEnabled(False)
+            self.fecha_fin.setEnabled(False)
+        elif option == "Esta semana":
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+            self.fecha_inicio.setDate(QDate(start))
+            self.fecha_fin.setDate(QDate(end))
+            self.fecha_inicio.setEnabled(False)
+            self.fecha_fin.setEnabled(False)
+        elif option == "Este mes":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = date(today.year, 12, 31)
+            else:
+                end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+            self.fecha_inicio.setDate(QDate(start))
+            self.fecha_fin.setDate(QDate(end))
+            self.fecha_inicio.setEnabled(False)
+            self.fecha_fin.setEnabled(False)
+        elif option == "Este año":
+            start = date(today.year, 1, 1)
+            end = date(today.year, 12, 31)
+            self.fecha_inicio.setDate(QDate(start))
+            self.fecha_fin.setDate(QDate(end))
+            self.fecha_inicio.setEnabled(False)
+            self.fecha_fin.setEnabled(False)
+        else:
+            self.fecha_inicio.setEnabled(True)
+            self.fecha_fin.setEnabled(True)
+        self._collect_params()
 
     def _mostrar_clientes(self, clientes):
         self.cliente_table.setRowCount(len(clientes))

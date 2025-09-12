@@ -29,7 +29,7 @@ CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.js
 LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab
 from facturacion_tab import FacturacionTab
-from datetime import datetime
+from datetime import datetime, date, timedelta
 
 from num2words import num2words  # Instala las dependencias con: pip install -r requirements.txt
 
@@ -73,6 +73,11 @@ class ExportThread(QThread):
 
 
 class MainWindow(QMainWindow):
+    # Generic signal emitted whenever sales or payment data changes. Tabs
+    # that need to stay in sync can listen for this signal to refresh
+    # immediately instead of waiting for the periodic timers.
+    data_changed = pyqtSignal()
+
     def __init__(self, user=None):
         super().__init__()
         self.user = user or {"username": "admin", "role": "admin"}
@@ -87,6 +92,18 @@ class MainWindow(QMainWindow):
         self._setup_ui()
         self._apply_styles()
         QTimer.singleShot(0, self._verificar_firmador)
+
+        # Timer to periodically refresh the "Estados de cuenta" table so it
+        # stays synchronized with new sales or payments made from any tab.
+        self._historial_timer = QTimer(self)
+        self._historial_timer.setInterval(10000)  # 10 seconds
+        self._historial_timer.timeout.connect(self._mostrar_historial_general)
+        self._historial_timer.start()
+
+        # When data changes elsewhere emit a signal so the tabs refresh
+        # immediately instead of waiting for the timer interval.
+        self.data_changed.connect(self.facturacion_tab.refresh_and_reload)
+        self.data_changed.connect(self._mostrar_historial_general)
 
     def iniciar_firmador(self):
         """Lanza el servicio externo de firmado de documentos."""
@@ -511,20 +528,23 @@ class MainWindow(QMainWindow):
         self.estado_search_bar = QLineEdit()
         self.estado_search_bar.setPlaceholderText("Buscar por código o nombre...")
         self.estado_filtrar_fechas = QCheckBox("Filtrar por fechas")
+        self.estado_quick_range = QComboBox()
+        self.estado_quick_range.addItems(
+            ["Personalizado", "Hoy", "Esta semana", "Este mes", "Este año"]
+        )
         self.estado_fecha_inicio = QDateEdit(QDate.currentDate())
         self.estado_fecha_inicio.setCalendarPopup(True)
         self.estado_fecha_fin = QDateEdit(QDate.currentDate())
         self.estado_fecha_fin.setCalendarPopup(True)
-        self.estado_anio_actual = QCheckBox("Año en curso")
         self.btn_generar_estado = QPushButton("Generar")
         controles.addWidget(self.estado_tipo_combo)
         controles.addWidget(self.estado_search_bar)
         controles.addWidget(self.estado_filtrar_fechas)
+        controles.addWidget(self.estado_quick_range)
         controles.addWidget(QLabel("Desde"))
         controles.addWidget(self.estado_fecha_inicio)
         controles.addWidget(QLabel("Hasta"))
         controles.addWidget(self.estado_fecha_fin)
-        controles.addWidget(self.estado_anio_actual)
         controles.addWidget(self.btn_generar_estado)
         estado_layout.addLayout(controles)
 
@@ -555,9 +575,16 @@ class MainWindow(QMainWindow):
         self.estado_tipo_combo.currentIndexChanged.connect(self._mostrar_historial_general)
         self.estado_search_bar.textChanged.connect(self._mostrar_historial_general)
         self.btn_generar_estado.clicked.connect(self._abrir_generar_estado_dialog)
-        self.estado_anio_actual.toggled.connect(self._toggle_estado_fechas)
         self.estado_filtrar_fechas.toggled.connect(self._toggle_estado_filtro_fechas)
         self.estado_filtrar_fechas.toggled.connect(self._mostrar_historial_general)
+        self.estado_quick_range.currentIndexChanged.connect(
+            self._apply_estado_quick_range
+        )
+        self.estado_quick_range.currentIndexChanged.connect(
+            self._mostrar_historial_general
+        )
+        self.estado_fecha_inicio.dateChanged.connect(self._mostrar_historial_general)
+        self.estado_fecha_fin.dateChanged.connect(self._mostrar_historial_general)
 
         self._actualizar_tabla_trabajadores()
         self._toggle_estado_filtro_fechas(False)
@@ -792,6 +819,9 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Venta", f"Venta registrada correctamente.\nTotal: ${total:.2f}")
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AQUÍ
+                # Notify other tabs that the underlying data changed so they
+                # can refresh immediately.
+                self.data_changed.emit()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta", str(e))
@@ -942,6 +972,8 @@ class MainWindow(QMainWindow):
                 QMessageBox.information(self, "Venta a Crédito Fiscal", f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}")
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
+                # Trigger refresh in other tabs immediately
+                self.data_changed.emit()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))
@@ -1737,18 +1769,51 @@ class MainWindow(QMainWindow):
             )
 
 
-    def _toggle_estado_fechas(self, checked: bool):
-        """Habilita o deshabilita las fechas manuales."""
-        if checked:
-            self.estado_fecha_inicio.setDate(QDate(QDate.currentDate().year(), 1, 1))
-            self.estado_fecha_fin.setDate(QDate.currentDate())
-        self._toggle_estado_filtro_fechas(self.estado_filtrar_fechas.isChecked())
-
     def _toggle_estado_filtro_fechas(self, checked: bool):
-        self.estado_anio_actual.setEnabled(checked)
-        manual = checked and not self.estado_anio_actual.isChecked()
-        self.estado_fecha_inicio.setEnabled(manual)
-        self.estado_fecha_fin.setEnabled(manual)
+        self.estado_quick_range.setEnabled(checked)
+        custom = self.estado_quick_range.currentIndex() == 0
+        self.estado_fecha_inicio.setEnabled(checked and custom)
+        self.estado_fecha_fin.setEnabled(checked and custom)
+        if checked:
+            self._apply_estado_quick_range()
+
+    def _apply_estado_quick_range(self):
+        if not self.estado_filtrar_fechas.isChecked():
+            return
+        option = self.estado_quick_range.currentText()
+        today = date.today()
+        if option == "Hoy":
+            self.estado_fecha_inicio.setDate(QDate(today))
+            self.estado_fecha_fin.setDate(QDate(today))
+            self.estado_fecha_inicio.setEnabled(False)
+            self.estado_fecha_fin.setEnabled(False)
+        elif option == "Esta semana":
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+            self.estado_fecha_inicio.setDate(QDate(start))
+            self.estado_fecha_fin.setDate(QDate(end))
+            self.estado_fecha_inicio.setEnabled(False)
+            self.estado_fecha_fin.setEnabled(False)
+        elif option == "Este mes":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = date(today.year, 12, 31)
+            else:
+                end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+            self.estado_fecha_inicio.setDate(QDate(start))
+            self.estado_fecha_fin.setDate(QDate(end))
+            self.estado_fecha_inicio.setEnabled(False)
+            self.estado_fecha_fin.setEnabled(False)
+        elif option == "Este año":
+            start = date(today.year, 1, 1)
+            end = date(today.year, 12, 31)
+            self.estado_fecha_inicio.setDate(QDate(start))
+            self.estado_fecha_fin.setDate(QDate(end))
+            self.estado_fecha_inicio.setEnabled(False)
+            self.estado_fecha_fin.setEnabled(False)
+        else:
+            self.estado_fecha_inicio.setEnabled(True)
+            self.estado_fecha_fin.setEnabled(True)
 
     def _abrir_generar_estado_dialog(self):
         """Abre la ventana de generación de estados de cuenta."""
@@ -1758,9 +1823,10 @@ class MainWindow(QMainWindow):
         dialog.stack.setCurrentIndex(tipo_idx)
         if self.estado_filtrar_fechas.isChecked():
             dialog.filtrar_fechas_chk.setChecked(True)
-            if self.estado_anio_actual.isChecked():
+            if self.estado_quick_range.currentText() == "Este año":
                 dialog.anio_actual.setChecked(True)
             else:
+                dialog.anio_actual.setChecked(False)
                 dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
                 dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         else:
@@ -1773,9 +1839,10 @@ class MainWindow(QMainWindow):
         dialog.stack.setCurrentIndex(1)
         if self.estado_filtrar_fechas.isChecked():
             dialog.filtrar_fechas_chk.setChecked(True)
-            if self.estado_anio_actual.isChecked():
+            if self.estado_quick_range.currentText() == "Este año":
                 dialog.anio_actual.setChecked(True)
             else:
+                dialog.anio_actual.setChecked(False)
                 dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
                 dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         else:
@@ -1788,12 +1855,8 @@ class MainWindow(QMainWindow):
         tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
 
         if self.estado_filtrar_fechas.isChecked():
-            if self.estado_anio_actual.isChecked():
-                inicio = QDate(QDate.currentDate().year(), 1, 1).toPyDate()
-                fin = QDate.currentDate().toPyDate()
-            else:
-                inicio = self.estado_fecha_inicio.date().toPyDate()
-                fin = self.estado_fecha_fin.date().toPyDate()
+            inicio = self.estado_fecha_inicio.date().toPyDate()
+            fin = self.estado_fecha_fin.date().toPyDate()
         else:
             inicio = None
             fin = None

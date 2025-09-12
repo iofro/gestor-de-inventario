@@ -567,7 +567,6 @@ CAT_DEPTOS = _CATS["CAT-012"]
 # Cada código está asociado a un departamento según CAT-013.
 CAT_MUNI44 = {
     "00": {"dep": "00", "name": "OTRO"},
-    "01": {"dep": "06", "name": "SAN SALVADOR CENTRO"},
     "10": {"dep": "06", "name": "SAN SALVADOR SUR"},
     "13": {"dep": "01", "name": "AHUACHAPAN NORTE"},
     # La Libertad (dep = 05)

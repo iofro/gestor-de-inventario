@@ -25,8 +25,8 @@ def _sample_receptor():
         "telefono": "70000001",
         "correo": "cliente@example.com",
         "direccion": {
-            "departamento": "05",
-            "municipio": "01",
+            "departamento": "06",
+            "municipio": "23",
             "complemento": "San Salvador",
         },
     }
@@ -130,8 +130,8 @@ def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
             "telefono": "70000001",
             "correo": "cliente@example.com",
             "direccion": {
-                "departamento": "05",
-                "municipio": "01",
+                "departamento": "06",
+                "municipio": "23",
                 "complemento": "San Salvador",
             },
         },
@@ -300,8 +300,8 @@ def test_receptor_dui_sin_nrc(monkeypatch):
         "telefono": "70000001",
         "correo": "cliente@example.com",
         "direccion": {
-            "departamento": "05",
-            "municipio": "01",
+            "departamento": "06",
+            "municipio": "23",
             "complemento": "San Salvador",
         },
     }
@@ -336,8 +336,8 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         "telefono": "70000001",
         "correo": "cliente@example.com",
         "direccion": {
-            "departamento": "05",
-            "municipio": "01",
+            "departamento": "06",
+            "municipio": "23",
             "complemento": "San Salvador",
         },
     }

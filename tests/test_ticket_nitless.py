@@ -51,8 +51,10 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
 
     assert data["identificacion"]["tipoDte"] == "01"
     assert "extra" not in data
-
-    assert "receptor" not in data
+    rec = data["receptor"]
+    assert rec["nombre"] == "CONSUMIDOR FINAL"
+    assert rec["tipoDocumento"] == "36"
+    assert rec["numDocumento"] == "00000000000000"
 
     nce = generar_nce_desde_dte(db, data, Decimal("1"), motivo="Dev")
     assert nce["identificacion"]["tipoDte"] == "05"

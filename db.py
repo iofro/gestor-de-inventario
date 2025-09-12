@@ -6,6 +6,9 @@ import threading
 from pathlib import Path
 from decimal import Decimal
 
+from utils.line_totals import compute_line_totals
+from utils.monto import d8
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
@@ -570,6 +573,10 @@ class DB:
             ("detalles_venta", "comision REAL DEFAULT 0"),
             ("detalles_venta", "iva_tipo TEXT"),
             ("detalles_venta", "tipo_fiscal TEXT"),
+            ("detalles_venta", "desc_con_iva REAL DEFAULT 0"),
+            ("detalles_venta", "base REAL DEFAULT 0"),
+            ("detalles_venta", "total REAL DEFAULT 0"),
+            ("detalles_venta", "unit_con_iva_efectivo REAL DEFAULT 0"),
             ("ventas_credito_fiscal", "sumas REAL DEFAULT 0"),
             ("ventas_credito_fiscal", "iva REAL DEFAULT 0"),
             ("ventas_credito_fiscal", "subtotal REAL DEFAULT 0"),
@@ -1210,13 +1217,71 @@ class DB:
             logger.exception("Error al eliminar venta: %s", e)
 
     # CRUD DETALLES_VENTA
-    def add_detalle_venta(self, venta_id, producto_id, cantidad, precio_unitario, descuento=0, descuento_tipo="", iva=0, comision=0, iva_tipo="", tipo_fiscal="", extra=None, precio_con_iva=0, vendedor_id=None):
+    def add_detalle_venta(
+        self,
+        venta_id,
+        producto_id,
+        cantidad,
+        precio_unitario,
+        descuento=0,
+        descuento_tipo="",
+        iva=0,
+        comision=0,
+        iva_tipo="",
+        tipo_fiscal="",
+        extra=None,
+        precio_con_iva=0,
+        vendedor_id=None,
+        desc_con_iva=0,
+        base=0,
+        total=0,
+        unit_con_iva_efectivo=0,
+    ):
         try:
             extra_json = json.dumps(extra) if extra else None
-            self.cursor.execute("""
-                INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """, (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra_json, precio_con_iva, vendedor_id))
+            self.cursor.execute(
+                """
+                INSERT INTO detalles_venta (
+                    venta_id,
+                    producto_id,
+                    cantidad,
+                    precio_unitario,
+                    descuento,
+                    descuento_tipo,
+                    iva,
+                    comision,
+                    iva_tipo,
+                    tipo_fiscal,
+                    extra,
+                    precio_con_iva,
+                    vendedor_id,
+                    desc_con_iva,
+                    base,
+                    total,
+                    unit_con_iva_efectivo
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    venta_id,
+                    producto_id,
+                    cantidad,
+                    precio_unitario,
+                    descuento,
+                    descuento_tipo,
+                    iva,
+                    comision,
+                    iva_tipo,
+                    tipo_fiscal,
+                    extra_json,
+                    precio_con_iva,
+                    vendedor_id,
+                    desc_con_iva,
+                    base,
+                    total,
+                    unit_con_iva_efectivo,
+                ),
+            )
             self.conn.commit()
         except Exception as e:
             logger.exception("Error al agregar detalle de venta: %s", e)
@@ -1816,16 +1881,61 @@ class DB:
         return [dict(row) for row in self.cursor.fetchall()]
 
     def add_venta_detallada(self, data):
-        # data es un dict con los campos de la tabla ventas
-        # Inserta la venta principal
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
+        detalles = data.get("detalles", [])
+        total = Decimal("0")
+        prepared: list[dict] = []
+        for d in detalles:
+            cantidad = Decimal(str(d.get("cantidad") or 0))
+            precio_iva = Decimal(
+                str(
+                    d.get("precio_con_iva")
+                    or d.get("precio_unit_con_iva")
+                    or d.get("precio_unitario")
+                    or 0
+                )
+            )
+            descuento = Decimal(
+                str(d.get("descuento") or d.get("descuento_valor") or 0)
+            )
+            descuento_tipo = d.get("descuento_tipo") or "$"
+            tipo_fiscal = d.get("tipo_fiscal") or "Venta gravada"
+            iva_rate = Decimal("0.13") if tipo_fiscal == "Venta gravada" else Decimal("0")
+            calcs = compute_line_totals(
+                cantidad,
+                precio_iva,
+                descuento,
+                descuento_tipo,
+                iva_rate,
+            )
+            precio_unitario = d8(calcs["base"] / cantidad) if cantidad else Decimal("0")
+            prepared.append(
+                {
+                    "producto_id": d.get("producto_id"),
+                    "cantidad": float(d8(cantidad)),
+                    "precio_unitario": float(precio_unitario),
+                    "descuento": float(d8(descuento)),
+                    "descuento_tipo": descuento_tipo,
+                    "iva": float(calcs["iva"]),
+                    "tipo_fiscal": tipo_fiscal,
+                    "extra": d.get("extra"),
+                    "precio_con_iva": float(d8(precio_iva)),
+                    "vendedor_id": d.get("vendedor_id"),
+                    "desc_con_iva": float(calcs["desc_con_iva"]),
+                    "base": float(calcs["base"]),
+                    "total": float(calcs["total_con_iva"]),
+                    "unit_con_iva_efectivo": float(calcs["unit_con_iva_efectivo"]),
+                }
+            )
+            total += calcs["total_con_iva"]
+
+        total = d8(total)
         fecha = data.get("fecha", "")
-        total = data.get("total", 0)
         cliente_id = data.get("cliente_id")
         Distribuidor_id = data.get("Distribuidor_id")
         estado = data.get("estado", "Pagada")
         cols = ["fecha", "total", "estado", "sincronizada"]
-        vals = [fecha, total, estado, 1]
+        vals = [fecha, float(total), estado, 1]
         if cliente_id is not None:
             cols.append("cliente_id")
             vals.append(cliente_id)
@@ -1837,18 +1947,27 @@ class DB:
         self.cursor.execute(query, vals)
         venta_id = self.cursor.lastrowid
 
-        # Si hay detalles de venta en el dict, agrégalos
-        detalles = data.get("detalles", [])
-        for d in detalles:
-            self.cursor.execute("""
-                INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario)
-                VALUES (?, ?, ?, ?)
-            """, (
+        for d in prepared:
+            self.add_detalle_venta(
                 venta_id,
                 d.get("producto_id"),
                 d.get("cantidad"),
-                d.get("precio_unitario")
-            ))
+                d.get("precio_unitario"),
+                d.get("descuento"),
+                d.get("descuento_tipo"),
+                d.get("iva"),
+                d.get("comision", 0),
+                d.get("iva_tipo", ""),
+                d.get("tipo_fiscal"),
+                d.get("extra"),
+                d.get("precio_con_iva"),
+                d.get("vendedor_id"),
+                d.get("desc_con_iva"),
+                d.get("base"),
+                d.get("total"),
+                d.get("unit_con_iva_efectivo"),
+            )
+
         self.conn.commit()
 
     def add_trabajador(self, data, commit: bool = True):

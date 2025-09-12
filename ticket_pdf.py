@@ -16,8 +16,16 @@ def _with_falta(value):
     return "falta" if not value else str(value)
 
 
-def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None):
+def generar_ticket_pdf(
+    venta,
+    detalles,
+    archivo="ticket.pdf",
+    datos_negocio=None,
+    dte_data=None,
+    qr_url=None,
+):
     """Genera un PDF sencillo tipo ticket para una venta."""
+
     if datos_negocio is None:
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -26,6 +34,10 @@ def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None
                     datos_negocio = json.load(f)
             except Exception:
                 datos_negocio = {}
+
+    if dte_data:
+        dte_json = dte_data.get("dteJson", dte_data)
+        qr_url = build_qr_url(dte_json)
 
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
@@ -55,6 +67,22 @@ def generar_ticket_pdf(venta, detalles, archivo="ticket.pdf", datos_negocio=None
     y -= 10
     c.setFont("Helvetica-Bold", 12)
     c.drawRightString(width - 40, y, f"Total: {venta.get('total', 0):.2f}")
+
+    if qr_url:
+        qr_size = 20 * mm
+        qr_code = qr.QrCodeWidget(qr_url)
+        bounds = qr_code.getBounds()
+        w = bounds[2] - bounds[0]
+        h = bounds[3] - bounds[1]
+        d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
+        d.add(qr_code)
+        if y < qr_size + 60:
+            c.showPage()
+            y = height - 40
+        qr_x = (width - qr_size) / 2
+        qr_y = y - qr_size - 20
+        renderPDF.draw(d, c, qr_x, qr_y)
+        c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 
     c.showPage()
     c.save()
@@ -225,8 +253,7 @@ def generar_ticket_personalizado(
         qr_x = (width - qr_size) / 2
         qr_y = max(5 * mm, y - qr_size)
         renderPDF.draw(d, c, qr_x, qr_y)
-        c.setFont("Helvetica", 5)
-        c.drawCentredString(width / 2, qr_y - 4, qr_url)
+        c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 
     c.showPage()
     c.save()

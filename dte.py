@@ -28,7 +28,8 @@ from utils.catalogos import (
 import logging
 import warnings
 import xml.etree.ElementTree as ET
-from utils.monto import monto_a_texto_sv, to_base_iva, d2, d4, d8
+from utils.monto import monto_a_texto_sv, to_base_iva, d2, d4, d8, money
+from utils.line_totals import compute_line_totals
 from utils.sanitize import limpiar_documentos, limpiar_doc, solo_digitos
 from num2words import num2words
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -199,20 +200,6 @@ getcontext().rounding = ROUND_HALF_UP
 
 # Helper alias for ``Decimal``
 D = Decimal
-
-
-def d1(value: "object") -> D:
-    """Return ``value`` as :class:`Decimal` with 1 decimal place."""
-    return D(str(value)).quantize(D("0.1"), rounding=ROUND_HALF_UP)
-
-
-def money(value) -> D:
-    """
-    Convierte `value` a Decimal con 2 decimales (multipleOf 0.01) usando ROUND_HALF_UP.
-    Acepta str, int, float, Decimal. Devuelve Decimal cuantizado a 0.01.
-    """
-    return D(str(value)).quantize(D("0.01"), rounding=ROUND_HALF_UP)
-
 
 def _precios_incluyen_iva_from(
     extra: dict | None, override: bool | None = None
@@ -1163,8 +1150,8 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
     resumen["ivaRete1"] = money(fiscal.get("iva_rete1", resumen.get("ivaRete1", 0)))
     resumen["reteRenta"] = money(fiscal.get("rete_renta", resumen.get("reteRenta", 0)))
 
-    if tipo_dte not in {"03", "05", "06"}:
-        resumen["totalIva"] = total_iva
+    # Incluir totalIva en todos los tipos de DTE
+    resumen["totalIva"] = total_iva
 
     if tipo_dte in {"01", "03", "05", "06"}:
         condicion = extra.get("condicion_operacion")
@@ -1237,7 +1224,7 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         "numPagoElectronico",
         "tributos",
     }
-    special_d4_fields = {"totalExenta", "totalNoSuj"}
+    special_d4_fields = set() if tipo_dte == "03" else {"totalExenta", "totalNoSuj"}
     for key, val in list(resumen.items()):
         if key in excl:
             continue
@@ -1324,8 +1311,8 @@ def recalcular_totales(
             _precio = D(str(_it.get("precioUni") or 0))
             _descu = D(str(_it.get("montoDescu") or 0))
             if _descu:
-                total_final = d4(_cant * _precio - _descu)
-                unit_pf = d4(total_final / _cant) if _cant else d4(0)
+                total_final = d8(_cant * _precio - _descu)
+                unit_pf = d8(total_final / _cant) if _cant else d8(0)
                 _it["precioUni"] = unit_pf
                 _it.pop("montoDescu", None)
         resumen["descuNoSuj"] = resumen["descuExenta"] = resumen["descuGravada"] = resumen["totalDescu"] = money(0)
@@ -1383,26 +1370,23 @@ def recalcular_totales(
             iva_total += esperado_iva
             venta_gravada_sum += linea
         elif tipo_dte == "03":
-            pf_line = d8(cant * precio - monto_descu)
-            if pf_line < 0:
-                pf_line = d8(0)
-            base_8d = pf_line / D("1.13")
-            precio_u = d4(base_8d / cant) if cant > 0 else d4(0)
-            base_line = d4(precio_u * cant)
-            iva_val = d4(pf_line - base_line)
+            precio_u = d8(precio)
+            base_line = d8(D(str(item.get("ventaGravada") or 0)))
+            iva_val = d8(D(str(item.get("ivaItem") or 0)))
+            pf_line = d8(base_line + iva_val)
             bases_pre.append(base_line)
             bases.append(base_line)
             ivas.append(iva_val)
-            pf_line_q = d4(base_line + iva_val)
-            bruto_sum += pf_line_q
-            bruto_linea_sum += d4(cant * precio)
+            bruto_sum += pf_line
+            bruto_linea_sum += d8(cant * precio_u)
             cantidades.append(cant)
             prices.append(precio_u)
-            item.pop("montoDescu", None)
-            item.pop("ivaItem", None)
-            item["ventaExenta"] = d4(0)
-            item["ventaNoSuj"] = d4(0)
-            item["noGravado"] = d4(0)
+            item["montoDescu"] = d8(0)
+            item["ventaGravada"] = base_line
+            item["ivaItem"] = iva_val
+            item["ventaExenta"] = d8(D(str(item.get("ventaExenta") or 0)))
+            item["ventaNoSuj"] = d8(D(str(item.get("ventaNoSuj") or 0)))
+            item["noGravado"] = d8(D(str(item.get("noGravado") or 0)))
         else:
             bruto_linea = money(cant * precio)
             bruto_linea_sum += bruto_linea
@@ -1428,7 +1412,8 @@ def recalcular_totales(
             item["ventaExenta"] = money(0)
             item["ventaNoSuj"] = money(0)
             item["noGravado"] = money(0)
-    if tipo_dte != "01":
+    # En FC (03) los ítems ya traen base/IVA correctos; no redistribuir.
+    if tipo_dte in {"05", "06"}:
         if bases:
             bruto_total = bruto_sum
             base_total = money(bruto_total / D("1.13"))
@@ -1446,13 +1431,13 @@ def recalcular_totales(
             total_venta = D("0")
             for idx, item in enumerate(cuerpo):
                 if idx < len(bases):
-                    base_val = d4(bases[idx])
+                    base_val = d8(bases[idx])
                     cant = cantidades[idx]
-                    iva_val = d4(ivas[idx])
-                    pf_neto = d4(base_val + iva_val)
+                    iva_val = d8(ivas[idx])
+                    pf_neto = d8(base_val + iva_val)
                     item["ventaGravada"] = base_val
-                    precio_u = prices[idx] if idx < len(prices) else d4(0)
-                    item["precioUni"] = precio_u if cant > 0 else d4(0)
+                    precio_u = prices[idx] if idx < len(prices) else d8(0)
+                    item["precioUni"] = precio_u if cant > 0 else d8(0)
                     item.pop("ivaItem", None)
                     item.pop("montoDescu", None)
                     if base_val + iva_val != pf_neto:
@@ -1492,25 +1477,33 @@ def recalcular_totales(
             venta_gravada_sum = D("0")
             iva_total = D("0")
             venta_total_sum = D("0")
+    elif tipo_dte == "03":
+        venta_gravada_sum = sum(bases)
+        iva_total = sum(ivas)
+        venta_total_sum = bruto_sum
+    else:
+        venta_gravada_sum = D("0")
+        iva_total = D("0")
+        venta_total_sum = D("0")
 
-        if tipo_dte in {"03", "05", "06"}:
-            if colapso_desc:
-                sub_total_ventas = money(sum(bases))
-                descu_gravada_sum = money(0)
-            else:
-                sub_total_ventas = money(sum(bases_pre))
-                descu_gravada_sum = money(
-                    sum(bp - b for bp, b in zip(bases_pre, bases))
-                )
+    if tipo_dte in {"03", "05", "06"}:
+        if colapso_desc:
+            sub_total_ventas = money(sum(bases))
+            descu_gravada_sum = money(0)
         else:
-            if precios_flag:
-                sub_total_ventas = money(sum(bases_pre))
-                descu_gravada_sum = money(
-                    sum(bp - b for bp, b in zip(bases_pre, bases))
-                )
-            else:
-                sub_total_ventas = money(venta_gravada_sum)
-                descu_gravada_sum = money(0)
+            sub_total_ventas = money(sum(bases_pre))
+            descu_gravada_sum = money(
+                sum(bp - b for bp, b in zip(bases_pre, bases))
+            )
+    else:
+        if precios_flag:
+            sub_total_ventas = money(sum(bases_pre))
+            descu_gravada_sum = money(
+                sum(bp - b for bp, b in zip(bases_pre, bases))
+            )
+        else:
+            sub_total_ventas = money(venta_gravada_sum)
+            descu_gravada_sum = money(0)
 
     venta_gravada_sum = venta_gravada_sum
     total_iva_sum = d4(iva_total)
@@ -2156,8 +2149,14 @@ def generar_dte_json(
         precios_incluyen_iva = True
         extra["precios_incluyen_iva"] = True
 
-    def _zero_or_d4(value: D) -> D:
-        dec = d4(value)
+    q_item = d8 if tipo_dte == "03" else d4
+    q_qty = d8 if tipo_dte == "03" else d4
+    # Quantizers per field (por tipo de DTE)
+    q_field_item = d8 if tipo_dte == "03" else d4  # ventaGravada/Exenta/NoSuj por ítem
+    q_field_iva = d8 if tipo_dte == "03" else d2   # ivaItem por ítem
+
+    def _zero_or_item(value: D) -> D:
+        dec = q_item(value)
         return D("0.0") if dec == 0 else dec
 
     def _zero_or_d2(value: D) -> D:
@@ -2166,15 +2165,25 @@ def generar_dte_json(
 
     for idx, d in enumerate(detalles, 1):
         try:
-            cant = d1(D(str(d.get("cantidad") or 0)))
+            cant = q_qty(D(str(d.get("cantidad") or 0)))
         except Exception:
-            cant = d1(D(0))
+            cant = q_qty(D(0))
         if cant <= 0:
-            cant = d1(D("1"))
+            cant = q_qty(D("1"))
         try:
-            precio_raw = d4(D(str(d.get("precio_unitario") or 0)))
+            precio_raw = q_item(
+                D(
+                    str(
+                        d.get("precio_con_iva")
+                        or d.get("precio_unit_con_iva")
+                        or d.get("precio_unitario_con_iva")
+                        or d.get("precio_unitario")
+                        or 0
+                    )
+                )
+            )
         except Exception:
-            precio_raw = d4(D(0))
+            precio_raw = q_item(D(0))
         try:
             tipo_item = int(d.get("tipoItem", 1))
         except Exception:
@@ -2202,31 +2211,37 @@ def generar_dte_json(
 
         tipo_fiscal_item = str(d.get("tipo_fiscal", "")).lower()
         if tipo_fiscal_item == "venta exenta":
-            precio = d4(precio_raw)
-            bruto = d4(cant * precio)
-            monto_descu = _calc_desc(bruto)
-            line_total = d4(bruto - monto_descu)
-            if line_total < 0:
-                line_total = D("0")
-            bruto_total += bruto
-            descuentos_total += monto_descu
+            calcs = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo, iva_rate=D("0"))
+            line_total = calcs["total_con_iva"]
+            precio = q_item(calcs["unit_con_iva_efectivo"])
             venta_gravada = D("0")
-            venta_exenta = d2(line_total)
+            venta_exenta = q_item(line_total)
             venta_no_suj = D("0")
             iva_val = D("0")
+            if tipo_dte in {"03", "05", "06"}:
+                monto_descu = D("0")
+                bruto_total += line_total
+                sub_total_ventas += line_total  # base = total, IVA=0
+            else:
+                monto_descu = calcs["desc_con_iva"]
+                bruto_total += calcs["bruto"]
+                descuentos_total += calcs["desc_con_iva"]
         elif tipo_fiscal_item == "venta no sujeta":
-            precio = d4(precio_raw)
-            bruto = d4(cant * precio)
-            monto_descu = _calc_desc(bruto)
-            line_total = d4(bruto - monto_descu)
-            if line_total < 0:
-                line_total = D("0")
-            bruto_total += bruto
-            descuentos_total += monto_descu
+            calcs = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo, iva_rate=D("0"))
+            line_total = calcs["total_con_iva"]
+            precio = q_item(calcs["unit_con_iva_efectivo"])
             venta_gravada = D("0")
             venta_exenta = D("0")
-            venta_no_suj = d2(line_total)
+            venta_no_suj = q_item(line_total)
             iva_val = D("0")
+            if tipo_dte in {"03", "05", "06"}:
+                monto_descu = D("0")
+                bruto_total += line_total
+                sub_total_ventas += line_total  # base = total, IVA=0
+            else:
+                monto_descu = calcs["desc_con_iva"]
+                bruto_total += calcs["bruto"]
+                descuentos_total += calcs["desc_con_iva"]
         else:
             if tipo_dte == "01":
                 origen = (
@@ -2248,19 +2263,18 @@ def generar_dte_json(
                 descuentos_total += monto_descu
             elif precios_incluyen_iva:
                 if tipo_dte in {"03", "05", "06"}:
-                    bruto = d4(cant * precio_raw)
-                    descu_total = _calc_desc(bruto)
-                    bruto_final = d4(bruto - descu_total)
-                    if bruto_final < 0:
-                        bruto_final = D("0")
-                    base_final = money(bruto_final / D("1.13"))
-                    iva_val = d4(bruto_final - base_final)
-                    precio = d4(money(bruto_final / cant))
+                    calcs = compute_line_totals(cant, precio_raw, desc_raw, desc_tipo)
+                    line_total = calcs["total_con_iva"]
+                    venta_gravada = calcs["base"]
+                    iva_val = calcs["iva"]
+                    iva_total += iva_val
+                    # FC (03): precioUni debe ser unitario SIN IVA (base/cant)
+                    precio = (
+                        q_item(calcs["base"] / cant) if cant > 0 else q_item(D("0"))
+                    )
                     monto_descu = D("0")
-                    venta_gravada = base_final
-                    line_total = bruto_final
-                    bruto_total += bruto_final
-                    sub_total_ventas += base_final
+                    bruto_total += line_total
+                    sub_total_ventas += venta_gravada
                 else:
                     bruto = d4(cant * precio_raw)
                     monto_descu = _calc_desc(bruto)
@@ -2290,7 +2304,8 @@ def generar_dte_json(
             venta_exenta = D("0")
             venta_no_suj = D("0")
         items_total += line_total
-        iva_total += iva_val
+        if tipo_dte not in {"03", "05", "06"}:
+            iva_total += iva_val
         try:
             commission_total += D(str(d.get("comision") or 0))
         except Exception:
@@ -2323,17 +2338,19 @@ def generar_dte_json(
             "descripcion": d.get("descripcion"),
             "cantidad": cant,
             "uniMedida": uni_medida,
-            "precioUni": d4(precio),
-            "montoDescu": d4(monto_descu),
+            "precioUni": q_item(precio),
+            "montoDescu": q_item(monto_descu),
             "ventaNoSuj": venta_no_suj,
             "ventaExenta": venta_exenta,
             "ventaGravada": venta_gravada,
-            "psv": money(0),
-            "noGravado": money(0),
+            "psv": q_item(0),
+            "noGravado": q_item(0),
             "tributos": [],
         }
-        if tipo_dte == "01":
-            item_data["ivaItem"] = money(iva_val)
+        if tipo_dte in {"01", "03"}:
+            item_data["ivaItem"] = (
+                q_field_iva(iva_val) if tipo_dte == "03" else money(iva_val)
+            )
         if tipo_dte == "01":
             item_data["codTributo"] = None
             item_data["tributos"] = None
@@ -2348,7 +2365,7 @@ def generar_dte_json(
                 item_data["codTributo"] = None
             item_data["tributos"] = trib_list
         for key in ("ventaNoSuj", "ventaExenta", "ventaGravada"):
-            item_data[key] = _zero_or_d4(D(str(item_data[key])))
+            item_data[key] = _zero_or_item(D(str(item_data[key])))
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
         total_exenta_sum += D(str(item_data["ventaExenta"]))
         total_gravada_sum += D(str(item_data["ventaGravada"]))
@@ -2358,11 +2375,11 @@ def generar_dte_json(
     items_total = money(items_total)
     bruto_total = money(bruto_total)
     descuentos_total = money(descuentos_total)
-    total_no_suj_sum = _zero_or_d4(total_no_suj_sum)
-    total_exenta_sum = _zero_or_d4(total_exenta_sum)
+    total_no_suj_sum = _zero_or_item(total_no_suj_sum)
+    total_exenta_sum = _zero_or_item(total_exenta_sum)
     total_gravada_sum = _zero_or_d2(total_gravada_sum)
     total_no_gravado_sum = money(total_no_gravado_sum)
-    total_iva_sum = d4(iva_total)
+    total_iva_sum = money(iva_total)
     sub_total_ventas = money(sub_total_ventas)
     descu_gravada_sum = money(descu_gravada_sum)
 
@@ -2393,8 +2410,8 @@ def generar_dte_json(
         tipo_dte=tipo_dte,
     )
 
-    resumen["totalNoSuj"] = _zero_or_d4(total_no_suj_sum)
-    resumen["totalExenta"] = _zero_or_d4(total_exenta_sum)
+    resumen["totalNoSuj"] = _zero_or_item(total_no_suj_sum)
+    resumen["totalExenta"] = _zero_or_item(total_exenta_sum)
     resumen["totalGravada"] = _zero_or_d2(total_gravada_sum)
 
     # Las siguientes validaciones se omiten para permitir diferencias entre el
@@ -2496,7 +2513,7 @@ def generar_dte_json(
         if last_grav is not None:
             item = cuerpo[last_grav]
             iva_val = D(str(item.get("ivaItem") or 0))
-            item["ivaItem"] = d4(iva_val + diff)
+            item["ivaItem"] = q_field_iva(iva_val + diff)
             resumen["totalIva"] = d2(D(str(resumen.get("totalIva", 0))) + diff)
             resumen["montoTotalOperacion"] = d2(dte_total + diff)
             resumen["totalPagar"] = resumen.get("totalPagar", resumen["montoTotalOperacion"])
@@ -2506,8 +2523,8 @@ def generar_dte_json(
             if cuerpo:
                 item = cuerpo[-1]
                 qty = D(str(item.get("cantidad") or 1))
-                unit_adj = d4(diff / qty)
-                item["precioUni"] = d4(D(str(item.get("precioUni"))) + unit_adj)
+                unit_adj = q_item(diff / qty)
+                item["precioUni"] = q_item(D(str(item.get("precioUni"))) + unit_adj)
                 if D(str(item.get("ventaExenta") or 0)) > 0:
                     campo = "ventaExenta"
                     resumen_key = "totalExenta"
@@ -2517,12 +2534,12 @@ def generar_dte_json(
                 else:
                     campo = "ventaGravada"
                     resumen_key = "totalGravada"
-                item[campo] = d4(D(str(item.get(campo))) + diff)
+                item[campo] = q_field_item(D(str(item.get(campo))) + diff)
                 resumen[resumen_key] = d2(D(str(resumen.get(resumen_key, 0))) + diff)
                 resumen["montoTotalOperacion"] = d2(dte_total + diff)
                 resumen["totalPagar"] = d2(D(str(resumen.get("totalPagar", dte_total))) + diff)
     # SERIALIZE-GUARD BEGIN
-    special_d4_fields = {"totalExenta", "totalNoSuj"}
+    special_d4_fields = set() if tipo_dte == "03" else {"totalExenta", "totalNoSuj"}
     for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):
         if k in resumen:
             val = D(str(resumen[k]))
@@ -2591,8 +2608,6 @@ def generar_dte_json(
         dec = money(value)
         return D("0.0") if dec == 0 else dec
 
-    special_d4_fields = {"totalExenta", "totalNoSuj"}
-
     for k, v in list(resumen.items()):
         if k in {
             "totalLetras",
@@ -2602,7 +2617,7 @@ def generar_dte_json(
             "tributos",
         }:
             continue
-        qfn = _zero_or_d4 if k in special_d4_fields else _quantize_money
+        qfn = _zero_or_item if k in special_d4_fields else _quantize_money
         resumen[k] = qfn(D(str(v)))
 
     if resumen.get("tributos"):
@@ -2717,6 +2732,11 @@ def validate_dte_json(
     else:
         tipo_dte_val = str(tipo_dte_val).zfill(2)
     ident["tipoDte"] = tipo_dte_val
+    tipo_dte = tipo_dte_val
+    # Cuantizadores por tipo: en FC (03) los ítems usan 8 decimales
+    q_item = d8 if tipo_dte == "03" else d4
+    q_qty = d8 if tipo_dte == "03" else d4
+    q_field = d8 if tipo_dte == "03" else d2
     if tipo_dte_val not in catalogos.DTE_TIPOS:
         raise ValueError("tipoDte inválido")
     if tipo_dte_val in {"03", "05", "06"}:
@@ -3023,6 +3043,8 @@ def validate_dte_json(
             "noGravado",
             "ivaItem",
         }
+    if tipo_dte == "03":
+        allowed_item_keys.add("ivaItem")
     precio_key = "precioUni"
     iva_key = "ivaItem" if "ivaItem" in allowed_item_keys else None
 
@@ -3085,34 +3107,34 @@ def validate_dte_json(
             item.setdefault(iva_key, cero)
 
         # --- Cálculo de base ---
-        cantidad = d1(D(str(item.get("cantidad") or 0)))
-        precio = d8(D(str(item.get(precio_key) or 0)))
+        cantidad = q_qty(D(str(item.get("cantidad") or 0)))
+        precio = q_item(D(str(item.get(precio_key) or 0)))
         item["cantidad"] = cantidad
         item[precio_key] = precio
-        monto_descu = d8(D(str(item.get("montoDescu") or 0)))
+        monto_descu = q_field(D(str(item.get("montoDescu") or 0)))
         if monto_descu < 0:
             monto_descu = cero
-        base = d8(cantidad * precio - monto_descu)
+        base = q_field(cantidad * precio - monto_descu)
         if base < 0:
             base = cero
 
         # Determinar tipo de venta
         if D(str(item.get("ventaExenta") or 0)) > 0:
-            item["ventaExenta"] = d2(base)
+            item["ventaExenta"] = q_field(base)
             item["ventaGravada"] = cero
             item["ventaNoSuj"] = cero
             item["noGravado"] = cero
         elif D(str(item.get("ventaNoSuj") or 0)) > 0:
-            item["ventaNoSuj"] = d2(base)
+            item["ventaNoSuj"] = q_field(base)
             item["ventaGravada"] = cero
             item["noGravado"] = cero
         elif D(str(item.get("noGravado") or 0)) > 0:
-            item["noGravado"] = d2(base)
+            item["noGravado"] = q_field(base)
             item["ventaGravada"] = cero
             item["ventaNoSuj"] = cero
 
         else:
-            item["ventaGravada"] = d2(base)
+            item["ventaGravada"] = q_field(base)
             item["ventaExenta"] = cero
             item["ventaNoSuj"] = cero
             item["noGravado"] = cero
@@ -3171,19 +3193,19 @@ def validate_dte_json(
                 if tipo_dte == "01":
                     item[iva_key] = money(D(str(item.get(iva_key))))
                 else:
-                    item[iva_key] = d8(D(str(item.get(iva_key))))
+                    item[iva_key] = q_field(D(str(item.get(iva_key))))
             else:
                 iva_calc = venta_gravada_val * D("0.13") if venta_gravada_val > 0 else cero
-                item[iva_key] = money(iva_calc) if tipo_dte == "01" else d8(iva_calc)
+                item[iva_key] = money(iva_calc) if tipo_dte == "01" else q_field(iva_calc)
 
-        # Totales a 2 decimales y normalizar -0.00
+        # Totales normalizados según el tipo de DTE y eliminar -0.00
         for k in ("ventaGravada", "ventaExenta", "ventaNoSuj", "psv", "noGravado"):
-            val = d2(item.get(k, cero))
+            val = q_field(item.get(k, cero))
             item[k] = cero if val == 0 else val
-        item["montoDescu"] = d2(monto_descu)
+        item["montoDescu"] = q_field(monto_descu)
         if iva_key:
             iva_val = D(str(item.get(iva_key) or 0))
-            iva_val_q = money(iva_val) if tipo_dte == "01" else d8(iva_val)
+            iva_val_q = money(iva_val) if tipo_dte == "01" else q_field(iva_val)
             item[iva_key] = cero if iva_val_q == 0 else iva_val_q
     payload["cuerpoDocumento"] = cuerpo
 
@@ -3203,10 +3225,11 @@ def validate_dte_json(
                 pass
     payload["resumen"] = resumen
 
-    # Recalcular totales y ajustar discrepancias
-    cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
-    if cambios:
-        print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
+    # Recalcular totales y ajustar discrepancias (excepto para FC ya normalizado)
+    if tipo_dte != "03":
+        cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
+        if cambios:
+            print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 
     ident = payload.get("identificacion", {})
     if ident.get("tipoDte") == "01":
@@ -3257,7 +3280,7 @@ def validate_dte_json(
                 p["plazo"] = ""
 
     # Verificación de centavos exactos en totales clave
-    special_d4_fields = {"totalExenta", "totalNoSuj"}
+    special_d4_fields = set() if tipo_dte == "03" else {"totalExenta", "totalNoSuj"}
     for k in ("totalIva", "montoTotalOperacion", "totalPagar", "totalNoGravado"):
         if k in resumen:
             val = D(str(resumen[k]))
@@ -3336,12 +3359,11 @@ def validate_dte_json(
         return D("0.0") if dec == 0 else dec
 
     for item in payload.get("cuerpoDocumento", []):
-        # cantidad se cuantiza a un decimal
-        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), d1)
-        # precio unitario y ventas: 4 decimales cuando es mayor a 0
-        item[precio_key] = _zero_or(item.get(precio_key, D("0")), d4)
+        # cuantizar cantidad y precios según tipo de DTE
+        item["cantidad"] = _zero_or(item.get("cantidad", D("0")), q_qty)
+        item[precio_key] = _zero_or(item.get(precio_key, D("0")), q_item)
         if iva_key and iva_key in item:
-            item[iva_key] = _zero_or(item.get(iva_key, D("0")), d2)
+            item[iva_key] = _zero_or(item.get(iva_key, D("0")), q_field)
         for k in (
             "montoDescu",
             "ventaNoSuj",
@@ -3350,11 +3372,13 @@ def validate_dte_json(
             "psv",
             "noGravado",
         ):
-            qfn = d4 if k in {"ventaNoSuj", "ventaExenta", "ventaGravada"} else d2
+            if tipo_dte == "03":
+                qfn = q_field
+            else:
+                qfn = d4 if k in {"ventaNoSuj", "ventaExenta", "ventaGravada"} else d2
             item[k] = _zero_or(item.get(k, D("0")), qfn)
 
     resumen = payload.get("resumen", {})
-    special_d4_fields = {"totalExenta", "totalNoSuj"}
     for k, v in list(resumen.items()):
         if k in {
             "totalLetras",

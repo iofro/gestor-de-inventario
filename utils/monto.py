@@ -28,6 +28,11 @@ def d4(value):
     return D(str(value)).quantize(Q4, rounding=ROUND_HALF_UP)
 
 
+def money(value):
+    """Return ``value`` quantized to 2 decimal places (multiple of 0.01)."""
+    return D(str(value)).quantize(Q2, rounding=ROUND_HALF_UP)
+
+
 def iva_item(base_gravada):
     """Return IVA amount for an item based on taxable base."""
     return d8(D(str(base_gravada)) * IVA_TASA)

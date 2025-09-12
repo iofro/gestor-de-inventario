@@ -663,7 +663,7 @@ class FacturacionTab(QWidget):
                     "_parsed_fecha": fdate,
                     "cliente": cliente.get("nombre", "") if cliente else "",
                     "total": venta["total"],
-                    "estado": venta["estado"],
+                    "estado": "",
                     "tipo": rec["tipo"],
                 }
             )
@@ -688,10 +688,10 @@ class FacturacionTab(QWidget):
         tipo = self.tipo_filter.currentText()
 
         rows = self._scan_documents()
-        envio_estado = {}
-        if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked():
-            for env in self.manager.db.listar_dtes():
-                envio_estado[env.get("venta_id")] = env.get("estado")
+        envio_estado = {
+            env.get("venta_id"): env.get("estado")
+            for env in self.manager.db.listar_dtes()
+        }
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
@@ -708,15 +708,12 @@ class FacturacionTab(QWidget):
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
                 continue
-            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked():
-                if r.get("row_type") not in ("venta", "ticket"):
-                    rows.remove(r)
-                    continue
-                estado = envio_estado.get(r.get("id"))
-                if not estado:
-                    rows.remove(r)
-                    continue
+            estado = envio_estado.get(r.get("id"))
+            if estado:
                 r["estado"] = estado
+            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked() and not r.get("estado"):
+                rows.remove(r)
+                continue
 
         rows.sort(
             key=lambda r: (
@@ -753,7 +750,8 @@ class FacturacionTab(QWidget):
         self._update_send_btn()
 
     def _scan_documents(self):
-        result = []
+        result = self._get_invoices_from_db()
+        seen = {r.get("name") for r in result}
         folders = [
             CF_DIR,
             CREDITO_DIR,
@@ -786,6 +784,8 @@ class FacturacionTab(QWidget):
                     if ext.lower() not in (".pdf", ".json"):
                         continue
                     if not DOC_PATTERN.match(base):
+                        continue
+                    if base in seen:
                         continue
                     entry = files.setdefault(base, {"tipo": tipo})
                     entry.setdefault(ext.lower(), os.path.join(root, fname))

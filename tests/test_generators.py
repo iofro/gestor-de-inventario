@@ -33,7 +33,7 @@ def _stub_datos_negocio(monkeypatch):
         "tipoContribuyente": "PN",
         "telefono": "22223333",
         "correo": "demo@example.com",
-        "direccion": {"departamento": "01", "municipio": "01", "complemento": ""},
+        "direccion": {"departamento": "06", "municipio": "23", "complemento": ""},
     }
     monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: fake)
     monkeypatch.setattr(dte_module, "_load_datos_negocio", lambda: fake)

@@ -22,9 +22,13 @@ def generar_ticket_pdf(
     archivo="ticket.pdf",
     datos_negocio=None,
     dte_data=None,
-    qr_url=None,
 ):
-    """Genera un PDF sencillo tipo ticket para una venta."""
+    """Genera un PDF sencillo tipo ticket para una venta.
+
+    Si ``dte_data`` contiene información de DTE (por ejemplo ``dteJson``), se
+    calcula automáticamente la URL del código QR con :func:`build_qr_url` y se
+    inserta como código y enlace en el PDF generado.
+    """
 
     if datos_negocio is None:
         datos_negocio = {}
@@ -35,6 +39,7 @@ def generar_ticket_pdf(
             except Exception:
                 datos_negocio = {}
 
+    qr_url = None
     if dte_data:
         dte_json = dte_data.get("dteJson", dte_data)
         qr_url = build_qr_url(dte_json)

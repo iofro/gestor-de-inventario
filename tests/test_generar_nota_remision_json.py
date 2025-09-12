@@ -23,8 +23,8 @@ def test_generar_nota_remision_json_from_dte(db_conn):
             "telefono": "70000001",
             "correo": "cliente@example.com",
             "direccion": {
-                "departamento": "05",
-                "municipio": "01",
+                "departamento": "06",
+                "municipio": "23",
                 "complemento": "San Salvador",
             },
         },

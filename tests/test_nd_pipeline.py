@@ -41,7 +41,7 @@ def test_nd_minimum_pipeline():
         "correo": "demo@example.com",
         "direccion": {
             "departamento": "06",
-            "municipio": "01",
+            "municipio": "23",
             "complemento": "Calle X",
         },
     }
@@ -56,8 +56,8 @@ def test_nd_minimum_pipeline():
         "telefono": "70000001",
         "correo": "cliente@example.com",
         "direccion": {
-            "departamento": "05",
-            "municipio": "01",
+            "departamento": "06",
+            "municipio": "23",
             "complemento": "San Salvador",
         },
     }

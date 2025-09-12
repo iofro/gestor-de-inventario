@@ -2957,7 +2957,7 @@ def validate_dte_json(
             dui = receptor.get("dui")
             num_doc_val = receptor.get("numDocumento")
             if dui and not num_doc_val:
-                receptor["numDocumento"] = dui
+                receptor["numDocumento"] = solo_digitos(dui)
                 if not tipo_doc:
                     tipo_doc = "13"
             receptor.pop("dui", None)

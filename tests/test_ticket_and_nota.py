@@ -27,7 +27,14 @@ def test_generar_ticket_pdf(tmp_path):
     venta = {"id": 1, "fecha": "2024-01-01", "total": 10}
     detalles = [{"descripcion": "Prod", "cantidad": 1, "precio_unitario": 10}]
     archivo = tmp_path / "ticket.pdf"
-    generar_ticket_pdf(venta, detalles, str(archivo))
+    dte_json = {
+        "identificacion": {
+            "ambiente": "00",
+            "codigoGeneracion": "ABC123",
+            "fecEmi": "2024-01-01",
+        }
+    }
+    generar_ticket_pdf(venta, detalles, str(archivo), dte_data={"dteJson": dte_json})
     assert archivo.exists()
     assert archivo.stat().st_size > 0
 
@@ -38,7 +45,20 @@ def test_generar_ticket_pdf_header(tmp_path):
     detalles = [{"descripcion": "Prod", "cantidad": 1, "precio_unitario": 10}]
     datos = {"nombreComercial": "MI NEGOCIO"}
     archivo = tmp_path / "ticket.pdf"
-    generar_ticket_pdf(venta, detalles, str(archivo), datos_negocio=datos)
+    dte_json = {
+        "identificacion": {
+            "ambiente": "00",
+            "codigoGeneracion": "XYZ987",
+            "fecEmi": "2024-01-01",
+        }
+    }
+    generar_ticket_pdf(
+        venta,
+        detalles,
+        str(archivo),
+        datos_negocio=datos,
+        dte_data={"dteJson": dte_json},
+    )
     assert archivo.exists()
     with fitz.open(archivo) as doc:
         text = "".join(p.get_text() for p in doc)
@@ -49,7 +69,20 @@ def test_generar_ticket_personalizado_missing(tmp_path):
     venta = {"id": 1, "total": 10}
     detalles = []
     archivo = tmp_path / "ticket_pers.pdf"
-    generar_ticket_personalizado(venta, detalles, str(archivo), datos_negocio={}, dte_data={})
+    dte_json = {
+        "identificacion": {
+            "ambiente": "00",
+            "codigoGeneracion": "ABC123",
+            "fecEmi": "2024-01-01",
+        }
+    }
+    generar_ticket_personalizado(
+        venta,
+        detalles,
+        str(archivo),
+        datos_negocio={},
+        dte_data={"dteJson": dte_json},
+    )
     assert archivo.exists()
     with fitz.open(archivo) as doc:
         text = "".join(p.get_text() for p in doc)

@@ -39,7 +39,7 @@ def test_generar_nce_detalles(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles, motivo="Dev")
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 10
@@ -65,7 +65,7 @@ def test_generar_nce_detalles_tributos(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     expected_iva = Decimal("10") * Decimal("0.13")
     assert data["resumen"]["tributos"][0]["valor"] == expected_iva
@@ -90,7 +90,7 @@ def test_generar_nce_detalles_monto_total(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
     resumen = nce["resumen"]
     expected_iva = Decimal("10") * Decimal("0.13")
@@ -118,7 +118,7 @@ def test_generar_nota_debito_detalles(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nde_desde_dte(db, dte_origen, detalles, Decimal("2.26"), "Ajuste")
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 2
@@ -127,7 +127,7 @@ def test_generar_nota_debito_detalles(monkeypatch):
     assert data["resumen"]["tributos"][0]["valor"] == expected_iva
     assert data["resumen"]["montoTotalOperacion"] == Decimal("2") + expected_iva
     doc_rel = data["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["tipoDocumento"] == "01"
 
 
 def test_generar_nde_respeta_total(monkeypatch):
@@ -139,7 +139,7 @@ def test_generar_nde_respeta_total(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 9)
     db.add_detalle_venta(venta_id, pid, 1, 7.96, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     detalles = [
         {
             "cantidad": 1,
@@ -162,7 +162,7 @@ def test_generar_nota_debito_precio_4_decimales(monkeypatch):
     db = create_db()
     dte_origen = {
         "identificacion": {
-            "tipoDte": "03",
+            "tipoDte": "01",
             "codigoGeneracion": "UUID",
             "fecEmi": "2024-01-01",
         },
@@ -198,7 +198,7 @@ def test_iva_no_excesivo_en_nota(monkeypatch):
     db = create_db()
     dte_origen = {
         "identificacion": {
-            "tipoDte": "03",
+            "tipoDte": "01",
             "codigoGeneracion": "UUID",
             "fecEmi": "2024-01-01",
         },

@@ -32,7 +32,7 @@ def test_prorrateo_porcentaje(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 100)
     db.add_detalle_venta(venta_id, pid, 1, 100, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("0.1"))
     assert data["resumen"]["montoTotalOperacion"] == 10.0
 

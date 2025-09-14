@@ -1073,10 +1073,9 @@ class FacturacionTab(QWidget):
                         self, "Enviar a Hacienda", str(exc)
                     )
             else:
-                tipo = "03" if rtype == "ticket" else "01"
                 try:
                     resp = transmitir_dte(
-                        self.manager.db, entry.get("id"), tipo_dte=tipo
+                        self.manager.db, entry.get("id")
                     )
                     if resp.get("http_status") in {401, 403}:
                         QMessageBox.warning(self, "Enviar a Hacienda", token_msg)

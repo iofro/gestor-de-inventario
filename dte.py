@@ -1938,6 +1938,10 @@ def generar_dte_json(
 
     ``kwargs`` se acepta para compatibilidad con parámetros obsoletos.
     """
+    # Asegurar columnas necesarias para identificar la venta
+    db.ensure_column("ventas", "codigo_generacion", "TEXT")
+    db.ensure_column("ventas", "numero_control", "TEXT")
+    db.ensure_column("ventas", "correlativo", "INTEGER")
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if not row:
         raise ValueError("Venta no encontrada")
@@ -1991,9 +1995,26 @@ def generar_dte_json(
     cod_punto = (cod_punto_raw or punto_pref.rjust(4, "0"))[-4:].zfill(4)
     suc = _norm3(cod_estable)
     pto = _norm3(cod_punto)
-    # Generar identificadores con formatos oficiales
-    codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
+    # Usar identificadores existentes o generar nuevos si faltan
+    codigo_generacion = venta.get("codigo_generacion")
+    numero_control = venta.get("numero_control")
+    correlativo = venta.get("correlativo")
+    generated = False
+    if not codigo_generacion:
+        codigo_generacion = str(uuid.uuid4()).upper()
+        generated = True
+    if not numero_control or not correlativo:
+        numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
+        generated = True
+    if generated:
+        db.cursor.execute(
+            "UPDATE ventas SET codigo_generacion=?, numero_control=?, correlativo=? WHERE id=?",
+            (codigo_generacion, numero_control, correlativo, venta_id),
+        )
+        db.conn.commit()
+        venta["codigo_generacion"] = codigo_generacion
+        venta["numero_control"] = numero_control
+        venta["correlativo"] = correlativo
 
 
     now = datetime.now(TZ_EL_SALVADOR)

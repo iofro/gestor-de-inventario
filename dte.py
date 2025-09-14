@@ -674,9 +674,13 @@ def _build_receptor_direccion(src: dict) -> dict:
     dep_code = dep_code or dep_inferred
     if dep_code is None or muni_code is None:
         warnings.warn(
-            "Información de dirección incompleta; la factura se generará con campos nulos",
+            "Información de dirección incompleta; usando dirección por defecto",
             UserWarning,
         )
+        dep_code = DEFAULT_ADDRESS["departamento"]
+        muni_code = DEFAULT_ADDRESS["municipio"]
+        if not complemento or len(complemento) < 5:
+            complemento = DEFAULT_ADDRESS["complemento"]
 
     return {
         "departamento": dep_code,
@@ -751,21 +755,16 @@ def norm_receptor(
     mun = d.get("municipio")
 
     is_cf = tipo == "37" and num == "CONSUMIDOR"
-    fallback_addr = es_ticket or is_cf
+    missing_addr = dep is None or mun is None
+    fallback_addr = es_ticket or is_cf or missing_addr
 
-    if dep is None or mun is None:
-        if fallback_addr:
-            warnings.warn(
-                "Dirección incompleta; usando dirección por defecto",
-                UserWarning,
-            )
-            dep = DEFAULT_ADDRESS["departamento"]
-            mun = DEFAULT_ADDRESS["municipio"]
-        else:
-            if dep is not None or mun is not None:
-                warnings.warn(
-                    "Dirección incompleta; validación omitida", UserWarning
-                )
+    if missing_addr:
+        warnings.warn(
+            "Dirección incompleta; usando dirección por defecto",
+            UserWarning,
+        )
+        dep = DEFAULT_ADDRESS["departamento"]
+        mun = DEFAULT_ADDRESS["municipio"]
     else:
         try:
             dep, mun = validar_dep_muni_por_catalogo(

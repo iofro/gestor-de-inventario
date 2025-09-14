@@ -4496,20 +4496,68 @@ def transmitir_dte(
     """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
     ``tipo_dte`` permite especificar el código del documento a transmitir,
-    usando ``"01"`` para facturas y ``"03"`` para tickets.
+    usando ``"01"`` para facturas y ``"03"`` para tickets. Los reenvíos
+    reutilizan el mismo ``codigoGeneracion`` previamente guardado.
     """
-
     if modo is None:
         modo = get_default_modo_transmision()
 
-    if tipo_dte == "03":
-        data = generar_ticket_json(db, venta_id)
-    else:
-        data = generar_dte_json(db, venta_id)
-        if data.get("identificacion", {}).get("tipoDte") == "01":
-            recalcular_totales(data, incluir_iva=True)
+    data = None
+    extra = {}
+    row = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,)).fetchone()
+    if row and row[0]:
+        try:
+            extra = json.loads(row[0])
+        except Exception:
+            extra = {}
+    json_path = extra.get("dteJsonPath") or extra.get("dte_json_path")
+    if json_path and os.path.exists(json_path):
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            data = None
+    if data is None:
+        codigo = extra.get("codigoGeneracion") or extra.get("codigo_generacion")
+        if codigo:
+            base_dir = Path(__file__).resolve().parent / "dtes"
+            matches = list(base_dir.glob(f"*/{codigo}/*/documento.json"))
+            if matches:
+                json_path = str(matches[-1])
+                try:
+                    with open(matches[-1], "r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    db.update_venta_extra(venta_id, {"dteJsonPath": json_path})
+                except Exception:
+                    data = None
 
-    data = apply_schema_patch(data)
+    row = db.cursor.execute(
+        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        (venta_id,),
+    ).fetchone()
+    success = {"transmitido", "recibido", "aceptado", "procesado"}
+    if row and str(row["estado"]).lower() in success:
+        raise ValueError("El DTE ya fue enviado")
+
+    if data is None:
+        if tipo_dte == "03":
+            data = generar_ticket_json(db, venta_id)
+        else:
+            data = generar_dte_json(db, venta_id)
+            if data.get("identificacion", {}).get("tipoDte") == "01":
+                recalcular_totales(data, incluir_iva=True)
+        data = apply_schema_patch(data)
+        json_path = save_dte_json(data)
+        ident = data.get("identificacion", {})
+        updates = {}
+        if ident.get("codigoGeneracion"):
+            updates["codigoGeneracion"] = ident["codigoGeneracion"]
+        if json_path:
+            updates["dteJsonPath"] = json_path
+        if updates:
+            db.update_venta_extra(venta_id, updates)
+    else:
+        data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
     # La validación de esquema se omite para permitir la transmisión sin
     # interrupciones por inconsistencias.

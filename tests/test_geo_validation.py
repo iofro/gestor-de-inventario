@@ -39,3 +39,13 @@ def test_norm_receptor_cf_missing_geo_uses_default():
         "complemento": DEFAULT_ADDRESS["complemento"],
     }
 
+
+def test_norm_receptor_missing_geo_uses_default():
+    r = {"nit": "06142501751015", "direccion": {"complemento": "abc"}}
+    res = norm_receptor(r)
+    assert res["direccion"] == {
+        "departamento": DEFAULT_ADDRESS["departamento"],
+        "municipio": DEFAULT_ADDRESS["municipio"],
+        "complemento": DEFAULT_ADDRESS["complemento"],
+    }
+

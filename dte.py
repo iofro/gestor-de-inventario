@@ -4207,23 +4207,19 @@ def _dte_base_dir(dte_data: dict, fallido: bool = False, root: str | None = None
 
 
 def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
-    """Guarda el JSON y JWS usando estructura versionada por hash."""
+    """Guarda únicamente el JSON original y el estado final del DTE."""
     try:
         base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
-        jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
-            sobre_path = os.path.join(
-                version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
-            )
-            _write_json(sobre_path, sobre)
+            versioned_dte.save_estado(version_dir, sobre)
     except Exception:
         pass
 
 
 def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: str) -> str:
-    """Move pending DTE directory to final location promoting existing JWS."""
+    """Move pending DTE directory to final location keeping only JSON files."""
     try:
         version_dir = os.path.dirname(json_path)
         pend_root = os.path.join(os.path.dirname(__file__), PENDIENTES_DIR)
@@ -4245,15 +4241,13 @@ def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: 
             shutil.rmtree(pend_codigo_dir, ignore_errors=True)
         except Exception:
             pass
-        try:
-            meta_path = os.path.join(dest_dir, "metadata.json")
-            with open(meta_path, "r", encoding="utf-8") as fh:
-                meta = json.load(fh)
-            firmas = meta.get("firmas", [])
-            if firmas:
-                versioned_dte.promote(dest_dir, firmas[-1]["archivo"])
-        except Exception:
-            pass
+        # Remove any leftover files besides JSON
+        for name in os.listdir(dest_dir):
+            if not name.endswith('.json'):
+                try:
+                    os.remove(os.path.join(dest_dir, name))
+                except Exception:
+                    pass
         return os.path.join(dest_dir, "documento.json")
     except Exception:
         return json_path
@@ -4621,7 +4615,6 @@ def transmitir_dte(
         modo = get_default_modo_transmision()
 
     data = None
-    jws_token = None
     extra = {}
     row = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if row and row[0]:
@@ -4638,17 +4631,8 @@ def transmitir_dte(
             try:
                 with open(path_obj, "r", encoding="utf-8") as fh:
                     data = json.load(fh)
-                meta_path = path_obj.with_name("metadata.json")
-                with open(meta_path, "r", encoding="utf-8") as fh:
-                    meta = json.load(fh)
-                firmas = meta.get("firmas", [])
-                if firmas:
-                    jws_path = path_obj.with_name(firmas[-1]["archivo"])
-                    with open(jws_path, "r", encoding="utf-8") as fh:
-                        jws_token = fh.read()
             except Exception:
                 data = None
-                jws_token = None
 
     row = db.cursor.execute(
         "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
@@ -4658,7 +4642,7 @@ def transmitir_dte(
     if row and str(row["estado"]).lower() in success:
         raise ValueError("El DTE ya fue enviado")
 
-    if data is None or jws_token is None:
+    if data is None:
         raise ValueError("DTE no preparado para envío")
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
@@ -4670,6 +4654,7 @@ def transmitir_dte(
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
+    jws_token = jws.sign_json(data)
     resp = _enviar_documento(db, venta_id, data, modo, jws_token=jws_token)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
@@ -4969,7 +4954,7 @@ def _enviar_documento(
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
 
-    signed = jws_token or jws.sign_json(data)
+    signed = jws.sign_json(data)
 
     if modo == "contingencia":
         if pend_json_path:
@@ -5099,19 +5084,8 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         ident.get("numeroControl"),
         "NotaCredito",
     )
-    jws_path = os.path.splitext(json_path)[0] + ".jws"
-    jws_token = None
-    if os.path.exists(jws_path):
-        try:
-            with open(jws_path, "r", encoding="utf-8") as fh:
-                jws_token = fh.read()
-        except Exception:
-            jws_token = None
-    if jws_token is None:
-        save_file(json_path, stable_stringify(data, indent=2))
-        token = sign_json(data)
-        jws_token = token.rstrip("\n")
-        save_file(jws_path, jws_token, add_final_newline=False)
+    save_file(json_path, stable_stringify(data, indent=2))
+    jws_token = sign_json(data).rstrip("\n")
     return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 
@@ -5142,19 +5116,8 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         ident.get("numeroControl"),
         "NotaDebito",
     )
-    jws_path = os.path.splitext(json_path)[0] + ".jws"
-    jws_token = None
-    if os.path.exists(jws_path):
-        try:
-            with open(jws_path, "r", encoding="utf-8") as fh:
-                jws_token = fh.read()
-        except Exception:
-            jws_token = None
-    if jws_token is None:
-        save_file(json_path, stable_stringify(data, indent=2))
-        token = sign_json(data)
-        jws_token = token.rstrip("\n")
-        save_file(jws_path, jws_token, add_final_newline=False)
+    save_file(json_path, stable_stringify(data, indent=2))
+    jws_token = sign_json(data).rstrip("\n")
     return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
 
 

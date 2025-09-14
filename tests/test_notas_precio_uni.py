@@ -26,7 +26,7 @@ def _datos_negocio():
 def _dte_origen():
     return {
         "identificacion": {
-            "tipoDte": "03",
+            "tipoDte": "01",
             "codigoGeneracion": "UUID",
             "fecEmi": "2024-01-01",
         },

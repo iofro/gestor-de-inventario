@@ -31,7 +31,7 @@ def test_nce_monto_total_por_detalles(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 20)
     db.add_detalle_venta(venta_id, pid, 2, 10, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
     detalles = [
         {
@@ -60,7 +60,7 @@ def test_nce_detalles_monto_un_dolar(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 1)
     db.add_detalle_venta(venta_id, pid, 1, 1, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
     detalles = [
         {

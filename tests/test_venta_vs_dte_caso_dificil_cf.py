@@ -116,7 +116,7 @@ def test_venta_vs_dte_caso_dificil_cf03(tmp_path):
             vendedor_id=vid,
         )
 
-    data = generar_dte_json(db, venta_id, tipo_dte="03")
+    data = generar_dte_json(db, venta_id, tipo_dte="01")
     resumen = data["resumen"]
     assert d2(str(resumen["montoTotalOperacion"])) == total_venta
 

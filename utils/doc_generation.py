@@ -2,11 +2,10 @@ import json
 import os
 import uuid
 import logging
-import shutil
 
 import dte
 from factura_sv import generar_factura_electronica_pdf
-from ticket_pdf import generar_ticket_personalizado
+from ticket_pdf import generar_ticket_personalizado, generar_ticket_fe_pdf
 from dte import generar_ticket_json, generar_dte_json, d4, generar_cabecera_dte_data
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json
@@ -388,19 +387,11 @@ def generate_invoice_pdf(manager, venta_id):
     try:
         pend_json_path = dte.save_dte_json(json_data)
         version_dir = os.path.dirname(pend_json_path)
-        try:
-            shutil.copy(file_path, os.path.join(version_dir, "documento.pdf"))
-        except Exception:
-            pass
         if jws_token:
             try:
-                jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
                 sobre = dte.construir_sobre_recepcion(jws_token, json_data)
                 if sobre.get("estado") != "Error":
-                    sobre_path = os.path.join(
-                        version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
-                    )
-                    dte._write_json(sobre_path, sobre)
+                    versioned_dte.save_estado(version_dir, sobre)
             except Exception:
                 pass
         try:
@@ -493,19 +484,11 @@ def generate_ticket_pdf(manager, venta_id):
     try:
         pend_json_path = dte.save_dte_json(ticket_json)
         version_dir = os.path.dirname(pend_json_path)
-        try:
-            shutil.copy(filename, os.path.join(version_dir, "documento.pdf"))
-        except Exception:
-            pass
         if jws_token:
             try:
-                jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
                 sobre = dte.construir_sobre_recepcion(jws_token, ticket_json)
                 if sobre.get("estado") != "Error":
-                    sobre_path = os.path.join(
-                        version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
-                    )
-                    dte._write_json(sobre_path, sobre)
+                    versioned_dte.save_estado(version_dir, sobre)
             except Exception:
                 pass
         try:
@@ -516,7 +499,10 @@ def generate_ticket_pdf(manager, venta_id):
         pass
     dte_data = dict(extra)
     dte_data["dteJson"] = ticket_json
-    generar_ticket_personalizado(venta, detalles, filename, dte_data=dte_data)
+    if ticket_json.get("identificacion", {}).get("tipoDte") == "01" and extra.get("es_ticket"):
+        generar_ticket_fe_pdf(venta, detalles, filename, dte_data=dte_data)
+    else:
+        generar_ticket_personalizado(venta, detalles, filename, dte_data=dte_data)
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     manager.db.add_ticket_pdf(venta_id, filename)

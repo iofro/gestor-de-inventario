@@ -1,5 +1,6 @@
 import os
 from utils import docs
+from dte import DEFAULT_ADDRESS
 
 
 def test_generate_document_name():
@@ -33,3 +34,9 @@ def test_build_invoice_json_preserves_address():
     assert rec.get('nrc') == '123456-7'
     assert rec.get('telefono') == '2222-3333'
     assert rec.get('correo') == 'ariel@example.com'
+
+
+def test_build_invoice_json_uses_default_address():
+    cliente = {'nombre': 'Ariel', 'direccion': 'abc'}
+    data = docs.build_invoice_json({'fecha': '2024-01-01'}, cliente, [])
+    assert data.get('receptor', {}).get('direccion') == DEFAULT_ADDRESS

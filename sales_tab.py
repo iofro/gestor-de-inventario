@@ -18,7 +18,6 @@ from PyQt5.QtWidgets import (
     QSizePolicy,
     QScrollArea,
 
-    QInputDialog,
     QDialog,
     QCheckBox,
     QComboBox,
@@ -26,10 +25,8 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QUrl, QSize
 from PyQt5.QtGui import QDesktopServices, QPixmap
 from datetime import datetime, date, timedelta
-from factura_sv import generar_factura_electronica_pdf
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
-from dialogs import ManualInvoiceDialog
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
 import tempfile
 import subprocess
@@ -109,10 +106,6 @@ class SalesTab(QWidget):
         self.btn_estado = QPushButton("Estado")
         self.btn_estado.clicked.connect(self.show_sale_details)
         left_layout.addWidget(self.btn_estado)
-
-        self.new_invoice_btn = QPushButton("+ Generar nueva factura manual")
-        self.new_invoice_btn.clicked.connect(self.generate_manual_invoice)
-        left_layout.addWidget(self.new_invoice_btn)
 
         left_widget = QWidget()
         left_widget.setLayout(left_layout)
@@ -732,51 +725,5 @@ class SalesTab(QWidget):
             QMessageBox.critical(self, "Enviar por correo", message)
         self.email_thread = None
 
-
-    def generate_manual_invoice(self):
-        """Open dialog to create an invoice manually and preview the PDF."""
-        if self.sales_table.currentRow() < 0:
-            QMessageBox.warning(
-                self,
-                "Factura manual",
-                "No has seleccionado ninguna venta",
-            )
-            return
-        tipo = "Consumidor final"
-        if os.environ.get("QT_QPA_PLATFORM") != "offscreen":
-            tipo, ok = QInputDialog.getItem(
-                self,
-                "Tipo de factura",
-                "¿Qué tipo de factura desea generar?",
-                ["Consumidor final", "Crédito fiscal"],
-                0,
-                False,
-            )
-            if not ok:
-                return
-        dialog = ManualInvoiceDialog(self)
-        if tipo == "Crédito fiscal":
-            dialog.type_combo.setCurrentIndex(1)
-        else:
-            dialog.type_combo.setCurrentIndex(0)
-        if dialog.exec_() == QDialog.Accepted:
-            data = dialog.get_data()
-            venta = {k: v for k, v in data.items() if k not in {"cliente", "detalles", "tipo"}}
-            detalles = data.get("detalles", [])
-            cliente = data.get("cliente", {})
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
-                temp_file = tmp.name
-            generar_factura_electronica_pdf(
-                venta,
-                detalles,
-                cliente,
-                {},
-                tipo.title(),
-                archivo=temp_file,
-                codigo_generacion=venta.get("codigo_generacion", ""),
-                numero_control=venta.get("numero_control", ""),
-                sello_recepcion=venta.get("sello_recepcion", ""),
-            )
-            QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(temp_file)))
 
 

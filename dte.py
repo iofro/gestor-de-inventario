@@ -1990,9 +1990,33 @@ def generar_dte_json(
     cod_punto = (cod_punto_raw or punto_pref.rjust(4, "0"))[-4:].zfill(4)
     suc = _norm3(cod_estable)
     pto = _norm3(cod_punto)
-    # Generar identificadores con formatos oficiales
-    codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
+    # Reutilizar identificadores si ya existen en la venta
+    codigo_generacion = (
+        venta.get("codigo_generacion")
+        or extra.get("codigoGeneracion")
+        or extra.get("codigo_generacion")
+    )
+    numero_control = (
+        venta.get("numero_control")
+        or extra.get("numeroControl")
+        or extra.get("numero_control")
+    )
+    correlativo = None
+    if codigo_generacion and numero_control:
+        m = re.search(r"^DTE-\d{2}-S\d{3}P\d{3}-(\d{15})$", numero_control)
+        if m:
+            try:
+                correlativo = int(m.group(1))
+            except ValueError:
+                correlativo = None
+    else:
+        # Generar identificadores con formatos oficiales
+        codigo_generacion = str(uuid.uuid4()).upper()
+        numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
+        db.update_venta_extra(
+            venta_id,
+            {"codigoGeneracion": codigo_generacion, "numeroControl": numero_control},
+        )
 
 
     now = datetime.now(TZ_EL_SALVADOR)

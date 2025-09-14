@@ -52,18 +52,15 @@ def _setup_db():
     return db, venta_id
 
 
-def test_correlativo_incrementa_secuencialmente(tmp_path):
+def test_identificadores_reutilizados(tmp_path):
     _setup_datos_negocio(tmp_path)
     db, venta_id = _setup_db()
 
     dte1 = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     dte2 = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
-    dte3 = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
 
-    n1 = dte1["identificacion"]["numeroControl"]
-    n2 = dte2["identificacion"]["numeroControl"]
-    n3 = dte3["identificacion"]["numeroControl"]
+    ident1 = dte1["identificacion"]
+    ident2 = dte2["identificacion"]
 
-    assert n1.endswith("000000000000001")
-    assert n2.endswith("000000000000002")
-    assert n3.endswith("000000000000003")
+    assert ident1["numeroControl"] == ident2["numeroControl"]
+    assert ident1["codigoGeneracion"] == ident2["codigoGeneracion"]

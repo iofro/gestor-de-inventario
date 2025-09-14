@@ -4166,9 +4166,7 @@ def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> N
 
 
 def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: str) -> str:
-    """Move pending DTE directory to final location and attach JWS.
-
-    Returns the new ``documento.json`` path."""
+    """Move pending DTE directory to final location promoting existing JWS."""
     try:
         version_dir = os.path.dirname(json_path)
         pend_root = os.path.join(os.path.dirname(__file__), PENDIENTES_DIR)
@@ -4190,11 +4188,15 @@ def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: 
             shutil.rmtree(pend_codigo_dir, ignore_errors=True)
         except Exception:
             pass
-        jws_name = versioned_dte.add_jws(dest_dir, jws_token, origen="auto")
-        sobre = construir_sobre_recepcion(jws_token, dte_data)
-        if sobre.get("estado") != "Error":
-            sobre_path = os.path.join(dest_dir, jws_name.replace(".jws", "_sobre_hacienda.json"))
-            _write_json(sobre_path, sobre)
+        try:
+            meta_path = os.path.join(dest_dir, "metadata.json")
+            with open(meta_path, "r", encoding="utf-8") as fh:
+                meta = json.load(fh)
+            firmas = meta.get("firmas", [])
+            if firmas:
+                versioned_dte.promote(dest_dir, firmas[-1]["archivo"])
+        except Exception:
+            pass
         return os.path.join(dest_dir, "documento.json")
     except Exception:
         return json_path
@@ -4561,6 +4563,7 @@ def transmitir_dte(
         modo = get_default_modo_transmision()
 
     data = None
+    jws_token = None
     extra = {}
     row = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if row and row[0]:
@@ -4577,26 +4580,17 @@ def transmitir_dte(
             try:
                 with open(path_obj, "r", encoding="utf-8") as fh:
                     data = json.load(fh)
+                meta_path = path_obj.with_name("metadata.json")
+                with open(meta_path, "r", encoding="utf-8") as fh:
+                    meta = json.load(fh)
+                firmas = meta.get("firmas", [])
+                if firmas:
+                    jws_path = path_obj.with_name(firmas[-1]["archivo"])
+                    with open(jws_path, "r", encoding="utf-8") as fh:
+                        jws_token = fh.read()
             except Exception:
                 data = None
-    if data is None:
-        codigo = extra.get("codigoGeneracion") or extra.get("codigo_generacion")
-        if codigo:
-            base_root = Path(__file__).resolve().parent
-            for root_name in ("dtes", "dte_fallidos"):
-                matches = list((base_root / root_name).glob(f"*/{codigo}/*/documento.json"))
-                if matches:
-                    raise ValueError("El DTE ya fue enviado")
-            pend_dir = base_root / PENDIENTES_DIR
-            matches = list(pend_dir.glob(f"*/{codigo}/*/documento.json"))
-            if matches:
-                json_path = str(matches[-1])
-                try:
-                    with open(matches[-1], "r", encoding="utf-8") as fh:
-                        data = json.load(fh)
-                    db.update_venta_extra(venta_id, {"dteJsonPath": json_path})
-                except Exception:
-                    data = None
+                jws_token = None
 
     row = db.cursor.execute(
         "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
@@ -4606,25 +4600,9 @@ def transmitir_dte(
     if row and str(row["estado"]).lower() in success:
         raise ValueError("El DTE ya fue enviado")
 
-    if data is None:
-        if tipo_dte == "03":
-            data = generar_ticket_json(db, venta_id)
-        else:
-            data = generar_dte_json(db, venta_id)
-            if data.get("identificacion", {}).get("tipoDte") == "01":
-                recalcular_totales(data, incluir_iva=True)
-        data = apply_schema_patch(data)
-        json_path = save_dte_json(data)
-        ident = data.get("identificacion", {})
-        updates = {}
-        if ident.get("codigoGeneracion"):
-            updates["codigoGeneracion"] = ident["codigoGeneracion"]
-        if json_path:
-            updates["dteJsonPath"] = json_path
-        if updates:
-            db.update_venta_extra(venta_id, updates)
-    else:
-        data = apply_schema_patch(data)
+    if data is None or jws_token is None:
+        raise ValueError("DTE no preparado para envío")
+    data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
     # La validación de esquema se omite para permitir la transmisión sin
     # interrupciones por inconsistencias.
@@ -4634,7 +4612,7 @@ def transmitir_dte(
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
-    resp = _enviar_documento(db, venta_id, data, modo)
+    resp = _enviar_documento(db, venta_id, data, modo, jws_token=jws_token)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
     return resp

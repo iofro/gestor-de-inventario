@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import logging
+import shutil
 
 import dte
 from factura_sv import generar_factura_electronica_pdf
@@ -10,6 +11,7 @@ from dte import generar_ticket_json, generar_dte_json, d4
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
+from utils import versioned_dte
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.sanitize import limpiar_documentos
 
@@ -358,12 +360,31 @@ def generate_invoice_pdf(manager, venta_id):
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
+    jws_token = None
     try:
-        jws_path = sign_and_save(json_data, json_path)
+        _, jws_token = sign_and_save(json_data, json_path, return_token=True)
+    except Exception:
+        pass
+    try:
+        pend_json_path = dte.save_dte_json(json_data)
+        version_dir = os.path.dirname(pend_json_path)
         try:
-            with open(jws_path, "r", encoding="utf-8") as fh:
-                jws_token = fh.read()
-            dte._save_signed_dte(json_data, jws_token)
+            shutil.copy(file_path, os.path.join(version_dir, "documento.pdf"))
+        except Exception:
+            pass
+        if jws_token:
+            try:
+                jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
+                sobre = dte.construir_sobre_recepcion(jws_token, json_data)
+                if sobre.get("estado") != "Error":
+                    sobre_path = os.path.join(
+                        version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
+                    )
+                    dte._write_json(sobre_path, sobre)
+            except Exception:
+                pass
+        try:
+            manager.db.update_venta_extra(venta_id, {"dteJsonPath": pend_json_path})
         except Exception:
             pass
     except Exception:
@@ -444,8 +465,33 @@ def generate_ticket_pdf(manager, venta_id):
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
+    jws_token = None
     try:
-        sign_and_save(ticket_json, json_path)
+        _, jws_token = sign_and_save(ticket_json, json_path, return_token=True)
+    except Exception:
+        pass
+    try:
+        pend_json_path = dte.save_dte_json(ticket_json)
+        version_dir = os.path.dirname(pend_json_path)
+        try:
+            shutil.copy(filename, os.path.join(version_dir, "documento.pdf"))
+        except Exception:
+            pass
+        if jws_token:
+            try:
+                jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
+                sobre = dte.construir_sobre_recepcion(jws_token, ticket_json)
+                if sobre.get("estado") != "Error":
+                    sobre_path = os.path.join(
+                        version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
+                    )
+                    dte._write_json(sobre_path, sobre)
+            except Exception:
+                pass
+        try:
+            manager.db.update_venta_extra(venta_id, {"dteJsonPath": pend_json_path})
+        except Exception:
+            pass
     except Exception:
         pass
     dte_data = dict(extra)

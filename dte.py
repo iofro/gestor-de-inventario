@@ -3062,15 +3062,16 @@ def validate_dte_json(
             "psv",
             "noGravado",
         }
+    allowed_item_keys.add("ivaItem")
     precio_key = "precioUni"
-    iva_key = None
+    iva_key = "ivaItem"
 
     for item in cuerpo:
         # --- Normalización de nombres ---
         if "precioUnitario" in item:
             raise ValueError("Usar 'precioUni' en lugar de 'precioUnitario'")
 
-        for k in ("montoIva", "iva", "ivaItem"):
+        for k in ("montoIva", "iva"):
             if k in item:
                 item.pop(k)
 
@@ -3238,11 +3239,12 @@ def validate_dte_json(
                 pass
     payload["resumen"] = resumen
 
-    # Recalcular totales y ajustar discrepancias (excepto para FC ya normalizado)
-    if tipo_dte != "03":
-        cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
-        if cambios:
-            print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
+    # Recalcular totales y ajustar discrepancias
+    cambios = recalcular_totales(
+        payload, precios_incluyen_iva=precios_flag, incluir_iva=True
+    )
+    if cambios:
+        print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 
     ident = payload.get("identificacion", {})
     if ident.get("tipoDte") == "01":

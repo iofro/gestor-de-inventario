@@ -8,7 +8,6 @@ import os
 import pytest
 import auth
 from tests.conftest import make_jws
-from utils import versioned_dte
 
 
 def create_sale(db):
@@ -28,8 +27,6 @@ def test_transmitir_dte_contingencia(monkeypatch, tmp_path):
     data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": "ABC"}, "resumen": {"totalLetras": "X"}}
     pend_path = dte.save_dte_json(data)
     version_dir = os.path.dirname(pend_path)
-    token = make_jws(data)
-    versioned_dte.add_jws(version_dir, token)
     db.update_venta_extra(venta, {"dteJsonPath": pend_path})
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
@@ -51,8 +48,6 @@ def test_transmitir_dte_default_contingencia(monkeypatch, tmp_path):
     data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": "DEF"}, "resumen": {"totalLetras": "X"}}
     pend_path = dte.save_dte_json(data)
     version_dir = os.path.dirname(pend_path)
-    token = make_jws(data)
-    versioned_dte.add_jws(version_dir, token)
     db.update_venta_extra(venta, {"dteJsonPath": pend_path})
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
@@ -92,17 +87,16 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     }
     pend_path = dte.save_dte_json(data)
     version_dir = os.path.dirname(pend_path)
-    token = make_jws(data)
-    versioned_dte.add_jws(version_dir, token)
     db.update_venta_extra(venta, {"dteJsonPath": pend_path})
+    token = make_jws(data)
     token_calls = {"count": 0}
-    def fake_get_token():
+    def fake_sign_json(payload):
         token_calls["count"] += 1
-        return "Bearer JWT"
-    monkeypatch.setattr(auth, "get_token", fake_get_token)
+        return token
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign_json)
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
-    monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not sign")))
     calls = []
     def fake_post(url, json=None, headers=None, timeout=20):
         calls.append((url, headers, json))

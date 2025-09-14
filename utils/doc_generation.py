@@ -2,7 +2,6 @@ import json
 import os
 import uuid
 import logging
-import shutil
 
 import dte
 from factura_sv import generar_factura_electronica_pdf
@@ -388,19 +387,11 @@ def generate_invoice_pdf(manager, venta_id):
     try:
         pend_json_path = dte.save_dte_json(json_data)
         version_dir = os.path.dirname(pend_json_path)
-        try:
-            shutil.copy(file_path, os.path.join(version_dir, "documento.pdf"))
-        except Exception:
-            pass
         if jws_token:
             try:
-                jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
                 sobre = dte.construir_sobre_recepcion(jws_token, json_data)
                 if sobre.get("estado") != "Error":
-                    sobre_path = os.path.join(
-                        version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
-                    )
-                    dte._write_json(sobre_path, sobre)
+                    versioned_dte.save_estado(version_dir, sobre)
             except Exception:
                 pass
         try:
@@ -493,19 +484,11 @@ def generate_ticket_pdf(manager, venta_id):
     try:
         pend_json_path = dte.save_dte_json(ticket_json)
         version_dir = os.path.dirname(pend_json_path)
-        try:
-            shutil.copy(filename, os.path.join(version_dir, "documento.pdf"))
-        except Exception:
-            pass
         if jws_token:
             try:
-                jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
                 sobre = dte.construir_sobre_recepcion(jws_token, ticket_json)
                 if sobre.get("estado") != "Error":
-                    sobre_path = os.path.join(
-                        version_dir, jws_name.replace(".jws", "_sobre_hacienda.json")
-                    )
-                    dte._write_json(sobre_path, sobre)
+                    versioned_dte.save_estado(version_dir, sobre)
             except Exception:
                 pass
         try:

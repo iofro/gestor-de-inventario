@@ -338,10 +338,6 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
         data["identificacion"]["numeroControl"],
         "NotaCredito",
     )
-    jws_path = os.path.splitext(json_path)[0] + ".jws"
-    token = make_jws(data)
-    with open(jws_path, "w", encoding="utf-8") as fh:
-        fh.write(token)
 
     captured = {}
 
@@ -376,8 +372,8 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
 
     res = enviar_nota_credito(db, nota_id)
     assert res["estado"] == "Transmitido"
-    assert captured["token"] == token
-    assert sign_calls["count"] == 0
+    assert captured["token"] == "SIGNED"
+    assert sign_calls["count"] == 1
 
 
 def test_post_dte_packs_jws_in_json_body(monkeypatch):

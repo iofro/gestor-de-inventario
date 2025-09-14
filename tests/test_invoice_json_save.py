@@ -156,9 +156,9 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
     pend_root = tmp_path / dte.PENDIENTES_DIR
     documento = next(pend_root.rglob("documento.json"))
     version_dir = documento.parent
-    assert (version_dir / "documento.pdf").exists()
-    assert any(f.name.endswith(".jws") for f in version_dir.iterdir())
-    assert any(f.name.endswith("_sobre_hacienda.json") for f in version_dir.iterdir())
+    assert not (version_dir / "documento.pdf").exists()
+    assert not any(f.name.endswith(".jws") for f in version_dir.iterdir())
+    assert (version_dir / "estado.json").exists()
 
 
 def test_generate_invoice_pdf_propagates_error(monkeypatch):

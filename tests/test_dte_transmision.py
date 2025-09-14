@@ -24,14 +24,18 @@ def create_sale(db):
 def test_transmitir_dte_contingencia(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
-    monkeypatch.setattr(dte, "generar_dte_json", lambda *a, **k: {"resumen": {"totalLetras": "X"}})
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": "ABC"}, "resumen": {"totalLetras": "X"}}
+    pend_path = dte.save_dte_json(data)
+    version_dir = os.path.dirname(pend_path)
+    token = make_jws(data)
+    versioned_dte.add_jws(version_dir, token)
+    db.update_venta_extra(venta, {"dteJsonPath": pend_path})
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
-    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
     monkeypatch.setattr(auth, "get_token", lambda: "T")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
-    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
     res = transmitir_dte(db, venta, modo="contingencia")
     assert res["estado"] == "Pendiente"
     row = db.cursor.execute(
@@ -40,24 +44,26 @@ def test_transmitir_dte_contingencia(monkeypatch, tmp_path):
     assert row["estado"] == "Pendiente"
 
 
-def test_transmitir_dte_default_contingencia(monkeypatch):
+def test_transmitir_dte_default_contingencia(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
-
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": "DEF"}, "resumen": {"totalLetras": "X"}}
+    pend_path = dte.save_dte_json(data)
+    version_dir = os.path.dirname(pend_path)
+    token = make_jws(data)
+    versioned_dte.add_jws(version_dir, token)
+    db.update_venta_extra(venta, {"dteJsonPath": pend_path})
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
-    monkeypatch.setattr(dte, "generar_dte_json", lambda *a, **k: {"resumen": {"totalLetras": "X"}})
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
-    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
     monkeypatch.setattr(auth, "get_token", lambda: "T")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
     monkeypatch.setattr(
         "dte.requests.post",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
     )
-    monkeypatch.setattr("utils.jws.sign_json", lambda d: make_jws(d))
-
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Pendiente"
     row = db.cursor.execute(
@@ -67,105 +73,55 @@ def test_transmitir_dte_default_contingencia(monkeypatch):
     assert row["modo"] == "contingencia"
 
 
+
 def test_transmitir_dte_normal(monkeypatch, tmp_path):
     ambiente = "pruebas"
     db = DB(":memory:")
     venta = create_sale(db)
-
-    sign_calls = {"count": 0, "tokens": []}
-
-    def fake_sign(data):
-        sign_calls["count"] += 1
-        token = make_jws(data)
-        sign_calls["tokens"].append(token)
-        return token
-
-    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
-
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    data = {
+        "receptor": {"nombre": "Cliente"},
+        "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
+        "resumen": {"totalGravada": 10, "totalPagar": 10, "totalLetras": "DIEZ"},
+        "identificacion": {
+            "tipoDte": "01",
+            "version": 2,
+            "ambiente": "00",
+            "codigoGeneracion": "ABC",
+        },
+    }
+    pend_path = dte.save_dte_json(data)
+    version_dir = os.path.dirname(pend_path)
+    token = make_jws(data)
+    versioned_dte.add_jws(version_dir, token)
+    db.update_venta_extra(venta, {"dteJsonPath": pend_path})
     token_calls = {"count": 0}
-
     def fake_get_token():
         token_calls["count"] += 1
         return "Bearer JWT"
-
     monkeypatch.setattr(auth, "get_token", fake_get_token)
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
-    monkeypatch.setattr(
-        "dte.generar_dte_json",
-        lambda db_obj, vid: {
-            "receptor": {
-                "nombre": "Cliente",
-                "tipoDocumento": "36",
-                "numDocumento": "06149876543210",
-                "nrc": None,
-                "codActividad": None,
-                "descActividad": None,
-                "direccion": None,
-                "telefono": None,
-                "correo": None,
-            },
-            "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
-                "resumen": {
-                    "totalNoSuj": 0,
-                    "totalExenta": 0,
-                    "totalGravada": 10,
-                    "subTotalVentas": 10,
-                    "descuNoSuj": 0,
-                    "descuExenta": 0,
-                    "descuGravada": 0,
-                    "porcentajeDescuento": 0,
-                    "totalDescu": 0,
-                    "tributos": [],
-                    "subTotal": 10,
-                    "ivaRete1": 0,
-                    "reteRenta": 0,
-                    "montoTotalOperacion": 10,
-                    "totalNoGravado": 0,
-                    "totalPagar": 10,
-                    "totalLetras": "DIEZ",
-                    "saldoFavor": 0,
-                    "condicionOperacion": 1,
-                    "pagos": None,
-                    "numPagoElectronico": None,
-            },
-            "identificacion": {
-                "tipoDte": "01",
-                "version": 2,
-                "ambiente": "00",
-                "codigoGeneracion": "ABC",
-            },
-        },
-    )
-
+    monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not sign")))
     calls = []
-
     def fake_post(url, json=None, headers=None, timeout=20):
         calls.append((url, headers, json))
-
         class R:
             status_code = 200
-
             def json(self):
                 return {"estado": "Transmitido", "sello": "ABC123"}
-
             def raise_for_status(self):
                 pass
-
         return R()
-
     monkeypatch.setattr("dte.requests.post", fake_post)
-
     datos = {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": ambiente}}
     cfg_path = tmp_path / "datos_negocio.json"
     with open(cfg_path, "w", encoding="utf-8") as fh:
         json.dump(datos, fh)
     monkeypatch.setattr("dte.DATOS_NEGOCIO_PATH", str(cfg_path))
-
     res = transmitir_dte(db, venta)
     assert res["estado"] == "Transmitido"
     assert token_calls["count"] == 1
-    assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
     assert url == dte.DEFAULT_RECEPCION_URL
@@ -173,13 +129,12 @@ def test_transmitir_dte_normal(monkeypatch, tmp_path):
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
     assert headers["User-Agent"] == "Vertex-DTE/1.0"
-    assert body["documento"] in sign_calls["tokens"]
+    assert body["documento"] == token
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
     assert row["estado"] == "Transmitido"
     assert row["sello"] == "ABC123"
-
 
 def test_post_dte_normalizes_bearer(monkeypatch):
     captured = {}

@@ -476,8 +476,10 @@ class FacturacionTab(QWidget):
         filter_layout.addStretch(1)
         left_layout.addLayout(filter_layout)
 
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["ID", "Fecha", "Cliente", "Total", "Estado"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(
+            ["ID", "Fecha", "Cliente", "Total", "Estado", "Envio"]
+        )
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -620,10 +622,11 @@ class FacturacionTab(QWidget):
     def _get_invoices_from_db(self):
         """Return invoice entries stored in the database.
 
-        Stale records whose sale no longer exists or whose PDF file is
-        missing are removed to keep the table tidy. The remaining rows
-        are returned as a list of dictionaries compatible with
-        ``load_invoices``.
+        Unlike the previous implementation, records are no longer
+        deleted when their corresponding sale or files are missing. Such
+        entries are kept and flagged through the ``estado`` field so they
+        can be inspected from the UI. Additionally, the transmission
+        state stored in ``dte_envios`` is exposed via the ``envio`` key.
         """
 
         cur = self.manager.db.cursor
@@ -632,13 +635,13 @@ class FacturacionTab(QWidget):
         )
         records = cur.fetchall()
         rows = []
-        to_delete = []
         for rec in records:
             venta = self.manager.db.get_venta_by_id(rec["venta_id"])
             ruta = rec["ruta"]
-            if not venta or not ruta or not os.path.exists(ruta):
-                to_delete.append((rec["id"],))
-                continue
+            pdf_exists = bool(ruta and os.path.exists(ruta))
+            json_path = os.path.splitext(ruta)[0] + ".json" if ruta else None
+            json_exists = bool(json_path and os.path.exists(json_path))
+
             fecha_creacion = rec["fecha_creacion"] or ""
             fdate = None
             if fecha_creacion:
@@ -647,30 +650,61 @@ class FacturacionTab(QWidget):
                 except Exception:
                     fdate = None
             fecha_str = fdate.strftime("%Y-%m-%d %H:%M") if fdate else fecha_creacion
-            getter = getattr(self.manager.db, "get_cliente", None)
-            cliente = None
-            if venta.get("cliente_id") and getter:
-                try:
-                    cliente = getter(venta.get("cliente_id"))
-                except Exception:
-                    cliente = None
-            row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
-            rows.append(
-                {
-                    "row_type": row_type,
-                    "id": venta["id"],
-                    "name": os.path.splitext(os.path.basename(ruta))[0],
-                    "fecha": fecha_str,
-                    "_parsed_fecha": fdate,
-                    "cliente": cliente.get("nombre", "") if cliente else "",
-                    "total": venta["total"],
-                    "estado": "",
-                    "tipo": rec["tipo"],
-                }
-            )
-        if to_delete:
-            cur.executemany("DELETE FROM facturas_pdf WHERE id=?", to_delete)
-            self.manager.db.conn.commit()
+
+            estado = ""
+            row_type = "venta"
+            cliente_nombre = ""
+            total = None
+            if venta:
+                getter = getattr(self.manager.db, "get_cliente", None)
+                if venta.get("cliente_id") and getter:
+                    try:
+                        cliente = getter(venta.get("cliente_id"))
+                        cliente_nombre = cliente.get("nombre", "") if cliente else ""
+                    except Exception:
+                        cliente_nombre = ""
+                total = venta.get("total")
+                row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
+                if not (pdf_exists and json_exists):
+                    estado = "Incompleta"
+            else:
+                estado = "Sin venta"
+                row_type = "orphan"
+
+            envio = ""
+            env_row = cur.execute(
+                "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                (rec["venta_id"],),
+            ).fetchone()
+            if env_row:
+                est = str(env_row["estado"]).lower()
+                if est == "aceptado":
+                    envio = "Aceptado"
+                elif est == "rechazado":
+                    envio = "Rechazado"
+                elif est == "error":
+                    envio = "Error"
+                elif est in {"transmitido", "recibido", "procesado"}:
+                    envio = "Pendiente"
+                else:
+                    envio = "Pendiente"
+
+            row = {
+                "row_type": row_type,
+                "id": rec["venta_id"],
+                "name": os.path.splitext(os.path.basename(ruta or ""))[0],
+                "fecha": fecha_str,
+                "_parsed_fecha": fdate,
+                "cliente": cliente_nombre,
+                "total": total,
+                "estado": estado,
+                "envio": envio,
+                "tipo": rec["tipo"],
+            }
+            if row_type == "orphan":
+                row["pdf"] = ruta
+                row["json"] = json_path
+            rows.append(row)
         return rows
 
     def refresh_and_reload(self):
@@ -699,20 +733,6 @@ class FacturacionTab(QWidget):
 
         rows = self._scan_documents()
 
-        def _estado_desde_json(path):
-            """Return DTE state inferred from its JSON path."""
-            if not path:
-                return ""
-            norm = os.path.normpath(path)
-            base_dir = os.path.dirname(__file__)
-            aceptados = os.path.join(base_dir, "dtes") + os.sep
-            rechazados = os.path.join(base_dir, "dte_fallidos") + os.sep
-            if norm.startswith(aceptados):
-                return "Aceptado"
-            if norm.startswith(rechazados):
-                return "Rechazado"
-            return ""
-
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
@@ -729,10 +749,12 @@ class FacturacionTab(QWidget):
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
                 continue
-            estado = _estado_desde_json(r.get("json") or r.get("dteJsonPath"))
-            if estado:
-                r["estado"] = estado
-            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked() and not estado:
+            envio = r.get("envio", "")
+            if (
+                getattr(self, "sent_filter_cb", None)
+                and self.sent_filter_cb.isChecked()
+                and envio not in {"Aceptado", "Rechazado", "Error"}
+            ):
                 rows.remove(r)
                 continue
 
@@ -763,7 +785,8 @@ class FacturacionTab(QWidget):
             else:
                 self.table.setItem(row, 3, QTableWidgetItem(""))
             self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
-            for col in range(5):
+            self.table.setItem(row, 5, QTableWidgetItem(v.get("envio", "")))
+            for col in range(6):
                 item = self.table.item(row, col)
                 if item:
                     item.setData(Qt.UserRole, v)
@@ -824,7 +847,17 @@ class FacturacionTab(QWidget):
             pdf = paths.get(".pdf")
             js = paths.get(".json")
             tipo = paths.get("tipo")
-            estado = "Completa" if pdf and js else "Incompleta"
+            estado = "Sin venta" if pdf and js else "Incompleta"
+            envio = "Pendiente"
+            if js:
+                norm = os.path.normpath(js)
+                base_dir = os.path.dirname(__file__)
+                aceptados = os.path.join(base_dir, "dtes") + os.sep
+                rechazados = os.path.join(base_dir, "dte_fallidos") + os.sep
+                if norm.startswith(aceptados):
+                    envio = "Aceptado"
+                elif norm.startswith(rechazados):
+                    envio = "Rechazado"
             numero = base
             fecha = ""
             cliente = ""
@@ -878,6 +911,7 @@ class FacturacionTab(QWidget):
                     "fecha": fecha,
                     "_parsed_fecha": fdate,
                     "estado": estado,
+                    "envio": envio,
                     "cliente": cliente,
                     "total": total,
                     "sign": signo,

@@ -59,12 +59,12 @@ def test_sent_filter_shows_accepted_and_rejected(qt_app, tmp_path, monkeypatch):
     tab = facturacion_tab.FacturacionTab(manager)
     tab.load_invoices()
     assert tab.table.rowCount() == 3
-    estados = {tab.table.item(r, 4).text() for r in range(tab.table.rowCount())}
-    assert "Aceptado" in estados
-    assert "Rechazado" in estados
+    envios = {tab.table.item(r, 5).text() for r in range(tab.table.rowCount())}
+    assert "Aceptado" in envios
+    assert "Rechazado" in envios
 
     tab.sent_filter_cb.setChecked(True)
     tab.load_invoices()
     assert tab.table.rowCount() == 2
-    estados = {tab.table.item(r, 4).text() for r in range(tab.table.rowCount())}
-    assert estados == {"Aceptado", "Rechazado"}
+    envios = {tab.table.item(r, 5).text() for r in range(tab.table.rowCount())}
+    assert envios == {"Aceptado", "Rechazado"}

@@ -689,10 +689,21 @@ class FacturacionTab(QWidget):
         tipo = self.tipo_filter.currentText()
 
         rows = self._scan_documents()
-        envio_estado = {
-            env.get("venta_id"): env.get("estado")
-            for env in self.manager.db.listar_dtes()
-        }
+
+        def _estado_desde_json(path):
+            """Return DTE state inferred from its JSON path."""
+            if not path:
+                return ""
+            norm = os.path.normpath(path)
+            base_dir = os.path.dirname(__file__)
+            aceptados = os.path.join(base_dir, "dtes") + os.sep
+            rechazados = os.path.join(base_dir, "dte_fallidos") + os.sep
+            if norm.startswith(aceptados):
+                return "Aceptado"
+            if norm.startswith(rechazados):
+                return "Rechazado"
+            return ""
+
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
@@ -709,10 +720,10 @@ class FacturacionTab(QWidget):
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
                 continue
-            estado = envio_estado.get(r.get("id"))
+            estado = _estado_desde_json(r.get("json") or r.get("dteJsonPath"))
             if estado:
                 r["estado"] = estado
-            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked() and not r.get("estado"):
+            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked() and not estado:
                 rows.remove(r)
                 continue
 

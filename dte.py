@@ -24,6 +24,8 @@ from utils.catalogos import (
     TRIBUTOS_PERMITIDOS_ITEM,
     TRIBUTOS_PERMITIDOS_RESUMEN,
     UNIDADES_MEDIDA_PERMITIDAS,
+    validar_dep_muni_por_catalogo,
+    GeoValidationError,
 )
 import logging
 import warnings
@@ -475,6 +477,16 @@ def _clean_dui(dui):
     return digits or None
 
 
+def _format_dui(dui):
+    """Devuelve DUI en formato ########-# o None si no tiene 9 dígitos."""
+    if not dui:
+        return None
+    digits = re.sub(r"\D", "", str(dui))
+    if len(digits) != 9:
+        return None
+    return f"{digits[:8]}-{digits[8]}"
+
+
 # --- Dirección --------------------------------------------------------------
 
 # Mapeos básicos de departamentos y municipios utilizados para normalizar la
@@ -679,6 +691,13 @@ def _build_receptor_direccion(src: dict) -> dict:
         "municipio": muni_code,
         "complemento": complemento,
     }
+
+
+DEFAULT_ADDRESS = {
+    "departamento": "06",
+    "municipio": "23",
+    "complemento": "San Salvador",
+}
 
 
 # --- Helpers ---------------------------------------------------------------
@@ -1995,33 +2014,13 @@ def generar_dte_json(
 
     rec = _drop_empty(rec)
 
-    if extra.get("es_ticket"):
-        dir_src = rec.get("direccion") if isinstance(rec.get("direccion"), dict) else rec
-        comp = (
-            (dir_src.get("complemento") or dir_src.get("direccionDetalle") or dir_src.get("direccion"))
-            if rec
-            else None
-        )
-        comp = comp.strip() if isinstance(comp, str) else comp
-        if not (
-            rec
-            and dir_src.get("departamento")
-            and dir_src.get("municipio")
-            and comp
-            and len(str(comp)) >= 5
-        ):
-            rec = {}
-        if not rec:
-            rec = {
-                "tipoDocumento": "36",
-                "numDocumento": "00000000-0",
-                "nombre": "CONSUMIDOR FINAL",
-                "direccion": {
-                    "departamento": "06",
-                    "municipio": "20",
-                    "complemento": "San Salvador",
-                },
-            }
+    if not rec.get("numDocumento") and rec.get("dui"):
+        formatted = _format_dui(rec.get("dui"))
+        if not formatted:
+            raise ValueError("DUI inválido")
+        rec["tipoDocumento"] = rec.get("tipoDocumento") or "13"
+        rec["numDocumento"] = formatted
+    rec.pop("dui", None)
 
     def _clean_nit(nit):
         return "".join(c for c in str(nit) if c.isdigit()) if nit else None
@@ -2046,11 +2045,8 @@ def generar_dte_json(
 
     if tipo_doc == "36":
         num_doc = _clean_nit(num_doc)
-        if num_doc:
-            if num_doc == "000000000":
-                num_doc = "00000000000000"
-            elif not re.fullmatch(r"[0-9]{14}", num_doc):
-                raise ValueError("NIT inválido")
+        if num_doc == "000000000":
+            num_doc = "00000000000000"
     elif tipo_doc == "13":
         if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
             raise ValueError("DUI inválido")
@@ -2071,22 +2067,27 @@ def generar_dte_json(
     if not isinstance(direccion_src, dict):
         direccion_src = rec
     receptor["direccion"] = _build_receptor_direccion(direccion_src)
-    compl = receptor["direccion"].get("complemento")
-    if extra.get("es_ticket"):
-        dir_ok = (
-            receptor["direccion"].get("departamento")
-            and receptor["direccion"].get("municipio")
-            and compl
-            and len(str(compl)) >= 5
-        )
-        if not dir_ok:
-            receptor = None
-        elif receptor:
-            for f in ("nit", "nombreComercial"):
-                receptor.pop(f, None)
-    else:
-        if not compl or len(str(compl)) < 5:
-            receptor["direccion"]["complemento"] = "SIN DIRECCION"
+    dep = receptor["direccion"].get("departamento")
+    mun = receptor["direccion"].get("municipio")
+    comp = receptor["direccion"].get("complemento")
+    try:
+        dep, mun = validar_dep_muni_por_catalogo(dep, mun, strict=True)
+    except GeoValidationError as e:
+        if extra.get("es_ticket"):
+            warnings.warn(f"{e}; usando dirección por defecto", UserWarning)
+            dep = DEFAULT_ADDRESS["departamento"]
+            mun = DEFAULT_ADDRESS["municipio"]
+        else:
+            raise
+    if not comp or len(str(comp).strip()) < 5:
+        if extra.get("es_ticket"):
+            comp = DEFAULT_ADDRESS["complemento"]
+        else:
+            comp = "SIN DIRECCION"
+    receptor["direccion"] = {"departamento": dep, "municipio": mun, "complemento": comp}
+    if extra.get("es_ticket") and receptor:
+        for f in ("nit", "nombreComercial"):
+            receptor.pop(f, None)
     if receptor and receptor.get("correo") and not EMAIL_RE.fullmatch(receptor["correo"]):
         raise ValueError("Correo de receptor inválido")
     if receptor and receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
@@ -2951,7 +2952,14 @@ def validate_dte_json(
                 if tipo_doc is None:
                     tipo_doc = "36"
             limpiar_documentos(receptor)
+            if "numDocumento" not in receptor and receptor.get("dui"):
+                formatted = _format_dui(receptor.get("dui"))
+                if not formatted:
+                    raise ValueError("DUI inválido")
+                receptor["numDocumento"] = formatted
+                tipo_doc = tipo_doc or "13"
             num_doc = solo_digitos(receptor.get("numDocumento"))
+            receptor.pop("dui", None)
             nrc_raw = receptor.get("nrc")
             nrc_digits = solo_digitos(nrc_raw) if nrc_raw is not None else ""
             if nrc_digits:
@@ -2967,7 +2975,7 @@ def validate_dte_json(
                 raise ValueError("tipoDocumento inválido en receptor")
             if tipo_doc == "13":
                 if len(num_doc) != 9:
-                    raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
+                    raise ValueError("DUI inválido")
                 if nrc_raw:
                     warnings.warn(
                         "Se removió NRC porque el documento es DUI", UserWarning,
@@ -3352,12 +3360,24 @@ def validate_dte_json(
         if len(clean_emisor_nit) != catalogos.NIT_LENGTH:
             raise ValueError("NIT inválido en emisor")
 
-    receptor_doc = payload.get("receptor", {}).get("numDocumento")
+    receptor_info = payload.get("receptor", {})
+    receptor_doc = receptor_info.get("numDocumento")
     if receptor_doc:
-        clean_doc = limpiar_doc(receptor_doc)
-        if len(clean_doc) not in (9, catalogos.NIT_LENGTH):
-            raise ValueError("Número de documento inválido en receptor")
-        payload["receptor"]["numDocumento"] = clean_doc
+        tipo_rec = receptor_info.get("tipoDocumento")
+        if tipo_rec == "13":  # DUI
+            digits = re.sub(r"\D", "", str(receptor_doc))
+            if len(digits) != 9:
+                raise ValueError("DUI inválido en receptor")
+            payload["receptor"]["numDocumento"] = f"{digits[:8]}-{digits[8]}"
+        elif tipo_rec == "36":  # NIT
+            clean_doc = limpiar_doc(receptor_doc)
+            if not clean_doc.isdigit() or len(clean_doc) not in (9, catalogos.NIT_LENGTH):
+                raise ValueError("Número de documento inválido en receptor")
+            payload["receptor"]["numDocumento"] = clean_doc
+        else:
+            doc_str = str(receptor_doc)
+            if not (3 <= len(doc_str) <= 20):
+                raise ValueError("Número de documento inválido en receptor")
     # Conversión final de Decimals con formatos específicos para el JSON
     def _zero_or(value: D, qfn) -> D:
         """Quantiza ``value`` usando ``qfn`` retornando ``0.0`` si es cero."""

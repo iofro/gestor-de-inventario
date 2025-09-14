@@ -1,5 +1,6 @@
 import fitz
 from decimal import Decimal
+import uuid
 from db import DB
 from nota_debito_electronica import generar_nde_desde_dte
 from dte import generar_dte_json
@@ -243,6 +244,10 @@ def test_nota_debito_pdf(tmp_path):
         datos_negocio={},
         doc_relacionado=doc_rel,
         motivo="Intereses",
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=f"DTE-06-{uuid.uuid4().hex[:8].upper()}",
+        fecha_generacion="01/01/2024",
+        sello_recepcion="SELLO",
     )
     assert out.exists()
     with fitz.open(out) as doc:
@@ -258,7 +263,18 @@ def test_nota_debito_pdf(tmp_path):
 def test_nota_remision_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
-    generar_nota_remision_pdf(venta, detalles, {}, {}, archivo=str(out), datos_negocio={})
+    generar_nota_remision_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        archivo=str(out),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=f"DTE-04-{uuid.uuid4().hex[:8].upper()}",
+        fecha_generacion="01/01/2024",
+        sello_recepcion="SELLO",
+    )
     assert out.exists()
     with fitz.open(out) as doc:
         text = "".join(p.get_text() for p in doc)

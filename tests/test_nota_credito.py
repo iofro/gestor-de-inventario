@@ -1,4 +1,5 @@
 import fitz
+import uuid
 from decimal import Decimal, ROUND_HALF_UP
 from db import DB
 from dte import generar_dte_json
@@ -284,7 +285,7 @@ def test_nota_credito_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
     doc_rel = {
-        "tipo": "01",
+        "tipo": "03",
         "numero_control": "DTE-01-S001P001-000000000000001",
         "codigo_generacion": "123",
         "fecha": "2024-01-01",
@@ -298,6 +299,10 @@ def test_nota_credito_pdf(tmp_path):
         datos_negocio={},
         doc_relacionado=doc_rel,
         motivo="Devolución",
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=f"DTE-05-{uuid.uuid4().hex[:8].upper()}",
+        fecha_generacion="01/01/2024",
+        sello_recepcion="SELLO",
     )
     assert out.exists()
     with fitz.open(out) as doc:
@@ -331,6 +336,10 @@ def test_nota_credito_direccion(tmp_path, monkeypatch):
         {},
         archivo=str(out),
         datos_negocio={'direccion': direccion},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=f"DTE-05-{uuid.uuid4().hex[:8].upper()}",
+        fecha_generacion="01/01/2024",
+        sello_recepcion="SELLO",
     )
     with fitz.open(out) as doc:
         lines = ''.join(p.get_text() for p in doc).splitlines()

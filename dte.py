@@ -757,7 +757,7 @@ def norm_receptor(
     mun = d.get("municipio")
 
     is_cf = tipo == "37" and num == "CONSUMIDOR"
-    missing_addr = dep is None or mun is None
+    missing_addr = not dep or not mun
     fallback_addr = es_ticket or is_cf or missing_addr
 
     if missing_addr:

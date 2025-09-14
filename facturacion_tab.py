@@ -1060,9 +1060,11 @@ class FacturacionTab(QWidget):
                     else:
                         detalle = resp.get("detalle")
                         if detalle:
-                            logger.debug("Detalle de respuesta de Hacienda: %s", detalle)
-                        mensaje = resp.get("errores") or (
-                            detalle.get("descripcionMsg") if isinstance(detalle, dict) else None
+                            logger.debug(
+                                "Detalle de respuesta de Hacienda: %s", detalle
+                            )
+                        mensaje = resp.get("errores") or resp.get("detalle", {}).get(
+                            "descripcionMsg"
                         )
                         QMessageBox.critical(
                             self,
@@ -1103,9 +1105,11 @@ class FacturacionTab(QWidget):
                     else:
                         detalle = resp.get("detalle")
                         if detalle:
-                            logger.debug("Detalle de respuesta de Hacienda: %s", detalle)
-                        mensaje = resp.get("errores") or (
-                            detalle.get("descripcionMsg") if isinstance(detalle, dict) else None
+                            logger.debug(
+                                "Detalle de respuesta de Hacienda: %s", detalle
+                            )
+                        mensaje = resp.get("errores") or resp.get("detalle", {}).get(
+                            "descripcionMsg"
                         )
                         QMessageBox.critical(
                             self,

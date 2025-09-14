@@ -680,6 +680,15 @@ class FacturacionTab(QWidget):
         self.load_invoices()
 
     def load_invoices(self):
+        # Remember which invoice is currently selected so that automatic
+        # refreshes do not interfere with the user's selection.
+        selected_id = None
+        current_items = self.table.selectedItems()
+        if current_items:
+            data = current_items[0].data(Qt.UserRole)
+            if isinstance(data, dict):
+                selected_id = data.get("id")
+
         search = self.search_bar.text().lower() if hasattr(self, "search_bar") else ""
         if self.date_filter_cb.isChecked():
             d_from = self.date_from.date().toPyDate()
@@ -689,10 +698,21 @@ class FacturacionTab(QWidget):
         tipo = self.tipo_filter.currentText()
 
         rows = self._scan_documents()
-        envio_estado = {
-            env.get("venta_id"): env.get("estado")
-            for env in self.manager.db.listar_dtes()
-        }
+
+        def _estado_desde_json(path):
+            """Return DTE state inferred from its JSON path."""
+            if not path:
+                return ""
+            norm = os.path.normpath(path)
+            base_dir = os.path.dirname(__file__)
+            aceptados = os.path.join(base_dir, "dtes") + os.sep
+            rechazados = os.path.join(base_dir, "dte_fallidos") + os.sep
+            if norm.startswith(aceptados):
+                return "Aceptado"
+            if norm.startswith(rechazados):
+                return "Rechazado"
+            return ""
+
         for r in list(rows):
             fdate = r.get("_parsed_fecha")
             if self.date_filter_cb.isChecked():
@@ -709,10 +729,10 @@ class FacturacionTab(QWidget):
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
                 continue
-            estado = envio_estado.get(r.get("id"))
+            estado = _estado_desde_json(r.get("json") or r.get("dteJsonPath"))
             if estado:
                 r["estado"] = estado
-            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked() and not r.get("estado"):
+            if getattr(self, "sent_filter_cb", None) and self.sent_filter_cb.isChecked() and not estado:
                 rows.remove(r)
                 continue
 
@@ -724,6 +744,7 @@ class FacturacionTab(QWidget):
         )
 
         self.table.setRowCount(len(rows))
+        selected_row = None
         for row, v in enumerate(rows):
             codigo = v.get("codigo", "")
             tipo = v.get("tipo", "")
@@ -746,8 +767,15 @@ class FacturacionTab(QWidget):
                 item = self.table.item(row, col)
                 if item:
                     item.setData(Qt.UserRole, v)
-        if rows:
+            if selected_id is not None and v.get("id") == selected_id:
+                selected_row = row
+
+        if selected_row is not None:
+            self.table.selectRow(selected_row)
+        elif selected_id is None and rows:
             self.table.selectRow(0)
+        else:
+            self.table.clearSelection()
         self._update_send_btn()
 
     def _scan_documents(self):

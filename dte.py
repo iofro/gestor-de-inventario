@@ -38,6 +38,7 @@ from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
 from pathlib import Path
+import shutil
 import jsonpatch
 from paths import DATOS_NEGOCIO_PATH
 from xml.etree.ElementTree import Element, SubElement
@@ -50,6 +51,7 @@ CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.js
 DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 DEFAULT_EVENTO_URL = "https://apitest.dtes.mh.gob.sv/fesv/contingencia"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
+PENDIENTES_DIR = "dtes_pendientes"
 
 SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
 FC_SCHEMA_PATH = SCHEMAS_DIR / "fe-fc-v1.json"
@@ -674,9 +676,13 @@ def _build_receptor_direccion(src: dict) -> dict:
     dep_code = dep_code or dep_inferred
     if dep_code is None or muni_code is None:
         warnings.warn(
-            "Información de dirección incompleta; la factura se generará con campos nulos",
+            "Información de dirección incompleta; usando dirección por defecto",
             UserWarning,
         )
+        dep_code = DEFAULT_ADDRESS["departamento"]
+        muni_code = DEFAULT_ADDRESS["municipio"]
+        if not complemento or len(complemento) < 5:
+            complemento = DEFAULT_ADDRESS["complemento"]
 
     return {
         "departamento": dep_code,
@@ -751,21 +757,16 @@ def norm_receptor(
     mun = d.get("municipio")
 
     is_cf = tipo == "37" and num == "CONSUMIDOR"
-    fallback_addr = es_ticket or is_cf
+    missing_addr = not dep or not mun
+    fallback_addr = es_ticket or is_cf or missing_addr
 
-    if dep is None or mun is None:
-        if fallback_addr:
-            warnings.warn(
-                "Dirección incompleta; usando dirección por defecto",
-                UserWarning,
-            )
-            dep = DEFAULT_ADDRESS["departamento"]
-            mun = DEFAULT_ADDRESS["municipio"]
-        else:
-            if dep is not None or mun is not None:
-                warnings.warn(
-                    "Dirección incompleta; validación omitida", UserWarning
-                )
+    if missing_addr:
+        warnings.warn(
+            "Dirección incompleta; usando dirección por defecto",
+            UserWarning,
+        )
+        dep = DEFAULT_ADDRESS["departamento"]
+        mun = DEFAULT_ADDRESS["municipio"]
     else:
         try:
             dep, mun = validar_dep_muni_por_catalogo(
@@ -4096,17 +4097,18 @@ def _write_json(path: str, data):
         save_file(path, stable_stringify(data, indent=2))
 
 
-def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
+def _dte_base_dir(dte_data: dict, fallido: bool = False, root: str | None = None) -> str:
     """Return destination directory for ``dte_data`` grouped by tipoDte.
 
     The ``fallido`` flag controls whether the DTE should be stored under the
     accepted directory (``dtes/``) or the rejected one (``dte_fallidos/``).
+    ``root`` can be used to override the base directory.
     """
 
     ident = dte_data.get("identificacion", {})
     tipo = str(ident.get("tipoDte", "")).zfill(2)
-    root = "dte_fallidos" if fallido else "dtes"
-    base = os.path.join(os.path.dirname(__file__), root)
+    root_dir = root or ("dte_fallidos" if fallido else "dtes")
+    base = os.path.join(os.path.dirname(__file__), root_dir)
     mapping = {
         "01": "fcf",  # Factura consumidor final
         "03": "ccf",  # Comprobante de crédito fiscal
@@ -4142,6 +4144,41 @@ def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> N
         pass
 
 
+def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: str) -> str:
+    """Move pending DTE directory to final location and attach JWS.
+
+    Returns the new ``documento.json`` path."""
+    try:
+        version_dir = os.path.dirname(json_path)
+        pend_root = os.path.join(os.path.dirname(__file__), PENDIENTES_DIR)
+        rel = os.path.relpath(version_dir, pend_root)
+        dest_root = "dte_fallidos" if estado == "Rechazado" else "dtes"
+        dest_dir = os.path.join(os.path.dirname(__file__), dest_root, rel)
+        os.makedirs(os.path.dirname(dest_dir), exist_ok=True)
+        shutil.move(version_dir, dest_dir)
+        try:
+            codigo_dir = os.path.dirname(dest_dir)
+            for name in os.listdir(codigo_dir):
+                path = os.path.join(codigo_dir, name)
+                if path != dest_dir and os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            pend_codigo_dir = os.path.dirname(version_dir)
+            shutil.rmtree(pend_codigo_dir, ignore_errors=True)
+        except Exception:
+            pass
+        jws_name = versioned_dte.add_jws(dest_dir, jws_token, origen="auto")
+        sobre = construir_sobre_recepcion(jws_token, dte_data)
+        if sobre.get("estado") != "Error":
+            sobre_path = os.path.join(dest_dir, jws_name.replace(".jws", "_sobre_hacienda.json"))
+            _write_json(sobre_path, sobre)
+        return os.path.join(dest_dir, "documento.json")
+    except Exception:
+        return json_path
+
+
 class DTEValidationError(Exception):
     """Error de validación que incluye lista de errores y ruta del JSON."""
 
@@ -4154,7 +4191,7 @@ class DTEValidationError(Exception):
 def save_dte_json(dte_data: dict) -> str:
     """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
     try:
-        base_dir = _dte_base_dir(dte_data)
+        base_dir = _dte_base_dir(dte_data, root=PENDIENTES_DIR)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         return os.path.join(version_dir, "documento.json")
     except Exception:
@@ -4496,20 +4533,77 @@ def transmitir_dte(
     """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
     ``tipo_dte`` permite especificar el código del documento a transmitir,
-    usando ``"01"`` para facturas y ``"03"`` para tickets.
+    usando ``"01"`` para facturas y ``"03"`` para tickets. Los reenvíos
+    reutilizan el mismo ``codigoGeneracion`` previamente guardado.
     """
-
     if modo is None:
         modo = get_default_modo_transmision()
 
-    if tipo_dte == "03":
-        data = generar_ticket_json(db, venta_id)
-    else:
-        data = generar_dte_json(db, venta_id)
-        if data.get("identificacion", {}).get("tipoDte") == "01":
-            recalcular_totales(data, incluir_iva=True)
+    data = None
+    extra = {}
+    row = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,)).fetchone()
+    if row and row[0]:
+        try:
+            extra = json.loads(row[0])
+        except Exception:
+            extra = {}
+    json_path = extra.get("dteJsonPath") or extra.get("dte_json_path")
+    if json_path:
+        path_obj = Path(json_path)
+        if PENDIENTES_DIR not in path_obj.parts:
+            raise ValueError("El DTE ya fue enviado")
+        if path_obj.exists():
+            try:
+                with open(path_obj, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                data = None
+    if data is None:
+        codigo = extra.get("codigoGeneracion") or extra.get("codigo_generacion")
+        if codigo:
+            base_root = Path(__file__).resolve().parent
+            for root_name in ("dtes", "dte_fallidos"):
+                matches = list((base_root / root_name).glob(f"*/{codigo}/*/documento.json"))
+                if matches:
+                    raise ValueError("El DTE ya fue enviado")
+            pend_dir = base_root / PENDIENTES_DIR
+            matches = list(pend_dir.glob(f"*/{codigo}/*/documento.json"))
+            if matches:
+                json_path = str(matches[-1])
+                try:
+                    with open(matches[-1], "r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    db.update_venta_extra(venta_id, {"dteJsonPath": json_path})
+                except Exception:
+                    data = None
 
-    data = apply_schema_patch(data)
+    row = db.cursor.execute(
+        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        (venta_id,),
+    ).fetchone()
+    success = {"transmitido", "recibido", "aceptado", "procesado"}
+    if row and str(row["estado"]).lower() in success:
+        raise ValueError("El DTE ya fue enviado")
+
+    if data is None:
+        if tipo_dte == "03":
+            data = generar_ticket_json(db, venta_id)
+        else:
+            data = generar_dte_json(db, venta_id)
+            if data.get("identificacion", {}).get("tipoDte") == "01":
+                recalcular_totales(data, incluir_iva=True)
+        data = apply_schema_patch(data)
+        json_path = save_dte_json(data)
+        ident = data.get("identificacion", {})
+        updates = {}
+        if ident.get("codigoGeneracion"):
+            updates["codigoGeneracion"] = ident["codigoGeneracion"]
+        if json_path:
+            updates["dteJsonPath"] = json_path
+        if updates:
+            db.update_venta_extra(venta_id, updates)
+    else:
+        data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)
     # La validación de esquema se omite para permitir la transmisión sin
     # interrupciones por inconsistencias.
@@ -4773,6 +4867,15 @@ def _enviar_documento(
     """
     config = _load_dte_api_config()
 
+    pend_json_path = None
+    try:
+        row = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (doc_id,)).fetchone()
+        if row and row[0]:
+            extra = json.loads(row[0])
+            pend_json_path = extra.get("dteJsonPath")
+    except Exception:
+        pass
+
     if not data.get("resumen", {}).get("totalLetras"):
         raise ValueError("El total en letras es obligatorio")
 
@@ -4812,10 +4915,17 @@ def _enviar_documento(
     signed = jws_token or jws.sign_json(data)
 
     if modo == "contingencia":
-        try:
-            _save_signed_dte(data, signed, fallido=False)
-        except Exception:
-            pass
+        if pend_json_path:
+            try:
+                final_path = _finalize_pendiente(pend_json_path, data, signed, "Pendiente")
+                db.update_venta_extra(doc_id, {"dteJsonPath": final_path})
+            except Exception:
+                pass
+        else:
+            try:
+                _save_signed_dte(data, signed, fallido=False)
+            except Exception:
+                pass
         db.registrar_envio_dte(
             doc_id,
             modo,
@@ -4862,10 +4972,17 @@ def _enviar_documento(
         sello,
         json.dumps(respuesta, ensure_ascii=False),
     )
-    try:
-        _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
-    except Exception:
-        pass
+    if pend_json_path:
+        try:
+            final_path = _finalize_pendiente(pend_json_path, data, signed, estado)
+            db.update_venta_extra(doc_id, {"dteJsonPath": final_path})
+        except Exception:
+            pass
+    else:
+        try:
+            _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
+        except Exception:
+            pass
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
     res = {"estado": estado, "sello": sello}

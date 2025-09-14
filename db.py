@@ -1357,6 +1357,15 @@ class DB:
     ):
         if codigo is None:
             codigo = self.get_next_cliente_codigo()
+        if (
+            not departamento
+            or not getattr(departamento, "strip", lambda: "")()
+            or not municipio
+            or not getattr(municipio, "strip", lambda: "")()
+        ):
+            departamento = "06"
+            municipio = "23"
+            direccion = direccion or "San Salvador"
         nit = nit.strip() if isinstance(nit, str) else nit
         nit = nit or None
         if self.nit_exists(nit):
@@ -1417,6 +1426,15 @@ class DB:
         codActividad=None,
         nombreComercial=None,
     ):
+        if (
+            not departamento
+            or not getattr(departamento, "strip", lambda: "")()
+            or not municipio
+            or not getattr(municipio, "strip", lambda: "")()
+        ):
+            departamento = "06"
+            municipio = "23"
+            direccion = direccion or "San Salvador"
         nit = nit.strip() if isinstance(nit, str) else nit
         nit = nit or None
         if self.nit_exists(nit, exclude_id=id):

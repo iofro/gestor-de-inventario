@@ -29,11 +29,11 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
-    assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
+    assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert data["cuerpoDocumento"][0]["precioUni"] > 0
     assert "totalPagar" not in data["resumen"]
     assert data["resumen"]["montoTotalOperacion"] > 0
@@ -89,7 +89,7 @@ def test_nota_credito_total_nueve(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 9)
     db.add_detalle_venta(venta_id, pid, 1, 7.96, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     assert dte_origen["resumen"]["montoTotalOperacion"] == Decimal("9.00")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert data["resumen"]["montoTotalOperacion"] == 9.0
@@ -112,7 +112,7 @@ def test_nota_credito_precio_uni(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 9)
     db.add_detalle_venta(venta_id, pid, 1, 9, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
     detalles = [
         {
@@ -175,7 +175,7 @@ def test_generar_nce_detalle_excede(monkeypatch):
     pid = db.cursor.lastrowid
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
     detalles = [
         {
@@ -284,8 +284,8 @@ def test_nota_credito_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
     doc_rel = {
-        "tipo": "03",
-        "numero_control": "DTE-03-S001P001-000000000000001",
+        "tipo": "01",
+        "numero_control": "DTE-01-S001P001-000000000000001",
         "codigo_generacion": "123",
         "fecha": "2024-01-01",
     }

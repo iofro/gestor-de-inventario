@@ -50,5 +50,5 @@ def test_cliente_nombre_comercial_en_dte(tmp_path):
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     assert data["receptor"]["nombreComercial"] == "Comercial XYZ"

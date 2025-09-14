@@ -85,3 +85,13 @@ def test_emisor_dui_omitted_for_credito_fiscal(dte_metadata_factory):
     payload["emisor"]["dui"] = "01234567-8"
     clean = dte.sanitize_dte_payload(payload)
     assert "dui" not in clean["emisor"]
+
+
+def test_sanitize_adds_iva_fields(dte_metadata_factory):
+    payload = dte_metadata_factory()
+    payload["identificacion"]["tipoDte"] = "03"
+    payload["cuerpoDocumento"][0].pop("ivaItem", None)
+    payload["resumen"].pop("totalIva", None)
+    clean = dte.sanitize_dte_payload(payload)
+    assert "ivaItem" in clean["cuerpoDocumento"][0]
+    assert "totalIva" in clean["resumen"]

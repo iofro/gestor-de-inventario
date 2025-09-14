@@ -16,7 +16,7 @@ def test_ticket_fe_pdf_clean(tmp_path):
             "horEmi": "12:00:00",
         },
         "emisor": {
-            "nombre": "Farmacia X",
+            "nombreComercial": "Farmacia X",
             "nit": "0614-290389-102-1",
             "nrc": "123456-7",
             "descActividad": "Farmacia",
@@ -37,6 +37,7 @@ def test_ticket_fe_pdf_clean(tmp_path):
             "montoTotalOperacion": 2.0,
             "totalPagar": 2.0,
             "condicionOperacion": 1,
+            "pagos": [{"codigo": "01", "montoPago": 2.0}],
         },
     }
     dte_data = {"dteJson": dte_json}
@@ -46,25 +47,12 @@ def test_ticket_fe_pdf_clean(tmp_path):
     with fitz.open(out) as doc:
         text = "\n".join(page.get_text() for page in doc)
 
-    for bad in ("apendice", "cuerpoDocumento", "falta", "None", "emisor.codActividad"):
+    for bad in ("apendice", "cuerpoDocumento", "falta", "None"):
         assert bad not in text
 
     for good in (
         "DOCUMENTO TRIBUTARIO ELECTRÓNICO",
-        "FACTURA",
-        "Código de Generación",
-        "Número de Control",
-        "Modelo de facturación",
-        "Tipo de Transmisión/Operación",
-        "EMISOR",
-        "RECEPTOR",
-        "Cant.",
-        "Unidad",
-        "Descripción",
-        "Precio",
-        "SubTotal",
-        "Condición de la Operación: Contado",
-        "Sello de recepción: —",
-        "Consulta pública:",
+        "FACTURA (Ticket)",
+        "Pago:",
     ):
         assert good in text

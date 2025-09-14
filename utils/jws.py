@@ -164,17 +164,15 @@ def sign_and_save(
     url: str | None = None,
     return_token: bool = False,
 ):
-    """Sign ``payload`` and store both JSON and JWS files.
+    """Sign ``payload`` and store only the JSON representation.
 
-    The JSON written to ``json_path`` uses a stable alphabetical key order
-    and indentation for readability.  The external signer receives the
-    compact representation without indentation ensuring both outputs are
-    derived from the same serialized string.
+    The previous implementation also persisted the JWS token to disk.  To
+    comply with the new requirement of keeping only the original JSON and
+    the final state, the JWS token is now generated in memory and returned
+    to the caller when needed but **no** ``.jws`` file is written.
 
     When ``return_token`` is ``True`` the function returns a tuple
-    ``(jws_path, token)``; otherwise only the path to the created JWS file
-    is returned.  Existing callers maintain their behaviour without
-    modification.
+    ``(json_path, token)``; otherwise only ``json_path`` is returned.
     """
     json_pretty = stable_stringify(payload, indent=2)
     payload_compact = stable_stringify(payload)
@@ -199,8 +197,6 @@ def sign_and_save(
         # Allows tests to patch ``sign_json`` with a simplified signature
         token = sign_json(payload)
     token = token.rstrip("\n")
-    jws_path = os.path.splitext(json_path)[0] + ".jws"
-    save_file(jws_path, token, add_final_newline=False)
     if return_token:
-        return jws_path, token
-    return jws_path
+        return json_path, token
+    return json_path

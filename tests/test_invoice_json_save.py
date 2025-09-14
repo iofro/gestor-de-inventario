@@ -149,36 +149,16 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
     monkeypatch.setattr("utils.doc_generation.generar_dte_json", fake_generar)
     monkeypatch.setattr("utils.jws.sign_json", lambda *a, **k: "TOKEN")
     monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda *a, **k: {"estado": "OK"})
-
-    created = {}
-
-    def fake_save(dte_data, jws_token):
-        fecha = dte_data.get("identificacion", {}).get("fecEmi") or dte.fecha_emision_hoy_str()
-        year = str(fecha)[:4]
-        base_dir = tmp_path / "dtes" / year
-        os.makedirs(base_dir, exist_ok=True)
-        nombre = dte_data.get("identificacion", {}).get("numeroControl") or uuid.uuid4().hex
-        json_dest = base_dir / f"{nombre}.json"
-        dte._write_json(str(json_dest), dte_data)
-        jws_dest = base_dir / f"{nombre}.jws"
-        dte._write_json(str(jws_dest), jws_token)
-        sobre = dte.construir_sobre_recepcion(jws_token, dte_data)
-        if sobre.get("estado") != "Error":
-            sobre_dest = base_dir / f"{nombre}_sobre_hacienda.json"
-            dte._write_json(str(sobre_dest), sobre)
-        created["dir"] = base_dir
-
-    monkeypatch.setattr(dte, "_save_signed_dte", fake_save)
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
 
     generate_invoice_pdf(man, 1)
 
-    base_dir = created["dir"]
-    files = list(base_dir.iterdir())
-    sobre = [f for f in files if f.name.endswith("_sobre_hacienda.json")]
-    assert sobre, "sobre no creado"
-    base = sobre[0].name.replace("_sobre_hacienda.json", "")
-    assert (base_dir / f"{base}.json").exists()
-    assert (base_dir / f"{base}.jws").exists()
+    pend_root = tmp_path / dte.PENDIENTES_DIR
+    documento = next(pend_root.rglob("documento.json"))
+    version_dir = documento.parent
+    assert (version_dir / "documento.pdf").exists()
+    assert any(f.name.endswith(".jws") for f in version_dir.iterdir())
+    assert any(f.name.endswith("_sobre_hacienda.json") for f in version_dir.iterdir())
 
 
 def test_generate_invoice_pdf_propagates_error(monkeypatch):

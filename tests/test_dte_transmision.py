@@ -376,6 +376,14 @@ def test_consultar_envio_dte_texto():
     assert db.consultar_envio_dte(venta) == {}
 
 
+def test_transmitir_dte_fails_if_already_sent():
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(venta, "normal", "Transmitido", "S")
+    with pytest.raises(ValueError):
+        transmitir_dte(db, venta)
+
+
 def test_listar_dtes():
     db = DB(":memory:")
     v1 = create_sale(db)

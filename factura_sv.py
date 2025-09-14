@@ -75,6 +75,9 @@ def generar_factura_electronica_pdf(
     ambiente: str = "00",
     tipo_contingencia: int | None = None,
     motivo_contin: str | None = None,
+    tipo_dte: str | None = None,
+    doc_relacionado: dict | None = None,
+    motivo: str | None = None,
 ):
 
     if datos_negocio is None:
@@ -90,7 +93,8 @@ def generar_factura_electronica_pdf(
         ambiente_cfg = ambiente_cfg.lower()
         ambiente = "01" if ambiente_cfg.startswith("produc") else "00"
 
-    tipo_dte = "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03"
+    if not tipo_dte:
+        tipo_dte = "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03"
 
     if not codigo_generacion or not numero_control or not fecha_generacion:
         cab = generar_cabecera_dte_data(
@@ -126,7 +130,12 @@ def generar_factura_electronica_pdf(
 
     top -= 20
     c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(width / 2, top, tipo_documento.upper())
+    titulo = tipo_documento.upper()
+    if tipo_dte and tipo_documento.lower().startswith("nota de cr"):
+        titulo = f"NOTA DE CRÉDITO ({tipo_dte})"
+    elif tipo_dte and tipo_documento.lower().startswith("nota de d"):
+        titulo = f"NOTA DE DÉBITO ({tipo_dte})"
+    c.drawCentredString(width / 2, top, titulo)
 
 
     row_y = top - 40
@@ -241,9 +250,31 @@ def generar_factura_electronica_pdf(
         c.drawCentredString(width / 2, box_y - 15, "TRANSMISIÓN DIFERIDA")
         c.setFillColor(colors.black)
 
+    # Información del documento relacionado y motivo
+    doc_y = box_y - 12
+    if doc_relacionado or motivo:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(x_margin, doc_y, "DOCUMENTO RELACIONADO:")
+        c.setFont("Helvetica", 8)
+        doc_y -= 12
+        if doc_relacionado:
+            t = doc_relacionado.get("tipo", "")
+            num = doc_relacionado.get("numero_control", "")
+            c.drawString(x_margin, doc_y, f"Tipo: {t}  Número Control: {num}")
+            doc_y -= 12
+            cod = doc_relacionado.get("codigo_generacion", "")
+            fec = doc_relacionado.get("fecha", "")
+            c.drawString(x_margin, doc_y, f"Código Generación: {cod}  Fecha: {fec}")
+            doc_y -= 12
+        if motivo:
+            doc_y = draw_wrapped_text(c, f"Motivo: {motivo}", x_margin, doc_y, width - 2 * x_margin, 12)
+        doc_y -= 8
+    else:
+        doc_y = qr_y
+
     # Posiciones base para los cuadros de emisor y receptor
-    # Mantenemos un espacio de 20 puntos debajo del código QR para acercarlos al encabezado
-    encabezado_y = qr_y - 20
+    # Mantenemos un espacio de 20 puntos debajo del bloque anterior para acercarlos al encabezado
+    encabezado_y = doc_y - 20
 
     # --- Datos del EMISOR (izquierda) y RECEPTOR (derecha) ---
 
@@ -525,6 +556,8 @@ def generar_nota_credito_pdf(
     distribuidor,
     archivo="nota_credito.pdf",
     datos_negocio=None,
+    doc_relacionado=None,
+    motivo=None,
     **kwargs,
 ):
     """Genera un PDF para una Nota de Cr\u00e9dito."""
@@ -545,6 +578,9 @@ def generar_nota_credito_pdf(
         "Nota de Cr\u00e9dito",
         archivo=archivo,
         datos_negocio=datos_negocio,
+        tipo_dte="05",
+        doc_relacionado=doc_relacionado,
+        motivo=motivo,
         **kwargs,
     )
 
@@ -556,6 +592,8 @@ def generar_nota_debito_pdf(
     distribuidor,
     archivo="nota_debito.pdf",
     datos_negocio=None,
+    doc_relacionado=None,
+    motivo=None,
     **kwargs,
 ):
     """Genera un PDF para una Nota de Débito."""
@@ -567,6 +605,9 @@ def generar_nota_debito_pdf(
         "Nota de Débito",
         archivo=archivo,
         datos_negocio=datos_negocio,
+        tipo_dte="06",
+        doc_relacionado=doc_relacionado,
+        motivo=motivo,
         **kwargs,
     )
 

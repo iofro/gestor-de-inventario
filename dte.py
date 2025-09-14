@@ -4379,6 +4379,14 @@ def _post_dte(
             "http_status": resp.status_code,
             "detalle": detalle,
         }
+        if isinstance(data, dict):
+            detalle_info = data.get("detalle") if isinstance(data.get("detalle"), dict) else data
+            for key in ("descripcionMsg", "observaciones"):
+                if key in detalle_info:
+                    result[key] = detalle_info[key]
+            err = _parse_error_response(result)
+            if err:
+                result["errores"] = err
         print(json.dumps(result, ensure_ascii=False))
         return result
 
@@ -4614,6 +4622,8 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
     )
     if estado:
         respuesta["estado"] = estado
+    if respuesta.get("estado") == "Rechazado":
+        respuesta["errores"] = _parse_error_response(respuesta)
     return respuesta
 
 
@@ -4715,18 +4725,25 @@ def consultar_estado_lote(codigo_lote: str) -> dict:
 
 def _parse_error_response(respuesta: dict) -> str:
     """Construye un mensaje de error a partir de ``descripcionMsg`` y ``observaciones``."""
-    partes = []
-    desc = respuesta.get("descripcionMsg")
-    if desc:
-        partes.append(str(desc))
-    obs = respuesta.get("observaciones")
-    if isinstance(obs, dict):
-        for k, v in obs.items():
-            partes.append(f"{k}: {v}")
-    elif isinstance(obs, list):
-        partes.extend(str(o) for o in obs)
-    elif obs:
-        partes.append(str(obs))
+
+    def _agregar_partes(origen, partes):
+        desc = origen.get("descripcionMsg")
+        if desc:
+            partes.append(str(desc))
+        obs = origen.get("observaciones")
+        if isinstance(obs, dict):
+            for k, v in obs.items():
+                partes.append(f"{k}: {v}")
+        elif isinstance(obs, list):
+            partes.extend(str(o) for o in obs)
+        elif obs:
+            partes.append(str(obs))
+
+    partes: list[str] = []
+    _agregar_partes(respuesta, partes)
+    detalle = respuesta.get("detalle", {})
+    if isinstance(detalle, dict):
+        _agregar_partes(detalle, partes)
     mensaje = "; ".join(partes)
     if mensaje:
         logger.error(mensaje)
@@ -5007,6 +5024,8 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     res = {"estado": estado, "sello": sello}
     if detalle:
         res["detalle"] = detalle
+    if respuesta.get("errores"):
+        res["errores"] = respuesta["errores"]
     return res
 
 

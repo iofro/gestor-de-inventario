@@ -9,8 +9,6 @@ from reportlab.lib.units import mm
 
 from utils.pdf_utils import draw_wrapped_text
 import utils.catalogos as catalogos
-from dte import generar_cabecera_dte_data
-from db import DB
 from urllib.parse import urlencode
 import json
 import os
@@ -96,20 +94,8 @@ def generar_factura_electronica_pdf(
     if not tipo_dte:
         tipo_dte = "01" if tipo_documento.upper() == "CONSUMIDOR FINAL" else "03"
 
-    if not codigo_generacion or not numero_control or not fecha_generacion:
-        cab = generar_cabecera_dte_data(
-            tipo_modelo,
-            tipo_operacion,
-            tipo_dte,
-            DB(),
-            tipo_contingencia=tipo_contingencia,
-            motivo_contin=motivo_contin,
-            ambiente=ambiente,
-        )
-        codigo_generacion = codigo_generacion or cab["codigo_generacion"]
-        numero_control = numero_control or cab["numero_control"]
-        fecha_generacion = fecha_generacion or cab["fecha_generacion"]
-        sello_recepcion = sello_recepcion or cab["sello_recepcion"]
+    if not codigo_generacion or not numero_control:
+        raise ValueError("codigo_generacion and numero_control are required")
 
     try:
         fecha_emision = datetime.strptime(

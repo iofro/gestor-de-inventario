@@ -6,7 +6,7 @@ import logging
 import dte
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado
-from dte import generar_ticket_json, generar_dte_json, d4
+from dte import generar_ticket_json, generar_dte_json, d4, generar_cabecera_dte_data
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json
 from utils.jws import sign_and_save
@@ -262,7 +262,6 @@ def generate_invoice_pdf(manager, venta_id):
     if ambiente not in ("00", "01"):
         amb_cfg = str(ambiente).lower()
         ambiente = "01" if amb_cfg.startswith("produc") else "00"
-    fecha_generacion = venta_data.get("fecha_generacion") or extra.get("fechaGeneracion", "")
 
     if tipo_operacion == 1 and not sello_recepcion:
         sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"
@@ -273,6 +272,26 @@ def generate_invoice_pdf(manager, venta_id):
     tipo_doc = "Crédito Fiscal" if credito_info else "Consumidor Final"
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
     cliente_nombre = cliente.get("nombre") if cliente else ""
+
+    cabecera = generar_cabecera_dte_data(
+        tipo_modelo,
+        tipo_operacion,
+        "03" if credito_info else "01",
+        manager.db,
+        tipo_contingencia=tipo_contingencia,
+        motivo_contin=motivo_contin,
+        ambiente=ambiente,
+    )
+    codigo_generacion = cabecera["codigo_generacion"]
+    numero_control = cabecera["numero_control"]
+    fecha_generacion = cabecera["fecha_generacion"]
+    sello_recepcion = sello_recepcion or cabecera["sello_recepcion"]
+    venta_data["sello_recepcion"] = sello_recepcion
+    tipo_modelo = cabecera["tipo_modelo"]
+    tipo_operacion = cabecera["tipo_operacion"]
+    tipo_contingencia = cabecera["tipo_contingencia"]
+    motivo_contin = cabecera["motivo_contin"]
+
     try:
         json_data = generar_dte_json(
             manager.db,
@@ -282,6 +301,10 @@ def generate_invoice_pdf(manager, venta_id):
             tipo_operacion=tipo_operacion,
             tipo_contingencia=tipo_contingencia,
             motivo_contin=motivo_contin,
+            codigo_generacion=codigo_generacion,
+            numero_control=numero_control,
+            correlativo=cabecera.get("correlativo"),
+            tipo_modelo=tipo_modelo,
         )
     except AttributeError as exc:
         logger.warning(
@@ -318,9 +341,6 @@ def generate_invoice_pdf(manager, venta_id):
         except Exception:
             venta_data["total_letras"] = ""
 
-    ident = json_data.get("identificacion", {})
-    codigo_generacion = ident.get("codigoGeneracion")
-    numero_control = ident.get("numeroControl")
     venta_data["codigo_generacion"] = codigo_generacion
     venta_data["numero_control"] = numero_control
 

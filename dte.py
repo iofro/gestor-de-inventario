@@ -1932,6 +1932,9 @@ def generar_dte_json(
     motivo_contin: str | None = None,
     tipo_modelo: int | None = None,
     tipo_moneda: str = "USD",
+    codigo_generacion: str | None = None,
+    numero_control: str | None = None,
+    correlativo: int | None = None,
     **kwargs,
 ) -> dict:
     """Genera un diccionario DTE básico para una venta.
@@ -1996,17 +1999,22 @@ def generar_dte_json(
     suc = _norm3(cod_estable)
     pto = _norm3(cod_punto)
     # Usar identificadores existentes o generar nuevos si faltan
-    codigo_generacion = venta.get("codigo_generacion")
-    numero_control = venta.get("numero_control")
-    correlativo = venta.get("correlativo")
+    codigo_generacion = codigo_generacion or venta.get("codigo_generacion")
+    numero_control = numero_control or venta.get("numero_control")
+    correlativo = correlativo if correlativo is not None else venta.get("correlativo")
     generated = False
     if not codigo_generacion:
         codigo_generacion = str(uuid.uuid4()).upper()
         generated = True
-    if not numero_control or not correlativo:
+    if not numero_control or correlativo is None:
         numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
         generated = True
-    if generated:
+    if (
+        generated
+        or venta.get("codigo_generacion") != codigo_generacion
+        or venta.get("numero_control") != numero_control
+        or venta.get("correlativo") != correlativo
+    ):
         db.cursor.execute(
             "UPDATE ventas SET codigo_generacion=?, numero_control=?, correlativo=? WHERE id=?",
             (codigo_generacion, numero_control, correlativo, venta_id),

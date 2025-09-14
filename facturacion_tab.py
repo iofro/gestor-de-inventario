@@ -680,6 +680,15 @@ class FacturacionTab(QWidget):
         self.load_invoices()
 
     def load_invoices(self):
+        # Remember which invoice is currently selected so that automatic
+        # refreshes do not interfere with the user's selection.
+        selected_id = None
+        current_items = self.table.selectedItems()
+        if current_items:
+            data = current_items[0].data(Qt.UserRole)
+            if isinstance(data, dict):
+                selected_id = data.get("id")
+
         search = self.search_bar.text().lower() if hasattr(self, "search_bar") else ""
         if self.date_filter_cb.isChecked():
             d_from = self.date_from.date().toPyDate()
@@ -724,6 +733,7 @@ class FacturacionTab(QWidget):
         )
 
         self.table.setRowCount(len(rows))
+        selected_row = None
         for row, v in enumerate(rows):
             codigo = v.get("codigo", "")
             tipo = v.get("tipo", "")
@@ -746,8 +756,15 @@ class FacturacionTab(QWidget):
                 item = self.table.item(row, col)
                 if item:
                     item.setData(Qt.UserRole, v)
-        if rows:
+            if selected_id is not None and v.get("id") == selected_id:
+                selected_row = row
+
+        if selected_row is not None:
+            self.table.selectRow(selected_row)
+        elif selected_id is None and rows:
             self.table.selectRow(0)
+        else:
+            self.table.clearSelection()
         self._update_send_btn()
 
     def _scan_documents(self):

@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "2F223F99-E995-49D5-A635-887EDB94104F",
+  "estado": "borrador",
+  "firmas": [
+    {
+      "archivo": "documento-20250912145017.jws",
+      "estado": "borrador",
+      "fechaFirma": "20250912145017",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "19433a7b050190acdb80c708e1bd98418f4d101feb656bfeaadce3d5df7b34e7",
+  "timestamp": "20250912145017"
+}

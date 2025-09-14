@@ -3035,6 +3035,7 @@ def validate_dte_json(
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
+    iva_allowed = False
     if schema:
         item_props = (
             schema.get("properties", {})
@@ -3043,6 +3044,7 @@ def validate_dte_json(
             .get("properties", {})
         )
         allowed_item_keys = set(item_props.keys())
+        iva_allowed = "ivaItem" in allowed_item_keys
     else:
         allowed_item_keys = {
             "numItem",
@@ -3062,15 +3064,18 @@ def validate_dte_json(
             "psv",
             "noGravado",
         }
+        iva_allowed = any("ivaItem" in i for i in cuerpo)
+        if iva_allowed:
+            allowed_item_keys.add("ivaItem")
     precio_key = "precioUni"
-    iva_key = None
+    iva_key = "ivaItem" if iva_allowed else None
 
     for item in cuerpo:
         # --- Normalización de nombres ---
         if "precioUnitario" in item:
             raise ValueError("Usar 'precioUni' en lugar de 'precioUnitario'")
 
-        for k in ("montoIva", "iva", "ivaItem"):
+        for k in ("montoIva", "iva"):
             if k in item:
                 item.pop(k)
 
@@ -3238,11 +3243,14 @@ def validate_dte_json(
                 pass
     payload["resumen"] = resumen
 
-    # Recalcular totales y ajustar discrepancias (excepto para FC ya normalizado)
-    if tipo_dte != "03":
-        cambios = recalcular_totales(payload, precios_incluyen_iva=precios_flag)
-        if cambios:
-            print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
+    # Recalcular totales y ajustar discrepancias
+    cambios = recalcular_totales(
+        payload,
+        precios_incluyen_iva=precios_flag,
+        incluir_iva=bool(iva_key),
+    )
+    if cambios:
+        print("Advertencia: se corrigieron campos de resumen: " + ", ".join(cambios))
 
     ident = payload.get("identificacion", {})
     if ident.get("tipoDte") == "01":

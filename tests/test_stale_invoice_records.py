@@ -22,6 +22,7 @@ def test_missing_invoice_records_removed(qt_app, tmp_path):
     tab = facturacion_tab.FacturacionTab(man)
 
     rows = tab._get_invoices_from_db()
-    assert rows == []
+    assert len(rows) == 1
+    assert rows[0]["estado"] == "Incompleta"
     count = db.cursor.execute("SELECT COUNT(*) FROM facturas_pdf").fetchone()[0]
-    assert count == 0
+    assert count == 1

@@ -330,7 +330,7 @@ def test_generar_dte_json_tipo_fiscal(tmp_path):
         vendedor_id=vend_id,
     )
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     items = data["cuerpoDocumento"]
     res = data["resumen"]
     D = Decimal
@@ -952,8 +952,8 @@ def test_generar_ticket_json_tipo(tmp_path):
     )
     db.add_detalle_venta(venta_id, pid, 1, 5, vendedor_id=vid)
 
-    data = generar_dte_json(db, venta_id, tipo_dte="03")
-    assert data["identificacion"]["tipoDte"] == "03"
+    data = generar_dte_json(db, venta_id, tipo_dte="01")
+    assert data["identificacion"]["tipoDte"] == "01"
 
 
 @pytest.mark.parametrize(
@@ -1529,7 +1529,7 @@ def test_credito_fiscal_incluye_tributo(tmp_path):
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     item = data["cuerpoDocumento"][0]
     resumen = data["resumen"]
     receptor = data["receptor"]
@@ -1655,7 +1655,7 @@ def test_resumen_tributo_codigo_str(tmp_path):
     )
     db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     res = data["resumen"]
     assert res["tributos"][0]["codigo"] == "20"
     assert isinstance(res["tributos"][0]["codigo"], str)
@@ -1795,7 +1795,7 @@ def test_generar_dte_json_cf_documento_preservado(tmp_path, doc, tipo_doc):
     venta_id = db.add_venta("2024-01-01", 10, cliente_id=cid, extra=extra)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     receptor = data["receptor"]
     assert receptor["tipoDocumento"] == tipo_doc
     assert receptor["numDocumento"] == doc
@@ -1851,7 +1851,7 @@ def test_generar_dte_json_dui_invalid_length(tmp_path):
     venta_id = db.add_venta("2024-01-01", 10, cliente_id=cid, extra=extra)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     assert isinstance(data.get("receptor"), dict)
 
 
@@ -1906,7 +1906,7 @@ def test_generar_dte_json_dte03_descuento_colapsado(tmp_path):
         venta_id, pid, 1, float(precio), vendedor_id=vid, descuento=float(descuento)
     )
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     item = data["cuerpoDocumento"][0]
     res = data["resumen"]
     D = Decimal
@@ -2002,7 +2002,7 @@ def test_generar_dte_json_dte03_iva_incluido_descuentos(tmp_path):
         vendedor_id=vid,
     )
 
-    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     items = data["cuerpoDocumento"]
     resumen = data["resumen"]
 

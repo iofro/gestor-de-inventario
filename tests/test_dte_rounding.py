@@ -25,7 +25,7 @@ def test_item_and_total_rounding():
         {'total': venta + iva},
         fiscal={'iva': iva},
         extra={"precios_incluyen_iva": False},
-        tipo_dte="03",
+        tipo_dte="01",
     )
 
     assert f"{float(d2(resumen['totalGravada'])):.2f}" == '23.85'
@@ -55,6 +55,6 @@ def test_resumen_matches_sale_total():
     items_total = D('40.51')
     fiscal = {'iva': D('5.27')}
     venta = {'total': D('45.77')}
-    resumen = calcular_resumen(items_total, venta, fiscal=fiscal, tipo_dte='03')
+    resumen = calcular_resumen(items_total, venta, fiscal=fiscal, tipo_dte='01')
     assert resumen['totalPagar'] == D('45.77')
     assert resumen['tributos'][0]['valor'] == D('5.26')

@@ -20,8 +20,8 @@
   "documentoRelacionado": [
     {
       "fechaEmision": "2024-01-01",
-      "numeroDocumento": "DTE-03-S001P001-000000000000001",
-      "tipoDocumento": "03",
+      "numeroDocumento": "DTE-01-S001P001-000000000000001",
+      "tipoDocumento": "01",
       "tipoGeneracion": 1
     }
   ],

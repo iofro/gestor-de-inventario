@@ -15,13 +15,13 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import copy
 import json
+import os
 from typing import Optional
 
 from db import DB
 from dte import (
     DTE_VERSIONES,
     generar_cabecera_dte_data,
-    generar_dte_json,
     sanitize_dte_payload,
 )
 from utils import catalogos
@@ -66,17 +66,30 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
         raise ValueError("La nota no está asociada a una venta")
 
     venta_row = db.cursor.execute(
-        "SELECT cliente_id, total FROM ventas WHERE id=?", (venta_id,)
+        "SELECT extra FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     if not venta_row:
         raise ValueError("Venta no encontrada")
-    venta = dict(venta_row)
-    tipo_doc = "01"
-    if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-        # Se asume comprobante de crédito fiscal cuando no hay cliente asociado
-        tipo_doc = "03"
 
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+    extra = {}
+    if venta_row["extra"]:
+        try:
+            extra = json.loads(venta_row["extra"])
+        except Exception:
+            extra = {}
+    dte_path = extra.get("dteJsonPath")
+    if not dte_path or not os.path.exists(dte_path):
+        raise ValueError("DTE base no encontrado")
+
+    estado_row = db.cursor.execute(
+        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        (venta_id,),
+    ).fetchone()
+    if not estado_row or estado_row["estado"] != "Aceptado":
+        raise ValueError("El DTE base no fue aceptado")
+
+    with open(dte_path, "r", encoding="utf-8") as fh:
+        dte_origen = json.load(fh)
 
     detalles = None
     if nota.get("detalles"):

@@ -162,6 +162,12 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         schema = FC_SCHEMA
     cleaned = _strip_additional_properties(data, schema)
     limpiar_documentos(cleaned)
+    try:
+        recalcular_totales(cleaned, incluir_iva=True)
+    except Exception:
+        pass
+    if "resumen" in cleaned:
+        cleaned["resumen"].setdefault("tributos", None)
     cleaned = _remove_nulls(cleaned)
 
     schema_props = set(schema.get("properties", {}))
@@ -741,6 +747,8 @@ def norm_receptor(
             nrc_digits = re.sub(r"\D", "", str(nrc))
             if len(nrc_digits) in (6, 7):
                 r["nrc"] = nrc_digits
+            elif nrc_digits:
+                raise ValueError("NRC inválido")
             else:
                 r["nrc"] = None
         else:
@@ -1535,6 +1543,10 @@ def recalcular_totales(
             item["noGravado"] = d8(D(str(item.get("noGravado") or 0)))
             item["codTributo"] = None
             item["tributos"] = [TRIBUTO_IVA] if base_line > D("0") else []
+            if incluir_iva:
+                item["ivaItem"] = iva_val
+            else:
+                item.pop("ivaItem", None)
             iva_total += iva_val
             venta_gravada_sum += base_line
         else:
@@ -1558,7 +1570,10 @@ def recalcular_totales(
             bases.append(base)
             ivas.append(iva_val)
             cantidades.append(cant)
-            item.pop("ivaItem", None)
+            if incluir_iva:
+                item["ivaItem"] = iva_val
+            else:
+                item.pop("ivaItem", None)
             item["ventaExenta"] = money(0)
             item["ventaNoSuj"] = money(0)
             item["noGravado"] = money(0)
@@ -1588,7 +1603,10 @@ def recalcular_totales(
                     item["ventaGravada"] = base_val
                     precio_u = prices[idx] if idx < len(prices) else d8(0)
                     item["precioUni"] = precio_u if cant > 0 else d8(0)
-                    item.pop("ivaItem", None)
+                    if incluir_iva:
+                        item["ivaItem"] = iva_val
+                    else:
+                        item.pop("ivaItem", None)
                     item.pop("montoDescu", None)
                     if base_val + iva_val != pf_neto:
                         logger.warning(
@@ -1809,6 +1827,8 @@ def recalcular_totales(
         )
         if resumen.get("tributos"):
             resumen["tributos"][0]["valor"] = total_iva_calc
+
+        _set_resumen("totalIva", total_iva_calc)
 
         monto_total = money(total_gravada_calc + total_iva_calc)
         _set_resumen("montoTotalOperacion", monto_total)

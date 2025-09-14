@@ -7,8 +7,15 @@ from reportlab.graphics import renderPDF
 from datetime import datetime
 import json
 import os
+
+from jinja2 import Environment, FileSystemLoader
+
+import utils.catalogos as catalogos
 from paths import DATOS_NEGOCIO_PATH
-from factura_sv import build_qr_url
+from factura_sv import build_qr_url, format_direccion
+
+TEMPLATES_DIR = os.path.join(os.path.dirname(__file__), "templates")
+_jinja_env = Environment(loader=FileSystemLoader(TEMPLATES_DIR), autoescape=False)
 
 
 def _with_falta(value):
@@ -86,6 +93,163 @@ def generar_ticket_pdf(
             y = height - 40
         qr_x = (width - qr_size) / 2
         qr_y = y - qr_size - 20
+        renderPDF.draw(d, c, qr_x, qr_y)
+        c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
+
+    c.showPage()
+    c.save()
+
+
+def generar_ticket_fe_pdf(
+    venta,
+    detalles,
+    archivo="ticket_fe.pdf",
+    datos_negocio=None,
+    dte_data=None,
+):
+    """Genera un ticket de Factura Electrónica amigable para impresión."""
+
+    if datos_negocio is None:
+        datos_negocio = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    datos_negocio = json.load(f)
+            except Exception:
+                datos_negocio = {}
+
+    if dte_data is None:
+        dte_data = {}
+
+    dte_json = dte_data.get("dteJson", {})
+    ident = dte_json.get("identificacion", {})
+    emisor = dte_json.get("emisor", {})
+    receptor = dte_json.get("receptor", {})
+    resumen = dte_json.get("resumen", {})
+
+    codigo_generacion = ident.get("codigoGeneracion", "")
+    numero_control = ident.get("numeroControl", "")
+    tipo_modelo = catalogos.get_value("CAT-003", str(ident.get("tipoModelo", "")), "") or ""
+    tipo_operacion = catalogos.get_value("CAT-004", str(ident.get("tipoOperacion", "")), "") or ""
+    fec_emi = ident.get("fecEmi", "")
+    hor_emi = ident.get("horEmi", "")
+    sello = dte_data.get("selloRecibido") or "—"
+    qr_url = build_qr_url(dte_json) if dte_json else None
+
+    emisor_nombre = (
+        emisor.get("nombre")
+        or emisor.get("nombreComercial")
+        or datos_negocio.get("nombreComercial", "")
+    )
+    emisor_nit = emisor.get("nit") or datos_negocio.get("nit", "")
+    emisor_nrc = emisor.get("nrc") or datos_negocio.get("nrc", "")
+    emisor_act = emisor.get("descActividad") or datos_negocio.get("descActividad", "")
+    emisor_dir = format_direccion(emisor.get("direccion") or datos_negocio.get("direccion"))
+
+    if receptor.get("tipoDocumento") == "37":
+        receptor_tipo_doc = "Otro"
+        receptor_numero = "—"
+        receptor_nombre = "CONSUMIDOR FINAL"
+    else:
+        receptor_tipo_doc = receptor.get("tipoDocumento", "")
+        receptor_numero = receptor.get("numDocumento", "")
+        receptor_nombre = receptor.get("nombre", "")
+    rec_dir_obj = receptor.get("direccion") or {}
+    receptor_direccion = (
+        rec_dir_obj.get("complemento") if isinstance(rec_dir_obj, dict) else rec_dir_obj
+    ) or ""
+    receptor_correo = receptor.get("correo") or ""
+
+    items = []
+    for item in dte_json.get("cuerpoDocumento", []):
+        qty = float(item.get("cantidad", 0))
+        unidad_code = str(item.get("uniMedida", ""))
+        unidad = "Unidad" if unidad_code == "59" else catalogos.get_value("CAT-014", unidad_code, "") or ""
+        desc = str(item.get("descripcion", ""))
+        if len(desc) > 40:
+            desc = desc[:37] + "..."
+        precio = float(item.get("precioUni", 0))
+        subtotal = float(
+            item.get("montoTotal")
+            or item.get("ventaGravada")
+            or item.get("ventaExenta")
+            or item.get("ventaNoSuj")
+            or 0
+        )
+        items.append(
+            {
+                "cantidad": ("{0:.4f}".format(qty)).rstrip("0").rstrip("."),
+                "unidad": unidad,
+                "descripcion": desc,
+                "precio": f"{precio:.2f}",
+                "subtotal": f"{subtotal:.2f}",
+            }
+        )
+
+    sumatoria_ventas = resumen.get("totalVenta") or resumen.get("totalGravada")
+    iva_retenido = resumen.get("ivaRetenido") or resumen.get("ivaPerci1") or ""
+    retencion_renta = resumen.get("retencionRenta") or ""
+    monto_total = resumen.get("montoTotalOperacion") or ""
+    total_pagar = resumen.get("totalPagar") or monto_total
+    condicion_operacion = catalogos.get_value(
+        "CAT-016", str(resumen.get("condicionOperacion", "")), ""
+    ) or ""
+
+    context = {
+        "codigo_generacion": codigo_generacion,
+        "numero_control": numero_control,
+        "tipo_modelo": tipo_modelo,
+        "tipo_operacion": tipo_operacion,
+        "fec_emi": fec_emi,
+        "hor_emi": hor_emi,
+        "sello": sello,
+        "qr_url": qr_url or "",
+        "emisor_nombre": emisor_nombre,
+        "emisor_nit": emisor_nit,
+        "emisor_nrc": emisor_nrc,
+        "emisor_actividad": emisor_act,
+        "emisor_direccion": emisor_dir,
+        "receptor_tipo_doc": receptor_tipo_doc,
+        "receptor_numero": receptor_numero,
+        "receptor_nombre": receptor_nombre,
+        "receptor_direccion": receptor_direccion,
+        "receptor_correo": receptor_correo,
+        "items": items,
+        "sumatoria_ventas": (
+            f"{float(sumatoria_ventas):.2f}" if sumatoria_ventas is not None else None
+        ),
+        "iva_retenido": f"{float(iva_retenido):.2f}" if iva_retenido else "",
+        "retencion_renta": f"{float(retencion_renta):.2f}" if retencion_renta else "",
+        "monto_total": f"{float(monto_total):.2f}" if monto_total else "",
+        "total_pagar": f"{float(total_pagar):.2f}" if total_pagar else "",
+        "condicion_operacion": condicion_operacion,
+    }
+
+    template = _jinja_env.get_template("ticket_fe_01.html")
+    rendered = template.render(**context)
+    lines = [line for line in rendered.splitlines() if line.strip()]
+
+    width = 80 * mm
+    line_height = 4 * mm
+    extra = 30 * mm if qr_url else 0
+    height = 20 * mm + line_height * len(lines) + extra
+    c = canvas.Canvas(archivo, pagesize=(width, height))
+    y = height - 10 * mm
+    c.setFont("Courier", 8)
+    for line in lines:
+        c.drawString(5 * mm, y, line)
+        y -= line_height
+
+    if qr_url:
+        qr_size = 20 * mm
+        qr_code = qr.QrCodeWidget(qr_url)
+        bounds = qr_code.getBounds()
+        w = bounds[2] - bounds[0]
+        h = bounds[3] - bounds[1]
+        d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
+        d.add(qr_code)
+        qr_x = (width - qr_size) / 2
+        qr_y = max(5 * mm, y - qr_size)
         renderPDF.draw(d, c, qr_x, qr_y)
         c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 

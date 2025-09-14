@@ -19,107 +19,50 @@ def decode_jws_payload(token: str) -> dict:
     return json.loads(data.decode("utf-8"))
 
 
-def _version_dir(base: str, codigo: str, json_hash: str, timestamp: str) -> str:
-    return os.path.join(base, codigo, f"{timestamp}-{json_hash}")
-
-
 def ensure_version(dte_json: dict, base_dir: str | None = None) -> tuple[str, str]:
-    """Ensure a directory for the given ``dte_json`` version exists.
+    """Ensure a directory for the given ``dte_json`` exists.
 
-    Returns a tuple ``(version_dir, hashJson)``.
+    Previously this module created versioned subdirectories with metadata and
+    stored JWS signatures.  To reduce the number of generated files we now
+    keep a single directory per ``codigoGeneracion`` containing only the
+    original JSON and, eventually, the final state.
     """
     ident = dte_json.get("identificacion", {})
     codigo = ident.get("codigoGeneracion") or "SIN-CODIGO"
     json_hash = hash_json(dte_json)
-    base_dir = os.path.abspath(base_dir or os.path.join(os.path.dirname(__file__), "..", "dtes"))
-    codigo_dir = os.path.join(base_dir, codigo)
-    os.makedirs(codigo_dir, exist_ok=True)
-    for name in os.listdir(codigo_dir):
-        if name.endswith(f"-{json_hash}"):
-            return os.path.join(codigo_dir, name), json_hash
-    timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
-    version_dir = _version_dir(base_dir, codigo, json_hash, timestamp)
+    base_dir = os.path.abspath(
+        base_dir or os.path.join(os.path.dirname(__file__), "..", "dtes")
+    )
+    version_dir = os.path.join(base_dir, codigo)
     os.makedirs(version_dir, exist_ok=True)
-    save_file(os.path.join(version_dir, "documento.json"), stable_stringify(dte_json, indent=2))
-    meta = {
-        "codigoGeneracion": codigo,
-        "hashJson": json_hash,
-        "timestamp": timestamp,
-        "estado": "borrador",
-        "firmas": [],
-    }
-    save_file(os.path.join(version_dir, "metadata.json"), stable_stringify(meta, indent=2))
+    save_file(
+        os.path.join(version_dir, "documento.json"),
+        stable_stringify(dte_json, indent=2),
+    )
     return version_dir, json_hash
 
 
-def add_jws(version_dir: str, token: str, origen: str = "manual", estado: str = "borrador") -> str:
-    """Store ``token`` under ``version_dir`` registering metadata."""
-    ts = datetime.now().strftime("%Y%m%d%H%M%S")
-    jws_filename = f"documento-{ts}.jws"
-    save_file(os.path.join(version_dir, jws_filename), token, add_final_newline=False)
-    meta_path = os.path.join(version_dir, "metadata.json")
-    try:
-        with open(meta_path, "r", encoding="utf-8") as fh:
-            meta = json.load(fh)
-    except Exception:
-        meta = {"firmas": []}
-    meta.setdefault("firmas", []).append(
-        {
-            "archivo": jws_filename,
-            "fechaFirma": ts,
-            "origen": origen,
-            "estado": estado,
-        }
-    )
-    save_file(meta_path, stable_stringify(meta, indent=2))
-    return jws_filename
+def save_estado(version_dir: str, data: dict) -> str:
+    """Store ``data`` representing the final state of the DTE.
 
-
-def promote(version_dir: str, jws_filename: str) -> None:
-    """Mark the pair as ready for sending."""
-    meta_path = os.path.join(version_dir, "metadata.json")
-    with open(meta_path, "r", encoding="utf-8") as fh:
-        meta = json.load(fh)
-    meta["estado"] = "lista"
-    for firma in meta.get("firmas", []):
-        if firma.get("archivo") == jws_filename:
-            firma["estado"] = "lista"
-    save_file(meta_path, stable_stringify(meta, indent=2))
-
-
-def verify(version_dir: str, jws_filename: str) -> None:
-    """Validate that ``jws_filename`` matches the stored JSON version."""
-    json_path = os.path.join(version_dir, "documento.json")
-    with open(json_path, "r", encoding="utf-8") as fh:
-        data = json.load(fh)
-    meta_path = os.path.join(version_dir, "metadata.json")
-    try:
-        with open(meta_path, "r", encoding="utf-8") as fh:
-            meta = json.load(fh)
-    except Exception:
-        meta = {}
-    if meta.get("hashJson") != hash_json(data):
-        raise ValueError(
-            "La firma no corresponde a la versión actual del documento. Vuelva a firmar o seleccione una firma compatible."
-        )
-    jws_path = os.path.join(version_dir, jws_filename)
-    with open(jws_path, "r", encoding="utf-8") as fh:
-        token = fh.read()
-    payload = decode_jws_payload(token)
-    ident_payload = payload.get("identificacion") or payload.get("identificador") or payload
-    ident_json = data.get("identificacion") or data.get("identificador") or data
-    for key in ("codigoGeneracion", "tipoDte", "version"):
-        if str(ident_payload.get(key)) != str(ident_json.get(key)):
-            raise ValueError(
-                "La firma no corresponde a la versión actual del documento. Vuelva a firmar o seleccione una firma compatible."
-            )
+    The file name is chosen based on ``data['estado']`` when available
+    (``aceptado.json`` or ``rechazado.json``); otherwise ``estado.json`` is
+    used.  The chosen file name is returned.
+    """
+    estado = str(data.get("estado", "")).lower()
+    if estado == "aceptado":
+        name = "aceptado.json"
+    elif estado == "rechazado":
+        name = "rechazado.json"
+    else:
+        name = "estado.json"
+    save_file(os.path.join(version_dir, name), stable_stringify(data, indent=2))
+    return name
 
 
 __all__ = [
     "ensure_version",
-    "add_jws",
-    "promote",
-    "verify",
+    "save_estado",
     "decode_jws_payload",
     "hash_json",
 ]

@@ -2,6 +2,7 @@ from db import DB
 from dte import transmitir_dte, _post_dte
 import dte
 import json
+import os
 from datetime import datetime
 from pathlib import Path
 import pytest
@@ -394,3 +395,68 @@ def test_listar_dtes():
     rows = db.listar_dtes(today, today, "Transmitido")
     assert len(rows) == 1
     assert rows[0]["estado"] == "Transmitido"
+
+
+def test_save_signed_dte_moves_and_cleans(monkeypatch, tmp_path):
+    codigo = "ABC"
+    data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": codigo}}
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    pending_base = tmp_path / "dtes_pendientes" / "fcf"
+    version_dir, _ = dte.versioned_dte.ensure_version(data, base_dir=str(pending_base))
+    json_path = os.path.join(version_dir, "documento.json")
+    dest_old = tmp_path / "dtes" / "fcf" / codigo / "old"
+    os.makedirs(dest_old, exist_ok=True)
+    with open(dest_old / "documento.json", "w") as fh:
+        fh.write("{}")
+    with open(dest_old / "metadata.json", "w") as fh:
+        fh.write("{}")
+    monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda *a, **k: {"estado": "OK"})
+    dte._save_signed_dte(data, "TOKEN", json_path=json_path)
+    dest_codigo_dir = tmp_path / "dtes" / "fcf" / codigo
+    dirs = [p.name for p in dest_codigo_dir.iterdir() if p.is_dir()]
+    assert dirs == [os.path.basename(version_dir)]
+    assert not dest_old.exists()
+    assert not Path(version_dir).exists()
+
+
+def test_transmitir_dte_reuses_pending_json(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+    codigo = "XYZ"
+    data = {
+        "identificacion": {"tipoDte": "01", "codigoGeneracion": codigo},
+        "resumen": {"totalLetras": "X"},
+    }
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    pending_base = tmp_path / "dtes_pendientes" / "fcf"
+    version_dir, _ = dte.versioned_dte.ensure_version(data, base_dir=str(pending_base))
+    json_path = os.path.join(version_dir, "documento.json")
+    db.update_venta_extra(venta, {"codigoGeneracion": codigo, "dteJsonPath": json_path})
+    called = {}
+
+    def fake_enviar(db_, vid, data_, modo_, jws_token=None, json_path=None):
+        called["json_path"] = json_path
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
+    res = transmitir_dte(db, venta)
+    assert called["json_path"] == json_path
+    assert res["estado"] == "Transmitido"
+
+
+def test_transmitir_dte_blocks_if_already_in_dtes(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+    codigo = "AAA"
+    data = {"resumen": {"totalLetras": "X"}}
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    dest_dir = tmp_path / "dtes" / "fcf" / codigo / "v1"
+    os.makedirs(dest_dir, exist_ok=True)
+    json_path = dest_dir / "documento.json"
+    with open(json_path, "w") as fh:
+        json.dump(data, fh)
+    db.update_venta_extra(venta, {"codigoGeneracion": codigo, "dteJsonPath": str(json_path)})
+    with pytest.raises(ValueError):
+        transmitir_dte(db, venta)

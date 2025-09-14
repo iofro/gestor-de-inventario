@@ -152,7 +152,7 @@ def test_generate_invoice_pdf_saves_sobre(tmp_path, monkeypatch):
 
     created = {}
 
-    def fake_save(dte_data, jws_token):
+    def fake_save(dte_data, jws_token, fallido=False, json_path=None):
         fecha = dte_data.get("identificacion", {}).get("fecEmi") or dte.fecha_emision_hoy_str()
         year = str(fecha)[:4]
         base_dir = tmp_path / "dtes" / year

@@ -6,6 +6,7 @@ import copy
 import platform
 import sys
 import re
+import shutil
 import requests as _requests
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -4096,6 +4097,21 @@ def _write_json(path: str, data):
         save_file(path, stable_stringify(data, indent=2))
 
 
+
+DTE_TIPO_DIRS = {
+    "01": "fcf",  # Factura consumidor final
+    "03": "ccf",  # Comprobante de crédito fiscal
+    "04": "nr",   # Nota de remisión
+    "05": "nc",   # Nota de crédito
+    "06": "nd",   # Nota de débito
+    "07": "cr",   # Comprobante de retención
+    "08": "cl",   # Comprobante de liquidación
+    "09": "dcl",  # Documento contable de liquidación
+    "11": "fex",  # Factura de exportación
+    "14": "fse",  # Factura de sujeto excluido
+    "15": "cd",   # Comprobante de donación
+}
+
 def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
     """Return destination directory for ``dte_data`` grouped by tipoDte.
 
@@ -4107,30 +4123,68 @@ def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
     tipo = str(ident.get("tipoDte", "")).zfill(2)
     root = "dte_fallidos" if fallido else "dtes"
     base = os.path.join(os.path.dirname(__file__), root)
-    mapping = {
-        "01": "fcf",  # Factura consumidor final
-        "03": "ccf",  # Comprobante de crédito fiscal
-        "04": "nr",   # Nota de remisión
-        "05": "nc",   # Nota de crédito
-        "06": "nd",   # Nota de débito
-        "07": "cr",   # Comprobante de retención
-        "08": "cl",   # Comprobante de liquidación
-        "09": "dcl",  # Documento contable de liquidación
-        "11": "fex",  # Factura de exportación
-        "14": "fse",  # Factura de sujeto excluido
-        "15": "cd",   # Comprobante de donación
-    }
-    folder = mapping.get(tipo)
+    folder = DTE_TIPO_DIRS.get(tipo)
     path = os.path.join(base, folder) if folder else base
     os.makedirs(path, exist_ok=True)
     return path
 
 
-def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
-    """Guarda el JSON y JWS usando estructura versionada por hash."""
+def _dte_pending_dir(dte_data: dict) -> str:
+    ident = dte_data.get("identificacion", {})
+    tipo = str(ident.get("tipoDte", "")).zfill(2)
+    base = os.path.join(os.path.dirname(__file__), "dtes_pendientes")
+    folder = DTE_TIPO_DIRS.get(tipo)
+    path = os.path.join(base, folder) if folder else base
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def save_dte_json(dte_data: dict) -> str:
+    """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
     try:
-        base_dir = _dte_base_dir(dte_data, fallido=fallido)
+        base_dir = _dte_pending_dir(dte_data)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
+        return os.path.join(version_dir, "documento.json")
+    except Exception:
+        return ""
+
+
+def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False, json_path: str | None = None) -> None:
+    """Guarda el JSON y JWS usando estructura versionada por hash.
+
+    Si ``json_path`` apunta a ``dtes_pendientes``, el directorio que contiene el
+    documento se mueve al destino final eliminando otras versiones previas del
+    mismo ``codigoGeneracion``.
+    """
+    try:
+        ident = dte_data.get("identificacion", {})
+        codigo = ident.get("codigoGeneracion") or "SIN-CODIGO"
+        tipo = str(ident.get("tipoDte", "")).zfill(2)
+        base_dir = _dte_base_dir(dte_data, fallido=fallido)
+        version_dir = None
+        if json_path:
+            pending_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "dtes_pendientes"))
+            abs_json = os.path.abspath(json_path)
+            if abs_json.startswith(pending_root):
+                version_dir = os.path.dirname(abs_json)
+                pend_codigo_dir = os.path.dirname(version_dir)
+                dest_codigo_dir = os.path.join(base_dir, codigo)
+                os.makedirs(dest_codigo_dir, exist_ok=True)
+                version_name = os.path.basename(version_dir)
+                for name in os.listdir(dest_codigo_dir):
+                    if name != version_name:
+                        shutil.rmtree(os.path.join(dest_codigo_dir, name), ignore_errors=True)
+                shutil.move(version_dir, dest_codigo_dir)
+                shutil.rmtree(pend_codigo_dir, ignore_errors=True)
+                version_dir = os.path.join(dest_codigo_dir, version_name)
+                other_root = "dte_fallidos" if not fallido else "dtes"
+                other_base = os.path.join(os.path.dirname(__file__), other_root)
+                folder = DTE_TIPO_DIRS.get(tipo)
+                other_base = os.path.join(other_base, folder) if folder else other_base
+                other_codigo_dir = os.path.join(other_base, codigo)
+                if os.path.isdir(other_codigo_dir):
+                    shutil.rmtree(other_codigo_dir, ignore_errors=True)
+        if version_dir is None:
+            version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
@@ -4142,356 +4196,10 @@ def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> N
         pass
 
 
-class DTEValidationError(Exception):
-    """Error de validación que incluye lista de errores y ruta del JSON."""
-
-    def __init__(self, errors, json_path):
-        super().__init__("; ".join(errors))
-        self.errors = errors
-        self.json_path = json_path
-
-
-def save_dte_json(dte_data: dict) -> str:
-    """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
-    try:
-        base_dir = _dte_base_dir(dte_data)
-        version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
-        return os.path.join(version_dir, "documento.json")
-    except Exception:
-        return ""
-
-
-def _format_validation_errors(exc: Exception) -> list:
-    """Convierte la excepción de validación en una lista de mensajes."""
-    if isinstance(exc, ValidationError) and getattr(exc, "errors", None):
-        formatted = []
-        for err in exc.errors:
-            path = ".".join(str(p) for p in err.path)
-            if path:
-                formatted.append(f"{path}: {err.message}")
-            else:
-                formatted.append(err.message)
-        return formatted
-    msg = str(exc)
-    if ":" in msg:
-        head, tail = msg.split(":", 1)
-        return [f"{head.strip()}: {part.strip()}" for part in tail.split(",")]
-    return [msg]
-
-
-def _decode_jws_payload(token: str) -> dict:
-    """Return the JSON payload embedded in ``token``.
-
-    Raises ``ValueError`` if the token is not a valid JWS string.
-    """
-    try:
-        parts = token.split(".")
-        if len(parts) != 3:
-            raise ValueError("JWS malformado")
-        payload = parts[1]
-        padding = "=" * (-len(payload) % 4)
-        payload_bytes = base64.urlsafe_b64decode(payload + padding)
-        return json.loads(payload_bytes.decode("utf-8"))
-    except Exception as exc:  # pragma: no cover - defensive
-        raise ValueError("documento inválido") from exc
-
-
-def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> dict:
-    """Retorna el body listo para ``POST /fesv/recepciondte``.
-
-    Si ``documento`` parece un JWS se extraen los metadatos desde su payload.
-    Cuando no es un JWS válido o la decodificación falla, los metadatos se
-    obtienen de ``dte_data``.  Valida campos requeridos y formatos.  En caso de
-    error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
-    """
-
-    if isinstance(documento, str):
-        documento = documento.strip()
-
-    meta: dict[str, object] = {}
-    payload = None
-
-    if isinstance(documento, str) and documento.count(".") == 2:
-        try:
-            payload = _decode_jws_payload(documento)
-            meta = payload.get("identificacion") or payload.get("identificador") or payload
-        except Exception:
-            payload = None
-            meta = {}
-
-    if isinstance(dte_data, dict):
-        ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
-        if payload is not None:
-            ident_payload = payload.get("identificacion") or payload.get("identificador") or payload
-            for key in ("codigoGeneracion", "tipoDte", "version"):
-                if str(ident_payload.get(key)) != str(ident.get(key)):
-                    return {
-                        "estado": "Error",
-                        "detalle": "La firma no corresponde a la versión actual del documento. Vuelva a firmar o seleccione una firma compatible.",
-                    }
-        if meta:
-            for k, v in ident.items():
-                meta.setdefault(k, v)
-        else:
-            meta = ident
-
-    try:
-        ambiente = str(meta["ambiente"])
-    except Exception:
-        return {"estado": "Error", "detalle": "falta ambiente"}
-    if ambiente not in {"00", "01"}:
-        return {"estado": "Error", "detalle": "ambiente inválido"}
-
-    try:
-        version = int(meta["version"])
-    except Exception:
-        return {"estado": "Error", "detalle": "version inválida"}
-
-    tipo = meta.get("tipoDte") or meta.get("tipoDocumento")
-    if tipo is None:
-        return {"estado": "Error", "detalle": "tipoDte requerido"}
-    tipo = str(tipo).zfill(2)
-
-    codigo = meta.get("codigoGeneracion")
-    if codigo is None:
-        return {"estado": "Error", "detalle": "codigoGeneracion requerido"}
-
-    id_envio = meta.get("idEnvio", 1)
-    try:
-        id_envio = int(id_envio)
-    except Exception:
-        return {"estado": "Error", "detalle": "idEnvio inválido"}
-
-    return {
-        "ambiente": ambiente,
-        "idEnvio": id_envio,
-        "version": version,
-        "tipoDte": tipo,
-        "codigoGeneracion": str(codigo),
-        "documento": documento,
-    }
-
-def format_cliente_id_from_dui(dui: str | None) -> str | None:
-    if not dui:
-        return None
-    return re.sub(r"\D+", "", str(dui)) or None
-
-
-def detect_user_agent(
-    user_agent: str | None = None,
-    opts: dict | None = None,
-    app_version: str | None = None,
-    client_id: str | None = None,
-) -> str:
-    # 1) UA explícito
-    if user_agent:
-        return str(user_agent)
-    # 2) UA proveniente de la capa web (navegador reenviado en opts)
-    if isinstance(opts, dict) and opts.get("user_agent"):
-        ua_from_opts = str(opts["user_agent"])[:256]
-        return ua_from_opts
-    # 3) Fallback genérico
-    av = app_version or APP_VERSION
-    parts = str(av).split(".")
-    base_version = ".".join(parts[:2]) if parts else str(av)
-    base = f"Vertex-DTE/{base_version}"
-    return base
-
-
-def build_auth_header(
-    auth: dict | None,
-    app_version: str | None = None,
-    client_id: str | None = None,
-) -> dict:
-    headers: dict = {}
-    if auth:
-        # 1) Authorization explícito
-        if auth.get("authorization"):
-            headers["Authorization"] = str(auth["authorization"])
-        # 2) Bearer
-        elif auth.get("access_token") or auth.get("bearer"):
-            token = auth.get("access_token") or auth.get("bearer")
-            token = str(token).strip()
-            if token.lower().startswith("bearer "):
-                headers["Authorization"] = token
-            else:
-                headers["Authorization"] = f"Bearer {token}" if token else ""
-        # 3) Basic
-        elif auth.get("basic_user") and auth.get("basic_password"):
-            creds = f"{auth['basic_user']}:{auth['basic_password']}"
-            b64 = base64.b64encode(creds.encode()).decode()
-            headers["Authorization"] = f"Basic {b64}"
-        # 4) Esquema personalizado
-        elif auth.get("scheme") and auth.get("credentials"):
-            headers["Authorization"] = f"{auth['scheme']} {auth['credentials']}"
-
-        # 5) Mezclar headers extra
-        if isinstance(auth.get("headers"), dict):
-            headers.update(auth["headers"])
-
-    # Metadatos de trazabilidad:
-    if app_version:
-        headers.setdefault("app-version", str(app_version))
-    if client_id:
-        headers.setdefault("cliente-id", str(client_id))
-    return headers
-
-
-def _post_dte(
-    url: str,
-    token: str,
-    documento: str,
-    dte_data: dict | None = None,
-    user_agent: str | None = None,
-    auth: dict | None = None,
-    opts: dict | None = None,
-    app_version: str | None = None,
-    dui: str | None = None,
-    client_id: str | None = None,
-) -> dict:
-    token = token or ""
-    if token:
-        logger.debug("Token: %s...%s", token[:5], token[-5:])
-    else:
-        logger.debug("Token: <empty>")
-
-    pu = urlparse(url)
-    assert pu.netloc in {
-        "apitest.dtes.mh.gob.sv",
-        "api.dtes.mh.gob.sv",
-    }, f"Host inválido: {url}"
-    assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
-
-    sobre = construir_sobre_recepcion(documento, dte_data)
-    if sobre.get("estado") == "Error":
-        return sobre
-
-    client_id = client_id or format_cliente_id_from_dui(dui)
-    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
-    auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
-        app_version=app_version or APP_VERSION,
-        client_id=client_id,
-    )
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": ua,
-        **auth_headers,
-    }
-
-    try:
-        print(json.dumps(sobre, ensure_ascii=False))
-        resp = requests.post(url, headers=headers, json=sobre, timeout=20)
-    except (requests.ConnectionError, requests.Timeout):
-        return {"estado": "Error", "detalle": "Sin conexión a Internet"}
-    except requests.RequestException as exc:
-        return {"estado": "Error", "detalle": str(exc)}
-
-    text = getattr(resp, "text", "")
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
-
-    if resp.status_code in {401, 403}:
-        result = {
-            "estado": "Rechazado",
-            "http_status": 401,
-            "detalle": "Token inválido o caducado",
-        }
-        print(json.dumps(result, ensure_ascii=False))
-        return result
-
-    if isinstance(resp.status_code, int) and resp.status_code >= 400:
-        detalle = data if data is not None else text
-        result = {
-            "estado": "Rechazado",
-            "http_status": resp.status_code,
-            "detalle": detalle,
-        }
-        print(json.dumps(result, ensure_ascii=False))
-        return result
-
-    result = data if data is not None else {"estado": "Recibido", "detalle": text}
-    print(json.dumps(result, ensure_ascii=False))
-    return result
-
-
-def _post_evento(
-    url: str,
-    token: str,
-    evento: str,
-    evento_data: dict | None = None,
-    user_agent: str | None = None,
-    auth: dict | None = None,
-    opts: dict | None = None,
-    app_version: str | None = None,
-    dui: str | None = None,
-    client_id: str | None = None,
-) -> dict:
-    token = token or ""
-    if token:
-        logger.debug("Token: %s...%s", token[:5], token[-5:])
-    else:
-        logger.debug("Token: <empty>")
-
-    pu = urlparse(url)
-    assert pu.netloc in {
-        "apitest.dtes.mh.gob.sv",
-        "api.dtes.mh.gob.sv",
-    }, f"Host inválido: {url}"
-    assert pu.path.rstrip("/") == "/fesv/contingencia", f"Path inválido: {url}"
-
-    body = {"documento": evento}
-    if evento_data:
-        ident = evento_data.get("identificacion", {})
-        ambiente = ident.get("ambiente")
-        version = ident.get("version")
-        if ambiente:
-            body["ambiente"] = ambiente
-        if version:
-            body["version"] = version
-
-    client_id = client_id or format_cliente_id_from_dui(dui)
-    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
-    auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
-        app_version=app_version or APP_VERSION,
-        client_id=client_id,
-    )
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": ua,
-        **auth_headers,
-    }
-
-    try:
-        print(json.dumps(body, ensure_ascii=False))
-        resp = requests.post(url, headers=headers, json=body, timeout=20)
-    except requests.RequestException as exc:
-        return {"estado": "Error", "detalle": str(exc)}
-
-    text = getattr(resp, "text", "")
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
-
-    if isinstance(resp.status_code, int) and resp.status_code >= 400:
-        detalle = data if data is not None else text
-        result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
-        print(json.dumps(result, ensure_ascii=False))
-        return result
-
-    result = data if data is not None else {"estado": "Recibido", "detalle": text}
-    print(json.dumps(result, ensure_ascii=False))
-    return result
 
 
 def transmitir_dte(
-    db: DB, venta_id: int, modo: str | None = None, tipo_dte: str = "01"
+    db: DB, venta_id: int, modo: str | None = None, tipo_dte: str = "01",
 ) -> dict:
     """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
@@ -4510,18 +4218,24 @@ def transmitir_dte(
             extra = json.loads(row[0])
         except Exception:
             extra = {}
+    base_dir = Path(__file__).resolve().parent
+    dtes_dir = base_dir / "dtes"
+    fallidos_dir = base_dir / "dte_fallidos"
+    pendientes_dir = base_dir / "dtes_pendientes"
     json_path = extra.get("dteJsonPath") or extra.get("dte_json_path")
     if json_path and os.path.exists(json_path):
+        p = Path(json_path).resolve()
+        if dtes_dir in p.parents or fallidos_dir in p.parents:
+            raise ValueError("El DTE ya fue enviado")
         try:
-            with open(json_path, "r", encoding="utf-8") as fh:
+            with open(p, "r", encoding="utf-8") as fh:
                 data = json.load(fh)
         except Exception:
             data = None
     if data is None:
         codigo = extra.get("codigoGeneracion") or extra.get("codigo_generacion")
         if codigo:
-            base_dir = Path(__file__).resolve().parent / "dtes"
-            matches = list(base_dir.glob(f"*/{codigo}/*/documento.json"))
+            matches = list(pendientes_dir.glob(f"*/{codigo}/*/documento.json"))
             if matches:
                 json_path = str(matches[-1])
                 try:
@@ -4530,6 +4244,10 @@ def transmitir_dte(
                     db.update_venta_extra(venta_id, {"dteJsonPath": json_path})
                 except Exception:
                     data = None
+            else:
+                if list(dtes_dir.glob(f"*/{codigo}/*/documento.json")) or list(
+                    fallidos_dir.glob(f"*/{codigo}/*/documento.json")):
+                    raise ValueError("El DTE ya fue enviado")
 
     row = db.cursor.execute(
         "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
@@ -4567,7 +4285,7 @@ def transmitir_dte(
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
-    resp = _enviar_documento(db, venta_id, data, modo)
+    resp = _enviar_documento(db, venta_id, data, modo, json_path=json_path)
     if resp.get("sello"):
         db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
     return resp
@@ -4812,8 +4530,308 @@ def _parse_error_response(respuesta: dict) -> str:
     return mensaje
 
 
+def construir_sobre_recepcion(documento: str, dte_data: dict | None = None) -> dict:
+    """Retorna el body listo para ``POST /fesv/recepciondte``.
+
+    Si ``documento`` parece un JWS se extraen los metadatos desde su payload.
+    Cuando no es un JWS válido o la decodificación falla, los metadatos se
+    obtienen de ``dte_data``.  Valida campos requeridos y formatos.  En caso de
+    error devuelve ``{"estado": "Error", "detalle": "<mensaje>"}``.
+    """
+
+    if isinstance(documento, str):
+        documento = documento.strip()
+
+    meta: dict[str, object] = {}
+    payload = None
+
+    if isinstance(documento, str) and documento.count(".") == 2:
+        try:
+            payload = _decode_jws_payload(documento)
+            meta = payload.get("identificacion") or payload.get("identificador") or payload
+        except Exception:
+            payload = None
+            meta = {}
+
+    if isinstance(dte_data, dict):
+        ident = dte_data.get("identificacion") or dte_data.get("identificador") or dte_data
+        if payload is not None:
+            ident_payload = payload.get("identificacion") or payload.get("identificador") or payload
+            for key in ("codigoGeneracion", "tipoDte", "version"):
+                if str(ident_payload.get(key)) != str(ident.get(key)):
+                    return {
+                        "estado": "Error",
+                        "detalle": "La firma no corresponde a la versión actual del documento. Vuelva a firmar o seleccione una firma compatible.",
+                    }
+        if meta:
+            for k, v in ident.items():
+                meta.setdefault(k, v)
+        else:
+            meta = ident
+
+    try:
+        ambiente = str(meta["ambiente"])
+    except Exception:
+        return {"estado": "Error", "detalle": "falta ambiente"}
+    if ambiente not in {"00", "01"}:
+        return {"estado": "Error", "detalle": "ambiente inválido"}
+
+    try:
+        version = int(meta["version"])
+    except Exception:
+        return {"estado": "Error", "detalle": "version inválida"}
+
+    tipo = meta.get("tipoDte") or meta.get("tipoDocumento")
+    if tipo is None:
+        return {"estado": "Error", "detalle": "tipoDte requerido"}
+    tipo = str(tipo).zfill(2)
+
+    codigo = meta.get("codigoGeneracion")
+    if codigo is None:
+        return {"estado": "Error", "detalle": "codigoGeneracion requerido"}
+
+    id_envio = meta.get("idEnvio", 1)
+    try:
+        id_envio = int(id_envio)
+    except Exception:
+        return {"estado": "Error", "detalle": "idEnvio inválido"}
+
+    return {
+        "ambiente": ambiente,
+        "idEnvio": id_envio,
+        "version": version,
+        "tipoDte": tipo,
+        "codigoGeneracion": str(codigo),
+        "documento": documento,
+    }
+
+
+def format_cliente_id_from_dui(dui: str | None) -> str | None:
+    if not dui:
+        return None
+    return re.sub(r"\D+", "", str(dui)) or None
+
+
+
+def detect_user_agent(
+    user_agent: str | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    client_id: str | None = None,
+) -> str:
+    # 1) UA explícito
+    if user_agent:
+        return str(user_agent)
+    # 2) UA proveniente de la capa web (navegador reenviado en opts)
+    if isinstance(opts, dict) and opts.get("user_agent"):
+        ua_from_opts = str(opts["user_agent"])[:256]
+        return ua_from_opts
+    # 3) Fallback genérico
+    av = app_version or APP_VERSION
+    parts = str(av).split(".")
+    base_version = ".".join(parts[:2]) if parts else str(av)
+    base = f"Vertex-DTE/{base_version}"
+    return base
+
+
+def build_auth_header(
+    auth: dict | None,
+    app_version: str | None = None,
+    client_id: str | None = None,
+) -> dict:
+    headers: dict = {}
+    if auth:
+        # 1) Authorization explícito
+        if auth.get("authorization"):
+            headers["Authorization"] = str(auth["authorization"])
+        # 2) Bearer
+        elif auth.get("access_token") or auth.get("bearer"):
+            token = auth.get("access_token") or auth.get("bearer")
+            token = str(token).strip()
+            if token.lower().startswith("bearer "):
+                headers["Authorization"] = token
+            else:
+                headers["Authorization"] = f"Bearer {token}" if token else ""
+        # 3) Basic
+        elif auth.get("basic_user") and auth.get("basic_password"):
+            creds = f"{auth['basic_user']}:{auth['basic_password']}"
+            b64 = base64.b64encode(creds.encode()).decode()
+            headers["Authorization"] = f"Basic {b64}"
+        # 4) Esquema personalizado
+        elif auth.get("scheme") and auth.get("credentials"):
+            headers["Authorization"] = f"{auth['scheme']} {auth['credentials']}"
+
+        # 5) Mezclar headers extra
+        if isinstance(auth.get("headers"), dict):
+            headers.update(auth["headers"])
+
+    # Metadatos de trazabilidad:
+    if app_version:
+        headers.setdefault("app-version", str(app_version))
+    if client_id:
+        headers.setdefault("cliente-id", str(client_id))
+    return headers
+def _post_dte(
+    url: str,
+    token: str,
+    documento: str,
+    dte_data: dict | None = None,
+    user_agent: str | None = None,
+    auth: dict | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    dui: str | None = None,
+    client_id: str | None = None,
+) -> dict:
+    token = token or ""
+    if token:
+        logger.debug("Token: %s...%s", token[:5], token[-5:])
+    else:
+        logger.debug("Token: <empty>")
+
+    pu = urlparse(url)
+    assert pu.netloc in {
+        "apitest.dtes.mh.gob.sv",
+        "api.dtes.mh.gob.sv",
+    }, f"Host inválido: {url}"
+    assert pu.path.rstrip("/") == "/fesv/recepciondte", f"Path inválido: {url}"
+
+    sobre = construir_sobre_recepcion(documento, dte_data)
+    if sobre.get("estado") == "Error":
+        return sobre
+
+    client_id = client_id or format_cliente_id_from_dui(dui)
+    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
+    auth_headers = build_auth_header(
+        auth if auth is not None else {"access_token": token},
+        app_version=app_version or APP_VERSION,
+        client_id=client_id,
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": ua,
+        **auth_headers,
+    }
+
+    try:
+        print(json.dumps(sobre, ensure_ascii=False))
+        resp = requests.post(url, headers=headers, json=sobre, timeout=20)
+    except (requests.ConnectionError, requests.Timeout):
+        return {"estado": "Error", "detalle": "Sin conexión a Internet"}
+    except requests.RequestException as exc:
+        return {"estado": "Error", "detalle": str(exc)}
+
+    text = getattr(resp, "text", "")
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if resp.status_code in {401, 403}:
+        result = {
+            "estado": "Rechazado",
+            "http_status": 401,
+            "detalle": "Token inválido o caducado",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else text
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": detalle,
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
+
+
+def _post_evento(
+    url: str,
+    token: str,
+    evento: str,
+    evento_data: dict | None = None,
+    user_agent: str | None = None,
+    auth: dict | None = None,
+    opts: dict | None = None,
+    app_version: str | None = None,
+    dui: str | None = None,
+    client_id: str | None = None,
+) -> dict:
+    token = token or ""
+    if token:
+        logger.debug("Token: %s...%s", token[:5], token[-5:])
+    else:
+        logger.debug("Token: <empty>")
+
+    pu = urlparse(url)
+    assert pu.netloc in {
+        "apitest.dtes.mh.gob.sv",
+        "api.dtes.mh.gob.sv",
+    }, f"Host inválido: {url}"
+    assert pu.path.rstrip("/") == "/fesv/contingencia", f"Path inválido: {url}"
+
+    client_id = client_id or format_cliente_id_from_dui(dui)
+    ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
+    auth_headers = build_auth_header(
+        auth if auth is not None else {"access_token": token},
+        app_version=app_version or APP_VERSION,
+        client_id=client_id,
+    )
+    headers = {
+        "Content-Type": "application/json",
+        "Accept": "application/json",
+        "User-Agent": ua,
+        **auth_headers,
+    }
+
+    payload = evento_data or {}
+    try:
+        print(json.dumps(payload, ensure_ascii=False))
+        resp = requests.post(url, headers=headers, json=payload, timeout=20)
+    except (requests.ConnectionError, requests.Timeout):
+        return {"estado": "Error", "detalle": "Sin conexión a Internet"}
+    except requests.RequestException as exc:
+        return {"estado": "Error", "detalle": str(exc)}
+
+    text = getattr(resp, "text", "")
+    try:
+        data = resp.json()
+    except Exception:
+        data = None
+
+    if resp.status_code in {401, 403}:
+        result = {
+            "estado": "Rechazado",
+            "http_status": 401,
+            "detalle": "Token inválido o caducado",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    if isinstance(resp.status_code, int) and resp.status_code >= 400:
+        detalle = data if data is not None else text
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": detalle,
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
+    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    print(json.dumps(result, ensure_ascii=False))
+    return result
+
+
 def _enviar_documento(
-    db: DB, doc_id: int, data: dict, modo: str = "normal", jws_token: str | None = None
+    db: DB, doc_id: int, data: dict, modo: str = "normal", jws_token: str | None = None, json_path: str | None = None
 ) -> dict:
     """Firma y envía ``data`` registrando el envío.
 
@@ -4861,7 +4879,7 @@ def _enviar_documento(
 
     if modo == "contingencia":
         try:
-            _save_signed_dte(data, signed, fallido=False)
+            _save_signed_dte(data, signed, fallido=False, json_path=json_path)
         except Exception:
             pass
         db.registrar_envio_dte(
@@ -4911,7 +4929,7 @@ def _enviar_documento(
         json.dumps(respuesta, ensure_ascii=False),
     )
     try:
-        _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
+        _save_signed_dte(data, signed, fallido=(estado == "Rechazado"), json_path=json_path)
     except Exception:
         pass
     if estado == "Rechazado":

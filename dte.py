@@ -702,12 +702,23 @@ def norm_receptor(
     es_ticket: bool = False,
     *,
     strict_geo: bool = True,
+    schema: dict | None = None,
 ) -> dict:
     r = dict(r or {})
     tipo = (r.get("tipoDocumento") or "").strip() or None
     num = (r.get("numDocumento") or "").strip() or None
+    required = set()
+    if schema:
+        required = set(
+            schema.get("properties", {})
+            .get("receptor", {})
+            .get("required", [])
+        )
+    nit_required = "nit" in required
+    nombre_com_required = "nombreComercial" in required
+
     nit_val = r.get("nit")
-    if nit_val and not num:
+    if nit_val and not num and not nit_required:
         num = re.sub(r"\D", "", str(nit_val))
         tipo = tipo or "36"
     dui_val = r.get("dui")
@@ -795,6 +806,11 @@ def norm_receptor(
         r["telefono"] = None
 
     for k in ("nit", "nombreComercial", "giro", "dui"):
+        if k == "nit" and nit_required:
+            r["nit"] = _clean_nit(r.get("nit"))
+            continue
+        if k == "nombreComercial" and nombre_com_required:
+            continue
         r.pop(k, None)
 
     for k in ("nrc", "nombre", "codActividad", "descActividad", "telefono", "correo"):
@@ -2160,7 +2176,10 @@ def generar_dte_json(
             if val not in (None, "", []):
                 rec[key] = val
 
-    receptor = norm_receptor(rec, es_ticket=extra.get("es_ticket"))
+    schema = catalogos.get_dte_schema(tipo_dte)
+    receptor = norm_receptor(
+        rec, es_ticket=extra.get("es_ticket"), schema=schema
+    )
 
     if not extra.get("es_ticket"):
         if not receptor.get("codActividad"):
@@ -2788,6 +2807,7 @@ def validate_dte_json(
     q_field = d8 if tipo_dte == "03" else d2
     if tipo_dte_val not in catalogos.DTE_TIPOS:
         raise ValueError("tipoDte inválido")
+    schema = catalogos.get_dte_schema(tipo_dte_val)
     if tipo_dte_val in {"03", "05", "06"}:
         precios_flag = True
         extra_conf["precios_incluyen_iva"] = True
@@ -2963,7 +2983,15 @@ def validate_dte_json(
 
     receptor = payload.get("receptor") or {}
     es_ticket = tipo_dte == "01" and extra_conf.get("es_ticket")
-    receptor = norm_receptor(receptor, es_ticket=es_ticket)
+    receptor = norm_receptor(receptor, es_ticket=es_ticket, schema=schema)
+    req_receptor = set(
+        schema.get("properties", {})
+        .get("receptor", {})
+        .get("required", [])
+    ) if schema else set()
+    if "nit" in req_receptor and "nombreComercial" in req_receptor:
+        receptor.pop("tipoDocumento", None)
+        receptor.pop("numDocumento", None)
     if tipo_dte == "01":
         allowed = {
             "tipoDocumento",
@@ -2987,7 +3015,6 @@ def validate_dte_json(
     payload["receptor"] = receptor
 
     cuerpo = payload.get("cuerpoDocumento", [])
-    schema = catalogos.get_dte_schema(tipo_dte)
     if schema:
         item_props = (
             schema.get("properties", {})

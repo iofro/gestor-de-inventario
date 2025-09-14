@@ -4206,11 +4206,55 @@ def _dte_base_dir(dte_data: dict, fallido: bool = False, root: str | None = None
     return path
 
 
+def _compute_json_filename(dte_data: dict) -> str:
+    """Return MH-compliant JSON file name for ``dte_data``."""
+    from utils.docs import sanitize_filename
+    ident = dte_data.get("identificacion", {})
+    receptor = dte_data.get("receptor", {}) or {}
+    fecha = ident.get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
+    try:
+        d = datetime.strptime(str(fecha)[:10], "%Y-%m-%d")
+    except Exception:
+        d = datetime.now()
+    date_str = d.strftime("%Y%m%d")
+    numero_control = ident.get("numeroControl") or ""
+    if isinstance(numero_control, str):
+        m = re.match(r"^(DTE-\d{2}-[^-]+-)(\d+)$", numero_control)
+        if m:
+            numero_control = f"{m.group(1)}{int(m.group(2)):015d}"
+    empresa = receptor.get("nombre") or receptor.get("nombreComercial") or ""
+    tipo = str(ident.get("tipoDte") or ident.get("tipoDocumento") or "").zfill(2)
+    doc_map = {
+        "01": "ConsumidorFinal",
+        "03": "CreditoFiscal",
+        "04": "NotaRemision",
+        "05": "NotaCredito",
+        "06": "NotaDebito",
+        "07": "ComprobanteRetencion",
+        "08": "ComprobanteLiquidacion",
+        "09": "DocumentoContableLiquidacion",
+        "11": "FacturaExportacion",
+        "14": "FacturaSujetoExcluido",
+        "15": "ComprobanteDonacion",
+    }
+    doc_type = doc_map.get(tipo, "DTE")
+    base = f"{date_str}_{sanitize_filename(empresa)}_{numero_control}_{sanitize_filename(doc_type)}"
+    return base + ".json"
+
+
 def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda únicamente el JSON original y el estado final del DTE."""
     try:
         base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
+        try:
+            filename = _compute_json_filename(dte_data)
+            src = os.path.join(version_dir, "documento.json")
+            dst = os.path.join(version_dir, filename)
+            if os.path.exists(src) and not os.path.exists(dst):
+                os.replace(src, dst)
+        except Exception:
+            pass
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
             versioned_dte.save_estado(version_dir, sobre)
@@ -4241,14 +4285,27 @@ def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: 
             shutil.rmtree(pend_codigo_dir, ignore_errors=True)
         except Exception:
             pass
-        # Remove any leftover files besides JSON
+        filename = _compute_json_filename(dte_data)
+        json_dest = os.path.join(dest_dir, filename)
+        main_json = None
         for name in os.listdir(dest_dir):
-            if not name.endswith('.json'):
+            path = os.path.join(dest_dir, name)
+            if name.endswith('.json'):
+                if name not in {"aceptado.json", "rechazado.json", "estado.json"}:
+                    main_json = path
+            else:
                 try:
-                    os.remove(os.path.join(dest_dir, name))
+                    os.remove(path)
                 except Exception:
                     pass
-        return os.path.join(dest_dir, "documento.json")
+        if main_json and os.path.basename(main_json) != filename:
+            try:
+                os.replace(main_json, json_dest)
+            except Exception:
+                json_dest = main_json
+        elif main_json:
+            json_dest = main_json
+        return json_dest
     except Exception:
         return json_path
 
@@ -4262,12 +4319,23 @@ class DTEValidationError(Exception):
         self.json_path = json_path
 
 
-def save_dte_json(dte_data: dict) -> str:
-    """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
+def save_dte_json(dte_data: dict, filename: str | None = None) -> str:
+    """Guarda ``dte_data`` en estructura versionada y devuelve la ruta.
+
+    ``filename`` permite conservar el nombre original del archivo JSON.
+    """
     try:
         base_dir = _dte_base_dir(dte_data, root=PENDIENTES_DIR)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
-        return os.path.join(version_dir, "documento.json")
+        target = os.path.join(version_dir, "documento.json")
+        if filename:
+            dest = os.path.join(version_dir, filename)
+            try:
+                os.replace(target, dest)
+                target = dest
+            except Exception:
+                pass
+        return target
     except Exception:
         return ""
 

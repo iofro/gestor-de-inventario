@@ -64,9 +64,9 @@ def test_nd_minimum_pipeline():
 
     env["documentoRelacionado"] = [
         {
-            "tipoDocumento": "03",
+            "tipoDocumento": "01",
             "tipoGeneracion": 1,
-            "numeroDocumento": "DTE-03-S001P001-000000000000001",
+            "numeroDocumento": "DTE-01-S001P001-000000000000001",
             "fechaEmision": "2024-01-01",
         }
     ]

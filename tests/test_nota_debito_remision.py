@@ -38,7 +38,7 @@ def _sample_data():
 def _doc_rel():
     return [
         {
-            "tipoDocumento": "03",
+            "tipoDocumento": "01",
             "tipoGeneracion": 2,
             "numeroDocumento": "12345678-ABCD-1234-ABCD-1234567890AB",
             "fechaEmision": "2024-01-01",
@@ -78,7 +78,7 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     assert data["identificacion"]["tipoDte"] == "06"
     assert data["resumen"]["montoTotalOperacion"] > 0
     doc_rel = data["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["fechaEmision"]
     assert doc_rel["numeroDocumento"] != data["identificacion"].get("numeroControl")
@@ -132,7 +132,7 @@ def test_generar_nde_ticket_minimo(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
     db = create_db()
     dte_origen = {
-        "identificacion": {"tipoDte": "03", "codigoGeneracion": "UUID", "fecEmi": "2024-01-01"},
+        "identificacion": {"tipoDte": "01", "codigoGeneracion": "UUID", "fecEmi": "2024-01-01"},
         "emisor": {},
         "receptor": {},
         "resumen": {
@@ -229,8 +229,8 @@ def test_nota_debito_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
     doc_rel = {
-        "tipo": "03",
-        "numero_control": "DTE-03-S001P001-000000000000001",
+        "tipo": "01",
+        "numero_control": "DTE-01-S001P001-000000000000001",
         "codigo_generacion": "abc",
         "fecha": "2024-01-01",
     }

@@ -4590,9 +4590,10 @@ def transmitir_dte(
 ) -> dict:
     """Genera y transmite un DTE reutilizando ``_enviar_documento``.
 
-    ``tipo_dte`` permite especificar el código del documento a transmitir,
-    usando ``"01"`` para facturas y ``"03"`` para tickets. Los reenvíos
-    reutilizan el mismo ``codigoGeneracion`` previamente guardado.
+    ``tipo_dte`` permite especificar el código del documento a transmitir.
+    Actualmente tanto tickets como facturas a consumidor final se envían con
+    el código ``"01"``. Los reenvíos reutilizan el mismo
+    ``codigoGeneracion`` previamente guardado.
     """
     if modo is None:
         modo = get_default_modo_transmision()

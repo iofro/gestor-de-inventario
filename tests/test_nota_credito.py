@@ -283,18 +283,32 @@ def _sample_data():
 def test_nota_credito_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
-    generar_nota_credito_pdf(venta, detalles, {}, {}, archivo=str(out), datos_negocio={})
+    doc_rel = {
+        "tipo": "03",
+        "numero_control": "DTE-03-S001P001-000000000000001",
+        "codigo_generacion": "123",
+        "fecha": "2024-01-01",
+    }
+    generar_nota_credito_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        archivo=str(out),
+        datos_negocio={},
+        doc_relacionado=doc_rel,
+        motivo="Devolución",
+    )
     assert out.exists()
     with fitz.open(out) as doc:
         text = "".join(p.get_text() for p in doc)
     assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in text
-    assert "NOTA DE CRÉDITO" in text
-    assert "Código Generación:" in text
-    assert "Número Control:" in text
-    assert "Sello Recepción:" in text
-    assert "Tipo Modelo:" in text
-    assert "Tipo Operación:" in text
-    assert "Fecha Generación:" in text
+    assert "NOTA DE CRÉDITO (05)" in text
+    assert "DTE-05-" in text
+    assert "DOCUMENTO RELACIONADO" in text
+    assert "Tipo: 03" in text
+    assert "Código Generación: 123" in text
+    assert "Motivo: Devolución" in text
 
 
 def test_nota_credito_direccion(tmp_path, monkeypatch):

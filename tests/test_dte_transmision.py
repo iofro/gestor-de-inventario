@@ -4,9 +4,11 @@ import dte
 import json
 from datetime import datetime
 from pathlib import Path
+import os
 import pytest
 import auth
 from tests.conftest import make_jws
+from utils import versioned_dte
 
 
 def create_sale(db):
@@ -394,3 +396,44 @@ def test_listar_dtes():
     rows = db.listar_dtes(today, today, "Transmitido")
     assert len(rows) == 1
     assert rows[0]["estado"] == "Transmitido"
+
+
+def test_finalize_pendiente_cleans_versions(monkeypatch, tmp_path):
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    codigo = "CGTEST"
+    data1 = {"identificacion": {"tipoDte": "01", "codigoGeneracion": codigo, "numeroControl": "1"}}
+    data2 = {"identificacion": {"tipoDte": "01", "codigoGeneracion": codigo, "numeroControl": "2"}}
+    path1 = dte.save_dte_json(data1)
+    path2 = dte.save_dte_json(data2)
+    base_dest = dte._dte_base_dir(data1)
+    versioned_dte.ensure_version(data1, base_dir=base_dest)
+    final_path = dte._finalize_pendiente(path2, data2, "TOK", "Aceptado")
+    codigo_dir = os.path.dirname(os.path.dirname(final_path))
+    assert os.listdir(codigo_dir) == [os.path.basename(os.path.dirname(final_path))]
+    assert not os.path.exists(os.path.dirname(os.path.dirname(path1)))
+
+
+def test_transmitir_dte_blocks_when_json_in_final_dir(monkeypatch, tmp_path):
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    db = DB(":memory:")
+    venta = create_sale(db)
+    codigo = "CGTEST2"
+    data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": codigo}}
+    pend_path = dte.save_dte_json(data)
+    final_path = dte._finalize_pendiente(pend_path, data, "TOK", "Rechazado")
+    db.update_venta_extra(venta, {"dteJsonPath": final_path, "codigoGeneracion": codigo})
+    with pytest.raises(ValueError):
+        transmitir_dte(db, venta)
+
+
+def test_transmitir_dte_blocks_if_final_json_exists_without_path(monkeypatch, tmp_path):
+    monkeypatch.setattr(dte, "__file__", str(tmp_path / "dte.py"))
+    db = DB(":memory:")
+    venta = create_sale(db)
+    codigo = "CGTEST3"
+    data = {"identificacion": {"tipoDte": "01", "codigoGeneracion": codigo}}
+    base_dest = dte._dte_base_dir(data)
+    versioned_dte.ensure_version(data, base_dir=base_dest)
+    db.update_venta_extra(venta, {"codigoGeneracion": codigo})
+    with pytest.raises(ValueError):
+        transmitir_dte(db, venta)

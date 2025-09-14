@@ -4156,6 +4156,19 @@ def _finalize_pendiente(json_path: str, dte_data: dict, jws_token: str, estado: 
         dest_dir = os.path.join(os.path.dirname(__file__), dest_root, rel)
         os.makedirs(os.path.dirname(dest_dir), exist_ok=True)
         shutil.move(version_dir, dest_dir)
+        try:
+            codigo_dir = os.path.dirname(dest_dir)
+            for name in os.listdir(codigo_dir):
+                path = os.path.join(codigo_dir, name)
+                if path != dest_dir and os.path.isdir(path):
+                    shutil.rmtree(path, ignore_errors=True)
+        except Exception:
+            pass
+        try:
+            pend_codigo_dir = os.path.dirname(version_dir)
+            shutil.rmtree(pend_codigo_dir, ignore_errors=True)
+        except Exception:
+            pass
         jws_name = versioned_dte.add_jws(dest_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
@@ -4535,17 +4548,26 @@ def transmitir_dte(
         except Exception:
             extra = {}
     json_path = extra.get("dteJsonPath") or extra.get("dte_json_path")
-    if json_path and os.path.exists(json_path):
-        try:
-            with open(json_path, "r", encoding="utf-8") as fh:
-                data = json.load(fh)
-        except Exception:
-            data = None
+    if json_path:
+        path_obj = Path(json_path)
+        if PENDIENTES_DIR not in path_obj.parts:
+            raise ValueError("El DTE ya fue enviado")
+        if path_obj.exists():
+            try:
+                with open(path_obj, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                data = None
     if data is None:
         codigo = extra.get("codigoGeneracion") or extra.get("codigo_generacion")
         if codigo:
-            base_dir = Path(__file__).resolve().parent / "dtes"
-            matches = list(base_dir.glob(f"*/{codigo}/*/documento.json"))
+            base_root = Path(__file__).resolve().parent
+            for root_name in ("dtes", "dte_fallidos"):
+                matches = list((base_root / root_name).glob(f"*/{codigo}/*/documento.json"))
+                if matches:
+                    raise ValueError("El DTE ya fue enviado")
+            pend_dir = base_root / PENDIENTES_DIR
+            matches = list(pend_dir.glob(f"*/{codigo}/*/documento.json"))
             if matches:
                 json_path = str(matches[-1])
                 try:

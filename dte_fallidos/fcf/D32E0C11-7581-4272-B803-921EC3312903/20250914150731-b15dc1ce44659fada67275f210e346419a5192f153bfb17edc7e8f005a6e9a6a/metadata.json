@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "D32E0C11-7581-4272-B803-921EC3312903",
+  "estado": "lista",
+  "firmas": [
+    {
+      "archivo": "documento-20250914150731.jws",
+      "estado": "lista",
+      "fechaFirma": "20250914150731",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "b15dc1ce44659fada67275f210e346419a5192f153bfb17edc7e8f005a6e9a6a",
+  "timestamp": "20250914150731"
+}

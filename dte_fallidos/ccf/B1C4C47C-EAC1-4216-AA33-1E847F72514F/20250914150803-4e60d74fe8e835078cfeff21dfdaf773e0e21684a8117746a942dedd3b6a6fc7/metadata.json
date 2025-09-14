@@ -1,0 +1,14 @@
+{
+  "codigoGeneracion": "B1C4C47C-EAC1-4216-AA33-1E847F72514F",
+  "estado": "lista",
+  "firmas": [
+    {
+      "archivo": "documento-20250914150803.jws",
+      "estado": "lista",
+      "fechaFirma": "20250914150803",
+      "origen": "auto"
+    }
+  ],
+  "hashJson": "4e60d74fe8e835078cfeff21dfdaf773e0e21684a8117746a942dedd3b6a6fc7",
+  "timestamp": "20250914150803"
+}

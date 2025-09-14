@@ -107,3 +107,67 @@ def test_send_selected_invoice_no_connection(monkeypatch, qt_app):
         captured["msg"]
         == "No hay conexión a Internet. Active la conexión antes de reenviar."
     )
+
+
+def test_send_selected_invoice_shows_detalle(monkeypatch, qt_app):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    tab = _make_tab(db, cid)
+
+    monkeypatch.setattr(
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": "", "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, v):
+            self._checked = v
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+            self.hacienda_cb.setChecked(True)
+
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    def fake_transmitir(db_, vid, tipo_dte="01", modo="normal"):
+        return {
+            "estado": "Rechazado",
+            "detalle": {
+                "descripcionMsg": "[identificacion.codigoGeneracion] YA EXISTE UN REGISTRO CON ESE VALOR"
+            },
+        }
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    captured = {}
+
+    def fake_critical(parent, title, msg):
+        captured["title"] = title
+        captured["msg"] = msg
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", fake_critical)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+
+    tab.send_selected_invoice()
+
+    assert (
+        captured["msg"]
+        == "[identificacion.codigoGeneracion] YA EXISTE UN REGISTRO CON ESE VALOR"
+    )

@@ -28,6 +28,7 @@ from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices
 import os
 import re
+import logging
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -60,6 +61,8 @@ from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from decimal import Decimal
 from utils.monto import iva_item
 from utils.catalogos import TRIBUTO_IVA
+
+logger = logging.getLogger(__name__)
 
 # Directory where debit notes will be stored
 NOTAS_DEBITO_DIR = os.path.join(os.path.dirname(__file__), "notas_debito")
@@ -1055,12 +1058,16 @@ class FacturacionTab(QWidget):
                             "Documento enviado y recibido correctamente",
                         )
                     else:
+                        detalle = resp.get("detalle")
+                        if detalle:
+                            logger.debug("Detalle de respuesta de Hacienda: %s", detalle)
+                        mensaje = resp.get("errores") or (
+                            detalle.get("descripcionMsg") if isinstance(detalle, dict) else None
+                        )
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            resp.get("errores")
-                            or resp.get("detalle")
-                            or "Fallo al enviar",
+                            mensaje or "Fallo al enviar",
                         )
                 except dte.DTEValidationError as exc:
                     QMessageBox.critical(
@@ -1095,12 +1102,16 @@ class FacturacionTab(QWidget):
                             "Documento enviado y recibido correctamente",
                         )
                     else:
+                        detalle = resp.get("detalle")
+                        if detalle:
+                            logger.debug("Detalle de respuesta de Hacienda: %s", detalle)
+                        mensaje = resp.get("errores") or (
+                            detalle.get("descripcionMsg") if isinstance(detalle, dict) else None
+                        )
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            resp.get("errores")
-                            or resp.get("detalle")
-                            or "Fallo al enviar",
+                            mensaje or "Fallo al enviar",
                         )
                 except dte.DTEValidationError as exc:
                     QMessageBox.critical(

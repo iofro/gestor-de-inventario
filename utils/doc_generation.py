@@ -385,7 +385,7 @@ def generate_invoice_pdf(manager, venta_id):
     except Exception:
         pass
     try:
-        pend_json_path = dte.save_dte_json(json_data)
+        pend_json_path = dte.save_dte_json(json_data, filename=os.path.basename(json_path))
         version_dir = os.path.dirname(pend_json_path)
         if jws_token:
             try:
@@ -482,7 +482,7 @@ def generate_ticket_pdf(manager, venta_id):
     except Exception:
         pass
     try:
-        pend_json_path = dte.save_dte_json(ticket_json)
+        pend_json_path = dte.save_dte_json(ticket_json, filename=os.path.basename(json_path))
         version_dir = os.path.dirname(pend_json_path)
         if jws_token:
             try:

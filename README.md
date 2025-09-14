@@ -109,7 +109,8 @@ configurado en `datos_negocio.json`.
 
 La función `transmitir_dte(db, venta_id)` utilizará la URL resultante para
 enviar el DTE inmediatamente después de firmarlo en modo normal, o registrará
-un evento pendiente en modo de contingencia.
+un evento pendiente en modo de contingencia. Los reenvíos reutilizan el mismo
+`codigoGeneracion` guardado del DTE inicial.
 
 Cuando se use el modo de contingencia con `tipoContingencia` igual a `5`, el
 campo `motivo_contin` permite describir la causa de la contingencia con una

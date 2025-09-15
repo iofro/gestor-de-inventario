@@ -164,7 +164,7 @@ def generar_nce_desde_dte(
         {
             "tipoDocumento": origen_ident.get("tipoDte"),
             "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "numeroDocumento": origen_ident.get("numeroControl"),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]

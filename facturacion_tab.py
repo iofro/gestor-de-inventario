@@ -1611,7 +1611,13 @@ class FacturacionTab(QWidget):
             "NotaRemision",
         )
         generar_nota_remision_pdf(
-            venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
+            venta_data,
+            detalles_pdf,
+            cliente,
+            extension,
+            archivo=str(pdf_path),
+            codigo_generacion=nota_json["identificacion"].get("codigoGeneracion"),
+            numero_control=nota_json["identificacion"].get("numeroControl"),
         )
         sign_and_save(nota_json, str(json_path))
         if transmitir and nota_id is not None:

@@ -86,12 +86,12 @@ def test_notas_precio_uni_cuatro_decimales(monkeypatch):
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
     assert (
         nce["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
     nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste")
     assert (
         nde["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
 
     expected_subtotal = sum(

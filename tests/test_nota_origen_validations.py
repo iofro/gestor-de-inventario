@@ -1,33 +1,51 @@
 from decimal import Decimal
-import pytest
+
 from db import DB
 from nota_credito_electronica import generar_nce_desde_dte
+from nota_debito_electronica import generar_nde_desde_dte
 
 
-def test_nce_requires_sello():
-    db = DB(":memory:")
-    dte_origen = {
-        "identificacion": {
-            "codigoGeneracion": "UUID",
-            "numeroControl": "NC",
-            "tipoDte": "01",
-            "fecEmi": "2024-01-01",
-        }
-    }
-    with pytest.raises(ValueError):
-        generar_nce_desde_dte(db, dte_origen, Decimal("1"))
-
-
-def test_nce_requires_db_record():
-    db = DB(":memory:")
-    dte_origen = {
+def _base_dte() -> dict:
+    return {
         "identificacion": {
             "codigoGeneracion": "UUID",
             "numeroControl": "NC",
             "tipoDte": "01",
             "fecEmi": "2024-01-01",
         },
-        "selloRecibido": "SELLO",
+        "emisor": {},
+        "receptor": {},
+        "resumen": {},
     }
-    with pytest.raises(ValueError):
-        generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+
+
+def test_nce_allows_missing_sello():
+    db = DB(":memory:")
+    dte_origen = _base_dte()
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"
+
+
+def test_nce_without_mh_record():
+    db = DB(":memory:")
+    dte_origen = _base_dte()
+    dte_origen["selloRecibido"] = "SELLO"
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"
+
+
+def test_nde_allows_missing_sello():
+    db = DB(":memory:")
+    dte_origen = _base_dte()
+    detalles = [{"descripcion": "Prod", "precio_unitario": 1, "ventas_gravadas": 1}]
+    data = generar_nde_desde_dte(db, dte_origen, detalles, None)
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"
+
+
+def test_nde_without_mh_record():
+    db = DB(":memory:")
+    dte_origen = _base_dte()
+    dte_origen["selloRecibido"] = "SELLO"
+    detalles = [{"descripcion": "Prod", "precio_unitario": 1, "ventas_gravadas": 1}]
+    data = generar_nde_desde_dte(db, dte_origen, detalles, None)
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"

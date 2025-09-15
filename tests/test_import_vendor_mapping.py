@@ -12,8 +12,39 @@ def test_import_maps_vendors(tmp_path):
     data = {
         "Distribuidores": [{"id": 1, "nombre": "D1"}],
         "vendedores": [{"id": 99, "nombre": "V1", "Distribuidor_id": 1, "codigo": "V001"}],
+        "productos": [
+            {
+                "id": 1,
+                "nombre": "P1",
+                "codigo": "P001",
+                "sku": "S1",
+                "vendedor_id": 99,
+                "Distribuidor_id": 1,
+                "precio_compra": 0,
+                "precio_venta_minorista": 0,
+                "precio_venta_mayorista": 0,
+                "stock": 0,
+            }
+        ],
         "clientes": [{"id": 2, "nombre": "C1", "codigo": "C001"}],
-        "ventas": [{"id": 5, "fecha": "2024-01-01", "total": 10, "cliente_id": 2, "Distribuidor_id": 1, "vendedor_id": 99}],
+        "ventas": [
+            {
+                "id": 5,
+                "fecha": "2024-01-01",
+                "total": 10,
+                "cliente_id": 2,
+                "Distribuidor_id": 1,
+                "vendedor_id": 99,
+            }
+        ],
+        "detalles_venta": [
+            {
+                "venta_id": 5,
+                "producto_id": 1,
+                "cantidad": 1,
+                "precio_unitario": 10,
+            }
+        ],
     }
     path = tmp_path / "inv.json"
     path.write_text(json.dumps(data))

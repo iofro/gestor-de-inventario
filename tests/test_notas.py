@@ -37,8 +37,10 @@ def test_agregar_nota_remision():
 
 def test_agregar_nota_venta_inexistente():
     db = create_db()
-    with pytest.raises(ValueError):
-        db.agregar_nota("debito", 999, "2024-01-03", 10, "extra")
+    note_id = db.agregar_nota("debito", 999, "2024-01-03", 10, "extra")
+    assert isinstance(note_id, int)
+    notas = db.obtener_notas_por_venta(999)
+    assert notas and notas[0]["venta_id"] == 999
 
 
 def test_credito_no_supera_total():

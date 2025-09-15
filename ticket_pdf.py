@@ -4,11 +4,10 @@ from reportlab.lib.units import mm
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
-from datetime import datetime
 import json
 import os
 
-from print.ticket_renderer import render_ticket_pdf
+from print.ticket_renderer import PAGO_LABELS, money, q, render_ticket_pdf
 
 from paths import DATOS_NEGOCIO_PATH
 from factura_sv import build_qr_url
@@ -157,126 +156,155 @@ def generar_ticket_personalizado(
             except Exception:
                 datos_negocio = {}
 
-    width = 80 * mm
-    line_height = 4 * mm
-    base_height = 60 * mm
-
     if dte_data is None:
         dte_data = {}
 
-    sello = dte_data.get("selloRecibido", "falta")
-    firma = dte_data.get("firmaElectronica", "falta")
+    sello = dte_data.get("selloRecibido")
+    firma = dte_data.get("firmaElectronica")
     dte_json = dte_data.get("dteJson", {})
     qr_url = build_qr_url(dte_json) if dte_json else None
+    ident = dte_json.get("identificacion", {})
+    receptor = dte_json.get("receptor", {})
 
-    def _flatten(data, prefix=""):
-        lines = []
-        if isinstance(data, dict):
-            for k, v in data.items():
-                key = f"{prefix}{k}"
-                if isinstance(v, dict):
-                    lines.extend(_flatten(v, key + "."))
-                else:
-                    lines.append(f"{key}: {v}")
-        return lines
+    width, height = letter
+    margin = 15 * mm
+    line_height = 5 * mm
 
-    dte_lines = _flatten(dte_data.get("dteJson", {}))
-    extra_count = 2 + len(dte_lines)
+    c = canvas.Canvas(archivo, pagesize=letter)
+    y = height - margin
 
-    height = base_height + len(detalles) * 6 * mm + extra_count * line_height + 40 * mm
-    page_size = (width, height)
-
-    c = canvas.Canvas(archivo, pagesize=page_size)
-    y = height - 10 * mm
-
-    # Opcional: logo centrado arriba
+    # Logo opcional centrado en la parte superior
     if logo_path and os.path.exists(logo_path):
-        logo_w = 20 * mm
+        logo_w = 30 * mm
         c.drawImage(
             logo_path,
             (width - logo_w) / 2,
-            y - 20 * mm,
+            y - logo_w,
             width=logo_w,
             preserveAspectRatio=True,
         )
-        y -= 22 * mm
+        y -= logo_w + line_height
 
-    # Encabezado con datos de DTE
-    c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(width / 2, y, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
-    y -= 4 * mm
-    c.drawCentredString(width / 2, y, "FACTURA")
-    y -= 5 * mm
-    c.setFont("Helvetica", 7)
-    c.drawCentredString(width / 2, y, "------------------- DATOS DEL EMISOR ------------------")
-    y -= 4 * mm
-    c.setFont("Helvetica-Bold", 8)
-    c.drawCentredString(width / 2, y, _with_falta(datos_negocio.get("nombreComercial")))
-    y -= 4 * mm
-    nit = datos_negocio.get("nit")
-    c.setFont("Helvetica", 7)
-    c.drawCentredString(width / 2, y, f"NIT: {_with_falta(nit)}")
-    y -= 4 * mm
-    nrc = datos_negocio.get("nrc")
-    c.drawCentredString(width / 2, y, f"NRC: {_with_falta(nrc)}")
-    y -= 4 * mm
-    giro = datos_negocio.get("descActividad")
-    c.drawCentredString(width / 2, y, f"Actividad Económica: {_with_falta(giro)}")
-    y -= 4 * mm
-    direccion = datos_negocio.get("direccion", {}).get("complemento")
-    c.drawCentredString(width / 2, y, f"Dirección: {_with_falta(direccion)}")
-    y -= 5 * mm
-    c.setFont("Helvetica-Bold", 7)
-    c.drawCentredString(width / 2, y, "DATOS DE FACTURA")
-    y -= 4 * mm
-    c.setFont("Helvetica", 7)
-    c.drawCentredString(width / 2, y, "Código de Generación:")
-    y -= 3 * mm
-    c.drawCentredString(width / 2, y, "Número de control:")
-    y -= 4 * mm
-    c.drawCentredString(width / 2, y, "Tipo Modelo: 1")
-    y -= 3 * mm
-    c.drawCentredString(width / 2, y, "Tipo Operación: 1")
-    y -= 3 * mm
-    c.drawCentredString(width / 2, y, f"Fecha y hora de Generación: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-    y -= 5 * mm
-    c.line(5 * mm, y, width - 5 * mm, y)
-    y -= 4 * mm
-
-    c.setFont("Helvetica-Bold", 7)
-    c.drawString(5 * mm, y, "DETALLE")
-    c.drawRightString(width - 5 * mm, y, "TOTAL")
-    y -= 3 * mm
-    c.line(5 * mm, y, width - 5 * mm, y)
-    y -= 4 * mm
-
-    c.setFont("Helvetica", 7)
-    for d in detalles:
-        desc = _with_falta(d.get("descripcion"))
-        qty = d.get("cantidad", 0)
-        pu = d.get("precio_unitario", 0)
-        total = qty * pu
-        c.drawString(5 * mm, y, f"{desc} x{qty}")
-        c.drawRightString(width - 5 * mm, y, f"{total:.2f}")
-        y -= 4 * mm
-
-    c.line(5 * mm, y, width - 5 * mm, y)
-    y -= 5 * mm
-    c.setFont("Helvetica-Bold", 9)
-    c.drawRightString(width - 5 * mm, y, f"Total: {venta.get('total', 0):.2f}")
-
-    y -= 6 * mm
-    c.setFont("Helvetica", 6)
-    c.drawString(5 * mm, y, f"Sello recibido: {_with_falta(sello)}")
-    y -= line_height
-    c.drawString(5 * mm, y, f"Firma electr\xf3nica: {_with_falta(firma)}")
-    y -= line_height
-    for line in dte_lines:
-        c.drawString(5 * mm, y, _with_falta(line))
+    def draw_center(text: str, size: int = 10, bold: bool = False):
+        nonlocal y
+        font = "Helvetica-Bold" if bold else "Helvetica"
+        c.setFont(font, size)
+        c.drawCentredString(width / 2, y, text)
         y -= line_height
+
+    def draw_left_right(left: str, right: str, size: int = 10, bold_left: bool = False, bold_right: bool = False):
+        nonlocal y
+        font_left = "Helvetica-Bold" if bold_left else "Helvetica"
+        font_right = "Helvetica-Bold" if bold_right else "Helvetica"
+        c.setFont(font_left, size)
+        c.drawString(margin, y, left)
+        c.setFont(font_right, size)
+        c.drawRightString(width - margin, y, right)
+        y -= line_height
+
+    def draw_hr():
+        nonlocal y
+        y -= 1
+        c.setLineWidth(0.5)
+        c.line(margin, y, width - margin, y)
+        y -= 1
+
+    # Encabezado ---------------------------------------------------------------
+    draw_center("DOCUMENTO TRIBUTARIO ELECTRÓNICO — FACTURA", size=14, bold=True)
+    draw_hr()
+
+    # Datos del emisor --------------------------------------------------------
+    draw_center(_with_falta(datos_negocio.get("nombreComercial")), size=12, bold=True)
+    nit = datos_negocio.get("nit")
+    nrc = datos_negocio.get("nrc")
+    draw_center(f"NIT: {_with_falta(nit)}   NRC: {_with_falta(nrc)}", size=10)
+    giro = datos_negocio.get("descActividad")
+    draw_center(f"Actividad: {_with_falta(giro)}", size=9)
+    direccion = datos_negocio.get("direccion", {}).get("complemento")
+    draw_center(f"Dirección: {_with_falta(direccion)}", size=9)
+    draw_hr()
+
+    # Datos de factura y receptor ---------------------------------------------
+    fecha = venta.get("fecha") or ident.get("fecEmi", "")
+    draw_left_right("Fecha:", _with_falta(fecha))
+    draw_left_right("No. Control:", _with_falta(ident.get("numeroControl")))
+    draw_left_right("Código Gen.:", _with_falta(ident.get("codigoGeneracion")))
+    draw_left_right("Cliente:", _with_falta(receptor.get("nombre")))
+    doc = receptor.get("nit") or receptor.get("dui") or receptor.get("numDocumento")
+    draw_left_right("Documento:", _with_falta(doc))
+    draw_hr()
+
+    # Tabla de ítems ---------------------------------------------------------
+    c.setFont("Helvetica-Bold", 10)
+    x_qty = margin
+    x_desc = margin + 25 * mm
+    x_unit = width - margin - 40 * mm
+    x_total = width - margin
+    c.drawString(x_qty, y, "Cant.")
+    c.drawString(x_desc, y, "Descripción")
+    c.drawRightString(x_unit, y, "P. Unit.")
+    c.drawRightString(x_total, y, "Total")
     y -= line_height
+    draw_hr()
+
+    c.setFont("Helvetica", 10)
+    for d in detalles:
+        qty = q(d.get("cantidad", 0))
+        desc = _with_falta(d.get("descripcion"))
+        pu = money(d.get("precio_unitario", 0))
+        line_total = (
+            d.get("monto_total")
+            or d.get("venta_gravada")
+            or d.get("ventas_gravadas")
+            or d.get("cantidad", 0) * d.get("precio_unitario", 0)
+        )
+        c.drawString(x_qty, y, qty)
+        c.drawString(x_desc, y, desc)
+        c.drawRightString(x_unit, y, pu)
+        c.drawRightString(x_total, y, money(line_total))
+        y -= line_height
+
+    draw_hr()
+
+    # Totales -----------------------------------------------------------------
+    sub_total = sum(
+        d.get("monto_total")
+        or d.get("venta_gravada")
+        or d.get("ventas_gravadas")
+        or d.get("cantidad", 0) * d.get("precio_unitario", 0)
+        for d in detalles
+    )
+    total = venta.get("total", sub_total)
+    iva = venta.get("iva")
+    if iva is None:
+        iva = max(total - sub_total, 0)
+    draw_left_right("Sub-total", money(sub_total))
+    draw_left_right("IVA", money(iva))
+    draw_left_right("Total a pagar", money(total), bold_left=True, bold_right=True)
+
+    # Formas de pago ----------------------------------------------------------
+    forma_pago = venta.get("forma_pago")
+    pago_monto = money(total)
+    pagos = dte_json.get("resumen", {}).get("pagos") or []
+    if not forma_pago and pagos:
+        p = pagos[0]
+        code = str(p.get("codigo")).zfill(2)
+        forma_pago = PAGO_LABELS.get(code, "Otro")
+        pago_monto = money(p.get("montoPago", total))
+    if forma_pago:
+        draw_hr()
+        draw_left_right(f"Pago: {forma_pago}", pago_monto)
+
+    # Información fiscal ------------------------------------------------------
+    if sello:
+        draw_hr()
+        draw_center(f"Sello recibido: {_with_falta(sello)}", size=8)
+    if firma:
+        draw_center(f"Firma electrónica: {_with_falta(firma)}", size=8)
+
+    # Código QR ---------------------------------------------------------------
     if qr_url:
-        qr_size = 20 * mm
+        qr_size = 30 * mm
         qr_code = qr.QrCodeWidget(qr_url)
         bounds = qr_code.getBounds()
         w = bounds[2] - bounds[0]
@@ -284,7 +312,7 @@ def generar_ticket_personalizado(
         d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
         d.add(qr_code)
         qr_x = (width - qr_size) / 2
-        qr_y = max(5 * mm, y - qr_size)
+        qr_y = margin
         renderPDF.draw(d, c, qr_x, qr_y)
         c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 

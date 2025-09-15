@@ -27,4 +27,6 @@ def test_sample_ticket_generation(tmp_path):
 
     assert "Farmacia San Nicolas" in text
     assert data["dte_data"]["selloRecibido"] in text
+    assert "cuerpoDocumento" not in text
+    assert "identificacion" not in text
 

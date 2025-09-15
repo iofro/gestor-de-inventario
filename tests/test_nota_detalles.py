@@ -1,11 +1,20 @@
 from db import DB
 from decimal import Decimal, ROUND_HALF_UP
+import pytest
 from nota_credito_electronica import generar_nce_desde_dte
 from nota_debito_electronica import generar_nde_desde_dte
 from dte import generar_dte_json
 
 def create_db():
     return DB(":memory:")
+
+
+@pytest.fixture(autouse=True)
+def _mock_geo(monkeypatch):
+    monkeypatch.setattr(
+        "dte.validar_dep_muni_por_catalogo",
+        lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
+    )
 
 
 def _prep(monkeypatch):
@@ -41,6 +50,10 @@ def test_generar_nce_detalles(monkeypatch):
     ]
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles, motivo="Dev")
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 10
     assert data["resumen"]["totalGravada"] == 10
@@ -67,6 +80,10 @@ def test_generar_nce_detalles_tributos(monkeypatch):
     ]
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     expected_iva = Decimal("10") * Decimal("0.13")
     assert data["resumen"]["tributos"][0]["valor"] == expected_iva
 
@@ -92,6 +109,10 @@ def test_generar_nce_detalles_monto_total(monkeypatch):
     ]
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
+    assert (
+        nce["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     resumen = nce["resumen"]
     expected_iva = Decimal("10") * Decimal("0.13")
     expected_total = Decimal("10") + expected_iva
@@ -128,6 +149,10 @@ def test_generar_nota_debito_detalles(monkeypatch):
     assert data["resumen"]["montoTotalOperacion"] == Decimal("2") + expected_iva
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "01"
+    assert (
+        doc_rel["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
 
 
 def test_generar_nde_respeta_total(monkeypatch):

@@ -825,7 +825,7 @@ class FacturacionTab(QWidget):
             estado = "Completa" if pdf_exists and json_exists else "Incompleta"
         else:
             if is_nota:
-                estado = "Incompleta"
+                estado = "Completa" if pdf_exists and json_exists else "Incompleta"
             else:
                 estado = "Sin venta" if pdf_exists and json_exists else "Incompleta"
 

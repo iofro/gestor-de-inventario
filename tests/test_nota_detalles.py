@@ -52,7 +52,7 @@ def test_generar_nce_detalles(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles, motivo="Dev")
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
     item = data["cuerpoDocumento"][0]
     assert item["ventaGravada"] == 10
@@ -82,7 +82,7 @@ def test_generar_nce_detalles_tributos(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
     expected_iva = Decimal("10") * Decimal("0.13")
     assert data["resumen"]["tributos"][0]["valor"] == expected_iva
@@ -111,7 +111,7 @@ def test_generar_nce_detalles_monto_total(monkeypatch):
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
     assert (
         nce["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
     resumen = nce["resumen"]
     expected_iva = Decimal("10") * Decimal("0.13")
@@ -151,7 +151,7 @@ def test_generar_nota_debito_detalles(monkeypatch):
     assert doc_rel["tipoDocumento"] == "01"
     assert (
         doc_rel["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
 
 

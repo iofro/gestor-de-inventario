@@ -2305,28 +2305,32 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if vendedor_idx > 0:
             vendedor_id = self.vendedores_trabajadores[vendedor_idx - 1]["id"]
 
-        sumas = 0
-        descuentos = 0
-        ventas_exentas = 0
-        ventas_no_sujetas = 0
-        total = 0
-        iva = 0
+        sumas = Decimal("0")
+        descuentos = Decimal("0")
+        ventas_exentas = Decimal("0")
+        ventas_no_sujetas = Decimal("0")
+        iva = Decimal("0")
+        q8 = Decimal("0.00000001")
 
         for item in self.venta_items:
             tipo_fiscal = item.get("tipo_fiscal", "").lower()
-            base = item["subtotal_con_descuento"]
+            base = Decimal(str(item.get("subtotal_con_descuento", 0)))
             if item.get("iva_tipo") == "desglosado":
-                base = item.get("subtotal", base)
+                base = Decimal(str(item.get("subtotal", base)))
 
             if tipo_fiscal == "venta gravada":
-                sumas += item["subtotal"]
-                descuentos += item.get("descuento_monto", 0)
-                iva += item.get("iva", 0)
+                sumas += Decimal(str(item.get("subtotal", 0)))
+                descuento_monto = Decimal(str(item.get("descuento_monto", 0)))
+                descuento_base = (descuento_monto / IVA_FACTOR).quantize(q8)
+                descuentos += descuento_base
+                iva += Decimal(str(item.get("iva", 0)))
             elif tipo_fiscal == "venta exenta":
                 ventas_exentas += base
             elif tipo_fiscal == "venta no sujeta":
                 ventas_no_sujetas += base
-            total += item.get("total", 0)
+
+        subtotal = (sumas - descuentos) + iva
+        total = subtotal + ventas_exentas + ventas_no_sujetas
 
         return {
             "cliente": self.selected_cliente if self.selected_cliente else {},
@@ -2349,13 +2353,13 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "documento_venta_a_cuenta": self.venta_documento_edit.text(),
             "fecha_remision_anterior": self.fecha_remision_anterior.date().toString("yyyy-MM-dd"),
             "fecha_remision": self.fecha_remision.date().toString("yyyy-MM-dd"),
-            "sumas": sumas,
-            "descuentos": descuentos,
-            "iva": iva,
-            "subtotal": (sumas - descuentos) + iva,
-            "ventas_exentas": ventas_exentas,
-            "ventas_no_sujetas": ventas_no_sujetas,
-            "total": (sumas - descuentos) + iva + ventas_exentas + ventas_no_sujetas,
+            "sumas": float(sumas.quantize(q8)),
+            "descuentos": float(descuentos.quantize(q8)),
+            "iva": float(iva.quantize(q8)),
+            "subtotal": float(subtotal.quantize(q8)),
+            "ventas_exentas": float(ventas_exentas.quantize(q8)),
+            "ventas_no_sujetas": float(ventas_no_sujetas.quantize(q8)),
+            "total": float(total.quantize(q8)),
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "Distribuidor_id": (
                 self.Distribuidor_combo.currentIndex()

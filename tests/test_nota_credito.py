@@ -44,7 +44,7 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
+        == dte_origen["identificacion"]["codigoGeneracion"].upper()
     )
     assert data["cuerpoDocumento"][0]["precioUni"] > 0
     assert "totalPagar" not in data["resumen"]
@@ -83,7 +83,7 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
+        == dte_origen["identificacion"]["codigoGeneracion"].upper()
     )
     assert "-" not in data["receptor"].get("nit", "")
 
@@ -110,7 +110,7 @@ def test_nota_credito_total_nueve(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
+        == dte_origen["identificacion"]["codigoGeneracion"].upper()
     )
     assert data["resumen"]["montoTotalOperacion"] == 9.0
 
@@ -147,7 +147,7 @@ def test_nota_credito_precio_uni(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
+        == dte_origen["identificacion"]["codigoGeneracion"].upper()
     )
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")

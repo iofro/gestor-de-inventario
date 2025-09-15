@@ -70,7 +70,7 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
     assert nce["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert (
         nce["documentoRelacionado"][0]["numeroDocumento"]
-        == data["identificacion"]["numeroControl"]
+        == data["identificacion"]["codigoGeneracion"].upper()
     )
     assert "nit" not in nce["receptor"]
 

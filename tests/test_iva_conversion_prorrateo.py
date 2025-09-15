@@ -45,7 +45,7 @@ def test_prorrateo_porcentaje(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("0.1"))
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
+        == dte_origen["identificacion"]["codigoGeneracion"].upper()
     )
     assert data["resumen"]["montoTotalOperacion"] == 10.0
 

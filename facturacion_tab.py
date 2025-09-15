@@ -1639,12 +1639,19 @@ class FacturacionTab(QWidget):
             nota_json["identificacion"].get("numeroControl"),
             doc_type,
         )
+        identificacion = nota_json.get("identificacion", {}) or {}
+        codigo_gen = identificacion.get("codigoGeneracion")
+        num_ctrl = identificacion.get("numeroControl")
+        fec_emision = identificacion.get("fecEmi") or identificacion.get("fechaEmi")
         pdf_func(
             venta_data,
             detalles_pdf,
             cliente or {},
             distribuidor or {},
             archivo=str(pdf_path),
+            codigo_generacion=codigo_gen,
+            numero_control=num_ctrl,
+            fecha_generacion=fec_emision,
         )
 
         # Mostrar previsualización del PDF generado

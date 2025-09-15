@@ -52,7 +52,10 @@ def test_enviar_documento_rechaza_reenvio_exitoso(monkeypatch):
 
 def test_detectar_estado_factura_prioriza_exitosos(monkeypatch):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
-    from facturacion_tab import FacturacionTab
+    facturacion_tab = pytest.importorskip(
+        "facturacion_tab", reason="PyQt5 no disponible", exc_type=ImportError
+    )
+    FacturacionTab = facturacion_tab.FacturacionTab
 
     db = DB(":memory:")
     venta = create_sale(db)
@@ -63,4 +66,26 @@ def test_detectar_estado_factura_prioriza_exitosos(monkeypatch):
         {}, cur=db.cursor, venta_id=venta
     )
     assert envio == "Enviado"
+
+
+def test_detectar_estado_factura_nota_remision(tmp_path):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    facturacion_tab = pytest.importorskip(
+        "facturacion_tab", reason="PyQt5 no disponible", exc_type=ImportError
+    )
+    FacturacionTab = facturacion_tab.FacturacionTab
+
+    pdf = tmp_path / "DTE-09-S001P001-000000000000001.pdf"
+    pdf.write_text("PDF")
+    json_path = pdf.with_suffix(".json")
+    json_path.write_text("{}")
+
+    estado, envio = FacturacionTab._detectar_estado_factura(
+        None,
+        pdf_path=str(pdf),
+        json_path=str(json_path),
+        doc_tipo="Nota de remisión",
+    )
+
+    assert estado == "Completa"
 

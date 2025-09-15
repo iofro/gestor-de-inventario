@@ -44,11 +44,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "E6E3912C-C491-4CB1-9EDE-B37A88275489",
+    "codigoGeneracion": "5634B276-2DC6-4C8A-B991-BED1DB639714",
     "fecEmi": "2025-09-14",
-    "horEmi": "18:52:42",
+    "horEmi": "18:52:39",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000040",
+    "numeroControl": "DTE-01-S001P001-000000000000039",
     "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,
@@ -58,19 +58,19 @@
   },
   "otrosDocumentos": null,
   "receptor": {
-    "codActividad": null,
-    "correo": null,
-    "descActividad": null,
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
     "direccion": {
       "complemento": "San Salvador",
       "departamento": "06",
       "municipio": "23"
     },
-    "nombre": null,
+    "nombre": "ariel",
     "nrc": null,
-    "numDocumento": null,
+    "numDocumento": "06756083-3",
     "telefono": null,
-    "tipoDocumento": null
+    "tipoDocumento": "13"
   },
   "resumen": {
     "condicionOperacion": 1,

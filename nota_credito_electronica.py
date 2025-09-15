@@ -23,6 +23,7 @@ from dte import (
     generar_dte_json,
     sanitize_dte_payload,
     _origen_aceptado_en_mh,
+    normalize_uuid_v4_upper,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -202,7 +203,9 @@ def generar_nce_desde_dte(
         {
             "tipoDocumento": origen_ident.get("tipoDte"),
             "tipoGeneracion": 2,
-            "numeroDocumento": str(origen_ident.get("codigoGeneracion") or "").upper(),
+            "numeroDocumento": normalize_uuid_v4_upper(
+                str(origen_ident.get("codigoGeneracion") or "").upper()
+            ),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]

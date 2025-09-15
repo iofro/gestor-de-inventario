@@ -9,7 +9,10 @@ from PyQt5.QtWidgets import (
     QRadioButton,
     QListWidget,
     QTableWidget,
+    QLineEdit,
+    QDateEdit,
 )
+from PyQt5.QtCore import QDate
 from dialogs import RegisterCreditoFiscalDialog
 
 
@@ -30,6 +33,10 @@ def build_dialog(qty=5, price=1.00):
     dialog.precio_total_spin = QDoubleSpinBox()
     dialog.precio_total_spin.setDecimals(2)
     dialog.precio_total_spin.setValue(qty * price)
+    dialog.tipo_minorista = QRadioButton()
+    dialog.tipo_minorista.setChecked(True)
+    dialog.tipo_mayorista_unit = QRadioButton()
+    dialog.tipo_mayorista_unit.setChecked(False)
     dialog.tipo_mayorista_total = QRadioButton()
     dialog.tipo_mayorista_total.setChecked(False)
     dialog.descuento_spin = QDoubleSpinBox()
@@ -58,6 +65,23 @@ def build_dialog(qty=5, price=1.00):
     dialog.venta_items = []
     dialog.table = QTableWidget(0, 6)
     dialog.total_label = QLabel()
+    dialog.vendedor_combo = QComboBox()
+    dialog.vendedor_combo.addItem("Sin vendedor")
+    dialog.vendedores_trabajadores = []
+    dialog.selected_cliente = {"id": 1, "nombre": "Cliente"}
+    dialog.iva_agregado_radio = QRadioButton()
+    dialog.nrc_edit = QLineEdit()
+    dialog.nit_edit = QLineEdit()
+    dialog.giro_edit = QLineEdit()
+    dialog.email_edit = QLineEdit()
+    dialog.no_remision_edit = QLineEdit()
+    dialog.orden_no_edit = QLineEdit()
+    dialog.condicion_pago_combo = QComboBox()
+    dialog.venta_a_cuenta_de_edit = QLineEdit()
+    dialog.venta_documento_edit = QLineEdit()
+    dialog.fecha_remision_anterior = QDateEdit(QDate.currentDate())
+    dialog.fecha_remision = QDateEdit(QDate.currentDate())
+    dialog.Distribuidor_combo = QComboBox()
     return dialog
 
 
@@ -139,3 +163,18 @@ def test_totals_precision_edge_cases(qt_app, qty, price, expected):
     RegisterCreditoFiscalDialog._agregar_a_venta(dialog)
     item = dialog.venta_items[0]
     assert pytest.approx(item["total"], rel=1e-6) == expected
+
+
+def test_get_data_credito_fiscal_discount_total(qt_app):
+    dialog = build_dialog(qty=1, price=15.00)
+    dialog.descuento_spin.setValue(10)
+    dialog.descuento_tipo_combo.setCurrentIndex(0)
+    RegisterCreditoFiscalDialog._recalcular_totales(dialog)
+    RegisterCreditoFiscalDialog._agregar_a_venta(dialog)
+
+    data = RegisterCreditoFiscalDialog.get_data(dialog)
+
+    assert len(dialog.venta_items) == 1
+    assert data["total"] == pytest.approx(13.5)
+    assert f"{data['total']:.2f}" == "13.50"
+    assert data["descuentos"] == pytest.approx(1.32743363)

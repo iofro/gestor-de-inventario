@@ -1885,8 +1885,16 @@ def generar_dte_json(
     suc = _norm3(cod_estable)
     pto = _norm3(cod_punto)
     # Generar identificadores con formatos oficiales
-    codigo_generacion = str(uuid.uuid4()).upper()
-    numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
+    codigo_generacion = kwargs.get("codigo_generacion") or str(uuid.uuid4()).upper()
+    numero_control_kw = kwargs.get("numero_control")
+    correlativo_kw = kwargs.get("correlativo")
+    if numero_control_kw is not None and correlativo_kw is not None:
+        if not isinstance(correlativo_kw, int) or correlativo_kw <= 0:
+            raise ValueError("correlativo inválido")
+        numero_control = str(numero_control_kw)
+        correlativo = correlativo_kw
+    else:
+        numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
 
 
     now = datetime.now(TZ_EL_SALVADOR)
@@ -2711,7 +2719,13 @@ def validate_dte_json(
     precios_incluyen_iva: bool | None = None,
     correlativo: int | None = None,
 ) -> None:
-    """Basic validation and normalization for DTE payload antes de firmar."""
+    """Basic validation and normalization for DTE payload antes de firmar.
+
+    When ``correlativo`` is provided the ``numeroControl`` field will be
+    reconstructed using it, avoiding any additional calls to generate a new
+    correlativo.  If ``correlativo`` is ``None`` and ``numeroControl`` is
+    missing or invalid a new correlativo will be obtained from ``db``.
+    """
     # Normalización omitida para preservar códigos con ceros a la izquierda
     # ("01", etc.) que ``_normalize_payload`` convertiría a enteros.
     required = ["identificacion", "emisor", "receptor", "cuerpoDocumento", "resumen"]
@@ -2888,12 +2902,20 @@ def validate_dte_json(
     )
     numero_control = ident.get("numeroControl")
     regex_nc = r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$"
-    if not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
-        if correlativo is None:
-            numero_control, correlativo = generar_numero_control(db, tipo, suc, pto)
+    recon = (
+        _format_numero_control(tipo, suc, pto, correlativo)
+        if correlativo is not None
+        else None
+    )
+    if correlativo is not None:
+        if numero_control and not re.fullmatch(regex_nc, numero_control):
+            ident["numeroControl"] = recon
+        elif numero_control and numero_control != recon:
+            raise ValueError("numeroControl no coincide con correlativo suministrado")
         else:
-            numero_control = _format_numero_control(tipo, suc, pto, correlativo)
-        ident["numeroControl"] = numero_control
+            ident["numeroControl"] = recon
+    elif not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
+        ident["numeroControl"], correlativo = generar_numero_control(db, tipo, suc, pto)
     numero_control = ident.get("numeroControl")
     if not re.fullmatch(regex_nc, numero_control):
         raise ValueError("numeroControl inválido")

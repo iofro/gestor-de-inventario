@@ -1417,8 +1417,22 @@ class FacturacionTab(QWidget):
             nota_json["identificacion"].get("numeroControl"),
             "NotaRemision",
         )
+        ident = nota_json.get("identificacion", {})
         generar_nota_remision_pdf(
-            venta_data, detalles_pdf, cliente, extension, archivo=str(pdf_path)
+            venta_data,
+            detalles_pdf,
+            cliente,
+            extension,
+            archivo=str(pdf_path),
+            codigo_generacion=ident.get("codigoGeneracion", ""),
+            numero_control=ident.get("numeroControl", ""),
+            sello_recepcion=nota_json.get("selloRecepcion", ""),
+            tipo_modelo=ident.get("tipoModelo", 1),
+            tipo_operacion=ident.get("tipoOperacion", 1),
+            fecha_generacion=f"{ident.get('fecEmi', '')}, {ident.get('horEmi', '')}",
+            ambiente=ident.get("ambiente", "00"),
+            tipo_contingencia=ident.get("tipoContingencia"),
+            motivo_contin=ident.get("motivoContin"),
         )
         sign_and_save(nota_json, str(json_path))
         if transmitir and nota_id is not None:
@@ -1643,12 +1657,27 @@ class FacturacionTab(QWidget):
             nota_json["identificacion"].get("numeroControl"),
             doc_type,
         )
+        ident = nota_json.get("identificacion", {})
+        doc_rel = None
+        if isinstance(nota_json.get("documentoRelacionado"), list):
+            doc_rel = nota_json["documentoRelacionado"][0] if nota_json["documentoRelacionado"] else None
         pdf_func(
             venta_data,
             detalles_pdf,
             cliente or {},
             distribuidor or {},
             archivo=str(pdf_path),
+            codigo_generacion=ident.get("codigoGeneracion", ""),
+            numero_control=ident.get("numeroControl", ""),
+            sello_recepcion=nota_json.get("selloRecepcion", ""),
+            tipo_modelo=ident.get("tipoModelo", 1),
+            tipo_operacion=ident.get("tipoOperacion", 1),
+            fecha_generacion=f"{ident.get('fecEmi', '')}, {ident.get('horEmi', '')}",
+            ambiente=ident.get("ambiente", "00"),
+            tipo_contingencia=ident.get("tipoContingencia"),
+            motivo_contin=ident.get("motivoContin"),
+            doc_relacionado=doc_rel,
+            motivo=motivo,
         )
 
         # Mostrar previsualización del PDF generado

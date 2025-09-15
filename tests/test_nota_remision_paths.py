@@ -12,9 +12,16 @@ def test_guardar_archivos_nota_remision_uses_docs_folder(tmp_path, monkeypatch):
         Path(archivo).write_text("PDF")
 
     monkeypatch.setattr(facturacion_tab, "generar_nota_remision_pdf", fake_pdf)
+    monkeypatch.setattr(
+        facturacion_tab, "sign_and_save", lambda data, path, return_token=False: Path(path).write_text("JSON")
+    )
 
     nota_json = {
-        "identificacion": {"fecEmi": "2024-05-01", "numeroControl": "DTE-04-ABC-1"},
+        "identificacion": {
+            "fecEmi": "2024-05-01",
+            "numeroControl": "DTE-04-ABC-1",
+            "codigoGeneracion": "XYZ",
+        },
         "receptor": {"nombre": "Cliente"},
         "resumen": {},
         "cuerpoDocumento": [],

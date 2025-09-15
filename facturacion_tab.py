@@ -1552,8 +1552,32 @@ class FacturacionTab(QWidget):
             QMessageBox.information(self, "Anular DTE", "Anulación enviada correctamente")
             self.refresh_and_reload()
         else:
-            detalle = resp.get("detalle") or json.dumps(resp.get("errores"), ensure_ascii=False)
-            QMessageBox.warning(self, "Anular DTE", detalle or "Rechazado")
+            detalle = resp.get("detalle")
+            detalle_text = ""
+
+            if isinstance(detalle, (dict, list)):
+                try:
+                    detalle_text = json.dumps(detalle, ensure_ascii=False, indent=2)
+                except (TypeError, ValueError):
+                    detalle_text = str(detalle)
+            elif detalle:
+                detalle_text = str(detalle)
+            else:
+                errores = resp.get("errores")
+                if isinstance(errores, (dict, list)):
+                    try:
+                        detalle_text = json.dumps(errores, ensure_ascii=False, indent=2)
+                    except (TypeError, ValueError):
+                        detalle_text = str(errores)
+                elif errores:
+                    detalle_text = str(errores)
+                else:
+                    detalle_text = ""
+
+            if not detalle_text:
+                detalle_text = "Rechazado (sin detalles legibles)"
+
+            QMessageBox.warning(self, "Anular DTE", detalle_text)
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

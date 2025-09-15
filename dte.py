@@ -68,18 +68,17 @@ DTE_VERSIONES = {
 
 
 def _origen_aceptado_en_mh(db: DB, ident: dict) -> bool:
-    """Check if the origin document has an accepted record in ``dte_envios``.
+    """Return ``True`` if ``codigoGeneracion`` exists in ``dte_envios`` and is
+    accepted by the ministry.
 
-    Se considera aceptado cuando existe un registro cuya ``estado`` sea
-    "Recibido", "Procesado" o "Aceptado" y posea un ``sello`` no vacío.
-    La consulta intenta primero usar columnas explícitas (``codigo_generacion`` y
-    ``numero_control``) y, si estas no existen, recurre a buscar dentro del JSON
-    ``respuesta``.
+    The record is considered valid when it has ``estado`` ``Procesado`` o
+    ``Aceptado`` (ignora mayúsculas/minúsculas) **y** un ``sello`` no vacío.
+    La consulta intenta primero usar la columna ``codigo_generacion``; si esta
+    no existe, se recurre a buscar dentro del JSON ``respuesta``.
     """
 
     uuid = str(ident.get("codigoGeneracion") or "").upper()
-    numc = str(ident.get("numeroControl") or "")
-    if not uuid and not numc:
+    if not uuid:
         return False
 
     row = None
@@ -88,28 +87,27 @@ def _origen_aceptado_en_mh(db: DB, ident: dict) -> bool:
             """
             SELECT estado, TRIM(sello) AS sello
               FROM dte_envios
-             WHERE UPPER(codigo_generacion)=? OR numero_control=?
+             WHERE UPPER(codigo_generacion)=?
              ORDER BY id DESC LIMIT 1
             """,
-            (uuid, numc),
+            (uuid,),
         ).fetchone()
     except Exception:
-        # fall back to searching within ``respuesta`` if explicit columns are missing
         db.ensure_column("dte_envios", "respuesta", "TEXT")
         row = db.cursor.execute(
             """
             SELECT estado, TRIM(sello) AS sello
               FROM dte_envios
-             WHERE (respuesta LIKE ? OR respuesta LIKE ?)
+             WHERE respuesta LIKE ?
              ORDER BY id DESC LIMIT 1
             """,
-            (f"%{uuid}%", f"%{numc}%"),
+            (f"%{uuid}%",),
         ).fetchone()
 
     if not row:
         return False
     estado = str(row["estado"] or "").lower()
-    return bool(estado in {"recibido", "procesado", "aceptado"} and row["sello"])
+    return bool(row["sello"] and estado in {"procesado", "aceptado"})
 
 
 def _strip_additional_properties(value, schema):

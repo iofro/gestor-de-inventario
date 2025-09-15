@@ -11,6 +11,7 @@ import dte
 import nota_remision
 import utils.docs
 import utils.jws
+from tests.conftest import make_jws
 
 
 def create_sale(db: DB):
@@ -105,4 +106,47 @@ def test_enviar_nota_remision_guarda_sello(monkeypatch):
     res = enviar_nota_remision(db, nota_id)
     assert res["sello"] == "SELLO"
     _assert_sello_guardado(db, nota_id)
+
+
+def test_sello_recibido_actualiza_envio_y_extra(monkeypatch):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+
+    minimo = {
+        "identificacion": {
+            "tipoDte": "01",
+            "version": 1,
+            "ambiente": "00",
+            "codigoGeneracion": "ABC",
+        },
+        "resumen": {"totalLetras": "X"},
+    }
+
+    monkeypatch.setattr(dte, "generar_dte_json", lambda db_obj, vid: minimo)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
+    monkeypatch.setattr(dte.jws, "sign_json", lambda data: make_jws(data))
+    monkeypatch.setattr(dte.auth, "get_token", lambda: "TKN")
+    monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
+    monkeypatch.setattr(
+        dte, "_load_dte_api_config", lambda: {"url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"}
+    )
+    monkeypatch.setattr(
+        dte, "_post_dte", lambda *a, **k: {"estado": "Transmitido", "selloRecibido": "SR"}
+    )
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
+
+    resp = enviar_factura(db, venta_id)
+    assert resp["sello"] == "SR"
+
+    row = db.cursor.execute(
+        "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta_id,)
+    ).fetchone()
+    assert row["sello"] == "SR"
+
+    extra_row = db.cursor.execute(
+        "SELECT extra FROM ventas WHERE id=?", (venta_id,)
+    ).fetchone()
+    extra = json.loads(extra_row["extra"])
+    assert extra["selloRecibido"] == "SR"
 

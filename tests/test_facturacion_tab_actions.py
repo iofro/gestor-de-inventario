@@ -136,26 +136,50 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     assert captured_post["args"] == ("http://example.com", "TOKEN", "SIGNED")
 
 
-def test_delete_files_removes(qt_app, tmp_path, monkeypatch):
+def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
+
     pdf = tmp_path / "f.pdf"
     pdf.write_text("p")
     js = pdf.with_suffix(".json")
-    js.write_text("{}")
+    js.write_text(
+        json.dumps({"identificacion": {"numeroControl": "DTE-01-S001P001-000000000000005"}})
+    )
     jws = pdf.with_suffix(".jws")
     jws.write_text("TOKEN")
     db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf))
-    tab = _make_tab(db, cid)
-    monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+
+    base_dte = Path(facturacion_tab.__file__).with_name("dtes")
+    dte_dir = base_dte / "tmp_test" / "abc"
+    dte_dir.mkdir(parents=True, exist_ok=True)
+    dte_json = dte_dir / "documento.json"
+    dte_json.write_text(
+        json.dumps({"identificacion": {"numeroControl": "DTE-01-S001P001-000000000000005"}})
     )
 
-    monkeypatch.setattr(facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes)
+    db.set_dte_correlativo("01", "001", "001", 5)
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "load_invoices", lambda self: None)
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": venta_id, "json": str(dte_json)},
+    )
+
+    monkeypatch.setattr(
+        facturacion_tab.QMessageBox,
+        "question",
+        lambda *a, **k: facturacion_tab.QMessageBox.Yes,
+    )
     monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
 
-    tab.delete_files()
+    tab.delete_invoice()
+
     assert not pdf.exists()
     assert not js.exists()
     assert not jws.exists()
+    assert not dte_dir.exists()
+    assert db.get_venta_by_id(venta_id) is None
+    assert db.get_dte_correlativo("01", "001", "001") == 4

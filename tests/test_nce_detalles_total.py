@@ -1,5 +1,6 @@
 from decimal import Decimal, ROUND_HALF_UP
 
+import pytest
 from db import DB
 from dte import generar_dte_json
 from nota_credito_electronica import generar_nce_desde_dte
@@ -7,6 +8,14 @@ from nota_credito_electronica import generar_nce_desde_dte
 
 def create_db():
     return DB(":memory:")
+
+
+@pytest.fixture(autouse=True)
+def _mock_geo(monkeypatch):
+    monkeypatch.setattr(
+        "dte.validar_dep_muni_por_catalogo",
+        lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
+    )
 
 
 def _prep(monkeypatch):
@@ -44,6 +53,10 @@ def test_nce_monto_total_por_detalles(monkeypatch):
         }
     ]
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
+    assert (
+        nce["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     resumen = nce["resumen"]
     expected_iva = (Decimal("10") * Decimal("0.13")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     expected_total = Decimal("10") + expected_iva
@@ -73,6 +86,10 @@ def test_nce_detalles_monto_un_dolar(monkeypatch):
         }
     ]
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles, monto=Decimal("1"))
+    assert (
+        nce["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     resumen = nce["resumen"]
     iva = resumen["tributos"][0]["valor"] if resumen["tributos"] else Decimal("0")
     assert resumen["montoTotalOperacion"] == Decimal("1.00")

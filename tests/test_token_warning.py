@@ -81,7 +81,9 @@ def test_send_selected_invoice_warns_on_token(monkeypatch, qt_app, tmp_path):
 
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
     )
     monkeypatch.setattr(
         tab,
@@ -132,7 +134,9 @@ def test_send_selected_invoice_warns_on_exception(monkeypatch, qt_app, tmp_path)
 
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
     )
     monkeypatch.setattr(
         tab,

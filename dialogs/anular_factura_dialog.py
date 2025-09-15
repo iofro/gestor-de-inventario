@@ -69,7 +69,7 @@ class AnularFacturaDialog(QDialog):
         row.addWidget(QLabel("Tipo doc:"))
         self.tdoc_resp = QComboBox()
         for code, desc in sorted(TIPO_DOC_REC.items()):
-            self.tdoc_resp.addItem(f"{code} - {desc}", code)
+            self.tdoc_resp.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tdoc_resp)
         row.addWidget(QLabel("Número:"))
         self.ndoc_resp = QLineEdit()
@@ -96,7 +96,7 @@ class AnularFacturaDialog(QDialog):
         row.addWidget(QLabel("Tipo doc:"))
         self.tdoc_sol = QComboBox()
         for code, desc in sorted(TIPO_DOC_REC.items()):
-            self.tdoc_sol.addItem(f"{code} - {desc}", code)
+            self.tdoc_sol.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tdoc_sol)
         row.addWidget(QLabel("Número:"))
         self.ndoc_sol = QLineEdit()

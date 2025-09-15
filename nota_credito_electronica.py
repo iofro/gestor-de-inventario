@@ -22,6 +22,7 @@ from dte import (
     generar_cabecera_dte_data,
     generar_dte_json,
     sanitize_dte_payload,
+    _origen_aceptado_en_mh,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -127,6 +128,17 @@ def generar_nce_desde_dte(
         if ratio is None or ratio <= Decimal_0:
             raise ValueError("El porcentaje a acreditar debe ser mayor que cero")
 
+    origen_ident = dte_origen.get("identificacion", {})
+    sello = dte_origen.get("selloRecibido") or dte_origen.get("extra", {}).get("selloRecibido")
+    if not sello:
+        raise ValueError(
+            "La factura base no tiene selloRecibido. No puedes referenciarla todavía."
+        )
+    if not _origen_aceptado_en_mh(db, origen_ident):
+        raise ValueError(
+            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+        )
+
     cabecera = generar_cabecera_dte_data(1, 1, "05", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     identificacion = {
@@ -144,12 +156,11 @@ def generar_nce_desde_dte(
         "tipoMoneda": "USD",
     }
 
-    origen_ident = dte_origen.get("identificacion", {})
     doc_rel = [
         {
             "tipoDocumento": origen_ident.get("tipoDte"),
             "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "numeroDocumento": str(origen_ident.get("codigoGeneracion") or "").upper(),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]

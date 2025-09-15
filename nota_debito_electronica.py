@@ -21,7 +21,6 @@ from dte import (
     generar_dte_json,
     sanitize_dte_payload,
     d4,
-    _origen_aceptado_en_mh,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -50,11 +49,6 @@ def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
             tipo_doc = "03"
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
 
-    if not _origen_aceptado_en_mh(db, dte_origen.get("identificacion", {})):
-        raise ValueError(
-            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
-        )
-
     detalles = None
     if nota.get("detalles"):
         try:
@@ -82,15 +76,6 @@ def generar_nde_desde_dte(
     ambiente: str = "00",
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
-    sello = dte_origen.get("selloRecibido") or dte_origen.get("extra", {}).get("selloRecibido")
-    if not sello:
-        raise ValueError(
-            "La factura base no tiene selloRecibido. No puedes referenciarla todavía."
-        )
-    if not _origen_aceptado_en_mh(db, dte_origen.get("identificacion", {})):
-        raise ValueError(
-            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
-        )
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     identificacion = {

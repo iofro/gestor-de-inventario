@@ -549,7 +549,7 @@ class InventoryManager:
             # Productos
             for p in data.get("productos", []):
                 old_vend_id = p.get("vendedor_id")
-                vend = vendedor_id_map.get(old_vend_id) or trabajador_id_map.get(old_vend_id)
+                vend = vendedor_id_map.get(old_vend_id)
                 if old_vend_id and vend is None:
                     logger.warning(
                         "vendedor_id %s not found in mapping, defaulting to None",
@@ -609,7 +609,7 @@ class InventoryManager:
                 cliente_id = cliente_id_map.get(v.get("cliente_id"))
                 Distribuidor_id = Distribuidor_id_map.get(v.get("Distribuidor_id"))
                 old_vend_id = v.get("vendedor_id")
-                vendedor_id = vendedor_id_map.get(old_vend_id) or trabajador_id_map.get(old_vend_id)
+                vendedor_id = trabajador_id_map.get(old_vend_id)
                 if old_vend_id and vendedor_id is None:
                     logger.warning(
                         "vendedor_id %s not found in mapping, defaulting to None",
@@ -690,7 +690,7 @@ class InventoryManager:
                 vendedor_id = None
                 old_vend_id = d.get("vendedor_id")
                 if old_vend_id is not None:
-                    vendedor_id = vendedor_id_map.get(old_vend_id) or trabajador_id_map.get(old_vend_id)
+                    vendedor_id = trabajador_id_map.get(old_vend_id)
                     if vendedor_id is None:
                         logger.warning(
                             "detalle_venta vendedor_id %s not found in mapping, defaulting to None",

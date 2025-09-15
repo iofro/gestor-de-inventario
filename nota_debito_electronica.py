@@ -12,6 +12,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import copy
 import json
+import logging
 from typing import Optional
 
 from db import DB
@@ -22,6 +23,7 @@ from dte import (
     sanitize_dte_payload,
     d4,
     _origen_aceptado_en_mh,
+    normalize_uuid_v4_upper,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -29,6 +31,8 @@ from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
 from utils.sanitize import limpiar_documentos
 
+
+logger = logging.getLogger(__name__)
 
 def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
     """Genera una NDE basada en la nota registrada en ``notas``."""
@@ -153,7 +157,9 @@ def generar_nde_desde_dte(
         {
             "tipoDocumento": tipo_rel,
             "tipoGeneracion": 2,
-            "numeroDocumento": str(origen_ident.get("codigoGeneracion") or "").upper(),
+            "numeroDocumento": normalize_uuid_v4_upper(
+                str(origen_ident.get("codigoGeneracion") or "").upper()
+            ),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]
@@ -354,6 +360,14 @@ def generar_nde_desde_dte(
         "apendice": None,
     }
 
+    logger.info(
+        "NDE relaciona tipo=%s gen=%s num=%s fec=%s sello=%s",
+        doc_rel[0].get("tipoDocumento"),
+        origen_ident.get("codigoGeneracion"),
+        origen_ident.get("numeroControl"),
+        origen_ident.get("fecEmi"),
+        dte_origen.get("selloRecibido"),
+    )
     schema = catalogos.get_dte_schema("06")
     return sanitize_dte_payload(data, schema)
 

@@ -71,6 +71,16 @@ def test_invalid_producto_id(tmp_path):
     assert not manager.db.get_productos()
 
 
+def test_non_numeric_stock(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
+    data = make_valid_data()
+    data["productos"][0]["stock"] = "invalid"
+    path = tmp_path / "inv.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = manager.importar_inventario_json(str(path), dry_run=True, strict=False)
+    assert any(issue["path"] == "productos[0].stock" for issue in summary["errors"])
+
+
 def test_missing_section_is_error(tmp_path):
     manager = im.InventoryManager(MemoryDB())
     data = make_valid_data()

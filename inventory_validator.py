@@ -87,6 +87,18 @@ def validate_inventory_json(data: dict) -> List[Issue]:
             issues.append({"path": f"productos[{i}].nombre", "severity": "error", "message": "Campo requerido"})
         if "precio_venta_minorista" not in p:
             issues.append({"path": f"productos[{i}].precio_venta_minorista", "severity": "error", "message": "Campo requerido"})
+        stock = p.get("stock")
+        if stock is not None:
+            try:
+                stock_val = float(stock)
+                if stock_val < 0:
+                    raise ValueError
+            except (TypeError, ValueError):
+                issues.append({
+                    "path": f"productos[{i}].stock",
+                    "severity": "error",
+                    "message": "stock debe ser un número no negativo",
+                })
 
     vendedor_ids = {v.get("id") for v in vendedores if isinstance(v, dict)}
     cliente_ids = {c.get("id") for c in clientes if isinstance(c, dict)}

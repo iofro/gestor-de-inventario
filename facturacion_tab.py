@@ -136,7 +136,7 @@ class AnularDteDialog(QDialog):
         self.nombre_resp = QLineEdit((responsable or {}).get("nombre", ""))
         self.tipdoc_resp = QComboBox()
         for code, desc in sorted(TIPO_DOC_REC.items()):
-            self.tipdoc_resp.addItem(f"{code} - {desc}", code)
+            self.tipdoc_resp.addItem(f"{code} - {desc}", str(code))
         if responsable and responsable.get("tipDoc"):
             idx = self.tipdoc_resp.findData(responsable.get("tipDoc"))
             if idx >= 0:
@@ -149,7 +149,7 @@ class AnularDteDialog(QDialog):
         self.nombre_sol = QLineEdit((solicitante or {}).get("nombre", ""))
         self.tipdoc_sol = QComboBox()
         for code, desc in sorted(TIPO_DOC_REC.items()):
-            self.tipdoc_sol.addItem(f"{code} - {desc}", code)
+            self.tipdoc_sol.addItem(f"{code} - {desc}", str(code))
         if solicitante and solicitante.get("tipDoc"):
             idx = self.tipdoc_sol.findData(solicitante.get("tipDoc"))
             if idx >= 0:

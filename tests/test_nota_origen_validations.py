@@ -49,3 +49,4 @@ def test_nde_without_mh_record():
     detalles = [{"descripcion": "Prod", "precio_unitario": 1, "ventas_gravadas": 1}]
     data = generar_nde_desde_dte(db, dte_origen, detalles, None)
     assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"
+

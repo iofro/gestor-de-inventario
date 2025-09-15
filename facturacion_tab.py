@@ -23,9 +23,12 @@ from PyQt5.QtWidgets import (
     QPlainTextEdit,
     QSizePolicy,
     QScrollArea,
+    QMenu,
+    QAction,
+    QFormLayout,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
-from PyQt5.QtGui import QPixmap, QDesktopServices
+from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor
 import os
 import re
 import logging
@@ -56,6 +59,7 @@ import tempfile
 import subprocess
 import shutil
 import dte
+import anulacion
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from decimal import Decimal
@@ -113,6 +117,61 @@ class SendOptionsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+
+
+class AnularDteDialog(QDialog):
+    def __init__(self, responsable: dict | None = None, solicitante: dict | None = None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Anular DTE")
+        layout = QFormLayout(self)
+
+        self.tipo_cb = QComboBox()
+        self.tipo_cb.addItems(["1", "2", "3"])
+        layout.addRow("Tipo anulación", self.tipo_cb)
+
+        self.motivo_edit = QLineEdit()
+        layout.addRow("Motivo", self.motivo_edit)
+
+        self.nombre_resp = QLineEdit((responsable or {}).get("nombre", ""))
+        self.tipdoc_resp = QComboBox()
+        self.tipdoc_resp.addItems(["36", "13", "02", "03", "37"])
+        if responsable and responsable.get("tipDoc"):
+            idx = self.tipdoc_resp.findText(responsable.get("tipDoc"))
+            if idx >= 0:
+                self.tipdoc_resp.setCurrentIndex(idx)
+        self.numdoc_resp = QLineEdit((responsable or {}).get("numDoc", ""))
+        layout.addRow("Resp. nombre", self.nombre_resp)
+        layout.addRow("Resp. tipo doc", self.tipdoc_resp)
+        layout.addRow("Resp. núm. doc", self.numdoc_resp)
+
+        self.nombre_sol = QLineEdit((solicitante or {}).get("nombre", ""))
+        self.tipdoc_sol = QComboBox()
+        self.tipdoc_sol.addItems(["36", "13", "02", "03", "37"])
+        if solicitante and solicitante.get("tipDoc"):
+            idx = self.tipdoc_sol.findText(solicitante.get("tipDoc"))
+            if idx >= 0:
+                self.tipdoc_sol.setCurrentIndex(idx)
+        self.numdoc_sol = QLineEdit((solicitante or {}).get("numDoc", ""))
+        layout.addRow("Solicita nombre", self.nombre_sol)
+        layout.addRow("Solicita tipo doc", self.tipdoc_sol)
+        layout.addRow("Solicita núm. doc", self.numdoc_sol)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addRow(buttons)
+
+    def get_data(self):
+        return {
+            "tipoAnulacion": self.tipo_cb.currentText(),
+            "motivoAnulacion": self.motivo_edit.text().strip(),
+            "nombreResponsable": self.nombre_resp.text().strip(),
+            "tipDocResponsable": self.tipdoc_resp.currentText(),
+            "numDocResponsable": self.numdoc_resp.text().strip(),
+            "nombreSolicita": self.nombre_sol.text().strip(),
+            "tipDocSolicita": self.tipdoc_sol.currentText(),
+            "numDocSolicita": self.numdoc_sol.text().strip(),
+        }
 
 
 class NotaRemisionExtWidget(QWidget):
@@ -1168,6 +1227,19 @@ class FacturacionTab(QWidget):
         except Exception:
             QMessageBox.warning(self, "Detalle", "Error al leer el archivo JSON")
             return
+
+        menu = QMenu(self)
+        ver_act = QAction("Ver detalle", self)
+        menu.addAction(ver_act)
+        anular_act = QAction("Anular", self)
+        menu.addAction(anular_act)
+        chosen = menu.exec_(QCursor.pos())
+        if chosen == anular_act:
+            self._anular_dte(factura, data)
+            return
+        if chosen != ver_act:
+            return
+
         items = data.get("cuerpoDocumento") or []
         resumen = data.get("resumen") or {}
         ident = data.get("identificacion") or {}
@@ -1182,6 +1254,62 @@ class FacturacionTab(QWidget):
         dlg.exec_()
         if getattr(dlg, "anulacion_result", None):
             self.refresh_and_reload()
+
+    def _anular_dte(self, factura, data):
+        venta_id = factura.get("venta_id")
+        venta = self.manager.db.get_venta_by_id(venta_id) if venta_id else None
+        extra = {}
+        if venta:
+            extra_raw = venta.get("extra")
+            if extra_raw:
+                try:
+                    extra = json.loads(extra_raw)
+                except Exception:
+                    extra = {}
+        sello = data.get("selloRecibido") or extra.get("selloRecibido")
+        ident = data.get("identificacion", {})
+        if not (ident.get("codigoGeneracion") and ident.get("numeroControl") and sello):
+            QMessageBox.critical(
+                self,
+                "Anular DTE",
+                "No se puede anular: falta acuse de recepción (selloRecibido)",
+            )
+            return
+        data["selloRecibido"] = sello
+
+        negocio = dte._load_datos_negocio()
+        responsable = {
+            "nombre": negocio.get("nombre", ""),
+            "tipDoc": "36",
+            "numDoc": solo_digitos(negocio.get("nit", "")),
+        }
+        receptor = data.get("receptor") or {}
+        solicitante = {
+            "nombre": receptor.get("nombre", ""),
+            "tipDoc": receptor.get("tipoDocumento") or ("36" if receptor.get("nit") else "13"),
+            "numDoc": receptor.get("nit") or receptor.get("numDocumento", ""),
+        }
+        dlg = AnularDteDialog(responsable, solicitante, self)
+        if dlg.exec_() != QDialog.Accepted:
+            return
+        ui_data = dlg.get_data()
+        try:
+            cfg = dte._load_dte_api_config()
+            amb = "01" if str(cfg.get("ambiente", "")).lower().startswith("produc") else "00"
+            anul_json = anulacion.build_invalidacion_json(data, ui_data, ambiente=amb)
+            resp = anulacion.enviar_invalidacion(self.manager.db, anul_json)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Anular DTE", str(exc))
+            return
+        estado = resp.get("estado", "")
+        if estado.lower() != "rechazado":
+            if venta_id:
+                self.manager.db.update_venta_estado(venta_id, "Anulada")
+            QMessageBox.information(self, "Anular DTE", "Anulación enviada correctamente")
+            self.refresh_and_reload()
+        else:
+            detalle = resp.get("detalle") or json.dumps(resp.get("errores"), ensure_ascii=False)
+            QMessageBox.warning(self, "Anular DTE", detalle or "Rechazado")
 
     def _send_invoice_email(self, venta_id):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)

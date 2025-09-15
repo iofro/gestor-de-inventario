@@ -20,5 +20,5 @@ def test_store_and_save_estado(tmp_path):
     assert json_hash
     state = {"estado": "Aceptado"}
     name = versioned_dte.save_estado(version_dir, state)
-    assert name == "aceptado.json"
+    assert name == "documento_aceptado.json"
     assert os.path.exists(os.path.join(version_dir, name))

@@ -717,6 +717,12 @@ class DB:
         self.cursor.execute("SELECT * FROM vendedores")
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_vendedores_distribuidores(self):
+        self.cursor.execute(
+            "SELECT * FROM vendedores WHERE Distribuidor_id IS NOT NULL"
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
+
     def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id, dui=None):
         try:
             self.cursor.execute(

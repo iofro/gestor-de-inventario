@@ -11,6 +11,17 @@ def create_db():
     return DB(":memory:")
 
 
+def _mark_accepted(db: DB, dte: dict, sello: str = "SELLO") -> None:
+    uuid = dte["identificacion"]["codigoGeneracion"]
+    db.ensure_column("dte_envios", "respuesta", "TEXT")
+    db.cursor.execute(
+        "INSERT INTO dte_envios (venta_id, estado, sello, respuesta) VALUES (?,?,?,?)",
+        (None, "Procesado", sello, uuid),
+    )
+    db.conn.commit()
+    dte["selloRecibido"] = sello
+
+
 def _sample_data():
     venta = {
         "sumas": 10,
@@ -74,6 +85,7 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "1234567", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    _mark_accepted(db, dte_origen)
     data = generar_nde_desde_dte(db, dte_origen, None, 10, "Ajuste")
     assert data["identificacion"]["tipoDte"] == "06"
     assert data["resumen"]["montoTotalOperacion"] > 0
@@ -115,6 +127,7 @@ def test_generar_nde_consumidor_final_sin_nit(monkeypatch):
             "totalNoSuj": 0,
         },
     }
+    _mark_accepted(db, dte_origen)
     data = generar_nde_desde_dte(db, dte_origen, None, 10, "Ajuste")
     assert data["identificacion"]["tipoDte"] == "06"
     assert "nit" not in data["receptor"]
@@ -146,6 +159,7 @@ def test_generar_nde_ticket_minimo(monkeypatch):
             "totalNoSuj": 0,
         },
     }
+    _mark_accepted(db, dte_origen)
     data = generar_nde_desde_dte(db, dte_origen, None, 5, "Ajuste")
     assert data["identificacion"]["tipoDte"] == "06"
 
@@ -180,6 +194,7 @@ def test_generar_nde_conserva_total(monkeypatch):
             "totalNoSuj": 0,
         },
     }
+    _mark_accepted(db, dte_origen)
     data = generar_nde_desde_dte(db, dte_origen, None, 1, "Ajuste")
     assert data["resumen"]["montoTotalOperacion"] == Decimal("1.00")
 

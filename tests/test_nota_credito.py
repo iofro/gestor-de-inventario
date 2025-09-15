@@ -12,6 +12,17 @@ def create_db():
     return DB(":memory:")
 
 
+def _mark_accepted(db: DB, dte: dict, sello: str = "SELLO") -> None:
+    uuid = dte["identificacion"]["codigoGeneracion"]
+    db.ensure_column("dte_envios", "respuesta", "TEXT")
+    db.cursor.execute(
+        "INSERT INTO dte_envios (venta_id, estado, sello, respuesta) VALUES (?,?,?,?)",
+        (None, "Procesado", sello, uuid),
+    )
+    db.conn.commit()
+    dte["selloRecibido"] = sello
+
+
 @pytest.fixture(autouse=True)
 def _mock_geo(monkeypatch):
     monkeypatch.setattr(
@@ -38,6 +49,7 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    _mark_accepted(db, dte_origen)
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
@@ -79,6 +91,7 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    _mark_accepted(db, dte_origen)
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert (
@@ -107,6 +120,7 @@ def test_nota_credito_total_nueve(monkeypatch):
     db.add_detalle_venta(venta_id, pid, 1, 7.96, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     assert dte_origen["resumen"]["montoTotalOperacion"] == Decimal("9.00")
+    _mark_accepted(db, dte_origen)
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
@@ -144,6 +158,7 @@ def test_nota_credito_precio_uni(monkeypatch):
             "ventas_no_sujetas": 0,
         }
     ]
+    _mark_accepted(db, dte_origen)
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
@@ -178,6 +193,8 @@ def test_generar_nce_rechaza_monto_excedido(monkeypatch):
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 15, '')",
         (venta_id,),
     ).lastrowid
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    _mark_accepted(db, dte_origen)
     with pytest.raises(ValueError):
         generar_nce_desde_nota(db, nota_id)
 
@@ -209,6 +226,7 @@ def test_generar_nce_detalle_excede(monkeypatch):
             "ventas_gravadas": Decimal("20"),
         }
     ]
+    _mark_accepted(db, dte_origen)
     with pytest.raises(ValueError):
         generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
 
@@ -239,6 +257,8 @@ def test_nota_credito_un_dolar(monkeypatch):
         str(db.cursor.execute("SELECT monto FROM notas WHERE id=?", (nota_id,)).fetchone()["monto"])
     )
     assert stored == Decimal("1")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    _mark_accepted(db, dte_origen)
     nce = generar_nce_desde_nota(db, nota_id)
     resumen = nce["resumen"]
     item = nce["cuerpoDocumento"][0]
@@ -271,6 +291,8 @@ def test_nota_credito_dos_centavos(monkeypatch):
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 0.02, '')",
         (venta_id,),
     ).lastrowid
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    _mark_accepted(db, dte_origen)
     nce = generar_nce_desde_nota(db, nota_id)
     resumen = nce["resumen"]
     assert resumen["montoTotalOperacion"] == Decimal("0.02")

@@ -82,6 +82,10 @@ def generar_nde_desde_dte(
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
     origen_ident = dte_origen.get("identificacion", {})
+    uuid = str(origen_ident.get("codigoGeneracion") or "").upper()
+    if not uuid:
+        raise ValueError("El documento relacionado requiere codigoGeneracion")
+
     # Intenta inyectar ``selloRecibido`` desde ventas.extra o dte_envios
     extra = dte_origen.get("extra", {}) or {}
     if isinstance(extra, str):
@@ -95,7 +99,6 @@ def generar_nde_desde_dte(
         or dte_origen.get("selloRecibido")
     )
     if not sello:
-        uuid = (str(origen_ident.get("codigoGeneracion") or "").upper())
         numc = str(origen_ident.get("numeroControl") or "")
         try:
             row = db.cursor.execute(
@@ -131,7 +134,7 @@ def generar_nde_desde_dte(
         )
     if not _origen_aceptado_en_mh(db, origen_ident):
         raise ValueError(
-            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+            f"El documento relacionado con UUID {uuid} no existe o aún no ha sido aceptado por MH."
         )
 
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)

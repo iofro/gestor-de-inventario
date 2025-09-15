@@ -5,18 +5,18 @@
       "cantidad": 1.0000,
       "codTributo": null,
       "codigo": "SKU-NA",
-      "descripcion": "Producto Demo 7",
+      "descripcion": "Producto Demo 4",
       "montoDescu": 0.0,
       "noGravado": 0.0,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 13.0000,
+      "precioUni": 10.0000,
       "psv": 0.0,
       "tipoItem": 1,
       "tributos": null,
       "uniMedida": 59,
       "ventaExenta": 0.0,
-      "ventaGravada": 13.0000,
+      "ventaGravada": 10.0000,
       "ventaNoSuj": 0.0
     }
   ],
@@ -44,11 +44,11 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "E6E3912C-C491-4CB1-9EDE-B37A88275489",
+    "codigoGeneracion": "52B78359-4CE2-4972-9760-C8D46F1FD678",
     "fecEmi": "2025-09-14",
-    "horEmi": "18:52:42",
+    "horEmi": "18:52:35",
     "motivoContin": null,
-    "numeroControl": "DTE-01-S001P001-000000000000040",
+    "numeroControl": "DTE-01-S001P001-000000000000038",
     "tipoContingencia": null,
     "tipoDte": "01",
     "tipoModelo": 1,
@@ -58,19 +58,19 @@
   },
   "otrosDocumentos": null,
   "receptor": {
-    "codActividad": null,
-    "correo": null,
-    "descActividad": null,
+    "codActividad": "46484",
+    "correo": "no-reply@example.com",
+    "descActividad": "Venta de productos farmaceuticos",
     "direccion": {
       "complemento": "San Salvador",
       "departamento": "06",
       "municipio": "23"
     },
-    "nombre": null,
+    "nombre": "ariel",
     "nrc": null,
-    "numDocumento": null,
+    "numDocumento": "06756083-3",
     "telefono": null,
-    "tipoDocumento": null
+    "tipoDocumento": "13"
   },
   "resumen": {
     "condicionOperacion": 1,
@@ -78,12 +78,12 @@
     "descuGravada": 0.0,
     "descuNoSuj": 0.0,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 13.00,
+    "montoTotalOperacion": 10.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 13.00,
+        "montoPago": 10.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
@@ -92,15 +92,15 @@
     "porcentajeDescuento": 0.0,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 13.00,
-    "subTotalVentas": 13.00,
+    "subTotal": 10.00,
+    "subTotalVentas": 10.00,
     "totalDescu": 0.0,
     "totalExenta": 0.0,
-    "totalGravada": 13.00,
-    "totalLetras": "Trece Dolares con cero centavos",
+    "totalGravada": 10.00,
+    "totalLetras": "Diez Dolares con cero centavos",
     "totalNoGravado": 0.0,
     "totalNoSuj": 0.0,
-    "totalPagar": 13.00,
+    "totalPagar": 10.00,
     "tributos": null
   },
   "ventaTercero": null

@@ -14,14 +14,7 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QTimer, QEvent
 import dte
 from db import DB
-
-DOC_TYPES = [
-    ("NIT", "36"),
-    ("DUI", "13"),
-    ("Carnet de residente", "02"),
-    ("Pasaporte", "03"),
-    ("Otro", "37"),
-]
+from utils.catalogos import TIPO_INVALIDACION, TIPO_DOC_REC
 
 class AnularFacturaDialog(QDialog):
     """Formulario para capturar datos de anulación."""
@@ -42,12 +35,8 @@ class AnularFacturaDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel("Tipo de anulación:"))
         self.tipo_cb = QComboBox()
-        for text, val in [
-            ("1", 1),
-            ("2", 2),
-            ("3", 3),
-        ]:
-            self.tipo_cb.addItem(text, val)
+        for code, desc in sorted(TIPO_INVALIDACION.items()):
+            self.tipo_cb.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tipo_cb)
         layout.addLayout(row)
 
@@ -79,8 +68,8 @@ class AnularFacturaDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel("Tipo doc:"))
         self.tdoc_resp = QComboBox()
-        for text, val in DOC_TYPES:
-            self.tdoc_resp.addItem(text, val)
+        for code, desc in sorted(TIPO_DOC_REC.items()):
+            self.tdoc_resp.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tdoc_resp)
         row.addWidget(QLabel("Número:"))
         self.ndoc_resp = QLineEdit()
@@ -106,8 +95,8 @@ class AnularFacturaDialog(QDialog):
         row = QHBoxLayout()
         row.addWidget(QLabel("Tipo doc:"))
         self.tdoc_sol = QComboBox()
-        for text, val in DOC_TYPES:
-            self.tdoc_sol.addItem(text, val)
+        for code, desc in sorted(TIPO_DOC_REC.items()):
+            self.tdoc_sol.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tdoc_sol)
         row.addWidget(QLabel("Número:"))
         self.ndoc_sol = QLineEdit()

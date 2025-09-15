@@ -209,24 +209,6 @@ class DB:
         finally:
             self.cursor.execute("PRAGMA foreign_keys=on")
 
-    def ensure_vendedores_trabajadores(self):
-        """Ensure every vendedor has a corresponding trabajador entry."""
-        self.cursor.execute("SELECT id, codigo, nombre, dui FROM vendedores")
-        for vend in self.cursor.fetchall():
-            self.cursor.execute(
-                "SELECT 1 FROM trabajadores WHERE id=?", (vend["id"],)
-            )
-            if self.cursor.fetchone():
-                continue
-            self.cursor.execute(
-                """
-                INSERT INTO trabajadores (id, codigo, nombre, dui, es_vendedor)
-                VALUES (?, ?, ?, ?, 1)
-                """,
-                (vend["id"], vend["codigo"], vend["nombre"], vend["dui"]),
-            )
-        self.conn.commit()
-
     def setup(self):
         # Create tables if they don't exist without dropping existing data
         self.cursor.execute("""
@@ -617,7 +599,6 @@ class DB:
         self.cursor.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_distribuidores_nombre ON Distribuidores(nombre)"
         )
-        self.ensure_vendedores_trabajadores()
         self.migrate_ventas_cliente_fk()
         self.migrate_detalles_venta_vendedor_fk()
         self.conn.commit()
@@ -734,6 +715,12 @@ class DB:
 
     def get_vendedores(self):
         self.cursor.execute("SELECT * FROM vendedores")
+        return [dict(row) for row in self.cursor.fetchall()]
+
+    def get_vendedores_distribuidores(self):
+        self.cursor.execute(
+            "SELECT * FROM vendedores WHERE Distribuidor_id IS NOT NULL"
+        )
         return [dict(row) for row in self.cursor.fetchall()]
 
     def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id, dui=None):

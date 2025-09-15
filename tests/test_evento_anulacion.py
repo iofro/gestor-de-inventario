@@ -46,13 +46,13 @@ def _sample_factura():
 def test_generar_evento_anulacion(qt_app, monkeypatch):
     factura = _sample_factura()
     dlg = AnularFacturaDialog()
-    dlg.tipo_cb.setCurrentIndex(1)
+    dlg.tipo_cb.setCurrentIndex(dlg.tipo_cb.findData("2"))
     dlg.motivo_edit.setText("Error en factura")
     dlg.nom_resp.setText("Responsable Uno")
-    dlg.tdoc_resp.setCurrentIndex(0)
+    dlg.tdoc_resp.setCurrentIndex(dlg.tdoc_resp.findData("36"))
     dlg.ndoc_resp.setText("123456789")
     dlg.nom_sol.setText("Solicita Dos")
-    dlg.tdoc_sol.setCurrentIndex(1)
+    dlg.tdoc_sol.setCurrentIndex(dlg.tdoc_sol.findData("13"))
     dlg.ndoc_sol.setText("987654321")
     form = dlg.get_data()
     sello = "A" * 40

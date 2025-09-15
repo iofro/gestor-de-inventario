@@ -537,7 +537,7 @@ class FacturacionTab(QWidget):
 
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
-        self.btn_eliminar.clicked.connect(self.delete_files)
+        self.btn_eliminar.clicked.connect(self.delete_invoice)
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)
@@ -1670,79 +1670,84 @@ class FacturacionTab(QWidget):
             QMessageBox.critical(self, "Nota", str(exc))
         self.load_invoices()
 
-    def delete_files(self):
-        """Elimina PDF y JSON asociados a la venta seleccionada."""
+    def delete_invoice(self):
+        """Elimina una venta junto con archivos y correlativos asociados."""
         data = self._selected_entry()
-        if not data:
+        if not data or data.get("row_type") not in {"venta", "ticket"}:
             QMessageBox.warning(self, "Eliminar", "Seleccione una venta")
             return
-        # Collect base paths for associated files
-        base_paths = set()
-        pdf_path = None
-        ticket_path = None
-        row_type = data.get("row_type")
-        if row_type in ("venta", "ticket"):
-            venta_id = data.get("id")
-            if row_type == "venta":
-                pdf_path = self.manager.db.get_factura_pdf(venta_id)
-                if pdf_path:
-                    base_paths.add(os.path.splitext(pdf_path)[0])
-            ticket_path = self.manager.db.get_ticket_pdf(venta_id)
-            if ticket_path:
-                base_paths.add(os.path.splitext(ticket_path)[0])
-                json_path = data.get("json") or os.path.splitext(ticket_path)[0] + ".json"
-                base_paths.add(os.path.splitext(json_path)[0])
-        else:
-            for p in [data.get("pdf"), data.get("json")]:
-                if p:
-                    base_paths.add(os.path.splitext(p)[0])
+        venta_id = data.get("id")
 
-        # Build list of files to remove for all relevant extensions
-        paths = []
-        for base in base_paths:
-            for ext in (".pdf", ".json", ".jws"):
-                candidate = base + ext
-                if os.path.exists(candidate):
-                    paths.append(candidate)
-        if not paths:
-            if row_type in ("venta", "ticket"):
-                confirm = QMessageBox.question(
-                    self,
-                    "Eliminar",
-                    "No se encontraron archivos. ¿Eliminar registros?",
-                    QMessageBox.Yes | QMessageBox.No,
-                )
-                if confirm == QMessageBox.Yes:
-                    if row_type == "venta" and pdf_path:
-                        self.manager.db.delete_factura_pdf(venta_id)
-                    if ticket_path:
-                        self.manager.db.delete_ticket_pdf(venta_id)
-                    QMessageBox.information(self, "Eliminar", "Registros eliminados")
-                    self.load_invoices()
-                else:
-                    QMessageBox.information(self, "Eliminar", "No se eliminaron registros")
-            else:
-                QMessageBox.information(self, "Eliminar", "No se encontraron archivos")
-            return
         confirm = QMessageBox.question(
             self,
             "Eliminar",
-            "¿Eliminar archivos?",
+            "¿Eliminar venta y archivos asociados?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
             return
-        for p in paths:
+
+        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+        dte_json_path = data.get("json")
+        if not dte_json_path and pdf_path:
+            dte_json_path = os.path.splitext(pdf_path)[0] + ".json"
+        if not dte_json_path:
             try:
-                os.remove(p)
-            except OSError:
-                pass
-        if row_type in ("venta", "ticket"):
-            if row_type == "venta" and pdf_path:
-                self.manager.db.delete_factura_pdf(venta_id)
-            if ticket_path:
-                self.manager.db.delete_ticket_pdf(venta_id)
-        QMessageBox.information(self, "Eliminar", "Archivos eliminados")
+                resp = self.manager.db.consultar_envio_dte(venta_id)
+                dte_json_path = resp.get("json") or resp.get("path") or resp.get("ruta")
+            except Exception:
+                dte_json_path = None
+
+        self.manager.db.delete_venta(venta_id)
+
+        numero_control = None
+        if dte_json_path and os.path.exists(dte_json_path):
+            try:
+                with open(dte_json_path, "r", encoding="utf-8") as fh:
+                    jdata = json.load(fh)
+                ident = jdata.get("identificacion") or jdata.get("identificador") or {}
+                numero_control = ident.get("numeroControl")
+            except Exception:
+                numero_control = None
+            base_dir = os.path.dirname(__file__)
+            abs_json = os.path.normpath(dte_json_path)
+            for root in ("dtes", "dte_fallidos", "dtes_pendientes"):
+                root_dir = os.path.normpath(os.path.join(base_dir, root))
+                if abs_json.startswith(root_dir + os.sep):
+                    try:
+                        shutil.rmtree(os.path.dirname(abs_json))
+                    except OSError:
+                        pass
+                    break
+
+        if numero_control:
+            m = re.match(r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$", numero_control)
+            if m:
+                tipo, suc, punto, corr = m.groups()
+                try:
+                    corr_int = int(corr)
+                    if (
+                        self.manager.db.get_dte_correlativo(tipo, suc, punto)
+                        == corr_int
+                    ):
+                        self.manager.db.set_dte_correlativo(
+                            tipo, suc, punto, corr_int - 1
+                        )
+                except Exception:
+                    pass
+
+        for base in filter(None, [pdf_path, ticket_path]):
+            root = os.path.splitext(base)[0]
+            for ext in (".pdf", ".json", ".jws"):
+                candidate = root + ext
+                if os.path.exists(candidate):
+                    try:
+                        os.remove(candidate)
+                    except OSError:
+                        pass
+
+        QMessageBox.information(self, "Eliminar", "Venta eliminada")
         self.load_invoices()
 
     # ------------------------------------------------------------------

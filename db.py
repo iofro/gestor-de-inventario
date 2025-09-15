@@ -496,9 +496,7 @@ class DB:
                 estado TEXT,
                 sello TEXT,
                 fecha_hora TEXT,
-                respuesta TEXT,
-
-                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+                respuesta TEXT
             )
             """
         )

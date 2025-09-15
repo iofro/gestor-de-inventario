@@ -36,9 +36,10 @@ class PurchasesTab(QWidget):
         for d in self.manager._Distribuidores:
             self.distribuidor_combo.addItem(d["nombre"], d["id"])
 
+        vendedores = self.manager.db.get_vendedores_distribuidores()
         self.vendedor_combo.clear()
         self.vendedor_combo.addItem("Todos", None)
-        for v in self.manager._vendedores:
+        for v in vendedores:
             self.vendedor_combo.addItem(v["nombre"], v["id"])
 
         if current_dist in [d["id"] for d in self.manager._Distribuidores]:
@@ -48,7 +49,7 @@ class PurchasesTab(QWidget):
         else:
             self.distribuidor_combo.setCurrentIndex(0)
 
-        if current_vend in [v["id"] for v in self.manager._vendedores]:
+        if current_vend in [v["id"] for v in vendedores]:
             idx = self.vendedor_combo.findData(current_vend)
             if idx >= 0:
                 self.vendedor_combo.setCurrentIndex(idx)
@@ -88,7 +89,7 @@ class PurchasesTab(QWidget):
             self.distribuidor_combo.addItem(d["nombre"], d["id"])
         self.vendedor_combo = QComboBox()
         self.vendedor_combo.addItem("Todos", None)
-        for v in self.manager._vendedores:
+        for v in self.manager.db.get_vendedores_distribuidores():
             self.vendedor_combo.addItem(v["nombre"], v["id"])
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("ID o producto")
@@ -200,7 +201,10 @@ class PurchasesTab(QWidget):
         detalles_cache = {}
         productos = {p["id"]: p for p in self.manager.db.get_productos()}
         Distribuidores = {d["id"]: d["nombre"] for d in self.manager.db.get_Distribuidores()}
-        Vendedores = {v["id"]: v["nombre"] for v in self.manager.db.get_vendedores()}
+        Vendedores = {
+            v["id"]: v["nombre"]
+            for v in self.manager.db.get_vendedores_distribuidores()
+        }
 
         if self.date_filter_cb.isChecked():
             d_from = self.date_from.date().toPyDate()

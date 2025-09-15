@@ -116,7 +116,7 @@ def generar_nde_desde_dte(
         {
             "tipoDocumento": tipo_rel,
             "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "numeroDocumento": origen_ident.get("numeroControl"),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]

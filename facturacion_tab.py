@@ -64,7 +64,7 @@ from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from decimal import Decimal
 from utils.monto import iva_item
-from utils.catalogos import TRIBUTO_IVA
+from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
 
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,8 @@ class AnularDteDialog(QDialog):
         layout = QFormLayout(self)
 
         self.tipo_cb = QComboBox()
-        self.tipo_cb.addItems(["1", "2", "3"])
+        for code, desc in sorted(TIPO_INVALIDACION.items()):
+            self.tipo_cb.addItem(f"{code} - {desc}", str(code))
         layout.addRow("Tipo anulación", self.tipo_cb)
 
         self.motivo_edit = QLineEdit()
@@ -134,9 +135,10 @@ class AnularDteDialog(QDialog):
 
         self.nombre_resp = QLineEdit((responsable or {}).get("nombre", ""))
         self.tipdoc_resp = QComboBox()
-        self.tipdoc_resp.addItems(["36", "13", "02", "03", "37"])
+        for code, desc in sorted(TIPO_DOC_REC.items()):
+            self.tipdoc_resp.addItem(f"{code} - {desc}", code)
         if responsable and responsable.get("tipDoc"):
-            idx = self.tipdoc_resp.findText(responsable.get("tipDoc"))
+            idx = self.tipdoc_resp.findData(responsable.get("tipDoc"))
             if idx >= 0:
                 self.tipdoc_resp.setCurrentIndex(idx)
         self.numdoc_resp = QLineEdit((responsable or {}).get("numDoc", ""))
@@ -146,9 +148,10 @@ class AnularDteDialog(QDialog):
 
         self.nombre_sol = QLineEdit((solicitante or {}).get("nombre", ""))
         self.tipdoc_sol = QComboBox()
-        self.tipdoc_sol.addItems(["36", "13", "02", "03", "37"])
+        for code, desc in sorted(TIPO_DOC_REC.items()):
+            self.tipdoc_sol.addItem(f"{code} - {desc}", code)
         if solicitante and solicitante.get("tipDoc"):
-            idx = self.tipdoc_sol.findText(solicitante.get("tipDoc"))
+            idx = self.tipdoc_sol.findData(solicitante.get("tipDoc"))
             if idx >= 0:
                 self.tipdoc_sol.setCurrentIndex(idx)
         self.numdoc_sol = QLineEdit((solicitante or {}).get("numDoc", ""))
@@ -163,13 +166,13 @@ class AnularDteDialog(QDialog):
 
     def get_data(self):
         return {
-            "tipoAnulacion": self.tipo_cb.currentText(),
+            "tipoAnulacion": self.tipo_cb.currentData(),
             "motivoAnulacion": self.motivo_edit.text().strip(),
             "nombreResponsable": self.nombre_resp.text().strip(),
-            "tipDocResponsable": self.tipdoc_resp.currentText(),
+            "tipDocResponsable": self.tipdoc_resp.currentData(),
             "numDocResponsable": self.numdoc_resp.text().strip(),
             "nombreSolicita": self.nombre_sol.text().strip(),
-            "tipDocSolicita": self.tipdoc_sol.currentText(),
+            "tipDocSolicita": self.tipdoc_sol.currentData(),
             "numDocSolicita": self.numdoc_sol.text().strip(),
         }
 

@@ -352,6 +352,13 @@ class MainWindow(QMainWindow):
         btn_edit_vend.clicked.connect(self._editar_vendedor)
         vend_layout.addWidget(btn_edit_vend)
 
+        btn_delete_vend = QPushButton("Eliminar Vendedor")
+        btn_delete_vend.setMinimumHeight(24)
+        btn_delete_vend.setMaximumHeight(28)
+        btn_delete_vend.setStyleSheet("font-size:11px;")
+        btn_delete_vend.clicked.connect(self._eliminar_vendedor)
+        vend_layout.addWidget(btn_delete_vend)
+
         vend_dist_layout.addLayout(vend_layout)
 
         # Distribuidores -> Distribuidores
@@ -386,6 +393,13 @@ class MainWindow(QMainWindow):
         btn_edit_dist.setStyleSheet("font-size:11px;")
         btn_edit_dist.clicked.connect(self._editar_Distribuidor)
         dist_layout.addWidget(btn_edit_dist)
+
+        btn_delete_dist = QPushButton("Eliminar Distribuidor")
+        btn_delete_dist.setMinimumHeight(24)
+        btn_delete_dist.setMaximumHeight(28)
+        btn_delete_dist.setStyleSheet("font-size:11px;")
+        btn_delete_dist.clicked.connect(self._eliminar_Distribuidor)
+        dist_layout.addWidget(btn_delete_dist)
 
         vend_dist_layout.addLayout(dist_layout)
 
@@ -1295,6 +1309,39 @@ class MainWindow(QMainWindow):
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor editado correctamente.")
 
+    def _eliminar_vendedor(self):
+        selected_items = self.vendedores_tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Eliminar vendedor", "Seleccione un vendedor para eliminar.")
+            return
+        item = selected_items[0]
+        vendedor_id = item.data(0, Qt.UserRole)
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar",
+            f"¿Eliminar vendedor '{item.text(0)}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm == QMessageBox.Yes:
+            try:
+                self.manager.db.delete_vendedor(vendedor_id)
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Eliminar vendedor",
+                    "El vendedor tiene registros asociados y no puede eliminarse.",
+                )
+                return
+            self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
+            self._actualizar_arbol_vendedores()
+            self._actualizar_arbol_Distribuidores()
+            QMessageBox.information(
+                self,
+                "Vendedor eliminado",
+                f"El vendedor '{item.text(0)}' ha sido eliminado.",
+            )
+
     def _agregar_Distribuidor(self):
         dialog = DistribuidorDialog(self)
         if dialog.exec_():
@@ -1376,6 +1423,45 @@ class MainWindow(QMainWindow):
 
         dialog = DistribuidorInfoDialog(Distribuidor, self)
         dialog.exec_()
+
+    def _eliminar_Distribuidor(self):
+        selected_items = self.Distribuidores_tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(
+                self, "Eliminar Distribuidor", "Seleccione un Distribuidor para eliminar."
+            )
+            return
+        item = selected_items[0]
+        if item.parent() is not None:
+            QMessageBox.warning(
+                self, "Eliminar Distribuidor", "Seleccione un Distribuidor para eliminar."
+            )
+            return
+        dist_id = item.data(0, Qt.UserRole)
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar Distribuidor",
+            f"¿Eliminar Distribuidor '{item.text(0)}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        try:
+            self.manager.db.delete_Distribuidor(dist_id)
+        except ValueError:
+            QMessageBox.warning(
+                self,
+                "Eliminar Distribuidor",
+                "No se puede eliminar el Distribuidor porque tiene registros asociados.",
+            )
+            return
+        self.manager.refresh_data()
+        self.compras_tab.refresh_filters()
+        self._actualizar_arbol_Distribuidores()
+        self._actualizar_arbol_vendedores()
+        QMessageBox.information(
+            self, "Distribuidor", "Distribuidor eliminado correctamente."
+        )
 
     def _actualizar_tabla_clientes(self):
         search = self.cliente_search.text()

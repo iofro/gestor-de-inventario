@@ -2162,15 +2162,32 @@ class DB:
         sello,
         respuesta_json="",
         codigo_lote=None,
+        codigo_generacion=None,
+        numero_control=None,
     ):
-        """Guarda un registro del estado de transmisión de un DTE."""
+        """Guarda un registro del estado de transmisión de un DTE.
+
+        Siempre asegura las columnas ``codigo_generacion`` y ``numero_control`` y
+        almacena ``codigo_generacion`` en mayúsculas cuando se provee.
+        """
+
         self.ensure_column("dte_envios", "respuesta", "TEXT")
         self.ensure_column("dte_envios", "codigo_lote", "TEXT")
+        self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        self.ensure_column("dte_envios", "numero_control", "TEXT")
+
+        # Normaliza valores
+        codigo_generacion = (codigo_generacion or "").upper() or None
+        numero_control = numero_control or None
+
         fecha_hora = datetime.now().isoformat()
         self.cursor.execute(
             """
-            INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta, codigo_lote)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO dte_envios (
+                venta_id, modo, estado, sello, fecha_hora,
+                respuesta, codigo_lote, codigo_generacion, numero_control
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 venta_id,
@@ -2180,6 +2197,8 @@ class DB:
                 fecha_hora,
                 respuesta_json,
                 codigo_lote,
+                codigo_generacion,
+                numero_control,
             ),
         )
         self.conn.commit()

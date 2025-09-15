@@ -201,13 +201,23 @@ class NotaRemisionExtWidget(QWidget):
 
         self.nomb_entrega = QLineEdit()
         self.docu_entrega = QLineEdit()
-        for label, widget in [
-            ("Nombre entrega:", self.nomb_entrega),
-            ("Documento entrega:", self.docu_entrega),
+        self.tipo_entrega_cb = QComboBox()
+        self.tipo_entrega_cb.addItem("DUI", "13")
+        self.tipo_entrega_cb.addItem("NIT", "36")
+        self.docu_entrega.setMaxLength(10)
+        self.docu_entrega.textChanged.connect(self._aplicar_mascara_dui)
+        self.tipo_entrega_cb.currentIndexChanged.connect(
+            lambda _: self._actualizar_tipo_doc(self.docu_entrega)
+        )
+        for label, widget, extra in [
+            ("Nombre entrega:", self.nomb_entrega, None),
+            ("Documento entrega:", self.docu_entrega, self.tipo_entrega_cb),
         ]:
             row = QHBoxLayout()
             row.addWidget(QLabel(label))
             row.addWidget(widget)
+            if extra:
+                row.addWidget(extra)
             layout.addLayout(row)
 
         # Persona que recibe
@@ -222,17 +232,28 @@ class NotaRemisionExtWidget(QWidget):
 
         self.nomb_recibe = QLineEdit()
         self.docu_recibe = QLineEdit()
+        self.docu_recibe.setMaxLength(10)
+        self.docu_recibe.textChanged.connect(self._aplicar_mascara_dui)
+        self.tipo_recibe_cb = QComboBox()
+        self.tipo_recibe_cb.addItem("DUI", "13")
+        self.tipo_recibe_cb.addItem("NIT", "36")
+        self.tipo_recibe_cb.currentIndexChanged.connect(
+            lambda _: self._actualizar_tipo_doc(self.docu_recibe, receptor=True)
+        )
         self.nrc_recibe = QLineEdit()
+        self.nrc_recibe.setEnabled(False)
         self.ext_obs = QPlainTextEdit()
-        for label, widget in [
-            ("Nombre recibe:", self.nomb_recibe),
-            ("Documento recibe:", self.docu_recibe),
-            ("NRC:", self.nrc_recibe),
-            ("Observaciones:", self.ext_obs),
+        for label, widget, extra in [
+            ("Nombre recibe:", self.nomb_recibe, None),
+            ("Documento recibe:", self.docu_recibe, self.tipo_recibe_cb),
+            ("NRC:", self.nrc_recibe, None),
+            ("Observaciones:", self.ext_obs, None),
         ]:
             row = QHBoxLayout()
             row.addWidget(QLabel(label))
             row.addWidget(widget)
+            if extra:
+                row.addWidget(extra)
             layout.addLayout(row)
 
         self.tipo_doc_recibe = "13"
@@ -261,6 +282,54 @@ class NotaRemisionExtWidget(QWidget):
             self.cli_results,
         ]:
             w.installEventFilter(self)
+
+    def _aplicar_mascara_dui(self, text: str):
+        line = self.sender()
+        if not isinstance(line, QLineEdit):
+            return
+        digits = solo_digitos(text)[:9]
+        if len(digits) > 8:
+            formatted = f"{digits[:8]}-{digits[8:]}"
+        else:
+            formatted = digits
+        if line.text() != formatted:
+            line.blockSignals(True)
+            line.setText(formatted)
+            line.blockSignals(False)
+
+    def _solo_digitos(self, text: str):
+        line = self.sender()
+        if not isinstance(line, QLineEdit):
+            return
+        digits = solo_digitos(text)[: line.maxLength()]
+        if line.text() != digits:
+            line.blockSignals(True)
+            line.setText(digits)
+            line.blockSignals(False)
+
+    def _actualizar_tipo_doc(self, line_edit: QLineEdit, receptor: bool = False):
+        combo = self.sender()
+        tipo = combo.currentData() if isinstance(combo, QComboBox) else "13"
+        for fn in (self._aplicar_mascara_dui, self._solo_digitos):
+            try:
+                line_edit.textChanged.disconnect(fn)
+            except TypeError:
+                pass
+        if tipo == "13":  # DUI
+            line_edit.setMaxLength(10)
+            line_edit.textChanged.connect(self._aplicar_mascara_dui)
+            self._aplicar_mascara_dui(line_edit.text())
+            if receptor:
+                self.nrc_recibe.clear()
+                self.nrc_recibe.setEnabled(False)
+        else:  # NIT
+            line_edit.setMaxLength(14)
+            line_edit.textChanged.connect(self._solo_digitos)
+            self._solo_digitos(line_edit.text())
+            if receptor:
+                self.nrc_recibe.setEnabled(True)
+        if receptor:
+            self.tipo_doc_recibe = tipo
 
     def _populate_results(self, widget, items, formatter):
         widget.clear()
@@ -299,8 +368,16 @@ class NotaRemisionExtWidget(QWidget):
         data = item.data(Qt.UserRole) if item else None
         if isinstance(data, dict):
             self.nomb_entrega.setText(data.get("nombre", ""))
-            doc = data.get("dui") or data.get("nit") or ""
-            self.docu_entrega.setText(limpiar_doc(doc))
+            doc_dui = data.get("dui")
+            doc_nit = data.get("nit")
+            if doc_nit and not doc_dui:
+                self.tipo_entrega_cb.setCurrentIndex(1)
+            else:
+                self.tipo_entrega_cb.setCurrentIndex(0)
+            self.tipo_entrega_cb.currentIndexChanged.emit(
+                self.tipo_entrega_cb.currentIndex()
+            )
+            self.docu_entrega.setText(limpiar_doc(doc_dui or doc_nit or ""))
 
     def _buscar_cliente(self):
         text = self.cli_search.text().strip()
@@ -328,15 +405,21 @@ class NotaRemisionExtWidget(QWidget):
             self.cli_data = data
             self.nomb_recibe.setText(data.get("nombre", ""))
             nrc = data.get("nrc") or ""
-            if nrc:
-                self.docu_recibe.setText(limpiar_doc(data.get("nit") or ""))
-                self.nrc_recibe.setText(limpiar_doc(nrc))
-                self.tipo_doc_recibe = "36"
+            doc_dui = data.get("dui")
+            doc_nit = data.get("nit")
+            if nrc or (doc_nit and not doc_dui):
+                self.tipo_recibe_cb.setCurrentIndex(1)
             else:
-                doc = data.get("dui") or data.get("nit") or ""
-                self.docu_recibe.setText(limpiar_doc(doc))
+                self.tipo_recibe_cb.setCurrentIndex(0)
+            self.tipo_recibe_cb.currentIndexChanged.emit(
+                self.tipo_recibe_cb.currentIndex()
+            )
+            if self.tipo_recibe_cb.currentData() == "36":
+                self.docu_recibe.setText(limpiar_doc(doc_nit or ""))
+                self.nrc_recibe.setText(limpiar_doc(nrc))
+            else:
+                self.docu_recibe.setText(limpiar_doc(doc_dui or doc_nit or ""))
                 self.nrc_recibe.clear()
-                self.tipo_doc_recibe = "13"
         else:
             self.cli_data = None
 
@@ -368,7 +451,7 @@ class NotaRemisionExtWidget(QWidget):
             "nombRecibe": self.nomb_recibe.text(),
             "docuRecibe": limpiar_doc(self.docu_recibe.text()),
             "nrcRecibe": limpiar_doc(self.nrc_recibe.text()),
-            "tipoDocRecibe": self.tipo_doc_recibe,
+            "tipoDocRecibe": self.tipo_recibe_cb.currentData(),
             "observaciones": self.ext_obs.toPlainText(),
         }
 
@@ -388,9 +471,11 @@ class NotaRemisionExtWidget(QWidget):
             return False
         doc = solo_digitos(self.docu_recibe.text())
         if self.tipo_doc_recibe == "36":
-            if len(doc) != 14:
+            if len(doc) not in (9, 10, 14):
                 QMessageBox.warning(
-                    self, "Nota", "NIT debe tener 14 dígitos (sin guiones)"
+                    self,
+                    "Nota",
+                    "NIT debe tener 9, 10 o 14 dígitos (sin guiones)",
                 )
                 return False
             nrc = solo_digitos(self.nrc_recibe.text())
@@ -445,6 +530,7 @@ class NotaRemisionExtDialog(QDialog):
         self.docu_entrega = self.panel.docu_entrega
         self.nomb_recibe = self.panel.nomb_recibe
         self.docu_recibe = self.panel.docu_recibe
+        self.nrc_recibe = self.panel.nrc_recibe
         self.ext_obs = self.panel.ext_obs
         self._seleccionar_empleado = self.panel._seleccionar_empleado
         self._seleccionar_cliente = self.panel._seleccionar_cliente

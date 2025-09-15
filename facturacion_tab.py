@@ -1329,6 +1329,13 @@ class FacturacionTab(QWidget):
                 except Exception:
                     extra = {}
         sello = data.get("selloRecibido") or extra.get("selloRecibido")
+        if not sello and venta_id:
+            row = self.manager.db.cursor.execute(
+                "SELECT sello FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                (venta_id,),
+            ).fetchone()
+            if row and row["sello"]:
+                sello = row["sello"]
         ident = data.get("identificacion", {})
         if not (ident.get("codigoGeneracion") and ident.get("numeroControl") and sello):
             QMessageBox.critical(

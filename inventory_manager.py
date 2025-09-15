@@ -556,6 +556,11 @@ class InventoryManager:
                         old_vend_id,
                     )
                 dist = Distribuidor_id_map.get(p.get("Distribuidor_id"))
+                stock = p.get("stock")
+                try:
+                    stock = float(stock) if stock is not None else 0
+                except (TypeError, ValueError):
+                    stock = 0
                 self.db.add_producto(
                     p.get("nombre", ""),
                     p.get("codigo", ""),
@@ -565,7 +570,7 @@ class InventoryManager:
                     p.get("precio_compra", 0),
                     p.get("precio_venta_minorista", 0),
                     p.get("precio_venta_mayorista", 0),
-                    p.get("stock", 0),
+                    stock,
                     commit=False,
                 )
                 new_id = self.db.cursor.lastrowid  # Usa el ID real insertado, no busques por nombre
@@ -1050,12 +1055,21 @@ class ProductTableModel(QAbstractTableModel):
                 precio = row.get("precio_venta_minorista", 0) or 0
                 return f"${precio:.2f}"
             elif col == 3:
-                return row.get("stock", 0)
+                stock = row.get("stock")
+                try:
+                    stock = float(stock) if stock is not None else 0
+                except (TypeError, ValueError):
+                    stock = 0
+                return stock
             # Si agregas comisión:
             # elif col == 4:
             #     return f"{row.get('comision_base', 0)}%"  # O el campo que corresponda
         elif role == Qt.BackgroundRole and col == 3:
-            stock = row.get("stock", 0)
+            stock = row.get("stock")
+            try:
+                stock = float(stock) if stock is not None else 0
+            except (TypeError, ValueError):
+                stock = 0
             if stock < 5:
                 return QColor("red")
             elif stock < 10:

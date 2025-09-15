@@ -24,6 +24,19 @@ from dte import (
 )
 
 
+UUID36_RE = re.compile(r"^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$")
+SELLO40_RE = re.compile(r"^[A-Z0-9]{40}$")
+NUM_CONTROL_RE = re.compile(r"^DTE-(0[0-9]|1[0-2])-[A-Z0-9]{8}-[0-9]{15}$")
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+TEL_EMISOR_RE = re.compile(r"^[0-9+;]{8,26}$")
+TEL_RECEPTOR_RE = re.compile(r"^[0-9+;]{8,50}$")
+
+TIPO_ESTABLECIMIENTOS = {"01", "02", "04", "07", "20"}
+TIPO_DOC_CAT22 = {"36", "13", "02", "03", "37"}
+TIPO_DTE_VALIDOS = {"01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "14", "15"}
+TIPO_ANULACION_VALIDOS = {1, 2, 3}
+
+
 def _post_invalidacion(
     url: str,
     token: str,
@@ -93,46 +106,118 @@ def _post_invalidacion(
 
 def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) -> dict:
     ident = factura.get("identificacion") or {}
-    codigo_gen = ident.get("codigoGeneracion")
-    numero_control = ident.get("numeroControl")
+    codigo_gen_raw = ident.get("codigoGeneracion")
+    numero_control_raw = ident.get("numeroControl")
     fec_emi = ident.get("fecEmi")
-    sello = factura.get("selloRecibido")
-    if not all([codigo_gen, numero_control, fec_emi, sello]):
+    sello_raw = factura.get("selloRecibido")
+    if not all([codigo_gen_raw, numero_control_raw, fec_emi, sello_raw]):
         raise ValueError("Factura incompleta para invalidación")
 
-    negocio = _load_datos_negocio()
+    codigo_gen = str(codigo_gen_raw).strip().upper()
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion de la factura inválido")
+    numero_control = str(numero_control_raw).strip().upper()
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl de la factura inválido")
+    try:
+        datetime.strptime(str(fec_emi), "%Y-%m-%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Fecha de emisión del DTE inválida") from exc
+    sello = str(sello_raw).strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError("selloRecibido inválido")
+
+    negocio = _load_datos_negocio() or {}
     nit = solo_digitos(negocio.get("nit", ""))
     if len(nit) not in (9, 14):
         raise ValueError("NIT del emisor inválido")
 
-    telefono = negocio.get("telefono", "")
-    correo = negocio.get("correo", "")
-    if not re.fullmatch(r"[0-9+;]{8,26}", telefono or ""):
+    nombre_emisor = (negocio.get("nombre") or "").strip()
+    if not (3 <= len(nombre_emisor) <= 250):
+        raise ValueError("Nombre del emisor inválido")
+
+    tipo_estable = str(negocio.get("tipoEstablecimiento") or "01").zfill(2)
+    if tipo_estable not in TIPO_ESTABLECIMIENTOS:
+        raise ValueError("tipoEstablecimiento del emisor inválido")
+
+    nom_estable_raw = negocio.get("nombreComercial") or nombre_emisor
+    nom_estable = nom_estable_raw.strip() if isinstance(nom_estable_raw, str) else None
+    if nom_estable and not (3 <= len(nom_estable) <= 150):
+        raise ValueError("Nombre de establecimiento inválido")
+    if not nom_estable:
+        nom_estable = None
+
+    cod_estable_mh_raw = negocio.get("codEstableMH")
+    cod_estable_mh = None
+    if cod_estable_mh_raw not in (None, ""):
+        cod_estable_mh = str(cod_estable_mh_raw).strip().zfill(4)
+        if len(cod_estable_mh) != 4:
+            raise ValueError("codEstableMH inválido")
+
+    cod_estable = str(negocio.get("codEstable") or "1").strip()
+    if not (1 <= len(cod_estable) <= 10):
+        raise ValueError("codEstable inválido")
+
+    cod_pv_mh_raw = negocio.get("codPuntoVentaMH")
+    cod_punto_venta_mh = None
+    if cod_pv_mh_raw not in (None, ""):
+        cod_punto_venta_mh = str(cod_pv_mh_raw).strip().zfill(4)
+        if len(cod_punto_venta_mh) != 4:
+            raise ValueError("codPuntoVentaMH inválido")
+
+    cod_punto_venta = str(negocio.get("codPuntoVenta") or "1").strip()
+    if not (1 <= len(cod_punto_venta) <= 15):
+        raise ValueError("codPuntoVenta inválido")
+
+    telefono = (negocio.get("telefono") or "").strip()
+    if not TEL_EMISOR_RE.fullmatch(telefono):
         raise ValueError("Teléfono del emisor inválido")
-    if not re.fullmatch(r"[^@]+@[^@]+\.[^@]+", correo or ""):
+
+    correo = (negocio.get("correo") or "").strip()
+    if not (3 <= len(correo) <= 100 and EMAIL_RE.fullmatch(correo)):
         raise ValueError("Correo del emisor inválido")
 
     emisor = {
         "nit": nit,
-        "nombre": negocio.get("nombre"),
-        "tipoEstablecimiento": str(negocio.get("tipoEstablecimiento") or "01").zfill(2),
-        "nomEstablecimiento": negocio.get("nombreComercial") or negocio.get("nombre"),
-        "codEstableMH": str(negocio.get("codEstableMH") or "0001").zfill(4),
-        "codEstable": str(negocio.get("codEstable") or "1"),
-        "codPuntoVentaMH": str(negocio.get("codPuntoVentaMH") or "0001").zfill(4),
-        "codPuntoVenta": str(negocio.get("codPuntoVenta") or "1"),
+        "nombre": nombre_emisor,
+        "tipoEstablecimiento": tipo_estable,
+        "nomEstablecimiento": nom_estable,
+        "codEstableMH": cod_estable_mh,
+        "codEstable": cod_estable,
+        "codPuntoVentaMH": cod_punto_venta_mh,
+        "codPuntoVenta": cod_punto_venta,
         "telefono": telefono,
         "correo": correo,
     }
 
     receptor = factura.get("receptor") or {}
-    nombre_rec = receptor.get("nombre")
-    tip_doc_rec = receptor.get("tipoDocumento") or ("36" if receptor.get("nit") else None)
-    num_doc_rec = receptor.get("numDocumento") or receptor.get("nit")
-    if not nombre_rec or len(nombre_rec) < 5:
+    nombre_rec = (receptor.get("nombre") or "").strip()
+    if not (5 <= len(nombre_rec) <= 200):
         raise ValueError("Nombre del receptor inválido")
-    if not tip_doc_rec or not num_doc_rec or not (3 <= len(num_doc_rec) <= 20):
-        raise ValueError("Documento del receptor inválido")
+
+    tip_doc_rec = receptor.get("tipoDocumento") or ("36" if receptor.get("nit") else None)
+    tip_doc_rec = str(tip_doc_rec).zfill(2) if tip_doc_rec is not None else None
+    if tip_doc_rec not in TIPO_DOC_CAT22:
+        raise ValueError("Tipo de documento del receptor inválido")
+
+    num_doc_rec = receptor.get("numDocumento") or receptor.get("nit")
+    num_doc_rec = (num_doc_rec or "").strip()
+    if not (3 <= len(num_doc_rec) <= 20):
+        raise ValueError("Número de documento del receptor inválido")
+
+    tel_rec_raw = receptor.get("telefono")
+    tel_rec = None
+    if tel_rec_raw not in (None, ""):
+        tel_rec = str(tel_rec_raw).strip()
+        if not TEL_RECEPTOR_RE.fullmatch(tel_rec):
+            raise ValueError("Teléfono del receptor inválido")
+
+    cor_rec_raw = receptor.get("correo")
+    cor_rec = None
+    if cor_rec_raw not in (None, ""):
+        cor_rec = str(cor_rec_raw).strip()
+        if len(cor_rec) > 100 or not EMAIL_RE.fullmatch(cor_rec):
+            raise ValueError("Correo del receptor inválido")
 
     resumen = factura.get("resumen") or {}
     monto_iva = resumen.get("totalIva")
@@ -141,33 +226,80 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
             if trib.get("codigo") == TRIBUTO_IVA:
                 monto_iva = trib.get("valor")
                 break
-    if monto_iva is None:
-        raise ValueError("montoIva no encontrado en la factura")
-    tipo_dte_str = str(ident.get("tipoDte")).zfill(2)
-    monto_iva = Decimal(str(monto_iva)).quantize(Decimal("0.01"))
+    monto_iva_val = None
+    if monto_iva is not None:
+        try:
+            monto_iva_val = Decimal(str(monto_iva))
+        except Exception as exc:
+            raise ValueError("montoIva inválido") from exc
+        if monto_iva_val < 0:
+            raise ValueError("montoIva no puede ser negativo")
+        monto_iva_val = float(monto_iva_val.quantize(Decimal("0.01")))
 
-    tipo_anulacion = str(ui_motivo.get("tipoAnulacion"))
-    motivo = ui_motivo.get("motivoAnulacion", "")
-    if len(motivo) < 5:
-        raise ValueError("motivoAnulacion debe tener al menos 5 caracteres")
+    tipo_dte_raw = ident.get("tipoDte")
+    tipo_dte_str = str(tipo_dte_raw).zfill(2) if tipo_dte_raw is not None else ""
+    if tipo_dte_str not in TIPO_DTE_VALIDOS:
+        raise ValueError("tipoDte inválido")
 
-    def _val_doc(nombre, tip, num):
-        if not nombre or len(nombre) < 3:
-            raise ValueError("nombre inválido")
-        if tip not in {"36", "13", "02", "03", "37"}:
-            raise ValueError("tipo de documento inválido")
-        if not (3 <= len(num or "") <= 20):
-            raise ValueError("número de documento inválido")
+    tipo_anulacion_raw = ui_motivo.get("tipoAnulacion")
+    try:
+        tipo_anulacion = int(tipo_anulacion_raw)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("tipoAnulacion inválido") from exc
+    if tipo_anulacion not in TIPO_ANULACION_VALIDOS:
+        raise ValueError("tipoAnulacion inválido")
 
-    _val_doc(
+    motivo_raw = ui_motivo.get("motivoAnulacion")
+    if isinstance(motivo_raw, str):
+        motivo_val = motivo_raw.strip()
+    elif motivo_raw is None:
+        motivo_val = None
+    else:
+        raise ValueError("motivoAnulacion inválido")
+
+    if tipo_anulacion == 3:
+        if not motivo_val or not (5 <= len(motivo_val) <= 250):
+            raise ValueError("motivoAnulacion requerido cuando tipoAnulacion es 3")
+    elif motivo_val:
+        if not (5 <= len(motivo_val) <= 250):
+            raise ValueError("motivoAnulacion inválido")
+    else:
+        motivo_val = None
+
+    codigo_generacion_r = None
+    if tipo_anulacion == 2:
+        codigo_generacion_r = None
+    else:
+        codigo_generacion_r_raw = ui_motivo.get("codigoGeneracionR")
+        if not isinstance(codigo_generacion_r_raw, str) or not codigo_generacion_r_raw.strip():
+            raise ValueError("codigoGeneracionR requerido para este tipo de anulación")
+        codigo_generacion_r = codigo_generacion_r_raw.strip().upper()
+        if not UUID36_RE.fullmatch(codigo_generacion_r):
+            raise ValueError("codigoGeneracionR inválido")
+
+    def _val_persona(nombre, tip, num, *, sujeto: str):
+        nombre_val = (nombre or "").strip()
+        if not (5 <= len(nombre_val) <= 100):
+            raise ValueError(f"Nombre de {sujeto} inválido")
+        tip_val = str(tip or "").zfill(2)
+        if tip_val not in TIPO_DOC_CAT22:
+            raise ValueError(f"Tipo de documento de {sujeto} inválido")
+        num_val = (num or "").strip()
+        if not (3 <= len(num_val) <= 20):
+            raise ValueError(f"Número de documento de {sujeto} inválido")
+        return nombre_val, tip_val, num_val
+
+    nombre_resp, tip_resp, num_resp = _val_persona(
         ui_motivo.get("nombreResponsable"),
         ui_motivo.get("tipDocResponsable"),
         ui_motivo.get("numDocResponsable"),
+        sujeto="responsable",
     )
-    _val_doc(
+    nombre_sol, tip_sol, num_sol = _val_persona(
         ui_motivo.get("nombreSolicita"),
         ui_motivo.get("tipDocSolicita"),
         ui_motivo.get("numDocSolicita"),
+        sujeto="solicitante",
     )
 
     now = datetime.now(TZ_EL_SALVADOR)
@@ -184,33 +316,26 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
         "codigoGeneracion": codigo_gen,
         "selloRecibido": sello,
         "numeroControl": numero_control,
-        "fecEmi": fec_emi,
-        "montoIva": float(monto_iva),
-        "codigoGeneracionR": None if tipo_anulacion == "2" else ui_motivo.get("codigoGeneracionR"),
+        "fecEmi": str(fec_emi),
+        "montoIva": monto_iva_val,
+        "codigoGeneracionR": codigo_generacion_r,
         "tipoDocumento": tip_doc_rec,
         "numDocumento": num_doc_rec,
         "nombre": nombre_rec,
+        "telefono": tel_rec,
     }
-    tel_rec = receptor.get("telefono")
-    if tel_rec:
-        if not re.fullmatch(r"[0-9+;]{8,50}", tel_rec):
-            raise ValueError("Teléfono del receptor inválido")
-        documento["telefono"] = tel_rec
-    cor_rec = receptor.get("correo")
-    if cor_rec:
-        if not re.fullmatch(r"[^@]+@[^@]+\.[^@]+", cor_rec):
-            raise ValueError("Correo del receptor inválido")
+    if cor_rec is not None:
         documento["correo"] = cor_rec
 
     motivo_section = {
-        "tipoAnulacion": int(tipo_anulacion),
-        "motivoAnulacion": motivo,
-        "nombreResponsable": ui_motivo.get("nombreResponsable"),
-        "tipDocResponsable": ui_motivo.get("tipDocResponsable"),
-        "numDocResponsable": ui_motivo.get("numDocResponsable"),
-        "nombreSolicita": ui_motivo.get("nombreSolicita"),
-        "tipDocSolicita": ui_motivo.get("tipDocSolicita"),
-        "numDocSolicita": ui_motivo.get("numDocSolicita"),
+        "tipoAnulacion": tipo_anulacion,
+        "motivoAnulacion": motivo_val,
+        "nombreResponsable": nombre_resp,
+        "tipDocResponsable": tip_resp,
+        "numDocResponsable": num_resp,
+        "nombreSolicita": nombre_sol,
+        "tipDocSolicita": tip_sol,
+        "numDocSolicita": num_sol,
     }
 
     return {

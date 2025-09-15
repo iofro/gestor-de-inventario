@@ -21,6 +21,7 @@ from dte import (
     generar_dte_json,
     sanitize_dte_payload,
     d4,
+    _origen_aceptado_en_mh,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -76,6 +77,17 @@ def generar_nde_desde_dte(
     ambiente: str = "00",
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
+    origen_ident = dte_origen.get("identificacion", {})
+    sello = dte_origen.get("selloRecibido") or dte_origen.get("extra", {}).get("selloRecibido")
+    if not sello:
+        raise ValueError(
+            "La factura base no tiene selloRecibido. No puedes referenciarla todavía."
+        )
+    if not _origen_aceptado_en_mh(db, origen_ident):
+        raise ValueError(
+            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+        )
+
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     identificacion = {
@@ -93,14 +105,13 @@ def generar_nde_desde_dte(
         "tipoMoneda": "USD",
     }
 
-    origen_ident = dte_origen.get("identificacion", {})
     tipo_origen = origen_ident.get("tipoDte")
     tipo_rel = "07" if tipo_origen == "07" else "03"
     doc_rel = [
         {
             "tipoDocumento": tipo_rel,
             "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "numeroDocumento": str(origen_ident.get("codigoGeneracion") or "").upper(),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]

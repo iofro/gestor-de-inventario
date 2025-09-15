@@ -622,6 +622,19 @@ class FacturacionTab(QWidget):
         self.client_filter.blockSignals(False)
         self.vendedor_filter.blockSignals(False)
 
+    @staticmethod
+    def _map_envio_state(state):
+        est = str(state).lower()
+        if est == "aceptado":
+            return "Aceptado"
+        if est == "rechazado":
+            return "Rechazado"
+        if est == "error":
+            return "Error"
+        if est in {"transmitido", "recibido", "procesado"}:
+            return "Enviado"
+        return "Pendiente"
+
     def _get_invoices_from_db(self):
         """Return invoice entries stored in the database.
 
@@ -682,17 +695,7 @@ class FacturacionTab(QWidget):
                 (rec["venta_id"],),
             ).fetchone()
             if env_row:
-                est = str(env_row["estado"]).lower()
-                if est == "aceptado":
-                    envio = "Aceptado"
-                elif est == "rechazado":
-                    envio = "Rechazado"
-                elif est == "error":
-                    envio = "Error"
-                elif est in {"transmitido", "recibido", "procesado"}:
-                    envio = "Enviado"
-                else:
-                    envio = "Pendiente"
+                envio = self._map_envio_state(env_row["estado"])
             else:
                 envio = "Pendiente de envío"
 
@@ -811,6 +814,7 @@ class FacturacionTab(QWidget):
     def _scan_documents(self):
         result = self._get_invoices_from_db()
         seen = {r.get("name") for r in result}
+        cur = self.manager.db.cursor
         folders = [
             CF_DIR,
             CREDITO_DIR,
@@ -855,16 +859,7 @@ class FacturacionTab(QWidget):
             js = paths.get(".json")
             tipo = paths.get("tipo")
             estado = "Sin venta" if pdf and js else "Incompleta"
-            envio = "Pendiente"
-            if js:
-                norm = os.path.normpath(js)
-                base_dir = os.path.dirname(__file__)
-                aceptados = os.path.join(base_dir, "dtes") + os.sep
-                rechazados = os.path.join(base_dir, "dte_fallidos") + os.sep
-                if norm.startswith(aceptados):
-                    envio = "Aceptado"
-                elif norm.startswith(rechazados):
-                    envio = "Rechazado"
+            envio = "Pendiente de envío"
             numero = base
             fecha = ""
             cliente = ""
@@ -872,6 +867,7 @@ class FacturacionTab(QWidget):
             signo = 1
             fdate = None
             codigo = None
+            codigo_gen = None
             if js and os.path.exists(js):
                 try:
                     with open(js, "r", encoding="utf-8") as fh:
@@ -879,6 +875,7 @@ class FacturacionTab(QWidget):
                     ident = data.get("identificacion", {})
                     numero = ident.get("numeroControl", numero)
                     codigo = ident.get("tipoDte")
+                    codigo_gen = ident.get("codigoGeneracion")
                     fecha = ident.get("fecEmi", "")
                     hora = ident.get("horEmi", "")
                     cliente = data.get("receptor", {}).get("nombre", "")
@@ -906,6 +903,19 @@ class FacturacionTab(QWidget):
                                 fecha = fdate.strftime("%Y-%m-%d")
                         except Exception:
                             fdate = None
+                    env_row = None
+                    if codigo_gen:
+                        env_row = cur.execute(
+                            "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1",
+                            (f'%{codigo_gen}%',),
+                        ).fetchone()
+                    if not env_row and numero:
+                        env_row = cur.execute(
+                            "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1",
+                            (f'%{numero}%',),
+                        ).fetchone()
+                    if env_row:
+                        envio = self._map_envio_state(env_row["estado"])
                 except Exception:
                     estado = "Incompleta"
             result.append(

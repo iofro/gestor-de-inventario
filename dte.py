@@ -1884,17 +1884,40 @@ def generar_dte_json(
     cod_punto = (cod_punto_raw or punto_pref.rjust(4, "0"))[-4:].zfill(4)
     suc = _norm3(cod_estable)
     pto = _norm3(cod_punto)
-    # Generar identificadores con formatos oficiales
-    codigo_generacion = kwargs.get("codigo_generacion") or str(uuid.uuid4()).upper()
-    numero_control_kw = kwargs.get("numero_control")
-    correlativo_kw = kwargs.get("correlativo")
-    if numero_control_kw is not None and correlativo_kw is not None:
-        if not isinstance(correlativo_kw, int) or correlativo_kw <= 0:
-            raise ValueError("correlativo inválido")
-        numero_control = str(numero_control_kw)
-        correlativo = correlativo_kw
-    else:
+
+    # Reutilizar identificadores existentes si están almacenados
+    codigo_generacion = (
+        extra.get("codigoGeneracion")
+        or extra.get("codigo_generacion")
+        or kwargs.get("codigo_generacion")
+    )
+    numero_control = (
+        extra.get("numeroControl")
+        or extra.get("numero_control")
+        or kwargs.get("numero_control")
+    )
+    correlativo = extra.get("correlativo")
+    if correlativo is None:
+        correlativo = kwargs.get("correlativo")
+
+    if codigo_generacion is None:
+        codigo_generacion = str(uuid.uuid4()).upper()
+    if numero_control is None or correlativo is None:
         numero_control, correlativo = generar_numero_control(db, tipo_dte, suc, pto)
+
+    # Persistir identificadores para reutilización futura
+    if tipo_dte in ("01", "03"):
+        try:
+            db.update_venta_extra(
+                venta_id,
+                {
+                    "codigoGeneracion": codigo_generacion,
+                    "numeroControl": numero_control,
+                    "correlativo": correlativo,
+                },
+            )
+        except Exception:
+            pass
 
 
     now = datetime.now(TZ_EL_SALVADOR)

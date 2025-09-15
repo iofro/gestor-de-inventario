@@ -12,6 +12,14 @@ def create_db():
     return DB(":memory:")
 
 
+@pytest.fixture(autouse=True)
+def _mock_geo(monkeypatch):
+    monkeypatch.setattr(
+        "dte.validar_dep_muni_por_catalogo",
+        lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
+    )
+
+
 def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
@@ -34,6 +42,10 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     assert data["cuerpoDocumento"][0]["precioUni"] > 0
     assert "totalPagar" not in data["resumen"]
     assert data["resumen"]["montoTotalOperacion"] > 0
@@ -69,6 +81,10 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     assert "-" not in data["receptor"].get("nit", "")
 
 
@@ -92,6 +108,10 @@ def test_nota_credito_total_nueve(monkeypatch):
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     assert dte_origen["resumen"]["montoTotalOperacion"] == Decimal("9.00")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     assert data["resumen"]["montoTotalOperacion"] == 9.0
 
 
@@ -125,6 +145,10 @@ def test_nota_credito_precio_uni(monkeypatch):
         }
     ]
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")
     iva = Decimal("7.96") * Decimal("0.13")

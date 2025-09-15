@@ -3,10 +3,19 @@ from utils.monto import to_base_iva, d8
 from nota_credito_electronica import generar_nce_desde_dte
 from db import DB
 from dte import generar_dte_json
+import pytest
 
 
 def create_db():
     return DB(":memory:")
+
+
+@pytest.fixture(autouse=True)
+def _mock_geo(monkeypatch):
+    monkeypatch.setattr(
+        "dte.validar_dep_muni_por_catalogo",
+        lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
+    )
 
 
 def test_to_base_iva_splits_total():
@@ -34,5 +43,9 @@ def test_prorrateo_porcentaje(monkeypatch):
     db.add_detalle_venta(venta_id, pid, 1, 100, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("0.1"))
+    assert (
+        data["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     assert data["resumen"]["montoTotalOperacion"] == 10.0
 

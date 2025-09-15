@@ -5038,7 +5038,10 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         token = sign_json(data)
         jws_token = token.rstrip("\n")
         save_file(jws_path, jws_token, add_final_newline=False)
-    return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
+    resp = _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
+    if resp.get("sello"):
+        db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})
+    return resp
 
 
 def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
@@ -5081,7 +5084,10 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         token = sign_json(data)
         jws_token = token.rstrip("\n")
         save_file(jws_path, jws_token, add_final_newline=False)
-    return _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
+    resp = _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
+    if resp.get("sello"):
+        db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})
+    return resp
 
 
 def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
@@ -5101,7 +5107,10 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
-    return _enviar_documento(db, nota_id, data, modo)
+    resp = _enviar_documento(db, nota_id, data, modo)
+    if resp.get("sello"):
+        db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})
+    return resp
 
 
 def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:

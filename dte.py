@@ -2931,12 +2931,15 @@ def validate_dte_json(
         else None
     )
     if correlativo is not None:
-        if numero_control and not re.fullmatch(regex_nc, numero_control):
-            ident["numeroControl"] = recon
-        elif numero_control and numero_control != recon:
-            raise ValueError("numeroControl no coincide con correlativo suministrado")
-        else:
-            ident["numeroControl"] = recon
+        if numero_control and numero_control != recon:
+            # Reemplazar cualquier numeroControl inconsistente con el correlativo
+            logger.warning(
+                "numeroControl %s no coincide con correlativo %s; se reemplaza con %s",
+                numero_control,
+                correlativo,
+                recon,
+            )
+        ident["numeroControl"] = recon
     elif not (isinstance(numero_control, str) and re.fullmatch(regex_nc, numero_control)):
         ident["numeroControl"], correlativo = generar_numero_control(db, tipo, suc, pto)
     numero_control = ident.get("numeroControl")

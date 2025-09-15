@@ -95,8 +95,8 @@ def test_validate_dte_json_correlativo_desincronizado(tmp_path):
     ident = dte["identificacion"]
     corr = int(ident["numeroControl"].split("-")[-1])
     ident["numeroControl"] = dte_module._format_numero_control("01", "001", "001", corr + 1)
-    with pytest.raises(ValueError):
-        dte_module.validate_dte_json(dte, db=db, correlativo=corr)
+    dte_module.validate_dte_json(dte, db=db, correlativo=corr)
+    assert ident["numeroControl"] == dte_module._format_numero_control("01", "001", "001", corr)
 
 
 def test_validate_dte_json_corrige_numero_control_invalido(tmp_path):

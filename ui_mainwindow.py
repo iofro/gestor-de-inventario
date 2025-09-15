@@ -352,6 +352,13 @@ class MainWindow(QMainWindow):
         btn_edit_vend.clicked.connect(self._editar_vendedor)
         vend_layout.addWidget(btn_edit_vend)
 
+        btn_delete_vend = QPushButton("Eliminar Vendedor")
+        btn_delete_vend.setMinimumHeight(24)
+        btn_delete_vend.setMaximumHeight(28)
+        btn_delete_vend.setStyleSheet("font-size:11px;")
+        btn_delete_vend.clicked.connect(self._eliminar_vendedor)
+        vend_layout.addWidget(btn_delete_vend)
+
         vend_dist_layout.addLayout(vend_layout)
 
         # Distribuidores -> Distribuidores
@@ -1294,6 +1301,39 @@ class MainWindow(QMainWindow):
             self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor editado correctamente.")
+
+    def _eliminar_vendedor(self):
+        selected_items = self.vendedores_tree.selectedItems()
+        if not selected_items:
+            QMessageBox.warning(self, "Eliminar vendedor", "Seleccione un vendedor para eliminar.")
+            return
+        item = selected_items[0]
+        vendedor_id = item.data(0, Qt.UserRole)
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar",
+            f"¿Eliminar vendedor '{item.text(0)}'?",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm == QMessageBox.Yes:
+            try:
+                self.manager.db.delete_vendedor(vendedor_id)
+            except ValueError:
+                QMessageBox.warning(
+                    self,
+                    "Eliminar vendedor",
+                    "El vendedor tiene registros asociados y no puede eliminarse.",
+                )
+                return
+            self.manager.refresh_data()
+            self.compras_tab.refresh_filters()
+            self._actualizar_arbol_vendedores()
+            self._actualizar_arbol_Distribuidores()
+            QMessageBox.information(
+                self,
+                "Vendedor eliminado",
+                f"El vendedor '{item.text(0)}' ha sido eliminado.",
+            )
 
     def _agregar_Distribuidor(self):
         dialog = DistribuidorDialog(self)

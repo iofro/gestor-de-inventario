@@ -12,6 +12,16 @@ from utils.stable_json import DecimalEncoder
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 
+try:  # Prefer shared app version if available
+    from dte import APP_VERSION
+except Exception:  # pragma: no cover - fallback when dte isn't importable
+    APP_VERSION = "unknown"
+
+from inventory_validator import (
+    validate_inventory_json,
+    migrate_inventory_json,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -205,6 +215,15 @@ class InventoryManager:
             except Exception:
                 logger.exception("Failed to parse %s", DATOS_NEGOCIO_PATH)
 
+        def write_kv(key, value):
+            nonlocal first_section
+            if not first_section:
+                f.write(",\n")
+            json.dump(key, f)
+            f.write(":")
+            json.dump(value, f, ensure_ascii=False, cls=DecimalEncoder)
+            first_section = False
+
         def write_array(key, iterator):
             nonlocal first_section
             if not first_section:
@@ -230,6 +249,9 @@ class InventoryManager:
             with open(filename, "w", encoding="utf-8") as f:
                 first_section = True
                 f.write("{")
+                write_kv("schemaVersion", 1)
+                write_kv("generatedAt", datetime.utcnow().isoformat())
+                write_kv("appVersion", APP_VERSION)
                 write_array("productos", self._products)
                 write_array("vendedores", (dict(v) for v in self._vendedores))
                 write_array("Distribuidores", (dict(v) for v in self._Distribuidores))
@@ -322,7 +344,7 @@ class InventoryManager:
                 f"No se pudo exportar inventario a {filename}: {e}"
             ) from e
 
-    def importar_inventario_json(self, filename):
+    def importar_inventario_json(self, filename, *, dry_run: bool = False, strict: bool = True):
         with open(filename, "r", encoding="utf-8") as f:
             try:
                 data = json.load(f)
@@ -330,6 +352,46 @@ class InventoryManager:
                 raise InventoryManagerError(
                     f"No se pudo importar inventario desde {filename}: JSON malformado en línea {e.lineno}, columna {e.colno}"
                 ) from e
+
+        data, migrations_applied = migrate_inventory_json(data)
+        issues = validate_inventory_json(data)
+        errors = [i for i in issues if i["severity"] == "error"]
+        warnings = [i for i in issues if i["severity"] == "warning"]
+
+        if strict and errors:
+            sample = "; ".join(f"{i['path']}: {i['message']}" for i in errors[:20])
+            raise ValueError(
+                f"Se encontraron {len(errors)} errores al importar {filename}: {sample}"
+            )
+
+        if dry_run:
+            return {
+                "errors": errors,
+                "warnings": warnings,
+                "migrations_applied": migrations_applied,
+            }
+
+        log_dir = os.path.join("logs")
+        os.makedirs(log_dir, exist_ok=True)
+        log_path = os.path.join(
+            log_dir, f"import_inventory_{datetime.now():%Y%m%d_%H%M%S}.log"
+        )
+        handler = logging.FileHandler(log_path, encoding="utf-8")
+        logger.addHandler(handler)
+        try:
+            self._importar_inventario_json_legacy(data)
+        except Exception as e:
+            logger.exception("Error al importar inventario desde %s", filename)
+            raise InventoryManagerError(
+                f"No se pudo importar inventario desde {filename}: {e}"
+            ) from e
+        finally:
+            logger.removeHandler(handler)
+            handler.close()
+
+        return data
+
+    def _importar_inventario_json_legacy(self, data):
         # Limpia tablas hijas primero para evitar violaciones de clave foránea
         self.db.conn.execute("BEGIN")
         try:
@@ -390,7 +452,7 @@ class InventoryManager:
         self.db.conn.execute("BEGIN")
         try:
             # --- Distribuidores primero ---
-            for v in data.get("Distribuidores", []):
+            for v in data.get("distribuidores", []):
                 self.db.add_Distribuidor_detallado(v, commit=False)
                 self.db.cursor.execute(
                     "SELECT id FROM Distribuidores WHERE nombre=? ORDER BY id DESC LIMIT 1",

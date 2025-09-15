@@ -694,6 +694,63 @@ class FacturacionTab(QWidget):
             return "Enviado"
         return "Pendiente"
 
+    @classmethod
+    def _detectar_estado_factura(
+        cls,
+        venta,
+        pdf_path=None,
+        json_path=None,
+        cur=None,
+        *,
+        venta_id=None,
+        numero_control=None,
+        codigo_generacion=None,
+    ):
+        """Determine ``estado`` and ``envio`` for an invoice.
+
+        Parameters mirror the data available from the database and the
+        filesystem so the same logic can be reused from different
+        codepaths.
+        """
+
+        pdf_exists = bool(pdf_path and os.path.exists(pdf_path))
+        json_exists = bool(json_path and os.path.exists(json_path))
+
+        if venta:
+            estado = "Completa" if pdf_exists and json_exists else "Incompleta"
+        else:
+            estado = "Sin venta" if pdf_exists and json_exists else "Incompleta"
+
+        envio = "Pendiente de envío"
+        env_row = None
+        try:
+            if cur is not None:
+                if venta_id is not None:
+                    env_row = cur.execute(
+                        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                        (venta_id,),
+                    ).fetchone()
+                elif codigo_generacion or numero_control:
+                    query = (
+                        "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1"
+                    )
+                    if codigo_generacion:
+                        env_row = cur.execute(
+                            query,
+                            (f"%{codigo_generacion}%",),
+                        ).fetchone()
+                    if not env_row and numero_control:
+                        env_row = cur.execute(
+                            query,
+                            (f"%{numero_control}%",),
+                        ).fetchone()
+        except Exception:
+            env_row = None
+        if env_row:
+            envio = cls._map_envio_state(env_row["estado"])
+
+        return estado, envio
+
     def _get_invoices_from_db(self):
         """Return invoice entries stored in the database.
 
@@ -713,9 +770,7 @@ class FacturacionTab(QWidget):
         for rec in records:
             venta = self.manager.db.get_venta_by_id(rec["venta_id"])
             ruta = rec["ruta"]
-            pdf_exists = bool(ruta and os.path.exists(ruta))
             json_path = os.path.splitext(ruta)[0] + ".json" if ruta else None
-            json_exists = bool(json_path and os.path.exists(json_path))
 
             fecha_creacion = rec["fecha_creacion"] or ""
             fdate = None
@@ -726,7 +781,6 @@ class FacturacionTab(QWidget):
                     fdate = None
             fecha_str = fdate.strftime("%Y-%m-%d %H:%M") if fdate else fecha_creacion
 
-            estado = ""
             row_type = "venta"
             cliente_nombre = ""
             total = None
@@ -740,23 +794,16 @@ class FacturacionTab(QWidget):
                         cliente_nombre = ""
                 total = venta.get("total")
                 row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
-                if pdf_exists and json_exists:
-                    estado = "Completa"
-                else:
-                    estado = "Incompleta"
             else:
-                estado = "Sin venta"
                 row_type = "orphan"
 
-            envio = ""
-            env_row = cur.execute(
-                "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-                (rec["venta_id"],),
-            ).fetchone()
-            if env_row:
-                envio = self._map_envio_state(env_row["estado"])
-            else:
-                envio = "Pendiente de envío"
+            estado, envio = self._detectar_estado_factura(
+                venta,
+                ruta,
+                json_path,
+                cur,
+                venta_id=rec["venta_id"],
+            )
 
             row = {
                 "row_type": row_type,
@@ -917,8 +964,12 @@ class FacturacionTab(QWidget):
             pdf = paths.get(".pdf")
             js = paths.get(".json")
             tipo = paths.get("tipo")
-            estado = "Sin venta" if pdf and js else "Incompleta"
-            envio = "Pendiente de envío"
+            estado, envio = self._detectar_estado_factura(
+                None,
+                pdf,
+                js,
+                cur,
+            )
             numero = base
             fecha = ""
             cliente = ""
@@ -962,21 +1013,18 @@ class FacturacionTab(QWidget):
                                 fecha = fdate.strftime("%Y-%m-%d")
                         except Exception:
                             fdate = None
-                    env_row = None
-                    if codigo_gen:
-                        env_row = cur.execute(
-                            "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1",
-                            (f'%{codigo_gen}%',),
-                        ).fetchone()
-                    if not env_row and numero:
-                        env_row = cur.execute(
-                            "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1",
-                            (f'%{numero}%',),
-                        ).fetchone()
-                    if env_row:
-                        envio = self._map_envio_state(env_row["estado"])
+
+                    estado, envio = self._detectar_estado_factura(
+                        None,
+                        pdf,
+                        js,
+                        cur,
+                        numero_control=numero,
+                        codigo_generacion=codigo_gen,
+                    )
                 except Exception:
                     estado = "Incompleta"
+                    envio = "Pendiente de envío"
             result.append(
                 {
                     "row_type": "orphan",

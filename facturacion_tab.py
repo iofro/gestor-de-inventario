@@ -668,7 +668,9 @@ class FacturacionTab(QWidget):
                         cliente_nombre = ""
                 total = venta.get("total")
                 row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
-                if not (pdf_exists and json_exists):
+                if pdf_exists and json_exists:
+                    estado = "Completa"
+                else:
                     estado = "Incompleta"
             else:
                 estado = "Sin venta"
@@ -688,9 +690,11 @@ class FacturacionTab(QWidget):
                 elif est == "error":
                     envio = "Error"
                 elif est in {"transmitido", "recibido", "procesado"}:
-                    envio = "Pendiente"
+                    envio = "Enviado"
                 else:
                     envio = "Pendiente"
+            else:
+                envio = "Pendiente de envío"
 
             row = {
                 "row_type": row_type,

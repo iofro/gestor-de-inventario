@@ -150,3 +150,31 @@ def test_sello_recibido_actualiza_envio_y_extra(monkeypatch):
     extra = json.loads(extra_row["extra"])
     assert extra["selloRecibido"] == "SR"
 
+
+def test_generar_dte_json_exposes_sello(monkeypatch):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    db.update_venta_extra(venta_id, {"selloRecibido": "ABC", "es_ticket": True})
+    datos = {
+        "nombre": "X",
+        "nit": "06140010912506",
+        "nrc": "123456-7",
+        "cod_giro": "123456",
+        "dte_api": {"prefijo_control": "DTE-01-S001P001"},
+    }
+    monkeypatch.setattr(dte, "_load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(
+        dte.svfe_config,
+        "load_datos_negocio",
+        lambda: {
+            "direccion": {
+                "departamento": "01",
+                "municipio": "001",
+                "complemento": "X",
+            }
+        },
+    )
+    monkeypatch.setattr(dte, "validate_dte_json", lambda *a, **k: None)
+    data = dte.generar_dte_json(db, venta_id, tipo_dte="01")
+    assert data["selloRecibido"] == "ABC"
+

@@ -40,7 +40,17 @@ def test_enviar_lote_dtes_envia_lote_y_registra_codigo(monkeypatch):
         def __init__(self):
             self.reg = []
 
-        def registrar_envio_dte(self, venta_id, modo, estado, sello, respuesta_json="", codigo_lote=None):
+        def registrar_envio_dte(
+            self,
+            venta_id,
+            modo,
+            estado,
+            sello,
+            respuesta_json="",
+            codigo_lote=None,
+            codigo_generacion=None,
+            numero_control=None,
+        ):
             self.reg.append((venta_id, modo, estado, codigo_lote))
 
     db = DummyDB()

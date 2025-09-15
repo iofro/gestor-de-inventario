@@ -2,6 +2,7 @@ import json
 import os
 import uuid
 import logging
+from datetime import datetime
 
 import dte
 from factura_sv import generar_factura_electronica_pdf
@@ -274,18 +275,56 @@ def generate_invoice_pdf(manager, venta_id):
     doc_key = "CreditoFiscal" if credito_info else "ConsumidorFinal"
     cliente_nombre = cliente.get("nombre") if cliente else ""
 
-    cabecera = generar_cabecera_dte_data(
-        tipo_modelo,
-        tipo_operacion,
-        "03" if credito_info else "01",
-        manager.db,
-        tipo_contingencia=tipo_contingencia,
-        motivo_contin=motivo_contin,
-        ambiente=ambiente,
-    )
-    codigo_generacion = cabecera["codigo_generacion"]
-    numero_control = cabecera["numero_control"]
-    fecha_generacion = cabecera["fecha_generacion"]
+    # Reutilizar códigos existentes si están presentes en ``extra``
+    codigo_generacion = extra.get("codigoGeneracion")
+    numero_control = extra.get("numeroControl")
+    correlativo = extra.get("correlativo")
+    fecha_generacion = extra.get("fechaGeneracion")
+    if codigo_generacion and numero_control and correlativo:
+        cabecera = {
+            "codigo_generacion": codigo_generacion,
+            "numero_control": numero_control,
+            "correlativo": correlativo,
+            "sello_recepcion": None,
+            "tipo_modelo": tipo_modelo,
+            "tipo_operacion": tipo_operacion,
+            "tipo_contingencia": tipo_contingencia,
+            "motivo_contin": motivo_contin,
+            "fecha_generacion": fecha_generacion
+            or datetime.now().strftime("%d/%m/%Y, %I:%M %p"),
+            "ambiente": ambiente,
+        }
+    else:
+        cabecera = generar_cabecera_dte_data(
+            tipo_modelo,
+            tipo_operacion,
+            "03" if credito_info else "01",
+            manager.db,
+            tipo_contingencia=tipo_contingencia,
+            motivo_contin=motivo_contin,
+            ambiente=ambiente,
+        )
+        codigo_generacion = cabecera["codigo_generacion"]
+        numero_control = cabecera["numero_control"]
+        correlativo = cabecera.get("correlativo")
+        fecha_generacion = cabecera["fecha_generacion"]
+        try:
+            manager.db.update_venta_extra(
+                venta_id,
+                {
+                    "codigoGeneracion": codigo_generacion,
+                    "numeroControl": numero_control,
+                    "correlativo": correlativo,
+                    "fechaGeneracion": fecha_generacion,
+                },
+            )
+        except Exception:
+            pass
+        extra["codigoGeneracion"] = codigo_generacion
+        extra["numeroControl"] = numero_control
+        extra["correlativo"] = correlativo
+        extra["fechaGeneracion"] = fecha_generacion
+
     sello_recepcion = sello_recepcion or cabecera["sello_recepcion"]
     venta_data["sello_recepcion"] = sello_recepcion
     tipo_modelo = cabecera["tipo_modelo"]

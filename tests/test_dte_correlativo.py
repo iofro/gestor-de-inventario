@@ -60,15 +60,7 @@ def test_identificadores_reutilizados(tmp_path):
 
     dte1 = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     ident1 = dte1["identificacion"]
-    correlativo = int(ident1["numeroControl"].split("-")[-1])
-    dte2 = dte_module.generar_dte_json(
-        db,
-        venta_id,
-        tipo_dte="01",
-        numero_control=ident1["numeroControl"],
-        codigo_generacion=ident1["codigoGeneracion"],
-        correlativo=correlativo,
-    )
+    dte2 = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
     ident2 = dte2["identificacion"]
 
     assert ident1["numeroControl"] == ident2["numeroControl"]

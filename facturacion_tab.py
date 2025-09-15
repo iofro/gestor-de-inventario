@@ -926,6 +926,8 @@ class FacturacionTab(QWidget):
             row_type = "venta"
             cliente_nombre = ""
             total = None
+            numero_control = None
+            codigo_generacion = None
             if venta:
                 getter = getattr(self.manager.db, "get_cliente", None)
                 if venta.get("cliente_id") and getter:
@@ -938,6 +940,16 @@ class FacturacionTab(QWidget):
                 row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
             else:
                 row_type = "orphan"
+                if json_path and os.path.exists(json_path):
+                    try:
+                        with open(json_path, "r", encoding="utf-8") as fh:
+                            data = json.load(fh)
+                        ident = data.get("identificacion", {})
+                        numero_control = ident.get("numeroControl")
+                        codigo_generacion = ident.get("codigoGeneracion")
+                    except Exception:
+                        numero_control = None
+                        codigo_generacion = None
 
             estado, envio = self._detectar_estado_factura(
                 venta,
@@ -945,6 +957,8 @@ class FacturacionTab(QWidget):
                 json_path,
                 cur,
                 venta_id=rec["venta_id"],
+                numero_control=numero_control,
+                codigo_generacion=codigo_generacion,
             )
 
             row = {

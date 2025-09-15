@@ -24,6 +24,7 @@ from dte import (
     DTE_VERSIONES,
     generar_cabecera_dte_data,
     sanitize_dte_payload,
+    _origen_aceptado_en_mh,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -123,16 +124,13 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     dte_path = extra.get("dteJsonPath")
     if not dte_path or not os.path.exists(dte_path):
         raise ValueError("DTE base no encontrado")
-
-    estado_row = db.cursor.execute(
-        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-        (venta_id,),
-    ).fetchone()
-    if not estado_row or estado_row["estado"] != "Aceptado":
-        raise ValueError("El DTE base no fue aceptado")
-
     with open(dte_path, "r", encoding="utf-8") as fh:
         dte_origen = json.load(fh)
+
+    if not _origen_aceptado_en_mh(db, dte_origen.get("identificacion", {})):
+        raise ValueError(
+            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+        )
 
     detalles = None
     if nota.get("detalles"):
@@ -181,6 +179,15 @@ def generar_nce_desde_dte(
     monto: Decimal | None = None,
 ) -> dict:
     """Genera la estructura JSON de una NCE."""
+    sello = dte_origen.get("selloRecibido") or dte_origen.get("extra", {}).get("selloRecibido")
+    if not sello:
+        raise ValueError(
+            "La factura base no tiene selloRecibido. No puedes referenciarla todavía."
+        )
+    if not _origen_aceptado_en_mh(db, dte_origen.get("identificacion", {})):
+        raise ValueError(
+            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+        )
     if detalles is None:
         if ratio is None or ratio <= Decimal_0:
             raise ValueError("El porcentaje a acreditar debe ser mayor que cero")

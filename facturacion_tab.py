@@ -33,6 +33,7 @@ import os
 import re
 import logging
 import glob
+import hashlib
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -963,7 +964,8 @@ class FacturacionTab(QWidget):
 
             row = {
                 "row_type": row_type,
-                "id": rec["venta_id"],
+                "id": rec["id"],
+                "venta_id": rec["venta_id"],
                 "name": os.path.splitext(os.path.basename(ruta or ""))[0],
                 "fecha": fecha_str,
                 "_parsed_fecha": fdate,
@@ -1181,9 +1183,13 @@ class FacturacionTab(QWidget):
                 except Exception:
                     estado = "Incompleta"
                     envio = "Pendiente de envío"
+            uid_src = js or pdf or base
+            row_id = hashlib.sha1(uid_src.encode("utf-8")).hexdigest()
             result.append(
                 {
                     "row_type": "orphan",
+                    "id": row_id,
+                    "venta_id": None,
                     "name": numero,
                     "codigo": codigo,
                     "pdf": pdf,
@@ -1224,7 +1230,7 @@ class FacturacionTab(QWidget):
             return None
         rtype = data.get("row_type")
         if rtype == "venta":
-            venta_id = data.get("id")
+            venta_id = data.get("venta_id")
             pdf_path = self.manager.db.get_factura_pdf(venta_id)
             if not pdf_path:
                 return None
@@ -1247,7 +1253,7 @@ class FacturacionTab(QWidget):
             if not pdf_path or not os.path.exists(pdf_path):
                 return None
             return {
-                "venta_id": data.get("id"),
+                "venta_id": data.get("venta_id"),
                 "json": json_path,
                 "control": data.get("name"),
             }
@@ -1310,7 +1316,7 @@ class FacturacionTab(QWidget):
             if rtype == "venta" and factura:
                 self._send_invoice_email(factura.get("venta_id"))
             elif rtype == "ticket":
-                self._send_ticket_email(entry.get("id"))
+                self._send_ticket_email(entry.get("venta_id"))
             elif rtype == "orphan" and factura:
                 self._send_orphan_email(entry)
         if dialog.hacienda_cb.isChecked():
@@ -1361,7 +1367,7 @@ class FacturacionTab(QWidget):
             else:
                 try:
                     resp = transmitir_dte(
-                        self.manager.db, entry.get("id")
+                        self.manager.db, entry.get("venta_id")
                     )  # tickets también se transmiten con tipo "01"
                     if resp.get("http_status") in {401, 403}:
                         QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
@@ -1413,12 +1419,12 @@ class FacturacionTab(QWidget):
         pdf_path = None
         rtype = entry.get("row_type")
         if rtype == "venta":
-            venta_id = entry.get("id")
+            venta_id = entry.get("venta_id")
             pdf_path = self.manager.db.get_factura_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_invoice_pdf(venta_id)
         elif rtype == "ticket":
-            venta_id = entry.get("id")
+            venta_id = entry.get("venta_id")
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):
                 pdf_path = self._generate_ticket_pdf(venta_id)
@@ -1673,7 +1679,7 @@ class FacturacionTab(QWidget):
         entry = self._selected_entry()
         if not entry or entry.get("row_type") not in ("venta", "ticket"):
             raise ValueError("No sale selected")
-        venta_id = entry.get("id")
+        venta_id = entry.get("venta_id")
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         detalles = self.manager.db.get_detalles_venta(venta_id)
         extra = {}
@@ -2056,7 +2062,7 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Eliminar", "Seleccione una factura")
             return
         rtype = data.get("row_type")
-        venta_id = data.get("id")
+        venta_id = data.get("venta_id")
 
         confirm = QMessageBox.question(
             self,
@@ -2174,7 +2180,7 @@ class FacturacionTab(QWidget):
             self._clear_preview_files()
             return
         if data.get("row_type") in ("venta", "ticket"):
-            self._update_preview(data.get("id"))
+            self._update_preview(data.get("venta_id"))
         else:
             pdf = data.get("pdf")
             if pdf and os.path.exists(pdf):

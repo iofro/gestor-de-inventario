@@ -1331,11 +1331,24 @@ class FacturacionTab(QWidget):
         sello = data.get("selloRecibido") or extra.get("selloRecibido")
         if not sello and venta_id:
             row = self.manager.db.cursor.execute(
-                "SELECT sello FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                "SELECT sello, respuesta FROM dte_envios WHERE venta_id=? AND TRIM(sello)<>'' ORDER BY id DESC LIMIT 1",
                 (venta_id,),
             ).fetchone()
-            if row and row["sello"]:
+            if not row:
+                row = self.manager.db.cursor.execute(
+                    "SELECT sello, respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                    (venta_id,),
+                ).fetchone()
+            if row:
                 sello = row["sello"]
+                if not sello:
+                    resp = row["respuesta"]
+                    if resp:
+                        try:
+                            resp_json = json.loads(resp)
+                            sello = resp_json.get("selloRecibido") or resp_json.get("sello")
+                        except Exception:
+                            pass
         ident = data.get("identificacion", {})
         if not (ident.get("codigoGeneracion") and ident.get("numeroControl") and sello):
             QMessageBox.critical(

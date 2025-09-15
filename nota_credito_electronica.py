@@ -22,6 +22,7 @@ from dte import (
     generar_cabecera_dte_data,
     generar_dte_json,
     sanitize_dte_payload,
+    _origen_aceptado_en_mh,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -77,6 +78,11 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
 
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
 
+    if not _origen_aceptado_en_mh(db, dte_origen.get("identificacion", {})):
+        raise ValueError(
+            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+        )
+
     detalles = None
     if nota.get("detalles"):
         try:
@@ -123,6 +129,15 @@ def generar_nce_desde_dte(
     monto: Decimal | None = None,
 ) -> dict:
     """Genera la estructura JSON de una NCE."""
+    sello = dte_origen.get("selloRecibido") or dte_origen.get("extra", {}).get("selloRecibido")
+    if not sello:
+        raise ValueError(
+            "La factura base no tiene selloRecibido. No puedes referenciarla todavía."
+        )
+    if not _origen_aceptado_en_mh(db, dte_origen.get("identificacion", {})):
+        raise ValueError(
+            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
+        )
     if detalles is None:
         if ratio is None or ratio <= Decimal_0:
             raise ValueError("El porcentaje a acreditar debe ser mayor que cero")

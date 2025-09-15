@@ -67,6 +67,35 @@ DTE_VERSIONES = {
 }
 
 
+def _origen_aceptado_en_mh(db: DB, ident: dict) -> bool:
+    """Check if the origin document has an accepted record in ``dte_envios``.
+
+    Se considera aceptado cuando existe un registro cuya ``estado`` sea
+    "Recibido", "Procesado" o "Aceptado" y posea un ``sello`` no vacío.
+    La coincidencia se realiza buscando el ``codigoGeneracion`` o el
+    ``numeroControl`` dentro del JSON almacenado en ``dte_envios.respuesta``.
+    """
+
+    uuid = str(ident.get("codigoGeneracion") or "").upper()
+    numc = str(ident.get("numeroControl") or "")
+    if not uuid and not numc:
+        return False
+    db.ensure_column("dte_envios", "respuesta", "TEXT")
+    row = db.cursor.execute(
+        """
+        SELECT estado, TRIM(sello) AS sello
+          FROM dte_envios
+         WHERE (respuesta LIKE ? OR respuesta LIKE ?)
+         ORDER BY id DESC LIMIT 1
+        """,
+        (f"%{uuid}%", f"%{numc}%"),
+    ).fetchone()
+    if not row:
+        return False
+    estado = str(row["estado"] or "").lower()
+    return bool(estado in {"recibido", "procesado", "aceptado"} and row["sello"])
+
+
 def _strip_additional_properties(value, schema):
     """Remove keys not defined in ``schema`` when ``additionalProperties`` is ``false``."""
     if "$ref" in schema:
@@ -4871,6 +4900,19 @@ def _enviar_documento(
 
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
+    SUCCESS_STATES = {"Transmitido", "Recibido", "Procesado", "Aceptado"}
+    if doc_id is not None:
+        row = db.cursor.execute(
+            """
+            SELECT estado FROM dte_envios
+            WHERE venta_id=? AND estado IN (?, ?, ?, ?)
+            ORDER BY id DESC LIMIT 1
+            """,
+            (doc_id, *SUCCESS_STATES),
+        ).fetchone()
+        if row:
+            raise ValueError("DTE ya enviado")
+
     config = _load_dte_api_config()
 
     if not data.get("resumen", {}).get("totalLetras"):

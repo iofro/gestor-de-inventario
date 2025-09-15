@@ -40,7 +40,7 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     venta_id, cid = _create_sale(db)
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id}
     )
 
     save_path = tmp_path / "ticket.pdf"
@@ -82,7 +82,7 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
 
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id}
     )
     monkeypatch.setattr(
         tab,
@@ -165,7 +165,7 @@ def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):
     monkeypatch.setattr(
         tab,
         "_selected_entry",
-        lambda: {"row_type": "venta", "id": venta_id, "json": str(dte_json)},
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id, "json": str(dte_json)},
     )
 
     monkeypatch.setattr(
@@ -184,3 +184,86 @@ def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):
     assert not dte_dir.exists()
     assert db.get_venta_by_id(venta_id) is None
     assert db.get_dte_correlativo("01", "001", "001") == 4
+
+
+def test_delete_orphan_invoice_removes_files(qt_app, tmp_path, monkeypatch):
+    db = DB(":memory:")
+    base = "20240101_Test"
+
+    cf_dir = tmp_path / "facturas_consumidor_final"
+    credito_dir = tmp_path / "facturas_credito_fiscal"
+    tickets_dir = tmp_path / "tickets"
+    dtes_dir = tmp_path / "dtes"
+    fallidos_dir = tmp_path / "dte_fallidos"
+    pendientes_dir = tmp_path / "dtes_pendientes"
+    for d in [cf_dir, credito_dir, tickets_dir, dtes_dir, fallidos_dir, pendientes_dir]:
+        d.mkdir(parents=True, exist_ok=True)
+
+    pdf = cf_dir / f"{base}.pdf"
+    js = cf_dir / f"{base}.json"
+    jws = cf_dir / f"{base}.jws"
+    pdf.write_text("p")
+    js.write_text("{}")
+    jws.write_text("sig")
+
+    (dtes_dir / f"{base}.pdf").write_text("p")
+    (dtes_dir / f"{base}.json").write_text("{}")
+    (dtes_dir / f"{base}.jws").write_text("sig")
+
+    db.cursor.execute(
+        "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, '')",
+        (None, "Consumidor Final", str(pdf)),
+    )
+    db.conn.commit()
+
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(cf_dir))
+    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(credito_dir))
+    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tickets_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(tmp_path / "notas_debito"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(tmp_path / "notas_credito"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(tmp_path / "notas_remision"))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+    monkeypatch.setattr(
+        facturacion_tab,
+        "INVOICE_DIRS",
+        [
+            str(cf_dir),
+            str(credito_dir),
+            str(tickets_dir),
+            str(dtes_dir),
+            str(fallidos_dir),
+            str(pendientes_dir),
+        ],
+    )
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "load_invoices", lambda self: None)
+
+    tab = facturacion_tab.FacturacionTab(SimpleNamespace(db=db, _clientes=[], _Distribuidores=[]))
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "orphan", "pdf": str(pdf), "json": str(js)},
+    )
+
+    warn_called = False
+
+    def fake_warning(*a, **k):
+        nonlocal warn_called
+        warn_called = True
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+    monkeypatch.setattr(
+        facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes
+    )
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+
+    tab.delete_invoice()
+
+    assert not warn_called
+    assert not pdf.exists()
+    assert not js.exists()
+    assert not jws.exists()
+    assert not (dtes_dir / f"{base}.pdf").exists()
+    assert not (dtes_dir / f"{base}.json").exists()
+    assert not (dtes_dir / f"{base}.jws").exists()
+    db.cursor.execute("SELECT COUNT(*) FROM facturas_pdf")
+    assert db.cursor.fetchone()[0] == 0

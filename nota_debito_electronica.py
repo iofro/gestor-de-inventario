@@ -13,6 +13,7 @@ from decimal import Decimal, ROUND_HALF_UP
 import copy
 import json
 import os
+import re
 from typing import Optional
 
 from db import DB
@@ -27,6 +28,48 @@ from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
 from utils.sanitize import limpiar_documentos
+
+
+def _is_uuid(s: str) -> bool:
+    return bool(
+        re.fullmatch(r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}", s.upper())
+    )
+
+
+def _is_nc(s: str) -> bool:
+    return str(s).startswith("DTE-")
+
+
+def _build_documento_relacionado(origen_ident: dict) -> tuple[list[dict], str]:
+    uuid_rel = str(origen_ident.get("codigoGeneracion", "")).upper()
+    nc_rel = origen_ident.get("numeroControl")
+    fec_rel = origen_ident.get("fecEmi")
+    tipo_generacion = origen_ident.get("tipoGeneracion")
+    numero_conf = origen_ident.get("numeroDocumento")
+    if tipo_generacion is None and numero_conf:
+        if _is_uuid(str(numero_conf)):
+            tipo_generacion = 2
+        elif _is_nc(str(numero_conf)):
+            tipo_generacion = 1
+        else:
+            raise ValueError("numeroDocumento inválido para documentoRelacionado")
+    if tipo_generacion is None:
+        tipo_generacion = 2
+    if tipo_generacion == 2:
+        numero_rel = uuid_rel
+    elif tipo_generacion == 1:
+        numero_rel = nc_rel
+    else:
+        raise ValueError("tipoGeneracion inválido para documentoRelacionado")
+    doc_rel = [
+        {
+            "tipoDocumento": origen_ident.get("tipoDte"),
+            "tipoGeneracion": tipo_generacion,
+            "numeroDocumento": numero_rel,
+            "fechaEmision": fec_rel,
+        }
+    ]
+    return doc_rel, numero_rel
 
 
 def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
@@ -110,16 +153,7 @@ def generar_nde_desde_dte(
     }
 
     origen_ident = dte_origen.get("identificacion", {})
-    tipo_origen = origen_ident.get("tipoDte")
-    tipo_rel = "07" if tipo_origen == "07" else "03"
-    doc_rel = [
-        {
-            "tipoDocumento": tipo_rel,
-            "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("numeroControl"),
-            "fechaEmision": origen_ident.get("fecEmi"),
-        }
-    ]
+    doc_rel, numero_rel = _build_documento_relacionado(origen_ident)
 
     emisor = copy.deepcopy(dte_origen.get("emisor", {}))
     receptor = copy.deepcopy(dte_origen.get("receptor", {}))
@@ -145,7 +179,7 @@ def generar_nde_desde_dte(
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
-    uuid_origen = origen_ident.get("codigoGeneracion", "")
+    uuid_origen = str(origen_ident.get("codigoGeneracion", "")).upper()
     tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
     extra_desc = f": {motivo}" if motivo else ""
 
@@ -183,7 +217,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": d4(exenta),
                     "ventaNoSuj": d4(nosuj),
                     "tributos": [TRIBUTO_IVA] if grav > 0 else [],
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_rel,
                     "codTributo": None,
                 }
             )
@@ -241,7 +275,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": 0.0,
                     "tributos": [TRIBUTO_IVA],
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_rel,
                     "codTributo": None,
                 }
             )
@@ -261,7 +295,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": total_exenta,
                     "ventaNoSuj": 0.0,
                     "tributos": [],
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_rel,
                     "codTributo": None,
                 }
             )
@@ -281,7 +315,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": total_nosuj,
                     "tributos": [],
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_rel,
                     "codTributo": None,
                 }
             )

@@ -1,7 +1,8 @@
+import json
 import uuid
 from types import SimpleNamespace
-import json
 
+import pytest
 from PyQt5.QtWidgets import QDialog, QWidget
 
 from dialogs.anular_factura_dialog import AnularFacturaDialog
@@ -29,8 +30,10 @@ def _sample_factura():
         "nombreComercial": "Empresa",
     }
     receptor = {
-        "nombre": "Cliente",
+        "nombre": "Cliente Demo",
         "nit": "06141404100016",
+        "telefono": "50377778888",
+        "correo": "cliente@example.com",
     }
     resumen = {
         "tributos": [{"codigo": TRIBUTO_IVA, "valor": "1.30"}]
@@ -83,6 +86,70 @@ def test_generar_evento_anulacion(qt_app, monkeypatch):
         evento["documento"]["numeroControl"]
         == factura["identificacion"]["numeroControl"]
     )
+    assert evento["documento"]["codigoGeneracionR"] is None
+    assert evento["documento"]["telefono"] == "50377778888"
+    assert evento["documento"]["correo"] == "cliente@example.com"
+    assert evento["motivo"]["tipoAnulacion"] == 2
+
+
+def test_invalidacion_tipo3_requiere_codigo(monkeypatch):
+    factura = _sample_factura()
+    sello = "B" * 40
+
+    monkeypatch.setattr(
+        anulacion,
+        "_load_datos_negocio",
+        lambda: {
+            "nit": "06141404100016",
+            "nombre": "Empresa SA",
+            "telefono": "22223333",
+            "correo": "info@empresa.com",
+            "tipoEstablecimiento": "01",
+            "nombreComercial": "Empresa",
+            "codEstableMH": "0001",
+            "codEstable": "0001",
+            "codPuntoVentaMH": "0001",
+            "codPuntoVenta": "0001",
+        },
+    )
+
+    form = {
+        "tipoAnulacion": "3",
+        "motivoAnulacion": "Cliente solicita anulación",
+        "nombreResponsable": "Responsable Uno",
+        "tipDocResponsable": "13",
+        "numDocResponsable": "01234567-8",
+        "nombreSolicita": "Solicita Dos",
+        "tipDocSolicita": "36",
+        "numDocSolicita": "06141404100016",
+        "codigoGeneracionR": str(uuid.uuid4()).upper(),
+    }
+
+    evento = anulacion.build_invalidacion_json(
+        {**factura, "selloRecibido": sello},
+        form,
+        ambiente="01",
+    )
+    assert evento["documento"]["codigoGeneracionR"] == form["codigoGeneracionR"]
+    assert evento["motivo"]["motivoAnulacion"] == "Cliente solicita anulación"
+
+    sin_codigo = dict(form)
+    sin_codigo.pop("codigoGeneracionR")
+    with pytest.raises(ValueError):
+        anulacion.build_invalidacion_json(
+            {**factura, "selloRecibido": sello},
+            sin_codigo,
+            ambiente="01",
+        )
+
+    sin_motivo = dict(form)
+    sin_motivo["motivoAnulacion"] = "  "
+    with pytest.raises(ValueError):
+        anulacion.build_invalidacion_json(
+            {**factura, "selloRecibido": sello},
+            sin_motivo,
+            ambiente="01",
+        )
 
 
 def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):

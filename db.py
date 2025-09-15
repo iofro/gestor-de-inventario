@@ -209,6 +209,90 @@ class DB:
         finally:
             self.cursor.execute("PRAGMA foreign_keys=on")
 
+    def migrate_dte_envios_fk(self):
+        """Drop ``ventas`` foreign key from ``dte_envios`` if present."""
+        self.cursor.execute("PRAGMA foreign_key_list(dte_envios)")
+        fk_exists = any(
+            row[2] == "ventas" and row[3] == "venta_id" for row in self.cursor.fetchall()
+        )
+        if not fk_exists:
+            return
+        logger.info("Migrating 'dte_envios' table to remove venta_id foreign key")
+        self.cursor.execute("PRAGMA foreign_keys=off")
+        try:
+            self.cursor.execute(
+                """
+                CREATE TABLE dte_envios_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    venta_id INTEGER,
+                    modo TEXT,
+                    estado TEXT,
+                    sello TEXT,
+                    fecha_hora TEXT,
+                    respuesta TEXT,
+                    codigo_lote TEXT,
+                    codigo_generacion TEXT,
+                    numero_control TEXT
+                )
+                """
+            )
+            self.cursor.execute(
+                """
+                INSERT INTO dte_envios_new (
+                    id, venta_id, modo, estado, sello, fecha_hora,
+                    respuesta, codigo_lote, codigo_generacion, numero_control
+                )
+                SELECT
+                    id, venta_id, modo, estado, sello, fecha_hora,
+                    respuesta, codigo_lote, codigo_generacion, numero_control
+                FROM dte_envios
+                """
+            )
+            self.cursor.execute("DROP TABLE dte_envios")
+            self.cursor.execute("ALTER TABLE dte_envios_new RENAME TO dte_envios")
+            self.conn.commit()
+        finally:
+            self.cursor.execute("PRAGMA foreign_keys=on")
+
+    def migrate_notas_fk(self):
+        """Drop ``ventas`` foreign key from ``notas`` if present."""
+        self.cursor.execute("PRAGMA foreign_key_list(notas)")
+        fk_exists = any(
+            row[2] == "ventas" and row[3] == "venta_id" for row in self.cursor.fetchall()
+        )
+        if not fk_exists:
+            return
+        logger.info("Migrating 'notas' table to remove venta_id foreign key")
+        self.cursor.execute("PRAGMA foreign_keys=off")
+        try:
+            self.cursor.execute(
+                """
+                CREATE TABLE notas_new (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    venta_id INTEGER,
+                    tipo TEXT,
+                    fecha TEXT,
+                    monto REAL,
+                    motivo TEXT,
+                    detalles TEXT
+                )
+                """
+            )
+            self.cursor.execute(
+                """
+                INSERT INTO notas_new (
+                    id, venta_id, tipo, fecha, monto, motivo, detalles
+                )
+                SELECT id, venta_id, tipo, fecha, monto, motivo, detalles
+                FROM notas
+                """
+            )
+            self.cursor.execute("DROP TABLE notas")
+            self.cursor.execute("ALTER TABLE notas_new RENAME TO notas")
+            self.conn.commit()
+        finally:
+            self.cursor.execute("PRAGMA foreign_keys=on")
+
     def setup(self):
         # Create tables if they don't exist without dropping existing data
         self.cursor.execute("""
@@ -358,9 +442,7 @@ class DB:
                 fecha TEXT,
                 monto REAL,
                 motivo TEXT,
-                detalles TEXT,
-                FOREIGN KEY (venta_id) REFERENCES ventas(id)
-
+                detalles TEXT
             )
         """)
         self.ensure_column("notas", "detalles", "TEXT")
@@ -496,9 +578,7 @@ class DB:
                 estado TEXT,
                 sello TEXT,
                 fecha_hora TEXT,
-                respuesta TEXT,
-
-                FOREIGN KEY (venta_id) REFERENCES ventas(id)
+                respuesta TEXT
             )
             """
         )
@@ -601,6 +681,8 @@ class DB:
         )
         self.migrate_ventas_cliente_fk()
         self.migrate_detalles_venta_vendedor_fk()
+        self.migrate_dte_envios_fk()
+        self.migrate_notas_fk()
         self.conn.commit()
 
         # Verifica que la columna estado exista en ventas
@@ -2101,10 +2183,10 @@ class DB:
             raise ValueError("tipo debe ser 'credito', 'debito' o 'remision'")
 
         if venta_id is not None:
-            row = self.cursor.execute("SELECT total FROM ventas WHERE id=?", (venta_id,)).fetchone()
-            if row is None:
-                raise ValueError("La venta indicada no existe")
-            if tipo == "credito":
+            row = self.cursor.execute(
+                "SELECT total FROM ventas WHERE id=?", (venta_id,)
+            ).fetchone()
+            if row is not None and tipo == "credito":
                 total_facturado = Decimal(str(row["total"]))
                 sum_row = self.cursor.execute(
                     "SELECT COALESCE(SUM(monto),0) AS total FROM notas WHERE venta_id=? AND tipo='credito'",
@@ -2114,7 +2196,9 @@ class DB:
                 monto_dec = Decimal(str(monto))
                 saldo = total_facturado - total_creditos
                 if monto_dec > saldo:
-                    raise ValueError("El monto de la nota excede el saldo restante de la venta")
+                    raise ValueError(
+                        "El monto de la nota excede el saldo restante de la venta"
+                    )
 
         detalles_json = json.dumps(detalles) if detalles is not None else None
         self.cursor.execute(

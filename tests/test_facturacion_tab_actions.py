@@ -153,10 +153,11 @@ def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):
     base_dte = Path(facturacion_tab.__file__).with_name("dtes")
     dte_dir = base_dte / "tmp_test" / "abc"
     dte_dir.mkdir(parents=True, exist_ok=True)
-    dte_json = dte_dir / "documento.json"
+    dte_json = dte_dir / js.name
     dte_json.write_text(
         json.dumps({"identificacion": {"numeroControl": "DTE-01-S001P001-000000000000005"}})
     )
+    (dte_dir / f"{js.stem}_estado.json").write_text(json.dumps({"estado": "aceptado"}))
 
     db.set_dte_correlativo("01", "001", "001", 5)
     monkeypatch.setattr(facturacion_tab.FacturacionTab, "load_invoices", lambda self: None)

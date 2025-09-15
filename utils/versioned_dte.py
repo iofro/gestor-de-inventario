@@ -43,19 +43,35 @@ def ensure_version(dte_json: dict, base_dir: str | None = None) -> tuple[str, st
 
 
 def save_estado(version_dir: str, data: dict) -> str:
-    """Store ``data`` representing the final state of the DTE.
+    """Store ``data`` representing the final state of the DTE."""
 
-    The file name is chosen based on ``data['estado']`` when available
-    (``aceptado.json`` or ``rechazado.json``); otherwise ``estado.json`` is
-    used.  The chosen file name is returned.
-    """
+    # Ensure the state file shares the same base name as the original JSON
+    # stored in ``version_dir``.  When the directory only contains
+    # ``documento.json`` this will default to ``documento``; otherwise the
+    # existing JSON filename (sans extension) is reused.
+    base_name = None
+    try:
+        for fname in os.listdir(version_dir):
+            if not fname.endswith(".json"):
+                continue
+            stem = os.path.splitext(fname)[0]
+            if stem.endswith("_estado") or stem.endswith("_aceptado") or stem.endswith("_rechazado"):
+                continue
+            base_name = stem
+            break
+    except OSError:  # pragma: no cover - best effort
+        base_name = None
+    if not base_name:
+        base_name = "documento"
+
     estado = str(data.get("estado", "")).lower()
     if estado == "aceptado":
-        name = "aceptado.json"
+        suffix = "aceptado"
     elif estado == "rechazado":
-        name = "rechazado.json"
+        suffix = "rechazado"
     else:
-        name = "estado.json"
+        suffix = "estado"
+    name = f"{base_name}_{suffix}.json"
     save_file(os.path.join(version_dir, name), stable_stringify(data, indent=2))
     return name
 

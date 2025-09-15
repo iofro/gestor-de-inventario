@@ -4871,6 +4871,19 @@ def _enviar_documento(
 
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
+    SUCCESS_STATES = {"Transmitido", "Recibido", "Procesado", "Aceptado"}
+    if doc_id is not None:
+        row = db.cursor.execute(
+            """
+            SELECT estado FROM dte_envios
+            WHERE venta_id=? AND estado IN (?, ?, ?, ?)
+            ORDER BY id DESC LIMIT 1
+            """,
+            (doc_id, *SUCCESS_STATES),
+        ).fetchone()
+        if row:
+            raise ValueError("DTE ya enviado")
+
     config = _load_dte_api_config()
 
     if not data.get("resumen", {}).get("totalLetras"):

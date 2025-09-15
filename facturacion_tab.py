@@ -729,24 +729,66 @@ class FacturacionTab(QWidget):
         try:
             if cur is not None:
                 if venta_id is not None:
-                    env_row = cur.execute(
-                        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-                        (venta_id,),
+                    success = cur.execute(
+                        """
+                        SELECT estado FROM dte_envios
+                        WHERE venta_id=? AND estado IN (?, ?, ?, ?)
+                        ORDER BY id DESC LIMIT 1
+                        """,
+                        (
+                            venta_id,
+                            "Transmitido",
+                            "Recibido",
+                            "Procesado",
+                            "Aceptado",
+                        ),
                     ).fetchone()
+                    if success:
+                        env_row = success
+                    else:
+                        env_row = cur.execute(
+                            "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                            (venta_id,),
+                        ).fetchone()
                 elif codigo_generacion or numero_control:
-                    query = (
+                    query_success = (
+                        "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? AND estado IN (?, ?, ?, ?) ORDER BY id DESC LIMIT 1"
+                    )
+                    query_latest = (
                         "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1"
                     )
                     if codigo_generacion:
                         env_row = cur.execute(
-                            query,
-                            (f"%{codigo_generacion}%",),
+                            query_success,
+                            (
+                                f"%{codigo_generacion}%",
+                                "Transmitido",
+                                "Recibido",
+                                "Procesado",
+                                "Aceptado",
+                            ),
                         ).fetchone()
+                        if not env_row:
+                            env_row = cur.execute(
+                                query_latest,
+                                (f"%{codigo_generacion}%",),
+                            ).fetchone()
                     if not env_row and numero_control:
                         env_row = cur.execute(
-                            query,
-                            (f"%{numero_control}%",),
+                            query_success,
+                            (
+                                f"%{numero_control}%",
+                                "Transmitido",
+                                "Recibido",
+                                "Procesado",
+                                "Aceptado",
+                            ),
                         ).fetchone()
+                        if not env_row:
+                            env_row = cur.execute(
+                                query_latest,
+                                (f"%{numero_control}%",),
+                            ).fetchone()
         except Exception:
             env_row = None
         if env_row:

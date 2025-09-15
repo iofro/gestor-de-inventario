@@ -13,16 +13,14 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
-import copy
 import json
-import os
-import re
 from typing import Optional
 
 from db import DB
 from dte import (
     DTE_VERSIONES,
     generar_cabecera_dte_data,
+    generar_dte_json,
     sanitize_dte_payload,
 )
 from utils import catalogos
@@ -36,48 +34,6 @@ Decimal_0 = Decimal("0")
 Decimal_1 = Decimal("1")
 Q4 = Decimal("0.0001")
 IVA = Decimal("0.13")
-
-
-def _is_uuid(s: str) -> bool:
-    return bool(
-        re.fullmatch(r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}", s.upper())
-    )
-
-
-def _is_nc(s: str) -> bool:
-    return str(s).startswith("DTE-")
-
-
-def _build_documento_relacionado(origen_ident: dict) -> tuple[list[dict], str]:
-    uuid_rel = str(origen_ident.get("codigoGeneracion", "")).upper()
-    nc_rel = origen_ident.get("numeroControl")
-    fec_rel = origen_ident.get("fecEmi")
-    tipo_generacion = origen_ident.get("tipoGeneracion")
-    numero_conf = origen_ident.get("numeroDocumento")
-    if tipo_generacion is None and numero_conf:
-        if _is_uuid(str(numero_conf)):
-            tipo_generacion = 2
-        elif _is_nc(str(numero_conf)):
-            tipo_generacion = 1
-        else:
-            raise ValueError("numeroDocumento inválido para documentoRelacionado")
-    if tipo_generacion is None:
-        tipo_generacion = 2
-    if tipo_generacion == 2:
-        numero_rel = uuid_rel
-    elif tipo_generacion == 1:
-        numero_rel = nc_rel
-    else:
-        raise ValueError("tipoGeneracion inválido para documentoRelacionado")
-    doc_rel = [
-        {
-            "tipoDocumento": origen_ident.get("tipoDte"),
-            "tipoGeneracion": tipo_generacion,
-            "numeroDocumento": numero_rel,
-            "fechaEmision": fec_rel,
-        }
-    ]
-    return doc_rel, numero_rel
 
 
 def _pct_label(ratio: Decimal) -> str:
@@ -109,30 +65,17 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
         raise ValueError("La nota no está asociada a una venta")
 
     venta_row = db.cursor.execute(
-        "SELECT extra FROM ventas WHERE id=?", (venta_id,)
+        "SELECT cliente_id, total FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     if not venta_row:
         raise ValueError("Venta no encontrada")
+    venta = dict(venta_row)
+    tipo_doc = "01"
+    if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+        # Se asume comprobante de crédito fiscal cuando no hay cliente asociado
+        tipo_doc = "03"
 
-    extra = {}
-    if venta_row["extra"]:
-        try:
-            extra = json.loads(venta_row["extra"])
-        except Exception:
-            extra = {}
-    dte_path = extra.get("dteJsonPath")
-    if not dte_path or not os.path.exists(dte_path):
-        raise ValueError("DTE base no encontrado")
-
-    estado_row = db.cursor.execute(
-        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-        (venta_id,),
-    ).fetchone()
-    if not estado_row or estado_row["estado"] != "Aceptado":
-        raise ValueError("El DTE base no fue aceptado")
-
-    with open(dte_path, "r", encoding="utf-8") as fh:
-        dte_origen = json.load(fh)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
 
     detalles = None
     if nota.get("detalles"):
@@ -149,7 +92,6 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
             detalles=detalles,
             ambiente=ambiente,
             motivo=nota.get("motivo"),
-            monto=Decimal(str(nota.get("monto"))) if nota.get("monto") is not None else None,
         )
 
     total_origen = Decimal(str(dte_origen.get("resumen", {}).get("montoTotalOperacion", 0)))
@@ -203,33 +145,23 @@ def generar_nce_desde_dte(
     }
 
     origen_ident = dte_origen.get("identificacion", {})
-    doc_rel, numero_rel = _build_documento_relacionado(origen_ident)
+    doc_rel = [
+        {
+            "tipoDocumento": origen_ident.get("tipoDte"),
+            "tipoGeneracion": 2,
+            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "fechaEmision": origen_ident.get("fecEmi"),
+        }
+    ]
 
     emisor = dte_origen.get("emisor")
-    receptor = copy.deepcopy(dte_origen.get("receptor", {}))
-    receptor.setdefault("nombreComercial", "")
-    if not receptor["nombreComercial"]:
-        receptor["nombreComercial"] = receptor.get("nombre", "")
-    nit_val = str(receptor.get("nit") or "")
-    num_doc = str(receptor.get("numDocumento") or "")
-    if not nit_val:
-        if num_doc.isdigit() and len(num_doc) == 14 and num_doc != "00000000000000":
-            receptor["nit"] = num_doc
-        else:
-            receptor.pop("nit", None)
-    else:
-        receptor["nit"] = nit_val
+    receptor = dte_origen.get("receptor")
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)
-    if "nit" in receptor:
-        receptor["nit"] = str(receptor["nit"])
-    receptor["nombreComercial"] = str(
-        receptor.get("nombreComercial", "")
-    )
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
-    uuid_origen = str(origen_ident.get("codigoGeneracion", "")).upper()
+    uuid_origen = origen_ident.get("codigoGeneracion", "")
     tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
     extra_desc = f": {motivo}" if motivo else ""
 
@@ -285,7 +217,7 @@ def generar_nce_desde_dte(
                     "ventaExenta": exenta,
                     "ventaNoSuj": nosuj,
                     "tributos": [TRIBUTO_IVA] if grav > 0 else [],
-                    "numeroDocumento": numero_rel,
+                    "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
@@ -293,49 +225,13 @@ def generar_nce_desde_dte(
         total_grav = total_grav.quantize(Q4)
         total_exenta = total_exenta.quantize(Q4)
         total_nosuj = total_nosuj.quantize(Q4)
-        if monto is not None:
-            monto_abs = Decimal(str(monto)).copy_abs()
-            base_precisa, iva_precisa = to_base_iva(monto_abs)
-            base_redondeada = d2(base_precisa)
-            iva_val = d2(iva_precisa)
-            base_q4 = base_redondeada.quantize(Q4)
-            if total_grav > 0:
-                ratio_adj = base_q4 / total_grav if total_grav != Decimal_0 else Decimal_0
-                grav_sum = Decimal_0
-                first_idx = None
-                for idx, item in enumerate(items):
-                    grav_it = Decimal(str(item.get("ventaGravada") or 0))
-                    if grav_it > 0:
-                        new_grav = (grav_it * ratio_adj).quantize(Q4)
-                        item["ventaGravada"] = new_grav
-                        item["precioUni"] = (
-                            new_grav
-                            + Decimal(str(item.get("ventaExenta") or 0))
-                            + Decimal(str(item.get("ventaNoSuj") or 0))
-                        ).quantize(Q4)
-                        if first_idx is None:
-                            first_idx = idx
-                        grav_sum += new_grav
-                diff = base_q4 - grav_sum
-                if diff != Decimal_0 and first_idx is not None:
-                    items[first_idx]["ventaGravada"] = (
-                        Decimal(str(items[first_idx]["ventaGravada"])) + diff
-                    ).quantize(Q4)
-                    items[first_idx]["precioUni"] = (
-                        Decimal(str(items[first_idx]["precioUni"])) + diff
-                    ).quantize(Q4)
-            total_grav = base_q4
-            subtotal_ventas_q4 = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-            subtotal_ventas = d2(subtotal_ventas_q4)
-            monto_total_operacion = d2(monto_abs)
-            iva_val = d2(monto_total_operacion - subtotal_ventas)
-        else:
-            subtotal_ventas_q4 = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-            subtotal_ventas = d2(subtotal_ventas_q4)
-            monto_total_operacion = d2(
-                total_grav * (Decimal("1") + IVA) + total_exenta + total_nosuj
-            )
-            iva_val = d2(monto_total_operacion - subtotal_ventas)
+        subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
+        # Cuando los montos se calculan a partir de ``detalles`` evitamos
+        # recurrir al total original del documento de origen. El IVA se obtiene
+        # directamente de las ventas gravadas parciales y el total de la
+        # operación se compone sumando dicho IVA al subtotal calculado.
+        iva_val = d2(total_grav * IVA)
+        monto_total_operacion = d2(subtotal_ventas + iva_val)
     else:
         if monto is not None:
             monto_abs = Decimal(str(monto)).copy_abs()
@@ -351,8 +247,8 @@ def generar_nce_desde_dte(
             total_grav = base_redondeada.quantize(Q4)
             total_exenta = Decimal_0
             total_nosuj = Decimal_0
-            subtotal_ventas = d2(total_grav)
-            iva_val = d2(monto_total_operacion - subtotal_ventas)
+            subtotal_ventas = total_grav
+            iva_val = d2(monto_total_operacion - base_redondeada)
             num = 1
             pct_text = _pct_label(ratio) if ratio is not None else "100"
             if total_grav > 0:
@@ -374,7 +270,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": 0.0,
                         "ventaNoSuj": 0.0,
                         "tributos": [TRIBUTO_IVA],
-                        "numeroDocumento": numero_rel,
+                        "numeroDocumento": uuid_origen,
                         "codTributo": None,
                     }
                 )
@@ -401,7 +297,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": 0.0,
                         "ventaNoSuj": 0.0,
                         "tributos": [TRIBUTO_IVA],
-                        "numeroDocumento": numero_rel,
+                        "numeroDocumento": uuid_origen,
                         "codTributo": None,
                     }
                 )
@@ -421,7 +317,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": total_exenta,
                         "ventaNoSuj": 0.0,
                         "tributos": [],
-                        "numeroDocumento": numero_rel,
+                        "numeroDocumento": uuid_origen,
                         "codTributo": None,
                     }
                 )
@@ -441,7 +337,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": 0.0,
                         "ventaNoSuj": total_nosuj,
                         "tributos": [],
-                        "numeroDocumento": numero_rel,
+                        "numeroDocumento": uuid_origen,
                         "codTributo": None,
                     }
                 )

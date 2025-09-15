@@ -416,7 +416,7 @@ def generar_factura_electronica_pdf(
 
     tabla = Table(
         tabla_data,
-        colWidths=[44, 180, 60, 50, 60, 60, 70],
+        colWidths=[44, 150, 90, 50, 60, 60, 70],
         repeatRows=1,
     )
     tabla.setStyle(TableStyle([

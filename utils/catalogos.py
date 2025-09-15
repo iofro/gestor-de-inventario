@@ -560,6 +560,8 @@ CONDICION_OPERACION = {int(k): v for k, v in _CATS["CAT-016"].items()}
 
 FORMA_PAGO = _CATS["CAT-017"]
 
+TIPO_INVALIDACION = {int(k): v for k, v in _CATS["CAT-024"].items()}
+
 # Catálogos geográficos
 CAT_DEPTOS = _CATS["CAT-012"]
 

@@ -22,8 +22,6 @@ from dte import (
     generar_dte_json,
     sanitize_dte_payload,
     d4,
-    _origen_aceptado_en_mh,
-    normalize_uuid_v4_upper,
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
@@ -82,57 +80,6 @@ def generar_nde_desde_dte(
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
     origen_ident = dte_origen.get("identificacion", {})
-    # Intenta inyectar ``selloRecibido`` desde ventas.extra o dte_envios
-    extra = dte_origen.get("extra", {}) or {}
-    if isinstance(extra, str):
-        try:
-            extra = json.loads(extra)
-        except Exception:
-            extra = {}
-    sello = (
-        extra.get("selloRecibido")
-        or extra.get("sello_recibido")
-        or dte_origen.get("selloRecibido")
-    )
-    if not sello:
-        uuid = (str(origen_ident.get("codigoGeneracion") or "").upper())
-        numc = str(origen_ident.get("numeroControl") or "")
-        try:
-            row = db.cursor.execute(
-                """
-                SELECT TRIM(sello) AS sello
-                  FROM dte_envios
-                 WHERE UPPER(codigo_generacion)=? OR numero_control=?
-                 ORDER BY id DESC LIMIT 1
-                """,
-                (uuid, numc),
-            ).fetchone()
-            if row and row["sello"]:
-                sello = row["sello"]
-        except Exception:
-            db.ensure_column("dte_envios", "respuesta", "TEXT")
-            row = db.cursor.execute(
-                """
-                SELECT TRIM(sello) AS sello
-                  FROM dte_envios
-                 WHERE (respuesta LIKE ? OR respuesta LIKE ?)
-                 ORDER BY id DESC LIMIT 1
-                """,
-                (f"%{uuid}%", f"%{numc}%"),
-            ).fetchone()
-            if row and row["sello"]:
-                sello = row["sello"]
-    if sello:
-        dte_origen["selloRecibido"] = sello
-    sello = dte_origen.get("selloRecibido") or extra.get("selloRecibido")
-    if not sello:
-        raise ValueError(
-            "La factura base no tiene selloRecibido. No puedes referenciarla todavía."
-        )
-    if not _origen_aceptado_en_mh(db, origen_ident):
-        raise ValueError(
-            "El documento relacionado aún no está registrado en MH. Transmítelo y espera acuse antes de emitir la nota."
-        )
 
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
@@ -151,15 +98,11 @@ def generar_nde_desde_dte(
         "tipoMoneda": "USD",
     }
 
-    tipo_origen = origen_ident.get("tipoDte")
-    tipo_rel = "07" if tipo_origen == "07" else "03"
     doc_rel = [
         {
-            "tipoDocumento": tipo_rel,
+            "tipoDocumento": origen_ident.get("tipoDte"),
             "tipoGeneracion": 2,
-            "numeroDocumento": normalize_uuid_v4_upper(
-                str(origen_ident.get("codigoGeneracion") or "").upper()
-            ),
+            "numeroDocumento": origen_ident.get("codigoGeneracion"),
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]

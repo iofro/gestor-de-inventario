@@ -2753,6 +2753,13 @@ def generar_dte_json(
         result.pop("receptor", None)
     result.pop("extra", None)
     final = json.loads(stable_stringify(result), parse_float=Decimal)
+    # Conservar el sello de recepción para operaciones posteriores (p.ej.,
+    # anulaciones o notas).  ``extra`` se elimina del DTE final, pero si ahí se
+    # encontraba ``selloRecibido`` lo exponemos en la raíz para que sea
+    # accesible por los generadores de notas.
+    sello = extra.get("selloRecibido") or extra.get("sello_recibido")
+    if sello:
+        final["selloRecibido"] = sello
     try:
         for idx, det in enumerate(detalles):
             if idx >= len(final.get("cuerpoDocumento", [])):
@@ -4739,7 +4746,14 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(None, "orphan", "Rechazado", "")
+        db.registrar_envio_dte(
+            None,
+            "orphan",
+            "Rechazado",
+            "",
+            codigo_generacion=ident.get("codigoGeneracion"),
+            numero_control=ident.get("numeroControl"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -4748,6 +4762,8 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         estado,
         sello,
         json.dumps(respuesta, ensure_ascii=False),
+        codigo_generacion=ident.get("codigoGeneracion"),
+        numero_control=ident.get("numeroControl"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
@@ -4817,6 +4833,7 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
                 {
                     "venta_id": venta_id,
                     "codigoGeneracion": ident.get("codigoGeneracion"),
+                    "numeroControl": ident.get("numeroControl"),
                     "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
                     "documento": firmado,
                 }
@@ -4859,6 +4876,8 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
                 "",
                 json.dumps(data_resp, ensure_ascii=False),
                 codigo_lote=codigo_lote,
+                codigo_generacion=d["codigoGeneracion"],
+                numero_control=d.get("numeroControl"),
             )
         resultados.append(data_resp)
 
@@ -4980,6 +4999,8 @@ def _enviar_documento(
             "Pendiente",
             "",
             json.dumps({"jws": signed}, ensure_ascii=False),
+            codigo_generacion=ident.get("codigoGeneracion"),
+            numero_control=ident.get("numeroControl"),
         )
         return {"estado": "Pendiente"}
 
@@ -5015,7 +5036,14 @@ def _enviar_documento(
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(doc_id, modo, "Rechazado", "")
+        db.registrar_envio_dte(
+            doc_id,
+            modo,
+            "Rechazado",
+            "",
+            codigo_generacion=p_cod,
+            numero_control=pident.get("numeroControl"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -5024,6 +5052,8 @@ def _enviar_documento(
         estado,
         sello,
         json.dumps(respuesta, ensure_ascii=False),
+        codigo_generacion=p_cod,
+        numero_control=pident.get("numeroControl"),
     )
     try:
         _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
@@ -5183,6 +5213,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     url = f"{pu.scheme}://{pu.netloc}/fesv/contingencia"
     signed = jws.sign_json(data)
     token = auth.get_token()
+    ident = data.get("identificacion") or data.get("identificador") or {}
 
     try:
         respuesta = _post_evento(url, token, signed, data)
@@ -5195,7 +5226,14 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         )
         detalle = respuesta.get("detalle")
     except Exception:
-        db.registrar_envio_dte(evento_id, "evento", "Rechazado", "")
+        db.registrar_envio_dte(
+            evento_id,
+            "evento",
+            "Rechazado",
+            "",
+            codigo_generacion=ident.get("codigoGeneracion"),
+            numero_control=ident.get("numeroControl"),
+        )
         raise
 
     db.registrar_envio_dte(
@@ -5204,6 +5242,8 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         estado,
         sello,
         json.dumps(respuesta, ensure_ascii=False),
+        codigo_generacion=ident.get("codigoGeneracion"),
+        numero_control=ident.get("numeroControl"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)

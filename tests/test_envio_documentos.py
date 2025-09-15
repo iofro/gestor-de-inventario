@@ -80,13 +80,14 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
                 "version": 2,
                 "ambiente": "00",
                 "codigoGeneracion": "ABC",
+                "numeroControl": "DTE-01-S001P001-000000000000123",
             },
         },
     )
 
     responses = [
         {"estado": "Rechazado", "descripcionMsg": "Error", "observaciones": ["campo"]},
-        {"estado": "Transmitido", "sello": "ABC"},
+        {"estado": "PROCESADO", "sello": "ABC"},
     ]
 
     calls = []
@@ -127,9 +128,22 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     caplog.clear()
     res = enviar_factura(db, venta)
-    assert res["estado"] == "Transmitido"
+    assert res["estado"] == "PROCESADO"
     row = db.cursor.execute("SELECT count(*) c FROM dte_envios WHERE venta_id=?", (venta,)).fetchone()
     assert row["c"] == 2
+
+    # Verifica que se hayan almacenado los campos clave
+    row = db.cursor.execute(
+        """
+        SELECT codigo_generacion, numero_control, estado, sello
+          FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1
+        """,
+        (venta,),
+    ).fetchone()
+    assert row["codigo_generacion"] == "ABC"
+    assert row["numero_control"] == "DTE-01-S001P001-000000000000123"
+    assert row["estado"] == "PROCESADO"
+    assert row["sello"] == "ABC"
 
     assert sign_calls["count"] == 2
     assert len(calls) == 2

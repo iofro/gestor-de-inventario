@@ -6,6 +6,7 @@ import copy
 import platform
 import sys
 import re
+import shutil
 import requests as _requests
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -4085,16 +4086,21 @@ def _write_json(path: str, data):
         save_file(path, stable_stringify(data, indent=2))
 
 
-def _dte_base_dir(dte_data: dict, fallido: bool = False) -> str:
-    """Return destination directory for ``dte_data`` grouped by tipoDte.
+def _dte_base_dir(
+    dte_data: dict, fallido: bool = False, pendientes: bool = False
+) -> str:
+    """Return destination directory for ``dte_data`` grouped by ``tipoDte``.
 
-    The ``fallido`` flag controls whether the DTE should be stored under the
-    accepted directory (``dtes/``) or the rejected one (``dte_fallidos/``).
+    ``fallido`` indica si el DTE debe almacenarse en ``dte_fallidos`` y
+    ``pendientes`` controla si se usa ``dtes_pendientes`` como raíz.
     """
 
     ident = dte_data.get("identificacion", {})
     tipo = str(ident.get("tipoDte", "")).zfill(2)
-    root = "dte_fallidos" if fallido else "dtes"
+    if pendientes:
+        root = "dtes_pendientes"
+    else:
+        root = "dte_fallidos" if fallido else "dtes"
     base = os.path.join(os.path.dirname(__file__), root)
     mapping = {
         "01": "fcf",  # Factura consumidor final
@@ -4140,14 +4146,53 @@ class DTEValidationError(Exception):
         self.json_path = json_path
 
 
-def save_dte_json(dte_data: dict) -> str:
-    """Guarda ``dte_data`` en estructura versionada y devuelve la ruta."""
+def save_dte_json(dte_data: dict, filename: str | None = None) -> str:
+    """Guarda ``dte_data`` en la carpeta de pendientes y devuelve la ruta."""
     try:
-        base_dir = _dte_base_dir(dte_data)
+        base_dir = _dte_base_dir(dte_data, pendientes=True)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
-        return os.path.join(version_dir, "documento.json")
+        json_path = os.path.join(version_dir, "documento.json")
+        if filename and filename != "documento.json":
+            dest = os.path.join(version_dir, filename)
+            os.replace(json_path, dest)
+            json_path = dest
+        return json_path
     except Exception:
         return ""
+
+
+def _finalize_pendiente(
+    pend_json_path: str, dte_data: dict, jws_token: str, estado: str
+) -> str:
+    """Move a pending DTE to its final directory preserving its name."""
+    ident = dte_data.get("identificacion", {})
+    codigo = ident.get("codigoGeneracion") or "SIN-CODIGO"
+    fallido = str(estado).lower() == "rechazado"
+    final_base = _dte_base_dir(dte_data, fallido=fallido)
+    dest_dir = os.path.join(final_base, codigo)
+
+    pend_dir = os.path.dirname(pend_json_path)
+    filename = os.path.basename(pend_json_path)
+
+    if os.path.exists(dest_dir):
+        shutil.rmtree(dest_dir)
+    shutil.move(pend_dir, dest_dir)
+
+    final_path = os.path.join(dest_dir, filename)
+    if jws_token:
+        jws_path = os.path.splitext(final_path)[0] + ".jws"
+        save_file(jws_path, jws_token, add_final_newline=False)
+
+    # Clean up empty pending directories
+    pend_tipo_dir = os.path.dirname(pend_dir)
+    try:
+        os.rmdir(pend_tipo_dir)
+        root_pend = os.path.dirname(pend_tipo_dir)
+        os.rmdir(root_pend)
+    except OSError:
+        pass
+
+    return final_path
 
 
 def _format_validation_errors(exc: Exception) -> list:

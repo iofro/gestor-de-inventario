@@ -4943,7 +4943,12 @@ def _enviar_documento(
 
     try:
         respuesta = _post_dte(url, token, signed, meta)
-        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+        sello = (
+            respuesta.get("sello")
+            or respuesta.get("selloRecepcion")
+            or respuesta.get("selloRecibido")
+            or ""
+        )
         estado = (
             respuesta.get("estado")
             or respuesta.get("estadoDte")

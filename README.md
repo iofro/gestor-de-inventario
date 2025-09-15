@@ -355,3 +355,10 @@ generar_ticket_personalizado(
     dte_data=data["dte_data"],
 )
 ```
+
+### Anulación de documentos
+
+Cada DTE transmitido recibe un `selloRecibido` por parte del Ministerio de
+Hacienda. Este sello debe almacenarse y conservarse en el campo `extra` de la
+venta correspondiente, ya que es un requisito indispensable para solicitar la
+anulación del documento en el futuro.

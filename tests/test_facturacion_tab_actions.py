@@ -40,7 +40,7 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     venta_id, cid = _create_sale(db)
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id}
     )
 
     save_path = tmp_path / "ticket.pdf"
@@ -82,7 +82,7 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
 
     tab = _make_tab(db, cid)
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab, "_selected_entry", lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id}
     )
     monkeypatch.setattr(
         tab,
@@ -165,7 +165,7 @@ def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):
     monkeypatch.setattr(
         tab,
         "_selected_entry",
-        lambda: {"row_type": "venta", "id": venta_id, "json": str(dte_json)},
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id, "json": str(dte_json)},
     )
 
     monkeypatch.setattr(

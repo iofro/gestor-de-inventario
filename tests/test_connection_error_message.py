@@ -55,7 +55,9 @@ def test_send_selected_invoice_no_connection(monkeypatch, qt_app):
     tab = _make_tab(db, cid)
 
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
     )
     monkeypatch.setattr(
         tab,
@@ -115,7 +117,9 @@ def test_send_selected_invoice_shows_detalle(monkeypatch, qt_app):
     tab = _make_tab(db, cid)
 
     monkeypatch.setattr(
-        tab, "_selected_entry", lambda: {"row_type": "venta", "id": venta_id}
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
     )
     monkeypatch.setattr(
         tab,

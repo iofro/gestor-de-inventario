@@ -806,6 +806,7 @@ class FacturacionTab(QWidget):
         venta_id=None,
         numero_control=None,
         codigo_generacion=None,
+        doc_tipo=None,
     ):
         """Determine ``estado`` and ``envio`` for an invoice.
 
@@ -817,10 +818,16 @@ class FacturacionTab(QWidget):
         pdf_exists = bool(pdf_path and os.path.exists(pdf_path))
         json_exists = bool(json_path and os.path.exists(json_path))
 
+        tipo_lower = str(doc_tipo or "").strip().lower()
+        is_nota = tipo_lower.startswith("nota")
+
         if venta:
             estado = "Completa" if pdf_exists and json_exists else "Incompleta"
         else:
-            estado = "Sin venta" if pdf_exists and json_exists else "Incompleta"
+            if is_nota:
+                estado = "Incompleta"
+            else:
+                estado = "Sin venta" if pdf_exists and json_exists else "Incompleta"
 
         envio = "Pendiente de envío"
         env_row = None
@@ -911,7 +918,14 @@ class FacturacionTab(QWidget):
         records = cur.fetchall()
         rows = []
         for rec in records:
-            venta = self.manager.db.get_venta_by_id(rec["venta_id"])
+            try:
+                doc_tipo = rec["tipo"]
+            except (KeyError, IndexError):
+                doc_tipo = None
+            tipo_lower = str(doc_tipo or "").strip().lower()
+            venta = None
+            if rec["venta_id"] is not None and not tipo_lower.startswith("nota"):
+                venta = self.manager.db.get_venta_by_id(rec["venta_id"])
             ruta = rec["ruta"]
             json_path = os.path.splitext(ruta)[0] + ".json" if ruta else None
 
@@ -960,6 +974,7 @@ class FacturacionTab(QWidget):
                 venta_id=rec["venta_id"],
                 numero_control=numero_control,
                 codigo_generacion=codigo_generacion,
+                doc_tipo=doc_tipo,
             )
 
             row = {
@@ -973,7 +988,7 @@ class FacturacionTab(QWidget):
                 "total": total,
                 "estado": estado,
                 "envio": envio,
-                "tipo": rec["tipo"],
+                "tipo": doc_tipo,
             }
             if row_type == "orphan":
                 row["pdf"] = ruta
@@ -1127,6 +1142,7 @@ class FacturacionTab(QWidget):
                 pdf,
                 js,
                 cur,
+                doc_tipo=tipo,
             )
             numero = base
             fecha = ""
@@ -1179,6 +1195,7 @@ class FacturacionTab(QWidget):
                         cur,
                         numero_control=numero,
                         codigo_generacion=codigo_gen,
+                        doc_tipo=tipo,
                     )
                 except Exception:
                     estado = "Incompleta"

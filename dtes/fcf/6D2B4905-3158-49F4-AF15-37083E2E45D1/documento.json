@@ -2,24 +2,23 @@
   "apendice": null,
   "cuerpoDocumento": [
     {
-      "cantidad": 1.0,
+      "cantidad": 1.0000,
       "codTributo": null,
       "codigo": "SKU-NA",
       "descripcion": "Producto Demo 9",
-      "montoDescu": 0.0,
-      "noGravado": 0.0,
+      "ivaItem": 1.7257,
+      "montoDescu": 0.0000,
+      "noGravado": 0.0000,
       "numItem": 1,
       "numeroDocumento": null,
-      "precioUni": 11.7500,
-      "psv": 0.0,
+      "precioUni": 15.0000,
+      "psv": 0.0000,
       "tipoItem": 1,
-      "tributos": [
-        "20"
-      ],
+      "tributos": null,
       "uniMedida": 59,
-      "ventaExenta": 0.0,
-      "ventaGravada": 11.7500,
-      "ventaNoSuj": 0.0
+      "ventaExenta": 0.0000,
+      "ventaGravada": 15.0000,
+      "ventaNoSuj": 0.0000
     }
   ],
   "documentoRelacionado": null,
@@ -36,7 +35,6 @@
       "departamento": "05",
       "municipio": "24"
     },
-    "dui": "000868547",
     "nit": "09061712791014",
     "nombre": "Karol Yamileth Cruz Escobar",
     "nombreComercial": "Farmacia Santa Catalina",
@@ -47,17 +45,17 @@
   "extension": null,
   "identificacion": {
     "ambiente": "00",
-    "codigoGeneracion": "0352EA6A-857E-49FF-BC46-4464F923CD5F",
+    "codigoGeneracion": "6D2B4905-3158-49F4-AF15-37083E2E45D1",
     "fecEmi": "2025-09-15",
-    "horEmi": "08:26:13",
+    "horEmi": "17:03:19",
     "motivoContin": null,
-    "numeroControl": "DTE-03-S001P001-000000000000178",
+    "numeroControl": "DTE-01-S001P001-000000000000182",
     "tipoContingencia": null,
-    "tipoDte": "03",
+    "tipoDte": "01",
     "tipoModelo": 1,
     "tipoMoneda": "USD",
     "tipoOperacion": 1,
-    "version": 3
+    "version": 1
   },
   "otrosDocumentos": null,
   "receptor": {
@@ -69,49 +67,43 @@
       "departamento": "05",
       "municipio": "25"
     },
-    "nit": "13240304791012",
     "nombre": "ariel",
-    "nombreComercial": "Vertex",
-    "nrc": "2273734",
-    "telefono": "74154027"
+    "nrc": null,
+    "numDocumento": "00798935-2",
+    "telefono": "74154027",
+    "tipoDocumento": "13"
   },
   "resumen": {
     "condicionOperacion": 1,
-    "descuExenta": 0.0,
-    "descuGravada": 0.0,
-    "descuNoSuj": 0.0,
-    "ivaPerci1": 0.0,
+    "descuExenta": 0.00,
+    "descuGravada": 0.00,
+    "descuNoSuj": 0.00,
     "ivaRete1": 0.0,
-    "montoTotalOperacion": 13.28,
+    "montoTotalOperacion": 15.00,
     "numPagoElectronico": "",
     "pagos": [
       {
         "codigo": "01",
-        "montoPago": 13.28,
+        "montoPago": 15.00,
         "periodo": null,
         "plazo": null,
         "referencia": null
       }
     ],
-    "porcentajeDescuento": 0.0,
+    "porcentajeDescuento": 0.00,
     "reteRenta": 0.0,
     "saldoFavor": 0.0,
-    "subTotal": 11.75,
-    "subTotalVentas": 11.75,
-    "totalDescu": 0.0,
-    "totalExenta": 0.0,
-    "totalGravada": 11.75,
-    "totalLetras": "TRECE 28/100 DÓLARES",
-    "totalNoGravado": 0.0,
-    "totalNoSuj": 0.0,
-    "totalPagar": 13.28,
-    "tributos": [
-      {
-        "codigo": "20",
-        "descripcion": "Impuesto al Valor Agregado 13%",
-        "valor": 1.53
-      }
-    ]
+    "subTotal": 15.00,
+    "subTotalVentas": 15.00,
+    "totalDescu": 0.00,
+    "totalExenta": 0.0000,
+    "totalGravada": 15.0000,
+    "totalIva": 1.73,
+    "totalLetras": "Quince Dolares con cero centavos",
+    "totalNoGravado": 0.00,
+    "totalNoSuj": 0.0000,
+    "totalPagar": 15.00,
+    "tributos": null
   },
   "ventaTercero": null
 }

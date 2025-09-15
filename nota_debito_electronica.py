@@ -12,14 +12,13 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import copy
 import json
-import os
-import re
 from typing import Optional
 
 from db import DB
 from dte import (
     DTE_VERSIONES,
     generar_cabecera_dte_data,
+    generar_dte_json,
     sanitize_dte_payload,
     d4,
 )
@@ -28,48 +27,6 @@ from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
 from utils.sanitize import limpiar_documentos
-
-
-def _is_uuid(s: str) -> bool:
-    return bool(
-        re.fullmatch(r"[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}", s.upper())
-    )
-
-
-def _is_nc(s: str) -> bool:
-    return str(s).startswith("DTE-")
-
-
-def _build_documento_relacionado(origen_ident: dict) -> tuple[list[dict], str]:
-    uuid_rel = str(origen_ident.get("codigoGeneracion", "")).upper()
-    nc_rel = origen_ident.get("numeroControl")
-    fec_rel = origen_ident.get("fecEmi")
-    tipo_generacion = origen_ident.get("tipoGeneracion")
-    numero_conf = origen_ident.get("numeroDocumento")
-    if tipo_generacion is None and numero_conf:
-        if _is_uuid(str(numero_conf)):
-            tipo_generacion = 2
-        elif _is_nc(str(numero_conf)):
-            tipo_generacion = 1
-        else:
-            raise ValueError("numeroDocumento inválido para documentoRelacionado")
-    if tipo_generacion is None:
-        tipo_generacion = 2
-    if tipo_generacion == 2:
-        numero_rel = uuid_rel
-    elif tipo_generacion == 1:
-        numero_rel = nc_rel
-    else:
-        raise ValueError("tipoGeneracion inválido para documentoRelacionado")
-    doc_rel = [
-        {
-            "tipoDocumento": origen_ident.get("tipoDte"),
-            "tipoGeneracion": tipo_generacion,
-            "numeroDocumento": numero_rel,
-            "fechaEmision": fec_rel,
-        }
-    ]
-    return doc_rel, numero_rel
 
 
 def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
@@ -83,30 +40,14 @@ def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
 
     venta_id = nota.get("venta_id")
     venta_row = db.cursor.execute(
-        "SELECT extra FROM ventas WHERE id=?", (venta_id,),
+        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,),
     ).fetchone()
-    if not venta_row:
-        raise ValueError("Venta no encontrada")
-
-    extra = {}
-    if venta_row["extra"]:
-        try:
-            extra = json.loads(venta_row["extra"])
-        except Exception:
-            extra = {}
-    dte_path = extra.get("dteJsonPath")
-    if not dte_path or not os.path.exists(dte_path):
-        raise ValueError("DTE base no encontrado")
-
-    estado_row = db.cursor.execute(
-        "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-        (venta_id,),
-    ).fetchone()
-    if not estado_row or estado_row["estado"] != "Aceptado":
-        raise ValueError("El DTE base no fue aceptado")
-
-    with open(dte_path, "r", encoding="utf-8") as fh:
-        dte_origen = json.load(fh)
+    tipo_doc = "01"
+    if venta_row:
+        venta = dict(venta_row)
+        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
+            tipo_doc = "03"
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
 
     detalles = None
     if nota.get("detalles"):
@@ -153,33 +94,27 @@ def generar_nde_desde_dte(
     }
 
     origen_ident = dte_origen.get("identificacion", {})
-    doc_rel, numero_rel = _build_documento_relacionado(origen_ident)
+    tipo_origen = origen_ident.get("tipoDte")
+    tipo_rel = "07" if tipo_origen == "07" else "03"
+    doc_rel = [
+        {
+            "tipoDocumento": tipo_rel,
+            "tipoGeneracion": 2,
+            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "fechaEmision": origen_ident.get("fecEmi"),
+        }
+    ]
 
     emisor = copy.deepcopy(dte_origen.get("emisor", {}))
     receptor = copy.deepcopy(dte_origen.get("receptor", {}))
-    receptor.setdefault("nombreComercial", "")
-    if not receptor["nombreComercial"]:
-        receptor["nombreComercial"] = receptor.get("nombre", "")
-    nit_val = str(receptor.get("nit") or "")
-    num_doc = str(receptor.get("numDocumento") or "")
-    if not nit_val:
-        if num_doc.isdigit() and len(num_doc) == 14 and num_doc != "00000000000000":
-            receptor["nit"] = num_doc
-        else:
-            receptor.pop("nit", None)
-    else:
-        receptor["nit"] = nit_val
+    receptor.setdefault("nombreComercial", None)
+    receptor.setdefault("nit", None)
     limpiar_documentos(emisor)
     limpiar_documentos(receptor)
-    if "nit" in receptor:
-        receptor["nit"] = str(receptor["nit"])
-    receptor["nombreComercial"] = str(
-        receptor.get("nombreComercial", "")
-    )
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
-    uuid_origen = str(origen_ident.get("codigoGeneracion", "")).upper()
+    uuid_origen = origen_ident.get("codigoGeneracion", "")
     tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
     extra_desc = f": {motivo}" if motivo else ""
 
@@ -217,7 +152,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": d4(exenta),
                     "ventaNoSuj": d4(nosuj),
                     "tributos": [TRIBUTO_IVA] if grav > 0 else [],
-                    "numeroDocumento": numero_rel,
+                    "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
@@ -226,22 +161,20 @@ def generar_nde_desde_dte(
         total_grav = d4(total_grav)
         total_exenta = d4(total_exenta)
         total_nosuj = d4(total_nosuj)
-        subtotal_ventas_q4 = total_grav + total_exenta + total_nosuj
-        subtotal_ventas = d2(subtotal_ventas_q4)
+        subtotal_ventas = total_grav + total_exenta + total_nosuj
 
         user_total = Decimal(str(monto)) if monto is not None else None
         if user_total is not None and user_total >= subtotal_ventas:
+            iva_val = d2(user_total - subtotal_ventas)
             monto_total = d2(user_total)
-            iva_val = d2(monto_total - subtotal_ventas)
         else:
-            monto_total = d2(
-                total_grav * Decimal("1.13") + total_exenta + total_nosuj
-            )
-            iva_val = d2(monto_total - subtotal_ventas)
+            iva_val = d2(total_grav * Decimal("0.13"))
+            monto_total = d2(subtotal_ventas + iva_val)
 
         total_grav = d2(total_grav)
         total_exenta = d2(total_exenta)
         total_nosuj = d2(total_nosuj)
+        subtotal_ventas = d2(subtotal_ventas)
     else:
         if monto is None:
             raise ValueError("Se requiere monto para nota de débito")
@@ -275,7 +208,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": 0.0,
                     "tributos": [TRIBUTO_IVA],
-                    "numeroDocumento": numero_rel,
+                    "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
@@ -295,7 +228,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": total_exenta,
                     "ventaNoSuj": 0.0,
                     "tributos": [],
-                    "numeroDocumento": numero_rel,
+                    "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
@@ -315,7 +248,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": total_nosuj,
                     "tributos": [],
-                    "numeroDocumento": numero_rel,
+                    "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
@@ -337,9 +270,9 @@ def generar_nde_desde_dte(
             }
         )
     resumen = {
-        "totalNoSuj": d2(total_nosuj),
-        "totalExenta": d2(total_exenta),
-        "totalGravada": d2(total_grav),
+        "totalNoSuj": total_nosuj,
+        "totalExenta": total_exenta,
+        "totalGravada": total_grav,
         "subTotal": subtotal_ventas,
         "subTotalVentas": subtotal_ventas,
         "descuNoSuj": 0.0,

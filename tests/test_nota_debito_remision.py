@@ -83,7 +83,7 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     assert doc_rel["fechaEmision"]
     assert (
         doc_rel["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"].upper()
+        == dte_origen["identificacion"]["codigoGeneracion"]
     )
     assert doc_rel["numeroDocumento"] != data["identificacion"].get("numeroControl")
     assert "-" not in data["emisor"].get("nit", "")

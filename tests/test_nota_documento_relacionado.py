@@ -18,9 +18,10 @@ def _patch_module(monkeypatch, module):
         "motivo_contin": None,
     }
     monkeypatch.setattr(module, "generar_cabecera_dte_data", lambda *a, **k: dummy_header)
-    monkeypatch.setattr(module, "_origen_aceptado_en_mh", lambda db, ident: True)
     monkeypatch.setattr(module, "sanitize_dte_payload", lambda data, schema: data)
     monkeypatch.setattr(module.catalogos, "get_dte_schema", lambda *a, **k: {})
+    if hasattr(module, "_origen_aceptado_en_mh"):
+        monkeypatch.setattr(module, "_origen_aceptado_en_mh", lambda db, ident: True)
 
 
 def test_documento_relacionado_usa_uuid(monkeypatch):
@@ -30,7 +31,7 @@ def test_documento_relacionado_usa_uuid(monkeypatch):
     with open("tests/goldens/ccf.json") as f:
         dte_origen = json.load(f)
     dte_origen["selloRecibido"] = "SELLO"
-    uuid = dte_origen["identificacion"]["codigoGeneracion"].upper()
+    uuid = dte_origen["identificacion"]["codigoGeneracion"]
 
     nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert nce["documentoRelacionado"][0]["numeroDocumento"] == uuid

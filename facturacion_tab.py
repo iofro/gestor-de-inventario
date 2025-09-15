@@ -1854,6 +1854,29 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
             return
 
+        # Intenta obtener el sello de recepción desde dte_envios
+        sello = data.get("selloRecibido")
+        if not sello and venta_id:
+            resp_envio = self.manager.db.consultar_envio_dte(venta_id) or {}
+            sello = resp_envio.get("selloRecibido") or resp_envio.get("sello")
+            if not sello:
+                row = self.manager.db.cursor.execute(
+                    "SELECT sello, respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                    (venta_id,),
+                ).fetchone()
+                if row:
+                    sello = row["sello"]
+                    if not sello:
+                        resp = row["respuesta"]
+                        if resp:
+                            try:
+                                resp_json = json.loads(resp)
+                                sello = resp_json.get("selloRecibido") or resp_json.get("sello")
+                            except Exception:
+                                pass
+        if sello:
+            data["selloRecibido"] = sello
+
         detalles_venta = []
         for d in data.get("cuerpoDocumento", []) or []:
             detalles_venta.append(

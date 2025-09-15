@@ -129,7 +129,49 @@ def generar_nce_desde_dte(
             raise ValueError("El porcentaje a acreditar debe ser mayor que cero")
 
     origen_ident = dte_origen.get("identificacion", {})
-    sello = dte_origen.get("selloRecibido") or dte_origen.get("extra", {}).get("selloRecibido")
+    # Intenta inyectar ``selloRecibido`` desde ventas.extra o dte_envios
+    extra = dte_origen.get("extra", {}) or {}
+    if isinstance(extra, str):
+        try:
+            extra = json.loads(extra)
+        except Exception:
+            extra = {}
+    sello = (
+        extra.get("selloRecibido")
+        or extra.get("sello_recibido")
+        or dte_origen.get("selloRecibido")
+    )
+    if not sello:
+        uuid = (str(origen_ident.get("codigoGeneracion") or "").upper())
+        numc = str(origen_ident.get("numeroControl") or "")
+        try:
+            row = db.cursor.execute(
+                """
+                SELECT TRIM(sello) AS sello
+                  FROM dte_envios
+                 WHERE UPPER(codigo_generacion)=? OR numero_control=?
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (uuid, numc),
+            ).fetchone()
+            if row and row["sello"]:
+                sello = row["sello"]
+        except Exception:
+            db.ensure_column("dte_envios", "respuesta", "TEXT")
+            row = db.cursor.execute(
+                """
+                SELECT TRIM(sello) AS sello
+                  FROM dte_envios
+                 WHERE (respuesta LIKE ? OR respuesta LIKE ?)
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (f"%{uuid}%", f"%{numc}%"),
+            ).fetchone()
+            if row and row["sello"]:
+                sello = row["sello"]
+    if sello:
+        dte_origen["selloRecibido"] = sello
+    sello = dte_origen.get("selloRecibido") or extra.get("selloRecibido")
     if not sello:
         raise ValueError(
             "La factura base no tiene selloRecibido. No puedes referenciarla todavía."

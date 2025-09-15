@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import json
+import logging
 from typing import Optional
 
 from db import DB
@@ -30,6 +31,9 @@ from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import limpiar_documentos
+
+
+logger = logging.getLogger(__name__)
 
 
 Decimal_0 = Decimal("0")
@@ -442,6 +446,14 @@ def generar_nce_desde_dte(
         "apendice": None,
     }
 
+    logger.info(
+        "NCE relaciona tipo=%s gen=%s num=%s fec=%s sello=%s",
+        doc_rel[0].get("tipoDocumento"),
+        origen_ident.get("codigoGeneracion"),
+        origen_ident.get("numeroControl"),
+        origen_ident.get("fecEmi"),
+        dte_origen.get("selloRecibido"),
+    )
     schema = catalogos.get_dte_schema("05")
     return sanitize_dte_payload(data, schema)
 

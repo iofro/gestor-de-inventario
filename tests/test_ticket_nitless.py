@@ -1,7 +1,16 @@
 from decimal import Decimal
+import pytest
 from db import DB
 from dte import generar_ticket_json, recalcular_totales
 from nota_credito_electronica import generar_nce_desde_dte
+
+
+@pytest.fixture(autouse=True)
+def _mock_geo(monkeypatch):
+    monkeypatch.setattr(
+        "dte.validar_dep_muni_por_catalogo",
+        lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
+    )
 
 
 def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
@@ -59,6 +68,10 @@ def test_recalcular_ticket_sin_nit_generar_nota(monkeypatch):
     nce = generar_nce_desde_dte(db, data, Decimal("1"), motivo="Dev")
     assert nce["identificacion"]["tipoDte"] == "05"
     assert nce["documentoRelacionado"][0]["tipoDocumento"] == "01"
+    assert (
+        nce["documentoRelacionado"][0]["numeroDocumento"]
+        == data["identificacion"]["numeroControl"]
+    )
     assert "nit" not in nce["receptor"]
 
 

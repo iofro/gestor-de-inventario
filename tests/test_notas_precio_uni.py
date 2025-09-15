@@ -1,8 +1,17 @@
 from decimal import Decimal, ROUND_HALF_UP
 
+import pytest
 from db import DB
 from nota_credito_electronica import generar_nce_desde_dte
 from nota_debito_electronica import generar_nde_desde_dte
+
+
+@pytest.fixture(autouse=True)
+def _mock_geo(monkeypatch):
+    monkeypatch.setattr(
+        "dte.validar_dep_muni_por_catalogo",
+        lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
+    )
 
 
 def _datos_negocio():
@@ -28,6 +37,7 @@ def _dte_origen():
         "identificacion": {
             "tipoDte": "01",
             "codigoGeneracion": "UUID",
+            "numeroControl": "DTE-01-S001P001-000000000000001",
             "fecEmi": "2024-01-01",
         },
         "emisor": {},
@@ -74,7 +84,15 @@ def test_notas_precio_uni_cuatro_decimales(monkeypatch):
     precios = [Decimal("1.2345"), Decimal("0.4321")]
 
     nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
+    assert (
+        nce["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
     nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste")
+    assert (
+        nde["documentoRelacionado"][0]["numeroDocumento"]
+        == dte_origen["identificacion"]["numeroControl"]
+    )
 
     expected_subtotal = sum(
         Decimal(str(d.get("ventaGravada", 0)))

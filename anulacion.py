@@ -21,6 +21,7 @@ from dte import (
     format_cliente_id_from_dui,
     detect_user_agent,
     build_auth_header,
+    _parse_error_response,
     APP_VERSION,
 )
 
@@ -661,6 +662,14 @@ def _post_invalidacion(
     if isinstance(resp.status_code, int) and resp.status_code >= 400:
         detalle = data if data is not None else text
         result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
+        if isinstance(data, dict):
+            detalle_info = data.get("detalle") if isinstance(data.get("detalle"), dict) else data
+            for key in ("descripcionMsg", "observaciones"):
+                if key in detalle_info:
+                    result[key] = detalle_info[key]
+            err = _parse_error_response(result)
+            if err:
+                result["errores"] = err
         print(json.dumps(result, ensure_ascii=False))
         return result
 

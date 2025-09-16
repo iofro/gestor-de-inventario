@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 from types import SimpleNamespace
 
@@ -105,6 +106,7 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):
             "numeroControl": numero_control_reemplazo,
             "fecEmi": "2024-01-02",
         },
+        "emisor": factura.get("emisor", {}),
         "receptor": factura.get("receptor", {}),
     }
     json_path = tmp_path / "reemplazo.json"
@@ -382,6 +384,109 @@ def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
 
     assert not called
     assert data["selloRecibido"] == sello
+
+
+def test_enviar_invalidacion_guarda_archivos(monkeypatch):
+    codigo = "ABC123XYZ789"
+    data = {
+        "identificacion": {"codigoGeneracion": codigo},
+        "documento": {"ejemplo": True},
+    }
+
+    monkeypatch.setattr(anulacion, "_load_dte_api_config", lambda: {"url": "https://mh.test"})
+    monkeypatch.setattr(anulacion.jws, "sign_json", lambda payload: "TOKEN")
+    monkeypatch.setattr(anulacion.auth, "get_token", lambda: "token")
+
+    posted = []
+
+    def fake_post(url, token, signed, payload):
+        posted.append((url, token, signed, payload))
+        return {"estado": "aceptado", "sello": "SELLO"}
+
+    monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
+
+    created_dirs = []
+
+    def fake_makedirs(path, exist_ok=False):
+        created_dirs.append((path, exist_ok))
+
+    monkeypatch.setattr(anulacion.os, "makedirs", fake_makedirs)
+
+    saved = []
+
+    def fake_save_file(path, content, add_final_newline=True):
+        saved.append((path, content, add_final_newline))
+
+    monkeypatch.setattr("utils.stable_json.save_file", fake_save_file)
+
+    result = anulacion.enviar_invalidacion(None, data)
+
+    expected_dir = os.path.join(
+        os.path.dirname(anulacion.__file__),
+        "dtes",
+        "eventos",
+        "anulacion",
+        codigo,
+    )
+    assert created_dirs == [(expected_dir, True)]
+
+    assert len(saved) == 2
+    saved_dict = {
+        path: (content, add_final_newline)
+        for path, content, add_final_newline in saved
+    }
+    json_path = os.path.join(expected_dir, "documento.json")
+    jws_path = os.path.join(expected_dir, "documento.jws")
+    assert json_path in saved_dict
+    assert saved_dict[json_path][1] is True
+    assert jws_path in saved_dict
+    assert saved_dict[jws_path][0] == "TOKEN"
+    assert saved_dict[jws_path][1] is False
+    assert posted and posted[0][2] == "TOKEN"
+    assert result["sello"] == "SELLO"
+
+
+def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
+    codigo = "ERR123456789"
+    data = {
+        "identificacion": {"codigoGeneracion": codigo},
+        "documento": {"ejemplo": True},
+    }
+
+    monkeypatch.setattr(anulacion, "_load_dte_api_config", lambda: {"url": "https://mh.test"})
+    monkeypatch.setattr(anulacion.jws, "sign_json", lambda payload: "TOKEN")
+    monkeypatch.setattr(anulacion.auth, "get_token", lambda: "token")
+
+    posted = []
+
+    def fake_post(url, token, signed, payload):
+        posted.append((url, token, signed, payload))
+        return {"estado": "procesado", "sello": "SIG"}
+
+    monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
+
+    monkeypatch.setattr(anulacion.os, "makedirs", lambda *args, **kwargs: None)
+
+    def failing_save_file(*args, **kwargs):
+        raise OSError("permiso denegado")
+
+    monkeypatch.setattr("utils.stable_json.save_file", failing_save_file)
+
+    class DummyLogger:
+        def __init__(self):
+            self.calls = []
+
+        def exception(self, msg, *args, **kwargs):
+            self.calls.append((msg, args, kwargs))
+
+    dummy_logger = DummyLogger()
+    monkeypatch.setattr(anulacion, "logger", dummy_logger)
+
+    result = anulacion.enviar_invalidacion(None, data)
+
+    assert posted and posted[0][2] == "TOKEN"
+    assert result["estado"] == "procesado"
+    assert dummy_logger.calls
 
 
 def test_anular_dte_uses_sello_from_respuesta(qt_app, db_conn, monkeypatch):

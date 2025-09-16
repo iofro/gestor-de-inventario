@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 import uuid
 import re
@@ -11,6 +12,7 @@ import requests
 import auth
 from db import DB
 from utils import jws
+from utils import stable_json
 from utils.catalogos import TRIBUTO_IVA
 from utils.sanitize import solo_digitos
 from utils.fecha import TZ_EL_SALVADOR
@@ -24,6 +26,9 @@ from dte import (
     _parse_error_response,
     APP_VERSION,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 UUID36_RE = re.compile(r"^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$")
@@ -999,6 +1004,41 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
     pu = urlparse(config["url"])
     url = f"{pu.scheme}://{pu.netloc}/fesv/anulardte"
     signed = jws.sign_json(data)
+    codigo_generacion = None
+    target_dir = None
+    if isinstance(data, dict):
+        ident = data.get("identificacion")
+        if isinstance(ident, dict):
+            raw_codigo = ident.get("codigoGeneracion")
+            if raw_codigo:
+                codigo_generacion = str(raw_codigo).strip()
+    if codigo_generacion:
+        base_dir = os.path.join(
+            os.path.dirname(__file__), "dtes", "eventos", "anulacion"
+        )
+        target_dir = os.path.join(base_dir, codigo_generacion)
+        try:
+            os.makedirs(target_dir, exist_ok=True)
+        except Exception:
+            logger.exception(
+                "No se pudo crear el directorio para el evento de anulación %s",
+                codigo_generacion,
+            )
+            target_dir = None
+    if target_dir and isinstance(data, dict):
+        try:
+            json_path = os.path.join(target_dir, "documento.json")
+            stable_json.save_file(
+                json_path, stable_json.stable_stringify(data, indent=2)
+            )
+            jws_path = os.path.join(target_dir, "documento.jws")
+            signed_str = signed if isinstance(signed, str) else str(signed)
+            stable_json.save_file(jws_path, signed_str, add_final_newline=False)
+        except Exception:
+            logger.exception(
+                "No se pudo guardar el evento de anulación %s",
+                codigo_generacion or "",
+            )
     token = auth.get_token()
     respuesta = _post_invalidacion(url, token, signed, data)
     sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""

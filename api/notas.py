@@ -7,8 +7,8 @@ from facturas_db.facturas_repo import FacturasRepo
 from models.factura import Factura  # noqa: F401 - reexport for tests
 
 app = FastAPI()
-repo = FacturasRepo()
 db = DB(":memory:")
+repo = FacturasRepo(db)
 
 
 @app.get("/api/facturas/{factura_id}")

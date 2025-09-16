@@ -49,7 +49,7 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
-        lambda db_obj, vid: {
+        lambda db_obj, vid, **kwargs: {
             "receptor": {"nombre": "Cliente"},
             "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
             "resumen": {
@@ -178,7 +178,7 @@ def test_no_envia_si_validacion_falla(monkeypatch):
 
     monkeypatch.setattr(
         "dte.generar_dte_json",
-        lambda db_obj, vid: {"identificacion": {"tipoDte": "01"}},
+        lambda db_obj, vid, **kwargs: {"identificacion": {"tipoDte": "01"}},
     )
 
     with pytest.raises(DTEValidationError):
@@ -186,6 +186,58 @@ def test_no_envia_si_validacion_falla(monkeypatch):
 
     assert sent == []
     assert sign_calls["count"] == 0
+
+
+def test_transmitir_dte_tipo03_preserves_tipo(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+
+    captured = {}
+
+    def fake_generar(db_obj, vid, tipo_dte="01", **kwargs):
+        captured["requested_tipo"] = tipo_dte
+        return {
+            "identificacion": {
+                "tipoDte": "03",
+                "version": 1,
+                "ambiente": "00",
+                "codigoGeneracion": "00000000-0000-4000-8000-000000000003",
+                "numeroControl": "DTE-03-S001P001-000000000000123",
+            },
+            "resumen": {
+                "totalLetras": "DIEZ",
+                "totalPagar": 10,
+                "condicionOperacion": 1,
+                "pagos": None,
+            },
+            "cuerpoDocumento": [],
+        }
+
+    def fail_ticket(*args, **kwargs):
+        raise AssertionError("generar_ticket_json no debe invocarse")
+
+    def fake_enviar_documento(db_obj, doc_id, data, modo, jws_token=None):
+        dest = tmp_path / data["identificacion"]["tipoDte"]
+        dest.mkdir(parents=True, exist_ok=True)
+        path = dest / "documento.json"
+        path.write_text(json.dumps(data), encoding="utf-8")
+        captured["path"] = path
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr("dte.generar_dte_json", fake_generar)
+    monkeypatch.setattr("dte.generar_ticket_json", fail_ticket)
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _: {})
+    monkeypatch.setattr("dte._enviar_documento", fake_enviar_documento)
+
+    resp = dte.transmitir_dte(db, venta, tipo_dte="03")
+
+    assert resp["estado"] == "Transmitido"
+    assert captured.get("requested_tipo") == "03"
+    path = captured.get("path")
+    assert path and path.exists()
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["identificacion"]["tipoDte"] == "03"
 
 
 def test_enviar_nota_credito(monkeypatch, tmp_path):
@@ -573,7 +625,7 @@ def test_enviar_factura_default_contingencia(monkeypatch):
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
         "dte.generar_dte_json",
-        lambda db_obj, vid: {"resumen": {"totalLetras": "X"}},
+        lambda db_obj, vid, **kwargs: {"resumen": {"totalLetras": "X"}},
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})

@@ -4645,12 +4645,46 @@ def transmitir_dte(
     if modo is None:
         modo = get_default_modo_transmision()
 
-    if tipo_dte == "03":
+    tipo_dte = str(tipo_dte)
+    venta_extra = {}
+    extra_es_ticket = False
+    if hasattr(db, "get_venta_by_id"):
+        try:
+            venta_row = db.get_venta_by_id(venta_id)
+        except Exception:
+            venta_row = None
+        row_data = venta_row if isinstance(venta_row, dict) else None
+        if row_data is None and venta_row is not None:
+            try:
+                row_data = dict(venta_row)
+            except Exception:
+                row_data = None
+        if isinstance(row_data, dict):
+            raw_extra = row_data.get("extra")
+            if isinstance(raw_extra, str) and raw_extra:
+                try:
+                    venta_extra = json.loads(raw_extra)
+                except Exception:
+                    venta_extra = {}
+            elif isinstance(raw_extra, dict):
+                venta_extra = raw_extra
+    extra_es_ticket = bool(venta_extra.get("es_ticket"))
+
+    if tipo_dte == "01" and extra_es_ticket:
         data = generar_ticket_json(db, venta_id)
     else:
-        data = generar_dte_json(db, venta_id)
-        if data.get("identificacion", {}).get("tipoDte") == "01":
-            recalcular_totales(data, incluir_iva=True)
+        extra_kwargs = {}
+        if extra_es_ticket and tipo_dte != "01":
+            extra_kwargs["extra"] = {"es_ticket": False}
+        data = generar_dte_json(db, venta_id, tipo_dte=tipo_dte, **extra_kwargs)
+
+    final_tipo = str(data.get("identificacion", {}).get("tipoDte") or "")
+    if final_tipo != tipo_dte:
+        raise ValueError(
+            f"tipoDte generado {final_tipo or 'desconocido'} no coincide con solicitado {tipo_dte}"
+        )
+    if final_tipo == "01":
+        recalcular_totales(data, incluir_iva=True)
 
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)

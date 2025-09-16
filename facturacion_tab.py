@@ -1287,6 +1287,79 @@ class FacturacionTab(QWidget):
                 enabled = True
         self.btn_enviar.setEnabled(enabled)
 
+    def _determine_tipo_dte(self, entry: dict | None) -> str:
+        """Return the DTE type code associated with the given entry.
+
+        Sales that correspond to credit-fiscal invoices must be transmitted
+        using code ``"03"`` while consumer final invoices and tickets use
+        ``"01"``.  The information can be obtained either from the database
+        (``ventas_credito_fiscal``) or from the entry metadata which
+        includes the human readable ``tipo`` stored in ``facturas_pdf``.
+        """
+
+        if not isinstance(entry, dict):
+            return "01"
+
+        row_type = entry.get("row_type")
+        if row_type == "ticket":
+            return "01"
+
+        if row_type != "venta":
+            return "01"
+
+        venta_id = entry.get("venta_id")
+        manager = getattr(self, "manager", None)
+        db = getattr(manager, "db", None) if manager else None
+
+        getter_cf = getattr(db, "get_venta_credito_fiscal", None) if db else None
+        if callable(getter_cf) and venta_id is not None:
+            try:
+                if getter_cf(venta_id):
+                    return "03"
+            except Exception:
+                pass
+
+        tipo_raw = entry.get("tipo")
+        if isinstance(tipo_raw, str):
+            tipo_lower = tipo_raw.lower()
+            tokens_cf = ("crédito fiscal", "credito fiscal", "ccf")
+            if any(token in tipo_lower for token in tokens_cf):
+                return "03"
+
+        def _tipo_from_json(path: str | None) -> str | None:
+            if not path or not isinstance(path, str):
+                return None
+            if not os.path.exists(path):
+                return None
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                return None
+            tipo_json = data.get("identificacion", {}).get("tipoDte")
+            if isinstance(tipo_json, str):
+                tipo_json = tipo_json.strip()
+                if tipo_json in {"01", "03"}:
+                    return tipo_json
+            return None
+
+        tipo_from_json = _tipo_from_json(entry.get("json"))
+        if tipo_from_json:
+            return tipo_from_json
+
+        getter_pdf = getattr(db, "get_factura_pdf", None) if db else None
+        if callable(getter_pdf) and venta_id is not None:
+            try:
+                pdf_path = getter_pdf(venta_id)
+            except Exception:
+                pdf_path = None
+            if pdf_path:
+                tipo_from_json = _tipo_from_json(os.path.splitext(pdf_path)[0] + ".json")
+                if tipo_from_json:
+                    return tipo_from_json
+
+        return "01"
+
     def _show_validation_errors(self, errors, json_path):
         """Display validation errors and allow opening a report."""
         msg = QMessageBox(self)
@@ -1382,9 +1455,12 @@ class FacturacionTab(QWidget):
                         self, "Enviar a Hacienda", str(exc)
                     )
             else:
+                tipo_dte = self._determine_tipo_dte(entry)
                 try:
                     resp = transmitir_dte(
-                        self.manager.db, entry.get("venta_id")
+                        self.manager.db,
+                        entry.get("venta_id"),
+                        tipo_dte=tipo_dte,
                     )  # tickets también se transmiten con tipo "01"
                     if resp.get("http_status") in {401, 403}:
                         QMessageBox.warning(self, "Enviar a Hacienda", token_msg)

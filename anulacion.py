@@ -406,6 +406,7 @@ def build_invalidacion_json(
         iva_sum = Decimal("0")
         iva_encontrado = False
         for trib in tributos_list:
+
             if trib.get("codigo") == TRIBUTO_IVA:
                 valor = trib.get("valor")
                 if valor is None:
@@ -417,6 +418,7 @@ def build_invalidacion_json(
                 iva_encontrado = True
         if iva_encontrado:
             monto_iva_decimal = iva_sum
+
     if monto_iva_decimal is None:
         total_iva = resumen.get("totalIva")
         if total_iva is not None:

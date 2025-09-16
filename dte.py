@@ -15,7 +15,7 @@ from db import DB
 import requests
 from utils import jws
 from utils import versioned_dte
-from utils.stable_json import stable_stringify, save_file
+from utils.stable_json import stable_stringify, save_file, hash_json
 import auth
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
@@ -4223,9 +4223,13 @@ def _dte_base_dir(
 
 def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
+    expected_hash = hash_json(dte_data)
+    version_dir = ""
+    json_path = ""
     try:
         base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
+        json_path = os.path.join(version_dir, "documento.json")
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
@@ -4235,6 +4239,18 @@ def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> N
             _write_json(sobre_path, sobre)
     except Exception:
         pass
+    else:
+        with open(json_path, "r", encoding="utf-8") as fh:
+            persisted_data = json.load(fh)
+        actual_hash = hash_json(persisted_data)
+        if actual_hash != expected_hash:
+            logger.error(
+                "El JSON guardado difiere del payload firmado: esperado %s, obtenido %s (ruta: %s)",
+                expected_hash,
+                actual_hash,
+                json_path,
+            )
+            raise RuntimeError("El JSON guardado difiere del payload firmado")
 
 
 class DTEValidationError(Exception):
@@ -4645,12 +4661,46 @@ def transmitir_dte(
     if modo is None:
         modo = get_default_modo_transmision()
 
-    if tipo_dte == "03":
+    tipo_dte = str(tipo_dte)
+    venta_extra = {}
+    extra_es_ticket = False
+    if hasattr(db, "get_venta_by_id"):
+        try:
+            venta_row = db.get_venta_by_id(venta_id)
+        except Exception:
+            venta_row = None
+        row_data = venta_row if isinstance(venta_row, dict) else None
+        if row_data is None and venta_row is not None:
+            try:
+                row_data = dict(venta_row)
+            except Exception:
+                row_data = None
+        if isinstance(row_data, dict):
+            raw_extra = row_data.get("extra")
+            if isinstance(raw_extra, str) and raw_extra:
+                try:
+                    venta_extra = json.loads(raw_extra)
+                except Exception:
+                    venta_extra = {}
+            elif isinstance(raw_extra, dict):
+                venta_extra = raw_extra
+    extra_es_ticket = bool(venta_extra.get("es_ticket"))
+
+    if tipo_dte == "01" and extra_es_ticket:
         data = generar_ticket_json(db, venta_id)
     else:
-        data = generar_dte_json(db, venta_id)
-        if data.get("identificacion", {}).get("tipoDte") == "01":
-            recalcular_totales(data, incluir_iva=True)
+        extra_kwargs = {}
+        if extra_es_ticket and tipo_dte != "01":
+            extra_kwargs["extra"] = {"es_ticket": False}
+        data = generar_dte_json(db, venta_id, tipo_dte=tipo_dte, **extra_kwargs)
+
+    final_tipo = str(data.get("identificacion", {}).get("tipoDte") or "")
+    if final_tipo != tipo_dte:
+        raise ValueError(
+            f"tipoDte generado {final_tipo or 'desconocido'} no coincide con solicitado {tipo_dte}"
+        )
+    if final_tipo == "01":
+        recalcular_totales(data, incluir_iva=True)
 
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema(tipo_dte)

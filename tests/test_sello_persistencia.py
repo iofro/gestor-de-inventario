@@ -11,6 +11,7 @@ import dte
 import nota_remision
 import utils.docs
 import utils.jws
+from utils import versioned_dte
 from tests.conftest import make_jws
 
 
@@ -35,10 +36,57 @@ def _assert_sello_guardado(db: DB, venta_id: int):
     assert extra["selloRecibido"] == "SELLO"
 
 
+def test_save_signed_dte_persists_stable_json(monkeypatch, tmp_path):
+    data = {
+        "identificacion": {
+            "codigoGeneracion": "00000000-0000-4000-8000-000000000123",
+            "tipoDte": "01",
+            "version": 1,
+            "ambiente": "00",
+        },
+        "resumen": {"totalLetras": "X"},
+    }
+
+    monkeypatch.setattr(
+        dte,
+        "_dte_base_dir",
+        lambda *a, **k: str(tmp_path),
+    )
+    monkeypatch.setattr(
+        dte.versioned_dte,
+        "add_jws",
+        lambda *a, **k: "documento.jws",
+        raising=False,
+    )
+    monkeypatch.setattr(
+        dte,
+        "construir_sobre_recepcion",
+        lambda *a, **k: {"estado": "Error"},
+    )
+
+    calls: list[dict] = []
+
+    def tracking_hash(value):
+        calls.append(value)
+        return versioned_dte.hash_json(value)
+
+    monkeypatch.setattr(dte, "hash_json", tracking_hash)
+
+    dte._save_signed_dte(data, "TOKEN")
+
+    assert len(calls) >= 2
+    assert calls[0] is data
+    assert calls[1] == data
+
+
 def test_transmitir_dte_guarda_sello(monkeypatch):
     db = DB(":memory:")
     venta_id = create_sale(db)
-    monkeypatch.setattr(dte, "generar_dte_json", lambda db_obj, vid: {})
+    monkeypatch.setattr(
+        dte,
+        "generar_dte_json",
+        lambda db_obj, vid, **kwargs: {"identificacion": {"tipoDte": "01"}},
+    )
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
@@ -50,7 +98,11 @@ def test_transmitir_dte_guarda_sello(monkeypatch):
 def test_enviar_factura_guarda_sello(monkeypatch):
     db = DB(":memory:")
     venta_id = create_sale(db)
-    monkeypatch.setattr(dte, "generar_dte_json", lambda db_obj, vid: {})
+    monkeypatch.setattr(
+        dte,
+        "generar_dte_json",
+        lambda db_obj, vid, **kwargs: {"identificacion": {"tipoDte": "01"}},
+    )
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
@@ -122,7 +174,7 @@ def test_sello_recibido_actualiza_envio_y_extra(monkeypatch):
         "resumen": {"totalLetras": "X"},
     }
 
-    monkeypatch.setattr(dte, "generar_dte_json", lambda db_obj, vid: minimo)
+    monkeypatch.setattr(dte, "generar_dte_json", lambda db_obj, vid, **kwargs: minimo)
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte.jws, "sign_json", lambda data: make_jws(data))

@@ -8,7 +8,7 @@ client = TestClient(notas_api.app)
 
 
 def setup_function(_):
-    notas_api.repo._data.clear()
+    notas_api.repo.clear()
     notas_api.db.cursor.execute("DELETE FROM notas")
     notas_api.db.cursor.execute("DELETE FROM ventas")
     notas_api.db.cursor.execute("DELETE FROM clientes")

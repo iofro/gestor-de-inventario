@@ -29,14 +29,14 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
         "codigoGeneracion": factura_a["identificacion"]["codigoGeneracion"],
         "numeroControl": factura_a["identificacion"]["numeroControl"],
         "dteJsonPath": str(json_a),
-        "selloRecibido": "Z" * 40,
+        "selloRecibido": "A" * 40,
     }
     venta_a = db_conn.add_venta("2024-02-01", 25.5, extra=extra)
     db_conn.registrar_envio_dte(
         venta_a,
         "manual",
         "Aceptada",
-        "Z" * 40,
+        "A" * 40,
         respuesta_json=json.dumps({"documento": factura_a}),
         codigo_generacion=factura_a["identificacion"]["codigoGeneracion"],
         numero_control=factura_a["identificacion"]["numeroControl"],
@@ -59,7 +59,7 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
         None,
         "manual",
         "Recibida",
-        "Y" * 40,
+        "B" * 40,
         respuesta_json=json.dumps(respuesta_b),
         codigo_generacion=codigo_b,
         numero_control="DTE-01-S001P001-000000000000222",
@@ -82,14 +82,14 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
         "codigoGeneracion": factura_c["identificacion"]["codigoGeneracion"],
         "numeroControl": factura_c["identificacion"]["numeroControl"],
         "dteJsonPath": str(json_c),
-        "selloRecibido": "X" * 40,
+        "selloRecibido": "C" * 40,
     }
     venta_c = db_conn.add_venta("2024-02-02", 10, extra=extra_c)
     db_conn.registrar_envio_dte(
         venta_c,
         "manual",
         "Aceptado",
-        "X" * 40,
+        "C" * 40,
         respuesta_json=json.dumps({"documento": factura_c}),
         codigo_generacion=factura_c["identificacion"]["codigoGeneracion"],
         numero_control=factura_c["identificacion"]["numeroControl"],

@@ -15,6 +15,11 @@ from utils import versioned_dte
 from tests.conftest import make_jws
 
 
+HEX_SEAL = "0" * 40
+ALT_HEX_SEAL = "1" * 40
+RESPONSE_SEAL = "2" * 40
+
+
 def create_sale(db: DB):
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
@@ -26,14 +31,14 @@ def create_sale(db: DB):
 
 
 def _stub_enviar_documento(db_obj, doc_id, data, modo, jws_token=None):
-    return {"estado": "Transmitido", "sello": "SELLO"}
+    return {"estado": "Transmitido", "sello": HEX_SEAL}
 
 
 def _assert_sello_guardado(db: DB, venta_id: int):
     row = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,)).fetchone()
     assert row and row["extra"]
     extra = json.loads(row["extra"])
-    assert extra["selloRecibido"] == "SELLO"
+    assert extra["selloRecibido"] == HEX_SEAL
 
 
 def test_save_signed_dte_persists_stable_json(monkeypatch, tmp_path):
@@ -91,7 +96,7 @@ def test_transmitir_dte_guarda_sello(monkeypatch):
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
     res = transmitir_dte(db, venta_id)
-    assert res["sello"] == "SELLO"
+    assert res["sello"] == HEX_SEAL
     _assert_sello_guardado(db, venta_id)
 
 
@@ -107,7 +112,7 @@ def test_enviar_factura_guarda_sello(monkeypatch):
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
     res = enviar_factura(db, venta_id)
-    assert res["sello"] == "SELLO"
+    assert res["sello"] == HEX_SEAL
     _assert_sello_guardado(db, venta_id)
 
 
@@ -125,7 +130,7 @@ def test_enviar_nota_credito_guarda_sello(monkeypatch, tmp_path):
     monkeypatch.setattr(dte.os.path, "exists", lambda p: False)
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
     res = enviar_nota_credito(db, nota_id)
-    assert res["sello"] == "SELLO"
+    assert res["sello"] == HEX_SEAL
     _assert_sello_guardado(db, nota_id)
 
 
@@ -143,7 +148,7 @@ def test_enviar_nota_debito_guarda_sello(monkeypatch, tmp_path):
     monkeypatch.setattr(dte.os.path, "exists", lambda p: False)
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
     res = enviar_nota_debito(db, nota_id)
-    assert res["sello"] == "SELLO"
+    assert res["sello"] == HEX_SEAL
     _assert_sello_guardado(db, nota_id)
 
 
@@ -156,7 +161,7 @@ def test_enviar_nota_remision_guarda_sello(monkeypatch):
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)
     res = enviar_nota_remision(db, nota_id)
-    assert res["sello"] == "SELLO"
+    assert res["sello"] == HEX_SEAL
     _assert_sello_guardado(db, nota_id)
 
 
@@ -184,29 +189,29 @@ def test_sello_recibido_actualiza_envio_y_extra(monkeypatch):
         dte, "_load_dte_api_config", lambda: {"url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"}
     )
     monkeypatch.setattr(
-        dte, "_post_dte", lambda *a, **k: {"estado": "Transmitido", "selloRecibido": "SR"}
+        dte, "_post_dte", lambda *a, **k: {"estado": "Transmitido", "selloRecibido": RESPONSE_SEAL}
     )
     monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
 
     resp = enviar_factura(db, venta_id)
-    assert resp["sello"] == "SR"
+    assert resp["sello"] == RESPONSE_SEAL
 
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta_id,)
     ).fetchone()
-    assert row["sello"] == "SR"
+    assert row["sello"] == RESPONSE_SEAL
 
     extra_row = db.cursor.execute(
         "SELECT extra FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
     extra = json.loads(extra_row["extra"])
-    assert extra["selloRecibido"] == "SR"
+    assert extra["selloRecibido"] == RESPONSE_SEAL
 
 
 def test_generar_dte_json_exposes_sello(monkeypatch):
     db = DB(":memory:")
     venta_id = create_sale(db)
-    db.update_venta_extra(venta_id, {"selloRecibido": "ABC", "es_ticket": True})
+    db.update_venta_extra(venta_id, {"selloRecibido": ALT_HEX_SEAL, "es_ticket": True})
     datos = {
         "nombre": "X",
         "nit": "06140010912506",
@@ -228,5 +233,5 @@ def test_generar_dte_json_exposes_sello(monkeypatch):
     )
     monkeypatch.setattr(dte, "validate_dte_json", lambda *a, **k: None)
     data = dte.generar_dte_json(db, venta_id, tipo_dte="01")
-    assert data["selloRecibido"] == "ABC"
+    assert data["selloRecibido"] == ALT_HEX_SEAL
 

@@ -29,7 +29,7 @@ def test_nce_allows_missing_sello():
 def test_nce_without_mh_record():
     db = DB(":memory:")
     dte_origen = _base_dte()
-    dte_origen["selloRecibido"] = "SELLO"
+    dte_origen["selloRecibido"] = "0" * 40
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"
 
@@ -45,7 +45,7 @@ def test_nde_allows_missing_sello():
 def test_nde_without_mh_record():
     db = DB(":memory:")
     dte_origen = _base_dte()
-    dte_origen["selloRecibido"] = "SELLO"
+    dte_origen["selloRecibido"] = "0" * 40
     detalles = [{"descripcion": "Prod", "precio_unitario": 1, "ventas_gravadas": 1}]
     data = generar_nde_desde_dte(db, dte_origen, detalles, None)
     assert data["documentoRelacionado"][0]["numeroDocumento"] == "UUID"

@@ -43,6 +43,26 @@ ACCEPTED_EVENT_STATE_ALIASES = {
     "aceptada": "aceptado",
 }
 
+ERROR_REEMPLAZO_TIPO_INDETERMINADO = (
+    "No se pudo determinar el tipo del DTE de reemplazo; verifica que exista el "
+    "documento.json o la respuesta almacenada."
+)
+ERROR_REEMPLAZO_NO_RECEPCION = (
+    "El DTE de reemplazo no existe o no ha sido recepcionado por MH."
+)
+ERROR_REEMPLAZO_DISTINTO = (
+    "El documento de reemplazo debe ser distinto al que se desea anular."
+)
+ERROR_REEMPLAZO_TIPO = (
+    "El DTE de reemplazo debe ser del mismo tipo que el documento a invalidar."
+)
+ERROR_REEMPLAZO_EMISOR = (
+    "El DTE de reemplazo debe pertenecer al mismo emisor que el documento a invalidar."
+)
+ERROR_REEMPLAZO_FECHA = (
+    "El DTE de reemplazo debe tener una fecha de emisión igual o posterior al documento a invalidar."
+)
+
 
 def _load_json_file(path: str | None) -> dict | None:
     if not path:
@@ -52,6 +72,29 @@ def _load_json_file(path: str | None) -> dict | None:
             return json.load(fh)
     except Exception:
         return None
+
+
+def normalize_ambiente(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    if text in {"00", "01"}:
+        return text
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if digits[:2] in {"00", "01"}:
+        return digits[:2]
+    lowered = text.lower()
+    if lowered.startswith("pru") or "prue" in lowered:
+        return "00"
+    if lowered.startswith("pro"):
+        return "01"
+    if text == "0":
+        return "00"
+    if text == "1":
+        return "01"
+    return text[:2]
 
 
 def _canonical_event_state(raw: str | None) -> str | None:
@@ -64,6 +107,18 @@ def _canonical_event_state(raw: str | None) -> str | None:
     if estado in ACCEPTED_EVENT_STATES:
         return estado
     return None
+
+
+def _normalize_documento_id(value: str | None) -> str:
+    if value is None:
+        return ""
+    text = str(value).strip().upper()
+    if not text:
+        return ""
+    digits = solo_digitos(text)
+    if digits:
+        return digits
+    return text
 
 
 def _load_dte_json_from_venta(db: DB, venta_id: int | None) -> dict | None:
@@ -114,19 +169,353 @@ def _load_dte_json_from_venta(db: DB, venta_id: int | None) -> dict | None:
     return None
 
 
-def _ensure_replacement_document(db: DB | None, codigo: str) -> str:
-    if db is None:
-        raise ValueError(
-            "No se pudo determinar el tipo del DTE de reemplazo; verifica que exista el documento.json o la respuesta almacenada."
+def _extract_metadata(source: dict | None) -> dict:
+    metadata = {
+        "tipo_dte": None,
+        "fecha_emision": None,
+        "ambiente": None,
+        "numero_control": None,
+        "emisor_nombre": None,
+        "emisor_documento": None,
+        "receptor_nombre": None,
+        "receptor_documento": None,
+        "total": None,
+    }
+    if not isinstance(source, dict):
+        return metadata
+
+    ident = source.get("identificacion")
+    if not isinstance(ident, dict):
+        ident = source.get("identificacionDocumento")
+    if isinstance(ident, dict):
+        tipo_val = ident.get("tipoDte") or ident.get("tipoDTE")
+        if tipo_val is not None:
+            metadata["tipo_dte"] = str(tipo_val).zfill(2)
+        fec = ident.get("fecEmi") or ident.get("fechaEmision") or ident.get("fecha")
+        if fec is not None:
+            metadata["fecha_emision"] = str(fec)[:10]
+        num_control = ident.get("numeroControl") or ident.get("numControl")
+        if num_control is not None:
+            metadata["numero_control"] = str(num_control).strip()
+        amb = ident.get("ambiente")
+        if amb is not None:
+            metadata["ambiente"] = normalize_ambiente(amb)
+
+    emisor = source.get("emisor")
+    if not isinstance(emisor, dict):
+        for key in ("emisorGenerador", "emisorResponsable", "sujetoGenerador", "transmitente"):
+            cand = source.get(key)
+            if isinstance(cand, dict):
+                emisor = cand
+                break
+    if isinstance(emisor, dict):
+        nombre_emisor = (
+            emisor.get("nombre")
+            or emisor.get("nombreComercial")
+            or emisor.get("razonSocial")
         )
-    db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
-    db.ensure_column("dte_envios", "numero_control", "TEXT")
-    db.ensure_column("dte_envios", "respuesta", "TEXT")
+        if nombre_emisor:
+            metadata["emisor_nombre"] = str(nombre_emisor).strip()
+        doc_emisor = (
+            emisor.get("nit")
+            or emisor.get("numDocumento")
+            or emisor.get("nrc")
+            or emisor.get("dui")
+        )
+        if doc_emisor:
+            metadata["emisor_documento"] = str(doc_emisor).strip()
+
+    receptor = source.get("receptor")
+    if not isinstance(receptor, dict):
+        receptor = source.get("cliente")
+    if isinstance(receptor, dict):
+        nombre = receptor.get("nombre") or receptor.get("razonSocial")
+        if nombre:
+            metadata["receptor_nombre"] = str(nombre).strip()
+        doc = (
+            receptor.get("numDocumento")
+            or receptor.get("nit")
+            or receptor.get("dui")
+            or receptor.get("nrc")
+        )
+        if doc:
+            metadata["receptor_documento"] = str(doc).strip()
+
+    resumen = source.get("resumen")
+    if not isinstance(resumen, dict):
+        resumen = source.get("totales")
+    if isinstance(resumen, dict):
+        for key in (
+            "montoTotalOperacion",
+            "totalPagar",
+            "totalPagarSinRedondeo",
+            "totalGeneral",
+        ):
+            val = resumen.get(key)
+            if val is not None:
+                try:
+                    metadata["total"] = float(Decimal(str(val)))
+                except (InvalidOperation, TypeError, ValueError):
+                    continue
+                else:
+                    break
+
+    if metadata["ambiente"] is None:
+        amb = source.get("ambiente")
+        if amb is not None:
+            metadata["ambiente"] = normalize_ambiente(amb)
+
+    return metadata
+
+
+def _merge_metadata(primary: dict, secondary: dict) -> dict:
+    for key, value in secondary.items():
+        if key not in primary:
+            primary[key] = value
+            continue
+        if primary[key] in (None, "") and value not in (None, ""):
+            primary[key] = value
+    return primary
+
+
+def _parse_respuesta_documento(respuesta_raw: str | None) -> dict | None:
+    if not respuesta_raw:
+        return None
+    try:
+        data = json.loads(respuesta_raw)
+    except Exception:
+        return None
+    if not isinstance(data, dict):
+        return None
+    for key in ("documento", "dte", "acuseRecibido", "acuseRecepcion"):
+        doc = data.get(key)
+        if isinstance(doc, dict):
+            if key in {"acuseRecibido", "acuseRecepcion"}:
+                inner = doc.get("documento") or doc.get("dte")
+                if isinstance(inner, dict):
+                    return inner
+                continue
+            return doc
+        if isinstance(doc, str):
+            try:
+                parsed = json.loads(doc)
+            except Exception:
+                parsed = None
+            if isinstance(parsed, dict):
+                return parsed
+    return None
+
+
+def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> list[dict]:
+    if db is None:
+        return []
+    filtros = filtros or {}
+    try:
+        db.ensure_column("dte_envios", "respuesta", "TEXT")
+        db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        db.ensure_column("dte_envios", "numero_control", "TEXT")
+        db.ensure_column("dte_envios", "ambiente", "TEXT")
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_codigo_generacion ON dte_envios(codigo_generacion)"
+        )
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_fecha_hora ON dte_envios(fecha_hora)"
+        )
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_estado ON dte_envios(estado)"
+        )
+        db.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_dte_envios_ambiente ON dte_envios(ambiente)"
+        )
+    except Exception:
+        pass
+
+    fecha_inicio = filtros.get("fecha_inicio")
+    fecha_fin = filtros.get("fecha_fin")
+    params: list = []
+    query = [
+        "SELECT id, venta_id, fecha_hora, modo, estado, TRIM(sello) AS sello,",
+        "       TRIM(codigo_generacion) AS codigo_generacion, numero_control,",
+        "       respuesta, ambiente",
+        "  FROM dte_envios",
+        " WHERE TRIM(COALESCE(codigo_generacion, '')) <> ''",
+    ]
+    if fecha_inicio:
+        query.append("   AND date(fecha_hora) >= date(?)")
+        params.append(fecha_inicio)
+    if fecha_fin:
+        query.append("   AND date(fecha_hora) <= date(?)")
+        params.append(fecha_fin)
+    query.append(" ORDER BY fecha_hora DESC, id DESC")
+
+    try:
+        rows = [dict(row) for row in db.cursor.execute("\n".join(query), params).fetchall()]
+    except Exception:
+        return []
+
+    exclude_uuid = str(filtros.get("exclude_uuid") or "").strip().upper()
+    ambiente_objetivo = normalize_ambiente(filtros.get("ambiente"))
+    tipo_objetivo = filtros.get("tipo_dte")
+    if tipo_objetivo is not None:
+        tipo_objetivo = str(tipo_objetivo).zfill(2)
+    receptor_docs_raw = filtros.get("receptor_documentos") or []
+    receptor_docs = {
+        _normalize_documento_id(val)
+        for val in receptor_docs_raw
+        if _normalize_documento_id(val)
+    }
+    recepcionado_only = bool(filtros.get("recepcionado", True))
+    mismo_receptor = bool(filtros.get("mismo_receptor", True))
+    search = str(filtros.get("search") or "").strip().upper()
+    limit = filtros.get("limit")
+    if isinstance(limit, int) and limit <= 0:
+        limit = None
+
+    results: list[dict] = []
+    for row in rows:
+        codigo = str(row.get("codigo_generacion") or "").strip().upper()
+        if not codigo or (exclude_uuid and codigo == exclude_uuid):
+            continue
+
+        sello = str(row.get("sello") or "").strip().upper()
+        sello_valido = bool(SELLO40_RE.fullmatch(sello))
+        estado_canonico = _canonical_event_state(row.get("estado"))
+
+        if recepcionado_only:
+            if estado_canonico not in ACCEPTED_EVENT_STATES or not sello_valido:
+                continue
+
+        venta_id = row.get("venta_id")
+        payload = _load_dte_json_from_venta(db, venta_id)
+        respuesta_doc = _parse_respuesta_documento(row.get("respuesta"))
+        metadata = _extract_metadata(payload)
+        metadata = _merge_metadata(metadata, _extract_metadata(respuesta_doc))
+
+        numero_control = metadata.get("numero_control") or row.get("numero_control")
+        ambiente_doc = metadata.get("ambiente") or normalize_ambiente(row.get("ambiente"))
+        if ambiente_objetivo and ambiente_doc:
+            if ambiente_doc != ambiente_objetivo:
+                continue
+        elif ambiente_objetivo:
+            continue
+
+        tipo_dte = metadata.get("tipo_dte")
+        tipo_indeterminado = False
+        if tipo_dte is None:
+            tipo_indeterminado = True
+        elif tipo_objetivo and tipo_dte != tipo_objetivo:
+            continue
+
+        receptor_doc = metadata.get("receptor_documento")
+        receptor_nombre = metadata.get("receptor_nombre")
+        receptor_norm = _normalize_documento_id(receptor_doc)
+        coincide_receptor = True
+        if receptor_docs:
+            coincide_receptor = receptor_norm in receptor_docs
+        if mismo_receptor and receptor_docs and not coincide_receptor:
+            continue
+
+        total = metadata.get("total")
+        fecha_emision = metadata.get("fecha_emision")
+        fecha_sort = None
+        if fecha_emision:
+            try:
+                fecha_sort = datetime.strptime(str(fecha_emision), "%Y-%m-%d")
+            except Exception:
+                fecha_sort = None
+        if fecha_sort is None:
+            raw_fecha = row.get("fecha_hora")
+            if raw_fecha:
+                try:
+                    fecha_sort = datetime.fromisoformat(raw_fecha)
+                except Exception:
+                    fecha_sort = None
+                else:
+                    if not fecha_emision:
+                        fecha_emision = str(raw_fecha)[:10]
+
+        if search:
+            campos = [
+                codigo,
+                str(numero_control or "").upper(),
+                str(receptor_nombre or "").upper(),
+                receptor_norm,
+            ]
+            if total is not None:
+                campos.append(f"{total:.2f}".upper())
+            if not any(search in campo for campo in campos if campo):
+                continue
+
+        estado_display = estado_canonico or (row.get("estado") or "").strip()
+        seleccionable = (
+            not tipo_indeterminado
+            and estado_canonico in ACCEPTED_EVENT_STATES
+            and sello_valido
+        )
+
+        candidato = {
+            "codigo_generacion": codigo,
+            "numero_control": str(numero_control or ""),
+            "estado": estado_display,
+            "estado_canonico": estado_canonico,
+            "con_sello": sello_valido,
+            "sello": sello,
+            "tipo_dte": tipo_dte,
+            "tipo_indeterminado": tipo_indeterminado,
+            "emisor_documento": metadata.get("emisor_documento"),
+            "emisor_nombre": metadata.get("emisor_nombre"),
+            "receptor_nombre": receptor_nombre,
+            "receptor_documento": receptor_doc,
+            "coincide_receptor": coincide_receptor,
+            "total": total,
+            "fecha_emision": fecha_emision,
+            "ambiente": ambiente_doc,
+            "venta_id": venta_id,
+            "seleccionable": seleccionable,
+            "_sort_key": (
+                fecha_sort or datetime.min,
+                {
+                    "aceptado": 3,
+                    "procesado": 2,
+                    "recibido": 1,
+                }.get(estado_canonico, 0),
+            ),
+        }
+        candidato["preselect"] = bool(
+            candidato["seleccionable"]
+            and candidato["coincide_receptor"]
+            and (tipo_objetivo is None or candidato.get("tipo_dte") == tipo_objetivo)
+        )
+
+        results.append(candidato)
+        if isinstance(limit, int) and len(results) >= limit:
+            break
+
+    results.sort(key=lambda item: item.get("_sort_key", (datetime.min, 0)), reverse=True)
+    for item in results:
+        item.pop("_sort_key", None)
+
+    return results
+
+
+def _ensure_replacement_document(db: DB | None, codigo: str) -> dict:
+    if db is None:
+        raise ValueError(ERROR_REEMPLAZO_TIPO_INDETERMINADO)
+
+    try:
+        db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        db.ensure_column("dte_envios", "numero_control", "TEXT")
+        db.ensure_column("dte_envios", "respuesta", "TEXT")
+        db.ensure_column("dte_envios", "ambiente", "TEXT")
+    except Exception:
+        pass
+
+    codigo = (codigo or "").strip().upper()
     row = None
     try:
         row = db.cursor.execute(
             """
-            SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control
+            SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control, ambiente, fecha_hora
               FROM dte_envios
              WHERE UPPER(codigo_generacion)=?
              ORDER BY id DESC LIMIT 1
@@ -139,7 +528,7 @@ def _ensure_replacement_document(db: DB | None, codigo: str) -> str:
         try:
             row = db.cursor.execute(
                 """
-                SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control
+                SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control, ambiente, fecha_hora
                   FROM dte_envios
                  WHERE UPPER(respuesta) LIKE ?
                  ORDER BY id DESC LIMIT 1
@@ -149,61 +538,68 @@ def _ensure_replacement_document(db: DB | None, codigo: str) -> str:
         except Exception:
             row = None
     if row is None:
-        raise ValueError(
-            "El DTE de reemplazo no existe o no ha sido recepcionado por MH."
-        )
+        raise ValueError(ERROR_REEMPLAZO_NO_RECEPCION)
+
     row_dict = dict(row)
-    estado = _canonical_event_state(row_dict.get("estado"))
-    sello = str(row_dict.get("sello") or "").strip()
+    estado_canonico = _canonical_event_state(row_dict.get("estado"))
+    sello = str(row_dict.get("sello") or "").strip().upper()
     respuesta_raw = row_dict.get("respuesta")
-    if (not sello) and respuesta_raw:
+    if (not SELLO40_RE.fullmatch(sello)) and respuesta_raw:
         try:
             resp_json = json.loads(respuesta_raw)
         except Exception:
             resp_json = None
         else:
             if isinstance(resp_json, dict):
-                sello = (
+                sello_resp = (
                     str(
                         resp_json.get("selloRecibido")
                         or resp_json.get("selloRecepcion")
                         or resp_json.get("sello")
                         or ""
-                    ).strip()
+                    )
+                    .strip()
+                    .upper()
                 )
-    if not sello or estado is None:
-        raise ValueError(
-            "El DTE de reemplazo no existe o no ha sido recepcionado por MH."
-        )
+                if SELLO40_RE.fullmatch(sello_resp):
+                    sello = sello_resp
+    if not SELLO40_RE.fullmatch(sello) or estado_canonico not in ACCEPTED_EVENT_STATES:
+        raise ValueError(ERROR_REEMPLAZO_NO_RECEPCION)
+
     venta_id = row_dict.get("venta_id")
     payload = _load_dte_json_from_venta(db, venta_id)
-    tipo_dte = None
+    respuesta_doc = _parse_respuesta_documento(respuesta_raw)
+
+    metadata = _extract_metadata(None)
     if payload:
         ident = payload.get("identificacion") or {}
-        tipo_val = ident.get("tipoDte")
-        if tipo_val is not None:
-            tipo_dte = str(tipo_val).zfill(2)
-        cod_archivo = str(ident.get("codigoGeneracion") or "").upper()
-        if cod_archivo and cod_archivo != codigo:
-            tipo_dte = None
-    if tipo_dte is None and respuesta_raw:
-        try:
-            resp_json = json.loads(respuesta_raw)
-        except Exception:
-            resp_json = None
-        else:
-            if isinstance(resp_json, dict):
-                doc = resp_json.get("documento") or resp_json.get("dte")
-                if isinstance(doc, dict):
-                    ident = doc.get("identificacion") or {}
-                    tipo_val = ident.get("tipoDte")
-                    if tipo_val is not None:
-                        tipo_dte = str(tipo_val).zfill(2)
+        codigo_archivo = str(ident.get("codigoGeneracion") or "").strip().upper()
+        if not codigo_archivo or codigo_archivo == codigo:
+            metadata = _merge_metadata(metadata, _extract_metadata(payload))
+    if respuesta_doc:
+        metadata = _merge_metadata(metadata, _extract_metadata(respuesta_doc))
+
+    if metadata.get("ambiente") is None:
+        metadata["ambiente"] = normalize_ambiente(row_dict.get("ambiente"))
+    if not metadata.get("numero_control"):
+        metadata["numero_control"] = str(row_dict.get("numero_control") or "").strip()
+    if not metadata.get("fecha_emision"):
+        fecha_raw = row_dict.get("fecha_hora")
+        if fecha_raw:
+            metadata["fecha_emision"] = str(fecha_raw)[:10]
+
+    tipo_dte = metadata.get("tipo_dte")
     if tipo_dte is None:
-        raise ValueError(
-            "No se pudo determinar el tipo del DTE de reemplazo; verifica que exista el documento.json o la respuesta almacenada."
-        )
-    return tipo_dte
+        raise ValueError(ERROR_REEMPLAZO_TIPO_INDETERMINADO)
+
+    metadata.update(
+        {
+            "codigo_generacion": codigo,
+            "estado_canonico": estado_canonico,
+            "sello": sello,
+        }
+    )
+    return metadata
 
 
 def _post_invalidacion(
@@ -481,14 +877,43 @@ def build_invalidacion_json(
                 "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones."
             )
         if codigo_generacion_r == codigo_gen:
-            raise ValueError(
-                "El documento de reemplazo debe ser distinto al que se desea anular."
-            )
-        tipo_reemplazo = _ensure_replacement_document(db, codigo_generacion_r)
+            raise ValueError(ERROR_REEMPLAZO_DISTINTO)
+        reemplazo = _ensure_replacement_document(db, codigo_generacion_r)
+        tipo_reemplazo = reemplazo.get("tipo_dte")
         if tipo_reemplazo != tipo_dte_str:
-            raise ValueError(
-                "El DTE de reemplazo debe ser del mismo tipo que el documento a invalidar."
-            )
+            raise ValueError(ERROR_REEMPLAZO_TIPO)
+
+        emisor_original_doc = None
+        emisor_factura = factura.get("emisor") or {}
+        for key in ("nit", "numDocumento", "nrc", "dui"):
+            val = emisor_factura.get(key)
+            if val:
+                emisor_original_doc = str(val)
+                break
+        emisor_original_norm = _normalize_documento_id(emisor_original_doc)
+        emisor_reemplazo_norm = _normalize_documento_id(
+            reemplazo.get("emisor_documento")
+        )
+        if emisor_original_norm and emisor_reemplazo_norm:
+            if emisor_original_norm != emisor_reemplazo_norm:
+                raise ValueError(ERROR_REEMPLAZO_EMISOR)
+        elif emisor_original_norm:
+            raise ValueError(ERROR_REEMPLAZO_EMISOR)
+
+        fecha_reemplazo = reemplazo.get("fecha_emision")
+        if fecha_reemplazo:
+            try:
+                fecha_reemplazo_dt = datetime.strptime(str(fecha_reemplazo)[:10], "%Y-%m-%d")
+                fecha_original_dt = datetime.strptime(str(fec_emi), "%Y-%m-%d")
+            except Exception:
+                fecha_reemplazo_dt = None
+                fecha_original_dt = None
+            if (
+                fecha_reemplazo_dt is not None
+                and fecha_original_dt is not None
+                and fecha_reemplazo_dt < fecha_original_dt
+            ):
+                raise ValueError(ERROR_REEMPLAZO_FECHA)
 
     def _val_persona(nombre, tip, num, *, sujeto: str):
         nombre_val = (nombre or "").strip()

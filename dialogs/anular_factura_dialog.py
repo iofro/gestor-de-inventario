@@ -16,6 +16,7 @@ import dte
 import anulacion
 from db import DB
 from utils.catalogos import TIPO_INVALIDACION, TIPO_DOC_REC
+from .seleccionar_dte_dialog import SeleccionarDteDialog
 
 class AnularFacturaDialog(QDialog):
     """Formulario para capturar datos de anulación."""
@@ -26,10 +27,38 @@ class AnularFacturaDialog(QDialog):
         responsable: dict | None = None,
         solicitante: dict | None = None,
         db: DB | None = None,
+        factura: dict | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Anular factura")
         self.db = db
+        self._factura = factura or {}
+        ident = self._factura.get("identificacion") or {}
+        tipo_val = ident.get("tipoDte")
+        self._original_tipo = str(tipo_val).zfill(2) if tipo_val is not None else None
+        codigo_val = ident.get("codigoGeneracion")
+        self._original_uuid = str(codigo_val or "").strip().upper() or None
+        self._original_ambiente = anulacion.normalize_ambiente(ident.get("ambiente"))
+        fecha_val = ident.get("fecEmi") or ident.get("fechaEmision") or ident.get("fecha")
+        self._original_fecha = str(fecha_val)[:10] if fecha_val else None
+        self._receptor_docs: set[str] = set()
+        receptor_data = (factura or {}).get("receptor") or {}
+        for key in ("numDocumento", "nit", "dui"):
+            val = receptor_data.get(key)
+            if val:
+                self._receptor_docs.add(str(val))
+        self._emisor_doc = None
+        emisor_data = (factura or {}).get("emisor") or {}
+        for key in ("nit", "numDocumento", "nrc", "dui"):
+            val = emisor_data.get(key)
+            if val:
+                self._emisor_doc = str(val)
+                break
+        if solicitante:
+            for key in ("numDoc", "numDocumento", "nit", "dui"):
+                val = solicitante.get(key)
+                if val:
+                    self._receptor_docs.add(str(val))
         layout = QVBoxLayout(self)
 
         # Tipo de anulación
@@ -52,9 +81,22 @@ class AnularFacturaDialog(QDialog):
         self.codigo_label = QLabel("Documento que reemplaza:")
         row.addWidget(self.codigo_label)
         self.codigo_edit = QLineEdit()
-        self.codigo_edit.setPlaceholderText("UUID del DTE corregido")
+        self.codigo_edit.setPlaceholderText("UUID del DTE corregido (36 caracteres)")
         row.addWidget(self.codigo_edit)
+        self.codigo_status = QLabel("")
+        self.codigo_status.setFixedWidth(18)
+        self.codigo_status.setAlignment(Qt.AlignCenter)
+        row.addWidget(self.codigo_status)
+        self.buscar_btn = QPushButton("Buscar…")
+        row.addWidget(self.buscar_btn)
         layout.addLayout(row)
+        self.codigo_hint = QLabel(
+            "Para tipo 1/3, selecciona el DTE corregido (mismo tipo) recepcionado por MH. "
+            "En tipo 2 deja vacío."
+        )
+        self.codigo_hint.setWordWrap(True)
+        self.codigo_hint.setStyleSheet("color: #555555; font-size: 11px;")
+        layout.addWidget(self.codigo_hint)
 
         # Responsable
         layout.addWidget(QLabel("Responsable"))
@@ -138,6 +180,11 @@ class AnularFacturaDialog(QDialog):
 
         self.negocio_btn.clicked.connect(self._usar_datos_negocio)
         self.tipo_cb.currentIndexChanged.connect(self._on_tipo_changed)
+        self.codigo_edit.textChanged.connect(self._update_codigo_status)
+        self.codigo_edit.editingFinished.connect(self._normalize_codigo)
+        self.buscar_btn.clicked.connect(self._abrir_selector)
+        self.buscar_btn.setEnabled(self.db is not None)
+        self._update_codigo_status()
         self._on_tipo_changed(self.tipo_cb.currentIndex())
 
         def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
@@ -190,13 +237,23 @@ class AnularFacturaDialog(QDialog):
                     "Ingresa ese código en 'Documento que reemplaza'.",
                 )
                 return False
-            if not anulacion.UUID36_RE.fullmatch(codigo.upper()):
+            codigo_upper = codigo.upper()
+            if not anulacion.UUID36_RE.fullmatch(codigo_upper):
                 QMessageBox.warning(
                     self,
                     "Anulación",
                     "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones.",
                 )
                 return False
+            if self._original_uuid and codigo_upper == self._original_uuid:
+                QMessageBox.warning(
+                    self,
+                    "Anulación",
+                    anulacion.ERROR_REEMPLAZO_DISTINTO,
+                )
+                return False
+            if self.codigo_edit.text() != codigo_upper:
+                self.codigo_edit.setText(codigo_upper)
 
         for name, line in [
             ("Responsable", self.nom_resp),
@@ -221,8 +278,70 @@ class AnularFacturaDialog(QDialog):
         requiere = tipo in {"1", "3"}
         self.codigo_label.setVisible(requiere)
         self.codigo_edit.setVisible(requiere)
+        self.codigo_status.setVisible(requiere)
+        self.codigo_hint.setVisible(requiere)
+        self.buscar_btn.setVisible(requiere)
+        self.buscar_btn.setEnabled(requiere and self.db is not None and self._original_tipo is not None)
         if not requiere:
             self.codigo_edit.clear()
+        self._update_codigo_status()
+
+    def _normalize_codigo(self):
+        codigo = self.codigo_edit.text().strip().upper()
+        if codigo and self.codigo_edit.text() != codigo:
+            self.codigo_edit.blockSignals(True)
+            self.codigo_edit.setText(codigo)
+            self.codigo_edit.blockSignals(False)
+        self._update_codigo_status()
+
+    def _update_codigo_status(self):
+        if not self.codigo_edit.isVisible():
+            self.codigo_status.clear()
+            return
+        codigo = self.codigo_edit.text().strip().upper()
+        if not codigo:
+            self.codigo_status.setText("")
+            self.codigo_status.setStyleSheet("")
+            return
+        if self._original_uuid and codigo == self._original_uuid:
+            self.codigo_status.setText("!")
+            self.codigo_status.setStyleSheet("color: #d93025; font-weight: bold;")
+            return
+        if anulacion.UUID36_RE.fullmatch(codigo):
+            self.codigo_status.setText("✓")
+            self.codigo_status.setStyleSheet("color: #1e8e3e; font-weight: bold;")
+        else:
+            self.codigo_status.setText("•")
+            self.codigo_status.setStyleSheet("color: #999999; font-weight: bold;")
+
+    def _abrir_selector(self):
+        if self.db is None:
+            QMessageBox.warning(
+                self,
+                "Anulación",
+                "Base de datos no disponible para buscar DTEs.",
+            )
+            return
+        if not self._original_tipo:
+            QMessageBox.warning(
+                self,
+                "Anulación",
+                "No se pudo determinar el tipo del DTE original.",
+            )
+            return
+        dialog = SeleccionarDteDialog(
+            self.db,
+            tipo_dte=self._original_tipo,
+            ambiente=self._original_ambiente,
+            receptor_documentos=sorted(self._receptor_docs),
+            exclude_uuid=self._original_uuid,
+            emisor_documento=self._emisor_doc,
+            fecha_emision_original=self._original_fecha,
+            parent=self,
+        )
+        if dialog.exec_() == QDialog.Accepted and dialog.selected_uuid:
+            self.codigo_edit.setText(dialog.selected_uuid)
+            self._update_codigo_status()
 
     # --- Empleado search helpers -----------------------------------------------
 

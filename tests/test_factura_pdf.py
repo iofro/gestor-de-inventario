@@ -45,7 +45,7 @@ def _generate(tmp_path, tipo):
         codigo_generacion=str(uuid.uuid4()),
         numero_control=uuid.uuid4().hex[:8].upper(),
         fecha_generacion="01/01/2024",
-        sello_recepcion="SELLO",
+        sello_recepcion="0" * 40,
     )
     return out
 
@@ -118,7 +118,7 @@ def test_total_letras_is_wrapped(tmp_path):
         codigo_generacion=str(uuid.uuid4()),
         numero_control=uuid.uuid4().hex[:8].upper(),
         fecha_generacion="01/01/2024",
-        sello_recepcion="SELLO",
+        sello_recepcion="0" * 40,
     )
     with fitz.open(out) as doc:
         text = ''.join(p.get_text() for p in doc)
@@ -174,7 +174,7 @@ def test_qr_url_matches_environment(tmp_path, monkeypatch):
             codigo_generacion=str(uuid.uuid4()),
             numero_control=uuid.uuid4().hex[:8].upper(),
             fecha_generacion="01/01/2024",
-            sello_recepcion="SELLO",
+            sello_recepcion="0" * 40,
         )
         assert captured, 'QR value not generated'
         url = captured[0]
@@ -198,7 +198,7 @@ def test_contingencia_draws_message(tmp_path):
         codigo_generacion=str(uuid.uuid4()),
         numero_control=uuid.uuid4().hex[:8].upper(),
         fecha_generacion="01/01/2024",
-        sello_recepcion="SELLO",
+        sello_recepcion="0" * 40,
     )
     with fitz.open(out) as doc:
         text = ''.join(p.get_text() for p in doc)
@@ -241,7 +241,7 @@ def test_direccion_includes_municipio(tmp_path, monkeypatch):
         codigo_generacion=str(uuid.uuid4()),
         numero_control=uuid.uuid4().hex[:8].upper(),
         fecha_generacion="01/01/2024",
-        sello_recepcion="SELLO",
+        sello_recepcion="0" * 40,
     )
     with fitz.open(out) as doc:
         lines = ''.join(p.get_text() for p in doc).splitlines()
@@ -265,7 +265,7 @@ def test_direccion_as_text(tmp_path):
         codigo_generacion=str(uuid.uuid4()),
         numero_control=uuid.uuid4().hex[:8].upper(),
         fecha_generacion="01/01/2024",
-        sello_recepcion="SELLO",
+        sello_recepcion="0" * 40,
     )
     assert out.exists()
 

@@ -30,7 +30,7 @@ def test_documento_relacionado_usa_uuid(monkeypatch):
     _patch_module(monkeypatch, nde_mod)
     with open("tests/goldens/ccf.json") as f:
         dte_origen = json.load(f)
-    dte_origen["selloRecibido"] = "SELLO"
+    dte_origen["selloRecibido"] = "0" * 40
     uuid = dte_origen["identificacion"]["codigoGeneracion"]
 
     nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))

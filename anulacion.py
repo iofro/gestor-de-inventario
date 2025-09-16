@@ -1,4 +1,5 @@
 import json
+import os
 import uuid
 import re
 from datetime import datetime
@@ -35,6 +36,174 @@ TIPO_ESTABLECIMIENTOS = {"01", "02", "04", "07", "20"}
 TIPO_DOC_CAT22 = {"36", "13", "02", "03", "37"}
 TIPO_DTE_VALIDOS = {"01", "03", "04", "05", "06", "07", "08", "09", "10", "11", "14", "15"}
 TIPO_ANULACION_VALIDOS = {1, 2, 3}
+ACCEPTED_EVENT_STATES = {"recibido", "procesado", "aceptado"}
+ACCEPTED_EVENT_STATE_ALIASES = {
+    "recibida": "recibido",
+    "procesada": "procesado",
+    "aceptada": "aceptado",
+}
+
+
+def _load_json_file(path: str | None) -> dict | None:
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except Exception:
+        return None
+
+
+def _canonical_event_state(raw: str | None) -> str | None:
+    if raw is None:
+        return None
+    estado = str(raw).strip().lower()
+    if not estado:
+        return None
+    estado = ACCEPTED_EVENT_STATE_ALIASES.get(estado, estado)
+    if estado in ACCEPTED_EVENT_STATES:
+        return estado
+    return None
+
+
+def _load_dte_json_from_venta(db: DB, venta_id: int | None) -> dict | None:
+    if db is None or venta_id is None:
+        return None
+    try:
+        db.ensure_column("ventas", "extra", "TEXT")
+    except Exception:
+        pass
+    try:
+        row = db.cursor.execute(
+            "SELECT extra FROM ventas WHERE id=?",
+            (venta_id,),
+        ).fetchone()
+    except Exception:
+        row = None
+    if row and row["extra"]:
+        extra_raw = row["extra"]
+        extra = None
+        if isinstance(extra_raw, str):
+            try:
+                extra = json.loads(extra_raw)
+            except Exception:
+                extra = None
+        if isinstance(extra, dict):
+            for key in ("dteJsonPath", "jsonPath"):
+                data = _load_json_file(extra.get(key))
+                if data:
+                    ident = data.get("identificacion") or {}
+                    cod = str(ident.get("codigoGeneracion") or "").upper()
+                    if not cod or cod == str(extra.get("codigoGeneracion", "")).upper():
+                        return data
+    getter = getattr(db, "get_factura_pdf", None)
+    pdf_path = None
+    if callable(getter):
+        try:
+            pdf_path = getter(venta_id)
+        except Exception:
+            pdf_path = None
+    if pdf_path:
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        data = _load_json_file(json_path)
+        if data:
+            ident = data.get("identificacion") or {}
+            cod = str(ident.get("codigoGeneracion") or "").upper()
+            if cod:
+                return data
+    return None
+
+
+def _ensure_replacement_document(db: DB | None, codigo: str) -> str:
+    if db is None:
+        raise ValueError(
+            "No se pudo determinar el tipo del DTE de reemplazo; verifica que exista el documento.json o la respuesta almacenada."
+        )
+    db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+    db.ensure_column("dte_envios", "numero_control", "TEXT")
+    db.ensure_column("dte_envios", "respuesta", "TEXT")
+    row = None
+    try:
+        row = db.cursor.execute(
+            """
+            SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control
+              FROM dte_envios
+             WHERE UPPER(codigo_generacion)=?
+             ORDER BY id DESC LIMIT 1
+            """,
+            (codigo,),
+        ).fetchone()
+    except Exception:
+        row = None
+    if row is None:
+        try:
+            row = db.cursor.execute(
+                """
+                SELECT venta_id, estado, TRIM(sello) AS sello, respuesta, numero_control
+                  FROM dte_envios
+                 WHERE UPPER(respuesta) LIKE ?
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (f"%{codigo}%",),
+            ).fetchone()
+        except Exception:
+            row = None
+    if row is None:
+        raise ValueError(
+            "El DTE de reemplazo no existe o no ha sido recepcionado por MH."
+        )
+    row_dict = dict(row)
+    estado = _canonical_event_state(row_dict.get("estado"))
+    sello = str(row_dict.get("sello") or "").strip()
+    respuesta_raw = row_dict.get("respuesta")
+    if (not sello) and respuesta_raw:
+        try:
+            resp_json = json.loads(respuesta_raw)
+        except Exception:
+            resp_json = None
+        else:
+            if isinstance(resp_json, dict):
+                sello = (
+                    str(
+                        resp_json.get("selloRecibido")
+                        or resp_json.get("selloRecepcion")
+                        or resp_json.get("sello")
+                        or ""
+                    ).strip()
+                )
+    if not sello or estado is None:
+        raise ValueError(
+            "El DTE de reemplazo no existe o no ha sido recepcionado por MH."
+        )
+    venta_id = row_dict.get("venta_id")
+    payload = _load_dte_json_from_venta(db, venta_id)
+    tipo_dte = None
+    if payload:
+        ident = payload.get("identificacion") or {}
+        tipo_val = ident.get("tipoDte")
+        if tipo_val is not None:
+            tipo_dte = str(tipo_val).zfill(2)
+        cod_archivo = str(ident.get("codigoGeneracion") or "").upper()
+        if cod_archivo and cod_archivo != codigo:
+            tipo_dte = None
+    if tipo_dte is None and respuesta_raw:
+        try:
+            resp_json = json.loads(respuesta_raw)
+        except Exception:
+            resp_json = None
+        else:
+            if isinstance(resp_json, dict):
+                doc = resp_json.get("documento") or resp_json.get("dte")
+                if isinstance(doc, dict):
+                    ident = doc.get("identificacion") or {}
+                    tipo_val = ident.get("tipoDte")
+                    if tipo_val is not None:
+                        tipo_dte = str(tipo_val).zfill(2)
+    if tipo_dte is None:
+        raise ValueError(
+            "No se pudo determinar el tipo del DTE de reemplazo; verifica que exista el documento.json o la respuesta almacenada."
+        )
+    return tipo_dte
 
 
 def _post_invalidacion(
@@ -104,7 +273,9 @@ def _post_invalidacion(
     return result
 
 
-def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) -> dict:
+def build_invalidacion_json(
+    factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
+) -> dict:
     ident = factura.get("identificacion") or {}
     codigo_gen_raw = ident.get("codigoGeneracion")
     numero_control_raw = ident.get("numeroControl")
@@ -224,11 +395,18 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
 
     resumen = factura.get("resumen") or {}
     monto_iva_decimal = None
-    tributos = resumen.get("tributos")
-    if isinstance(tributos, list) and tributos:
+    tributos_raw = resumen.get("tributos")
+    if tributos_raw in (None, []):
+        tributos_list = []
+    elif isinstance(tributos_raw, list):
+        tributos_list = tributos_raw
+    else:
+        raise ValueError("Estructura de tributos inválida en el DTE original")
+    if tributos_list:
         iva_sum = Decimal("0")
         iva_encontrado = False
-        for trib in tributos:
+        for trib in tributos_list:
+
             if trib.get("codigo") == TRIBUTO_IVA:
                 valor = trib.get("valor")
                 if valor is None:
@@ -240,8 +418,7 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
                 iva_encontrado = True
         if iva_encontrado:
             monto_iva_decimal = iva_sum
-    elif tributos not in (None, []):
-        raise ValueError("Estructura de tributos inválida en el DTE original")
+
     if monto_iva_decimal is None:
         total_iva = resumen.get("totalIva")
         if total_iva is not None:
@@ -294,10 +471,24 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
     else:
         codigo_generacion_r_raw = ui_motivo.get("codigoGeneracionR")
         if not isinstance(codigo_generacion_r_raw, str) or not codigo_generacion_r_raw.strip():
-            raise ValueError("codigoGeneracionR requerido para este tipo de anulación")
+            raise ValueError(
+                "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                "Ingresa ese código en 'Documento que reemplaza'."
+            )
         codigo_generacion_r = codigo_generacion_r_raw.strip().upper()
         if not UUID36_RE.fullmatch(codigo_generacion_r):
-            raise ValueError("codigoGeneracionR inválido")
+            raise ValueError(
+                "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones."
+            )
+        if codigo_generacion_r == codigo_gen:
+            raise ValueError(
+                "El documento de reemplazo debe ser distinto al que se desea anular."
+            )
+        tipo_reemplazo = _ensure_replacement_document(db, codigo_generacion_r)
+        if tipo_reemplazo != tipo_dte_str:
+            raise ValueError(
+                "El DTE de reemplazo debe ser del mismo tipo que el documento a invalidar."
+            )
 
     def _val_persona(nombre, tip, num, *, sujeto: str):
         nombre_val = (nombre or "").strip()

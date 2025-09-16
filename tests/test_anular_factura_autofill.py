@@ -1,3 +1,5 @@
+import uuid
+
 import dte
 from db import DB
 from dialogs.anular_factura_dialog import AnularFacturaDialog
@@ -26,9 +28,9 @@ def test_invoice_detail_uses_negocio_and_cliente(monkeypatch, qt_app):
     captured = {}
 
     class FakeDialog:
-        def __init__(self, parent=None, responsable=None, solicitante=None):
-            captured["responsable"] = responsable
-            captured["solicitante"] = solicitante
+        def __init__(self, *args, **kwargs):
+            captured["responsable"] = kwargs.get("responsable")
+            captured["solicitante"] = kwargs.get("solicitante")
         def exec_(self):
             return QDialog.Rejected
 
@@ -37,6 +39,23 @@ def test_invoice_detail_uses_negocio_and_cliente(monkeypatch, qt_app):
     dlg._anular()
     assert captured["responsable"]["nombre"] == "Dueño"
     assert captured["solicitante"]["nombre"] == "Comprador"
+
+
+def test_anular_dialog_rejects_same_uuid(monkeypatch, qt_app):
+    codigo = str(uuid.uuid4()).upper()
+    factura = {"identificacion": {"tipoDte": "01", "codigoGeneracion": codigo}}
+    dlg = AnularFacturaDialog(factura=factura)
+    idx = dlg.tipo_cb.findData("1")
+    dlg.tipo_cb.setCurrentIndex(idx)
+    dlg.codigo_edit.setText(codigo)
+    warnings = []
+
+    def fake_warning(*args):
+        warnings.append(args)
+
+    monkeypatch.setattr("dialogs.anular_factura_dialog.QMessageBox.warning", fake_warning)
+    assert not dlg._validate()
+    assert warnings, "expected warning when selecting same UUID"
 
 
 def test_usar_datos_negocio_button(monkeypatch, qt_app):

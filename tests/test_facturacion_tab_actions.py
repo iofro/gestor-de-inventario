@@ -3,6 +3,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 import pytest
 from PyQt5.QtWidgets import QApplication, QDialog
 
@@ -16,14 +18,41 @@ def qt_app():
     return QApplication.instance() or QApplication([])
 
 
-def _create_sale(db):
+@pytest.fixture(autouse=True)
+def disable_qt_timers(monkeypatch):
+    class DummyTimer:
+        def __init__(self, parent=None):
+            self.timeout = SimpleNamespace(connect=lambda fn: None)
+
+        def setInterval(self, value):
+            pass
+
+        def start(self):
+            pass
+
+    monkeypatch.setattr(facturacion_tab, "QTimer", DummyTimer)
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "load_invoices", lambda self: None)
+
+
+def _create_sale(db, *, credito=False):
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("P1", "C1", None,  vid, None, 0, 10, 10, 1)
     pid = db.cursor.lastrowid
     db.add_cliente("C", "", "", "", "", "", "c@x.com", "", "", "")
     cid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10, cliente_id=cid, vendedor_id=vid)
+    if credito:
+        venta_id = db.add_venta_credito_fiscal(
+            cid,
+            "2024-01-01",
+            10,
+            "NRC",
+            "NIT",
+            "Giro",
+            vendedor_id=vid,
+        )
+    else:
+        venta_id = db.add_venta("2024-01-01", 10, cliente_id=cid, vendedor_id=vid)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     return venta_id, cid
 
@@ -50,6 +79,7 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
         Path(fname).with_suffix(".json").write_text("{}")
     monkeypatch.setattr(facturacion_tab, "generar_ticket_personalizado", fake_gen)
     monkeypatch.setattr(facturacion_tab.QFileDialog, "getSaveFileName", lambda *a, **k: (str(save_path), None))
+    monkeypatch.setattr(facturacion_tab.dte, "generar_ticket_json", lambda *a, **k: {})
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
     monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
 
@@ -121,8 +151,11 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
         captured_post["args"] = (url, token, jws)
         return {"estado": "Transmitido"}
     monkeypatch.setattr("dte._post_dte", fake_post)
+    captured_transmit = {}
+
     def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
         fake_post("http://example.com", "TOKEN", "SIGNED", {})
+        captured_transmit["args"] = (db_, vid, modo, tipo_dte)
         return {"estado": "Transmitido"}
     monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
 
@@ -134,6 +167,110 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     assert pdf_path in map(Path, captured_email["args"][7])
     assert json_path in map(Path, captured_email["args"][7])
     assert captured_post["args"] == ("http://example.com", "TOKEN", "SIGNED")
+    assert captured_transmit["args"][3] == "01"
+
+
+def test_send_selected_invoice_credito_fiscal(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db, credito=True)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Crédito Fiscal", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {
+            "row_type": "venta",
+            "id": 1,
+            "venta_id": venta_id,
+            "tipo": "Crédito Fiscal",
+        },
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self, checked=False):
+            self._checked = checked
+
+        def setChecked(self, v):
+            self._checked = v
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck(False)
+            self.hacienda_cb = DummyCheck(True)
+
+        def exec_(self):
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    captured_tipo = {}
+
+    def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
+        captured_tipo["tipo"] = tipo_dte
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    tab.send_selected_invoice()
+
+    assert captured_tipo["tipo"] == "03"
+
+
+def test_determine_tipo_dte_uses_tipo_tokens(monkeypatch, qt_app):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab.manager.db, "get_venta_credito_fiscal", lambda *_: None)
+
+    entry = {"row_type": "venta", "venta_id": venta_id, "tipo": "Factura CCF"}
+
+    assert tab._determine_tipo_dte(entry) == "03"
+
+
+def test_determine_tipo_dte_uses_json_hint(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab.manager.db, "get_venta_credito_fiscal", lambda *_: None)
+
+    json_path = tmp_path / "preview.json"
+    json_path.write_text(json.dumps({"identificacion": {"tipoDte": "03"}}))
+
+    entry = {
+        "row_type": "venta",
+        "venta_id": venta_id,
+        "tipo": "Nota de crédito",
+        "json": str(json_path),
+    }
+
+    assert tab._determine_tipo_dte(entry) == "03"
+
+
+def test_determine_tipo_dte_skips_nota_credito(monkeypatch, qt_app):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(tab.manager.db, "get_venta_credito_fiscal", lambda *_: None)
+
+    entry = {"row_type": "venta", "venta_id": venta_id, "tipo": "Nota de crédito"}
+
+    assert tab._determine_tipo_dte(entry) == "01"
 
 
 def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):

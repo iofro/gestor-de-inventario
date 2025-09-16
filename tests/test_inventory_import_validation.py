@@ -99,3 +99,13 @@ def test_migration_applied(tmp_path):
     summary = manager.importar_inventario_json(str(path), dry_run=True)
     assert not summary["errors"]
     assert any("Distribuidores" in m for m in summary["migrations_applied"])
+
+
+def test_vendedor_id_optional(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
+    data = make_valid_data()
+    data["ventas"][0]["vendedor_id"] = None
+    path = tmp_path / "inv.json"
+    path.write_text(json.dumps(data), encoding="utf-8")
+    summary = manager.importar_inventario_json(str(path), dry_run=True, strict=False)
+    assert not any(issue["path"] == "ventas[0].vendedor_id" for issue in summary["errors"])

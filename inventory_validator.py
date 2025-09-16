@@ -111,7 +111,7 @@ def validate_inventory_json(data: dict) -> List[Issue]:
         if vid is not None:
             venta_ids.add(vid)
         vend_id = v.get("vendedor_id")
-        if vend_id not in vendedor_ids:
+        if vend_id is not None and vend_id not in vendedor_ids:
             issues.append({
                 "path": f"ventas[{i}].vendedor_id",
                 "severity": "error",

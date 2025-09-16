@@ -92,9 +92,40 @@ def test_generar_evento_anulacion(qt_app, monkeypatch):
     assert evento["motivo"]["tipoAnulacion"] == 2
 
 
-def test_invalidacion_tipo3_requiere_codigo(monkeypatch):
+def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):
     factura = _sample_factura()
     sello = "B" * 40
+
+    codigo_reemplazo = str(uuid.uuid4()).upper()
+    numero_control_reemplazo = "DTE-01-S001P001-000000000000777"
+    reemplazo = {
+        "identificacion": {
+            "tipoDte": factura["identificacion"]["tipoDte"],
+            "codigoGeneracion": codigo_reemplazo,
+            "numeroControl": numero_control_reemplazo,
+            "fecEmi": "2024-01-02",
+        },
+        "receptor": factura.get("receptor", {}),
+    }
+    json_path = tmp_path / "reemplazo.json"
+    json_path.write_text(json.dumps(reemplazo), encoding="utf-8")
+
+    extra = {
+        "codigoGeneracion": codigo_reemplazo,
+        "numeroControl": numero_control_reemplazo,
+        "dteJsonPath": str(json_path),
+        "selloRecibido": "Z" * 40,
+    }
+    venta_id = db_conn.add_venta("2024-01-02", 10, extra=extra)
+    db_conn.registrar_envio_dte(
+        venta_id,
+        "test",
+        "Aceptado",
+        "Z" * 40,
+        respuesta_json=json.dumps({"sello": "Z" * 40}),
+        codigo_generacion=codigo_reemplazo,
+        numero_control=numero_control_reemplazo,
+    )
 
     monkeypatch.setattr(
         anulacion,
@@ -122,13 +153,14 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch):
         "nombreSolicita": "Solicita Dos",
         "tipDocSolicita": "36",
         "numDocSolicita": "06141404100016",
-        "codigoGeneracionR": str(uuid.uuid4()).upper(),
+        "codigoGeneracionR": codigo_reemplazo,
     }
 
     evento = anulacion.build_invalidacion_json(
         {**factura, "selloRecibido": sello},
         form,
         ambiente="01",
+        db=db_conn,
     )
     assert evento["documento"]["codigoGeneracionR"] == form["codigoGeneracionR"]
     assert evento["motivo"]["motivoAnulacion"] == "Cliente solicita anulación"
@@ -140,6 +172,7 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch):
             {**factura, "selloRecibido": sello},
             sin_codigo,
             ambiente="01",
+            db=db_conn,
         )
 
     sin_motivo = dict(form)
@@ -149,6 +182,7 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch):
             {**factura, "selloRecibido": sello},
             sin_motivo,
             ambiente="01",
+            db=db_conn,
         )
 
 

@@ -132,7 +132,12 @@ class SendOptionsDialog(QDialog):
 
 
 class AnularDteDialog(QDialog):
-    def __init__(self, responsable: dict | None = None, solicitante: dict | None = None, parent=None):
+    def __init__(
+        self,
+        responsable: dict | None = None,
+        solicitante: dict | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         self.setWindowTitle("Anular DTE")
         layout = QFormLayout(self)
@@ -144,6 +149,13 @@ class AnularDteDialog(QDialog):
 
         self.motivo_edit = QLineEdit()
         layout.addRow("Motivo", self.motivo_edit)
+
+        self.codigo_reemplazo_label = QLabel("Documento que reemplaza")
+        self.codigo_reemplazo_edit = QLineEdit()
+        self.codigo_reemplazo_edit.setPlaceholderText(
+            "UUID del DTE corregido (36 caracteres)"
+        )
+        layout.addRow(self.codigo_reemplazo_label, self.codigo_reemplazo_edit)
 
         self.nombre_resp = QLineEdit((responsable or {}).get("nombre", ""))
         self.tipdoc_resp = QComboBox()
@@ -172,11 +184,75 @@ class AnularDteDialog(QDialog):
         layout.addRow("Solicita núm. doc", self.numdoc_sol)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addRow(buttons)
 
-    def get_data(self):
+        self.tipo_cb.currentIndexChanged.connect(self._on_tipo_changed)
+        self._on_tipo_changed(self.tipo_cb.currentIndex())
+
+    def _on_tipo_changed(self, index: int) -> None:
+        tipo = self.tipo_cb.itemData(index)
+        requires = tipo in {"1", "3"}
+        self.codigo_reemplazo_label.setVisible(requires)
+        self.codigo_reemplazo_edit.setVisible(requires)
+        if not requires:
+            self.codigo_reemplazo_edit.clear()
+
+    def _on_accept(self) -> None:
+        if not self._validate():
+            return
+        self.accept()
+
+    def _validate(self) -> bool:
+        tipo = self.tipo_cb.currentData()
+        motivo = self.motivo_edit.text().strip()
+        if tipo == "3":
+            if len(motivo) < 5 or len(motivo) > 250:
+                QMessageBox.warning(self, "Anulación", "Motivo inválido")
+                return False
+        elif motivo and (len(motivo) < 5 or len(motivo) > 250):
+            QMessageBox.warning(self, "Anulación", "Motivo inválido")
+            return False
+
+        codigo = self.codigo_reemplazo_edit.text().strip()
+        if tipo in {"1", "3"}:
+            if not codigo:
+                QMessageBox.warning(
+                    self,
+                    "Anulación",
+                    "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                    "Ingresa ese código en 'Documento que reemplaza'.",
+                )
+                return False
+            if not anulacion.UUID36_RE.fullmatch(codigo.upper()):
+                QMessageBox.warning(
+                    self,
+                    "Anulación",
+                    "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones.",
+                )
+                return False
+
+        for name, line in [
+            ("Responsable", self.nombre_resp),
+            ("Solicitante", self.nombre_sol),
+        ]:
+            val = line.text().strip()
+            if len(val) < 5 or len(val) > 100:
+                QMessageBox.warning(self, "Anulación", f"Nombre de {name} inválido")
+                return False
+        for name, line in [
+            ("Documento responsable", self.numdoc_resp),
+            ("Documento solicitante", self.numdoc_sol),
+        ]:
+            val = line.text().strip()
+            if len(val) < 3 or len(val) > 20:
+                QMessageBox.warning(self, "Anulación", f"Número de {name} inválido")
+                return False
+        return True
+
+    def get_data(self) -> dict:
+        codigo = self.codigo_reemplazo_edit.text().strip()
         return {
             "tipoAnulacion": self.tipo_cb.currentData(),
             "motivoAnulacion": self.motivo_edit.text().strip(),
@@ -186,6 +262,7 @@ class AnularDteDialog(QDialog):
             "nombreSolicita": self.nombre_sol.text().strip(),
             "tipDocSolicita": self.tipdoc_sol.currentData(),
             "numDocSolicita": self.numdoc_sol.text().strip(),
+            "codigoGeneracionR": codigo.upper() if codigo else None,
         }
 
 
@@ -1633,7 +1710,9 @@ class FacturacionTab(QWidget):
         try:
             cfg = dte._load_dte_api_config()
             amb = "01" if str(cfg.get("ambiente", "")).lower().startswith("produc") else "00"
-            anul_json = anulacion.build_invalidacion_json(data, ui_data, ambiente=amb)
+            anul_json = anulacion.build_invalidacion_json(
+                data, ui_data, ambiente=amb, db=self.manager.db
+            )
             resp = anulacion.enviar_invalidacion(self.manager.db, anul_json)
         except ValueError as exc:
             QMessageBox.warning(self, "Anular DTE", str(exc))

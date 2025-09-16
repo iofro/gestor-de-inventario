@@ -20,7 +20,8 @@ def create_sale(db: DB) -> int:
 def test_enviar_documento_rechaza_reenvio_exitoso(monkeypatch):
     db = DB(":memory:")
     venta = create_sale(db)
-    db.registrar_envio_dte(venta, "normal", "Procesado", "S")
+    db.registrar_envio_dte(venta, "normal", "PROCESADO", "S")
+    db.registrar_envio_dte(venta, "normal", "Rechazado", "")
 
     called = {"sign": 0, "post": 0}
 
@@ -59,7 +60,7 @@ def test_detectar_estado_factura_prioriza_exitosos(monkeypatch):
 
     db = DB(":memory:")
     venta = create_sale(db)
-    db.registrar_envio_dte(venta, "normal", "Transmitido", "S")
+    db.registrar_envio_dte(venta, "normal", "PROCESADO", "S")
     db.registrar_envio_dte(venta, "normal", "Rechazado", "")
 
     _, envio = FacturacionTab._detectar_estado_factura(

@@ -908,22 +908,17 @@ class FacturacionTab(QWidget):
 
         envio = "Pendiente de envío"
         env_row = None
+        success_states = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
         try:
             if cur is not None:
                 if venta_id is not None:
                     success = cur.execute(
                         """
                         SELECT estado FROM dte_envios
-                        WHERE venta_id=? AND estado IN (?, ?, ?, ?)
+                        WHERE venta_id=? AND UPPER(estado) IN (?, ?, ?, ?)
                         ORDER BY id DESC LIMIT 1
                         """,
-                        (
-                            venta_id,
-                            "Transmitido",
-                            "Recibido",
-                            "Procesado",
-                            "Aceptado",
-                        ),
+                        (venta_id, *success_states),
                     ).fetchone()
                     if success:
                         env_row = success
@@ -934,7 +929,10 @@ class FacturacionTab(QWidget):
                         ).fetchone()
                 elif codigo_generacion or numero_control:
                     query_success = (
-                        "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? AND estado IN (?, ?, ?, ?) ORDER BY id DESC LIMIT 1"
+                        "SELECT estado FROM dte_envios "
+                        "WHERE venta_id IS NULL AND respuesta LIKE ? "
+                        "AND UPPER(estado) IN (?, ?, ?, ?) "
+                        "ORDER BY id DESC LIMIT 1"
                     )
                     query_latest = (
                         "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1"
@@ -944,10 +942,7 @@ class FacturacionTab(QWidget):
                             query_success,
                             (
                                 f"%{codigo_generacion}%",
-                                "Transmitido",
-                                "Recibido",
-                                "Procesado",
-                                "Aceptado",
+                                *success_states,
                             ),
                         ).fetchone()
                         if not env_row:
@@ -960,10 +955,7 @@ class FacturacionTab(QWidget):
                             query_success,
                             (
                                 f"%{numero_control}%",
-                                "Transmitido",
-                                "Recibido",
-                                "Procesado",
-                                "Aceptado",
+                                *success_states,
                             ),
                         ).fetchone()
                         if not env_row:

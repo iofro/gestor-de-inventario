@@ -73,7 +73,7 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     monkeypatch.setattr("dte.validate_dte_json", lambda d, db=None: None)
     monkeypatch.setattr(
         "dte.generar_dte_json",
-        lambda db_obj, vid: {
+        lambda db_obj, vid, **kwargs: {
             "receptor": {
                 "nombre": "Cliente",
                 "tipoDocumento": "36",

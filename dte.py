@@ -15,7 +15,7 @@ from db import DB
 import requests
 from utils import jws
 from utils import versioned_dte
-from utils.stable_json import stable_stringify, save_file
+from utils.stable_json import stable_stringify, save_file, hash_json
 import auth
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
@@ -4223,9 +4223,13 @@ def _dte_base_dir(
 
 def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
+    expected_hash = hash_json(dte_data)
+    version_dir = ""
+    json_path = ""
     try:
         base_dir = _dte_base_dir(dte_data, fallido=fallido)
         version_dir, _ = versioned_dte.ensure_version(dte_data, base_dir)
+        json_path = os.path.join(version_dir, "documento.json")
         jws_name = versioned_dte.add_jws(version_dir, jws_token, origen="auto")
         sobre = construir_sobre_recepcion(jws_token, dte_data)
         if sobre.get("estado") != "Error":
@@ -4235,6 +4239,18 @@ def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> N
             _write_json(sobre_path, sobre)
     except Exception:
         pass
+    else:
+        with open(json_path, "r", encoding="utf-8") as fh:
+            persisted_data = json.load(fh)
+        actual_hash = hash_json(persisted_data)
+        if actual_hash != expected_hash:
+            logger.error(
+                "El JSON guardado difiere del payload firmado: esperado %s, obtenido %s (ruta: %s)",
+                expected_hash,
+                actual_hash,
+                json_path,
+            )
+            raise RuntimeError("El JSON guardado difiere del payload firmado")
 
 
 class DTEValidationError(Exception):

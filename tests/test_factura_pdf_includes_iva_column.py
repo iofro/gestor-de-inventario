@@ -34,7 +34,7 @@ def test_factura_pdf_includes_iva_column(tmp_path):
         archivo=str(pdf),
         codigo_generacion=str(uuid.uuid4()),
         numero_control=uuid.uuid4().hex[:8].upper(),
-        sello_recepcion="SELLO",
+        sello_recepcion="0" * 40,
         fecha_generacion="01/01/2024",
     )
     reader = PdfReader(str(pdf))

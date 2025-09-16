@@ -156,7 +156,7 @@ if __name__ == "__main__":
     generar_cabecera_dte(
         codigo_generacion="ABCDEF1234567890",
         numero_control="DTE-001",
-        sello_recepcion="SELLO1234567890",
+        sello_recepcion="ABCDEF0123456789ABCDEF0123456789ABCDEF01",
         tipo_modelo=1,
         tipo_operacion=1,
         fecha_generacion="01/07/2025, 11:15 AM",
@@ -168,7 +168,7 @@ if __name__ == "__main__":
     generar_cabecera_dte(
         codigo_generacion="ABCDEF1234567890",
         numero_control="DTE-001",
-        sello_recepcion="SELLO1234567890",
+        sello_recepcion="ABCDEF0123456789ABCDEF0123456789ABCDEF01",
         tipo_modelo=1,
         tipo_operacion=1,
         fecha_generacion="01/07/2025, 11:15 AM",

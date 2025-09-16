@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 
 UUID36_RE = re.compile(r"^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$")
-SELLO40_RE = re.compile(r"^[A-Z0-9]{40}$")
+SELLO40_RE = re.compile(r"^[0-9A-F]{40}$")
 NUM_CONTROL_RE = re.compile(r"^DTE-(0[0-9]|1[0-2])-[A-Z0-9]{8}-[0-9]{15}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TEL_EMISOR_RE = re.compile(r"^[0-9+;]{8,26}$")
@@ -706,7 +706,7 @@ def build_invalidacion_json(
         raise ValueError("Fecha de emisión del DTE inválida") from exc
     sello = str(sello_raw).strip().upper()
     if not SELLO40_RE.fullmatch(sello):
-        raise ValueError("selloRecibido inválido")
+        raise ValueError("selloRecibido inválido; debe coincidir con el sello hexadecimal emitido por MH")
 
     negocio = _load_datos_negocio() or {}
     nit = solo_digitos(negocio.get("nit", ""))

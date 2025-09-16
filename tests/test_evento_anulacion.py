@@ -186,6 +186,138 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):
         )
 
 
+def _patch_negocio(monkeypatch):
+    monkeypatch.setattr(
+        anulacion,
+        "_load_datos_negocio",
+        lambda: {
+            "nit": "06141404100016",
+            "nombre": "Empresa SA",
+            "telefono": "22223333",
+            "correo": "info@empresa.com",
+            "tipoEstablecimiento": "01",
+            "nombreComercial": "Empresa",
+            "codEstableMH": "0001",
+            "codEstable": "0001",
+            "codPuntoVentaMH": "0001",
+            "codPuntoVenta": "0001",
+        },
+    )
+
+
+def _build_form(codigo):
+    return {
+        "tipoAnulacion": "3",
+        "motivoAnulacion": "Cliente solicita anulación",
+        "nombreResponsable": "Responsable Uno",
+        "tipDocResponsable": "13",
+        "numDocResponsable": "01234567-8",
+        "nombreSolicita": "Solicita Dos",
+        "tipDocSolicita": "36",
+        "numDocSolicita": "06141404100016",
+        "codigoGeneracionR": codigo,
+    }
+
+
+def test_invalidacion_rechaza_emisor_distinto(monkeypatch, db_conn, tmp_path):
+    factura = _sample_factura()
+    sello = "C" * 40
+    codigo_reemplazo = str(uuid.uuid4()).upper()
+    numero_control = "DTE-01-S001P001-000000000000888"
+    reemplazo = {
+        "identificacion": {
+            "tipoDte": factura["identificacion"]["tipoDte"],
+            "codigoGeneracion": codigo_reemplazo,
+            "numeroControl": numero_control,
+            "fecEmi": "2024-01-02",
+        },
+        "emisor": {
+            "nit": "06141404100017",
+            "nombre": "Otra Empresa",
+        },
+        "receptor": factura.get("receptor", {}),
+    }
+    json_path = tmp_path / "reemplazo_emisor.json"
+    json_path.write_text(json.dumps(reemplazo), encoding="utf-8")
+
+    extra = {
+        "codigoGeneracion": codigo_reemplazo,
+        "numeroControl": numero_control,
+        "dteJsonPath": str(json_path),
+        "selloRecibido": "Z" * 40,
+    }
+    venta_id = db_conn.add_venta("2024-01-02", 10, extra=extra)
+    db_conn.registrar_envio_dte(
+        venta_id,
+        "manual",
+        "Aceptado",
+        "Z" * 40,
+        respuesta_json=json.dumps({"documento": reemplazo}),
+        codigo_generacion=codigo_reemplazo,
+        numero_control=numero_control,
+    )
+
+    _patch_negocio(monkeypatch)
+    form = _build_form(codigo_reemplazo)
+
+    with pytest.raises(ValueError) as excinfo:
+        anulacion.build_invalidacion_json(
+            {**factura, "selloRecibido": sello},
+            form,
+            ambiente="00",
+            db=db_conn,
+        )
+    assert str(excinfo.value) == anulacion.ERROR_REEMPLAZO_EMISOR
+
+
+def test_invalidacion_rechaza_fecha_anterior(monkeypatch, db_conn, tmp_path):
+    factura = _sample_factura()
+    sello = "D" * 40
+    codigo_reemplazo = str(uuid.uuid4()).upper()
+    numero_control = "DTE-01-S001P001-000000000000889"
+    reemplazo = {
+        "identificacion": {
+            "tipoDte": factura["identificacion"]["tipoDte"],
+            "codigoGeneracion": codigo_reemplazo,
+            "numeroControl": numero_control,
+            "fecEmi": "2023-12-20",
+        },
+        "emisor": factura.get("emisor", {}),
+        "receptor": factura.get("receptor", {}),
+    }
+    json_path = tmp_path / "reemplazo_fecha.json"
+    json_path.write_text(json.dumps(reemplazo), encoding="utf-8")
+
+    extra = {
+        "codigoGeneracion": codigo_reemplazo,
+        "numeroControl": numero_control,
+        "dteJsonPath": str(json_path),
+        "selloRecibido": "Z" * 40,
+    }
+    venta_id = db_conn.add_venta("2023-12-20", 10, extra=extra)
+    db_conn.registrar_envio_dte(
+        venta_id,
+        "manual",
+        "Aceptado",
+        "Z" * 40,
+        respuesta_json=json.dumps({"documento": reemplazo}),
+        codigo_generacion=codigo_reemplazo,
+        numero_control=numero_control,
+    )
+
+    _patch_negocio(monkeypatch)
+    form = _build_form(codigo_reemplazo)
+
+    with pytest.raises(ValueError) as excinfo:
+        anulacion.build_invalidacion_json(
+            {**factura, "selloRecibido": sello},
+            form,
+            ambiente="00",
+            db=db_conn,
+        )
+    assert str(excinfo.value) == anulacion.ERROR_REEMPLAZO_FECHA
+
+
 def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
     def _create_sale(db):
         db.add_vendedor("V1")

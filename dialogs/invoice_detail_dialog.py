@@ -14,6 +14,7 @@ from PyQt5.QtCore import Qt
 
 from utils.catalogos import TRIBUTO_IVA
 from .anular_factura_dialog import AnularFacturaDialog
+import anulacion
 import dte
 
 
@@ -104,12 +105,21 @@ class InvoiceDetailDialog(QDialog):
     def _anular(self):
         negocio = dte._load_datos_negocio()
         receptor = self.factura.get("receptor", {})
-        dlg = AnularFacturaDialog(self, responsable=negocio, solicitante=receptor)
+        parent = self.parent()
+        db = getattr(getattr(parent, "manager", None), "db", None)
+        dlg = AnularFacturaDialog(
+            self,
+            responsable=negocio,
+            solicitante=receptor,
+            db=db,
+            factura=self.factura,
+        )
         if dlg.exec_() != QDialog.Accepted:
             return
         form = dlg.get_data()
-        parent = self.parent()
-        db = getattr(getattr(parent, "manager", None), "db", None)
+        if db is None:
+            parent = self.parent()
+            db = getattr(getattr(parent, "manager", None), "db", None)
         if not db:
             QMessageBox.warning(self, "Anulación", "Base de datos no disponible")
             return
@@ -124,8 +134,18 @@ class InvoiceDetailDialog(QDialog):
             )
             return
         try:
-            evento = dte.generar_evento_anulacion(self.factura, form, sello)
-            res = dte.enviar_evento_anulacion(db, self.venta_id, evento)
+            cfg = dte._load_dte_api_config()
+            ambiente_cfg = str(cfg.get("ambiente", ""))
+            amb = "01" if ambiente_cfg.lower().startswith("produc") else "00"
+            factura_payload = dict(self.factura)
+            factura_payload["selloRecibido"] = sello
+            evento = anulacion.build_invalidacion_json(
+                factura_payload,
+                form,
+                ambiente=amb,
+                db=db,
+            )
+            res = anulacion.enviar_invalidacion(db, evento)
         except Exception as exc:  # pragma: no cover - UI feedback
             QMessageBox.warning(self, "Anulación", str(exc))
             return

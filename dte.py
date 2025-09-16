@@ -4985,12 +4985,12 @@ def _enviar_documento(
 
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
-    SUCCESS_STATES = {"Transmitido", "Recibido", "Procesado", "Aceptado"}
+    SUCCESS_STATES = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
     if doc_id is not None:
         row = db.cursor.execute(
             """
             SELECT estado FROM dte_envios
-            WHERE venta_id=? AND estado IN (?, ?, ?, ?)
+            WHERE venta_id=? AND UPPER(estado) IN (?, ?, ?, ?)
             ORDER BY id DESC LIMIT 1
             """,
             (doc_id, *SUCCESS_STATES),

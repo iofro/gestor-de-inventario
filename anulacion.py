@@ -2,7 +2,7 @@ import json
 import uuid
 import re
 from datetime import datetime
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
 import requests
@@ -140,12 +140,13 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
     if tipo_estable not in TIPO_ESTABLECIMIENTOS:
         raise ValueError("tipoEstablecimiento del emisor inválido")
 
-    nom_estable_raw = negocio.get("nombreComercial") or nombre_emisor
-    nom_estable = nom_estable_raw.strip() if isinstance(nom_estable_raw, str) else None
-    if nom_estable and not (3 <= len(nom_estable) <= 150):
+    nom_estable_raw = negocio.get("nombreComercial")
+    if isinstance(nom_estable_raw, str) and nom_estable_raw.strip():
+        nom_estable = nom_estable_raw.strip()
+    else:
+        nom_estable = nombre_emisor
+    if not (3 <= len(nom_estable) <= 150):
         raise ValueError("Nombre de establecimiento inválido")
-    if not nom_estable:
-        nom_estable = None
 
     cod_estable_mh_raw = negocio.get("codEstableMH")
     cod_estable_mh = None
@@ -182,13 +183,15 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
         "nombre": nombre_emisor,
         "tipoEstablecimiento": tipo_estable,
         "nomEstablecimiento": nom_estable,
-        "codEstableMH": cod_estable_mh,
         "codEstable": cod_estable,
-        "codPuntoVentaMH": cod_punto_venta_mh,
         "codPuntoVenta": cod_punto_venta,
         "telefono": telefono,
         "correo": correo,
     }
+    if cod_estable_mh is not None:
+        emisor["codEstableMH"] = cod_estable_mh
+    if cod_punto_venta_mh is not None:
+        emisor["codPuntoVentaMH"] = cod_punto_venta_mh
 
     receptor = factura.get("receptor") or {}
     nombre_rec = (receptor.get("nombre") or "").strip()
@@ -220,21 +223,41 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
             raise ValueError("Correo del receptor inválido")
 
     resumen = factura.get("resumen") or {}
-    monto_iva = resumen.get("totalIva")
-    if monto_iva is None:
-        for trib in resumen.get("tributos", []):
+    monto_iva_decimal = None
+    tributos = resumen.get("tributos")
+    if isinstance(tributos, list) and tributos:
+        iva_sum = Decimal("0")
+        iva_encontrado = False
+        for trib in tributos:
             if trib.get("codigo") == TRIBUTO_IVA:
-                monto_iva = trib.get("valor")
-                break
+                valor = trib.get("valor")
+                if valor is None:
+                    continue
+                try:
+                    iva_sum += Decimal(str(valor))
+                except (InvalidOperation, TypeError, ValueError) as exc:
+                    raise ValueError("montoIva inválido") from exc
+                iva_encontrado = True
+        if iva_encontrado:
+            monto_iva_decimal = iva_sum
+    elif tributos not in (None, []):
+        raise ValueError("Estructura de tributos inválida en el DTE original")
+    if monto_iva_decimal is None:
+        total_iva = resumen.get("totalIva")
+        if total_iva is not None:
+            try:
+                monto_iva_decimal = Decimal(str(total_iva))
+            except (InvalidOperation, TypeError, ValueError) as exc:
+                raise ValueError("montoIva inválido") from exc
     monto_iva_val = None
-    if monto_iva is not None:
-        try:
-            monto_iva_val = Decimal(str(monto_iva))
-        except Exception as exc:
-            raise ValueError("montoIva inválido") from exc
-        if monto_iva_val < 0:
+    if monto_iva_decimal is not None:
+        if monto_iva_decimal < 0:
             raise ValueError("montoIva no puede ser negativo")
-        monto_iva_val = float(monto_iva_val.quantize(Decimal("0.01")))
+        try:
+            monto_iva_decimal = monto_iva_decimal.quantize(Decimal("0.01"))
+        except InvalidOperation as exc:
+            raise ValueError("montoIva inválido") from exc
+        monto_iva_val = float(monto_iva_decimal)
 
     tipo_dte_raw = ident.get("tipoDte")
     tipo_dte_str = str(tipo_dte_raw).zfill(2) if tipo_dte_raw is not None else ""
@@ -252,6 +275,8 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
     motivo_raw = ui_motivo.get("motivoAnulacion")
     if isinstance(motivo_raw, str):
         motivo_val = motivo_raw.strip()
+        if not motivo_val:
+            motivo_val = None
     elif motivo_raw is None:
         motivo_val = None
     else:
@@ -260,11 +285,8 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
     if tipo_anulacion == 3:
         if not motivo_val or not (5 <= len(motivo_val) <= 250):
             raise ValueError("motivoAnulacion requerido cuando tipoAnulacion es 3")
-    elif motivo_val:
-        if not (5 <= len(motivo_val) <= 250):
-            raise ValueError("motivoAnulacion inválido")
-    else:
-        motivo_val = None
+    elif motivo_val is not None and not (5 <= len(motivo_val) <= 250):
+        raise ValueError("motivoAnulacion inválido")
 
     codigo_generacion_r = None
     if tipo_anulacion == 2:
@@ -322,8 +344,9 @@ def build_invalidacion_json(factura: dict, ui_motivo: dict, *, ambiente: str) ->
         "tipoDocumento": tip_doc_rec,
         "numDocumento": num_doc_rec,
         "nombre": nombre_rec,
-        "telefono": tel_rec,
     }
+    if tel_rec is not None:
+        documento["telefono"] = tel_rec
     if cor_rec is not None:
         documento["correo"] = cor_rec
 

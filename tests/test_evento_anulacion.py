@@ -116,15 +116,15 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):
         "codigoGeneracion": codigo_reemplazo,
         "numeroControl": numero_control_reemplazo,
         "dteJsonPath": str(json_path),
-        "selloRecibido": "Z" * 40,
+        "selloRecibido": "E" * 40,
     }
     venta_id = db_conn.add_venta("2024-01-02", 10, extra=extra)
     db_conn.registrar_envio_dte(
         venta_id,
         "test",
         "Aceptado",
-        "Z" * 40,
-        respuesta_json=json.dumps({"sello": "Z" * 40}),
+        "E" * 40,
+        respuesta_json=json.dumps({"sello": "E" * 40}),
         codigo_generacion=codigo_reemplazo,
         numero_control=numero_control_reemplazo,
     )
@@ -246,14 +246,14 @@ def test_invalidacion_rechaza_emisor_distinto(monkeypatch, db_conn, tmp_path):
         "codigoGeneracion": codigo_reemplazo,
         "numeroControl": numero_control,
         "dteJsonPath": str(json_path),
-        "selloRecibido": "Z" * 40,
+        "selloRecibido": "E" * 40,
     }
     venta_id = db_conn.add_venta("2024-01-02", 10, extra=extra)
     db_conn.registrar_envio_dte(
         venta_id,
         "manual",
         "Aceptado",
-        "Z" * 40,
+        "E" * 40,
         respuesta_json=json.dumps({"documento": reemplazo}),
         codigo_generacion=codigo_reemplazo,
         numero_control=numero_control,
@@ -294,14 +294,14 @@ def test_invalidacion_rechaza_fecha_anterior(monkeypatch, db_conn, tmp_path):
         "codigoGeneracion": codigo_reemplazo,
         "numeroControl": numero_control,
         "dteJsonPath": str(json_path),
-        "selloRecibido": "Z" * 40,
+        "selloRecibido": "E" * 40,
     }
     venta_id = db_conn.add_venta("2023-12-20", 10, extra=extra)
     db_conn.registrar_envio_dte(
         venta_id,
         "manual",
         "Aceptado",
-        "Z" * 40,
+        "E" * 40,
         respuesta_json=json.dumps({"documento": reemplazo}),
         codigo_generacion=codigo_reemplazo,
         numero_control=numero_control,
@@ -333,7 +333,7 @@ def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
         return venta_id
 
     venta_id = _create_sale(db_conn)
-    sello = "S" * 40
+    sello = "1" * 40
     db_conn.registrar_envio_dte(venta_id, "test", "aceptado", sello)
 
     factura = {"venta_id": venta_id}
@@ -401,7 +401,7 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
 
     def fake_post(url, token, signed, payload):
         posted.append((url, token, signed, payload))
-        return {"estado": "aceptado", "sello": "SELLO"}
+        return {"estado": "aceptado", "sello": "0" * 40}
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
 
@@ -443,7 +443,7 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
     assert saved_dict[jws_path][0] == "TOKEN"
     assert saved_dict[jws_path][1] is False
     assert posted and posted[0][2] == "TOKEN"
-    assert result["sello"] == "SELLO"
+    assert result["sello"] == "0" * 40
 
 
 def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
@@ -461,7 +461,7 @@ def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
 
     def fake_post(url, token, signed, payload):
         posted.append((url, token, signed, payload))
-        return {"estado": "procesado", "sello": "SIG"}
+        return {"estado": "procesado", "sello": "2" * 40}
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
 
@@ -502,7 +502,7 @@ def test_anular_dte_uses_sello_from_respuesta(qt_app, db_conn, monkeypatch):
         return venta_id
 
     venta_id = _create_sale(db_conn)
-    sello = "R" * 40
+    sello = "3" * 40
     db_conn.registrar_envio_dte(
         venta_id,
         "test",

@@ -8,7 +8,7 @@ def test_registrar_envio_dte_guarda_campos():
         venta_id,
         "normal",
         "Procesado",
-        "SELLO",
+        "0" * 40,
         codigo_generacion="abc",
         numero_control="DTE-01-S001P001-000000000000001",
     )
@@ -19,4 +19,4 @@ def test_registrar_envio_dte_guarda_campos():
     assert row["codigo_generacion"] == "ABC"
     assert row["numero_control"] == "DTE-01-S001P001-000000000000001"
     assert row["estado"] == "Procesado"
-    assert row["sello"] == "SELLO"
+    assert row["sello"] == "0" * 40

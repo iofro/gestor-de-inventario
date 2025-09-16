@@ -13,6 +13,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QTimer, QEvent
 import dte
+import anulacion
 from db import DB
 from utils.catalogos import TIPO_INVALIDACION, TIPO_DOC_REC
 
@@ -45,6 +46,14 @@ class AnularFacturaDialog(QDialog):
         row.addWidget(QLabel("Motivo:"))
         self.motivo_edit = QLineEdit()
         row.addWidget(self.motivo_edit)
+        layout.addLayout(row)
+
+        row = QHBoxLayout()
+        self.codigo_label = QLabel("Documento que reemplaza:")
+        row.addWidget(self.codigo_label)
+        self.codigo_edit = QLineEdit()
+        self.codigo_edit.setPlaceholderText("UUID del DTE corregido")
+        row.addWidget(self.codigo_edit)
         layout.addLayout(row)
 
         # Responsable
@@ -128,6 +137,8 @@ class AnularFacturaDialog(QDialog):
             w.installEventFilter(self)
 
         self.negocio_btn.clicked.connect(self._usar_datos_negocio)
+        self.tipo_cb.currentIndexChanged.connect(self._on_tipo_changed)
+        self._on_tipo_changed(self.tipo_cb.currentIndex())
 
         def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
             if not data:
@@ -159,10 +170,34 @@ class AnularFacturaDialog(QDialog):
         self.accept()
 
     def _validate(self) -> bool:
+        tipo = self.tipo_cb.currentData()
         motivo = self.motivo_edit.text().strip()
-        if len(motivo) < 5 or len(motivo) > 250:
+        if tipo == "3":
+            if len(motivo) < 5 or len(motivo) > 250:
+                QMessageBox.warning(self, "Anulación", "Motivo inválido")
+                return False
+        elif motivo and (len(motivo) < 5 or len(motivo) > 250):
             QMessageBox.warning(self, "Anulación", "Motivo inválido")
             return False
+
+        codigo = self.codigo_edit.text().strip()
+        if tipo in {"1", "3"}:
+            if not codigo:
+                QMessageBox.warning(
+                    self,
+                    "Anulación",
+                    "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                    "Ingresa ese código en 'Documento que reemplaza'.",
+                )
+                return False
+            if not anulacion.UUID36_RE.fullmatch(codigo.upper()):
+                QMessageBox.warning(
+                    self,
+                    "Anulación",
+                    "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones.",
+                )
+                return False
+
         for name, line in [
             ("Responsable", self.nom_resp),
             ("Solicitante", self.nom_sol),
@@ -180,6 +215,14 @@ class AnularFacturaDialog(QDialog):
                 QMessageBox.warning(self, "Anulación", f"Número de {name} inválido")
                 return False
         return True
+
+    def _on_tipo_changed(self, index: int):
+        tipo = self.tipo_cb.itemData(index)
+        requiere = tipo in {"1", "3"}
+        self.codigo_label.setVisible(requiere)
+        self.codigo_edit.setVisible(requiere)
+        if not requiere:
+            self.codigo_edit.clear()
 
     # --- Empleado search helpers -----------------------------------------------
 
@@ -303,6 +346,7 @@ class AnularFacturaDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def get_data(self) -> dict:
+        codigo = self.codigo_edit.text().strip()
         return {
             "tipoAnulacion": self.tipo_cb.currentData(),
             "motivoAnulacion": self.motivo_edit.text().strip(),
@@ -312,4 +356,5 @@ class AnularFacturaDialog(QDialog):
             "nombreSolicita": self.nom_sol.text().strip(),
             "tipDocSolicita": self.tdoc_sol.currentData(),
             "numDocSolicita": self.ndoc_sol.text().strip(),
+            "codigoGeneracionR": codigo.upper() if codigo else None,
         }

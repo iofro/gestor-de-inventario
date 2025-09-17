@@ -62,9 +62,11 @@ import subprocess
 import shutil
 import dte
 import anulacion
+from db import DB
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
+from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
 from decimal import Decimal
 from utils.monto import iva_item
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
@@ -138,9 +140,25 @@ class AnularDteDialog(QDialog):
         responsable: dict | None = None,
         solicitante: dict | None = None,
         parent=None,
+        db: DB | None = None,
+        factura: dict | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Anular DTE")
+        self.db = db
+        self._factura = factura or {}
+        ident = self._factura.get("identificacion") or {}
+        tipo_val = ident.get("tipoDte")
+        self._original_tipo = str(tipo_val).zfill(2) if tipo_val is not None else None
+        codigo_val = ident.get("codigoGeneracion")
+        self._original_uuid = str(codigo_val or "").strip().upper() or None
+        self._original_ambiente = anulacion.normalize_ambiente(ident.get("ambiente"))
+        self._receptor_docs: set[str] = set()
+        receptor_data = (self._factura.get("receptor") or {})
+        for key in ("numDocumento", "nit", "dui"):
+            val = receptor_data.get(key)
+            if val:
+                self._receptor_docs.add(str(val))
         layout = QFormLayout(self)
 
         self.tipo_cb = QComboBox()
@@ -153,10 +171,16 @@ class AnularDteDialog(QDialog):
 
         self.codigo_reemplazo_label = QLabel("Documento que reemplaza")
         self.codigo_reemplazo_edit = QLineEdit()
+        self.codigo_reemplazo_edit.setReadOnly(True)
         self.codigo_reemplazo_edit.setPlaceholderText(
-            "UUID del DTE corregido (36 caracteres)"
+            "Selecciona con el botón…"
         )
-        layout.addRow(self.codigo_reemplazo_label, self.codigo_reemplazo_edit)
+        codigo_row = QHBoxLayout()
+        codigo_row.addWidget(self.codigo_reemplazo_edit)
+        self.buscar_codigo_btn = QPushButton("Buscar…")
+        self.buscar_codigo_btn.clicked.connect(self._abrir_selector)
+        codigo_row.addWidget(self.buscar_codigo_btn)
+        layout.addRow(self.codigo_reemplazo_label, codigo_row)
 
         self.nombre_resp = QLineEdit((responsable or {}).get("nombre", ""))
         self.tipdoc_resp = QComboBox()
@@ -197,8 +221,24 @@ class AnularDteDialog(QDialog):
         requires = tipo in {"1", "3"}
         self.codigo_reemplazo_label.setVisible(requires)
         self.codigo_reemplazo_edit.setVisible(requires)
+        self.buscar_codigo_btn.setVisible(requires)
+        self.buscar_codigo_btn.setEnabled(requires and self.db is not None)
         if not requires:
             self.codigo_reemplazo_edit.clear()
+
+    def _abrir_selector(self) -> None:
+        if self.db is None:
+            return
+        dlg = SeleccionarDteDialog(
+            self.db,
+            tipo_dte=self._original_tipo,
+            ambiente=self._original_ambiente,
+            receptor_documentos=sorted(self._receptor_docs),
+            exclude_uuid=self._original_uuid,
+            parent=self,
+        )
+        if dlg.exec_() == QDialog.Accepted and dlg.selected_uuid:
+            self.codigo_reemplazo_edit.setText(dlg.selected_uuid.upper())
 
     def _on_accept(self) -> None:
         if not self._validate():
@@ -226,13 +266,23 @@ class AnularDteDialog(QDialog):
                     "Ingresa ese código en 'Documento que reemplaza'.",
                 )
                 return False
-            if not anulacion.UUID36_RE.fullmatch(codigo.upper()):
+            codigo_upper = codigo.upper()
+            if not anulacion.UUID36_RE.fullmatch(codigo_upper):
                 QMessageBox.warning(
                     self,
                     "Anulación",
                     "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones.",
                 )
                 return False
+            if self._original_uuid and codigo_upper == self._original_uuid:
+                QMessageBox.warning(
+                    self,
+                    "Anulación",
+                    anulacion.ERROR_REEMPLAZO_DISTINTO,
+                )
+                return False
+            if self.codigo_reemplazo_edit.text() != codigo_upper:
+                self.codigo_reemplazo_edit.setText(codigo_upper)
 
         for name, line in [
             ("Responsable", self.nombre_resp),
@@ -253,7 +303,10 @@ class AnularDteDialog(QDialog):
         return True
 
     def get_data(self) -> dict:
-        codigo = self.codigo_reemplazo_edit.text().strip()
+        tipo = self.tipo_cb.currentData()
+        codigo = self.codigo_reemplazo_edit.text().strip().upper()
+        if tipo not in {"1", "3"}:
+            codigo = None
         return {
             "tipoAnulacion": self.tipo_cb.currentData(),
             "motivoAnulacion": self.motivo_edit.text().strip(),
@@ -263,7 +316,7 @@ class AnularDteDialog(QDialog):
             "nombreSolicita": self.nombre_sol.text().strip(),
             "tipDocSolicita": self.tipdoc_sol.currentData(),
             "numDocSolicita": self.numdoc_sol.text().strip(),
-            "codigoGeneracionR": codigo.upper() if codigo else None,
+            "codigoGeneracionR": codigo if codigo else None,
         }
 
 

@@ -86,6 +86,7 @@ class MainWindow(QMainWindow):
         self.db = DB()
         self.manager = InventoryManager(self.db)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
+        self._load_last_inventory_path()
         self.firmador_proc = None
         # Contador de cambios en la base de datos para detectar si hay datos sin guardar
         self._mark_saved()
@@ -2085,6 +2086,28 @@ class MainWindow(QMainWindow):
         modificado sin guardar.
         """
         self._db_change_counter = self.manager.db.conn.total_changes
+
+    def _load_last_inventory_path(self):
+        """Carga la última ruta usada para guardar el inventario.
+
+        Permite que la opción "Guardar rápido" funcione al iniciar la
+        aplicación reutilizando el mismo archivo utilizado previamente.
+        """
+        if not os.path.exists(LAST_INVENTORY_PATH):
+            return
+        try:
+            with open(LAST_INVENTORY_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception:
+            logger.warning(
+                "No se pudo leer %s para restaurar el último inventario",
+                LAST_INVENTORY_PATH,
+            )
+            return
+
+        ultimo = data.get("ultimo") if isinstance(data, dict) else None
+        if ultimo:
+            self.ultimo_archivo_json = ultimo
 
     def closeEvent(self, event):
         if self.manager.db.conn.total_changes == self._db_change_counter:

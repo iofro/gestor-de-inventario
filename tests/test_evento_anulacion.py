@@ -390,20 +390,30 @@ def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
 
 
 def test_enviar_invalidacion_guarda_archivos(monkeypatch):
-    codigo = "ABC123XYZ789"
+    codigo = "12345678-1234-1234-1234-1234567890AB"
     data = {
-        "identificacion": {"codigoGeneracion": codigo},
-        "documento": {"ejemplo": True},
+        "identificacion": {
+            "codigoGeneracion": codigo,
+            "version": 2,
+            "ambiente": "00",
+        },
+        "documento": {
+            "codigoGeneracion": codigo,
+            "tipoDte": "01",
+            "numeroControl": "DTE-01-ABCDEFGH-000000000000001",
+            "selloRecibido": "0" * 40,
+            "montoIva": 1.23,
+        },
+        "motivo": {"tipoAnulacion": 2},
     }
 
     monkeypatch.setattr(anulacion, "_load_dte_api_config", lambda: {"url": "https://mh.test"})
-    monkeypatch.setattr(anulacion.jws, "sign_json", lambda payload: "TOKEN")
     monkeypatch.setattr(anulacion.auth, "get_token", lambda: "token")
 
     posted = []
 
-    def fake_post(url, token, signed, payload):
-        posted.append((url, token, signed, payload))
+    def fake_post(url, token, payload, *, ambiente_config=None, **kwargs):
+        posted.append((url, token, payload, ambiente_config, kwargs))
         return {"estado": "aceptado", "sello": "0" * 40}
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
@@ -433,37 +443,41 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
     )
     assert created_dirs == [(expected_dir, True)]
 
-    assert len(saved) == 2
-    saved_dict = {
-        path: (content, add_final_newline)
-        for path, content, add_final_newline in saved
-    }
+    assert len(saved) == 1
     json_path = os.path.join(expected_dir, "documento.json")
-    jws_path = os.path.join(expected_dir, "documento.jws")
-    assert json_path in saved_dict
-    assert saved_dict[json_path][1] is True
-    assert jws_path in saved_dict
-    assert saved_dict[jws_path][0] == "TOKEN"
-    assert saved_dict[jws_path][1] is False
-    assert posted and posted[0][2] == "TOKEN"
+    assert saved[0][0] == json_path
+    assert saved[0][2] is True
+    assert posted
+    assert posted[0][2] is data
+    assert posted[0][3] is None
     assert result["sello"] == "0" * 40
 
 
 def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
-    codigo = "ERR123456789"
+    codigo = "ABCDEF12-3456-7890-ABCD-EF1234567890"
     data = {
-        "identificacion": {"codigoGeneracion": codigo},
-        "documento": {"ejemplo": True},
+        "identificacion": {
+            "codigoGeneracion": codigo,
+            "version": 2,
+            "ambiente": "01",
+        },
+        "documento": {
+            "codigoGeneracion": codigo,
+            "tipoDte": "01",
+            "numeroControl": "DTE-01-IJKLMN12-000000000000002",
+            "selloRecibido": "2" * 40,
+            "montoIva": 0.0,
+        },
+        "motivo": {"tipoAnulacion": 2},
     }
 
     monkeypatch.setattr(anulacion, "_load_dte_api_config", lambda: {"url": "https://mh.test"})
-    monkeypatch.setattr(anulacion.jws, "sign_json", lambda payload: "TOKEN")
     monkeypatch.setattr(anulacion.auth, "get_token", lambda: "token")
 
     posted = []
 
-    def fake_post(url, token, signed, payload):
-        posted.append((url, token, signed, payload))
+    def fake_post(url, token, payload, *, ambiente_config=None, **kwargs):
+        posted.append((url, token, payload, ambiente_config, kwargs))
         return {"estado": "procesado", "sello": "2" * 40}
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
@@ -487,7 +501,7 @@ def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
 
     result = anulacion.enviar_invalidacion(None, data)
 
-    assert posted and posted[0][2] == "TOKEN"
+    assert posted and posted[0][2] is data
     assert result["estado"] == "procesado"
     assert dummy_logger.calls
 

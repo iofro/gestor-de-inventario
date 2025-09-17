@@ -254,7 +254,7 @@ class InventoryManager:
                 write_kv("appVersion", APP_VERSION)
                 write_array("productos", self._products)
                 write_array("vendedores", (dict(v) for v in self._vendedores))
-                write_array("Distribuidores", (dict(v) for v in self._Distribuidores))
+                write_array("distribuidores", (dict(v) for v in self._Distribuidores))
                 write_array("clientes", (dict(c) for c in self._clientes))
                 # Export only synchronized sales.  Older installations might lack the
                 # ``sincronizada`` column, so ensure it exists with a sensible

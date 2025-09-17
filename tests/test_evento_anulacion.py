@@ -12,6 +12,9 @@ import facturacion_tab
 import anulacion
 
 
+SELLO_BASE36 = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZABCD"
+
+
 def _sample_factura():
     ident = {
         "ambiente": "00",
@@ -59,7 +62,7 @@ def test_generar_evento_anulacion(qt_app, monkeypatch):
     dlg.tdoc_sol.setCurrentIndex(dlg.tdoc_sol.findData("13"))
     dlg.ndoc_sol.setText("987654321")
     form = dlg.get_data()
-    sello = "A" * 40
+    sello = SELLO_BASE36
 
     monkeypatch.setattr(
         anulacion,
@@ -95,7 +98,7 @@ def test_generar_evento_anulacion(qt_app, monkeypatch):
 
 def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):
     factura = _sample_factura()
-    sello = "B" * 40
+    sello = "Z" * 40
 
     codigo_reemplazo = str(uuid.uuid4()).upper()
     numero_control_reemplazo = "DTE-01-S001P001-000000000000777"
@@ -116,7 +119,7 @@ def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):
         "codigoGeneracion": codigo_reemplazo,
         "numeroControl": numero_control_reemplazo,
         "dteJsonPath": str(json_path),
-        "selloRecibido": "E" * 40,
+        "selloRecibido": "Y" * 40,
     }
     venta_id = db_conn.add_venta("2024-01-02", 10, extra=extra)
     db_conn.registrar_envio_dte(

@@ -178,6 +178,7 @@ def _load_dte_json_from_venta(db: DB, venta_id: int | None) -> dict | None:
 
 def _extract_metadata(source: dict | None) -> dict:
     metadata = {
+        "codigo_generacion": None,
         "tipo_dte": None,
         "fecha_emision": None,
         "ambiente": None,
@@ -195,6 +196,9 @@ def _extract_metadata(source: dict | None) -> dict:
     if not isinstance(ident, dict):
         ident = source.get("identificacionDocumento")
     if isinstance(ident, dict):
+        codigo_generacion = ident.get("codigoGeneracion")
+        if codigo_generacion is not None:
+            metadata["codigo_generacion"] = str(codigo_generacion).strip().upper()
         tipo_val = ident.get("tipoDte") or ident.get("tipoDTE")
         if tipo_val is not None:
             metadata["tipo_dte"] = str(tipo_val).zfill(2)
@@ -271,6 +275,11 @@ def _extract_metadata(source: dict | None) -> dict:
         amb = source.get("ambiente")
         if amb is not None:
             metadata["ambiente"] = normalize_ambiente(amb)
+
+    if metadata["codigo_generacion"] in (None, ""):
+        codigo_generacion = source.get("codigoGeneracion")
+        if codigo_generacion is not None:
+            metadata["codigo_generacion"] = str(codigo_generacion).strip().upper()
 
     return metadata
 
@@ -381,8 +390,31 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
     results: list[dict] = []
     for row in rows:
         codigo = str(row.get("codigo_generacion") or "").strip().upper()
+        venta_id = row.get("venta_id")
+        metadata: dict | None = None
+
+        def _get_metadata() -> dict:
+            nonlocal metadata
+            if metadata is None:
+                payload_local = _load_dte_json_from_venta(db, venta_id)
+                respuesta_local = _parse_respuesta_documento(row.get("respuesta"))
+                primary = _extract_metadata(payload_local)
+                metadata = _merge_metadata(primary, _extract_metadata(respuesta_local))
+            return metadata
+
+        if not codigo:
+            codigo_metadata = str(
+                (_get_metadata().get("codigo_generacion") or "")
+            ).strip().upper()
+            if codigo_metadata:
+                codigo = codigo_metadata
+
         if not codigo or (exclude_uuid and codigo == exclude_uuid):
             continue
+
+        metadata = _get_metadata()
+        if metadata.get("codigo_generacion") in (None, ""):
+            metadata["codigo_generacion"] = codigo
 
         sello = str(row.get("sello") or "").strip().upper()
         sello_valido = bool(SELLO40_RE.fullmatch(sello))
@@ -391,12 +423,6 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         if recepcionado_only:
             if estado_canonico not in ACCEPTED_EVENT_STATES or not sello_valido:
                 continue
-
-        venta_id = row.get("venta_id")
-        payload = _load_dte_json_from_venta(db, venta_id)
-        respuesta_doc = _parse_respuesta_documento(row.get("respuesta"))
-        metadata = _extract_metadata(payload)
-        metadata = _merge_metadata(metadata, _extract_metadata(respuesta_doc))
 
         numero_control = metadata.get("numero_control") or row.get("numero_control")
         ambiente_doc = metadata.get("ambiente")

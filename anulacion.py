@@ -399,12 +399,16 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         metadata = _merge_metadata(metadata, _extract_metadata(respuesta_doc))
 
         numero_control = metadata.get("numero_control") or row.get("numero_control")
-        ambiente_doc = metadata.get("ambiente") or normalize_ambiente(row.get("ambiente"))
-        if ambiente_objetivo and ambiente_doc:
-            if ambiente_doc != ambiente_objetivo:
+        ambiente_doc = metadata.get("ambiente")
+        if ambiente_doc is None:
+            ambiente_doc = normalize_ambiente(row.get("ambiente"))
+
+        ambiente_real = ambiente_doc
+        if ambiente_objetivo:
+            if ambiente_doc and ambiente_doc != ambiente_objetivo:
                 continue
-        elif ambiente_objetivo:
-            continue
+            if not ambiente_doc and metadata.get("ambiente") is None:
+                metadata["ambiente"] = ambiente_objetivo
 
         tipo_dte = metadata.get("tipo_dte")
         tipo_indeterminado = False
@@ -476,7 +480,7 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
             "coincide_receptor": coincide_receptor,
             "total": total,
             "fecha_emision": fecha_emision,
-            "ambiente": ambiente_doc,
+            "ambiente": ambiente_real,
             "venta_id": venta_id,
             "seleccionable": seleccionable,
             "_sort_key": (

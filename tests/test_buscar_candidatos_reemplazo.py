@@ -70,6 +70,29 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
         (factura_a["identificacion"]["ambiente"], row_b),
     )
 
+    codigo_d = str(uuid.uuid4()).upper()
+    factura_d = _crear_factura(
+        dte_metadata_factory,
+        codigo=codigo_d,
+        numero="DTE-01-S001P001-000000000000444",
+        ambiente=factura_a["identificacion"]["ambiente"],
+    )
+    factura_d["receptor"] = factura_a["receptor"]
+    db_conn.registrar_envio_dte(
+        None,
+        "manual",
+        "En proceso",
+        "D" * 40,
+        respuesta_json=json.dumps({"documento": factura_d}),
+        codigo_generacion=codigo_d,
+        numero_control=factura_d["identificacion"]["numeroControl"],
+    )
+    row_d = db_conn.cursor.lastrowid
+    db_conn.cursor.execute(
+        "UPDATE dte_envios SET ambiente=? WHERE id=?",
+        (factura_a["identificacion"]["ambiente"], row_d),
+    )
+
     factura_c = _crear_factura(
         dte_metadata_factory,
         tipo="03",
@@ -116,6 +139,7 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
     assert factura_a["identificacion"]["codigoGeneracion"] in codigos
     assert codigo_b in codigos
     assert factura_c["identificacion"]["codigoGeneracion"] not in codigos
+    assert codigo_d not in codigos
 
     datos = {item["codigo_generacion"]: item for item in resultados}
     cand_a = datos[factura_a["identificacion"]["codigoGeneracion"]]
@@ -140,3 +164,9 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
     filtros_busqueda["search"] = receptor_doc
     resultados_busqueda = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_busqueda)
     assert {r["codigo_generacion"] for r in resultados_busqueda} == codigos
+
+    filtros_sin_recepcionado = dict(filtros)
+    filtros_sin_recepcionado.pop("recepcionado", None)
+    sin_filtro = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_sin_recepcionado)
+    codigos_sin_filtro = {r["codigo_generacion"] for r in sin_filtro}
+    assert codigo_d in codigos_sin_filtro

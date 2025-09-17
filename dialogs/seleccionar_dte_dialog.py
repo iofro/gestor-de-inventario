@@ -91,7 +91,7 @@ class SeleccionarDteDialog(QDialog):
 
         filters_layout = QHBoxLayout()
         self.recepcionado_cb = QCheckBox("Solo DTE recepcionados por MH")
-        self.recepcionado_cb.setChecked(True)
+        self.recepcionado_cb.setChecked(False)
         filters_layout.addWidget(self.recepcionado_cb)
 
         self.mismo_receptor_cb = QCheckBox("Mismo receptor")
@@ -99,6 +99,10 @@ class SeleccionarDteDialog(QDialog):
         self.mismo_receptor_cb.setChecked(tiene_docs)
         self.mismo_receptor_cb.setEnabled(tiene_docs)
         filters_layout.addWidget(self.mismo_receptor_cb)
+
+        self.filtrar_fecha_cb = QCheckBox("Filtrar por fecha")
+        self.filtrar_fecha_cb.setChecked(True)
+        filters_layout.addWidget(self.filtrar_fecha_cb)
         filters_layout.addStretch(1)
 
         filters_layout.addWidget(QLabel("Desde:"))
@@ -147,20 +151,30 @@ class SeleccionarDteDialog(QDialog):
 
         self.recepcionado_cb.toggled.connect(self._refresh)
         self.mismo_receptor_cb.toggled.connect(self._refresh)
+        self.filtrar_fecha_cb.toggled.connect(self._on_toggle_fecha_filter)
         self.fecha_inicio.dateChanged.connect(lambda *_: self._refresh())
         self.fecha_fin.dateChanged.connect(lambda *_: self._refresh())
+
+        self._on_toggle_fecha_filter(self.filtrar_fecha_cb.isChecked(), refresh=False)
 
         if self.db is None:
             for widget in (
                 self.search_edit,
                 self.recepcionado_cb,
                 self.mismo_receptor_cb,
+                self.filtrar_fecha_cb,
                 self.fecha_inicio,
                 self.fecha_fin,
             ):
                 widget.setEnabled(False)
 
         self._refresh()
+
+    def _on_toggle_fecha_filter(self, enabled: bool, *, refresh: bool = True) -> None:
+        self.fecha_inicio.setEnabled(enabled)
+        self.fecha_fin.setEnabled(enabled)
+        if refresh:
+            self._refresh()
 
     def _current_candidate(self) -> dict | None:
         row = self.table.currentRow()
@@ -181,7 +195,10 @@ class SeleccionarDteDialog(QDialog):
             self._populate_table()
             return
 
-        if self.fecha_inicio.date() > self.fecha_fin.date():
+        if (
+            self.filtrar_fecha_cb.isChecked()
+            and self.fecha_inicio.date() > self.fecha_fin.date()
+        ):
             self.fecha_fin.setDate(self.fecha_inicio.date())
 
         filtros = {
@@ -191,10 +208,17 @@ class SeleccionarDteDialog(QDialog):
             "recepcionado": self.recepcionado_cb.isChecked(),
             "mismo_receptor": self.mismo_receptor_cb.isChecked(),
             "receptor_documentos": self.receptor_documentos,
-            "fecha_inicio": self.fecha_inicio.date().toString("yyyy-MM-dd"),
-            "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd"),
             "search": self.search_edit.text(),
         }
+        if self.filtrar_fecha_cb.isChecked():
+            filtros.update(
+                {
+                    "fecha_inicio": self.fecha_inicio.date().toString("yyyy-MM-dd"),
+                    "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd"),
+                }
+            )
+        else:
+            filtros.update({"fecha_inicio": None, "fecha_fin": None})
         try:
             self.candidates = anulacion.buscar_candidatos_reemplazo(self.db, filtros)
         except Exception:

@@ -11,7 +11,6 @@ import requests
 
 import auth
 from db import DB
-from utils import jws
 from utils import stable_json
 from utils.catalogos import TRIBUTO_IVA
 from utils.sanitize import solo_digitos
@@ -608,11 +607,96 @@ def _ensure_replacement_document(db: DB | None, codigo: str) -> dict:
     return metadata
 
 
+def _quick_invalidacion_checks(
+    evento: dict,
+    *,
+    ambiente_raiz: str | None = None,
+    db: DB | None = None,
+) -> None:
+    if not isinstance(evento, dict):
+        raise ValueError("Evento de invalidación inválido")
+
+    ident = evento.get("identificacion") or {}
+    if not isinstance(ident, dict):
+        raise ValueError("Evento de invalidación sin identificación")
+
+    version = ident.get("version")
+    if str(version) != "2":
+        raise ValueError("La invalidación debe usar identificacion.version = 2")
+
+    ambiente_evento = normalize_ambiente(ident.get("ambiente"))
+    if ambiente_evento is None:
+        raise ValueError("Ambiente de la invalidación no determinado")
+
+    if ambiente_raiz is not None:
+        ambiente_raiz_norm = normalize_ambiente(ambiente_raiz)
+        if ambiente_raiz_norm and ambiente_evento != ambiente_raiz_norm:
+            raise ValueError("El ambiente del evento no coincide con el del envío")
+
+    documento = evento.get("documento") or {}
+    if not isinstance(documento, dict):
+        raise ValueError("Evento de invalidación sin documento")
+
+    tipo_dte_evento = str(documento.get("tipoDte") or "").zfill(2)
+    if not tipo_dte_evento:
+        raise ValueError("tipoDte del documento de invalidación requerido")
+
+    numero_control_evento = str(documento.get("numeroControl") or "").strip().upper()
+    if not numero_control_evento:
+        raise ValueError("numeroControl del documento de invalidación requerido")
+
+    sello_evento = str(documento.get("selloRecibido") or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello_evento):
+        raise ValueError("selloRecibido del documento de invalidación inválido")
+
+    monto_iva = documento.get("montoIva")
+    if monto_iva is not None:
+        try:
+            monto_decimal = Decimal(str(monto_iva))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("montoIva del documento de invalidación inválido") from exc
+        if monto_decimal < 0:
+            raise ValueError("montoIva no puede ser negativo")
+        try:
+            monto_decimal.quantize(Decimal("0.01"))
+        except InvalidOperation as exc:  # pragma: no cover - rounding errors
+            raise ValueError("montoIva debe tener dos decimales") from exc
+
+    motivo = evento.get("motivo") or {}
+    if isinstance(motivo, dict) and motivo.get("tipoAnulacion") == 2:
+        if documento.get("codigoGeneracionR") not in (None, ""):
+            raise ValueError(
+                "Para tipoAnulacion=2 el documento.codigoGeneracionR debe ser nulo"
+            )
+
+    metadata = None
+    codigo_generacion = str(documento.get("codigoGeneracion") or "").strip().upper()
+    if db is not None and codigo_generacion:
+        try:
+            metadata = _ensure_replacement_document(db, codigo_generacion)
+        except ValueError:
+            metadata = None
+
+    if metadata:
+        tipo_dte_original = str(metadata.get("tipo_dte") or "").zfill(2)
+        if tipo_dte_original and tipo_dte_original != tipo_dte_evento:
+            raise ValueError("tipoDte del documento no coincide con el DTE original")
+
+        numero_control_original = str(metadata.get("numero_control") or "").strip().upper()
+        if numero_control_original and numero_control_original != numero_control_evento:
+            raise ValueError("numeroControl del documento no coincide con el DTE original")
+
+        sello_original = str(metadata.get("sello") or "").strip().upper()
+        if sello_original and sello_original != sello_evento:
+            raise ValueError("selloRecibido del documento no coincide con el acuse original")
+
+
 def _post_invalidacion(
     url: str,
     token: str,
-    evento: str,
-    evento_data: dict | None = None,
+    evento_data: dict,
+    *,
+    ambiente_config: str | None = None,
     user_agent: str | None = None,
     auth: dict | None = None,
     opts: dict | None = None,
@@ -628,15 +712,22 @@ def _post_invalidacion(
     }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/anulardte", f"Path inválido: {url}"
 
-    body = {"documento": evento}
-    if evento_data:
-        ident = evento_data.get("identificacion", {})
-        ambiente = ident.get("ambiente")
-        version = ident.get("version")
-        if ambiente:
-            body["ambiente"] = ambiente
-        if version:
-            body["version"] = version
+    ident = evento_data.get("identificacion") if isinstance(evento_data, dict) else None
+    ambiente_evento = normalize_ambiente((ident or {}).get("ambiente"))
+    ambiente_cfg = normalize_ambiente(ambiente_config)
+    ambiente_raiz = ambiente_evento or ambiente_cfg
+    if ambiente_raiz is None:
+        raise ValueError("No se pudo determinar el ambiente de envío de la invalidación")
+
+    body = {"ambiente": ambiente_raiz, "documento": evento_data}
+
+    body_types = {key: type(value).__name__ for key, value in body.items()}
+    try:
+        body_json = stable_json.stable_stringify(body, indent=2)
+    except Exception:  # pragma: no cover - fallback para logging
+        body_json = json.dumps(body, ensure_ascii=False)
+    logger.info("Body de invalidación listo (tipos=%s)", body_types)
+    logger.info("Body de invalidación contenido: %s", body_json)
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
@@ -653,7 +744,6 @@ def _post_invalidacion(
     }
 
     try:
-        print(json.dumps(body, ensure_ascii=False))
         resp = requests.post(url, headers=headers, json=body, timeout=20)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
@@ -1005,7 +1095,6 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
     config = _load_dte_api_config()
     pu = urlparse(config["url"])
     url = f"{pu.scheme}://{pu.netloc}/fesv/anulardte"
-    signed = jws.sign_json(data)
     codigo_generacion = None
     target_dir = None
     if isinstance(data, dict):
@@ -1033,16 +1122,20 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
             stable_json.save_file(
                 json_path, stable_json.stable_stringify(data, indent=2)
             )
-            jws_path = os.path.join(target_dir, "documento.jws")
-            signed_str = signed if isinstance(signed, str) else str(signed)
-            stable_json.save_file(jws_path, signed_str, add_final_newline=False)
         except Exception:
             logger.exception(
                 "No se pudo guardar el evento de anulación %s",
                 codigo_generacion or "",
             )
     token = auth.get_token()
-    respuesta = _post_invalidacion(url, token, signed, data)
+    ambiente_cfg = config.get("ambiente")
+    _quick_invalidacion_checks(data, ambiente_raiz=ambiente_cfg, db=db)
+    respuesta = _post_invalidacion(
+        url,
+        token,
+        data,
+        ambiente_config=ambiente_cfg,
+    )
     sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
     estado = (
         respuesta.get("estado")

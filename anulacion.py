@@ -19,12 +19,14 @@ from utils.fecha import TZ_EL_SALVADOR
 from dte import (
     _load_datos_negocio,
     _load_dte_api_config,
+    _decode_jws_payload,
     format_cliente_id_from_dui,
     detect_user_agent,
     build_auth_header,
     _parse_error_response,
     APP_VERSION,
 )
+from utils.jws import sign_json
 
 
 logger = logging.getLogger(__name__)
@@ -712,6 +714,9 @@ def _post_invalidacion(
     }, f"Host inválido: {url}"
     assert pu.path.rstrip("/") == "/fesv/anulardte", f"Path inválido: {url}"
 
+    if not isinstance(evento_data, dict):
+        raise ValueError("Evento de invalidación inválido")
+
     ident = evento_data.get("identificacion") if isinstance(evento_data, dict) else None
     ambiente_evento = normalize_ambiente((ident or {}).get("ambiente"))
     ambiente_cfg = normalize_ambiente(ambiente_config)
@@ -719,7 +724,74 @@ def _post_invalidacion(
     if ambiente_raiz is None:
         raise ValueError("No se pudo determinar el ambiente de envío de la invalidación")
 
-    body = {"ambiente": ambiente_raiz, "documento": evento_data}
+    if not isinstance(ident, dict):
+        ident = {}
+
+    documento_evento = evento_data.get("documento")
+    if not isinstance(documento_evento, dict):
+        documento_evento = {}
+
+    version_envio = 2
+    version_raw = ident.get("version")
+    if version_raw is not None:
+        try:
+            version_envio = int(str(version_raw))
+        except (TypeError, ValueError) as exc:
+            raise ValueError("Versión de la invalidación inválida") from exc
+    if version_envio != 2:
+        raise ValueError("La invalidación debe usar identificacion.version = 2")
+
+    id_envio_raw = evento_data.get("idEnvio")
+    if id_envio_raw in (None, ""):
+        id_envio_raw = ident.get("idEnvio")
+    try:
+        id_envio = int(str(id_envio_raw)) if id_envio_raw not in (None, "") else 1
+    except (TypeError, ValueError):
+        id_envio = 1
+    if id_envio <= 0:
+        id_envio = 1
+
+    firmado = str(sign_json(evento_data)).strip()
+    if firmado.count(".") != 2:
+        raise ValueError("Firma de invalidación inválida")
+
+    try:
+        payload_firmado = _decode_jws_payload(firmado)
+    except ValueError as exc:
+        raise ValueError("Firma de invalidación inválida") from exc
+
+    ident_firmado = payload_firmado.get("identificacion") or {}
+    if not isinstance(ident_firmado, dict):
+        ident_firmado = {}
+    documento_firmado = payload_firmado.get("documento") or {}
+    if not isinstance(documento_firmado, dict):
+        documento_firmado = {}
+
+    def _norm_codigo(value: object) -> str:
+        return str(value or "").strip().upper()
+
+    cod_evento = _norm_codigo(ident.get("codigoGeneracion"))
+    cod_evento_firmado = _norm_codigo(ident_firmado.get("codigoGeneracion"))
+    if cod_evento and cod_evento_firmado and cod_evento != cod_evento_firmado:
+        raise ValueError("codigoGeneracion del evento no coincide con la firma")
+
+    cod_doc = _norm_codigo(documento_evento.get("codigoGeneracion"))
+    cod_doc_firmado = _norm_codigo(documento_firmado.get("codigoGeneracion"))
+    if cod_doc and cod_doc_firmado and cod_doc != cod_doc_firmado:
+        raise ValueError("codigoGeneracion del documento no coincide con la firma")
+
+    ambiente_firmado = normalize_ambiente(ident_firmado.get("ambiente"))
+    if ambiente_firmado:
+        if ambiente_raiz and ambiente_firmado != ambiente_raiz:
+            raise ValueError("El ambiente del evento firmado no coincide con el solicitado")
+        ambiente_raiz = ambiente_firmado
+
+    body = {
+        "ambiente": ambiente_raiz,
+        "idEnvio": id_envio,
+        "version": version_envio,
+        "documento": firmado,
+    }
 
     body_types = {key: type(value).__name__ for key, value in body.items()}
     try:

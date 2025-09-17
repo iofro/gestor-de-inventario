@@ -81,7 +81,8 @@ class AnularFacturaDialog(QDialog):
         self.codigo_label = QLabel("Documento que reemplaza:")
         row.addWidget(self.codigo_label)
         self.codigo_edit = QLineEdit()
-        self.codigo_edit.setPlaceholderText("UUID del DTE corregido (36 caracteres)")
+        self.codigo_edit.setReadOnly(True)
+        self.codigo_edit.setPlaceholderText("Selecciona con el botón…")
         row.addWidget(self.codigo_edit)
         self.codigo_status = QLabel("")
         self.codigo_status.setFixedWidth(18)
@@ -184,8 +185,6 @@ class AnularFacturaDialog(QDialog):
         self.codigo_edit.editingFinished.connect(self._normalize_codigo)
         self.buscar_btn.clicked.connect(self._abrir_selector)
         self.buscar_btn.setEnabled(self.db is not None)
-        self._update_codigo_status()
-        self._on_tipo_changed(self.tipo_cb.currentIndex())
 
         def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
             if not data:
@@ -205,6 +204,8 @@ class AnularFacturaDialog(QDialog):
 
         _prefill(responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp)
         _prefill(solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
+
+        self._on_tipo_changed(self.tipo_cb.currentIndex())
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self._on_accept)
@@ -281,7 +282,7 @@ class AnularFacturaDialog(QDialog):
         self.codigo_status.setVisible(requiere)
         self.codigo_hint.setVisible(requiere)
         self.buscar_btn.setVisible(requiere)
-        self.buscar_btn.setEnabled(requiere and self.db is not None and self._original_tipo is not None)
+        self.buscar_btn.setEnabled(requiere and self.db is not None)
         if not requiere:
             self.codigo_edit.clear()
         self._update_codigo_status()
@@ -316,31 +317,17 @@ class AnularFacturaDialog(QDialog):
 
     def _abrir_selector(self):
         if self.db is None:
-            QMessageBox.warning(
-                self,
-                "Anulación",
-                "Base de datos no disponible para buscar DTEs.",
-            )
             return
-        if not self._original_tipo:
-            QMessageBox.warning(
-                self,
-                "Anulación",
-                "No se pudo determinar el tipo del DTE original.",
-            )
-            return
-        dialog = SeleccionarDteDialog(
+        dlg = SeleccionarDteDialog(
             self.db,
             tipo_dte=self._original_tipo,
             ambiente=self._original_ambiente,
             receptor_documentos=sorted(self._receptor_docs),
             exclude_uuid=self._original_uuid,
-            emisor_documento=self._emisor_doc,
-            fecha_emision_original=self._original_fecha,
             parent=self,
         )
-        if dialog.exec_() == QDialog.Accepted and dialog.selected_uuid:
-            self.codigo_edit.setText(dialog.selected_uuid)
+        if dlg.exec_() == QDialog.Accepted and dlg.selected_uuid:
+            self.codigo_edit.setText(dlg.selected_uuid.upper())
             self._update_codigo_status()
 
     # --- Empleado search helpers -----------------------------------------------
@@ -465,7 +452,10 @@ class AnularFacturaDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def get_data(self) -> dict:
-        codigo = self.codigo_edit.text().strip()
+        tipo = self.tipo_cb.currentData()
+        codigo = self.codigo_edit.text().strip().upper()
+        if tipo not in {"1", "3"}:
+            codigo = None
         return {
             "tipoAnulacion": self.tipo_cb.currentData(),
             "motivoAnulacion": self.motivo_edit.text().strip(),
@@ -475,5 +465,5 @@ class AnularFacturaDialog(QDialog):
             "nombreSolicita": self.nom_sol.text().strip(),
             "tipDocSolicita": self.tdoc_sol.currentData(),
             "numDocSolicita": self.ndoc_sol.text().strip(),
-            "codigoGeneracionR": codigo.upper() if codigo else None,
+            "codigoGeneracionR": codigo if codigo else None,
         }

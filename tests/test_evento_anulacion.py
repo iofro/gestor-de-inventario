@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import QDialog, QWidget
 
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from utils.catalogos import TRIBUTO_IVA
+from tests.conftest import make_jws
 import facturacion_tab
 import anulacion
 
@@ -48,6 +49,74 @@ def _sample_factura():
         "receptor": receptor,
         "resumen": resumen,
     }
+
+
+def _basic_form(tipo: str = "2") -> dict:
+    return {
+        "tipoAnulacion": tipo,
+        "motivoAnulacion": "Error en factura",
+        "nombreResponsable": "Responsable Uno",
+        "tipDocResponsable": "36",
+        "numDocResponsable": "123456789",
+        "nombreSolicita": "Solicita Dos",
+        "tipDocSolicita": "13",
+        "numDocSolicita": "987654321",
+    }
+
+
+def _evento_minimo() -> dict:
+    codigo_evento = str(uuid.uuid4()).upper()
+    codigo_dte = str(uuid.uuid4()).upper()
+    return {
+        "identificacion": {
+            "version": 2,
+            "ambiente": "00",
+            "codigoGeneracion": codigo_evento,
+            "fecAnula": "2024-01-05",
+            "horAnula": "08:00:00",
+        },
+        "documento": {
+            "tipoDte": "01",
+            "codigoGeneracion": codigo_dte,
+            "selloRecibido": SELLO_BASE36,
+            "numeroControl": "DTE-01-S001P001-000000000000099",
+            "fecEmi": "2024-01-01",
+            "montoIva": 1.23,
+            "codigoGeneracionR": None,
+            "tipoDocumento": "36",
+            "numDocumento": "123456789",
+            "nombre": "Cliente Demo",
+        },
+        "motivo": {"tipoAnulacion": 2},
+    }
+
+
+def test_build_invalidacion_tributos_null_usa_totaliva(monkeypatch):
+    factura = _sample_factura()
+    factura["resumen"]["tributos"] = None
+    factura["resumen"]["totalIva"] = "5.50"
+    factura["selloRecibido"] = SELLO_BASE36
+    form = _basic_form()
+
+    _patch_negocio(monkeypatch)
+
+    evento = anulacion.build_invalidacion_json(factura, form, ambiente="00")
+
+    assert evento["documento"]["montoIva"] == pytest.approx(5.5)
+
+
+def test_build_invalidacion_tributos_null_sin_totaliva(monkeypatch):
+    factura = _sample_factura()
+    factura["resumen"]["tributos"] = None
+    factura["resumen"].pop("totalIva", None)
+    factura["selloRecibido"] = SELLO_BASE36
+    form = _basic_form()
+
+    _patch_negocio(monkeypatch)
+
+    evento = anulacion.build_invalidacion_json(factura, form, ambiente="00")
+
+    assert evento["documento"]["montoIva"] is None
 
 
 def test_generar_evento_anulacion(qt_app, monkeypatch):
@@ -321,6 +390,82 @@ def test_invalidacion_rechaza_fecha_anterior(monkeypatch, db_conn, tmp_path):
             db=db_conn,
         )
     assert str(excinfo.value) == anulacion.ERROR_REEMPLAZO_FECHA
+
+
+def test_post_invalidacion_envia_sobre_con_jws(monkeypatch):
+    evento = _evento_minimo()
+    firmado = make_jws(evento)
+
+    monkeypatch.setattr(anulacion, "sign_json", lambda data: firmado)
+
+    captured = {}
+
+    class DummyResp:
+        status_code = 200
+        text = ""
+
+        @staticmethod
+        def json():
+            return {"estado": "aceptado", "sello": "S" * 40}
+
+    def fake_post(url, headers=None, json=None, timeout=None):
+        captured["url"] = url
+        captured["headers"] = headers
+        captured["body"] = json
+        captured["timeout"] = timeout
+        return DummyResp()
+
+    monkeypatch.setattr(anulacion.requests, "post", fake_post)
+
+    result = anulacion._post_invalidacion(
+        "https://apitest.dtes.mh.gob.sv/fesv/anulardte",
+        "token123",
+        evento,
+        ambiente_config="00",
+    )
+
+    assert captured["url"] == "https://apitest.dtes.mh.gob.sv/fesv/anulardte"
+    assert captured["timeout"] == 20
+    assert captured["body"]["documento"] == firmado
+    assert isinstance(captured["body"]["documento"], str)
+    assert captured["body"]["ambiente"] == "00"
+    assert captured["body"]["idEnvio"] == 1
+    assert captured["body"]["version"] == 2
+    assert captured["headers"]["Authorization"] == "Bearer token123"
+    assert result["estado"] == "aceptado"
+
+
+def test_post_invalidacion_reporta_detalle_error(monkeypatch):
+    evento = _evento_minimo()
+    firmado = make_jws(evento)
+
+    monkeypatch.setattr(anulacion, "sign_json", lambda data: firmado)
+
+    class DummyResp:
+        status_code = 400
+        text = "Bad Request"
+
+        @staticmethod
+        def json():
+            return {
+                "detalle": {
+                    "descripcionMsg": "Formato inválido",
+                    "observaciones": ["Falta campo"],
+                }
+            }
+
+    monkeypatch.setattr(anulacion.requests, "post", lambda *a, **k: DummyResp())
+
+    result = anulacion._post_invalidacion(
+        "https://apitest.dtes.mh.gob.sv/fesv/anulardte",
+        "token456",
+        evento,
+    )
+
+    assert result["estado"] == "Rechazado"
+    assert result["http_status"] == 400
+    assert result["descripcionMsg"] == "Formato inválido"
+    assert result["observaciones"] == ["Falta campo"]
 
 
 def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):

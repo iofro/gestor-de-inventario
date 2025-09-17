@@ -519,7 +519,7 @@ def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
         def get_data(self):
             return {}
 
-    monkeypatch.setattr(facturacion_tab, "AnularDteDialog", DummyDialog)
+    monkeypatch.setattr(facturacion_tab, "AnularFacturaDialog", DummyDialog)
 
     called = []
 
@@ -708,7 +708,7 @@ def test_anular_dte_uses_sello_from_respuesta(qt_app, db_conn, monkeypatch):
         def get_data(self):
             return {}
 
-    monkeypatch.setattr(facturacion_tab, "AnularDteDialog", DummyDialog)
+    monkeypatch.setattr(facturacion_tab, "AnularFacturaDialog", DummyDialog)
 
     called = []
 

@@ -371,7 +371,7 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         for val in receptor_docs_raw
         if _normalize_documento_id(val)
     }
-    recepcionado_only = bool(filtros.get("recepcionado", True))
+    recepcionado_only = bool(filtros.get("recepcionado"))
     mismo_receptor = bool(filtros.get("mismo_receptor", True))
     search = str(filtros.get("search") or "").strip().upper()
     limit = filtros.get("limit")

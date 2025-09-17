@@ -64,6 +64,7 @@ import dte
 import anulacion
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
+from dialogs.anular_factura_dialog import AnularFacturaDialog
 from decimal import Decimal
 from utils.monto import iva_item
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
@@ -1684,18 +1685,63 @@ class FacturacionTab(QWidget):
         data["selloRecibido"] = sello
 
         negocio = dte._load_datos_negocio()
+        responsable_nit = negocio.get("nit", "")
+        responsable_dui = negocio.get("dui", "")
         responsable = {
             "nombre": negocio.get("nombre", ""),
-            "tipDoc": "36",
-            "numDoc": solo_digitos(negocio.get("nit", "")),
+            "nit": responsable_nit,
+            "dui": responsable_dui,
+            "nrc": negocio.get("nrc", ""),
         }
+        responsable_nit_digits = solo_digitos(responsable_nit)
+        responsable_dui_digits = solo_digitos(responsable_dui)
+        if responsable_dui:
+            responsable["tipDoc"] = "13"
+            responsable["numDoc"] = (
+                responsable_dui if "-" in str(responsable_dui) else responsable_dui_digits
+            )
+        elif responsable_nit_digits:
+            responsable["tipDoc"] = "36"
+            responsable["numDoc"] = responsable_nit_digits
+        else:
+            responsable["tipDoc"] = "36"
+            responsable["numDoc"] = solo_digitos(negocio.get("nrc", "")) or ""
+
         receptor = data.get("receptor") or {}
+        solicitante_nit = receptor.get("nit", "")
+        solicitante_dui = receptor.get("dui", "")
+        solicitante_numdoc = receptor.get("numDocumento", "")
         solicitante = {
             "nombre": receptor.get("nombre", ""),
-            "tipDoc": receptor.get("tipoDocumento") or ("36" if receptor.get("nit") else "13"),
-            "numDoc": receptor.get("nit") or receptor.get("numDocumento", ""),
+            "nit": solicitante_nit,
+            "dui": solicitante_dui,
+            "numDocumento": solicitante_numdoc,
+            "nrc": receptor.get("nrc", ""),
         }
-        dlg = AnularDteDialog(responsable, solicitante, self)
+        tipo_doc = receptor.get("tipoDocumento")
+        if not tipo_doc:
+            if solicitante_dui or (
+                solicitante_numdoc and len(solo_digitos(solicitante_numdoc)) == 9
+            ):
+                tipo_doc = "13"
+            elif solicitante_nit:
+                tipo_doc = "36"
+            else:
+                tipo_doc = "13"
+        solicitante["tipDoc"] = tipo_doc
+        solicitante["numDoc"] = (
+            solicitante_dui
+            or (solo_digitos(solicitante_nit) if solicitante_nit else "")
+            or solicitante_numdoc
+            or solo_digitos(receptor.get("nrc", ""))
+        )
+        dlg = AnularFacturaDialog(
+            self,
+            responsable=responsable,
+            solicitante=solicitante,
+            db=self.manager.db,
+            factura=data,
+        )
         if dlg.exec_() != QDialog.Accepted:
             return
         ui_data = dlg.get_data()

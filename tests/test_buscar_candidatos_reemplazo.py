@@ -170,3 +170,68 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
     sin_filtro = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_sin_recepcionado)
     codigos_sin_filtro = {r["codigo_generacion"] for r in sin_filtro}
     assert codigo_d in codigos_sin_filtro
+
+
+@pytest.mark.parametrize("metadata_source", ["payload", "respuesta"])
+def test_buscar_candidatos_reemplazo_recupera_codigo_de_metadatos(
+    monkeypatch, dte_metadata_factory, metadata_source
+):
+    codigo_generacion = str(uuid.uuid4()).upper()
+    factura = _crear_factura(
+        dte_metadata_factory,
+        codigo=codigo_generacion,
+        numero="DTE-01-S001P001-000000000000555",
+    )
+
+    class DummyCursor:
+        def __init__(self, rows):
+            self._rows = rows
+            self._current_rows = []
+
+        def execute(self, query, params=None):
+            query_text = str(query or "").strip().lower()
+            if query_text.startswith("select"):
+                self._current_rows = self._rows
+            else:
+                self._current_rows = []
+            return self
+
+        def fetchall(self):
+            return self._current_rows
+
+    class DummyDB:
+        def __init__(self, rows):
+            self.cursor = DummyCursor(rows)
+
+        def ensure_column(self, *args, **kwargs):
+            return None
+
+    rows = [
+        {
+            "id": 1,
+            "venta_id": 10,
+            "fecha_hora": "2024-02-03T10:00:00",
+            "modo": "manual",
+            "estado": "Aceptado",
+            "sello": "A" * 40,
+            "codigo_generacion": None,
+            "numero_control": None,
+            "respuesta": "{}",
+            "ambiente": None,
+        }
+    ]
+    dummy_db = DummyDB(rows)
+
+    payload = factura if metadata_source == "payload" else None
+    respuesta_doc = factura if metadata_source == "respuesta" else None
+
+    monkeypatch.setattr(anulacion, "_load_dte_json_from_venta", lambda *_: payload)
+    monkeypatch.setattr(anulacion, "_parse_respuesta_documento", lambda *_: respuesta_doc)
+
+    resultados = anulacion.buscar_candidatos_reemplazo(dummy_db, {})
+
+    assert len(resultados) == 1
+    candidato = resultados[0]
+    assert candidato["codigo_generacion"] == codigo_generacion
+    assert candidato["numero_control"] == factura["identificacion"]["numeroControl"]
+    assert candidato["seleccionable"] is True

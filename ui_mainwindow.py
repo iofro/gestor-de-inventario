@@ -993,24 +993,85 @@ class MainWindow(QMainWindow):
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))
 
-    def guardar_como(self):
-        filename, _ = QFileDialog.getSaveFileName(self, "Guardar inventario como", "", "Archivos JSON (*.json);;Todos los archivos (*)")
-        if filename:
-            # Use a background thread with its own DB connection to avoid
-            # blocking the UI or sharing the main thread's connection.
-            thread = ExportThread(filename, self.get_tab_order())
+    def _post_guardado_exitoso(self, filename):
+        self.ultimo_archivo_json = filename
+        with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
+            json.dump({"ultimo": filename}, f)
+        self._mark_saved()
+
+    def _exportar_inventario(
+        self,
+        filename,
+        *,
+        titulo_dialogo,
+        mensaje_exito,
+        asincrono=True,
+        mostrar_mensajes=True,
+    ):
+        tab_order = self.get_tab_order()
+        if asincrono:
+            thread = ExportThread(filename, tab_order)
 
             def on_finished():
-                self.ultimo_archivo_json = filename
-                with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
-                    json.dump({"ultimo": filename}, f)
-                self._mark_saved()
-                QMessageBox.information(self, "Guardar como", "Inventario guardado correctamente.")
+                self._post_guardado_exitoso(filename)
+                if mostrar_mensajes:
+                    QMessageBox.information(
+                        self,
+                        titulo_dialogo,
+                        mensaje_exito,
+                    )
+
+            def on_error(error):
+                if mostrar_mensajes:
+                    QMessageBox.critical(
+                        self,
+                        "Error",
+                        f"No se pudo guardar el inventario:\n{error}",
+                    )
 
             thread.finished.connect(on_finished)
-            thread.error.connect(lambda e: QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}"))
+            thread.error.connect(on_error)
             thread.start()
             self.export_thread = thread
+            return thread
+
+        try:
+            manager = InventoryManager(DB())
+            manager.exportar_inventario_json(filename, tab_order=tab_order)
+        except Exception as exc:
+            if mostrar_mensajes:
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    f"No se pudo guardar el inventario:\n{exc}",
+                )
+            return False
+
+        self._post_guardado_exitoso(filename)
+        if mostrar_mensajes:
+            QMessageBox.information(
+                self,
+                titulo_dialogo,
+                mensaje_exito,
+            )
+        return True
+
+    def guardar_como(self):
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar inventario como",
+            "",
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+        )
+        if not filename:
+            return False
+
+        self._exportar_inventario(
+            filename,
+            titulo_dialogo="Guardar como",
+            mensaje_exito="Inventario guardado correctamente.",
+        )
+        return True
 
     def cargar_inventario(self):
         filename, _ = QFileDialog.getOpenFileName(self, "Cargar inventario", "", "Archivos JSON (*.json);;Todos los archivos (*)")
@@ -1077,29 +1138,35 @@ class MainWindow(QMainWindow):
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo guardar el archivo:\n{exc}")
 
-    def guardar_rapido(self):
-        if self.ultimo_archivo_json:
-            # Reuse the background export thread with its own database
-            # connection to keep the GUI responsive.
-            thread = ExportThread(
-                self.ultimo_archivo_json, self.get_tab_order()
+    def guardar_rapido(self, *, asincrono=True, mostrar_mensajes=True):
+        filename = self.ultimo_archivo_json
+        if not filename:
+            filename, _ = QFileDialog.getSaveFileName(
+                self,
+                "Guardar inventario",
+                "",
+                "Archivos JSON (*.json);;Todos los archivos (*)",
             )
+            if not filename:
+                if mostrar_mensajes:
+                    QMessageBox.warning(
+                        self,
+                        "Guardar rápido",
+                        "Primero debes guardar o cargar un inventario manualmente.",
+                    )
+                return False
 
-            def on_finished():
-                self._mark_saved()
-                QMessageBox.information(
-                    self,
-                    "Guardar rápido",
-                    f"Inventario guardado en:\n{self.ultimo_archivo_json}",
-                )
+        resultado = self._exportar_inventario(
+            filename,
+            titulo_dialogo="Guardar rápido",
+            mensaje_exito=f"Inventario guardado en:\n{filename}",
+            asincrono=asincrono,
+            mostrar_mensajes=mostrar_mensajes,
+        )
 
-            thread.finished.connect(on_finished)
-            thread.error.connect(lambda e: QMessageBox.critical(self, "Error", f"No se pudo guardar el inventario:\n{e}"))
-            thread.start()
-            self.export_thread = thread
-        else:
-            QMessageBox.warning(self, "Guardar rápido", "Primero debes guardar o cargar un inventario manualmente.")
-            self._actualizar_historial()
+        if asincrono:
+            return resultado is not None
+        return bool(resultado)
 
     def cargar_rapido(self):
         import os
@@ -2122,9 +2189,12 @@ class MainWindow(QMainWindow):
             QMessageBox.Yes,
         )
         if reply == QMessageBox.Yes:
-            self.guardar_rapido()
-            detener_firmador()
-            event.accept()
+            guardado = self.guardar_rapido(asincrono=False)
+            if guardado:
+                detener_firmador()
+                event.accept()
+            else:
+                event.ignore()
         elif reply == QMessageBox.No:
             detener_firmador()
             event.accept()

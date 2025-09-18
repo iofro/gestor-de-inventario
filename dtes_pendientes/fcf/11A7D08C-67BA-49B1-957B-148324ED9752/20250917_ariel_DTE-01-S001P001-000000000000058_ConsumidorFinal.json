@@ -1,0 +1,143 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1.0000,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 5",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
+      "numItem": 1,
+      "numeroDocumento": null,
+      "precioUni": 11.0000,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 11.0000,
+      "ventaNoSuj": 0.0
+    },
+    {
+      "cantidad": 1.0000,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 5",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
+      "numItem": 2,
+      "numeroDocumento": null,
+      "precioUni": 11.0000,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 11.0000,
+      "ventaGravada": 0.0,
+      "ventaNoSuj": 0.0
+    },
+    {
+      "cantidad": 1.0000,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 5",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
+      "numItem": 3,
+      "numeroDocumento": null,
+      "precioUni": 11.0000,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 0.0,
+      "ventaNoSuj": 11.0000
+    }
+  ],
+  "documentoRelacionado": null,
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "11A7D08C-67BA-49B1-957B-148324ED9752",
+    "fecEmi": "2025-09-17",
+    "horEmi": "18:42:25",
+    "motivoContin": null,
+    "numeroControl": "DTE-01-S001P001-000000000000058",
+    "tipoContingencia": null,
+    "tipoDte": "01",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 1
+  },
+  "otrosDocumentos": null,
+  "receptor": {
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Cliente de demostración",
+    "direccion": {
+      "complemento": "6a calle oriente",
+      "departamento": "05",
+      "municipio": "25"
+    },
+    "nombre": "ariel",
+    "nrc": null,
+    "numDocumento": "00798935-2",
+    "telefono": "74154027",
+    "tipoDocumento": "13"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 33.00,
+    "numPagoElectronico": "",
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 33.00,
+        "periodo": null,
+        "plazo": null,
+        "referencia": null
+      }
+    ],
+    "porcentajeDescuento": 0.0,
+    "reteRenta": 0.0,
+    "saldoFavor": 0.0,
+    "subTotal": 33.00,
+    "subTotalVentas": 33.00,
+    "totalDescu": 0.0,
+    "totalExenta": 11.0000,
+    "totalGravada": 11.00,
+    "totalLetras": "Treinta y tres Dolares con cero centavos",
+    "totalNoGravado": 0.0,
+    "totalNoSuj": 11.0000,
+    "totalPagar": 33.00,
+    "tributos": null
+  },
+  "ventaTercero": null
+}

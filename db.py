@@ -919,6 +919,7 @@ class DB:
         self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         try:
+            extra_json = json.dumps(extra) if extra is not None else None
             cols = ["fecha", "total", "cliente_id", "estado", "sincronizada"]
             vals = [fecha, total, cliente_id, estado, 1]
             if Distribuidor_id is not None:
@@ -927,6 +928,9 @@ class DB:
             if vendedor_id is not None:
                 cols.append("vendedor_id")
                 vals.append(vendedor_id)
+            if extra_json is not None:
+                cols.append("extra")
+                vals.append(extra_json)
             placeholders = ", ".join(["?"] * len(vals))
             q = f"INSERT INTO ventas ({', '.join(cols)}) VALUES ({placeholders})"
             self.cursor.execute(q, vals)
@@ -958,7 +962,6 @@ class DB:
                     FOREIGN KEY (cliente_id) REFERENCES clientes(id)
                 )
             """)
-            extra_json = json.dumps(extra) if extra else None
             self.cursor.execute("""
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro,

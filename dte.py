@@ -1078,7 +1078,9 @@ def armar_tributos(tributos_raw, tipo_dte):
     return result or None
 
 
-def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01"):
+def calcular_resumen(
+    items_total, venta, fiscal=None, extra=None, tipo_dte="01", *, cuerpo=None
+):
     """Calcula la sección resumen acorde al esquema oficial."""
 
     fiscal = fiscal or {}
@@ -1240,6 +1242,20 @@ def calcular_resumen(items_total, venta, fiscal=None, extra=None, tipo_dte="01")
         if condicion is None:
             condicion = fiscal.get("condicion_pago")
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
+
+    if tipo_dte in {"03", "05", "06"}:
+        cuerpo_doc = cuerpo or []
+        tg = money(sum(D(str(i.get("ventaGravada") or 0)) for i in cuerpo_doc))
+        resumen_total_gravada = money(D(str(resumen.get("totalGravada", 0))))
+        if resumen_total_gravada == D("0") and tg > D("0"):
+            resumen["totalGravada"] = tg
+            resumen_total_gravada = tg
+        iva_desde_cuerpo = money(
+            sum(D(str(i.get("ventaGravada") or 0)) * D("0.13") for i in cuerpo_doc)
+        )
+        if cuerpo_doc:
+            total_iva = iva_desde_cuerpo
+        total_gravada = resumen_total_gravada
 
     # Consolidar tributos adicionales desde ``extra`` o ``fiscal``
     trib_raw = []
@@ -2698,6 +2714,7 @@ def generar_dte_json(
         fiscal=fiscal_totals,
         extra=extra,
         tipo_dte=tipo_dte,
+        cuerpo=cuerpo,
     )
 
     resumen["totalNoSuj"] = _zero_or_item(total_no_suj_sum)

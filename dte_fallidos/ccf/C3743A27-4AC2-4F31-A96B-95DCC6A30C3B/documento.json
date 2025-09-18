@@ -1,0 +1,152 @@
+{
+  "apendice": null,
+  "cuerpoDocumento": [
+    {
+      "cantidad": 1.00000000,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 9",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
+      "numItem": 1,
+      "numeroDocumento": null,
+      "precioUni": 13.27433628,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": [
+        "20"
+      ],
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 13.27433628,
+      "ventaNoSuj": 0.0
+    },
+    {
+      "cantidad": 1.00000000,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 9",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
+      "numItem": 2,
+      "numeroDocumento": null,
+      "precioUni": 15.00000000,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 15.00000000,
+      "ventaGravada": 0.0,
+      "ventaNoSuj": 0.0
+    },
+    {
+      "cantidad": 1.00000000,
+      "codTributo": null,
+      "codigo": "SKU-NA",
+      "descripcion": "Producto Demo 9",
+      "montoDescu": 0.0,
+      "noGravado": 0.0,
+      "numItem": 3,
+      "numeroDocumento": null,
+      "precioUni": 15.00000000,
+      "psv": 0.0,
+      "tipoItem": 1,
+      "tributos": null,
+      "uniMedida": 59,
+      "ventaExenta": 0.0,
+      "ventaGravada": 0.0,
+      "ventaNoSuj": 15.00000000
+    }
+  ],
+  "documentoRelacionado": null,
+  "emisor": {
+    "codActividad": "46484",
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "descActividad": "Venta de productos farmaceuticos",
+    "direccion": {
+      "complemento": "Local.3 #4-6 B, Paseo Concepcion",
+      "departamento": "05",
+      "municipio": "24"
+    },
+    "nit": "09061712791014",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "nombreComercial": "Farmacia Santa Catalina",
+    "nrc": "2301408",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "extension": null,
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "C3743A27-4AC2-4F31-A96B-95DCC6A30C3B",
+    "fecEmi": "2025-09-18",
+    "horEmi": "16:22:08",
+    "motivoContin": null,
+    "numeroControl": "DTE-03-S001P001-000000000000205",
+    "tipoContingencia": null,
+    "tipoDte": "03",
+    "tipoModelo": 1,
+    "tipoMoneda": "USD",
+    "tipoOperacion": 1,
+    "version": 3
+  },
+  "otrosDocumentos": null,
+  "receptor": {
+    "codActividad": "62090",
+    "correo": "cliente1@demo.com",
+    "descActividad": "Cliente de demostración",
+    "direccion": {
+      "complemento": "6a calle oriente",
+      "departamento": "05",
+      "municipio": "25"
+    },
+    "nit": "13240304791012",
+    "nombre": "ariel",
+    "nombreComercial": "Vertex",
+    "nrc": "2273734",
+    "telefono": "74154027"
+  },
+  "resumen": {
+    "condicionOperacion": 1,
+    "descuExenta": 0.0,
+    "descuGravada": 0.0,
+    "descuNoSuj": 0.0,
+    "ivaPerci1": 0.0,
+    "ivaRete1": 0.0,
+    "montoTotalOperacion": 45.00,
+    "numPagoElectronico": "",
+    "pagos": [
+      {
+        "codigo": "01",
+        "montoPago": 45.00,
+        "periodo": null,
+        "plazo": null,
+        "referencia": null
+      }
+    ],
+    "porcentajeDescuento": 0.0,
+    "reteRenta": 0.0,
+    "saldoFavor": 0.0,
+    "subTotal": 13.27,
+    "subTotalVentas": 13.27,
+    "totalDescu": 0.0,
+    "totalExenta": 15.00,
+    "totalGravada": 13.27,
+    "totalLetras": "CUARENTA CON Y CINCO 00/100 DÓLARES",
+    "totalNoGravado": 0.0,
+    "totalNoSuj": 15.00,
+    "totalPagar": 45.00,
+    "tributos": [
+      {
+        "codigo": "20",
+        "descripcion": "Impuesto al Valor Agregado 13%",
+        "valor": 31.73
+      }
+    ]
+  },
+  "ventaTercero": null
+}

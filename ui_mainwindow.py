@@ -35,6 +35,7 @@ from num2words import num2words  # Instala las dependencias con: pip install -r 
 
 from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
+from utils.fiscal_extra import build_fiscal_extra
 from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
@@ -789,14 +790,8 @@ class MainWindow(QMainWindow):
                 Distribuidor_id = Distribuidor["id"] if Distribuidor else None
                 vendedor_id = data.get("vendedor_id")
                 estado = data.get("estado", "Pagada")
-                extra = {
-                    "sumas": data.get("sumas", 0),
-                    "descuentos": data.get("descuentos", 0),
-                    "iva": data.get("iva", 0),
-                    "subtotal": data.get("subtotal", 0),
-                    "ventas_exentas": data.get("ventas_exentas", 0),
-                    "ventas_no_sujetas": data.get("ventas_no_sujetas", 0),
-                }
+                extra = build_fiscal_extra(data)
+
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
@@ -933,14 +928,9 @@ class MainWindow(QMainWindow):
                 Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == Distribuidor_nombre), None)
                 Distribuidor_id = Distribuidor["id"] if Distribuidor else None
                 vendedor_id = data.get("vendedor_id")
-                extra = {
-                    "sumas": sumas,
-                    "descuentos": descuentos,
-                    "iva": iva,
-                    "subtotal": subtotal,
-                    "ventas_exentas": data.get("ventas_exentas", 0),
-                    "ventas_no_sujetas": data.get("ventas_no_sujetas", 0),
-                }
+
+                extra = build_fiscal_extra(data)
+
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")

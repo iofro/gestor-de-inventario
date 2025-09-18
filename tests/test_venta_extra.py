@@ -1,5 +1,7 @@
 import json
 
+from utils.fiscal_extra import build_fiscal_extra
+
 
 def test_add_venta_with_extra_dict(db_conn):
     """Ensure ``extra`` dicts are stored as JSON strings."""
@@ -61,3 +63,42 @@ def test_credito_fiscal_extra_persisted_in_ventas(db_conn):
     assert row is not None and row["extra"]
     stored = json.loads(row["extra"])
     assert stored == extra
+
+
+
+def test_build_fiscal_extra_detects_no_gravado():
+    data = {
+        "items": [
+            {
+                "tipo_fiscal": "Venta gravada",
+                "subtotal_con_descuento": 100,
+                "descuento_monto": 0,
+                "iva": 13,
+                "total": 115,
+            }
+        ]
+    }
+
+    extra = build_fiscal_extra(data)
+    assert extra["sumas"] == 100.0
+    assert extra["iva"] == 13.0
+    assert extra["no_gravado"] == 2.0
+
+
+def test_build_fiscal_extra_marks_precio_desglosado():
+    data = {
+        "items": [
+            {
+                "tipo_fiscal": "Venta gravada",
+                "subtotal": 50,
+                "subtotal_con_descuento": 50,
+                "iva": 0,
+                "total": 50,
+                "iva_tipo": "desglosado",
+            }
+        ]
+    }
+
+    extra = build_fiscal_extra(data)
+    assert extra["precios_incluyen_iva"] is False
+

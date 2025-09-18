@@ -258,8 +258,18 @@ def test_credito_mixto_includes_iva_only_for_gravadas(db_conn, monkeypatch):
 
     cuerpo = data["cuerpoDocumento"]
     for item in cuerpo:
-        tributos = item.get("tributos") or []
-        assert tributos, "cada ítem debe exponer tributos no vacíos"
+        venta_gravada = Decimal(str(item.get("ventaGravada", 0)))
+        tributos = item.get("tributos")
+        if venta_gravada > 0:
+            assert isinstance(tributos, list) and tributos
+            assert tributos[0] == dte_module.TRIBUTO_IVA
+            assert all(
+                code == dte_module.TRIBUTO_IVA
+                or code in dte_module.TRIBUTOS_PERMITIDOS_ITEM
+                for code in tributos
+            )
+        else:
+            assert tributos is None
 
     grav_item = next(i for i in cuerpo if Decimal(str(i.get("ventaGravada", 0))) > 0)
     exento_item = next(i for i in cuerpo if Decimal(str(i.get("ventaExenta", 0))) > 0)
@@ -273,13 +283,8 @@ def test_credito_mixto_includes_iva_only_for_gravadas(db_conn, monkeypatch):
         for code in grav_tributos
     )
 
-    exento_tributos = exento_item.get("tributos") or []
-    assert exento_tributos
-    assert exento_tributos[0] == dte_module.TRIBUTO_IVA
-
-    no_grav_tributos = no_grav_item.get("tributos") or []
-    assert no_grav_tributos
-    assert no_grav_tributos[0] == dte_module.TRIBUTO_IVA
+    assert exento_item.get("tributos") is None
+    assert no_grav_item.get("tributos") is None
 
 
 def test_fc_exenta_no_suj_siempre_incluye_tributos(db_conn, monkeypatch):
@@ -358,7 +363,7 @@ def test_fc_exenta_no_suj_siempre_incluye_tributos(db_conn, monkeypatch):
     data = dte_module.generar_dte_json(db_conn, venta_id, tipo_dte="03")
 
     resumen = data["resumen"]
-    assert (resumen.get("tributos") or []) == []
+    assert resumen.get("tributos") in (None, [])
     assert Decimal(str(resumen["totalGravada"])) == Decimal("0")
     assert Decimal(str(resumen["totalExenta"])) == Decimal("60")
     assert Decimal(str(resumen["totalNoSuj"])) == Decimal("40")
@@ -369,10 +374,102 @@ def test_fc_exenta_no_suj_siempre_incluye_tributos(db_conn, monkeypatch):
     cuerpo = data["cuerpoDocumento"]
     assert len(cuerpo) == 2
     for item in cuerpo:
-        tributos = item.get("tributos") or []
-        assert tributos
-        assert tributos[0] == dte_module.TRIBUTO_IVA
+        assert item.get("tributos") is None
         assert Decimal(str(item.get("ventaGravada") or 0)) == Decimal("0")
+
+
+def test_dte03_no_gravadas_preservan_clave_tributos(db_conn, monkeypatch):
+    _configure_negocio(monkeypatch)
+
+    db_conn.add_cliente(
+        nombre="Cliente FC",
+        nrc="1234567",
+        nit="06141990011019",
+        dui="",
+        giro="Comercio",
+        telefono="22223333",
+        email="cli@example.com",
+        direccion="San Salvador",
+        departamento="06",
+        municipio="23",
+    )
+    cliente_id = db_conn.cursor.lastrowid
+
+    db_conn.add_producto("Servicio Exento", "E13", "SKU-E13", None, None, 0, 0, 0, 0)
+    prod_exento = db_conn.cursor.lastrowid
+    db_conn.add_producto("Servicio No Sujeto", "NS13", "SKU-NS13", None, None, 0, 0, 0, 0)
+    prod_no_suj = db_conn.cursor.lastrowid
+
+    extra = {
+        "sumas": 0,
+        "descuentos": 0,
+        "iva": 0,
+        "subtotal": 100,
+        "ventas_exentas": 60,
+        "ventas_no_sujetas": 40,
+        "no_gravado": 0,
+        "precios_incluyen_iva": True,
+    }
+
+    venta_id = db_conn.add_venta_credito_fiscal(
+        cliente_id=cliente_id,
+        fecha="2024-06-10",
+        total=100,
+        nrc="1234567",
+        nit="06141990011019",
+        giro="Comercio",
+        sumas=extra["sumas"],
+        descuentos=extra["descuentos"],
+        iva=extra["iva"],
+        subtotal=extra["subtotal"],
+        ventas_exentas=extra["ventas_exentas"],
+        ventas_no_sujetas=extra["ventas_no_sujetas"],
+        total_letras="CIEN",
+        extra=extra,
+    )
+
+    db_conn.add_detalle_venta(
+        venta_id,
+        prod_exento,
+        1,
+        60,
+        iva=0,
+        tipo_fiscal="venta exenta",
+        precio_con_iva=60,
+        base=60,
+        total=60,
+    )
+    db_conn.add_detalle_venta(
+        venta_id,
+        prod_no_suj,
+        1,
+        40,
+        iva=0,
+        tipo_fiscal="venta no sujeta",
+        precio_con_iva=40,
+        base=40,
+        total=40,
+    )
+
+    data = dte_module.generar_dte_json(db_conn, venta_id, tipo_dte="03")
+
+    cuerpo = data["cuerpoDocumento"]
+    assert len(cuerpo) == 2
+    for item in cuerpo:
+        assert "tributos" in item
+        assert item["tributos"] is None
+        assert "codTributo" in item
+        assert item["codTributo"] is None
+
+    resumen = data["resumen"]
+    assert "tributos" in resumen
+    assert resumen["tributos"] == []
+    assert Decimal(str(resumen["totalGravada"])) == Decimal("0")
+    assert Decimal(str(resumen["totalExenta"])) == Decimal("60")
+    assert Decimal(str(resumen["totalNoSuj"])) == Decimal("40")
+    assert Decimal(str(resumen.get("totalIva", 0))) == Decimal("0")
+    assert Decimal(str(resumen["montoTotalOperacion"])) == Decimal("100")
+    assert Decimal(str(resumen["totalPagar"])) == Decimal("100")
 
 
 def test_dte03_exentas_no_suj_sin_iva(db_conn, monkeypatch):
@@ -458,7 +555,7 @@ def test_dte03_exentas_no_suj_sin_iva(db_conn, monkeypatch):
 
     bases = Decimal("0")
     for item in data["cuerpoDocumento"]:
-        assert item.get("tributos") == [dte_module.TRIBUTO_IVA]
+        assert item.get("tributos") is None
         bases += Decimal(str(item.get("ventaExenta") or 0))
         bases += Decimal(str(item.get("ventaNoSuj") or 0))
         bases += Decimal(str(item.get("ventaGravada") or 0))
@@ -471,6 +568,105 @@ def test_dte03_exentas_no_suj_sin_iva(db_conn, monkeypatch):
     iva_resumen -= Decimal(str(resumen["totalNoSuj"]))
     iva_resumen -= Decimal(str(resumen.get("totalNoGravado", 0)))
     assert iva_resumen == Decimal("0")
+
+
+def test_dte03_exenta_y_no_sujeta_sin_gravada_tributos_schema(
+    db_conn, monkeypatch
+):
+    _configure_negocio(monkeypatch)
+
+    db_conn.add_cliente(
+        nombre="Cliente FC",
+        nrc="1234567",
+        nit="06141990011019",
+        dui="",
+        giro="Comercio",
+        telefono="22223333",
+        email="cli@example.com",
+        direccion="San Salvador",
+        departamento="06",
+        municipio="23",
+    )
+    cliente_id = db_conn.cursor.lastrowid
+
+    db_conn.add_producto("Servicio Exento", "E12", "SKU-E12", None, None, 0, 0, 0, 0)
+    prod_exento = db_conn.cursor.lastrowid
+    db_conn.add_producto(
+        "Servicio No Sujeto", "NS12", "SKU-NS12", None, None, 0, 0, 0, 0
+    )
+    prod_no_suj = db_conn.cursor.lastrowid
+
+    extra = {
+        "sumas": 0,
+        "descuentos": 0,
+        "iva": 0,
+        "subtotal": 100,
+        "ventas_exentas": 60,
+        "ventas_no_sujetas": 40,
+        "no_gravado": 0,
+        "precios_incluyen_iva": True,
+    }
+
+    venta_id = db_conn.add_venta_credito_fiscal(
+        cliente_id=cliente_id,
+        fecha="2024-05-10",
+        total=100,
+        nrc="1234567",
+        nit="06141990011019",
+        giro="Comercio",
+        sumas=extra["sumas"],
+        descuentos=extra["descuentos"],
+        iva=extra["iva"],
+        subtotal=extra["subtotal"],
+        ventas_exentas=extra["ventas_exentas"],
+        ventas_no_sujetas=extra["ventas_no_sujetas"],
+        total_letras="CIEN",
+        extra=extra,
+    )
+
+    db_conn.add_detalle_venta(
+        venta_id,
+        prod_exento,
+        1,
+        60,
+        iva=0,
+        tipo_fiscal="venta exenta",
+        precio_con_iva=60,
+        base=60,
+        total=60,
+    )
+    db_conn.add_detalle_venta(
+        venta_id,
+        prod_no_suj,
+        1,
+        40,
+        iva=0,
+        tipo_fiscal="venta no sujeta",
+        precio_con_iva=40,
+        base=40,
+        total=40,
+    )
+
+    data = dte_module.generar_dte_json(db_conn, venta_id, tipo_dte="03")
+    cuerpo = data["cuerpoDocumento"]
+
+    assert len(cuerpo) == 2
+    for item in cuerpo:
+        assert item.get("tributos") is None
+        assert item.get("codTributo") is None
+
+    resumen = data["resumen"]
+
+    assert resumen.get("tributos") in (None, [])
+    assert Decimal(str(resumen["totalGravada"])) == Decimal(str(extra["sumas"]))
+    assert Decimal(str(resumen["totalExenta"])) == Decimal(str(extra["ventas_exentas"]))
+    assert Decimal(str(resumen["totalNoSuj"])) == Decimal(str(extra["ventas_no_sujetas"]))
+    assert Decimal(str(resumen.get("totalNoGravado", 0))) == Decimal(
+        str(extra.get("no_gravado", 0))
+    )
+    assert Decimal(str(resumen.get("totalIva", 0))) == Decimal("0")
+    assert Decimal(str(resumen["montoTotalOperacion"])) == Decimal("100")
+    assert Decimal(str(resumen["totalPagar"])) == Decimal("100")
 
 
 def test_dte03_mixto(db_conn, monkeypatch):
@@ -563,7 +759,7 @@ def test_dte03_mixto(db_conn, monkeypatch):
     resumen = data["resumen"]
 
     total_gravada = Decimal(str(resumen["totalGravada"]))
-    assert total_gravada == Decimal("100")
+    assert total_gravada == Decimal(str(extra["sumas"]))
     expected_iva = (total_gravada * Decimal("0.13")).quantize(Decimal("0.01"))
     iva_resumen = Decimal(str(resumen["montoTotalOperacion"]))
     iva_resumen -= Decimal(str(resumen["totalGravada"]))
@@ -571,13 +767,48 @@ def test_dte03_mixto(db_conn, monkeypatch):
     iva_resumen -= Decimal(str(resumen["totalNoSuj"]))
     iva_resumen -= Decimal(str(resumen.get("totalNoGravado", 0)))
     assert iva_resumen == expected_iva
-    assert Decimal(str(resumen["totalExenta"])) == Decimal("40")
-    assert Decimal(str(resumen["totalNoSuj"])) == Decimal("10")
+    assert Decimal(str(resumen["totalExenta"])) == Decimal(
+        str(extra["ventas_exentas"])
+    )
+    assert Decimal(str(resumen["totalNoSuj"])) == Decimal(
+        str(extra["ventas_no_sujetas"])
+    )
+    assert Decimal(str(resumen.get("totalNoGravado", 0))) == Decimal(
+        str(extra.get("no_gravado", 0))
+    )
+    assert Decimal(str(resumen.get("totalIva", expected_iva))) == expected_iva
 
-    for item in data["cuerpoDocumento"]:
+    cuerpo = data["cuerpoDocumento"]
+    assert len(cuerpo) == 3
+
+    grav_items = [
+        item
+        for item in cuerpo
+        if Decimal(str(item.get("ventaGravada") or 0)) > 0
+    ]
+    exentas = [
+        item
+        for item in cuerpo
+        if Decimal(str(item.get("ventaExenta") or 0)) > 0
+    ]
+    no_suj = [
+        item
+        for item in cuerpo
+        if Decimal(str(item.get("ventaNoSuj") or 0)) > 0
+    ]
+
+    assert len(grav_items) == 1
+    assert len(exentas) == 1
+    assert len(no_suj) == 1
+
+    for item in grav_items:
         assert item.get("tributos") == [dte_module.TRIBUTO_IVA]
-        if Decimal(str(item.get("ventaGravada") or 0)) == Decimal("0"):
-            assert Decimal(str(item.get("ivaItem") or 0)) == Decimal("0")
+        assert item.get("codTributo") is None
+
+    for item in exentas + no_suj:
+        assert item.get("tributos") is None
+        assert item.get("codTributo") is None
+        assert Decimal(str(item.get("ivaItem") or 0)) == Decimal("0")
 
 
 def test_dte01_regresion(db_conn, monkeypatch):

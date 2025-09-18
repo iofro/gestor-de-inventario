@@ -791,6 +791,7 @@ class MainWindow(QMainWindow):
                 vendedor_id = data.get("vendedor_id")
                 estado = data.get("estado", "Pagada")
                 extra = build_fiscal_extra(data)
+
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
@@ -927,7 +928,9 @@ class MainWindow(QMainWindow):
                 Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == Distribuidor_nombre), None)
                 Distribuidor_id = Distribuidor["id"] if Distribuidor else None
                 vendedor_id = data.get("vendedor_id")
+
                 extra = build_fiscal_extra(data)
+
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")

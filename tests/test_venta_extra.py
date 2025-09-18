@@ -65,6 +65,7 @@ def test_credito_fiscal_extra_persisted_in_ventas(db_conn):
     assert stored == extra
 
 
+
 def test_build_fiscal_extra_detects_no_gravado():
     data = {
         "items": [
@@ -100,3 +101,4 @@ def test_build_fiscal_extra_marks_precio_desglosado():
 
     extra = build_fiscal_extra(data)
     assert extra["precios_incluyen_iva"] is False
+

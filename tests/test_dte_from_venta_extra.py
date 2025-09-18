@@ -256,6 +256,12 @@ def test_credito_mixto_includes_iva_only_for_gravadas(db_conn, monkeypatch):
     exento_item = next(i for i in cuerpo if Decimal(str(i.get("ventaExenta", 0))) > 0)
     no_grav_item = next(i for i in cuerpo if Decimal(str(i.get("noGravado", 0))) > 0)
 
-    assert dte_module.TRIBUTO_IVA in (grav_item.get("tributos") or [])
-    assert dte_module.TRIBUTO_IVA not in (exento_item.get("tributos") or [])
-    assert dte_module.TRIBUTO_IVA not in (no_grav_item.get("tributos") or [])
+    grav_tributos = grav_item.get("tributos") or []
+    assert dte_module.TRIBUTO_IVA in grav_tributos
+    assert grav_item.get("tributos") == [dte_module.TRIBUTO_IVA] or all(
+        code == dte_module.TRIBUTO_IVA or code in dte_module.TRIBUTOS_PERMITIDOS_ITEM
+        for code in grav_tributos
+    )
+
+    assert "tributos" not in exento_item
+    assert "tributos" not in no_grav_item

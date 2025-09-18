@@ -975,6 +975,7 @@ class DB:
                 )
             """)
                 self.cursor.execute("""
+
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro,
                     no_remision, orden_no, condicion_pago, venta_a_cuenta_de,

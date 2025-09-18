@@ -5,7 +5,9 @@ import logging
 import threading
 from pathlib import Path
 from decimal import Decimal
+from typing import Any
 
+from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 
@@ -26,12 +28,20 @@ class DB:
         self.conn = sqlite3.connect(db_path, check_same_thread=False)
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row
-        self.cursor = self.conn.cursor()
         # Simple mutex to guard database operations when the same connection is
-        # accessed from multiple threads.  Threads may also create their own
+        # accessed from multiple threads. Threads may also create their own
         # ``DB`` instances to keep connections separate.
         self.lock = threading.Lock()
+        self.cursor = self.conn.cursor()
         self.setup()
+        # ``extra`` se introdujo como un JSON con información adicional de la
+        # venta.  Garantizamos que la columna exista incluso en bases antiguas
+        # para evitar fallos al guardar nuevos totales fiscales.
+        self.ensure_column("ventas", "extra", "TEXT")
+        try:
+            self.backfill_ventas_extra()
+        except Exception:
+            logger.exception("No se pudo ejecutar el backfill de ventas.extra")
 
     def ensure_column(self, table: str, column: str, definition: str) -> bool:
         """Ensure that a specific column exists in ``table``.
@@ -883,9 +893,10 @@ class DB:
             values.append(extra_json)
         placeholders = ", ".join(["?"] * len(values))
         query = f"INSERT INTO ventas ({', '.join(columns)}) VALUES ({placeholders})"
-        self.cursor.execute(query, values)
-        self.conn.commit()
-        return self.cursor.lastrowid
+        with self.lock:
+            self.cursor.execute(query, values)
+            self.conn.commit()
+            return self.cursor.lastrowid
 
     def add_venta_credito_fiscal(
         self,
@@ -933,9 +944,10 @@ class DB:
                 vals.append(extra_json)
             placeholders = ", ".join(["?"] * len(vals))
             q = f"INSERT INTO ventas ({', '.join(cols)}) VALUES ({placeholders})"
-            self.cursor.execute(q, vals)
-            venta_id = self.cursor.lastrowid
-            self.cursor.execute("""
+            with self.lock:
+                self.cursor.execute(q, vals)
+                venta_id = self.cursor.lastrowid
+                self.cursor.execute("""
                 CREATE TABLE IF NOT EXISTS ventas_credito_fiscal (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     venta_id INTEGER,
@@ -962,7 +974,8 @@ class DB:
                     FOREIGN KEY (cliente_id) REFERENCES clientes(id)
                 )
             """)
-            self.cursor.execute("""
+                self.cursor.execute("""
+
                 INSERT INTO ventas_credito_fiscal (
                     venta_id, cliente_id, nrc, nit, giro,
                     no_remision, orden_no, condicion_pago, venta_a_cuenta_de,
@@ -975,7 +988,7 @@ class DB:
                 documento_venta_a_cuenta, fecha_remision_anterior, fecha_remision,
                 sumas, descuentos, iva, subtotal, ventas_exentas, ventas_no_sujetas, total_letras, extra_json
             ))
-            self.conn.commit()
+                self.conn.commit()
             return venta_id
         except Exception as e:
             logger.exception("Error al agregar venta a crédito fiscal: %s", e)
@@ -995,8 +1008,9 @@ class DB:
 
     def get_venta_by_id(self, venta_id: int):
         """Fetch a single sale by its ID."""
-        self.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,))
-        row = self.cursor.fetchone()
+        with self.lock:
+            self.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,))
+            row = self.cursor.fetchone()
         if row:
             data = dict(row)
             try:
@@ -1008,31 +1022,34 @@ class DB:
 
     def update_venta_estado(self, venta_id, estado):
         """Actualiza el estado de una venta."""
-        self.cursor.execute(
-            "UPDATE ventas SET estado=? WHERE id=?",
-            (estado, venta_id),
-        )
-        self.conn.commit()
+        with self.lock:
+            self.cursor.execute(
+                "UPDATE ventas SET estado=? WHERE id=?",
+                (estado, venta_id),
+            )
+            self.conn.commit()
 
     def get_detalles_venta(self, venta_id):
         """Return sale line items joined with product names."""
-        self.cursor.execute(
-            """
-            SELECT detalles_venta.*, productos.nombre AS descripcion
-            FROM detalles_venta
-            LEFT JOIN productos ON detalles_venta.producto_id = productos.id
-            WHERE detalles_venta.venta_id=?
-        """,
-            (venta_id,),
-        )
-        return [dict(row) for row in self.cursor.fetchall()]
+        with self.lock:
+            self.cursor.execute(
+                """
+                SELECT detalles_venta.*, productos.nombre AS descripcion
+                FROM detalles_venta
+                LEFT JOIN productos ON detalles_venta.producto_id = productos.id
+                WHERE detalles_venta.venta_id=?
+            """,
+                (venta_id,),
+            )
+            return [dict(row) for row in self.cursor.fetchall()]
 
     def get_venta_credito_fiscal(self, venta_id):
         """Return credit-fiscal record associated with a sale, if any."""
-        self.cursor.execute(
-            "SELECT * FROM ventas_credito_fiscal WHERE venta_id=?", (venta_id,)
-        )
-        row = self.cursor.fetchone()
+        with self.lock:
+            self.cursor.execute(
+                "SELECT * FROM ventas_credito_fiscal WHERE venta_id=?", (venta_id,)
+            )
+            row = self.cursor.fetchone()
         if row:
             data = dict(row)
             extra = data.get("extra")
@@ -1204,6 +1221,55 @@ class DB:
         except Exception as e:
             logger.exception("Error al eliminar venta: %s", e)
 
+    def backfill_ventas_extra(self) -> int:
+        """Populate ``ventas.extra`` for rows that are missing fiscal totals."""
+
+        with self.lock:
+            rows = self.cursor.execute(
+                "SELECT id FROM ventas WHERE extra IS NULL OR TRIM(extra) = ''"
+            ).fetchall()
+        venta_ids = [row["id"] for row in rows]
+        updated = 0
+        for venta_id in venta_ids:
+            detalles = self.get_detalles_venta(venta_id)
+            if not detalles:
+                continue
+            data: dict[str, Any] = {"items": detalles}
+            fiscal_row = self.get_venta_credito_fiscal(venta_id)
+            if fiscal_row:
+                for key in (
+                    "sumas",
+                    "descuentos",
+                    "iva",
+                    "subtotal",
+                    "ventas_exentas",
+                    "ventas_no_sujetas",
+                    "no_gravado",
+                    "precios_incluyen_iva",
+                    "descu_no_suj",
+                    "descu_exenta",
+                    "descu_gravada",
+                    "sub_total_ventas",
+                ):
+                    if fiscal_row.get(key) is not None:
+                        data[key] = fiscal_row[key]
+                extra_cf = fiscal_row.get("extra")
+                if isinstance(extra_cf, dict):
+                    data.setdefault("extra", extra_cf)
+            extra = build_fiscal_extra(data)
+            if not extra:
+                continue
+            with self.lock:
+                self.cursor.execute(
+                    "UPDATE ventas SET extra=? WHERE id=?",
+                    (json.dumps(extra), venta_id),
+                )
+                updated += 1
+        if updated:
+            with self.lock:
+                self.conn.commit()
+        return updated
+
     # CRUD DETALLES_VENTA
     def add_detalle_venta(
         self,
@@ -1227,52 +1293,63 @@ class DB:
     ):
         try:
             extra_json = json.dumps(extra) if extra else None
-            self.cursor.execute(
-                """
-                INSERT INTO detalles_venta (
-                    venta_id,
-                    producto_id,
-                    cantidad,
-                    precio_unitario,
-                    descuento,
-                    descuento_tipo,
-                    iva,
-                    comision,
-                    iva_tipo,
-                    tipo_fiscal,
-                    extra,
-                    precio_con_iva,
-                    vendedor_id,
-                    desc_con_iva,
-                    base,
-                    total,
-                    unit_con_iva_efectivo
+            tipo_norm = normalize_tipo_fiscal(tipo_fiscal)
+            try:
+                iva_value = float(Decimal(str(iva or 0)))
+            except Exception:
+                iva_value = 0.0
+            if tipo_norm != "gravada":
+                iva_value = 0.0
+            with self.lock:
+                self.cursor.execute(
+                    """
+                    INSERT INTO detalles_venta (
+                        venta_id,
+                        producto_id,
+                        cantidad,
+                        precio_unitario,
+                        descuento,
+                        descuento_tipo,
+                        iva,
+                        comision,
+                        iva_tipo,
+                        tipo_fiscal,
+                        extra,
+                        precio_con_iva,
+                        vendedor_id,
+                        desc_con_iva,
+                        base,
+                        total,
+                        unit_con_iva_efectivo
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        venta_id,
+                        producto_id,
+                        cantidad,
+                        precio_unitario,
+                        descuento,
+                        descuento_tipo,
+                        iva_value,
+                        comision,
+                        iva_tipo,
+                        tipo_norm,
+                        extra_json,
+                        precio_con_iva,
+                        vendedor_id,
+                        desc_con_iva,
+                        base,
+                        total,
+                        unit_con_iva_efectivo,
+                    ),
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    venta_id,
-                    producto_id,
-                    cantidad,
-                    precio_unitario,
-                    descuento,
-                    descuento_tipo,
-                    iva,
-                    comision,
-                    iva_tipo,
-                    tipo_fiscal,
-                    extra_json,
-                    precio_con_iva,
-                    vendedor_id,
-                    desc_con_iva,
-                    base,
-                    total,
-                    unit_con_iva_efectivo,
-                ),
-            )
-            self.conn.commit()
+                self.conn.commit()
+                return self.cursor.lastrowid
         except Exception as e:
             logger.exception("Error al agregar detalle de venta: %s", e)
+            self.conn.rollback()
+            raise
 
     def delete_detalle_venta(self, id):
         try:
@@ -1905,8 +1982,9 @@ class DB:
                 str(d.get("descuento") or d.get("descuento_valor") or 0)
             )
             descuento_tipo = d.get("descuento_tipo") or "$"
-            tipo_fiscal = d.get("tipo_fiscal") or "Venta gravada"
-            iva_rate = Decimal("0.13") if tipo_fiscal == "Venta gravada" else Decimal("0")
+            tipo_fiscal_raw = d.get("tipo_fiscal") or "gravada"
+            tipo_fiscal_norm = normalize_tipo_fiscal(tipo_fiscal_raw)
+            iva_rate = Decimal("0.13") if tipo_fiscal_norm == "gravada" else Decimal("0")
             calcs = compute_line_totals(
                 cantidad,
                 precio_iva,
@@ -1923,7 +2001,7 @@ class DB:
                     "descuento": float(d8(descuento)),
                     "descuento_tipo": descuento_tipo,
                     "iva": float(calcs["iva"]),
-                    "tipo_fiscal": tipo_fiscal,
+                    "tipo_fiscal": tipo_fiscal_norm,
                     "extra": d.get("extra"),
                     "precio_con_iva": float(d8(precio_iva)),
                     "vendedor_id": d.get("vendedor_id"),
@@ -2239,8 +2317,9 @@ class DB:
     def update_venta_extra(self, venta_id, extra_dict):
         """Actualiza el campo ``extra`` de la venta, fusionando los datos."""
         self.ensure_column("ventas", "extra", "TEXT")
-        self.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,))
-        row = self.cursor.fetchone()
+        with self.lock:
+            self.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta_id,))
+            row = self.cursor.fetchone()
         current = {}
         if row and row[0]:
             try:
@@ -2248,11 +2327,12 @@ class DB:
             except Exception:
                 current = {}
         current.update(extra_dict)
-        self.cursor.execute(
-            "UPDATE ventas SET extra=? WHERE id=?",
-            (json.dumps(current, ensure_ascii=False), venta_id),
-        )
-        self.conn.commit()
+        with self.lock:
+            self.cursor.execute(
+                "UPDATE ventas SET extra=? WHERE id=?",
+                (json.dumps(current, ensure_ascii=False), venta_id),
+            )
+            self.conn.commit()
 
     # ---- Gestión de usuarios ----
 

@@ -9,6 +9,7 @@ import sqlite3
 from decimal import Decimal as D
 from paths import DATOS_NEGOCIO_PATH
 from utils.stable_json import DecimalEncoder
+from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 
@@ -990,8 +991,9 @@ class InventoryManager:
                 str(item.get("descuento_valor") or item.get("descuento") or 0)
             )
             descuento_tipo = item.get("descuento_tipo", "$")
-            tipo_fiscal = item.get("tipo_fiscal", "Venta gravada")
-            iva_rate = D("0.13") if tipo_fiscal == "Venta gravada" else D("0")
+            tipo_fiscal_raw = item.get("tipo_fiscal", "gravada")
+            tipo_fiscal_norm = normalize_tipo_fiscal(tipo_fiscal_raw)
+            iva_rate = D("0.13") if tipo_fiscal_norm == "gravada" else D("0")
             calcs = compute_line_totals(
                 cantidad,
                 precio_con_iva,
@@ -1006,7 +1008,7 @@ class InventoryManager:
                 "descuento": float(d8(descuento_valor)),
                 "descuento_tipo": descuento_tipo,
                 "iva": float(calcs["iva"]),
-                "tipo_fiscal": tipo_fiscal,
+                "tipo_fiscal": tipo_fiscal_norm,
                 "precio_con_iva": float(d8(precio_con_iva)),
                 "desc_con_iva": float(calcs["desc_con_iva"]),
                 "base": float(calcs["base"]),

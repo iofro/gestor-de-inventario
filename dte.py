@@ -1442,7 +1442,10 @@ def recalcular_totales(
             if not is_non_grav and venta_gravada_val <= D("0") and linea > D("0"):
                 venta_gravada_val = linea
             if is_non_grav and venta_gravada_val == D("0"):
-                item.pop("ivaItem", None)
+                if incluir_iva:
+                    item["ivaItem"] = d4(0)
+                else:
+                    item.pop("ivaItem", None)
                 item["ventaGravada"] = d4(0)
                 item["ventaExenta"] = venta_exenta_val
                 item["ventaNoSuj"] = venta_no_suj_val

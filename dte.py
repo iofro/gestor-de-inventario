@@ -1442,7 +1442,10 @@ def recalcular_totales(
             if not is_non_grav and venta_gravada_val <= D("0") and linea > D("0"):
                 venta_gravada_val = linea
             if is_non_grav and venta_gravada_val == D("0"):
-                item.pop("ivaItem", None)
+                if incluir_iva:
+                    item["ivaItem"] = d4(0)
+                else:
+                    item.pop("ivaItem", None)
                 item["ventaGravada"] = d4(0)
                 item["ventaExenta"] = venta_exenta_val
                 item["ventaNoSuj"] = venta_no_suj_val
@@ -2509,9 +2512,14 @@ def generar_dte_json(
         if not trib_code_raw:
             raw = d.get("tributos")
             if isinstance(raw, list) and raw:
-                trib_code_raw = raw[0]
+                raw_list = [str(item).strip().upper() for item in raw if str(item).strip()]
+                raw_list = [item for item in raw_list if item != TRIBUTO_IVA]
+                if raw_list:
+                    trib_code_raw = raw_list[0]
             elif isinstance(raw, str):
-                trib_code_raw = raw
+                raw_str = raw.strip().upper()
+                if raw_str and raw_str != TRIBUTO_IVA:
+                    trib_code_raw = raw_str
         trib_code = str(trib_code_raw).upper() if trib_code_raw else ""
         if trib_code == TRIBUTO_IVA:
             raise ValueError("El IVA 13% (20) no va por ítem; solo en resumen")
@@ -2542,19 +2550,38 @@ def generar_dte_json(
             "noGravado": q_item(no_gravado_val),
             "tributos": [],
         }
+        venta_gravada_val = D(str(item_data.get("ventaGravada") or 0))
         if tipo_dte == "01":
             item_data["codTributo"] = None
             item_data["tributos"] = None
         else:
             trib_list: list[str] = []
-            if D(str(item_data.get("ventaGravada") or 0)) > 0:
+            if venta_gravada_val > 0:
                 trib_list.append(TRIBUTO_IVA)
             if tipo_item == 4 and trib_code:
                 item_data["codTributo"] = trib_code
                 trib_list.append(trib_code)
             else:
                 item_data["codTributo"] = None
-            item_data["tributos"] = trib_list
+
+            if tipo_dte in {"03", "05", "06"}:
+                if venta_gravada_val > 0:
+                    filtered = []
+                    seen: set[str] = set()
+                    for code in trib_list:
+                        if code == TRIBUTO_IVA or code in TRIBUTOS_PERMITIDOS_ITEM:
+                            if code not in seen:
+                                filtered.append(code)
+                                seen.add(code)
+                    if TRIBUTO_IVA not in seen:
+                        filtered.insert(0, TRIBUTO_IVA)
+                        seen.add(TRIBUTO_IVA)
+                    item_data["tributos"] = filtered
+                else:
+                    item_data.pop("tributos", None)
+                    item_data["codTributo"] = None
+            else:
+                item_data["tributos"] = trib_list
         for key in ("ventaNoSuj", "ventaExenta", "ventaGravada"):
             item_data[key] = _zero_or_item(D(str(item_data[key])))
         total_no_suj_sum += D(str(item_data["ventaNoSuj"]))
@@ -3332,6 +3359,27 @@ def validate_dte_json(
         item.setdefault("psv", cero)
         if tipo_dte == "01":
             item["tributos"] = None
+        elif tipo_dte in {"03", "05", "06"}:
+            venta_grav_item = D(str(item.get("ventaGravada") or 0))
+            if venta_grav_item > 0:
+                tributos_raw = item.get("tributos") or []
+                filtered: list[str] = []
+                seen: set[str] = set()
+                for code in tributos_raw:
+                    code_str = str(code).strip().upper()
+                    if not code_str:
+                        continue
+                    if code_str == TRIBUTO_IVA or code_str in TRIBUTOS_PERMITIDOS_ITEM:
+                        if code_str not in seen:
+                            filtered.append(code_str)
+                            seen.add(code_str)
+                if TRIBUTO_IVA not in seen:
+                    filtered.insert(0, TRIBUTO_IVA)
+                    seen.add(TRIBUTO_IVA)
+                item["tributos"] = filtered
+            else:
+                item.pop("tributos", None)
+                item["codTributo"] = None
         else:
             item.setdefault("tributos", [])
         if iva_key:
@@ -3372,15 +3420,17 @@ def validate_dte_json(
 
         # --- Manejo y validación de tributos ---
         venta_gravada_val = D(str(item.get("ventaGravada") or 0))
-        trib_raw = item.get("tributos") or []
+        trib_raw = item.get("tributos")
         if isinstance(trib_raw, str):
             tributos = [trib_raw]
+        elif isinstance(trib_raw, list):
+            tributos = trib_raw[:]
         else:
-            tributos = list(trib_raw)
-        tributos = [str(t).upper() for t in tributos if t]
+            tributos = []
+        tributos = [str(t).strip().upper() for t in tributos if str(t).strip()]
         cod_tri = item.get("codTributo")
         if cod_tri is not None:
-            cod_tri = str(cod_tri).upper()
+            cod_tri = str(cod_tri).strip().upper() or None
 
         if tipo_dte == "01":
             item["codTributo"] = None
@@ -3400,24 +3450,52 @@ def validate_dte_json(
                     f"Código(s) de tributo inválido(s): {', '.join(invalid)}"
                 )
 
-            if venta_gravada_val <= 0:
-                item["tributos"] = []
-                item["codTributo"] = None
-            elif tributos:
-                if TRIBUTO_IVA not in tributos and venta_gravada_val > 0:
-                    tributos.append(TRIBUTO_IVA)
-                item["tributos"] = tributos
-                if (
-                    len(tributos) == 1
-                    and item.get("tipoItem") == 4
-                    and tributos[0] != TRIBUTO_IVA
-                ):
-                    item["codTributo"] = tributos[0]
+            if tipo_dte in {"03", "05", "06"}:
+                if venta_gravada_val > 0:
+                    combined = tributos[:]
+                    if cod_tri and cod_tri not in combined:
+                        combined.append(cod_tri)
+                    filtered: list[str] = []
+                    seen: set[str] = set()
+                    for code in combined:
+                        if code == TRIBUTO_IVA or code in TRIBUTOS_PERMITIDOS_ITEM:
+                            if code not in seen:
+                                filtered.append(code)
+                                seen.add(code)
+                    if TRIBUTO_IVA not in seen:
+                        filtered.insert(0, TRIBUTO_IVA)
+                        seen.add(TRIBUTO_IVA)
+                    item["tributos"] = filtered
+                    if item.get("tipoItem") == 4:
+                        extra_code = next(
+                            (c for c in filtered if c != TRIBUTO_IVA),
+                            None,
+                        )
+                        item["codTributo"] = extra_code
+                    else:
+                        item["codTributo"] = None
                 else:
+                    item.pop("tributos", None)
                     item["codTributo"] = None
             else:
-                item["tributos"] = [TRIBUTO_IVA]
-                item["codTributo"] = None
+                if venta_gravada_val <= 0:
+                    item["tributos"] = []
+                    item["codTributo"] = None
+                elif tributos:
+                    if TRIBUTO_IVA not in tributos:
+                        tributos.append(TRIBUTO_IVA)
+                    item["tributos"] = tributos
+                    if (
+                        len(tributos) == 1
+                        and item.get("tipoItem") == 4
+                        and tributos[0] != TRIBUTO_IVA
+                    ):
+                        item["codTributo"] = tributos[0]
+                    else:
+                        item["codTributo"] = None
+                else:
+                    item["tributos"] = [TRIBUTO_IVA]
+                    item["codTributo"] = None
 
         if iva_key:
             if precios_flag and item.get(iva_key) not in (None, 0, D("0")):

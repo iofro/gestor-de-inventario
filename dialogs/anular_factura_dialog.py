@@ -33,6 +33,9 @@ class AnularFacturaDialog(QDialog):
         self.setWindowTitle("Anular factura")
         self.db = db
         self._factura = factura or {}
+        self._resp_docs: dict[str, str] = {}
+        self._sol_docs: dict[str, str] = {}
+        self._negocio_docs: dict[str, str] = {}
         ident = self._factura.get("identificacion") or {}
         tipo_val = ident.get("tipoDte")
         self._original_tipo = str(tipo_val).zfill(2) if tipo_val is not None else None
@@ -185,25 +188,47 @@ class AnularFacturaDialog(QDialog):
         self.codigo_edit.editingFinished.connect(self._normalize_codigo)
         self.buscar_btn.clicked.connect(self._abrir_selector)
         self.buscar_btn.setEnabled(self.db is not None)
+        self.tdoc_resp.currentIndexChanged.connect(self._on_resp_doc_type_changed)
+        self.tdoc_sol.currentIndexChanged.connect(self._on_sol_doc_type_changed)
 
-        def _prefill(data: dict | None, name_edit: QLineEdit, combo: QComboBox, doc_edit: QLineEdit):
+        def _prefill(
+            data: dict | None,
+            name_edit: QLineEdit,
+            combo: QComboBox,
+            doc_edit: QLineEdit,
+            doc_store: dict[str, str],
+        ):
             if not data:
                 return
             name_edit.setText(data.get("nombre", ""))
-            doc = data.get("dui")
-            doc_type = "13" if doc else None
-            if not doc:
-                doc = data.get("nit")
-                doc_type = "36" if doc else doc_type
+            dui = data.get("dui")
+            nit = data.get("nit")
+            self._update_doc_store(doc_store, dui=dui, nit=nit)
+            doc = dui or nit or ""
+            doc_type = "13" if dui else "36" if nit else None
             if doc_type:
                 idx = combo.findData(doc_type)
                 if idx >= 0:
+                    combo.blockSignals(True)
                     combo.setCurrentIndex(idx)
+                    combo.blockSignals(False)
             if doc:
                 doc_edit.setText(doc)
 
-        _prefill(responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp)
-        _prefill(solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol)
+        _prefill(
+            responsable,
+            self.nom_resp,
+            self.tdoc_resp,
+            self.ndoc_resp,
+            self._resp_docs,
+        )
+        _prefill(
+            solicitante,
+            self.nom_sol,
+            self.tdoc_sol,
+            self.ndoc_sol,
+            self._sol_docs,
+        )
 
         self._on_tipo_changed(self.tipo_cb.currentIndex())
 
@@ -365,24 +390,35 @@ class AnularFacturaDialog(QDialog):
         data = item.data(Qt.UserRole) if item else None
         if isinstance(data, dict):
             self.nom_resp.setText(data.get("nombre", ""))
-            doc = data.get("dui") or data.get("nit") or ""
+            dui = data.get("dui")
+            nit = data.get("nit")
+            self._update_doc_store(self._resp_docs, dui=dui, nit=nit)
+            doc = dui or nit or ""
             self.ndoc_resp.setText(doc)
-            doc_type = "13" if data.get("dui") else "36" if data.get("nit") else None
+            doc_type = "13" if dui else "36" if nit else None
             if doc_type:
                 idx = self.tdoc_resp.findData(doc_type)
                 if idx >= 0:
+                    self.tdoc_resp.blockSignals(True)
                     self.tdoc_resp.setCurrentIndex(idx)
+                    self.tdoc_resp.blockSignals(False)
 
     def _usar_datos_negocio(self):
         datos = dte._load_datos_negocio()
         self.nom_resp.setText(datos.get("nombre", ""))
-        doc = datos.get("dui") or datos.get("nit") or ""
+        dui = datos.get("dui")
+        nit = datos.get("nit")
+        self._update_doc_store(self._negocio_docs, dui=dui, nit=nit)
+        self._update_doc_store(self._resp_docs, dui=dui, nit=nit)
+        doc = dui or nit or ""
         self.ndoc_resp.setText(doc)
-        doc_type = "13" if datos.get("dui") else "36" if datos.get("nit") else None
+        doc_type = "13" if dui else "36" if nit else None
         if doc_type:
             idx = self.tdoc_resp.findData(doc_type)
             if idx >= 0:
+                self.tdoc_resp.blockSignals(True)
                 self.tdoc_resp.setCurrentIndex(idx)
+                self.tdoc_resp.blockSignals(False)
 
     # --- Cliente search helpers -------------------------------------------------
 
@@ -419,13 +455,52 @@ class AnularFacturaDialog(QDialog):
         data = item.data(Qt.UserRole) if item else None
         if isinstance(data, dict):
             self.nom_sol.setText(data.get("nombre", ""))
-            doc = data.get("dui") or data.get("nit") or data.get("nrc") or ""
+            dui = data.get("dui")
+            nit = data.get("nit") or data.get("nrc")
+            self._update_doc_store(self._sol_docs, dui=dui, nit=nit)
+            doc = dui or nit or ""
             self.ndoc_sol.setText(doc)
-            doc_type = "13" if data.get("dui") else "36" if data.get("nit") or data.get("nrc") else None
+            doc_type = "13" if dui else "36" if nit else None
             if doc_type:
                 idx = self.tdoc_sol.findData(doc_type)
                 if idx >= 0:
+                    self.tdoc_sol.blockSignals(True)
                     self.tdoc_sol.setCurrentIndex(idx)
+                    self.tdoc_sol.blockSignals(False)
+
+    def _update_doc_store(
+        self,
+        store: dict[str, str],
+        *,
+        dui: str | None = None,
+        nit: str | None = None,
+    ) -> None:
+        if dui:
+            store["13"] = str(dui)
+        else:
+            store.pop("13", None)
+        if nit:
+            store["36"] = str(nit)
+        else:
+            store.pop("36", None)
+
+    def _on_resp_doc_type_changed(self, index: int) -> None:
+        code = self.tdoc_resp.itemData(index)
+        if code in {"13", "36"}:
+            doc = self._resp_docs.get(code)
+            if doc and self.ndoc_resp.text() != doc:
+                self.ndoc_resp.blockSignals(True)
+                self.ndoc_resp.setText(doc)
+                self.ndoc_resp.blockSignals(False)
+
+    def _on_sol_doc_type_changed(self, index: int) -> None:
+        code = self.tdoc_sol.itemData(index)
+        if code in {"13", "36"}:
+            doc = self._sol_docs.get(code)
+            if doc and self.ndoc_sol.text() != doc:
+                self.ndoc_sol.blockSignals(True)
+                self.ndoc_sol.setText(doc)
+                self.ndoc_sol.blockSignals(False)
 
     def eventFilter(self, obj, event):
         if event.type() == QEvent.KeyPress:

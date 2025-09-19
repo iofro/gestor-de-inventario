@@ -2309,6 +2309,8 @@ def generar_dte_json(
         "telefono": rec.get("telefono") or None,
         "correo": rec.get("correo") or None,
     }
+    if not receptor.get("nombre") and (tipo_dte == "01" or extra.get("es_ticket")):
+        receptor["nombre"] = "Consumidor Final"
     direccion_src = rec.get("direccion")
     if not isinstance(direccion_src, dict):
         direccion_src = rec

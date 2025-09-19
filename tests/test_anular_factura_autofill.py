@@ -68,6 +68,47 @@ def test_usar_datos_negocio_button(monkeypatch, qt_app):
     assert dlg.tdoc_resp.currentData() == "13"
 
 
+def test_doc_number_switches_with_type(qt_app):
+    resp = {"nombre": "Negocio", "dui": "00000000-1", "nit": "0614-290990-101-5"}
+    sol = {"nombre": "Cliente", "dui": "11111111-2", "nit": "0614-290990-201-3"}
+    dlg = AnularFacturaDialog(responsable=resp, solicitante=sol)
+
+    nit_index = dlg.tdoc_resp.findData("36")
+    assert nit_index >= 0
+    dlg.tdoc_resp.setCurrentIndex(nit_index)
+    assert dlg.ndoc_resp.text() == "0614-290990-101-5"
+    dui_index = dlg.tdoc_resp.findData("13")
+    assert dui_index >= 0
+    dlg.tdoc_resp.setCurrentIndex(dui_index)
+    assert dlg.ndoc_resp.text() == "00000000-1"
+
+    # Changing to a non DUI/NIT type should not overwrite manual values
+    for i in range(dlg.tdoc_resp.count()):
+        code = dlg.tdoc_resp.itemData(i)
+        if code not in {"13", "36"}:
+            dlg.ndoc_resp.setText("manual")
+            dlg.tdoc_resp.setCurrentIndex(i)
+            assert dlg.ndoc_resp.text() == "manual"
+            break
+
+    nit_index = dlg.tdoc_sol.findData("36")
+    assert nit_index >= 0
+    dlg.tdoc_sol.setCurrentIndex(nit_index)
+    assert dlg.ndoc_sol.text() == "0614-290990-201-3"
+    dui_index = dlg.tdoc_sol.findData("13")
+    assert dui_index >= 0
+    dlg.tdoc_sol.setCurrentIndex(dui_index)
+    assert dlg.ndoc_sol.text() == "11111111-2"
+
+    for i in range(dlg.tdoc_sol.count()):
+        code = dlg.tdoc_sol.itemData(i)
+        if code not in {"13", "36"}:
+            dlg.ndoc_sol.setText("manual sol")
+            dlg.tdoc_sol.setCurrentIndex(i)
+            assert dlg.ndoc_sol.text() == "manual sol"
+            break
+
+
 def test_buscar_empleado_autocompleta(tmp_path, qt_app):
     db = DB(tmp_path / "test.db")
     db.add_trabajador({"nombre": "Juan", "dui": "0001"})

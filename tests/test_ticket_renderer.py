@@ -41,7 +41,7 @@ def _sample_payload():
 
 def test_render_ticket_pdf_clean(tmp_path):
     payload = _sample_payload()
-    pdf_bytes = render_ticket_pdf(payload, accepted=True)
+    pdf_bytes = render_ticket_pdf(payload, accepted=True, sello="SEAL-123")
     out = tmp_path / "ticket.pdf"
     out.write_bytes(pdf_bytes)
 
@@ -50,7 +50,9 @@ def test_render_ticket_pdf_clean(tmp_path):
 
     assert "cuerpoDocumento" not in text
     assert "identificacion" not in text
-    assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in text
-    assert "FACTURA (Ticket)" in text
-    assert "Pago: Efectivo" in text
+    assert "DOCUMENTO TRIBUTARIO" in text
+    assert "ELECTRÓNICO — FACTURA" in text
+    assert "DETALLE DE FACTURA" in text
+    assert "FORMA DE PAGO" in text or "Forma de pago" in text
+    assert "Sello de Recepción: SEAL-123" in text
     assert "3.39" in text  # total

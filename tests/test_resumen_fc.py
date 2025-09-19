@@ -1,7 +1,7 @@
 from decimal import Decimal as D
 import pytest
 
-from dte import calcular_resumen, normalizar_pagos, money
+from dte import calcular_resumen, normalizar_pagos, money, recalcular_totales
 from jsonschema import ValidationError
 from utils import catalogos
 
@@ -16,7 +16,7 @@ def test_resumen_formulas_fc():
     assert D(str(resumen['subTotal'])) == D('13.00')
     assert D(str(resumen['montoTotalOperacion'])) == D('13.00')
     assert D(str(resumen['totalPagar'])) == D('13.00')
-    assert 'totalIva' not in resumen
+    assert D(str(resumen['totalIva'])) == D('1.50')
 
 
 def test_resumen_credito_fiscal_suma_iva():
@@ -35,16 +35,133 @@ def test_resumen_credito_fiscal_sin_sumas():
     items_total = D('100.00')
     fiscal = {'iva': D('13.00'), 'descu_gravada': D('10.00')}
     resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='03')
-    assert D(str(resumen['totalGravada'])) == D('100.00')
-    assert D(str(resumen['subTotalVentas'])) == D('110.00')
-    assert D(str(resumen['subTotal'])) == D('100.00')
+    assert D(str(resumen['totalGravada'])) == D('88.50')
+    assert D(str(resumen['subTotalVentas'])) == D('88.50')
+    assert D(str(resumen['subTotal'])) == D('78.50')
     assert 'totalIva' not in resumen
-    assert D(str(resumen['montoTotalOperacion'])) == D('113.00')
-    assert D(str(resumen['totalPagar'])) == D('113.00')
+    assert D(str(resumen['montoTotalOperacion'])) == D('91.50')
+    assert D(str(resumen['totalPagar'])) == D('91.50')
     assert D(str(resumen['totalDescu'])) == D('10.00')
-    assert D(str(resumen['porcentajeDescuento'])) == D('9.09')
+    assert D(str(resumen['porcentajeDescuento'])) == D('11.30')
     assert resumen['tributos'][0]['codigo'] == '20'
     assert resumen['tributos'][0]['valor'] == D('13.00')
+
+
+def test_resumen_credito_fiscal_bases_mixtas():
+    fiscal = {
+        'sumas': D('13.27'),
+        'ventas_exentas': D('15.00'),
+        'ventas_no_sujetas': D('15.00'),
+    }
+    cuerpo = [
+        {
+            'ventaGravada': D('13.27'),
+            'ventaExenta': D('0'),
+            'ventaNoSuj': D('0'),
+            'noGravado': D('0'),
+            'ivaItem': D('1.73'),
+        },
+        {
+            'ventaGravada': D('0'),
+            'ventaExenta': D('15.00'),
+            'ventaNoSuj': D('0'),
+            'noGravado': D('0'),
+            'ivaItem': D('0'),
+        },
+        {
+            'ventaGravada': D('0'),
+            'ventaExenta': D('0'),
+            'ventaNoSuj': D('15.00'),
+            'noGravado': D('0'),
+            'ivaItem': D('0'),
+        },
+    ]
+    resumen = calcular_resumen(
+        D('43.27'),
+        {},
+        fiscal={**fiscal, 'iva': D('0')},
+        tipo_dte='03',
+        cuerpo=cuerpo,
+    )
+    assert D(str(resumen['totalGravada'])) == D('13.27')
+    assert D(str(resumen['subTotalVentas'])) == D('43.27')
+    assert D(str(resumen['subTotal'])) == D('43.27')
+    assert resumen['tributos'][0]['valor'] == D('1.73')
+    assert D(str(resumen['montoTotalOperacion'])) == D('45.00')
+    assert D(str(resumen['totalPagar'])) == D('45.00')
+
+
+def test_resumen_credito_fiscal_iva_por_linea_sin_iva_item():
+    cuerpo = [
+        {
+            'ventaGravada': D('0.01'),
+            'ventaExenta': D('0'),
+            'ventaNoSuj': D('0'),
+            'noGravado': D('0'),
+        },
+        {
+            'ventaGravada': D('0.03'),
+            'ventaExenta': D('0'),
+            'ventaNoSuj': D('0'),
+            'noGravado': D('0'),
+        },
+    ]
+    resumen = calcular_resumen(D('0.04'), {}, tipo_dte='03', cuerpo=cuerpo)
+    assert resumen['tributos'][0]['valor'] == D('0.00')
+    assert D(str(resumen['montoTotalOperacion'])) == D('0.04')
+    assert D(str(resumen['subTotal'])) == D('0.04')
+
+
+def test_recalcular_totales_fc_mixto_consistente():
+    payload = {
+        'identificacion': {'tipoDte': '03'},
+        'receptor': {'nit': '06141407100012'},
+        'cuerpoDocumento': [
+            {
+                'cantidad': 1,
+                'precioUni': D('13.27'),
+                'ventaGravada': D('13.27'),
+                'ventaExenta': D('0'),
+                'ventaNoSuj': D('0'),
+                'noGravado': D('0'),
+                'ivaItem': D('1.73'),
+            },
+            {
+                'cantidad': 1,
+                'precioUni': D('15.00'),
+                'ventaGravada': D('0'),
+                'ventaExenta': D('15.00'),
+                'ventaNoSuj': D('0'),
+                'noGravado': D('0'),
+                'ivaItem': D('0'),
+            },
+            {
+                'cantidad': 1,
+                'precioUni': D('15.00'),
+                'ventaGravada': D('0'),
+                'ventaExenta': D('0'),
+                'ventaNoSuj': D('15.00'),
+                'noGravado': D('0'),
+                'ivaItem': D('0'),
+            },
+        ],
+        'resumen': {
+            'totalDescu': D('0'),
+            'tributos': [{'codigo': '20', 'valor': D('0')}],
+        },
+    }
+
+    recalcular_totales(payload)
+
+    resumen = payload['resumen']
+    assert D(str(resumen['totalGravada'])) == D('13.27')
+    assert D(str(resumen['totalExenta'])) == D('15.00')
+    assert D(str(resumen['totalNoSuj'])) == D('15.00')
+    assert D(str(resumen['subTotalVentas'])) == D('43.27')
+    assert D(str(resumen['subTotal'])) == D('43.27')
+    assert D(str(resumen['montoTotalOperacion'])) == D('45.00')
+    assert D(str(resumen['totalPagar'])) == D('45.00')
+    assert resumen['tributos'][0]['valor'] == D('1.73')
 
 
 def test_resumen_sin_gravada_sin_tributos():
@@ -52,7 +169,7 @@ def test_resumen_sin_gravada_sin_tributos():
     fiscal = {'sumas': D('0'), 'ventas_exentas': D('5'), 'iva': D('0')}
     resumen = calcular_resumen(items_total, {}, fiscal=fiscal, tipo_dte='01')
     assert D(str(resumen['totalGravada'])) == D('0.00')
-    assert 'totalIva' not in resumen
+    assert D(str(resumen['totalIva'])) == D('0.00')
     assert resumen['tributos'] is None
 
 

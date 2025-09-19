@@ -511,6 +511,69 @@ def test_generar_dte_json_cons_final_precio_neto(tmp_path):
     assert "ivaItem" not in item
 
 
+def test_generar_dte_json_asigna_nombre_consumidor_final(tmp_path):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    tmp_file = tmp_path / "datos_negocio.json"
+    tmp_file.write_text(json.dumps(datos))
+    original_path = dte_module.DATOS_NEGOCIO_PATH
+    dte_module.DATOS_NEGOCIO_PATH = str(tmp_file)
+    original_loader = dte_module._load_datos_negocio
+    original_svfe_path = svfe_config.DATOS_NEGOCIO_PATH
+    original_svfe_loader = svfe_config.load_datos_negocio
+    svfe_config.DATOS_NEGOCIO_PATH = str(tmp_file)
+    dte_module._load_datos_negocio = lambda: datos
+    svfe_config.load_datos_negocio = lambda: datos
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01",
+        10,
+        extra={
+            "precios_incluyen_iva": False,
+            "es_ticket": True,
+            "receptor": {
+                "direccion": {
+                    "departamento": "06",
+                    "municipio": "23",
+                    "complemento": "San Salvador",
+                }
+            },
+        },
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vid)
+
+    try:
+        data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
+    finally:
+        dte_module.DATOS_NEGOCIO_PATH = original_path
+        dte_module._load_datos_negocio = original_loader
+        svfe_config.DATOS_NEGOCIO_PATH = original_svfe_path
+        svfe_config.load_datos_negocio = original_svfe_loader
+
+    assert data["receptor"]["nombre"] == "Consumidor Final"
+
+
 def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
     import dte as dte_module
 

@@ -118,7 +118,7 @@ def validate_inventory_json(data: dict) -> List[Issue]:
                 "message": f"vendedor_id {vend_id} no existe",
             })
         cid = v.get("cliente_id")
-        if cid not in cliente_ids:
+        if cid is not None and cid not in cliente_ids:
             issues.append({
                 "path": f"ventas[{i}].cliente_id",
                 "severity": "error",

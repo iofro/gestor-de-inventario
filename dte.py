@@ -3063,6 +3063,11 @@ def validate_dte_json(
     negocio = _load_datos_negocio()
 
     ident = payload.get("identificacion", {})
+    if correlativo is None and isinstance(ident, dict):
+        # Forzar regeneración de ``numeroControl`` al validar cuando no se
+        # proporciona un correlativo explícito.  Si dejamos el valor entrante
+        # Hacienda puede rechazar el documento por duplicado.
+        ident.pop("numeroControl", None)
     config = _load_dte_api_config()
     ambiente = "01" if config.get("ambiente") == "produccion" else "00"
     ident.setdefault("ambiente", ambiente)

@@ -69,6 +69,7 @@ def check_document(data: dict, expected_ambiente: str | None = None) -> List[str
         fiscal=fiscal,
         extra=extra,
         tipo_dte=ident.get("tipoDte", "01"),
+        cuerpo=cuerpo,
     )
 
     compare_keys = [

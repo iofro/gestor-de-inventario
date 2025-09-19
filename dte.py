@@ -1095,6 +1095,7 @@ def calcular_resumen(
     total_exenta = money(fiscal.get("ventas_exentas", 0))
     total_no_suj = money(fiscal.get("ventas_no_sujetas", 0))
     total_no_gravado = money(fiscal.get("no_gravado", 0))
+    cuerpo_doc = cuerpo or []
 
     if tipo_dte == "01":
         descu_no_suj = money(0)
@@ -1123,26 +1124,40 @@ def calcular_resumen(
         )
         total_descu = money(descu_no_suj + descu_exenta + descu_gravada)
         if tipo_dte in {"03", "05", "06"}:
-            if tipo_dte == "03" and (
-                "sumas" not in fiscal or "iva" not in fiscal
-            ):
-                base_calc, iva_calc = to_base_iva(items_total)
-                total_gravada = money(fiscal.get("sumas", base_calc))
-                total_iva = money(fiscal.get("iva", iva_calc))
-            elif "sumas" in fiscal:
-                total_gravada = money(fiscal["sumas"])
-                total_iva = money(fiscal.get("iva", 0))
-            else:
-                total_gravada = money(items_total)
-                total_iva = money(
-                    fiscal.get("iva", items_total * D("0.13"))
+            gravada_desde_cuerpo = None
+            if cuerpo_doc:
+                gravada_desde_cuerpo = money(
+                    sum(D(str(i.get("ventaGravada") or 0)) for i in cuerpo_doc)
                 )
+            if "sumas" in fiscal:
+                total_gravada = money(fiscal["sumas"])
+            elif gravada_desde_cuerpo is not None:
+                total_gravada = gravada_desde_cuerpo
+            else:
+                base_calc, _ = to_base_iva(items_total)
+                total_gravada = money(base_calc)
+
+            iva_items = [
+                money(D(str(i.get("ivaItem"))))
+                for i in cuerpo_doc
+                if i.get("ivaItem") is not None
+            ]
+            if iva_items:
+                total_iva = money(sum(iva_items))
+            elif cuerpo_doc:
+                total_iva = money(
+                    sum(
+                        money(D(str(i.get("ventaGravada") or 0)) * D("0.13"))
+                        for i in cuerpo_doc
+                    )
+                )
+            else:
+                total_iva = money(fiscal.get("iva", total_gravada * D("0.13")))
             sub_total_ventas = money(
-                fiscal.get("sub_total_ventas", total_gravada + total_descu)
+                total_gravada + total_exenta + total_no_suj + total_no_gravado
             )
-            sub_total = total_gravada
-            total_descu = descu_gravada
-            monto_total_operacion = money(total_gravada + total_iva)
+            sub_total = money(sub_total_ventas - total_descu)
+            monto_total_operacion = money(sub_total + total_iva)
             total_pagar = monto_total_operacion
             porcentaje_desc = money(
                 (total_descu * D("100") / sub_total_ventas)
@@ -1244,16 +1259,28 @@ def calcular_resumen(
         resumen["condicionOperacion"] = _parse_condicion_operacion(condicion)
 
     if tipo_dte in {"03", "05", "06"}:
-        cuerpo_doc = cuerpo or []
         tg = money(sum(D(str(i.get("ventaGravada") or 0)) for i in cuerpo_doc))
         resumen_total_gravada = money(D(str(resumen.get("totalGravada", 0))))
         if resumen_total_gravada == D("0") and tg > D("0"):
             resumen["totalGravada"] = tg
             resumen_total_gravada = tg
-        iva_desde_cuerpo = money(
-            sum(D(str(i.get("ventaGravada") or 0)) * D("0.13") for i in cuerpo_doc)
-        )
-        if cuerpo_doc:
+        iva_items = [
+            money(D(str(i.get("ivaItem"))))
+            for i in cuerpo_doc
+            if i.get("ivaItem") is not None
+        ]
+        if iva_items:
+            iva_desde_cuerpo = money(sum(iva_items))
+        elif cuerpo_doc:
+            iva_desde_cuerpo = money(
+                sum(
+                    money(D(str(i.get("ventaGravada") or 0)) * D("0.13"))
+                    for i in cuerpo_doc
+                )
+            )
+        else:
+            iva_desde_cuerpo = None
+        if iva_desde_cuerpo is not None:
             total_iva = iva_desde_cuerpo
         total_gravada = resumen_total_gravada
 
@@ -1800,41 +1827,61 @@ def recalcular_totales(
             first["montoPago"] = money(first_val + delta)
 
     if tipo_dte in {"03", "05", "06"}:
-        total_gravada_calc = D("0")
-        for item in cuerpo:
-            cant = D(str(item.get("cantidad") or 0))
-            precio_u = D(str(item.get("precioUni") or 0))
-            linea_base = d4(precio_u * cant)
-            item["ventaGravada"] = linea_base
-            total_gravada_calc += linea_base
+        def _sum_cuerpo(key: str) -> D:
+            return money(sum(D(str(item.get(key) or 0)) for item in cuerpo))
 
-        total_gravada_calc = money(total_gravada_calc)
-        _set_resumen("totalGravada", total_gravada_calc)
+        total_gravada_calc = _sum_cuerpo("ventaGravada")
+        total_exenta_calc = _sum_cuerpo("ventaExenta")
+        total_no_suj_calc = _sum_cuerpo("ventaNoSuj")
+        total_no_gravado_calc = _sum_cuerpo("noGravado")
 
-        total_iva_calc = money(
-            sum(D(str(t.get("valor") or 0)) for t in resumen.get("tributos") or [])
+        iva_items_vals = [
+            money(D(str(item.get("ivaItem"))))
+            for item in cuerpo
+            if item.get("ivaItem") is not None
+        ]
+        if iva_items_vals:
+            total_iva_calc = money(sum(iva_items_vals))
+        elif cuerpo:
+            total_iva_calc = money(
+                sum(
+                    money(D(str(item.get("ventaGravada") or 0)) * D("0.13"))
+                    for item in cuerpo
+                )
+            )
+        else:
+            total_iva_calc = money(
+                sum(D(str(t.get("valor") or 0)) for t in resumen.get("tributos") or [])
+            )
+
+        total_descu_calc = money(D(str(resumen.get("totalDescu", 0))))
+        sub_total_ventas_calc = money(
+            total_gravada_calc
+            + total_exenta_calc
+            + total_no_suj_calc
+            + total_no_gravado_calc
         )
-        if resumen.get("tributos"):
-            resumen["tributos"][0]["valor"] = total_iva_calc
+        sub_total_calc = money(sub_total_ventas_calc - total_descu_calc)
+        monto_total = money(sub_total_calc + total_iva_calc)
 
-        monto_total = money(total_gravada_calc + total_iva_calc)
+        _set_resumen("totalNoSuj", total_no_suj_calc)
+        _set_resumen("totalExenta", total_exenta_calc)
+        _set_resumen("totalGravada", total_gravada_calc)
+        _set_resumen("totalNoGravado", total_no_gravado_calc)
+        _set_resumen("subTotalVentas", sub_total_ventas_calc)
+        _set_resumen("totalDescu", total_descu_calc)
+        porcentaje_desc = money(
+            (total_descu_calc * D("100") / sub_total_ventas_calc)
+            if sub_total_ventas_calc
+            else D("0")
+        )
+        _set_resumen("porcentajeDescuento", porcentaje_desc)
+        _set_resumen("subTotal", sub_total_calc)
         _set_resumen("montoTotalOperacion", monto_total)
         _set_resumen("totalPagar", monto_total)
 
-        sub_total = total_gravada_calc
-        suma_trib = total_iva_calc
-        esperado_total = money(sub_total + suma_trib)
-        if esperado_total != money(resumen.get("montoTotalOperacion", 0)):
-            warnings.warn(
-                "subTotal + tributos.valor incoherente con montoTotalOperacion"
-            )
-            resumen["montoTotalOperacion"] = esperado_total
-            if money(resumen.get("totalPagar", 0)) != esperado_total:
-                resumen["totalPagar"] = esperado_total
-                if "totalPagar" not in modificados:
-                    modificados.append("totalPagar")
-            if "montoTotalOperacion" not in modificados:
-                modificados.append("montoTotalOperacion")
+        if resumen.get("tributos"):
+            resumen["tributos"][0]["valor"] = total_iva_calc
 
         if tipo_dte == "03":
             pf_total = money(
@@ -1844,8 +1891,8 @@ def recalcular_totales(
                 )
                 + total_iva_calc
             )
-            monto_total = money(resumen.get("montoTotalOperacion", 0))
-            diff = money(pf_total - monto_total)
+            monto_total_resumen = money(resumen.get("montoTotalOperacion", 0))
+            diff = money(pf_total - monto_total_resumen)
             if diff != D("0"):
                 if abs(diff) <= D("0.01"):
                     if resumen.get("tributos"):
@@ -1858,7 +1905,7 @@ def recalcular_totales(
                     _set_resumen("totalPagar", pf_total)
                 else:
                     warnings.warn(
-                        f"pf_base+iva {pf_total} difiere de montoTotalOperacion {monto_total}"
+                        f"pf_base+iva {pf_total} difiere de montoTotalOperacion {monto_total_resumen}"
                     )
 
     data["resumen"] = resumen

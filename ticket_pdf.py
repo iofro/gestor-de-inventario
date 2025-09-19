@@ -114,7 +114,7 @@ def generar_ticket_fe_pdf(
 
     payload = dte_data.get("dteJson", {})
     accepted = bool(dte_data.get("selloRecibido"))
-    pdf_bytes = render_ticket_pdf(payload, accepted)
+    pdf_bytes = render_ticket_pdf(payload, accepted, sello=dte_data.get("selloRecibido"))
 
     with open(archivo, "wb") as fh:
         fh.write(pdf_bytes)

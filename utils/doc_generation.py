@@ -536,9 +536,17 @@ def generate_ticket_pdf(manager, venta_id):
             pass
     except Exception:
         pass
+    tipo_dte = ticket_json.get("identificacion", {}).get("tipoDte")
+    if tipo_dte == "01" and not extra.get("es_ticket"):
+        extra["es_ticket"] = True
+        try:
+            manager.db.update_venta_extra(venta_id, {"es_ticket": True})
+        except Exception:
+            pass
+
     dte_data = dict(extra)
     dte_data["dteJson"] = ticket_json
-    if ticket_json.get("identificacion", {}).get("tipoDte") == "01" and extra.get("es_ticket"):
+    if tipo_dte == "01" and extra.get("es_ticket"):
         generar_ticket_fe_pdf(venta, detalles, filename, dte_data=dte_data)
     else:
         generar_ticket_personalizado(venta, detalles, filename, dte_data=dte_data)

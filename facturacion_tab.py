@@ -113,6 +113,27 @@ TIPO_DTE_DESC = {
     "06": "Nota de débito",
 }
 
+# Fallback mapping used when ``tipoDte`` is not available but the
+# human-readable description is known.
+TIPO_DTE_CODE_BY_DESC = {
+    "ticket": "01",
+    "consumidor final": "01",
+    "crédito fiscal": "03",
+    "credito fiscal": "03",
+    "nota de remisión": "04",
+    "nota de remision": "04",
+    "nota de crédito": "05",
+    "nota de credito": "05",
+    "nota de débito": "06",
+    "nota de debito": "06",
+}
+
+
+def _tipo_code_from_desc(tipo: str | None) -> str | None:
+    if not tipo:
+        return None
+    return TIPO_DTE_CODE_BY_DESC.get(str(tipo).strip().lower())
+
 
 DUPLICATE_HINTS = (
     "ya existe un registro con ese valor",
@@ -1125,6 +1146,16 @@ class FacturacionTab(QWidget):
             total = None
             numero_control = None
             codigo_generacion = None
+            tipo_desc = doc_tipo
+            tipo_codigo = None
+            ident_data = None
+            if json_path and os.path.exists(json_path):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    ident_data = data.get("identificacion", {})
+                except Exception:
+                    ident_data = None
             if venta:
                 getter = getattr(self.manager.db, "get_cliente", None)
                 if venta.get("cliente_id") and getter:
@@ -1137,17 +1168,26 @@ class FacturacionTab(QWidget):
                 row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
             else:
                 row_type = "orphan"
-                if json_path and os.path.exists(json_path):
-                    try:
-                        with open(json_path, "r", encoding="utf-8") as fh:
-                            data = json.load(fh)
-                        ident = data.get("identificacion", {})
-                        numero_control = ident.get("numeroControl")
-                        codigo_generacion = ident.get("codigoGeneracion")
-                    except Exception:
-                        numero_control = None
-                        codigo_generacion = None
+                if ident_data:
+                    numero_control = ident_data.get("numeroControl")
+                    codigo_generacion = ident_data.get("codigoGeneracion")
 
+            if tipo_codigo is None and ident_data:
+                tipo_codigo = ident_data.get("tipoDte")
+                if tipo_desc is None:
+                    tipo_codigo_str = str(tipo_codigo or "").zfill(2)
+                    tipo_desc = TIPO_DTE_DESC.get(tipo_codigo_str)
+
+            if tipo_codigo is None:
+                tipo_codigo = _tipo_code_from_desc(tipo_desc)
+
+            if tipo_codigo is not None:
+                try:
+                    tipo_codigo = str(tipo_codigo).zfill(2)
+                except Exception:
+                    tipo_codigo = None
+            if tipo_desc is None:
+                tipo_desc = doc_tipo
             estado, envio = self._detectar_estado_factura(
                 venta,
                 ruta,
@@ -1170,7 +1210,8 @@ class FacturacionTab(QWidget):
                 "total": total,
                 "estado": estado,
                 "envio": envio,
-                "tipo": doc_tipo,
+                "tipo": tipo_desc or doc_tipo,
+                "codigo": tipo_codigo,
             }
             if row_type == "orphan":
                 row["pdf"] = ruta
@@ -1239,9 +1280,12 @@ class FacturacionTab(QWidget):
         self.table.setRowCount(len(rows))
         selected_row = None
         for row, v in enumerate(rows):
-            codigo = v.get("codigo", "")
-            tipo = v.get("tipo", "")
-            text_id = f"{codigo} {tipo}".strip() if codigo else v.get("name", "")
+            codigo = v.get("codigo") or ""
+            tipo = v.get("tipo") or ""
+            if codigo:
+                text_id = f"{codigo} {tipo}".strip()
+            else:
+                text_id = tipo or v.get("name", "")
             self.table.setItem(row, 0, QTableWidgetItem(text_id))
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
@@ -1341,6 +1385,13 @@ class FacturacionTab(QWidget):
                     ident = data.get("identificacion", {})
                     numero = ident.get("numeroControl", numero)
                     codigo = ident.get("tipoDte")
+                    if codigo is None:
+                        codigo = _tipo_code_from_desc(tipo)
+                    if codigo is not None:
+                        try:
+                            codigo = str(codigo).zfill(2)
+                        except Exception:
+                            codigo = None
                     codigo_gen = ident.get("codigoGeneracion")
                     fecha = ident.get("fecEmi", "")
                     hora = ident.get("horEmi", "")

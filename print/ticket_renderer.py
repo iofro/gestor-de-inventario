@@ -345,7 +345,7 @@ def render_ticket_pdf(
         )
 
     def add_qr_block(url: str) -> None:
-        qr_size = min(70 * mm, content_width)
+        qr_size = min(50 * mm, content_width)
         elements.append(
             {
                 "type": "qr",

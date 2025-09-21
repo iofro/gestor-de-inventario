@@ -113,6 +113,27 @@ TIPO_DTE_DESC = {
     "06": "Nota de débito",
 }
 
+# Fallback mapping used when ``tipoDte`` is not available but the
+# human-readable description is known.
+TIPO_DTE_CODE_BY_DESC = {
+    "ticket": "01",
+    "consumidor final": "01",
+    "crédito fiscal": "03",
+    "credito fiscal": "03",
+    "nota de remisión": "04",
+    "nota de remision": "04",
+    "nota de crédito": "05",
+    "nota de credito": "05",
+    "nota de débito": "06",
+    "nota de debito": "06",
+}
+
+
+def _tipo_code_from_desc(tipo: str | None) -> str | None:
+    if not tipo:
+        return None
+    return TIPO_DTE_CODE_BY_DESC.get(str(tipo).strip().lower())
+
 
 DUPLICATE_HINTS = (
     "ya existe un registro con ese valor",
@@ -1125,6 +1146,16 @@ class FacturacionTab(QWidget):
             total = None
             numero_control = None
             codigo_generacion = None
+            tipo_desc = doc_tipo
+            tipo_codigo = None
+            ident_data = None
+            if json_path and os.path.exists(json_path):
+                try:
+                    with open(json_path, "r", encoding="utf-8") as fh:
+                        data = json.load(fh)
+                    ident_data = data.get("identificacion", {})
+                except Exception:
+                    ident_data = None
             if venta:
                 getter = getattr(self.manager.db, "get_cliente", None)
                 if venta.get("cliente_id") and getter:
@@ -1137,17 +1168,26 @@ class FacturacionTab(QWidget):
                 row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
             else:
                 row_type = "orphan"
-                if json_path and os.path.exists(json_path):
-                    try:
-                        with open(json_path, "r", encoding="utf-8") as fh:
-                            data = json.load(fh)
-                        ident = data.get("identificacion", {})
-                        numero_control = ident.get("numeroControl")
-                        codigo_generacion = ident.get("codigoGeneracion")
-                    except Exception:
-                        numero_control = None
-                        codigo_generacion = None
+                if ident_data:
+                    numero_control = ident_data.get("numeroControl")
+                    codigo_generacion = ident_data.get("codigoGeneracion")
 
+            if tipo_codigo is None and ident_data:
+                tipo_codigo = ident_data.get("tipoDte")
+                if tipo_desc is None:
+                    tipo_codigo_str = str(tipo_codigo or "").zfill(2)
+                    tipo_desc = TIPO_DTE_DESC.get(tipo_codigo_str)
+
+            if tipo_codigo is None:
+                tipo_codigo = _tipo_code_from_desc(tipo_desc)
+
+            if tipo_codigo is not None:
+                try:
+                    tipo_codigo = str(tipo_codigo).zfill(2)
+                except Exception:
+                    tipo_codigo = None
+            if tipo_desc is None:
+                tipo_desc = doc_tipo
             estado, envio = self._detectar_estado_factura(
                 venta,
                 ruta,
@@ -1170,7 +1210,8 @@ class FacturacionTab(QWidget):
                 "total": total,
                 "estado": estado,
                 "envio": envio,
-                "tipo": doc_tipo,
+                "tipo": tipo_desc or doc_tipo,
+                "codigo": tipo_codigo,
             }
             if row_type == "orphan":
                 row["pdf"] = ruta
@@ -1239,9 +1280,12 @@ class FacturacionTab(QWidget):
         self.table.setRowCount(len(rows))
         selected_row = None
         for row, v in enumerate(rows):
-            codigo = v.get("codigo", "")
-            tipo = v.get("tipo", "")
-            text_id = f"{codigo} {tipo}".strip() if codigo else v.get("name", "")
+            codigo = v.get("codigo") or ""
+            tipo = v.get("tipo") or ""
+            if codigo:
+                text_id = f"{codigo} {tipo}".strip()
+            else:
+                text_id = tipo or v.get("name", "")
             self.table.setItem(row, 0, QTableWidgetItem(text_id))
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
@@ -1341,6 +1385,13 @@ class FacturacionTab(QWidget):
                     ident = data.get("identificacion", {})
                     numero = ident.get("numeroControl", numero)
                     codigo = ident.get("tipoDte")
+                    if codigo is None:
+                        codigo = _tipo_code_from_desc(tipo)
+                    if codigo is not None:
+                        try:
+                            codigo = str(codigo).zfill(2)
+                        except Exception:
+                            codigo = None
                     codigo_gen = ident.get("codigoGeneracion")
                     fecha = ident.get("fecEmi", "")
                     hora = ident.get("horEmi", "")
@@ -1724,6 +1775,12 @@ class FacturacionTab(QWidget):
             ident_info["codigoGeneracion"] = codigo_generacion
 
         motivo = self._format_rejection_reason(resp)
+        if motivo:
+            QMessageBox.critical(
+                self,
+                "Enviar a Hacienda",
+                motivo,
+            )
         dialog = DTERechazadoDialog(
             numero_control or "Desconocido",
             codigo_generacion or "Desconocido",
@@ -1731,7 +1788,21 @@ class FacturacionTab(QWidget):
             parent=self,
         )
         if dialog.exec_() == QDialog.Accepted:
-            self._revert_correlativo(ident_info)
+            if self._revert_correlativo(ident_info):
+                QMessageBox.information(
+                    self,
+                    "Enviar a Hacienda",
+                    "La factura será eliminada del sistema.",
+                )
+                try:
+                    self._archive_rejected_invoice(entry, factura)
+                except Exception:
+                    logger.exception("Error al archivar factura rechazada")
+                    QMessageBox.warning(
+                        self,
+                        "Enviar a Hacienda",
+                        "Ocurrió un error al archivar la factura rechazada.",
+                    )
         return True
 
     def send_selected_invoice(self):
@@ -2611,6 +2682,199 @@ class FacturacionTab(QWidget):
             QMessageBox.critical(self, "Nota", str(exc))
         self.load_invoices()
 
+    def _get_invoice_paths(self, venta_id, factura=None, entry=None):
+        """Obtiene las rutas relacionadas a una factura."""
+        pdf_path = None
+        ticket_path = None
+        dte_json_path = None
+
+        if venta_id:
+            try:
+                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            except Exception:
+                pdf_path = None
+            try:
+                ticket_path = self.manager.db.get_ticket_pdf(venta_id)
+            except Exception:
+                ticket_path = None
+
+        if factura:
+            dte_json_path = factura.get("json")
+
+        if not dte_json_path and entry:
+            dte_json_path = entry.get("json") or entry.get("path")
+
+        if not dte_json_path and pdf_path:
+            dte_json_path = os.path.splitext(pdf_path)[0] + ".json"
+
+        if not dte_json_path and venta_id:
+            try:
+                resp = self.manager.db.consultar_envio_dte(venta_id)
+                dte_json_path = (
+                    resp.get("json")
+                    or resp.get("path")
+                    or resp.get("ruta")
+                )
+            except Exception:
+                dte_json_path = None
+
+        return pdf_path, ticket_path, dte_json_path
+
+    def _ensure_archive_directory(self, name: str) -> str:
+        base_root = os.path.join(os.path.dirname(__file__), "dte_fallidos")
+        os.makedirs(base_root, exist_ok=True)
+        sanitized = re.sub(r"[^A-Za-z0-9_.-]", "_", name or "rechazo")
+        sanitized = sanitized.strip("_") or "rechazo"
+        candidate = os.path.join(base_root, sanitized)
+        index = 1
+        while os.path.exists(candidate):
+            candidate = os.path.join(base_root, f"{sanitized}_{index}")
+            index += 1
+        os.makedirs(candidate)
+        return candidate
+
+    def _unique_destination(self, path: str) -> str:
+        base, ext = os.path.splitext(path)
+        candidate = path
+        index = 1
+        while os.path.exists(candidate):
+            candidate = f"{base}_{index}{ext}"
+            index += 1
+        return candidate
+
+    def _move_directory_contents(self, src_dir: str, dest_dir: str) -> None:
+        if not src_dir or not dest_dir:
+            return
+        if os.path.abspath(src_dir) == os.path.abspath(dest_dir):
+            return
+        if not os.path.isdir(src_dir):
+            return
+        for name in os.listdir(src_dir):
+            src_path = os.path.join(src_dir, name)
+            dest_path = os.path.join(dest_dir, name)
+            dest_path = self._unique_destination(dest_path)
+            try:
+                shutil.move(src_path, dest_path)
+            except Exception:
+                logger.exception("No se pudo mover %s a %s", src_path, dest_path)
+        try:
+            shutil.rmtree(src_dir)
+        except OSError:
+            pass
+
+    def _cleanup_invoice_artifacts(
+        self,
+        venta_id,
+        *,
+        pdf_path=None,
+        ticket_path=None,
+        dte_json_path=None,
+        archive_subdir=None,
+    ):
+        archive_dir = None
+        if archive_subdir:
+            archive_dir = self._ensure_archive_directory(archive_subdir)
+
+        numero_control = None
+        if dte_json_path and os.path.exists(dte_json_path):
+            try:
+                with open(dte_json_path, "r", encoding="utf-8") as fh:
+                    jdata = json.load(fh)
+                ident = jdata.get("identificacion") or jdata.get("identificador") or {}
+                numero_control = ident.get("numeroControl")
+            except Exception:
+                numero_control = None
+
+            base_dir = os.path.dirname(__file__)
+            abs_json = os.path.normpath(dte_json_path)
+            for root in ("dtes", "dte_fallidos", "dtes_pendientes"):
+                root_dir = os.path.normpath(os.path.join(base_dir, root))
+                if abs_json.startswith(root_dir + os.sep):
+                    if archive_dir:
+                        self._move_directory_contents(os.path.dirname(abs_json), archive_dir)
+                    else:
+                        try:
+                            shutil.rmtree(os.path.dirname(abs_json))
+                        except OSError:
+                            pass
+                    break
+
+        if numero_control:
+            m = re.match(r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$", numero_control)
+            if m:
+                tipo, suc, punto, corr = m.groups()
+                try:
+                    corr_int = int(corr)
+                    actual = self.manager.db.get_dte_correlativo(tipo, suc, punto)
+                    if actual == corr_int:
+                        self.manager.db.set_dte_correlativo(
+                            tipo, suc, punto, max(corr_int - 1, 0)
+                        )
+                except Exception:
+                    pass
+
+        targets = [path for path in [pdf_path, ticket_path] if path]
+        for base in targets:
+            root = os.path.splitext(base)[0]
+            for ext in (".pdf", ".json", ".jws"):
+                candidate = root + ext
+                if not os.path.exists(candidate):
+                    continue
+                if archive_dir:
+                    dest = os.path.join(archive_dir, os.path.basename(candidate))
+                    dest = self._unique_destination(dest)
+                    try:
+                        shutil.move(candidate, dest)
+                    except Exception:
+                        logger.exception("No se pudo mover %s a %s", candidate, dest)
+                else:
+                    try:
+                        os.remove(candidate)
+                    except OSError:
+                        pass
+
+    def _archive_rejected_invoice(self, entry, factura):
+        if not entry:
+            return
+        venta_id = entry.get("venta_id")
+        if not venta_id:
+            return
+
+        factura = factura or self._selected_factura()
+        pdf_path, ticket_path, dte_json_path = self._get_invoice_paths(
+            venta_id, factura=factura, entry=entry
+        )
+
+        numero_control = None
+        if dte_json_path and os.path.exists(dte_json_path):
+            try:
+                with open(dte_json_path, "r", encoding="utf-8") as fh:
+                    jdata = json.load(fh)
+                ident = jdata.get("identificacion") or jdata.get("identificador") or {}
+                numero_control = ident.get("numeroControl")
+            except Exception:
+                numero_control = None
+
+        archive_label = numero_control or entry.get("name") or entry.get("control")
+        if not archive_label:
+            archive_label = f"venta_{venta_id}"
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        archive_label = f"{archive_label}_rechazo_{timestamp}"
+        archive_label = re.sub(r"[^A-Za-z0-9_.-]", "_", archive_label)
+
+        self.manager.db.delete_venta(venta_id)
+
+        self._cleanup_invoice_artifacts(
+            venta_id,
+            pdf_path=pdf_path,
+            ticket_path=ticket_path,
+            dte_json_path=dte_json_path,
+            archive_subdir=archive_label,
+        )
+
+        self.load_invoices()
+        self._clear_preview_files()
+
     def delete_invoice(self):
         """Elimina una factura junto con archivos y correlativos asociados."""
         data = self._selected_entry()
@@ -2659,65 +2923,21 @@ class FacturacionTab(QWidget):
             self.load_invoices()
             return
 
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
-        ticket_path = self.manager.db.get_ticket_pdf(venta_id)
-        dte_json_path = data.get("json")
-        if not dte_json_path and pdf_path:
-            dte_json_path = os.path.splitext(pdf_path)[0] + ".json"
-        if not dte_json_path:
-            try:
-                resp = self.manager.db.consultar_envio_dte(venta_id)
-                dte_json_path = resp.get("json") or resp.get("path") or resp.get("ruta")
-            except Exception:
-                dte_json_path = None
+        factura = None
+        if rtype == "venta":
+            factura = self._selected_factura()
+        pdf_path, ticket_path, dte_json_path = self._get_invoice_paths(
+            venta_id, factura=factura, entry=data
+        )
 
         self.manager.db.delete_venta(venta_id)
 
-        numero_control = None
-        if dte_json_path and os.path.exists(dte_json_path):
-            try:
-                with open(dte_json_path, "r", encoding="utf-8") as fh:
-                    jdata = json.load(fh)
-                ident = jdata.get("identificacion") or jdata.get("identificador") or {}
-                numero_control = ident.get("numeroControl")
-            except Exception:
-                numero_control = None
-            base_dir = os.path.dirname(__file__)
-            abs_json = os.path.normpath(dte_json_path)
-            for root in ("dtes", "dte_fallidos", "dtes_pendientes"):
-                root_dir = os.path.normpath(os.path.join(base_dir, root))
-                if abs_json.startswith(root_dir + os.sep):
-                    try:
-                        shutil.rmtree(os.path.dirname(abs_json))
-                    except OSError:
-                        pass
-                    break
-
-        if numero_control:
-            m = re.match(r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$", numero_control)
-            if m:
-                tipo, suc, punto, corr = m.groups()
-                try:
-                    corr_int = int(corr)
-                    if (
-                        self.manager.db.get_dte_correlativo(tipo, suc, punto)
-                        == corr_int
-                    ):
-                        self.manager.db.set_dte_correlativo(
-                            tipo, suc, punto, corr_int - 1
-                        )
-                except Exception:
-                    pass
-
-        for base in filter(None, [pdf_path, ticket_path]):
-            root = os.path.splitext(base)[0]
-            for ext in (".pdf", ".json", ".jws"):
-                candidate = root + ext
-                if os.path.exists(candidate):
-                    try:
-                        os.remove(candidate)
-                    except OSError:
-                        pass
+        self._cleanup_invoice_artifacts(
+            venta_id,
+            pdf_path=pdf_path,
+            ticket_path=ticket_path,
+            dte_json_path=dte_json_path,
+        )
 
         QMessageBox.information(self, "Eliminar", "Factura eliminada")
         self.load_invoices()

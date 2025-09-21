@@ -281,6 +281,14 @@ class SalesTab(QWidget):
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
+        if not venta:
+            QMessageBox.warning(
+                self,
+                "Venta no encontrada",
+                f"No se encontraron datos para la venta seleccionada (ID {venta_id}).",
+            )
+            self.show_sale(clear=True)
+            return
         cliente = ""
         cliente_email = ""
         if venta and venta.get("cliente_id"):

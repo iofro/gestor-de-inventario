@@ -46,7 +46,7 @@
     "ambiente": "00",
     "codigoGeneracion": "1AF07E92-596C-48FB-90F0-C0E965C91F22",
     "fecEmi": "2025-09-19",
-    "horEmi": "12:28:36",
+    "horEmi": "13:46:26",
     "motivoContin": null,
     "numeroControl": "DTE-01-S001P001-000000000000064",
     "tipoContingencia": null,
@@ -66,7 +66,7 @@
       "departamento": "06",
       "municipio": "23"
     },
-    "nombre": null,
+    "nombre": "Consumidor Final",
     "nrc": null,
     "numDocumento": null,
     "telefono": null,

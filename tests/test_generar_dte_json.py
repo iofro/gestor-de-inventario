@@ -2,7 +2,7 @@ import pytest
 
 import json
 from pathlib import Path
-from decimal import Decimal, getcontext, setcontext, InvalidOperation
+from decimal import Decimal, getcontext, setcontext, InvalidOperation, ROUND_HALF_UP
 
 from db import DB
 from dte import generar_dte_json, _write_json, money, d4
@@ -1088,6 +1088,233 @@ def test_dte_comision_sin_advertencia_total(capsys):
     generar_dte_json(db, venta_id)
     capsys.readouterr()
 
+
+def test_generar_dte_json_resumen_fc_descuentos_mixtos(tmp_path):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    original_path = dte_module.DATOS_NEGOCIO_PATH
+    original_svfe_path = svfe_config.DATOS_NEGOCIO_PATH
+    dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
+    svfe_config.DATOS_NEGOCIO_PATH = str(datos_file)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+
+    def add_prod(nombre: str, codigo: str) -> int:
+        db.add_producto(nombre, codigo, None, vid, None, 0, 0, 0, 10)
+        return db.cursor.lastrowid
+
+    pid_grav_1 = add_prod("Prod Grav 1", "PG1")
+    pid_grav_2 = add_prod("Prod Grav 2", "PG2")
+    pid_exe = add_prod("Prod Exe", "PE")
+    pid_nos = add_prod("Prod NoS", "PN")
+
+    db.add_cliente(
+        "Cliente",
+        "123",
+        "06141990011019",
+        "",
+        "giro",
+        "",
+        "",
+        "C",
+        "06",
+        "23",
+    )
+    cliente_id = db.cursor.lastrowid
+
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        0,
+        "123",
+        "06141990011019",
+        "giro",
+        sumas=0,
+        descuentos=0,
+        iva=0,
+        extra={
+            "descu_gravada": "1.00",
+            "descu_exenta": "0.50",
+            "descu_no_suj": "0.30",
+        },
+    )
+
+    db.add_detalle_venta(
+        venta_id,
+        pid_grav_1,
+        1,
+        16,
+        descuento=1,
+        descuento_tipo="$",
+        tipo_fiscal="gravada",
+        precio_con_iva=16,
+    )
+    db.add_detalle_venta(
+        venta_id,
+        pid_grav_2,
+        1,
+        15.4,
+        descuento=1,
+        descuento_tipo="$",
+        tipo_fiscal="gravada",
+        precio_con_iva=15.4,
+    )
+    db.add_detalle_venta(
+        venta_id,
+        pid_exe,
+        1,
+        15.4,
+        descuento=1,
+        descuento_tipo="$",
+        tipo_fiscal="exenta",
+        precio_con_iva=15.4,
+    )
+    db.add_detalle_venta(
+        venta_id,
+        pid_nos,
+        1,
+        15.4,
+        descuento=1,
+        descuento_tipo="$",
+        tipo_fiscal="no_sujeta",
+        precio_con_iva=15.4,
+    )
+
+    try:
+        data = generar_dte_json(db, venta_id, tipo_dte="03")
+    finally:
+        dte_module.DATOS_NEGOCIO_PATH = original_path
+        svfe_config.DATOS_NEGOCIO_PATH = original_svfe_path
+
+    resumen = data["resumen"]
+    cuerpo = data["cuerpoDocumento"]
+
+    q8 = Decimal("0.00000001")
+    base_grav_1 = ((Decimal("16") - Decimal("1")) / Decimal("1.13")).quantize(
+        q8, rounding=ROUND_HALF_UP
+    )
+    base_grav_2 = ((Decimal("15.4") - Decimal("1")) / Decimal("1.13")).quantize(
+        q8, rounding=ROUND_HALF_UP
+    )
+    expected_total_gravada = money(base_grav_1 + base_grav_2)
+    expected_total_exenta = money(Decimal("15.4") - Decimal("1"))
+    expected_total_no_suj = money(Decimal("15.4") - Decimal("1"))
+    expected_total_no_gravado = money(Decimal("0"))
+    expected_sub_total_ventas = money(
+        expected_total_gravada
+        + expected_total_exenta
+        + expected_total_no_suj
+        + expected_total_no_gravado
+    )
+    expected_descuentos = money(Decimal("0"))
+    expected_sub_total = money(expected_sub_total_ventas - expected_descuentos)
+    expected_iva = money(expected_total_gravada * Decimal("0.13"))
+    expected_monto_total = money(expected_sub_total + expected_iva)
+    expected_total_pagar = expected_monto_total
+
+    total_gravada = Decimal(str(resumen.get("totalGravada", 0)))
+    total_exenta = Decimal(str(resumen.get("totalExenta", 0)))
+    total_no_suj = Decimal(str(resumen.get("totalNoSuj", 0)))
+    total_no_gravado = Decimal(str(resumen.get("totalNoGravado", 0)))
+    sub_total_ventas = Decimal(str(resumen.get("subTotalVentas", 0)))
+
+    assert total_gravada == expected_total_gravada
+    assert total_exenta == expected_total_exenta
+    assert total_no_suj == expected_total_no_suj
+    assert total_no_gravado == expected_total_no_gravado
+    assert sub_total_ventas == expected_sub_total_ventas
+
+    descu_no_suj = Decimal(str(resumen.get("descuNoSuj", 0)))
+    descu_exenta = Decimal(str(resumen.get("descuExenta", 0)))
+    descu_gravada = Decimal(str(resumen.get("descuGravada", 0)))
+    total_descuentos = money(descu_no_suj + descu_exenta + descu_gravada)
+
+    assert descu_no_suj == Decimal("0")
+    assert descu_exenta == Decimal("0")
+    assert descu_gravada == Decimal("0")
+    assert total_descuentos == expected_descuentos
+    assert Decimal(str(resumen.get("totalDescu", 0))) == expected_descuentos
+
+    sub_total = Decimal(str(resumen.get("subTotal", 0)))
+    assert sub_total == expected_sub_total
+
+    tributos = resumen.get("tributos") or []
+    assert tributos and [t.get("codigo") for t in tributos] == ["20"]
+    iva_total = money(Decimal(str(tributos[0]["valor"])))
+    assert iva_total == expected_iva
+
+    monto_total_operacion = Decimal(str(resumen.get("montoTotalOperacion", 0)))
+    assert monto_total_operacion == expected_monto_total
+
+    total_pagar = Decimal(str(resumen.get("totalPagar", 0)))
+    assert total_pagar == expected_total_pagar
+
+    tg8 = sum(Decimal(str(item.get("ventaGravada") or 0)) for item in cuerpo)
+    te8 = sum(Decimal(str(item.get("ventaExenta") or 0)) for item in cuerpo)
+    tns8 = sum(Decimal(str(item.get("ventaNoSuj") or 0)) for item in cuerpo)
+    tng8 = sum(Decimal(str(item.get("noGravado") or 0)) for item in cuerpo)
+
+    assert total_gravada == money(tg8)
+    assert total_exenta == money(te8)
+    assert total_no_suj == money(tns8)
+    assert total_no_gravado == money(tng8)
+
+    iva_resumen = Decimal(str(tributos[0]["valor"])) if tributos else Decimal("0")
+    assert iva_resumen == money(tg8 * Decimal("0.13"))
+
+    for item in cuerpo:
+        venta_gravada_item = Decimal(str(item.get("ventaGravada") or 0))
+        venta_exenta_item = Decimal(str(item.get("ventaExenta") or 0))
+        venta_no_suj_item = Decimal(str(item.get("ventaNoSuj") or 0))
+        venta_no_grav_item = Decimal(str(item.get("noGravado") or 0))
+        cantidad_item = Decimal(str(item.get("cantidad") or 0))
+        precio_unit = Decimal(str(item.get("precioUni") or 0))
+        monto_desc = Decimal(str(item.get("montoDescu") or 0))
+
+        assert monto_desc == Decimal("0")
+
+        if cantidad_item > 0:
+            if venta_gravada_item > 0:
+                expected_unit = (venta_gravada_item / cantidad_item).quantize(
+                    q8, rounding=ROUND_HALF_UP
+                )
+                assert precio_unit == expected_unit
+                assert item.get("tributos") == ["20"]
+            else:
+                base_val = (
+                    venta_exenta_item
+                    or venta_no_suj_item
+                    or venta_no_grav_item
+                    or Decimal("0")
+                )
+                if base_val:
+                    expected_unit = (base_val / cantidad_item).quantize(
+                        q8, rounding=ROUND_HALF_UP
+                    )
+                    assert precio_unit == expected_unit
+                assert item.get("tributos") is None
+        else:
+            assert precio_unit == Decimal("0")
 
 def test_generar_dte_json_condicion_operacion_invalida():
     db = create_db()

@@ -2658,29 +2658,10 @@ def generar_dte_json(
                         seen_raw.add(code_str)
 
             if tipo_dte in {"03", "05", "06"}:
-                if venta_gravada_val > 0:
-                    extras: list[str] = []
-                    if trib_code and trib_code != TRIBUTO_IVA:
-                        extras.append(trib_code)
-                    for code in raw_filtered:
-                        if code == TRIBUTO_IVA:
-                            continue
-                        if code not in extras:
-                            extras.append(code)
-
-                    normalized = [TRIBUTO_IVA] + extras
-                    if tipo_item == 4:
-                        item_data["uniMedida"] = 99
-                        item_data["codTributo"] = extras[0] if extras else None
-                        item_data["tributos"] = [TRIBUTO_IVA]
-                    else:
-                        item_data["codTributo"] = None
-                        item_data["tributos"] = normalized
-                else:
-                    if tipo_item == 4 and venta_gravada_val <= 0:
-                        item_data["uniMedida"] = 99
-                    item_data["codTributo"] = None
-                    item_data["tributos"] = None
+                if tipo_item == 4:
+                    item_data["uniMedida"] = 99
+                item_data["codTributo"] = None
+                item_data["tributos"] = [TRIBUTO_IVA] if venta_gravada_val > 0 else None
             else:
                 trib_list: list[str] = []
                 if venta_gravada_val > 0:
@@ -2688,7 +2669,12 @@ def generar_dte_json(
                 for code in raw_filtered:
                     if code != TRIBUTO_IVA and code not in trib_list:
                         trib_list.append(code)
-                if tipo_item == 4 and trib_code and venta_gravada_val > 0 and trib_code != TRIBUTO_IVA:
+                if (
+                    tipo_item == 4
+                    and trib_code
+                    and venta_gravada_val > 0
+                    and trib_code != TRIBUTO_IVA
+                ):
                     item_data["codTributo"] = trib_code
                     if trib_code not in trib_list:
                         trib_list.append(trib_code)
@@ -2749,11 +2735,12 @@ def generar_dte_json(
         )
     else:
         computed_defaults["descuentos"] = descuentos_total
-    subtotal_calculado = money(
-        (total_gravada_sum - computed_defaults.get("descuentos", money(0)))
-        + total_iva_sum
-    )
-    computed_defaults.setdefault("subtotal", subtotal_calculado)
+    if tipo_dte not in {"03", "05", "06"}:
+        subtotal_calculado = money(
+            (total_gravada_sum - computed_defaults.get("descuentos", money(0)))
+            + total_iva_sum
+        )
+        computed_defaults.setdefault("subtotal", subtotal_calculado)
     for key, value in computed_defaults.items():
         fiscal_totals.setdefault(key, value)
 
@@ -2766,9 +2753,125 @@ def generar_dte_json(
         cuerpo=cuerpo,
     )
 
-    resumen["totalNoSuj"] = _zero_or_item(total_no_suj_sum)
-    resumen["totalExenta"] = _zero_or_item(total_exenta_sum)
-    resumen["totalGravada"] = _zero_or_d2(total_gravada_sum)
+    commission_total = money(commission_total)
+
+    descu_no_suj = money(D(str(resumen.get("descuNoSuj", 0))))
+    descu_exenta = money(D(str(resumen.get("descuExenta", 0))))
+    descu_gravada = money(D(str(resumen.get("descuGravada", 0))))
+    if tipo_dte in {"03", "05", "06"}:
+        descu_no_suj = money(0)
+        descu_exenta = money(0)
+        descu_gravada = money(0)
+    total_descuentos_calc = money(descu_no_suj + descu_exenta + descu_gravada)
+    if tipo_dte in {"03", "05", "06"}:
+        tg8 = sum(D(str(item.get("ventaGravada") or 0)) for item in cuerpo)
+        te8 = sum(D(str(item.get("ventaExenta") or 0)) for item in cuerpo)
+        tns8 = sum(D(str(item.get("ventaNoSuj") or 0)) for item in cuerpo)
+        tng8 = sum(D(str(item.get("noGravado") or 0)) for item in cuerpo)
+
+        total_gravada_val = d2(tg8)
+        total_exenta_val = d2(te8)
+        total_no_suj_val = d2(tns8)
+        total_no_gravado_val = d2(tng8)
+
+        resumen["totalGravada"] = total_gravada_val
+        resumen["totalExenta"] = total_exenta_val
+        resumen["totalNoSuj"] = total_no_suj_val
+        resumen["totalNoGravado"] = total_no_gravado_val
+        resumen["descuNoSuj"] = descu_no_suj
+        resumen["descuExenta"] = descu_exenta
+        resumen["descuGravada"] = descu_gravada
+
+        sub_total_ventas_calc = money(
+            total_gravada_val
+            + total_exenta_val
+            + total_no_suj_val
+            + total_no_gravado_val
+        )
+        sub_total_calc = d2(sub_total_ventas_calc - total_descuentos_calc)
+
+        resumen["subTotalVentas"] = sub_total_ventas_calc
+        resumen["totalDescu"] = total_descuentos_calc
+        resumen["subTotal"] = sub_total_calc
+
+        iva_calc = money(total_gravada_val * D("0.13"))
+        if total_gravada_val == D("0"):
+            resumen["tributos"] = []
+        else:
+            resumen["tributos"] = [
+                {
+                    "codigo": TRIBUTO_IVA,
+                    "descripcion": catalogos.TRIBUTOS.get(TRIBUTO_IVA),
+                    "valor": iva_calc,
+                }
+            ]
+
+        iva_perci1 = money(D(str(resumen.get("ivaPerci1", 0))))
+        otros_tributos = money(
+            sum(
+                D(str(t.get("valor") or 0))
+                for t in (resumen.get("tributos") or [])
+                if t.get("codigo") != TRIBUTO_IVA
+            )
+        )
+        iva_rete1 = money(D(str(resumen.get("ivaRete1", 0))))
+        rete_renta = money(D(str(resumen.get("reteRenta", 0))))
+
+        monto_total_operacion_calc = d2(
+            sub_total_calc + iva_calc + iva_perci1 + otros_tributos - iva_rete1 - rete_renta
+        )
+        total_pagar_calc = d2(monto_total_operacion_calc + commission_total)
+
+        resumen["montoTotalOperacion"] = monto_total_operacion_calc
+        resumen["totalPagar"] = total_pagar_calc
+    else:
+        resumen["totalNoSuj"] = _zero_or_item(total_no_suj_sum)
+        resumen["totalExenta"] = _zero_or_item(total_exenta_sum)
+        resumen["totalGravada"] = _zero_or_d2(total_gravada_sum)
+        resumen["totalNoGravado"] = total_no_gravado_sum
+
+        sub_total_ventas_calc = money(
+            total_gravada_sum + total_exenta_sum + total_no_suj_sum + total_no_gravado_sum
+        )
+        sub_total_calc = money(sub_total_ventas_calc - total_descuentos_calc)
+
+        if tipo_dte == "01":
+            iva_calc = money(D(str(resumen.get("totalIva", 0))))
+        else:
+            iva_calc = money(
+                D(
+                    str(
+                        next(
+                            (
+                                t.get("valor")
+                                for t in (resumen.get("tributos") or [])
+                                if t.get("codigo") == TRIBUTO_IVA
+                            ),
+                            resumen.get("ivaPerci1", 0),
+                        )
+                    )
+                )
+            )
+
+        total_no_gravado = money(D(str(resumen.get("totalNoGravado", 0))))
+
+        if tipo_dte == "01":
+            monto_total_operacion_calc = sub_total_calc
+        elif precios_incluyen_iva:
+            monto_total_operacion_calc = money(sub_total_calc + iva_calc)
+        else:
+            monto_total_operacion_calc = money(
+                sub_total_calc + total_no_gravado + iva_calc
+            )
+
+        total_pagar_calc = money(monto_total_operacion_calc + commission_total)
+
+        resumen["subTotalVentas"] = sub_total_ventas_calc
+        resumen["totalDescu"] = total_descuentos_calc
+        resumen["subTotal"] = sub_total_calc
+        resumen["montoTotalOperacion"] = monto_total_operacion_calc
+        resumen["totalPagar"] = total_pagar_calc
+
 
     # Las siguientes validaciones se omiten para permitir diferencias entre el
     # resumen y el cuerpo del documento sin lanzar ``ValidationError``.

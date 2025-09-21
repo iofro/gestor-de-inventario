@@ -5196,6 +5196,17 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
     res = {"estado": estado, "sello": sello}
+    ident_info = {
+        "numeroControl": ident.get("numeroControl"),
+        "codigoGeneracion": ident.get("codigoGeneracion"),
+        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "ambiente": ident.get("ambiente"),
+    }
+    res["identificacion"] = {
+        key: value
+        for key, value in ident_info.items()
+        if value is not None
+    }
     if detalle:
         res["detalle"] = detalle
     if respuesta.get("errores"):
@@ -5490,6 +5501,17 @@ def _enviar_documento(
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
     res = {"estado": estado, "sello": sello}
+    ident_info = {
+        "numeroControl": ident.get("numeroControl"),
+        "codigoGeneracion": ident.get("codigoGeneracion"),
+        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "ambiente": ident.get("ambiente"),
+    }
+    res["identificacion"] = {
+        key: value
+        for key, value in ident_info.items()
+        if value is not None
+    }
     if detalle:
         res["detalle"] = detalle
     if respuesta.get("errores"):

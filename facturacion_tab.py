@@ -114,6 +114,26 @@ TIPO_DTE_DESC = {
 }
 
 
+DUPLICATE_HINTS = (
+    "ya existe un registro con ese valor",
+    "duplicado",
+    "ya registrado",
+)
+
+
+def _gather_rejection_texts(*values):
+    texts = []
+    for value in values:
+        if isinstance(value, dict):
+            texts.extend(_gather_rejection_texts(*value.values()))
+        elif isinstance(value, (list, tuple, set)):
+            for item in value:
+                texts.extend(_gather_rejection_texts(item))
+        elif value not in (None, ""):
+            texts.append(str(value))
+    return texts
+
+
 class SendOptionsDialog(QDialog):
     """Simple dialog to choose where to send the invoice."""
 
@@ -132,6 +152,45 @@ class SendOptionsDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
+
+
+class DTERechazadoDialog(QDialog):
+    def __init__(self, numero_control: str, codigo_generacion: str, motivo: str, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("DTE rechazado por Hacienda")
+        layout = QVBoxLayout(self)
+
+        info_layout = QFormLayout()
+
+        numero_lbl = QLabel(numero_control or "Desconocido")
+        numero_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        info_layout.addRow("Número de control:", numero_lbl)
+
+        codigo_lbl = QLabel(codigo_generacion or "Desconocido")
+        codigo_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        info_layout.addRow("Código de generación:", codigo_lbl)
+
+        motivo_lbl = QLabel(motivo or "Sin detalle disponible")
+        motivo_lbl.setWordWrap(True)
+        motivo_lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        info_layout.addRow("Motivo:", motivo_lbl)
+
+        layout.addLayout(info_layout)
+
+        pregunta_lbl = QLabel(
+            "¿Desea regresar el correlativo al valor anterior para mantener la secuencia?"
+        )
+        pregunta_lbl.setWordWrap(True)
+        layout.addWidget(pregunta_lbl)
+
+        buttons = QDialogButtonBox()
+        self.accept_btn = buttons.addButton(
+            "Sí, regresar correlativo", QDialogButtonBox.AcceptRole
+        )
+        self.reject_btn = buttons.addButton("No, mantener", QDialogButtonBox.RejectRole)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
 
 
 class AnularDteDialog(QDialog):
@@ -1501,6 +1560,180 @@ class FacturacionTab(QWidget):
                     fh.write(f"- {e}\n")
             QDesktopServices.openUrl(QUrl.fromLocalFile(report_path))
 
+    def _is_duplicate_rejection(self, resp: dict) -> bool:
+        texts = _gather_rejection_texts(
+            resp.get("detalle"),
+            resp.get("errores"),
+            resp.get("mensaje"),
+            resp.get("descripcion"),
+        )
+        combined = " ".join(text.lower() for text in texts)
+        return any(hint in combined for hint in DUPLICATE_HINTS)
+
+    def _extract_rejection_reason(self, resp: dict) -> tuple[str | None, str | None]:
+        codigo: str | None = None
+        descripcion: str | None = None
+
+        def inspect(value):
+            nonlocal codigo, descripcion
+            if isinstance(value, dict):
+                for key in ("codigoMsg", "codigo", "codigoError", "codError"):
+                    if codigo is None and value.get(key):
+                        codigo = str(value.get(key))
+                for key in ("descripcionMsg", "descripcion", "mensaje", "observaciones"):
+                    if descripcion is None and value.get(key):
+                        raw = value.get(key)
+                        if isinstance(raw, (list, tuple, set)):
+                            textos = _gather_rejection_texts(raw)
+                            if textos:
+                                descripcion = textos[0]
+                        else:
+                            descripcion = str(raw)
+                if codigo and descripcion:
+                    return
+                for val in value.values():
+                    inspect(val)
+            elif isinstance(value, (list, tuple, set)):
+                for item in value:
+                    inspect(item)
+
+        inspect(resp.get("detalle"))
+        if not descripcion:
+            inspect(resp.get("errores"))
+        if not descripcion:
+            textos = _gather_rejection_texts(resp.get("detalle"), resp.get("errores"))
+            if textos:
+                descripcion = textos[0]
+        return codigo, descripcion
+
+    def _format_rejection_reason(self, resp: dict) -> str:
+        codigo, descripcion = self._extract_rejection_reason(resp)
+        if codigo and descripcion:
+            return f"{codigo} - {descripcion}"
+        if descripcion:
+            return descripcion
+        if codigo:
+            return str(codigo)
+        return "Sin detalle disponible"
+
+    @staticmethod
+    def _parse_numero_control(numero_control: str | None) -> dict | None:
+        if not numero_control:
+            return None
+        match = re.match(r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$", str(numero_control))
+        if not match:
+            return None
+        tipo, sucursal, punto, correlativo = match.groups()
+        try:
+            correlativo_int = int(correlativo)
+        except ValueError:
+            return None
+        return {
+            "tipo": tipo,
+            "sucursal": sucursal,
+            "punto": punto,
+            "correlativo": correlativo_int,
+        }
+
+    def _revert_correlativo(self, ident_info: dict) -> bool:
+        numero_control = ident_info.get("numeroControl")
+        serie = self._parse_numero_control(numero_control)
+        if not serie:
+            QMessageBox.warning(
+                self,
+                "Enviar a Hacienda",
+                "No se pudo revertir el correlativo porque el número de control es inválido.",
+            )
+            return False
+
+        tipo = serie["tipo"]
+        sucursal = serie["sucursal"]
+        punto = serie["punto"]
+        correlativo = serie["correlativo"]
+        actual = self.manager.db.get_dte_correlativo(tipo, sucursal, punto)
+        if actual != correlativo:
+            QMessageBox.warning(
+                self,
+                "Enviar a Hacienda",
+                "No se puede revertir porque la serie avanzó.",
+            )
+            return False
+
+        nuevo = max(correlativo - 1, 0)
+        self.manager.db.set_dte_correlativo(tipo, sucursal, punto, nuevo)
+        logger.info(
+            "Correlativo revertido tipo=%s sucursal=%s punto=%s ambiente=%s de %s a %s por rechazo MH (no duplicado)",
+            tipo,
+            sucursal,
+            punto,
+            ident_info.get("ambiente") or "desconocido",
+            correlativo,
+            nuevo,
+        )
+        QMessageBox.information(
+            self,
+            "Enviar a Hacienda",
+            "Correlativo regresado al valor anterior.",
+        )
+        return True
+
+    def _handle_hacienda_rejection(
+        self,
+        resp: dict,
+        *,
+        tipo_dte: str | None = None,
+        entry: dict | None = None,
+        factura: dict | None = None,
+    ) -> bool:
+        if self._is_duplicate_rejection(resp):
+            QMessageBox.information(
+                self,
+                "Enviar a Hacienda",
+                "Este número ya está registrado en Hacienda. No se ofrece revertir correlativo.",
+            )
+            return True
+
+        ident_info = dict(resp.get("identificacion") or {})
+        if tipo_dte and not ident_info.get("tipoDte"):
+            ident_info["tipoDte"] = tipo_dte
+
+        numero_control = ident_info.get("numeroControl")
+        codigo_generacion = ident_info.get("codigoGeneracion")
+
+        if not numero_control and factura and factura.get("control"):
+            numero_control = factura.get("control")
+        if not numero_control and entry:
+            numero_control = entry.get("name") or entry.get("control")
+
+        if not codigo_generacion and entry:
+            codigo_generacion = entry.get("codigo")
+
+        if (factura and factura.get("json")) and (not numero_control or not codigo_generacion):
+            try:
+                with open(factura.get("json"), "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                ident = data.get("identificacion") or {}
+                numero_control = numero_control or ident.get("numeroControl")
+                codigo_generacion = codigo_generacion or ident.get("codigoGeneracion")
+            except Exception:
+                pass
+
+        if numero_control:
+            ident_info["numeroControl"] = numero_control
+        if codigo_generacion:
+            ident_info["codigoGeneracion"] = codigo_generacion
+
+        motivo = self._format_rejection_reason(resp)
+        dialog = DTERechazadoDialog(
+            numero_control or "Desconocido",
+            codigo_generacion or "Desconocido",
+            motivo,
+            parent=self,
+        )
+        if dialog.exec_() == QDialog.Accepted:
+            self._revert_correlativo(ident_info)
+        return True
+
     def send_selected_invoice(self):
         entry = self._selected_entry()
         if not entry:
@@ -1559,6 +1792,11 @@ class FacturacionTab(QWidget):
                             logger.debug(
                                 "Detalle de respuesta de Hacienda: %s", detalle
                             )
+                        if str(estado).lower() == "rechazado":
+                            if self._handle_hacienda_rejection(
+                                resp, entry=entry, factura=factura
+                            ):
+                                return
                         mensaje = resp.get("errores") or resp.get("detalle", {}).get(
                             "descripcionMsg"
                         )
@@ -1607,6 +1845,14 @@ class FacturacionTab(QWidget):
                             logger.debug(
                                 "Detalle de respuesta de Hacienda: %s", detalle
                             )
+                        if str(estado).lower() == "rechazado":
+                            if self._handle_hacienda_rejection(
+                                resp,
+                                tipo_dte=tipo_dte,
+                                entry=entry,
+                                factura=factura,
+                            ):
+                                return
                         mensaje = resp.get("errores") or resp.get("detalle", {}).get(
                             "descripcionMsg"
                         )

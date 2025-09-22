@@ -26,18 +26,24 @@ datas += [(certifi.where(), 'certifi')]
 resource_folders = [
     'assets',
     'templates',
-    'facturas_consumidor_final',
-    'facturas_credito_fiscal',
-    'notas_credito',
-    'notas_debito',
-    'notas_remision',
     'dtes',
     'dte_fallidos',
     'dtes_pendientes',
-    'tickets',
-    'svfe-json-schemas',
+    'extras/firmador',
     'schema_patches',
+    'svfe-json-schemas',
+    'tickets',
 ]
+
+resource_patterns = [
+    'facturas_*',
+    'notas_*',
+]
+
+for pattern in resource_patterns:
+    for match in Path('.').glob(pattern):
+        if match.is_dir():
+            resource_folders.append(str(match))
 
 for folder in resource_folders:
     if os.path.isdir(folder):

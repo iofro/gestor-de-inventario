@@ -1,6 +1,8 @@
 from typing import List, Dict, Optional, Union
 import os
 
+from utils import resource_path
+
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QPixmap, QColor, QPainter
 from PyQt5.QtWidgets import (
@@ -20,7 +22,7 @@ BRAND_COLOR = "#0EA5E9"
 BACKGROUND_COLOR = "#F7FAFC"
 TEXT_COLOR = "#1F2937"
 
-DEFAULT_AVATAR = os.path.join(os.path.dirname(__file__), "avatar.jpg")
+DEFAULT_AVATAR = str(resource_path("avatar.jpg"))
 
 
 def square_avatar(path: str, size: int) -> QPixmap:

@@ -13,7 +13,7 @@ import sys
 import subprocess
 from inventory_manager import InventoryManager
 from db import DB
-from paths import DATOS_NEGOCIO_PATH
+from paths import DATOS_NEGOCIO_PATH, CONFIG_NEGOCIO_PATH, LAST_INVENTORY_PATH
 from dialogs import (
     RegisterSaleDialog,
     ProductDialog,
@@ -25,8 +25,6 @@ from dialogs import (
     UserConfigDialog,
 )
 
-CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
-LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab
 from facturacion_tab import FacturacionTab
 from datetime import datetime, date, timedelta

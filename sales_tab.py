@@ -34,12 +34,17 @@ import shutil
 import os
 import json
 import warnings
-from paths import DATOS_NEGOCIO_PATH
+from paths import (
+    DATOS_NEGOCIO_PATH,
+    FACTURAS_CONSUMIDOR_FINAL_DIR,
+    FACTURAS_CREDITO_FISCAL_DIR,
+    TICKETS_OUTPUT_DIR,
+)
 import logging
 
-CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
-CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
-TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
+CF_DIR = FACTURAS_CONSUMIDOR_FINAL_DIR
+CREDITO_DIR = FACTURAS_CREDITO_FISCAL_DIR
+TICKETS_DIR = TICKETS_OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 

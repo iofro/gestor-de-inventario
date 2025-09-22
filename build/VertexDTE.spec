@@ -18,6 +18,9 @@ hidden = sorted(set(hidden))
 datas = collect_data_files('PyQt5', include_py_files=False)
 datas += collect_data_files('certifi', include_py_files=False)
 
+spec_path = Path(locals().get('__file__', sys.argv[0])).resolve()
+repo_root = spec_path.parent.parent
+
 resource_directories = [
     'assets',
     'templates',
@@ -30,16 +33,17 @@ resource_directories = [
 ]
 
 for pattern in ['facturas_*', 'notas_*']:
-    for match in Path('.').glob(pattern):
+    for match in repo_root.glob(pattern):
         if match.is_dir():
-            resource_directories.append(str(match))
+            resource_directories.append(str(match.relative_to(repo_root)))
 
 firmador_dir = os.path.join('extras', 'firmador')
 resource_directories.append(firmador_dir)
 
 for directory in resource_directories:
-    if os.path.isdir(directory):
-        datas.append((directory, directory))
+    source = repo_root / directory
+    if source.is_dir():
+        datas.append((str(source), directory))
 
 for file_name in [
     'style.qss',
@@ -49,13 +53,12 @@ for file_name in [
     'config_negocio.json',
     'inventario.json',
 ]:
-    if os.path.isfile(file_name):
-        datas.append((file_name, '.'))
+    source = repo_root / file_name
+    if source.is_file():
+        datas.append((str(source), '.'))
 
 block_cipher = None
 
-spec_path = Path(locals().get('__file__', sys.argv[0])).resolve()
-repo_root = spec_path.parent.parent
 main_script = repo_root / "main.py"
 
 a = Analysis(

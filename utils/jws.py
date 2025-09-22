@@ -3,6 +3,7 @@ import json
 import base64
 import requests
 import logging
+from pathlib import Path
 
 from utils.stable_json import (
     stable_stringify,
@@ -10,9 +11,10 @@ from utils.stable_json import (
     assert_same_payload,
     validar_montos,
 )
+from paths import CONFIG_NEGOCIO_PATH as _CONFIG_NEGOCIO_PATH
 
 logger = logging.getLogger(__name__)
-CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
+CONFIG_NEGOCIO_PATH = str(Path(_CONFIG_NEGOCIO_PATH))
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
 

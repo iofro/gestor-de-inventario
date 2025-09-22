@@ -4,18 +4,21 @@ import sqlite3
 import time
 import base64
 import logging
+from pathlib import Path
 from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 import requests
+
+from paths import CONFIG_NEGOCIO_PATH, DEFAULT_DB_PATH
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_AUTH_URL = "https://apitest.dtes.mh.gob.sv/seguridad/auth"
 # URL de producción proporcionada por el MH
 PRODUCTION_AUTH_URL = "https://api.dtes.mh.gob.sv/seguridad/auth"
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
-DB_PATH = os.path.join(os.path.dirname(__file__), "inventario.db")
+CONFIG_PATH = Path(CONFIG_NEGOCIO_PATH)
+DB_PATH = Path(DEFAULT_DB_PATH)
 
 _access_token: Optional[str] = None
 _expires_at: float = 0.0

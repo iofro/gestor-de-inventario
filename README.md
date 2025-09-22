@@ -27,19 +27,21 @@ aplicación.
 
 Se cargará el último inventario si está disponible y podrás comenzar a registrar compras y ventas.
 
-## Empaquetado con PyInstaller
+## Empaquetado y distribución
 
-Puedes generar un ejecutable independiente con **PyInstaller** usando:
+El repositorio incluye scripts y una acción de GitHub que generan el paquete
+para Windows con **PyInstaller** en modo *onedir* y un instalador con **Inno
+Setup**. Consulta [BUILD.md](BUILD.md) para los requisitos y los comandos de
+empaquetado.
 
-```bash
-pyinstaller --onefile --windowed \
-    --add-data "style.qss;." --add-data "logoinventario.jpg;." \
-    --add-data "inventario.db;." main.py
-```
+El icono `assets/app.ico` se reconstruye automáticamente a partir del archivo
+base64 `assets/app.ico.b64` durante el proceso de construcción para evitar
+versionar binarios pesados.
 
-El comando anterior también está preconfigurado en `setup.py`, por lo que puedes ejecutar `python setup.py` si prefieres.
-
-Si la interfaz no aparece al ejecutar el binario, inicia el programa desde una terminal para ver los mensajes de error.
+La configuración y los logs se guardan en `%APPDATA%\VertexDTE\`. Los archivos
+`datos_negocio.json` y `config_negocio.json` se copian automáticamente a esa
+carpeta al ejecutar la aplicación por primera vez; edita esa copia en lugar de
+modificar los archivos dentro de `Program Files`.
 
 ## Pruebas
 
@@ -89,8 +91,9 @@ db = DB()
 dte = db.generar_dte_json(venta_id=1)
 ```
 
-Para transmitir los DTE hacia la API de Hacienda añade en `datos_negocio.json` un
-bloque de configuración similar al siguiente:
+Para transmitir los DTE hacia la API de Hacienda añade en
+`%APPDATA%\VertexDTE\datos_negocio.json` un bloque de configuración similar al
+siguiente:
 
 ```json
 {

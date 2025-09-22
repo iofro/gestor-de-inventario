@@ -3,6 +3,7 @@ import os
 import json
 import warnings
 import sqlite3
+from pathlib import Path
 
 # Swig-generated types from external libraries (e.g. PyMuPDF) may emit
 # warnings about missing ``__module__`` attributes. Since these wrappers
@@ -25,16 +26,16 @@ from ui_mainwindow import MainWindow
 from user_picker_dialog import UserPickerDialog
 from db import DB
 from utils import resource_path
-from paths import migrate_datos_negocio
+from paths import migrate_datos_negocio, LAST_INVENTORY_PATH
 
-LAST_FILE_PATH = resource_path("ultimo_inventario.json")
+LAST_FILE_PATH = Path(LAST_INVENTORY_PATH)
 DEFAULT_INVENTORY = resource_path("inventario.json")
 
 def cargar_ultimo_archivo():
     """Devuelve la ruta del inventario a cargar al iniciar la aplicación."""
-    if os.path.exists(LAST_FILE_PATH):
+    if LAST_FILE_PATH.exists():
         try:
-            with open(LAST_FILE_PATH, "r", encoding="utf-8") as f:
+            with LAST_FILE_PATH.open("r", encoding="utf-8") as f:
                 data = json.load(f)
             path = data.get("ultimo", "")
             if path and os.path.exists(path):
@@ -42,8 +43,9 @@ def cargar_ultimo_archivo():
         except (OSError, json.JSONDecodeError):
             pass
 
-    if os.path.exists(DEFAULT_INVENTORY):
-        return str(DEFAULT_INVENTORY)
+    default_inventory = Path(DEFAULT_INVENTORY)
+    if default_inventory.exists():
+        return str(default_inventory)
     return ""
 
 if __name__ == "__main__":
@@ -51,7 +53,7 @@ if __name__ == "__main__":
     app = QApplication(sys.argv)
     style_path = resource_path("style.qss")
     if style_path.exists():
-        with open(style_path, "r", encoding="utf-8") as f:
+        with style_path.open("r", encoding="utf-8") as f:
             app.setStyleSheet(f.read())
     icon_path = resource_path("logoinventario.jpg")
     if icon_path.exists():

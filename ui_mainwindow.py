@@ -11,9 +11,14 @@ import os
 import json
 import sys
 import subprocess
+from pathlib import Path
 from inventory_manager import InventoryManager
 from db import DB
-from paths import DATOS_NEGOCIO_PATH
+from paths import DATOS_NEGOCIO_PATH, CONFIG_NEGOCIO_PATH, LAST_INVENTORY_PATH
+
+DATOS_NEGOCIO_PATH = Path(DATOS_NEGOCIO_PATH)
+CONFIG_NEGOCIO_PATH = Path(CONFIG_NEGOCIO_PATH)
+LAST_INVENTORY_PATH = Path(LAST_INVENTORY_PATH)
 from dialogs import (
     RegisterSaleDialog,
     ProductDialog,
@@ -25,8 +30,6 @@ from dialogs import (
     UserConfigDialog,
 )
 
-CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
-LAST_INVENTORY_PATH = os.path.join(os.path.dirname(__file__), "ultimo_inventario.json")
 from sales_tab import SalesTab
 from facturacion_tab import FacturacionTab
 from datetime import datetime, date, timedelta
@@ -1005,7 +1008,8 @@ class MainWindow(QMainWindow):
 
     def _post_guardado_exitoso(self, filename):
         self.ultimo_archivo_json = filename
-        with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
+        LAST_INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with LAST_INVENTORY_PATH.open("w", encoding="utf-8") as f:
             json.dump({"ultimo": filename}, f)
         self._mark_saved()
 
@@ -1091,7 +1095,8 @@ class MainWindow(QMainWindow):
                 if isinstance(data, dict) and data.get("tab_order"):
                     self.set_tab_order(data["tab_order"])
                 self.ultimo_archivo_json = filename
-                with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
+                LAST_INVENTORY_PATH.parent.mkdir(parents=True, exist_ok=True)
+                with LAST_INVENTORY_PATH.open("w", encoding="utf-8") as f:
                     json.dump({"ultimo": filename}, f)
                 self.compras_tab.refresh_filters()
                 self.filter_products()
@@ -1285,8 +1290,8 @@ class MainWindow(QMainWindow):
             # Reset last loaded inventory so old data is not reimported
             self.ultimo_archivo_json = None
             try:
-                if os.path.exists(LAST_INVENTORY_PATH):
-                    os.remove(LAST_INVENTORY_PATH)
+                if LAST_INVENTORY_PATH.exists():
+                    LAST_INVENTORY_PATH.unlink()
             except OSError:
                 pass
             self.manager.refresh_data()
@@ -1750,12 +1755,13 @@ class MainWindow(QMainWindow):
     
     def _abrir_datos_negocio(self):
         # Puedes guardar/cargar los datos en un archivo JSON local, por ejemplo:
-        import os, json
+        import json
+
         datos_path = DATOS_NEGOCIO_PATH
         datos = {}
-        if os.path.exists(datos_path):
+        if datos_path.exists():
             try:
-                with open(datos_path, "r", encoding="utf-8") as f:
+                with datos_path.open("r", encoding="utf-8") as f:
                     datos = json.load(f)
                     dir_info = datos.get("direccion") or {}
                     dir_info.setdefault("departamento", "")
@@ -1772,17 +1778,19 @@ class MainWindow(QMainWindow):
             dir_info.setdefault("departamento", "")
             dir_info.setdefault("municipio", "")
             datos["direccion"] = dir_info
-            with open(datos_path, "w", encoding="utf-8") as f:
+            datos_path.parent.mkdir(parents=True, exist_ok=True)
+            with datos_path.open("w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Datos del negocio", "Datos guardados correctamente.")
 
     def _abrir_config_correo(self):
-        import os, json
+        import json
+
         datos_path = DATOS_NEGOCIO_PATH
         datos = {}
-        if os.path.exists(datos_path):
+        if datos_path.exists():
             try:
-                with open(datos_path, "r", encoding="utf-8") as f:
+                with datos_path.open("r", encoding="utf-8") as f:
                     datos = json.load(f)
             except Exception:
                 datos = {}
@@ -1790,25 +1798,27 @@ class MainWindow(QMainWindow):
         dlg = EmailConfigDialog(datos, self)
         if dlg.exec_():
             datos.update(dlg.get_data())
-            with open(datos_path, "w", encoding="utf-8") as f:
+            datos_path.parent.mkdir(parents=True, exist_ok=True)
+            with datos_path.open("w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Configuración de correo", "Datos guardados correctamente.")
 
     def _abrir_config_facturacion(self):
-        import os, json
+        import json
+
         datos_path = DATOS_NEGOCIO_PATH
         config_path = CONFIG_NEGOCIO_PATH
         datos = {}
         config = {}
-        if os.path.exists(datos_path):
+        if datos_path.exists():
             try:
-                with open(datos_path, "r", encoding="utf-8") as f:
+                with datos_path.open("r", encoding="utf-8") as f:
                     datos = json.load(f)
             except Exception:
                 datos = {}
-        if os.path.exists(config_path):
+        if config_path.exists():
             try:
-                with open(config_path, "r", encoding="utf-8") as f:
+                with config_path.open("r", encoding="utf-8") as f:
                     config = json.load(f)
             except Exception:
                 config = {}
@@ -1829,9 +1839,11 @@ class MainWindow(QMainWindow):
             config[ambiente]["recepcion_url"] = new_urls.get("recepcion_url", "")
             if "auth" in new_urls:
                 config[ambiente]["auth"] = new_urls["auth"]
-            with open(datos_path, "w", encoding="utf-8") as f:
+            datos_path.parent.mkdir(parents=True, exist_ok=True)
+            with datos_path.open("w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
-            with open(config_path, "w", encoding="utf-8") as f:
+            config_path.parent.mkdir(parents=True, exist_ok=True)
+            with config_path.open("w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             QMessageBox.information(self, "Facturación electrónica", "Datos guardados correctamente.")
 
@@ -2170,10 +2182,10 @@ class MainWindow(QMainWindow):
         Permite que la opción "Guardar rápido" funcione al iniciar la
         aplicación reutilizando el mismo archivo utilizado previamente.
         """
-        if not os.path.exists(LAST_INVENTORY_PATH):
+        if not LAST_INVENTORY_PATH.exists():
             return
         try:
-            with open(LAST_INVENTORY_PATH, "r", encoding="utf-8") as f:
+            with LAST_INVENTORY_PATH.open("r", encoding="utf-8") as f:
                 data = json.load(f)
         except Exception:
             logger.warning(

@@ -7,16 +7,15 @@ import os
 import logging
 import sqlite3
 from decimal import Decimal as D
-from paths import DATOS_NEGOCIO_PATH
+from pathlib import Path
+
+from paths import DATOS_NEGOCIO_PATH, ensure_logs_dir
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 
-try:  # Prefer shared app version if available
-    from dte import APP_VERSION
-except Exception:  # pragma: no cover - fallback when dte isn't importable
-    APP_VERSION = "unknown"
+from vertexdte_version import APP_VERSION
 
 from inventory_validator import (
     validate_inventory_json,
@@ -209,9 +208,9 @@ class InventoryManager:
 
     def exportar_inventario_json(self, filename, tab_order=None):
         datos_negocio = {}
-        if os.path.exists(DATOS_NEGOCIO_PATH):
+        if Path(DATOS_NEGOCIO_PATH).exists():
             try:
-                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                with Path(DATOS_NEGOCIO_PATH).open("r", encoding="utf-8") as f:
                     datos_negocio = json.load(f)
             except Exception:
                 logger.exception("Failed to parse %s", DATOS_NEGOCIO_PATH)
@@ -372,12 +371,9 @@ class InventoryManager:
                 "migrations_applied": migrations_applied,
             }
 
-        log_dir = os.path.join("logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(
-            log_dir, f"import_inventory_{datetime.now():%Y%m%d_%H%M%S}.log"
-        )
-        handler = logging.FileHandler(log_path, encoding="utf-8")
+        log_dir = ensure_logs_dir()
+        log_path = log_dir / f"import_inventory_{datetime.now():%Y%m%d_%H%M%S}.log"
+        handler = logging.FileHandler(str(log_path), encoding="utf-8")
         logger.addHandler(handler)
         try:
             self._importar_inventario_json_legacy(data)
@@ -852,14 +848,15 @@ class InventoryManager:
 
         self.refresh_data()
 
-        datos_path = DATOS_NEGOCIO_PATH
+        datos_path = Path(DATOS_NEGOCIO_PATH)
         if "datos_negocio" in data:
             datos_negocio = data.get("datos_negocio")
             if datos_negocio is not None:
-                with open(datos_path, "w", encoding="utf-8") as f:
+                datos_path.parent.mkdir(parents=True, exist_ok=True)
+                with datos_path.open("w", encoding="utf-8") as f:
                     json.dump(datos_negocio, f, ensure_ascii=False, indent=2)
-            elif os.path.exists(datos_path):
-                os.remove(datos_path)
+            elif datos_path.exists():
+                datos_path.unlink()
 
         return data
 

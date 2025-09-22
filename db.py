@@ -10,6 +10,7 @@ from typing import Any
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
+from paths import DEFAULT_DB_PATH
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,9 +18,10 @@ logger = logging.getLogger(__name__)
 class DB:
     def __init__(self, db_name: str | Path | None = None):
         if db_name is None:
-            db_path = Path.home() / ".gestor-inventario" / "inventario.db"
+            db_path = Path(DEFAULT_DB_PATH)
         else:
             db_path = Path(db_name)
+        db_path = db_path.expanduser()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         # ``check_same_thread=False`` allows the connection to be used from
         # multiple threads.  Each thread should ideally use its own connection

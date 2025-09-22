@@ -18,6 +18,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from db import DB  # type: ignore  # noqa: E402
 from inventory_manager import InventoryManager  # type: ignore  # noqa: E402
 from utils.doc_generation import log_venta_vs_dte  # type: ignore  # noqa: E402
+from paths import DEFAULT_DB_PATH  # type: ignore  # noqa: E402
+
+DEFAULT_DB_HELP = str(DEFAULT_DB_PATH)
 
 
 def main() -> None:
@@ -29,7 +32,7 @@ def main() -> None:
         "--db",
         dest="db_path",
         default=None,
-        help="Ruta al archivo de base de datos (por defecto ~/.gestor-inventario/inventario.db)",
+        help=f"Ruta al archivo de base de datos (por defecto {DEFAULT_DB_HELP})",
     )
     parser.add_argument(
         "--level",

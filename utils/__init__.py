@@ -1,13 +1,27 @@
+from __future__ import annotations
+
 from pathlib import Path
+from typing import Union
+import os
 import sys
 
 
-def resource_path(relative: str) -> Path:
-    """Return absolute path to resource bundled via PyInstaller.
+PathLike = Union[str, os.PathLike]
 
-    In frozen mode (e.g., when packaged with PyInstaller) resources live
-    inside ``sys._MEIPASS``. During development, resources are resolved
-    relative to the project root directory.
+
+def resource_path(*parts: PathLike) -> Path:
+    """Return an absolute path to a bundled resource.
+
+    ``PyInstaller`` extracts resources into ``sys._MEIPASS`` when running in
+    frozen mode. During development we resolve paths relative to the project
+    root so the same helper works in both environments. ``parts`` accepts
+    positional path fragments, mirroring :func:`pathlib.Path.joinpath`.
     """
-    base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
-    return base / relative
+
+    base_dir = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    if not parts:
+        return base_dir
+    return base_dir.joinpath(*parts)
+
+
+__all__ = ["resource_path"]

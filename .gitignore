@@ -17,9 +17,11 @@ __pycache__/
 *.pyd
 
 # Build/output
-build/
+/build/*.exe
+/build/*.log
 dist/
 *.spec
+assets/app.ico
 
 # Logs y DB locales
 *.log

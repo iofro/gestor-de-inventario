@@ -57,14 +57,13 @@ FISCAL_TOTAL_FIELDS = {
 }
 from pathlib import Path
 import jsonpatch
-from paths import DATOS_NEGOCIO_PATH
+from paths import DATOS_NEGOCIO_PATH, CONFIG_NEGOCIO_PATH
 from xml.etree.ElementTree import Element, SubElement
-
-APP_VERSION = "1.0.0"  # editable a futuro
+from vertexdte_version import APP_VERSION
 
 logger = logging.getLogger(__name__)
 
-CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
+CONFIG_NEGOCIO_PATH = Path(CONFIG_NEGOCIO_PATH)
 DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 DEFAULT_EVENTO_URL = "https://apitest.dtes.mh.gob.sv/fesv/contingencia"
 PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"

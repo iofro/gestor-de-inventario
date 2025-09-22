@@ -1143,19 +1143,23 @@ class FacturacionTab(QWidget):
 
             row_type = "venta"
             cliente_nombre = ""
+            cliente_id = None
+            vendedor_id = None
             total = None
             numero_control = None
             codigo_generacion = None
             tipo_desc = doc_tipo
             tipo_codigo = None
             ident_data = None
+            json_data = None
             if json_path and os.path.exists(json_path):
                 try:
                     with open(json_path, "r", encoding="utf-8") as fh:
-                        data = json.load(fh)
-                    ident_data = data.get("identificacion", {})
+                        json_data = json.load(fh)
+                    ident_data = json_data.get("identificacion", {})
                 except Exception:
                     ident_data = None
+                    json_data = None
             if venta:
                 getter = getattr(self.manager.db, "get_cliente", None)
                 if venta.get("cliente_id") and getter:
@@ -1164,6 +1168,8 @@ class FacturacionTab(QWidget):
                         cliente_nombre = cliente.get("nombre", "") if cliente else ""
                     except Exception:
                         cliente_nombre = ""
+                cliente_id = venta.get("cliente_id")
+                vendedor_id = venta.get("vendedor_id")
                 total = venta.get("total")
                 row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
             else:
@@ -1171,6 +1177,14 @@ class FacturacionTab(QWidget):
                 if ident_data:
                     numero_control = ident_data.get("numeroControl")
                     codigo_generacion = ident_data.get("codigoGeneracion")
+            if not cliente_nombre and json_data:
+                try:
+                    cliente_nombre = json_data.get("receptor", {}).get("nombre", "") or cliente_nombre
+                except Exception:
+                    pass
+            if ident_data:
+                numero_control = numero_control or ident_data.get("numeroControl")
+                codigo_generacion = codigo_generacion or ident_data.get("codigoGeneracion")
 
             if tipo_codigo is None and ident_data:
                 tipo_codigo = ident_data.get("tipoDte")
@@ -1199,14 +1213,19 @@ class FacturacionTab(QWidget):
                 doc_tipo=doc_tipo,
             )
 
+            base_name = os.path.splitext(os.path.basename(ruta or ""))[0]
+            if not base_name:
+                base_name = numero_control or ""
             row = {
                 "row_type": row_type,
                 "id": rec["id"],
                 "venta_id": rec["venta_id"],
-                "name": os.path.splitext(os.path.basename(ruta or ""))[0],
+                "name": base_name,
                 "fecha": fecha_str,
                 "_parsed_fecha": fdate,
                 "cliente": cliente_nombre,
+                "cliente_id": cliente_id,
+                "vendedor_id": vendedor_id,
                 "total": total,
                 "estado": estado,
                 "envio": envio,
@@ -1242,6 +1261,16 @@ class FacturacionTab(QWidget):
         else:
             d_from = d_to = None
         tipo = self.tipo_filter.currentText()
+        cliente_filter_value = None
+        vendedor_filter_value = None
+        if hasattr(self, "client_filter"):
+            cliente_filter_value = self.client_filter.currentData()
+            if cliente_filter_value is not None:
+                cliente_filter_value = str(cliente_filter_value)
+        if hasattr(self, "vendedor_filter"):
+            vendedor_filter_value = self.vendedor_filter.currentData()
+            if vendedor_filter_value is not None:
+                vendedor_filter_value = str(vendedor_filter_value)
 
         rows = self._scan_documents()
 
@@ -1257,6 +1286,14 @@ class FacturacionTab(QWidget):
             if tipo != "Todos" and r.get("tipo") != tipo:
                 rows.remove(r)
                 continue
+            if cliente_filter_value is not None:
+                if str(r.get("cliente_id")) != cliente_filter_value:
+                    rows.remove(r)
+                    continue
+            if vendedor_filter_value is not None:
+                if str(r.get("vendedor_id")) != vendedor_filter_value:
+                    rows.remove(r)
+                    continue
             cliente = r.get("cliente", "")
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
@@ -1449,6 +1486,8 @@ class FacturacionTab(QWidget):
                     "estado": estado,
                     "envio": envio,
                     "cliente": cliente,
+                    "cliente_id": None,
+                    "vendedor_id": None,
                     "total": total,
                     "sign": signo,
                     "tipo": tipo,

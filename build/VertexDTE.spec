@@ -1,45 +1,57 @@
 # -*- mode: python ; coding: utf-8 -*-
-
-from PyInstaller.building.datastruct import TOC, Tree
-from PyInstaller.utils.hooks import collect_data_files, collect_submodules
-import os
-import sys
 from pathlib import Path
+from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+import certifi, os
+import sys
+from PyInstaller.building.datastruct import TOC, Tree
 
 icon_path = 'assets/app.ico'
 if not os.path.isfile(icon_path):
     icon_path = None
 
-hidden = collect_submodules('PyQt5') + [
-    'PyQt5.QtPrintSupport',
-    'PyQt5.QtSvg',
-]
+hidden = []
+hidden += collect_submodules('PyQt5')
+hidden += ['PyQt5.QtPrintSupport', 'PyQt5.QtSvg']
+# 🔒 ReportLab: incluir todos los submódulos de barcode
+hidden += collect_submodules('reportlab.graphics.barcode')
 hidden = sorted(set(hidden))
 
-datas = collect_data_files('PyQt5', include_py_files=False)
-datas += collect_data_files('certifi', include_py_files=False)
+datas = []
+datas += collect_data_files('PyQt5', include_py_files=False)
+# 🔒 ReportLab: añadir data files (fuentes/recursos)
+datas += collect_data_files('reportlab', include_py_files=False)
+# Certificados TLS para requests/httpx
+datas += [(certifi.where(), 'certifi')]
 
 spec_path = Path(locals().get('__file__', sys.argv[0])).resolve()
 repo_root = spec_path.parent.parent
 
-resource_directories = [
-    Path('assets'),
-    Path('templates'),
-    Path('dtes'),
-    Path('dte_fallidos'),
-    Path('dtes_pendientes'),
-    Path('schema_patches'),
-    Path('svfe-json-schemas'),
-    Path('tickets'),
-]
+resource_directories = []
+# 🔒 Incluye extras (firmador) y tus carpetas de recursos
+for folder in [
+    'assets',
+    'templates',
+    'facturas_consumidor_final',
+    'facturas_credito_fiscal',
+    'notas_credito',
+    'notas_debito',
+    'notas_remision',
+    'dtes',
+    'dte_fallidos',
+    'dtes_pendientes',
+    'schema_patches',
+    'svfe-json-schemas',
+    'tickets',
+    'extras',
+]:
+    folder_path = Path(folder)
+    if os.path.isdir(folder_path):
+        resource_directories.append(folder_path)
 
 for pattern in ['facturas_*', 'notas_*']:
     for match in repo_root.glob(pattern):
         if match.is_dir():
             resource_directories.append(match.relative_to(repo_root))
-
-firmador_dir = Path('extras') / 'firmador'
-resource_directories.append(firmador_dir)
 
 extra_datas = []
 existing_directories = []

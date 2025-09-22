@@ -354,7 +354,7 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         "       TRIM(codigo_generacion) AS codigo_generacion, numero_control,",
         "       respuesta, ambiente",
         "  FROM dte_envios",
-        " WHERE TRIM(COALESCE(codigo_generacion, '')) <> ''",
+        " WHERE 1=1",
     ]
     if fecha_inicio:
         query.append("   AND date(fecha_hora) >= date(?)")
@@ -375,13 +375,13 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
     if tipo_objetivo is not None:
         tipo_objetivo = str(tipo_objetivo).zfill(2)
     receptor_docs_raw = filtros.get("receptor_documentos") or []
-    receptor_docs = {
-        _normalize_documento_id(val)
-        for val in receptor_docs_raw
-        if _normalize_documento_id(val)
-    }
+    receptor_docs: set[str] = set()
+    for val in receptor_docs_raw:
+        norm = _normalize_documento_id(val)
+        if norm:
+            receptor_docs.add(norm)
     recepcionado_only = bool(filtros.get("recepcionado"))
-    mismo_receptor = bool(filtros.get("mismo_receptor", True))
+    mismo_receptor = bool(filtros.get("mismo_receptor"))
     search = str(filtros.get("search") or "").strip().upper()
     limit = filtros.get("limit")
     if isinstance(limit, int) and limit <= 0:
@@ -389,7 +389,6 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
 
     results: list[dict] = []
     for row in rows:
-        codigo = str(row.get("codigo_generacion") or "").strip().upper()
         venta_id = row.get("venta_id")
         metadata: dict | None = None
 
@@ -402,17 +401,14 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
                 metadata = _merge_metadata(primary, _extract_metadata(respuesta_local))
             return metadata
 
+        metadata = _get_metadata()
+
+        codigo = str(row.get("codigo_generacion") or "").strip().upper()
         if not codigo:
-            codigo_metadata = str(
-                (_get_metadata().get("codigo_generacion") or "")
-            ).strip().upper()
-            if codigo_metadata:
-                codigo = codigo_metadata
+            codigo = str((metadata.get("codigo_generacion") or "")).strip().upper()
 
         if not codigo or (exclude_uuid and codigo == exclude_uuid):
             continue
-
-        metadata = _get_metadata()
         if metadata.get("codigo_generacion") in (None, ""):
             metadata["codigo_generacion"] = codigo
 

@@ -19,7 +19,7 @@ Name: "{group}\\Vertex DTE"; Filename: "{app}\\VertexDTE.exe"
 Name: "{commondesktop}\\Vertex DTE"; Filename: "{app}\\VertexDTE.exe"; Tasks: desktopicon
 
 [Tasks]
-Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; GroupDescription: "Accesos directos:"; Flags: unchecked
+Name: "desktopicon"; Description: "Crear acceso directo en el escritorio"; Flags: unchecked; GroupDescription: "Accesos directos:"
 
 [Run]
 Filename: "{app}\\VertexDTE.exe"; Description: "Ejecutar Vertex DTE"; Flags: nowait postinstall skipifsilent

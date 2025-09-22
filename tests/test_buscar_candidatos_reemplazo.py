@@ -1,4 +1,5 @@
 import json
+from datetime import datetime, timedelta
 import uuid
 
 import pytest
@@ -278,3 +279,131 @@ def test_buscar_candidatos_reemplazo_incluye_codigo_vacio(
 
     codigos = {item["codigo_generacion"] for item in resultados}
     assert codigo_generacion in codigos
+
+
+@pytest.mark.usefixtures("qt_app")
+def test_buscar_candidatos_reemplazo_sin_filtros_muestra_todos(
+    db_conn, tmp_path, dte_metadata_factory
+):
+    ahora = datetime(2024, 4, 30, 9, 30)
+    fechas = [
+        ahora.isoformat(),
+        (ahora - timedelta(days=20)).isoformat(),
+        (ahora - timedelta(days=120)).isoformat(),
+    ]
+
+    codigos = []
+    for idx, fecha in enumerate(fechas, start=1):
+        factura = _crear_factura(
+            dte_metadata_factory,
+            codigo=str(uuid.uuid4()).upper(),
+            numero=f"DTE-01-S001P001-0000000000009{idx}",
+        )
+        if idx == 3:
+            factura["receptor"].pop("numDocumento", None)
+        json_path = tmp_path / f"cand_{idx}.json"
+        json_path.write_text(json.dumps(factura), encoding="utf-8")
+        extra = {
+            "codigoGeneracion": factura["identificacion"]["codigoGeneracion"],
+            "numeroControl": factura["identificacion"]["numeroControl"],
+            "dteJsonPath": str(json_path),
+            "selloRecibido": "S" * 40,
+        }
+        venta = db_conn.add_venta(fecha[:10], 10 + idx, extra=extra)
+        db_conn.registrar_envio_dte(
+            venta,
+            "manual",
+            "Aceptada",
+            "S" * 40,
+            respuesta_json=json.dumps({"documento": factura}),
+            codigo_generacion=factura["identificacion"]["codigoGeneracion"],
+            numero_control=factura["identificacion"]["numeroControl"],
+        )
+        row_id = db_conn.cursor.lastrowid
+        db_conn.ensure_column("dte_envios", "ambiente", "TEXT")
+        db_conn.cursor.execute(
+            "UPDATE dte_envios SET ambiente=?, fecha_hora=? WHERE id=?",
+            (factura["identificacion"]["ambiente"], fecha, row_id),
+        )
+        codigos.append(factura["identificacion"]["codigoGeneracion"])
+
+    db_conn.conn.commit()
+
+    filtros_base = {
+        "tipo_dte": "01",
+        "ambiente": "00",
+        "exclude_uuid": "",
+        "mismo_receptor": False,
+        "receptor_documentos": ["0614-140410-0016"],
+    }
+
+    todos = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_base)
+    assert {item["codigo_generacion"] for item in todos} == set(codigos)
+
+    filtros_fecha = dict(filtros_base)
+    filtros_fecha.update({"fecha_inicio": "2024-02-01", "fecha_fin": "2024-04-30"})
+    recientes = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_fecha)
+    assert {item["codigo_generacion"] for item in recientes} == set(codigos[:2])
+
+    sin_fecha = dict(filtros_fecha)
+    sin_fecha.pop("fecha_inicio")
+    sin_fecha.pop("fecha_fin")
+    reinicio = anulacion.buscar_candidatos_reemplazo(db_conn, sin_fecha)
+    assert {item["codigo_generacion"] for item in reinicio} == set(codigos)
+
+
+@pytest.mark.usefixtures("qt_app")
+def test_buscar_candidatos_reemplazo_mismo_receptor_normaliza_documentos(
+    db_conn, tmp_path, dte_metadata_factory
+):
+    factura_match = _crear_factura(
+        dte_metadata_factory,
+        codigo=str(uuid.uuid4()).upper(),
+        numero="DTE-01-S001P001-00000000000111",
+    )
+    factura_otro = _crear_factura(
+        dte_metadata_factory,
+        codigo=str(uuid.uuid4()).upper(),
+        numero="DTE-01-S001P001-00000000000222",
+    )
+    factura_otro["receptor"]["numDocumento"] = "06141404100099"
+
+    for idx, factura in enumerate((factura_match, factura_otro), start=1):
+        json_path = tmp_path / f"cand_norm_{idx}.json"
+        json_path.write_text(json.dumps(factura), encoding="utf-8")
+        extra = {
+            "codigoGeneracion": factura["identificacion"]["codigoGeneracion"],
+            "numeroControl": factura["identificacion"]["numeroControl"],
+            "dteJsonPath": str(json_path),
+            "selloRecibido": "R" * 40,
+        }
+        venta = db_conn.add_venta("2024-03-01", 20 + idx, extra=extra)
+        db_conn.registrar_envio_dte(
+            venta,
+            "manual",
+            "Aceptada",
+            "R" * 40,
+            respuesta_json=json.dumps({"documento": factura}),
+            codigo_generacion=factura["identificacion"]["codigoGeneracion"],
+            numero_control=factura["identificacion"]["numeroControl"],
+        )
+        row_id = db_conn.cursor.lastrowid
+        db_conn.ensure_column("dte_envios", "ambiente", "TEXT")
+        db_conn.cursor.execute(
+            "UPDATE dte_envios SET ambiente=?, fecha_hora=? WHERE id=?",
+            (factura["identificacion"]["ambiente"], "2024-03-01T08:00:00", row_id),
+        )
+
+    db_conn.conn.commit()
+
+    filtros = {
+        "tipo_dte": "01",
+        "ambiente": "00",
+        "mismo_receptor": True,
+        "receptor_documentos": ["0614-140410-0016"],
+    }
+
+    resultados = anulacion.buscar_candidatos_reemplazo(db_conn, filtros)
+    codigos = {item["codigo_generacion"] for item in resultados}
+    assert factura_match["identificacion"]["codigoGeneracion"] in codigos
+    assert factura_otro["identificacion"]["codigoGeneracion"] not in codigos

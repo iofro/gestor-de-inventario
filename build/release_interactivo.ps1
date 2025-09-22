@@ -151,7 +151,7 @@ function Compress-DirectoryWithRetry {
                 [System.GC]::Collect(); [System.GC]::WaitForPendingFinalizers()
                 Start-Sleep -Milliseconds (250 * $i)
                 Compress-Archive -Path (Join-Path $tempDir '*') -DestinationPath $ZipPath -Force -ErrorAction Stop
-                Write-Host "ZIP creado en intento $i: $ZipPath"
+                Write-Host ("ZIP creado en intento {0}: {1}" -f $i, $ZipPath)
                 return $true
             } catch {
                 $hr = $_.Exception.HResult

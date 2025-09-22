@@ -1,6 +1,4 @@
-#define VersionFile "..\\VERSION"
-#define DefaultAppVersion Trim(StringChange(GetIniString(VersionFile, "VertexDTE", "version", "1.0.0"), "\n", ""))
-#define AppVersion GetStringParam("AppVersion", DefaultAppVersion)
+#define AppVersion GetStringParam("AppVersion", "1.0.0")
 #define OutputDir GetStringParam("OutputDir", "build\\Output")
 
 [Setup]
@@ -8,8 +6,8 @@ AppName=Vertex DTE
 AppVersion={#AppVersion}
 DefaultDirName={pf}\\Vertex DTE
 DefaultGroupName=Vertex DTE
-OutputDir={#OutputDir}
 OutputBaseFilename=VertexDTE-Setup-{#AppVersion}
+OutputDir={#OutputDir}
 Compression=lzma
 SolidCompression=yes
 WizardStyle=modern
@@ -30,7 +28,7 @@ Filename: "{app}\\VertexDTE.exe"; Description: "Ejecutar Vertex DTE"; Flags: now
 [Code]
 function GetSignerPath(): string;
 begin
-  Result := ExpandConstant('{app}\extras\firmador');
+  Result := ExpandConstant('{app}\\extras\\firmador');
 end;
 
 procedure CreateDefaultSettings();
@@ -39,12 +37,12 @@ var
   JsonPath: string;
   SignerEntry: string;
 begin
-  AppDataDir := ExpandConstant('{userappdata}\VertexDTE');
+  AppDataDir := ExpandConstant('{userappdata}\\VertexDTE');
   if not DirExists(AppDataDir) then
     ForceDirectories(AppDataDir);
 
-  SignerEntry := StringChange(GetSignerPath(), '\', '\\');
-  JsonPath := AppDataDir + '\settings.json';
+  SignerEntry := StringChange(GetSignerPath(), '\\', '\\\\');
+  JsonPath := AppDataDir + '\\settings.json';
   SaveStringToFile(JsonPath, Format('{"firmador_path": "%s"}', [SignerEntry]), False);
 end;
 

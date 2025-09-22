@@ -1,3 +1,4 @@
+[CmdletBinding()]
 param(
     [string]$OutputDir,
     [string]$SignerDir,
@@ -11,9 +12,11 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Set-Location $repoRoot
 
 function Get-DefaultVersion {
-    param([string]$Current)
+    param(
+        [string]$Current
+    )
 
-    if ($Current -and $Current.Trim().Length -gt 0) {
+    if ($Current -and -not [string]::IsNullOrWhiteSpace($Current)) {
         return $Current.Trim()
     }
 
@@ -21,10 +24,15 @@ function Get-DefaultVersion {
     if (Test-Path $versionFile) {
         foreach ($line in Get-Content -Path $versionFile -ErrorAction SilentlyContinue) {
             $trimmed = $line.Trim()
+            if (-not $trimmed) {
+                continue
+            }
+
             if ($trimmed -like 'version=*') {
                 return $trimmed.Split('=')[-1].Trim()
             }
-            if ($trimmed -and $trimmed -notlike '#*') {
+
+            if ($trimmed -notlike '#*') {
                 return $trimmed
             }
         }
@@ -34,10 +42,12 @@ function Get-DefaultVersion {
 }
 
 function Resolve-SignerDirectory {
-    param([string]$Path)
+    param(
+        [string]$Path
+    )
 
     if (-not $Path) {
-        throw 'No se especificó la carpeta del firmador.'
+        throw 'Debe especificar la carpeta del firmador.'
     }
 
     try {
@@ -58,14 +68,85 @@ function Resolve-SignerDirectory {
     return $resolved
 }
 
-if (-not $NoUI) {
+function Resolve-PythonInterpreter {
+    $candidates = @()
+
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd) {
+        $candidates += [pscustomobject]@{
+            Command     = $pythonCmd.Path
+            Arguments   = @()
+            Description = 'python'
+        }
+    }
+
+    $pyLauncher = Get-Command py -ErrorAction SilentlyContinue
+    if ($pyLauncher) {
+        $candidates += [pscustomobject]@{
+            Command     = $pyLauncher.Path
+            Arguments   = @('-3.11')
+            Description = 'py -3.11'
+        }
+        $candidates += [pscustomobject]@{
+            Command     = $pyLauncher.Path
+            Arguments   = @()
+            Description = 'py'
+        }
+    }
+
+    $winApps = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'Microsoft\WindowsApps\python3.11.exe'
+    if (Test-Path $winApps) {
+        $candidates += [pscustomobject]@{
+            Command     = $winApps
+            Arguments   = @()
+            Description = $winApps
+        }
+    }
+
+    foreach ($candidate in $candidates) {
+        try {
+            $output = & $candidate.Command @($candidate.Arguments) -c "import sys;print(sys.executable)"
+            if ($LASTEXITCODE -ne 0) {
+                continue
+            }
+
+            $executable = $null
+            if ($output) {
+                $executable = $output.Trim().Split("`n")[-1].Trim()
+            }
+
+            if ($executable -and (Test-Path -LiteralPath $executable)) {
+                Write-Host "Python detectado ($($candidate.Description)): $executable"
+                return $executable
+            }
+        } catch {
+            continue
+        }
+    }
+
+    throw 'No se encontró una instalación de Python compatible. Asegúrate de tener Python 3.11 disponible.'
+}
+
+if ($NoUI) {
+    if (-not $OutputDir) {
+        throw 'Debe especificar -OutputDir cuando usa -NoUI.'
+    }
+    if (-not $SignerDir) {
+        throw 'Debe especificar -SignerDir cuando usa -NoUI.'
+    }
+    if (-not $Version) {
+        throw 'Debe especificar -Version cuando usa -NoUI.'
+    }
+
+    $Version = Get-DefaultVersion -Current $Version
+} else {
     Add-Type -AssemblyName System.Windows.Forms
 
     $folderDialog = New-Object System.Windows.Forms.FolderBrowserDialog
     $folderDialog.Description = 'Selecciona la carpeta donde se guardarán los artefactos.'
     if ($OutputDir) {
         try {
-            $folderDialog.SelectedPath = (Resolve-Path $OutputDir -ErrorAction Stop).Path
+            $folderDialog.SelectedPath = (Resolve-Path -LiteralPath $OutputDir -ErrorAction Stop).Path
         } catch {
             $folderDialog.SelectedPath = [Environment]::GetFolderPath('Desktop')
         }
@@ -73,7 +154,6 @@ if (-not $NoUI) {
 
     Write-Host 'Seleccionando carpeta de salida...'
     if ($folderDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-        Write-Error 'Operación cancelada: no se seleccionó carpeta de salida.'
         throw 'Operación cancelada: no se seleccionó carpeta de salida.'
     }
     $OutputDir = $folderDialog.SelectedPath
@@ -83,7 +163,7 @@ if (-not $NoUI) {
     $signerDialog.Description = 'Selecciona la carpeta raíz del firmador.'
     if ($SignerDir) {
         try {
-            $signerDialog.SelectedPath = (Resolve-Path $SignerDir -ErrorAction Stop).Path
+            $signerDialog.SelectedPath = (Resolve-Path -LiteralPath $SignerDir -ErrorAction Stop).Path
         } catch {
             $signerDialog.SelectedPath = $repoRoot
         }
@@ -91,7 +171,6 @@ if (-not $NoUI) {
 
     Write-Host 'Seleccionando firmador...'
     if ($signerDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-        Write-Error 'Operación cancelada: no se seleccionó la carpeta del firmador.'
         throw 'Operación cancelada: no se seleccionó la carpeta del firmador.'
     }
     $SignerDir = $signerDialog.SelectedPath
@@ -112,14 +191,6 @@ if (-not $NoUI) {
     } else {
         $Version = $Version.Trim()
     }
-} else {
-    if (-not $OutputDir) {
-        throw 'Debe especificar -OutputDir cuando usa -NoUI.'
-    }
-    if (-not $SignerDir) {
-        throw 'Debe especificar -SignerDir cuando usa -NoUI.'
-    }
-    $Version = Get-DefaultVersion -Current $Version
 }
 
 $OutputDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $OutputDir -Force).FullName).Path
@@ -129,29 +200,33 @@ Write-Host "Versión objetivo: $Version"
 Write-Host "Directorio de salida: $OutputDir"
 Write-Host "Carpeta del firmador: $SignerDir"
 
-$pythonCmd = Get-Command python -ErrorAction Stop
-$venvPath = Join-Path $repoRoot '.venv-release'
+$pythonExecutable = Resolve-PythonInterpreter
 
-if (-not (Test-Path $venvPath)) {
-    Write-Host 'Creando entorno virtual...'
-    & $pythonCmd.Path -m venv $venvPath
+$venvPath = Join-Path $repoRoot '.venv-release'
+if (-not (Test-Path -LiteralPath $venvPath)) {
+    Write-Host "Creando entorno virtual en $venvPath..."
+    & $pythonExecutable -m venv $venvPath
 }
 
 $pythonExe = Join-Path $venvPath 'Scripts/python.exe'
-if (-not (Test-Path $pythonExe)) {
-    throw "No se encontró el intérprete de Python en el entorno virtual ($pythonExe)."
+if (-not (Test-Path -LiteralPath $pythonExe)) {
+    throw "No se encontró el intérprete de Python en el entorno virtual: $pythonExe"
 }
 
-Write-Host 'Actualizando pip y dependencias...'
-& $pythonExe -m pip install --upgrade pip | Out-String | Write-Verbose
-& $pythonExe -m pip install -r (Join-Path $repoRoot 'requirements.txt') | Out-String | Write-Verbose
-& $pythonExe -m pip install pyinstaller appdirs certifi | Out-String | Write-Verbose
+Write-Host 'Actualizando pip...'
+& $pythonExe -m pip install --upgrade pip
+
+Write-Host 'Instalando dependencias del proyecto...'
+& $pythonExe -m pip install -r (Join-Path $repoRoot 'requirements.txt')
+
+Write-Host 'Instalando herramientas de build...'
+& $pythonExe -m pip install pyinstaller appdirs certifi
 
 $extrasRoot = Join-Path $repoRoot 'extras'
 $extrasDir = Join-Path $extrasRoot 'firmador'
+Write-Host 'Preparando carpeta del firmador...'
 New-Item -ItemType Directory -Path $extrasRoot -Force | Out-Null
-if (Test-Path $extrasDir) {
-    Write-Host 'Limpiando firmador previo...'
+if (Test-Path -LiteralPath $extrasDir) {
     Get-ChildItem -Path $extrasDir -Force | Remove-Item -Force -Recurse
 } else {
     New-Item -ItemType Directory -Path $extrasDir -Force | Out-Null
@@ -166,19 +241,20 @@ if (-not (Get-ChildItem -Path $extrasDir -Force -Recurse -File -ErrorAction Sile
     throw 'No se copiaron archivos del firmador. Revisa los permisos de la carpeta seleccionada.'
 }
 
-$bundleSignerPath = Join-Path $repoRoot 'dist/VertexDTE/extras/firmador'
+$specPath = Join-Path $repoRoot 'build/VertexDTE.spec'
+$distDir = Join-Path $repoRoot 'dist/VertexDTE'
+$bundleSignerPath = Join-Path $distDir 'extras/firmador'
 
 try {
     Write-Host 'Ejecutando PyInstaller...'
-    & $pythonExe -m PyInstaller (Join-Path $repoRoot 'build/VertexDTE.spec')
+    & $pythonExe -m PyInstaller $specPath --noconfirm --clean
 
-    $distDir = Join-Path $repoRoot 'dist/VertexDTE'
-    if (-not (Test-Path $distDir)) {
-        throw "No se encontró la carpeta generada por PyInstaller (`"$distDir`")."
+    if (-not (Test-Path -LiteralPath $distDir)) {
+        throw "No se encontró la carpeta generada por PyInstaller ('$distDir')."
     }
 
-    if (-not (Test-Path $bundleSignerPath)) {
-        throw "El bundle no contiene la carpeta del firmador esperada (`"$bundleSignerPath`")."
+    if (-not (Test-Path -LiteralPath $bundleSignerPath)) {
+        throw "El bundle no contiene la carpeta del firmador esperada ('$bundleSignerPath')."
     }
 
     $bundledFiles = Get-ChildItem -Path $bundleSignerPath -Recurse -File -Force -ErrorAction SilentlyContinue
@@ -188,11 +264,11 @@ try {
 
     $zipName = "VertexDTE-$Version-win64.zip"
     $zipPath = Join-Path $OutputDir $zipName
-    if (Test-Path $zipPath) {
+    if (Test-Path -LiteralPath $zipPath) {
         Remove-Item -LiteralPath $zipPath -Force
     }
 
-    Write-Host 'Comprimiendo distribución onedir...'
+    Write-Host 'Generando archivo ZIP...'
     $distParent = Split-Path $distDir -Parent
     $distFolder = Split-Path $distDir -Leaf
     Push-Location $distParent
@@ -203,19 +279,35 @@ try {
     }
 
     $installerPath = $null
-    $innosetup = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
-    if ($innosetup) {
-        Write-Host 'Compilando instalador con Inno Setup...'
+    $innoCommand = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
+    if (-not $innoCommand) {
+        $defaultInnoPaths = @(
+            'C:\Program Files (x86)\Inno Setup 6\ISCC.exe',
+            'C:\Program Files\Inno Setup 6\ISCC.exe'
+        )
+
+        foreach ($defaultPath in $defaultInnoPaths) {
+            if (Test-Path -LiteralPath $defaultPath) {
+                $innoCommand = [pscustomobject]@{ Path = $defaultPath }
+                break
+            }
+        }
+    }
+
+    if ($innoCommand) {
+        Write-Host "Compilando instalador con Inno Setup usando '$($innoCommand.Path)'..."
         $issFile = Join-Path $repoRoot 'build/VertexDTE.iss'
-        & $innosetup.Path "/DAppVersion=$Version" "/DOutputDir=$([string]::Format('"{0}"', $OutputDir))" $issFile
+        $appVersionArg = "/DAppVersion=$Version"
+        $outputDirArg = [string]::Format('/DOutputDir="{0}"', $OutputDir)
+        & $innoCommand.Path $appVersionArg $outputDirArg $issFile
         $expectedInstaller = Join-Path $OutputDir "VertexDTE-Setup-$Version.exe"
-        if (Test-Path $expectedInstaller) {
+        if (Test-Path -LiteralPath $expectedInstaller) {
             $installerPath = $expectedInstaller
         } else {
-            Write-Warning "Inno Setup terminó sin generar `"$expectedInstaller`". Revisa la salida para más detalles."
+            Write-Warning "Inno Setup terminó sin generar '$expectedInstaller'. Revisa la salida para más detalles."
         }
     } else {
-        Write-Warning 'No se encontró ISCC.exe en el PATH. Se omitió la generación del instalador.'
+        Write-Warning 'No se encontró ISCC.exe. Se omitió la generación del instalador.'
     }
 
     Write-Host ''
@@ -228,7 +320,7 @@ try {
     Write-Host ''
     Write-Host "Firmador empaquetado en: $bundleSignerPath"
 } finally {
-    if (Test-Path $extrasDir) {
+    if (Test-Path -LiteralPath $extrasDir) {
         Write-Host 'Limpiando carpeta temporal del firmador...'
         Get-ChildItem -Path $extrasDir -Force | Remove-Item -Force -Recurse
     }

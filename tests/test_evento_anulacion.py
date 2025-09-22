@@ -1,12 +1,14 @@
 import json
 import os
 import uuid
+from datetime import datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
 from PyQt5.QtWidgets import QDialog, QWidget
 
 from dialogs.anular_factura_dialog import AnularFacturaDialog
+from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
 from utils.catalogos import TRIBUTO_IVA
 from tests.conftest import make_jws
 import facturacion_tab
@@ -163,6 +165,70 @@ def test_generar_evento_anulacion(qt_app, monkeypatch):
     assert evento["documento"]["telefono"] == "50377778888"
     assert evento["documento"]["correo"] == "cliente@example.com"
     assert evento["motivo"]["tipoAnulacion"] == 2
+
+
+@pytest.mark.usefixtures("qt_app")
+def test_seleccionar_dte_fecha_filter_respects_checkbox(
+    db_conn, tmp_path, dte_metadata_factory
+):
+    factura = dte_metadata_factory()
+    codigo = str(uuid.uuid4()).upper()
+    numero = "DTE-01-S001P001-000000000000601"
+    factura["identificacion"]["codigoGeneracion"] = codigo
+    factura["identificacion"]["numeroControl"] = numero
+    json_path = tmp_path / "dte_antiguo.json"
+    json_path.write_text(json.dumps(factura), encoding="utf-8")
+
+    extra = {
+        "codigoGeneracion": codigo,
+        "numeroControl": numero,
+        "dteJsonPath": str(json_path),
+        "selloRecibido": "S" * 40,
+    }
+    venta_id = db_conn.add_venta("2024-01-01", 10, extra=extra)
+    db_conn.registrar_envio_dte(
+        venta_id,
+        "manual",
+        "Aceptado",
+        "S" * 40,
+        respuesta_json=json.dumps({"documento": factura}),
+        codigo_generacion=codigo,
+        numero_control=numero,
+    )
+    row_id = db_conn.cursor.lastrowid
+    antiguo = datetime.now() - timedelta(days=90)
+    db_conn.ensure_column("dte_envios", "ambiente", "TEXT")
+    db_conn.cursor.execute(
+        "UPDATE dte_envios SET fecha_hora=?, ambiente=? WHERE id=?",
+        (
+            antiguo.isoformat(),
+            factura["identificacion"].get("ambiente"),
+            row_id,
+        ),
+    )
+    db_conn.conn.commit()
+
+    dialog = SeleccionarDteDialog(
+        db_conn,
+        tipo_dte=factura["identificacion"].get("tipoDte"),
+        ambiente=factura["identificacion"].get("ambiente"),
+        receptor_documentos=[factura["receptor"].get("numDocumento")],
+    )
+
+    assert not dialog.filtrar_fecha_cb.isChecked()
+    assert dialog.fecha_inicio.date() == dialog.fecha_inicio.minimumDate()
+    assert dialog.fecha_fin.date() == dialog.fecha_fin.minimumDate()
+
+    codigos_sin_filtro = {c["codigo_generacion"] for c in dialog.candidates}
+    assert codigo in codigos_sin_filtro
+
+    dialog.filtrar_fecha_cb.setChecked(True)
+
+    assert dialog.fecha_inicio.date() <= dialog.fecha_fin.date()
+    codigos_con_filtro = {c["codigo_generacion"] for c in dialog.candidates}
+    assert codigo not in codigos_con_filtro
+
+    dialog.deleteLater()
 
 
 def test_invalidacion_tipo3_requiere_codigo(monkeypatch, db_conn, tmp_path):

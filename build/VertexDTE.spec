@@ -29,7 +29,7 @@ resource_folders = [
     'dtes',
     'dte_fallidos',
     'dtes_pendientes',
-    'extras/firmador',
+    'extras',
     'schema_patches',
     'svfe-json-schemas',
     'tickets',

@@ -1,6 +1,6 @@
 param(
     [string]$OutputDir,
-    [string]$Signer,
+    [string]$SignerDir,
     [string]$Version,
     [switch]$NoUI
 )
@@ -24,10 +24,38 @@ function Get-DefaultVersion {
             if ($trimmed -like 'version=*') {
                 return $trimmed.Split('=')[-1].Trim()
             }
+            if ($trimmed -and $trimmed -notlike '#*') {
+                return $trimmed
+            }
         }
     }
 
     return '1.0.0'
+}
+
+function Resolve-SignerDirectory {
+    param([string]$Path)
+
+    if (-not $Path) {
+        throw 'No se especificó la carpeta del firmador.'
+    }
+
+    try {
+        $resolved = (Resolve-Path -LiteralPath $Path -ErrorAction Stop).Path
+    } catch {
+        throw "No se pudo acceder a la carpeta del firmador '$Path'."
+    }
+
+    if (-not (Test-Path -LiteralPath $resolved -PathType Container)) {
+        throw "La ruta '$resolved' no es una carpeta válida para el firmador."
+    }
+
+    $items = Get-ChildItem -LiteralPath $resolved -Force -Recurse -File -ErrorAction SilentlyContinue
+    if (-not $items) {
+        throw "La carpeta del firmador '$resolved' está vacía."
+    }
+
+    return $resolved
 }
 
 if (-not $NoUI) {
@@ -48,21 +76,20 @@ if (-not $NoUI) {
     }
     $OutputDir = $folderDialog.SelectedPath
 
-    $fileDialog = New-Object System.Windows.Forms.OpenFileDialog
-    $fileDialog.Title = 'Selecciona el archivo del firmador'
-    $fileDialog.Filter = 'Todos los archivos (*.*)|*.*'
-    if ($Signer) {
+    $signerDialog = New-Object System.Windows.Forms.FolderBrowserDialog
+    $signerDialog.Description = 'Selecciona la carpeta raíz del firmador.'
+    if ($SignerDir) {
         try {
-            $fileDialog.InitialDirectory = (Split-Path (Resolve-Path $Signer -ErrorAction Stop).Path -Parent)
+            $signerDialog.SelectedPath = (Resolve-Path $SignerDir -ErrorAction Stop).Path
         } catch {
-            $fileDialog.InitialDirectory = $repoRoot
+            $signerDialog.SelectedPath = $repoRoot
         }
     }
 
-    if ($fileDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
-        throw 'Operación cancelada: no se seleccionó el firmador.'
+    if ($signerDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        throw 'Operación cancelada: no se seleccionó la carpeta del firmador.'
     }
-    $Signer = $fileDialog.FileName
+    $SignerDir = $signerDialog.SelectedPath
 
     $defaultVersion = Get-DefaultVersion -Current $null
     if (-not $Version) {
@@ -80,18 +107,18 @@ if (-not $NoUI) {
     if (-not $OutputDir) {
         throw 'Debe especificar -OutputDir cuando usa -NoUI.'
     }
-    if (-not $Signer) {
-        throw 'Debe especificar -Signer cuando usa -NoUI.'
+    if (-not $SignerDir) {
+        throw 'Debe especificar -SignerDir cuando usa -NoUI.'
     }
     $Version = Get-DefaultVersion -Current $Version
 }
 
 $OutputDir = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $OutputDir -Force).FullName).Path
-$Signer = (Resolve-Path -LiteralPath $Signer).Path
+$SignerDir = Resolve-SignerDirectory -Path $SignerDir
 
 Write-Host "Versión objetivo: $Version"
 Write-Host "Directorio de salida: $OutputDir"
-Write-Host "Firmador seleccionado: $Signer"
+Write-Host "Carpeta del firmador: $SignerDir"
 
 $pythonCmd = Get-Command python -ErrorAction Stop
 $venvPath = Join-Path $repoRoot '.venv-release'
@@ -113,62 +140,87 @@ Write-Host 'Actualizando pip y dependencias...'
 
 $extrasRoot = Join-Path $repoRoot 'extras'
 $extrasDir = Join-Path $extrasRoot 'firmador'
+New-Item -ItemType Directory -Path $extrasRoot -Force | Out-Null
 if (Test-Path $extrasDir) {
     Write-Host 'Limpiando firmador previo...'
-    Get-ChildItem -Path $extrasDir -Recurse -Force | Remove-Item -Force -Recurse
+    Get-ChildItem -Path $extrasDir -Force | Remove-Item -Force -Recurse
 } else {
     New-Item -ItemType Directory -Path $extrasDir -Force | Out-Null
 }
 
-Copy-Item -LiteralPath $Signer -Destination $extrasDir -Force
-$signerFileName = Split-Path $Signer -Leaf
-
-Write-Host 'Ejecutando PyInstaller...'
-& $pythonExe -m PyInstaller (Join-Path $repoRoot 'build/VertexDTE.spec')
-
-$distDir = Join-Path $repoRoot 'dist/VertexDTE'
-if (-not (Test-Path $distDir)) {
-    throw "No se encontró la carpeta generada por PyInstaller ($distDir)."
+Write-Host "Copiando firmador desde '$SignerDir'..."
+Get-ChildItem -LiteralPath $SignerDir -Force | ForEach-Object {
+    Copy-Item -LiteralPath $_.FullName -Destination $extrasDir -Recurse -Force
 }
 
-$zipName = "VertexDTE-$Version-win64.zip"
-$zipPath = Join-Path $OutputDir $zipName
-if (Test-Path $zipPath) {
-    Remove-Item -LiteralPath $zipPath -Force
+if (-not (Get-ChildItem -Path $extrasDir -Force -Recurse -File -ErrorAction SilentlyContinue)) {
+    throw 'No se copiaron archivos del firmador. Revisa los permisos de la carpeta seleccionada.'
 }
 
-Write-Host 'Comprimiendo distribución onedir...'
-$distParent = Split-Path $distDir -Parent
-$distFolder = Split-Path $distDir -Leaf
-Push-Location $distParent
+$bundleSignerPath = Join-Path $repoRoot 'dist/VertexDTE/extras/firmador'
+
 try {
-    Compress-Archive -Path $distFolder -DestinationPath $zipPath
-} finally {
-    Pop-Location
-}
+    Write-Host 'Ejecutando PyInstaller...'
+    & $pythonExe -m PyInstaller (Join-Path $repoRoot 'build/VertexDTE.spec')
 
-$installerPath = $null
-$innosetup = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
-if ($innosetup) {
-    Write-Host 'Compilando instalador con Inno Setup...'
-    $issFile = Join-Path $repoRoot 'build/VertexDTE.iss'
-    & $innosetup.Path "/DAppVersion=$Version" "/DOutputDir=$OutputDir" $issFile
-    $expectedInstaller = Join-Path $OutputDir "VertexDTE-Setup-$Version.exe"
-    if (Test-Path $expectedInstaller) {
-        $installerPath = $expectedInstaller
-    } else {
-        Write-Warning "Inno Setup terminó sin generar $expectedInstaller. Revisa la salida para más detalles."
+    $distDir = Join-Path $repoRoot 'dist/VertexDTE'
+    if (-not (Test-Path $distDir)) {
+        throw "No se encontró la carpeta generada por PyInstaller (`"$distDir"`)."
     }
-} else {
-    Write-Warning 'No se encontró ISCC.exe en el PATH. Se omitió la generación del instalador.'
-}
 
-Write-Host ''
-Write-Host 'Artefactos generados:'
-Write-Host "  Ejecutable onedir: $distDir"
-Write-Host "  Paquete ZIP:      $zipPath"
-if ($installerPath) {
-    Write-Host "  Instalador:       $installerPath"
+    if (-not (Test-Path $bundleSignerPath)) {
+        throw "El bundle no contiene la carpeta del firmador esperada (`"$bundleSignerPath"`)."
+    }
+
+    $bundledFiles = Get-ChildItem -Path $bundleSignerPath -Recurse -File -Force -ErrorAction SilentlyContinue
+    if (-not $bundledFiles) {
+        throw 'La carpeta del firmador dentro del bundle está vacía.'
+    }
+
+    $zipName = "VertexDTE-$Version-win64.zip"
+    $zipPath = Join-Path $OutputDir $zipName
+    if (Test-Path $zipPath) {
+        Remove-Item -LiteralPath $zipPath -Force
+    }
+
+    Write-Host 'Comprimiendo distribución onedir...'
+    $distParent = Split-Path $distDir -Parent
+    $distFolder = Split-Path $distDir -Leaf
+    Push-Location $distParent
+    try {
+        Compress-Archive -Path $distFolder -DestinationPath $zipPath -Force
+    } finally {
+        Pop-Location
+    }
+
+    $installerPath = $null
+    $innosetup = Get-Command 'ISCC.exe' -ErrorAction SilentlyContinue
+    if ($innosetup) {
+        Write-Host 'Compilando instalador con Inno Setup...'
+        $issFile = Join-Path $repoRoot 'build/VertexDTE.iss'
+        & $innosetup.Path "/DAppVersion=$Version" "/DOutputDir=$([string]::Format('"{0}"', $OutputDir))" $issFile
+        $expectedInstaller = Join-Path $OutputDir "VertexDTE-Setup-$Version.exe"
+        if (Test-Path $expectedInstaller) {
+            $installerPath = $expectedInstaller
+        } else {
+            Write-Warning "Inno Setup terminó sin generar `"$expectedInstaller`". Revisa la salida para más detalles."
+        }
+    } else {
+        Write-Warning 'No se encontró ISCC.exe en el PATH. Se omitió la generación del instalador.'
+    }
+
+    Write-Host ''
+    Write-Host 'Artefactos generados:'
+    Write-Host "  Ejecutable onedir: $distDir"
+    Write-Host "  Paquete ZIP:      $zipPath"
+    if ($installerPath) {
+        Write-Host "  Instalador:       $installerPath"
+    }
+    Write-Host ''
+    Write-Host "Firmador empaquetado en: $bundleSignerPath"
+} finally {
+    if (Test-Path $extrasDir) {
+        Write-Host 'Limpiando carpeta temporal del firmador...'
+        Get-ChildItem -Path $extrasDir -Force | Remove-Item -Force -Recurse
+    }
 }
-Write-Host ''
-Write-Host "Firmador empaquetado en: dist/VertexDTE/extras/firmador/$signerFileName"

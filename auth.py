@@ -9,13 +9,15 @@ from urllib.parse import urlparse
 
 import requests
 
+from paths import CONFIG_NEGOCIO_PATH, user_data_path
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_AUTH_URL = "https://apitest.dtes.mh.gob.sv/seguridad/auth"
 # URL de producción proporcionada por el MH
 PRODUCTION_AUTH_URL = "https://api.dtes.mh.gob.sv/seguridad/auth"
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
-DB_PATH = os.path.join(os.path.dirname(__file__), "inventario.db")
+CONFIG_PATH = CONFIG_NEGOCIO_PATH
+DB_PATH = str(user_data_path("inventario.db"))
 
 _access_token: Optional[str] = None
 _expires_at: float = 0.0

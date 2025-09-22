@@ -11,8 +11,9 @@ from typing import List
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from dte import calcular_resumen
+from paths import CONFIG_NEGOCIO_PATH
 
-CONFIG_PATH = Path(__file__).resolve().parent.parent / "config_negocio.json"
+CONFIG_PATH = Path(CONFIG_NEGOCIO_PATH)
 
 
 def _load_expected_ambiente() -> str:

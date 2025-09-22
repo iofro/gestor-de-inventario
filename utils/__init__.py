@@ -1,13 +1,26 @@
+from __future__ import annotations
+
 from pathlib import Path
 import sys
+from typing import Union
 
 
-def resource_path(relative: str) -> Path:
-    """Return absolute path to resource bundled via PyInstaller.
+def resource_path(*parts: Union[str, Path]) -> Path:
+    """Return absolute path to a bundled resource.
 
-    In frozen mode (e.g., when packaged with PyInstaller) resources live
-    inside ``sys._MEIPASS``. During development, resources are resolved
-    relative to the project root directory.
+    When packaged with PyInstaller the application files are extracted
+    to ``sys._MEIPASS``. During development resources should be located
+    relative to the repository root. The helper mirrors the behaviour of
+    the commonly used snippet in PyInstaller documentation while keeping
+    the ``Path`` API available to callers.
     """
-    base = Path(sys._MEIPASS) if getattr(sys, "frozen", False) else Path(__file__).resolve().parent.parent
-    return base / relative
+
+    if getattr(sys, "frozen", False):  # pragma: no cover - executed in frozen builds
+        base = Path(getattr(sys, "_MEIPASS"))
+    else:
+        base = Path(__file__).resolve().parent.parent
+
+    if not parts:
+        return base
+
+    return base.joinpath(*[Path(p) for p in parts])

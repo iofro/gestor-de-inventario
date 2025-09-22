@@ -10,6 +10,7 @@ from typing import Any
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
+from paths import user_data_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 class DB:
     def __init__(self, db_name: str | Path | None = None):
         if db_name is None:
-            db_path = Path.home() / ".gestor-inventario" / "inventario.db"
+            db_path = user_data_path("inventario.db")
         else:
             db_path = Path(db_name)
         db_path.parent.mkdir(parents=True, exist_ok=True)

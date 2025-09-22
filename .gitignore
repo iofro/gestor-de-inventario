@@ -17,9 +17,14 @@ __pycache__/
 *.pyd
 
 # Build/output
-build/
+build/*
+!build/VertexDTE.spec
+!build/VertexDTE.iss
+!build/build.ps1
 dist/
 *.spec
+!build/VertexDTE.spec
+assets/app.ico
 
 # Logs y DB locales
 *.log

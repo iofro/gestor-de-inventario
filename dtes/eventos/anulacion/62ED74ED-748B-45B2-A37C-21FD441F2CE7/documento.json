@@ -1,0 +1,45 @@
+{
+  "documento": {
+    "codigoGeneracion": "68D8A717-0DCD-4291-8743-4103A927FA68",
+    "codigoGeneracionR": "2EC66587-1D18-4AB9-941C-15A52504201D",
+    "correo": "cliente1@demo.com",
+    "fecEmi": "2025-09-21",
+    "montoIva": 1.42,
+    "nombre": "ariel",
+    "numDocumento": "13240304791012",
+    "numeroControl": "DTE-03-S001P001-000000000000223",
+    "selloRecibido": "202570951D9608B746D3A592E8912A4614A24AYC",
+    "telefono": "74154027",
+    "tipoDocumento": "36",
+    "tipoDte": "03"
+  },
+  "emisor": {
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "nit": "09061712791014",
+    "nomEstablecimiento": "Farmacia Santa Catalina",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "62ED74ED-748B-45B2-A37C-21FD441F2CE7",
+    "fecAnula": "2025-09-21",
+    "horAnula": "21:02:27",
+    "version": 2
+  },
+  "motivo": {
+    "motivoAnulacion": "equivocacion del documento",
+    "nombreResponsable": "Karol Yamileth Cruz Escobar",
+    "nombreSolicita": "ariel",
+    "numDocResponsable": "000868547",
+    "numDocSolicita": "13240304791012",
+    "tipDocResponsable": "13",
+    "tipDocSolicita": "36",
+    "tipoAnulacion": 1
+  }
+}

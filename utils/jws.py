@@ -12,7 +12,7 @@ from utils.stable_json import (
 )
 
 logger = logging.getLogger(__name__)
-CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(os.path.dirname(__file__)), "config_negocio.json")
+from paths import CONFIG_NEGOCIO_PATH, CERT_UPLOAD_DIR as _DEFAULT_CERT_DIR
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
 
@@ -20,9 +20,6 @@ SEND_DTEJSON_AS_OBJECT = os.getenv("SEND_DTEJSON_AS_OBJECT", "1") == "1"
 
 # Directory where the signing service expects certificate files (.crt)
 # Allow overriding via environment variable and strip any hidden characters.
-_DEFAULT_CERT_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "svfe-api-firmador", "uploads"
-)
 CERT_UPLOAD_DIR = os.getenv("CERT_UPLOAD_DIR", _DEFAULT_CERT_DIR).strip()
 
 

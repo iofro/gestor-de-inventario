@@ -13,6 +13,8 @@ import os
 import re
 from typing import Dict
 
+from utils import resource_path
+
 # ---------------------------------------------------------------------------
 # Parser básico de catálogos
 # ---------------------------------------------------------------------------
@@ -656,14 +658,14 @@ CATALOGS["TIPO_ITEM"] = {str(k): v for k, v in TIPO_ITEM.items()}
 # Esquemas JSON oficiales
 # ---------------------------------------------------------------------------
 
-ROOT_DIR = os.path.dirname(os.path.dirname(__file__))
-SCHEMAS_DIR = os.path.join(ROOT_DIR, "svfe-json-schemas")
+ROOT_DIR = resource_path()
+SCHEMAS_DIR = resource_path("svfe-json-schemas")
 SCHEMA_MAP = {
-    "01": os.path.join(SCHEMAS_DIR, "fe-fc-v1.json"),
-    "03": os.path.join(SCHEMAS_DIR, "fe-ccf-v3.json"),
-    "04": os.path.join(SCHEMAS_DIR, "fe-nr-v3.json"),
-    "05": os.path.join(SCHEMAS_DIR, "fe-nc-v3.json"),
-    "06": os.path.join(SCHEMAS_DIR, "fe-nd-v3.json"),
+    "01": str(resource_path("svfe-json-schemas", "fe-fc-v1.json")),
+    "03": str(resource_path("svfe-json-schemas", "fe-ccf-v3.json")),
+    "04": str(resource_path("svfe-json-schemas", "fe-nr-v3.json")),
+    "05": str(resource_path("svfe-json-schemas", "fe-nc-v3.json")),
+    "06": str(resource_path("svfe-json-schemas", "fe-nd-v3.json")),
 }
 
 

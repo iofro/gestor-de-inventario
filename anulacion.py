@@ -354,7 +354,7 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         "       TRIM(codigo_generacion) AS codigo_generacion, numero_control,",
         "       respuesta, ambiente",
         "  FROM dte_envios",
-        " WHERE TRIM(COALESCE(codigo_generacion, '')) <> ''",
+        " WHERE 1=1",
     ]
     if fecha_inicio:
         query.append("   AND date(fecha_hora) >= date(?)")
@@ -402,17 +402,17 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
                 metadata = _merge_metadata(primary, _extract_metadata(respuesta_local))
             return metadata
 
+        metadata = _get_metadata()
+
         if not codigo:
             codigo_metadata = str(
-                (_get_metadata().get("codigo_generacion") or "")
+                (metadata.get("codigo_generacion") or "")
             ).strip().upper()
             if codigo_metadata:
                 codigo = codigo_metadata
 
         if not codigo or (exclude_uuid and codigo == exclude_uuid):
             continue
-
-        metadata = _get_metadata()
         if metadata.get("codigo_generacion") in (None, ""):
             metadata["codigo_generacion"] = codigo
 

@@ -108,3 +108,85 @@ def test_orders_by_datetime(qt_app, tmp_path, monkeypatch):
     second = tab.table.item(1, 1).text()
     assert first.endswith("11:00")
     assert second.endswith("10:00")
+
+
+def test_client_and_vendor_filters(qt_app, tmp_path, monkeypatch):
+    inv_dir = tmp_path / "facturas_consumidor_final"
+    inv_dir.mkdir()
+
+    base1 = "20240101_Alpha_1_ConsumidorFinal"
+    data1 = {
+        "identificacion": {
+            "numeroControl": base1,
+            "tipoDte": "01",
+            "fecEmi": "2024-01-01",
+        },
+        "receptor": {"nombre": "Alice"},
+        "resumen": {"totalPagar": 10},
+    }
+    (inv_dir / f"{base1}.json").write_text(json.dumps(data1))
+    (inv_dir / f"{base1}.pdf").write_text("pdf")
+
+    base2 = "20240102_Beta_2_ConsumidorFinal"
+    data2 = {
+        "identificacion": {
+            "numeroControl": base2,
+            "tipoDte": "01",
+            "fecEmi": "2024-01-02",
+        },
+        "receptor": {"nombre": "Bob"},
+        "resumen": {"totalPagar": 20},
+    }
+    (inv_dir / f"{base2}.json").write_text(json.dumps(data2))
+    (inv_dir / f"{base2}.pdf").write_text("pdf")
+
+    db = DB(":memory:")
+    db.cursor.executemany(
+        "INSERT INTO clientes (id, nombre) VALUES (?, ?)",
+        [(1, "Alice"), (2, "Bob")],
+    )
+    db.cursor.executemany(
+        "INSERT INTO trabajadores (id, codigo, nombre, es_vendedor) VALUES (?, ?, ?, 1)",
+        [(1, "V1", "Vend 1"), (2, "V2", "Vend 2")],
+    )
+    db.conn.commit()
+
+    venta1 = db.add_venta("2024-01-01", 10, cliente_id=1, vendedor_id=1)
+    venta2 = db.add_venta("2024-01-02", 20, cliente_id=2, vendedor_id=2)
+    db.add_factura_pdf(venta1, "ConsumidorFinal", str(inv_dir / f"{base1}.pdf"))
+    db.add_factura_pdf(venta2, "ConsumidorFinal", str(inv_dir / f"{base2}.pdf"))
+
+    manager = SimpleNamespace(
+        db=db,
+        _clientes=[{"id": 1, "nombre": "Alice"}, {"id": 2, "nombre": "Bob"}],
+    )
+
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(inv_dir))
+    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "credito"))
+    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tmp_path / "tickets"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(tmp_path / "nd"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(tmp_path / "nc"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(tmp_path / "nr"))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+
+    tab = facturacion_tab.FacturacionTab(manager)
+    tab.load_invoices()
+    assert tab.table.rowCount() == 2
+
+    idx = tab.client_filter.findData(1)
+    tab.client_filter.setCurrentIndex(idx)
+    tab.load_invoices()
+    assert tab.table.rowCount() == 1
+
+    tab.client_filter.setCurrentIndex(0)
+    tab.load_invoices()
+    assert tab.table.rowCount() == 2
+
+    idx_v = tab.vendedor_filter.findData(2)
+    tab.vendedor_filter.setCurrentIndex(idx_v)
+    tab.load_invoices()
+    assert tab.table.rowCount() == 1
+
+    tab.vendedor_filter.setCurrentIndex(0)
+    tab.load_invoices()
+    assert tab.table.rowCount() == 2

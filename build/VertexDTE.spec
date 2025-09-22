@@ -1,53 +1,44 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
-from pathlib import Path
-import base64
-import certifi
+from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 import os
+from pathlib import Path
 
-ICON_B64 = """
-AAABAAEAAQEAAAEAIAAwAAAAFgAAACgAAAABAAAAAgAAAAEAIAAAAAAABAAAAAAAAAAAAAAAAAAA
-AAAAAADliB7/AAAAAA==
-""".strip().replace("\n", "")
-
-icon_path = Path(__file__).resolve().parent.parent / 'assets' / 'app.ico'
-if not icon_path.exists():
-    icon_path.parent.mkdir(parents=True, exist_ok=True)
-    icon_path.write_bytes(base64.b64decode(ICON_B64))
+icon_path = 'assets/app.ico'
+if not os.path.isfile(icon_path):
+    icon_path = None
 
 hidden = collect_submodules('PyQt5') + [
     'PyQt5.QtPrintSupport',
     'PyQt5.QtSvg',
 ]
-datas = collect_data_files('PyQt5', include_py_files=False)
-datas += [(certifi.where(), 'certifi')]
+hidden = sorted(set(hidden))
 
-resource_folders = [
+datas = collect_data_files('PyQt5', include_py_files=False)
+datas += collect_data_files('certifi', include_py_files=False)
+
+resource_directories = [
     'assets',
     'templates',
     'dtes',
     'dte_fallidos',
     'dtes_pendientes',
-    'extras',
     'schema_patches',
     'svfe-json-schemas',
     'tickets',
 ]
 
-resource_patterns = [
-    'facturas_*',
-    'notas_*',
-]
-
-for pattern in resource_patterns:
+for pattern in ['facturas_*', 'notas_*']:
     for match in Path('.').glob(pattern):
         if match.is_dir():
-            resource_folders.append(str(match))
+            resource_directories.append(str(match))
 
-for folder in resource_folders:
-    if os.path.isdir(folder):
-        datas.append((folder, folder))
+firmador_dir = os.path.join('extras', 'firmador')
+resource_directories.append(firmador_dir)
+
+for directory in resource_directories:
+    if os.path.isdir(directory):
+        datas.append((directory, directory))
 
 for file_name in [
     'style.qss',
@@ -90,7 +81,7 @@ exe = EXE(
     upx_exclude=[],
     runtime_tmpdir=None,
     console=False,
-    icon=str(icon_path),
+    icon=icon_path,
 )
 coll = COLLECT(
     exe,

@@ -235,3 +235,46 @@ def test_buscar_candidatos_reemplazo_recupera_codigo_de_metadatos(
     assert candidato["codigo_generacion"] == codigo_generacion
     assert candidato["numero_control"] == factura["identificacion"]["numeroControl"]
     assert candidato["seleccionable"] is True
+
+
+def test_buscar_candidatos_reemplazo_incluye_codigo_vacio(
+    db_conn, tmp_path, dte_metadata_factory
+):
+    codigo_generacion = str(uuid.uuid4()).upper()
+    factura = _crear_factura(
+        dte_metadata_factory,
+        codigo=codigo_generacion,
+        numero="DTE-01-S001P001-000000000000777",
+    )
+    json_path = tmp_path / "candidato_codigo_vacio.json"
+    json_path.write_text(json.dumps(factura), encoding="utf-8")
+    extra = {
+        "codigoGeneracion": codigo_generacion,
+        "numeroControl": factura["identificacion"]["numeroControl"],
+        "dteJsonPath": str(json_path),
+        "selloRecibido": "Z" * 40,
+    }
+    venta_id = db_conn.add_venta("2024-03-01", 15.75, extra=extra)
+    db_conn.registrar_envio_dte(
+        venta_id,
+        "manual",
+        "Aceptado",
+        "Z" * 40,
+        respuesta_json=json.dumps({"documento": factura}),
+        codigo_generacion="",
+        numero_control=factura["identificacion"]["numeroControl"],
+    )
+    envio_id = db_conn.cursor.lastrowid
+    db_conn.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+    db_conn.cursor.execute(
+        "UPDATE dte_envios SET codigo_generacion='' WHERE id=?",
+        (envio_id,),
+    )
+    db_conn.conn.commit()
+
+    resultados = anulacion.buscar_candidatos_reemplazo(
+        db_conn, {"recepcionado": True}
+    )
+
+    codigos = {item["codigo_generacion"] for item in resultados}
+    assert codigo_generacion in codigos

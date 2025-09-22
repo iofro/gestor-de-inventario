@@ -29,7 +29,7 @@ def main() -> None:
         "--db",
         dest="db_path",
         default=None,
-        help="Ruta al archivo de base de datos (por defecto ~/.gestor-inventario/inventario.db)",
+        help="Ruta al archivo de base de datos (por defecto %APPDATA%/VertexDTE/inventario.db)",
     )
     parser.add_argument(
         "--level",

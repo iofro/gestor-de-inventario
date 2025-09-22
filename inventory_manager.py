@@ -7,7 +7,7 @@ import os
 import logging
 import sqlite3
 from decimal import Decimal as D
-from paths import DATOS_NEGOCIO_PATH
+from paths import DATOS_NEGOCIO_PATH, user_logs_path
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
@@ -372,12 +372,10 @@ class InventoryManager:
                 "migrations_applied": migrations_applied,
             }
 
-        log_dir = os.path.join("logs")
-        os.makedirs(log_dir, exist_ok=True)
-        log_path = os.path.join(
-            log_dir, f"import_inventory_{datetime.now():%Y%m%d_%H%M%S}.log"
+        log_path = user_logs_path(
+            f"import_inventory_{datetime.now():%Y%m%d_%H%M%S}.log"
         )
-        handler = logging.FileHandler(log_path, encoding="utf-8")
+        handler = logging.FileHandler(str(log_path), encoding="utf-8")
         logger.addHandler(handler)
         try:
             self._importar_inventario_json_legacy(data)

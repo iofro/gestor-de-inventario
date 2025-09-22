@@ -27,17 +27,14 @@ aplicación.
 
 Se cargará el último inventario si está disponible y podrás comenzar a registrar compras y ventas.
 
-## Empaquetado con PyInstaller
+## Empaquetado y distribución
 
-Puedes generar un ejecutable independiente con **PyInstaller** usando:
+El proyecto incluye scripts listos para generar el ejecutable y el instalador
+para Windows. Consulta [BUILD.md](BUILD.md) para pasos detallados sobre cómo:
 
-```bash
-pyinstaller --onefile --windowed \
-    --add-data "style.qss;." --add-data "logoinventario.jpg;." \
-    --add-data "inventario.db;." main.py
-```
-
-El comando anterior también está preconfigurado en `setup.py`, por lo que puedes ejecutar `python setup.py` si prefieres.
+* Ejecutar PyInstaller en modo *onedir* (`build/build.ps1`).
+* Empaquetar el instalador `VertexDTE-Setup.exe` con Inno Setup.
+* Realizar las pruebas manuales recomendadas en una máquina sin dependencias.
 
 Si la interfaz no aparece al ejecutar el binario, inicia el programa desde una terminal para ver los mensajes de error.
 

@@ -12,6 +12,7 @@ import requests
 import auth
 from db import DB
 from utils import stable_json
+from utils import resource_path
 from utils.catalogos import TRIBUTO_IVA
 from utils.sanitize import solo_digitos
 from utils.fecha import TZ_EL_SALVADOR
@@ -1203,7 +1204,7 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
                 codigo_generacion = str(raw_codigo).strip()
     if codigo_generacion:
         base_dir = os.path.join(
-            os.path.dirname(__file__), "dtes", "eventos", "anulacion"
+            resource_path("dtes", "eventos", "anulacion")
         )
         target_dir = os.path.join(base_dir, codigo_generacion)
         try:

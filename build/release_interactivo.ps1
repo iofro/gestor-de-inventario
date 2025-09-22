@@ -71,10 +71,13 @@ if (-not $NoUI) {
         }
     }
 
+    Write-Host 'Seleccionando carpeta de salida...'
     if ($folderDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        Write-Error 'Operación cancelada: no se seleccionó carpeta de salida.'
         throw 'Operación cancelada: no se seleccionó carpeta de salida.'
     }
     $OutputDir = $folderDialog.SelectedPath
+    Write-Host "Carpeta elegida: $OutputDir"
 
     $signerDialog = New-Object System.Windows.Forms.FolderBrowserDialog
     $signerDialog.Description = 'Selecciona la carpeta raíz del firmador.'
@@ -86,19 +89,25 @@ if (-not $NoUI) {
         }
     }
 
+    Write-Host 'Seleccionando firmador...'
     if ($signerDialog.ShowDialog() -ne [System.Windows.Forms.DialogResult]::OK) {
+        Write-Error 'Operación cancelada: no se seleccionó la carpeta del firmador.'
         throw 'Operación cancelada: no se seleccionó la carpeta del firmador.'
     }
     $SignerDir = $signerDialog.SelectedPath
+    Write-Host "Firmador elegido: $SignerDir"
 
     $defaultVersion = Get-DefaultVersion -Current $null
     if (-not $Version) {
         Add-Type -AssemblyName Microsoft.VisualBasic
+        Write-Host 'Solicitando versión a publicar...'
         $inputVersion = [Microsoft.VisualBasic.Interaction]::InputBox('Versión a publicar:', 'Vertex DTE', $defaultVersion)
         if ([string]::IsNullOrWhiteSpace($inputVersion)) {
             $Version = $defaultVersion
+            Write-Host "Se usará la versión predeterminada: $Version"
         } else {
             $Version = $inputVersion.Trim()
+            Write-Host "Versión ingresada: $Version"
         }
     } else {
         $Version = $Version.Trim()

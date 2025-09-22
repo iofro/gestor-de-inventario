@@ -53,9 +53,12 @@ for file_name in [
 
 block_cipher = None
 
+repo_root = Path(__file__).resolve().parent.parent
+main_script = repo_root / "main.py"
+
 a = Analysis(
-    ['main.py'],
-    pathex=[],
+    [str(main_script)],
+    pathex=[str(repo_root)],
     binaries=[],
     datas=datas,
     hiddenimports=hidden,

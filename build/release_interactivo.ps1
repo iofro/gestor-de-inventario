@@ -127,6 +127,60 @@ function Resolve-PythonInterpreter {
     throw 'No se encontró una instalación de Python compatible. Asegúrate de tener Python 3.11 disponible.'
 }
 
+function New-TempCopyOfFolder {
+    param([string]$SourceDir)
+    $tmp = Join-Path $env:TEMP ("VertexDTE_" + [guid]::NewGuid())
+    robocopy $SourceDir $tmp /MIR /NFL /NDL /NJH /NJS /NC /NS | Out-Null
+    return $tmp
+}
+
+function Compress-DirectoryWithRetry {
+    param(
+        [string]$SourceDir,
+        [string]$ZipPath,
+        [int]$MaxAttempts = 8
+    )
+    # Limpia ZIP previo
+    if (Test-Path $ZipPath) { Remove-Item $ZipPath -Force }
+
+    # Copia a TEMP para evitar handles sobre dist\
+    $tempDir = New-TempCopyOfFolder -SourceDir $SourceDir
+    try {
+        for ($i=1; $i -le $MaxAttempts; $i++) {
+            try {
+                [System.GC]::Collect(); [System.GC]::WaitForPendingFinalizers()
+                Start-Sleep -Milliseconds (250 * $i)
+                Compress-Archive -Path (Join-Path $tempDir '*') -DestinationPath $ZipPath -Force -ErrorAction Stop
+                Write-Host "ZIP creado en intento $i: $ZipPath"
+                return $true
+            } catch {
+                $hr = $_.Exception.HResult
+                $msg = $_.Exception.Message
+                # 0x80070020 = sharing violation
+                if ($hr -eq -2147024864 -or $msg -match 'being used by another process') {
+                    Write-Warning "ZIP bloqueado (intento $i/$MaxAttempts). Reintentando…"
+                    Start-Sleep -Seconds ([math]::Pow(2, [math]::Min($i,5))) # backoff exponencial
+                    continue
+                } else {
+                    throw
+                }
+            }
+        }
+        # Fallback .NET si Compress-Archive no logró
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            [System.IO.Compression.ZipFile]::CreateFromDirectory($tempDir, $ZipPath)
+            Write-Host "ZIP creado con fallback .NET: $ZipPath"
+            return $true
+        } catch {
+            Write-Warning "Fallo creando ZIP incluso con fallback: $($_.Exception.Message)"
+            return $false
+        }
+    } finally {
+        try { Remove-Item $tempDir -Recurse -Force } catch { }
+    }
+}
+
 if ($NoUI) {
     if (-not $OutputDir) {
         throw 'Debe especificar -OutputDir cuando usa -NoUI.'
@@ -264,18 +318,10 @@ try {
 
     $zipName = "VertexDTE-$Version-win64.zip"
     $zipPath = Join-Path $OutputDir $zipName
-    if (Test-Path -LiteralPath $zipPath) {
-        Remove-Item -LiteralPath $zipPath -Force
-    }
-
     Write-Host 'Generando archivo ZIP...'
-    $distParent = Split-Path $distDir -Parent
-    $distFolder = Split-Path $distDir -Leaf
-    Push-Location $distParent
-    try {
-        Compress-Archive -Path $distFolder -DestinationPath $zipPath -Force
-    } finally {
-        Pop-Location
+    $zipOk = Compress-DirectoryWithRetry -SourceDir $distDir -ZipPath $zipPath
+    if (-not $zipOk) {
+        Write-Warning "No se pudo generar el ZIP tras reintentos. Se continúa con el instalador si hay Inno Setup."
     }
 
     $installerPath = $null
@@ -313,7 +359,11 @@ try {
     Write-Host ''
     Write-Host 'Artefactos generados:'
     Write-Host "  Ejecutable onedir: $distDir"
-    Write-Host "  Paquete ZIP:      $zipPath"
+    if (Test-Path -LiteralPath $zipPath) {
+        Write-Host "  Paquete ZIP:      $zipPath"
+    } else {
+        Write-Warning "  Paquete ZIP no generado. Revisa los mensajes anteriores."
+    }
     if ($installerPath) {
         Write-Host "  Instalador:       $installerPath"
     }

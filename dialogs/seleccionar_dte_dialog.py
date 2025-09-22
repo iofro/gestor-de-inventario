@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Iterable, List
+from typing import Iterable
 
 from PyQt5.QtCore import QDate, QTimer, Qt
 from PyQt5.QtWidgets import (
@@ -55,7 +55,12 @@ class SeleccionarDteDialog(QDialog):
         self.tipo_dte = str(tipo_dte).zfill(2) if tipo_dte else None
         self.ambiente = anulacion.normalize_ambiente(ambiente)
         docs = receptor_documentos or []
-        self.receptor_documentos: List[str] = [str(doc) for doc in docs if doc]
+        normalizados: list[str] = []
+        for raw in docs:
+            norm = anulacion._normalize_documento_id(raw)
+            if norm and norm not in normalizados:
+                normalizados.append(norm)
+        self.receptor_documentos = normalizados
         self.exclude_uuid = (exclude_uuid or "").strip().upper()
         self.candidates: list[dict] = []
         self.selected_uuid: str | None = None
@@ -96,8 +101,16 @@ class SeleccionarDteDialog(QDialog):
 
         self.mismo_receptor_cb = QCheckBox("Mismo receptor")
         tiene_docs = bool(self.receptor_documentos)
-        self.mismo_receptor_cb.setChecked(tiene_docs)
+        self.mismo_receptor_cb.setChecked(False)
         self.mismo_receptor_cb.setEnabled(tiene_docs)
+        if tiene_docs:
+            self.mismo_receptor_cb.setToolTip(
+                "Restringe los resultados al receptor del documento original."
+            )
+        else:
+            self.mismo_receptor_cb.setToolTip(
+                "No hay identificadores de receptor para filtrar."
+            )
         filters_layout.addWidget(self.mismo_receptor_cb)
 
         self.filtrar_fecha_cb = QCheckBox("Filtrar por fecha")

@@ -165,11 +165,11 @@ try {
 
     $distDir = Join-Path $repoRoot 'dist/VertexDTE'
     if (-not (Test-Path $distDir)) {
-        throw "No se encontró la carpeta generada por PyInstaller (`"$distDir"`)."
+        throw "No se encontró la carpeta generada por PyInstaller (`"$distDir`")."
     }
 
     if (-not (Test-Path $bundleSignerPath)) {
-        throw "El bundle no contiene la carpeta del firmador esperada (`"$bundleSignerPath"`)."
+        throw "El bundle no contiene la carpeta del firmador esperada (`"$bundleSignerPath`")."
     }
 
     $bundledFiles = Get-ChildItem -Path $bundleSignerPath -Recurse -File -Force -ErrorAction SilentlyContinue

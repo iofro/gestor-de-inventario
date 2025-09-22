@@ -5,20 +5,29 @@ from datetime import datetime
 from pathlib import Path
 
 from dte import _map_departamento, _map_municipio, _build_receptor_direccion
+from paths import (
+    FACTURAS_CONSUMIDOR_FINAL_DIR,
+    FACTURAS_CREDITO_FISCAL_DIR,
+    TICKETS_OUTPUT_DIR,
+    NOTAS_DEBITO_DIR,
+    NOTAS_CREDITO_DIR,
+    NOTAS_REMISION_DIR,
+    user_data_path,
+)
+from utils import resource_path
 
-# Base path is repository root two levels up from this file
-BASE_DIR = os.path.dirname(os.path.dirname(__file__))
+BASE_DIR = user_data_path()
 
 FOLDERS = {
-    'ConsumidorFinal': os.path.join(BASE_DIR, 'facturas_consumidor_final'),
-    'CreditoFiscal': os.path.join(BASE_DIR, 'facturas_credito_fiscal'),
-    'Ticket': os.path.join(BASE_DIR, 'tickets'),
-    'NotaDebito': os.path.join(BASE_DIR, 'notas_debito'),
-    'NotaCredito': os.path.join(BASE_DIR, 'notas_credito'),
-    'NotaRemision': os.path.join(BASE_DIR, 'notas_remision'),
+    'ConsumidorFinal': Path(FACTURAS_CONSUMIDOR_FINAL_DIR),
+    'CreditoFiscal': Path(FACTURAS_CREDITO_FISCAL_DIR),
+    'Ticket': Path(TICKETS_OUTPUT_DIR),
+    'NotaDebito': Path(NOTAS_DEBITO_DIR),
+    'NotaCredito': Path(NOTAS_CREDITO_DIR),
+    'NotaRemision': Path(NOTAS_REMISION_DIR),
 }
 
-TEMPLATE_PATH = os.path.join(BASE_DIR, 'formato_factura.json')
+TEMPLATE_PATH = resource_path('formato_factura.json')
 
 
 def sanitize_filename(value: str) -> str:
@@ -46,23 +55,24 @@ def generate_document_name(date, cliente, identifier, doc_type) -> str:
 
 def get_document_paths(date, cliente, identifier, doc_type, root=None):
     """Return PDF and JSON paths for the given document."""
-    base = root or BASE_DIR
+
     folder = FOLDERS.get(doc_type)
+    if folder is None:
+        folder = Path(BASE_DIR) / sanitize_filename(doc_type or "documentos")
     if root:
-        # when custom root is provided, mirror folder names inside it
-        name = os.path.basename(folder)
-        folder = os.path.join(root, name)
-    os.makedirs(folder, exist_ok=True)
+        root_path = Path(root)
+        folder = root_path / folder.name
+    folder.mkdir(parents=True, exist_ok=True)
     base_name = generate_document_name(date, cliente, identifier, doc_type)
-    pdf_path = os.path.join(folder, base_name + '.pdf')
-    json_path = os.path.join(folder, base_name + '.json')
-    return pdf_path, json_path
+    pdf_path = folder / f"{base_name}.pdf"
+    json_path = folder / f"{base_name}.json"
+    return str(pdf_path), str(json_path)
 
 
 def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
     """Return paths ensuring MH-required naming for DTE notes."""
-    base = Path(root or BASE_DIR)
-    folder = Path(FOLDERS.get(doc_type))
+    base = Path(root) if root else Path(BASE_DIR)
+    folder = Path(FOLDERS.get(doc_type, base))
     if root:
         folder = base / folder.name
     folder.mkdir(parents=True, exist_ok=True)
@@ -86,8 +96,9 @@ def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
 
 def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
     """Create an invoice JSON following the template structure."""
+    template = Path(template_path)
     try:
-        with open(template_path, 'r', encoding='utf-8') as fh:
+        with template.open('r', encoding='utf-8') as fh:
             data = json.load(fh)
     except FileNotFoundError:
         data = {
@@ -191,22 +202,25 @@ def build_invoice_json(venta, cliente, detalles, template_path=TEMPLATE_PATH):
 
 def list_documents(root=None):
     """Return a list of paired PDF/JSON documents found in folders."""
-    base = root or BASE_DIR
-    result = []
+    base = Path(root) if root else Path(BASE_DIR)
+    result: list[dict[str, str]] = []
     for doc_type, folder in FOLDERS.items():
+        current = Path(folder)
         if root:
-            folder = os.path.join(base, os.path.basename(folder))
-        if not os.path.isdir(folder):
+            current = base / current.name
+        if not current.is_dir():
             continue
-        pairs = {}
-        for fname in os.listdir(folder):
-            base_name, ext = os.path.splitext(fname)
-            path = os.path.join(folder, fname)
-            if ext.lower() == '.pdf':
-                pairs.setdefault(base_name, {})['pdf'] = path
-            elif ext.lower() == '.json':
-                pairs.setdefault(base_name, {})['json'] = path
-        for name, paths in pairs.items():
+        pairs: dict[str, dict[str, str]] = {}
+        for path in current.iterdir():
+            if not path.is_file():
+                continue
+            stem = path.stem
+            suffix = path.suffix.lower()
+            if suffix == '.pdf':
+                pairs.setdefault(stem, {})['pdf'] = str(path)
+            elif suffix == '.json':
+                pairs.setdefault(stem, {})['json'] = str(path)
+        for paths in pairs.values():
             if 'pdf' in paths and 'json' in paths:
                 result.append({'tipo': doc_type, 'pdf': paths['pdf'], 'json': paths['json']})
     return result

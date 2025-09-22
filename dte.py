@@ -14,6 +14,7 @@ from typing import Any
 from urllib.parse import urlparse
 from db import DB
 import requests
+from configparser import ConfigParser
 from utils import jws
 from utils import versioned_dte
 from utils.stable_json import stable_stringify, save_file, hash_json
@@ -40,6 +41,7 @@ from num2words import num2words
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
+from utils import resource_path
 
 FISCAL_TOTAL_FIELDS = {
     "sumas",
@@ -57,19 +59,28 @@ FISCAL_TOTAL_FIELDS = {
 }
 from pathlib import Path
 import jsonpatch
-from paths import DATOS_NEGOCIO_PATH
+from paths import (
+    DATOS_NEGOCIO_PATH,
+    CONFIG_NEGOCIO_PATH,
+    DTES_DIR,
+    DTE_FALLIDOS_DIR,
+    DTES_PENDIENTES_DIR,
+)
 from xml.etree.ElementTree import Element, SubElement
 
-APP_VERSION = "1.0.0"  # editable a futuro
+try:
+    _version_cfg = ConfigParser()
+    _version_cfg.read(resource_path("VERSION"), encoding="utf-8")
+    APP_VERSION = _version_cfg.get("VertexDTE", "version", fallback="1.0.0").strip()
+except Exception:  # pragma: no cover - fallback when VERSION is missing
+    APP_VERSION = "1.0.0"
 
 logger = logging.getLogger(__name__)
-
-CONFIG_NEGOCIO_PATH = os.path.join(os.path.dirname(__file__), "config_negocio.json")
 DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 DEFAULT_EVENTO_URL = "https://apitest.dtes.mh.gob.sv/fesv/contingencia"
-PATCHES_DIR = Path(__file__).resolve().parent / "schema_patches"
+PATCHES_DIR = resource_path("schema_patches")
 
-SCHEMAS_DIR = Path(__file__).resolve().parent / "svfe-json-schemas"
+SCHEMAS_DIR = resource_path("svfe-json-schemas")
 FC_SCHEMA_PATH = SCHEMAS_DIR / "fe-fc-v1.json"
 with FC_SCHEMA_PATH.open("r", encoding="utf-8") as fh:
     FC_SCHEMA = json.load(fh)
@@ -4679,10 +4690,9 @@ def _dte_base_dir(
     ident = dte_data.get("identificacion", {})
     tipo = str(ident.get("tipoDte", "")).zfill(2)
     if pendientes:
-        root = "dtes_pendientes"
+        base = DTES_PENDIENTES_DIR
     else:
-        root = "dte_fallidos" if fallido else "dtes"
-    base = os.path.join(os.path.dirname(__file__), root)
+        base = DTE_FALLIDOS_DIR if fallido else DTES_DIR
     mapping = {
         "01": "fcf",  # Factura consumidor final
         "03": "ccf",  # Comprobante de crédito fiscal
@@ -4697,9 +4707,10 @@ def _dte_base_dir(
         "15": "cd",   # Comprobante de donación
     }
     folder = mapping.get(tipo)
-    path = os.path.join(base, folder) if folder else base
-    os.makedirs(path, exist_ok=True)
-    return path
+    base_path = Path(base)
+    target = base_path / folder if folder else base_path
+    target.mkdir(parents=True, exist_ok=True)
+    return str(target)
 
 
 def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:

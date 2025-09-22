@@ -2,6 +2,7 @@
 
 from PyInstaller.utils.hooks import collect_data_files, collect_submodules
 import os
+import sys
 from pathlib import Path
 
 icon_path = 'assets/app.ico'
@@ -53,7 +54,8 @@ for file_name in [
 
 block_cipher = None
 
-repo_root = Path(__file__).resolve().parent.parent
+spec_path = Path(locals().get('__file__', sys.argv[0])).resolve()
+repo_root = spec_path.parent.parent
 main_script = repo_root / "main.py"
 
 a = Analysis(

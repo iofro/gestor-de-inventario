@@ -1,85 +1,62 @@
 # Compilación y empaquetado de Vertex DTE
 
-Este documento describe cómo construir el ejecutable de Vertex DTE con PyInstaller
-(
-modo *onedir*) y cómo generar el instalador de Windows con Inno Setup. Los pasos
-fueron probados en Windows 11 con PowerShell.
+Este documento explica cómo generar, con un único comando, tanto el directorio
+"onedir" de PyInstaller como el instalador de Windows usando Inno Setup.
 
 ## Requisitos previos
 
 * Windows 10 u 11.
 * [Python 3.11](https://www.python.org/downloads/windows/) instalado y agregado al `PATH`.
-* [Inno Setup 6](https://jrsoftware.org/isinfo.php) (para generar el instalador).
+* [Inno Setup 6](https://jrsoftware.org/isinfo.php) disponible en el `PATH` (opcional, sólo si se desea generar el instalador).
 * Permisos para ejecutar scripts de PowerShell (`Set-ExecutionPolicy -Scope Process RemoteSigned`).
 
-## Construir el ejecutable con PyInstaller
+## Flujo interactivo
 
-1. Clona el repositorio y abre una sesión de PowerShell en la raíz del proyecto.
-2. Ejecuta el script de build:
+1. Abre PowerShell en la raíz del repositorio.
+2. Ejecuta el script todo-en-uno:
 
    ```powershell
-   ./build/build.ps1
+   powershell -ExecutionPolicy Bypass -File .\build\release_interactivo.ps1
    ```
 
-   El script crea un entorno virtual, instala las dependencias y ejecuta
-   PyInstaller con la especificación `build/VertexDTE.spec`. Al finalizar se
-   valida que `dist/VertexDTE/VertexDTE.exe` se inicie correctamente.
+3. Selecciona la carpeta de salida, el archivo del firmador y confirma (o ajusta)
+   la versión que se utilizará en los artefactos.
 
-   El icono de la aplicación se reconstruye automáticamente desde un blob
-   codificado en Base64 dentro de la especificación, evitando versionar
-   binarios.
+El proceso crea:
 
-3. El ejecutable se encuentra en `dist/VertexDTE/`. Copia el directorio completo
-   para distribuirlo manualmente o continuar con el instalador.
+* `dist/VertexDTE/`: carpeta lista para ejecutar `VertexDTE.exe` en modo *onedir*.
+* `<OutputDir>\VertexDTE-<versión>-win64.zip`: copia comprimida de la carpeta anterior.
+* `<OutputDir>\VertexDTE-Setup-<versión>.exe`: instalador generado con Inno Setup (si `ISCC.exe` está disponible).
 
-> **Nota:** PyInstaller se ejecuta en modo *onedir* para reducir falsos positivos
-de antivirus y permitir inspeccionar fácilmente los archivos generados.
+El firmador seleccionado se copia dentro del paquete en `extras\firmador\` y el
+instalador genera `%APPDATA%\VertexDTE\settings.json` con la ruta instalada del
+firmador (`{app}\extras\firmador\...`).
 
-## Generar el instalador con Inno Setup
+## Flujo no interactivo
 
-1. Asegúrate de haber ejecutado previamente PyInstaller; `dist/VertexDTE/` debe
-   contener los binarios actualizados.
-2. Abre "Inno Setup Compiler" y carga `build/VertexDTE.iss`.
-3. Compila el script (`F9`). El archivo resultante `VertexDTE-Setup.exe` se
-   guarda en el directorio `build/Output/` por defecto.
-
-La versión utilizada por Inno Setup se lee automáticamente desde el archivo
-`VERSION` del proyecto, por lo que no es necesario editar el script manualmente.
-
-### Compilación silenciosa
-
-Si prefieres una compilación automatizada, puedes ejecutar en PowerShell (desde
-la raíz del repositorio):
+Para automatizar el proceso (por ejemplo en CI) ejecuta:
 
 ```powershell
-& "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /Qp build/VertexDTE.iss
+powershell -ExecutionPolicy Bypass -File .\build\release_interactivo.ps1 `
+  -NoUI -OutputDir "D:\Releases" -Signer "D:\Firmador\FirmadorMH.exe" -Version 1.4.2
 ```
 
-Ajusta la ruta de `ISCC.exe` si instalaste Inno Setup en otra ubicación.
+Los parámetros `-OutputDir` y `-Signer` son obligatorios cuando se usa `-NoUI`.
+Si omites `-Version`, se tomará el valor del archivo `VERSION` (o `1.0.0` por
+omisión).
 
-## Pruebas manuales recomendadas (VM "limpia")
+## Dónde quedan los datos de la aplicación
 
-1. Ejecuta `VertexDTE-Setup.exe` e instala en la ubicación predeterminada.
-2. Abre la aplicación desde el menú Inicio y confirma que la interfaz carga los
-   recursos (iconos, plantillas, estilos).
-3. Genera un PDF de prueba desde la pestaña correspondiente.
-4. Envía un DTE en ambiente de pruebas (puedes simular o reutilizar un token).
-5. Verifica que los archivos de configuración y los registros se creen en
-   `%APPDATA%\VertexDTE`.
-6. Comprueba que el selector de DTE lista resultados (si la base de datos está
-   disponible en esa máquina).
-7. Valida la previsualización o impresión utilizando QtPrintSupport.
+Vertex DTE guarda su configuración, registros y documentos generados en
+`%APPDATA%\VertexDTE\`. Durante la instalación se crea (o actualiza)
+`settings.json` apuntando al firmador instalado en `{app}\extras\firmador\`.
 
-## Integración continua
+## Pruebas manuales recomendadas
 
-El repositorio incluye el flujo de trabajo `.github/workflows/windows-build.yml`
-que ejecuta PyInstaller en `windows-latest`, sube el artefacto resultante y puede
-servir como base para acciones de publicación.
-
-## Consideraciones de seguridad
-
-* Windows SmartScreen y algunos antivirus pueden marcar binarios nuevos como
-  desconocidos. Distribuir el directorio completo (*onedir*) facilita la
-  inspección y reduce falsos positivos.
-* Usa certificados de firma de código si cuentas con ellos para reducir alertas
-  durante la instalación.
+1. Ejecuta `VertexDTE-Setup-<versión>.exe` e instala en la ubicación predeterminada.
+2. Comprueba que la aplicación se inicia desde el menú Inicio y que los recursos
+   (iconos, plantillas, estilos) se cargan correctamente.
+3. Genera un PDF de prueba y verifica que se guarda en la carpeta de usuario
+   (`%APPDATA%\VertexDTE`).
+4. Comprueba que el firmador quedó instalado en
+   `C:\Program Files\Vertex DTE\extras\firmador\`.

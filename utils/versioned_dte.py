@@ -6,6 +6,7 @@ import os
 from datetime import datetime
 
 from .stable_json import stable_stringify, save_file, hash_json
+from paths import DTES_DIR
 
 
 def decode_jws_payload(token: str) -> dict:
@@ -30,9 +31,7 @@ def ensure_version(dte_json: dict, base_dir: str | None = None) -> tuple[str, st
     ident = dte_json.get("identificacion", {})
     codigo = ident.get("codigoGeneracion") or "SIN-CODIGO"
     json_hash = hash_json(dte_json)
-    base_dir = os.path.abspath(
-        base_dir or os.path.join(os.path.dirname(__file__), "..", "dtes")
-    )
+    base_dir = os.path.abspath(base_dir or DTES_DIR)
     version_dir = os.path.join(base_dir, codigo)
     os.makedirs(version_dir, exist_ok=True)
     save_file(

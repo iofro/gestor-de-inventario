@@ -19,14 +19,17 @@ Este documento explica cómo generar, con un único comando, tanto el directorio
    powershell -ExecutionPolicy Bypass -File .\build\release_interactivo.ps1
    ```
 
-3. Selecciona la carpeta de salida, el archivo del firmador y confirma (o ajusta)
-   la versión que se utilizará en los artefactos.
+3. Selecciona la carpeta de salida, la carpeta raíz del firmador y confirma (o
+   ajusta) la versión que se utilizará en los artefactos.
 
 El proceso crea:
 
 * `dist/VertexDTE/`: carpeta lista para ejecutar `VertexDTE.exe` en modo *onedir*.
 * `<OutputDir>\VertexDTE-<versión>-win64.zip`: copia comprimida de la carpeta anterior.
 * `<OutputDir>\VertexDTE-Setup-<versión>.exe`: instalador generado con Inno Setup (si `ISCC.exe` está disponible).
+
+Dentro de la carpeta `extras\firmador\` del bundle se copia íntegramente la
+estructura del firmador suministrado.
 
 El firmador seleccionado se copia dentro del paquete en `extras\firmador\` y el
 instalador genera `%APPDATA%\VertexDTE\settings.json` con la ruta instalada del
@@ -38,18 +41,23 @@ Para automatizar el proceso (por ejemplo en CI) ejecuta:
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\build\release_interactivo.ps1 `
-  -NoUI -OutputDir "D:\Releases" -Signer "D:\Firmador\FirmadorMH.exe" -Version 1.4.2
+  -NoUI -OutputDir "D:\Releases" -SignerDir "D:\svfe-api-firmador" -Version 1.4.2
 ```
 
-Los parámetros `-OutputDir` y `-Signer` son obligatorios cuando se usa `-NoUI`.
+Los parámetros `-OutputDir` y `-SignerDir` son obligatorios cuando se usa `-NoUI`.
 Si omites `-Version`, se tomará el valor del archivo `VERSION` (o `1.0.0` por
 omisión).
+
+Al finalizar se generan los mismos artefactos que en el modo interactivo y se
+valida automáticamente que `dist/VertexDTE/extras/firmador/` contenga la copia
+completa del firmador proporcionado.
 
 ## Dónde quedan los datos de la aplicación
 
 Vertex DTE guarda su configuración, registros y documentos generados en
-`%APPDATA%\VertexDTE\`. Durante la instalación se crea (o actualiza)
-`settings.json` apuntando al firmador instalado en `{app}\extras\firmador\`.
+`%APPDATA%\VertexDTE\`, evitando escribir en `{app}` durante la ejecución.
+Durante la instalación se crea (o actualiza) `settings.json` apuntando al
+firmador instalado en `{app}\extras\firmador\`.
 
 ## Pruebas manuales recomendadas
 
@@ -59,4 +67,4 @@ Vertex DTE guarda su configuración, registros y documentos generados en
 3. Genera un PDF de prueba y verifica que se guarda en la carpeta de usuario
    (`%APPDATA%\VertexDTE`).
 4. Comprueba que el firmador quedó instalado en
-   `C:\Program Files\Vertex DTE\extras\firmador\`.
+   `C:\Program Files\Vertex DTE\extras\firmador\` con todos sus archivos.

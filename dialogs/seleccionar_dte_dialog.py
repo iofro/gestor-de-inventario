@@ -101,20 +101,26 @@ class SeleccionarDteDialog(QDialog):
         filters_layout.addWidget(self.mismo_receptor_cb)
 
         self.filtrar_fecha_cb = QCheckBox("Filtrar por fecha")
-        self.filtrar_fecha_cb.setChecked(True)
+        self.filtrar_fecha_cb.setChecked(False)
         filters_layout.addWidget(self.filtrar_fecha_cb)
         filters_layout.addStretch(1)
 
         filters_layout.addWidget(QLabel("Desde:"))
         self.fecha_inicio = QDateEdit()
         self.fecha_inicio.setCalendarPopup(True)
-        self.fecha_inicio.setDate(QDate.currentDate().addDays(-60))
+        self.fecha_inicio.setDisplayFormat("yyyy-MM-dd")
+        self.fecha_inicio.setSpecialValueText("")
+        self.fecha_inicio.setMinimumDate(QDate(1900, 1, 1))
+        self.fecha_inicio.setDate(self.fecha_inicio.minimumDate())
         filters_layout.addWidget(self.fecha_inicio)
 
         filters_layout.addWidget(QLabel("Hasta:"))
         self.fecha_fin = QDateEdit()
         self.fecha_fin.setCalendarPopup(True)
-        self.fecha_fin.setDate(QDate.currentDate())
+        self.fecha_fin.setDisplayFormat("yyyy-MM-dd")
+        self.fecha_fin.setSpecialValueText("")
+        self.fecha_fin.setMinimumDate(QDate(1900, 1, 1))
+        self.fecha_fin.setDate(self.fecha_fin.minimumDate())
         filters_layout.addWidget(self.fecha_fin)
         layout.addLayout(filters_layout)
 
@@ -155,6 +161,7 @@ class SeleccionarDteDialog(QDialog):
         self.fecha_inicio.dateChanged.connect(lambda *_: self._refresh())
         self.fecha_fin.dateChanged.connect(lambda *_: self._refresh())
 
+        self._fecha_filtro_configurado = False
         self._on_toggle_fecha_filter(self.filtrar_fecha_cb.isChecked(), refresh=False)
 
         if self.db is None:
@@ -173,6 +180,25 @@ class SeleccionarDteDialog(QDialog):
     def _on_toggle_fecha_filter(self, enabled: bool, *, refresh: bool = True) -> None:
         self.fecha_inicio.setEnabled(enabled)
         self.fecha_fin.setEnabled(enabled)
+        if enabled:
+            if not self._fecha_filtro_configurado:
+                self._fecha_filtro_configurado = True
+                inicio = QDate.currentDate().addDays(-60)
+                fin = QDate.currentDate()
+                self.fecha_inicio.blockSignals(True)
+                self.fecha_fin.blockSignals(True)
+                self.fecha_inicio.setDate(inicio)
+                self.fecha_fin.setDate(fin)
+                self.fecha_inicio.blockSignals(False)
+                self.fecha_fin.blockSignals(False)
+        else:
+            self._fecha_filtro_configurado = False
+            self.fecha_inicio.blockSignals(True)
+            self.fecha_fin.blockSignals(True)
+            self.fecha_inicio.setDate(self.fecha_inicio.minimumDate())
+            self.fecha_fin.setDate(self.fecha_fin.minimumDate())
+            self.fecha_inicio.blockSignals(False)
+            self.fecha_fin.blockSignals(False)
         if refresh:
             self._refresh()
 
@@ -217,8 +243,6 @@ class SeleccionarDteDialog(QDialog):
                     "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd"),
                 }
             )
-        else:
-            filtros.update({"fecha_inicio": None, "fecha_fin": None})
         try:
             self.candidates = anulacion.buscar_candidatos_reemplazo(self.db, filtros)
         except Exception:

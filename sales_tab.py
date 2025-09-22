@@ -35,10 +35,14 @@ import os
 import json
 import warnings
 from paths import DATOS_NEGOCIO_PATH
+import logging
 
 CF_DIR = os.path.join(os.path.dirname(__file__), "facturas_consumidor_final")
 CREDITO_DIR = os.path.join(os.path.dirname(__file__), "facturas_credito_fiscal")
 TICKETS_DIR = os.path.join(os.path.dirname(__file__), "tickets")
+
+logger = logging.getLogger(__name__)
+
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -560,6 +564,26 @@ class SalesTab(QWidget):
     def _generate_ticket_pdf(self, venta_id):
         return generate_ticket_pdf(self.manager, venta_id)
 
+    def _safe_generate(self, generator, venta_id, title, failure_message):
+        """Run a document generator and handle unexpected errors gracefully."""
+        try:
+            result = generator(venta_id)
+        except ValueError as exc:
+            QMessageBox.warning(self, title, str(exc))
+            return None
+        except Exception as exc:  # pragma: no cover - defensive branch
+            logger.exception("Error al generar documento para venta %s", venta_id)
+            QMessageBox.critical(
+                self,
+                title,
+                f"{failure_message}\nDetalles: {exc}",
+            )
+            return None
+        if not result:
+            QMessageBox.warning(self, title, failure_message)
+            return None
+        return result
+
     def save_invoice(self):
         """Generate and store the document for the selected sale."""
         if self.sales_table.currentRow() < 0:
@@ -576,17 +600,22 @@ class SalesTab(QWidget):
         self.email_body = self.email_body_edit.toPlainText()
         self._save_email_config()
         if self._is_ticket_sale(venta):
-            file_path = self._generate_ticket_pdf(venta_id)
             doc_type = "Ticket"
+            file_path = self._safe_generate(
+                self._generate_ticket_pdf,
+                venta_id,
+                "Guardar factura",
+                "No se pudo generar el ticket.",
+            )
         else:
-            try:
-                file_path = self._generate_invoice_pdf(venta_id)
-                doc_type = "Factura"
-            except ValueError as e:
-                QMessageBox.warning(self, "Guardar factura", str(e))
-                return
+            doc_type = "Factura"
+            file_path = self._safe_generate(
+                self._generate_invoice_pdf,
+                venta_id,
+                "Guardar factura",
+                "No se pudo generar la factura.",
+            )
         if not file_path:
-            QMessageBox.warning(self, "Guardar factura", "No se pudo generar el documento.")
             return
         QMessageBox.information(self, "Guardar factura", f"{doc_type} guardado en {file_path}")
 
@@ -598,12 +627,15 @@ class SalesTab(QWidget):
 
         row = self.sales_table.currentRow()
         venta_id = int(self.sales_table.item(row, 0).text())
-        file_path = self._generate_ticket_pdf(venta_id)
+        file_path = self._safe_generate(
+            self._generate_ticket_pdf,
+            venta_id,
+            "Ticket",
+            "No se pudo generar el ticket.",
+        )
         if file_path:
             QMessageBox.information(self, "Ticket", f"Ticket guardado en {file_path}")
-        else:
-            QMessageBox.warning(self, "Ticket", "No se pudo generar el ticket.")
-
+        
     def preview_pdf(self):
         """Open the saved PDF for the selected sale."""
         if self.sales_table.currentRow() < 0:
@@ -673,21 +705,42 @@ class SalesTab(QWidget):
             doc_type = "ticket"
             pdf_path = self.manager.db.get_ticket_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_ticket_pdf(venta_id)
+                pdf_path = self._safe_generate(
+                    self._generate_ticket_pdf,
+                    venta_id,
+                    "Enviar por correo",
+                    "No se pudo generar el ticket.",
+                )
         else:
             doc_type = "factura"
             pdf_path = self.manager.db.get_factura_pdf(venta_id)
             if not pdf_path or not os.path.exists(pdf_path):
-                pdf_path = self._generate_invoice_pdf(venta_id)
+                pdf_path = self._safe_generate(
+                    self._generate_invoice_pdf,
+                    venta_id,
+                    "Enviar por correo",
+                    "No se pudo generar la factura.",
+                )
         if not pdf_path or not os.path.exists(pdf_path):
-            QMessageBox.warning(self, "Enviar por correo", "No se pudo generar el documento.")
             return
         json_path = os.path.splitext(pdf_path)[0] + ".json"
         if not os.path.exists(json_path):
             if doc_type == "ticket":
-                pdf_path = self._generate_ticket_pdf(venta_id)
+                pdf_path = self._safe_generate(
+                    self._generate_ticket_pdf,
+                    venta_id,
+                    "Enviar por correo",
+                    "No se pudo generar el ticket.",
+                )
             else:
-                pdf_path = self._generate_invoice_pdf(venta_id)
+                pdf_path = self._safe_generate(
+                    self._generate_invoice_pdf,
+                    venta_id,
+                    "Enviar por correo",
+                    "No se pudo generar la factura.",
+                )
+            if not pdf_path:
+                return
             json_path = os.path.splitext(pdf_path)[0] + ".json"
             if not os.path.exists(json_path):
                 QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON firmado.")

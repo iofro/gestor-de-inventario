@@ -3,6 +3,8 @@ import os
 import json
 import warnings
 import sqlite3
+import logging
+import traceback
 
 # Swig-generated types from external libraries (e.g. PyMuPDF) may emit
 # warnings about missing ``__module__`` attributes. Since these wrappers
@@ -30,6 +32,28 @@ from paths import migrate_datos_negocio
 LAST_FILE_PATH = resource_path("ultimo_inventario.json")
 DEFAULT_INVENTORY = resource_path("inventario.json")
 
+logger = logging.getLogger(__name__)
+
+
+def handle_exception(exc_type, exc_value, exc_traceback):
+    """Mostrar un mensaje de error sin cerrar la aplicación."""
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+
+    logger.error("Unhandled exception", exc_info=(exc_type, exc_value, exc_traceback))
+    message = "".join(traceback.format_exception_only(exc_type, exc_value)).strip()
+    try:
+        QMessageBox.critical(
+            None,
+            "Error inesperado",
+            "Ocurrió un error inesperado y la aplicación continuará en ejecución.\n"
+            f"{message}",
+        )
+    except RuntimeError:
+        sys.stderr.write(f"Ocurrió un error inesperado: {message}\n")
+
+
 def cargar_ultimo_archivo():
     """Devuelve la ruta del inventario a cargar al iniciar la aplicación."""
     if os.path.exists(LAST_FILE_PATH):
@@ -49,6 +73,7 @@ def cargar_ultimo_archivo():
 if __name__ == "__main__":
     migrate_datos_negocio()
     app = QApplication(sys.argv)
+    sys.excepthook = handle_exception
     style_path = resource_path("style.qss")
     if style_path.exists():
         with open(style_path, "r", encoding="utf-8") as f:

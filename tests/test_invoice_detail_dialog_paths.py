@@ -118,6 +118,8 @@ def _make_dialog():
     dialog.venta_id = None
     dialog._pdf_path = None
     dialog._json_path = None
+    dialog._source_pdf_path = None
+    dialog._source_json_path = None
     dialog._open_button = None
     dialog.factura = {}
     return dialog
@@ -309,6 +311,45 @@ def test_open_file_location_regenerates_and_opens_canonical(tmp_path, monkeypatc
     assert opened == [str(canonical_dir)]
     assert dialog._pdf_path == str(expected_pdf)
     assert dialog._json_path == str(expected_json)
+    assert dialog._open_button.enabled is True
+
+
+def test_open_file_location_prefers_existing_original_path(tmp_path, monkeypatch):
+    dialog = _make_dialog()
+
+    class FakeButton:
+        def __init__(self):
+            self.enabled = None
+
+        def setEnabled(self, value):
+            self.enabled = value
+
+    dialog._open_button = FakeButton()
+
+    legacy_dir = tmp_path / "legacy"
+    legacy_dir.mkdir()
+    legacy_pdf = legacy_dir / "legacy.pdf"
+    legacy_pdf.write_text("legacy", encoding="utf-8")
+
+    canonical_dir = tmp_path / "canonical"
+    canonical_pdf = canonical_dir / "canonical.pdf"
+
+    dialog._source_pdf_path = str(legacy_pdf)
+    dialog._pdf_path = str(canonical_pdf)
+    dialog._json_path = None
+    dialog._source_json_path = None
+
+    opened = []
+
+    def fake_open(url):
+        opened.append(url)
+
+    monkeypatch.setattr(invoice_detail_dialog.QDesktopServices, "openUrl", fake_open)
+
+    dialog._update_open_button_state()
+    dialog._open_file_location()
+
+    assert opened == [str(legacy_dir)]
     assert dialog._open_button.enabled is True
 
 

@@ -9,6 +9,7 @@ from reportlab.lib.units import mm
 
 from utils.pdf_utils import draw_wrapped_text
 import utils.catalogos as catalogos
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
 import json
 import os
@@ -459,61 +460,66 @@ def generar_factura_electronica_pdf(
     texto_y = bloque_totales_y + bloque_totales_h - 18
     salto = 18
 
+    def _venta_monto(*keys, default=0.0):
+        for key in keys:
+            valor = venta.get(key)
+            if valor in (None, ""):
+                continue
+            if isinstance(valor, (int, float)):
+                return float(valor)
+            try:
+                return float(Decimal(str(valor)))
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+        return float(default)
+
+    total_sumas = _venta_monto("sumas", "subTotalVentas")
+    total_descuentos = _venta_monto("descuentos", "totalDescu")
+    total_iva = _venta_monto("totalIva", "iva")
+    subtotal = _venta_monto("subTotal", "subtotal", "subTotalVentas")
+    total_exentas = _venta_monto("ventas_exentas", "totalExenta")
+    total_no_sujetas = _venta_monto("ventas_no_sujetas", "totalNoSuj")
+    total_pagar = _venta_monto("total", "totalPagar", "montoTotalOperacion")
+
     c.setFont("Helvetica", 9)
-    c.drawString(x_linea + 10, texto_y, f"SUMA DE VENTAS:")
-    c.drawRightString(
-        bloque_totales_x + bloque_totales_w - 10,
-        texto_y,
-        f"{venta.get('subTotalVentas', venta.get('sumas', 0)):.2f}",
-    )
+    c.drawString(x_linea + 10, texto_y, "SUMA DE VENTAS:")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_sumas:.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "Descuentos y rebajas:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(
-        bloque_totales_x + bloque_totales_w - 10,
-        texto_y,
-        f"{venta.get('totalDescu', venta.get('descuentos', 0)):.2f}",
-    )
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_descuentos:.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "IVA 13%:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(
-        bloque_totales_x + bloque_totales_w - 10,
-        texto_y,
-        f"{venta.get('totalIva', venta.get('iva', 0)):.2f}",
-    )
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_iva:.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "Subtotal:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(
-        bloque_totales_x + bloque_totales_w - 10,
-        texto_y,
-        f"{venta.get('subTotal', venta.get('subtotal', 0)):.2f}",
-    )
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{subtotal:.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "Exentas:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('ventas_exentas', 0):.2f}")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_exentas:.2f}")
 
     texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "No sujetas:")
     c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('ventas_no_sujetas', 0):.2f}")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_no_sujetas:.2f}")
 
     texto_y -= salto + 10  # Más espacio antes de "Total a pagar"
     c.setFont("Helvetica-Bold", 10)
     c.drawString(x_linea + 10, texto_y, "Total a pagar:")
     c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{venta.get('total', 0):.2f}")
+    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_pagar:.2f}")
 
     # --- Valor en letras (columna izquierda del cuadro, texto más grande y solo el label en negrita) ---
     c.setFont("Helvetica-Bold", 11)

@@ -1,9 +1,12 @@
 import os
+import re
+import shutil
 import sqlite3
 from datetime import datetime
 import json
 import logging
 import threading
+import unicodedata
 from pathlib import Path
 from decimal import Decimal
 from typing import Any
@@ -11,10 +14,69 @@ from typing import Any
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
-from paths import user_data_path
+from paths import get_canonical_dte_dir, user_data_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+_CODE_TO_CANONICAL = {
+    "01": "ConsumidorFinal",
+    "1": "ConsumidorFinal",
+    "cf": "ConsumidorFinal",
+    "consumidorfinal": "ConsumidorFinal",
+    "consumidor final": "ConsumidorFinal",
+    "factura consumidor final": "ConsumidorFinal",
+    "03": "CreditoFiscal",
+    "3": "CreditoFiscal",
+    "ccf": "CreditoFiscal",
+    "credito fiscal": "CreditoFiscal",
+    "credito fiscal electronico": "CreditoFiscal",
+    "crédito fiscal": "CreditoFiscal",
+    "factura credito fiscal": "CreditoFiscal",
+    "04": "NotaRemision",
+    "4": "NotaRemision",
+    "nota remision": "NotaRemision",
+    "nota de remision": "NotaRemision",
+    "nota de remisión": "NotaRemision",
+    "05": "NotaCredito",
+    "5": "NotaCredito",
+    "nota credito": "NotaCredito",
+    "nota de credito": "NotaCredito",
+    "nota de crédito": "NotaCredito",
+    "nc": "NotaCredito",
+    "06": "NotaDebito",
+    "6": "NotaDebito",
+    "nota debito": "NotaDebito",
+    "nota de debito": "NotaDebito",
+    "nota de débito": "NotaDebito",
+    "nd": "NotaDebito",
+}
+
+_PATH_HINTS = {
+    "facturas_consumidor_final": "ConsumidorFinal",
+    "consumidor_final": "ConsumidorFinal",
+    "consumidorfinal": "ConsumidorFinal",
+    "facturas_credito_fiscal": "CreditoFiscal",
+    "credito_fiscal": "CreditoFiscal",
+    "creditofiscal": "CreditoFiscal",
+    "notas_credito": "NotaCredito",
+    "nota_credito": "NotaCredito",
+    "notacredito": "NotaCredito",
+    "notas_debito": "NotaDebito",
+    "nota_debito": "NotaDebito",
+    "notadebito": "NotaDebito",
+    "notas_remision": "NotaRemision",
+    "nota_remision": "NotaRemision",
+    "notaremision": "NotaRemision",
+}
+
+_CANONICAL_TYPES = {
+    "ConsumidorFinal",
+    "CreditoFiscal",
+    "NotaCredito",
+    "NotaDebito",
+    "NotaRemision",
+}
 
 class DB:
     def __init__(self, db_name: str | Path | None = None):
@@ -44,6 +106,184 @@ class DB:
             self.backfill_ventas_extra()
         except Exception:
             logger.exception("No se pudo ejecutar el backfill de ventas.extra")
+
+        try:
+            self.migrate_facturas_pdf_paths()
+        except Exception:
+            logger.exception(
+                "No se pudo migrar las rutas de facturas a la ubicación canónica"
+            )
+
+    @staticmethod
+    def _paths_equal(first: os.PathLike | str | None, second: os.PathLike | str | None) -> bool:
+        if first is None or second is None:
+            return False
+        try:
+            return os.path.abspath(os.fspath(first)) == os.path.abspath(os.fspath(second))
+        except (TypeError, ValueError, OSError):  # pragma: no cover - defensive
+            return False
+
+    @staticmethod
+    def _simplify_label(value: os.PathLike | str | None) -> str | None:
+        if value is None:
+            return None
+        try:
+            text = os.fspath(value)
+        except TypeError:
+            return None
+        text = text.strip()
+        if not text:
+            return None
+        if text in _CANONICAL_TYPES:
+            return text
+        lowered = text.lower()
+        for canonical in _CANONICAL_TYPES:
+            if lowered == canonical.lower():
+                return canonical
+        normalized = unicodedata.normalize("NFKD", text)
+        cleaned = []
+        for char in normalized:
+            if unicodedata.combining(char):
+                continue
+            if char.isalnum():
+                cleaned.append(char.lower())
+            else:
+                cleaned.append(" ")
+        simplified = re.sub(r"\s+", " ", "".join(cleaned)).strip()
+        if not simplified:
+            return None
+        mapped = _CODE_TO_CANONICAL.get(simplified)
+        if mapped:
+            return mapped
+        if simplified.isdigit():
+            mapped = _CODE_TO_CANONICAL.get(simplified.zfill(2))
+            if mapped:
+                return mapped
+        if "nota" in simplified and "credito" in simplified:
+            return "NotaCredito"
+        if "nota" in simplified and "debito" in simplified:
+            return "NotaDebito"
+        if "nota" in simplified and "remision" in simplified:
+            return "NotaRemision"
+        if "credito" in simplified:
+            return "CreditoFiscal"
+        if "consumidor" in simplified:
+            return "ConsumidorFinal"
+        return None
+
+    def _guess_doc_type(self, tipo: os.PathLike | str | None, ruta: os.PathLike | str | None) -> str | None:
+        canonical = self._simplify_label(tipo)
+        if canonical:
+            return canonical
+        if ruta:
+            try:
+                ruta_text = os.fspath(ruta).lower()
+            except TypeError:
+                ruta_text = ""
+            for hint, mapped in _PATH_HINTS.items():
+                if hint in ruta_text:
+                    return mapped
+        return None
+
+    def _find_json_sidecar(self, pdf_path: Path | None) -> Path | None:
+        if not pdf_path:
+            return None
+        stem = pdf_path.stem
+        parent = pdf_path.parent
+        for suffix in (".json", ".JSON", ".Json", ".JsON"):
+            candidate = parent / f"{stem}{suffix}"
+            if candidate.exists():
+                return candidate
+        return None
+
+    def _sync_invoice_json(self, original_pdf: Path | None, dest_pdf: Path) -> None:
+        json_source = None
+        for candidate in (original_pdf, dest_pdf):
+            sidecar = self._find_json_sidecar(candidate)
+            if sidecar:
+                json_source = sidecar
+                break
+        if not json_source:
+            return
+        dest_json = dest_pdf.with_suffix(".json")
+        if self._paths_equal(json_source, dest_json):
+            return
+        try:
+            dest_json.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(json_source, dest_json)
+        except Exception:
+            logger.warning(
+                "No se pudo copiar JSON asociado a la factura: %s",
+                dest_json,
+                exc_info=True,
+            )
+
+    def _ensure_invoice_files(self, source_path: Path | None, dest_path: Path) -> bool:
+        dest_path = Path(dest_path)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        source_exists = source_path.exists() if source_path else False
+        dest_exists = dest_path.exists()
+        if source_exists and not self._paths_equal(source_path, dest_path):
+            try:
+                shutil.copy2(source_path, dest_path)
+                dest_exists = True
+            except Exception:
+                logger.warning(
+                    "No se pudo copiar PDF a ubicación canónica: %s",
+                    dest_path,
+                    exc_info=True,
+                )
+        elif not source_exists and not dest_exists:
+            return False
+
+        self._sync_invoice_json(source_path if source_path else None, dest_path)
+        return dest_path.exists()
+
+    def _compute_invoice_destination(
+        self, tipo: os.PathLike | str | None, ruta: os.PathLike | str | None
+    ) -> Path | None:
+        canonical = self._guess_doc_type(tipo, ruta)
+        if not canonical:
+            return None
+        try:
+            filename = Path(os.fspath(ruta)).name
+        except (TypeError, ValueError, OSError):
+            return None
+        try:
+            target_dir = get_canonical_dte_dir(canonical)
+        except Exception:
+            return None
+        return target_dir / filename
+
+    def migrate_facturas_pdf_paths(self) -> None:
+        self.cursor.execute(
+            "SELECT id, venta_id, tipo, ruta FROM facturas_pdf WHERE ruta IS NOT NULL"
+        )
+        rows = self.cursor.fetchall()
+        updated = 0
+        for row in rows:
+            ruta = row["ruta"]
+            destino = self._compute_invoice_destination(row["tipo"], ruta)
+            if not destino:
+                continue
+            destino_str = os.fspath(destino)
+            if self._paths_equal(ruta, destino_str):
+                continue
+            try:
+                source_path = Path(os.fspath(ruta)) if ruta else None
+            except (TypeError, ValueError, OSError):
+                source_path = None
+            if not self._ensure_invoice_files(source_path, destino):
+                if not destino.exists():
+                    continue
+            self.cursor.execute(
+                "UPDATE facturas_pdf SET ruta=? WHERE id=?",
+                (destino_str, row["id"]),
+            )
+            updated += 1
+        if updated:
+            self.conn.commit()
+            logger.info("Rutas de facturas migradas: %s", updated)
 
     def ensure_column(self, table: str, column: str, definition: str) -> bool:
         """Ensure that a specific column exists in ``table``.
@@ -1602,10 +1842,20 @@ class DB:
 
     def add_factura_pdf(self, venta_id, tipo, ruta):
         """Guarda la ruta de un PDF generado para una venta."""
+        final_path = os.fspath(ruta)
+        destino = self._compute_invoice_destination(tipo, final_path)
+        if destino is not None:
+            try:
+                source_path = Path(final_path)
+            except (TypeError, ValueError, OSError):
+                source_path = None
+            if self._ensure_invoice_files(source_path, destino) or destino.exists():
+                final_path = os.fspath(destino)
+
         # Check if a record with the same file path already exists
         self.cursor.execute(
             "SELECT id FROM facturas_pdf WHERE ruta=?",
-            (ruta,),
+            (final_path,),
         )
         row = self.cursor.fetchone()
         if row:
@@ -1614,7 +1864,7 @@ class DB:
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.cursor.execute(
             "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, ?)",
-            (venta_id, tipo, ruta, fecha),
+            (venta_id, tipo, final_path, fecha),
         )
         self.conn.commit()
         return self.cursor.lastrowid

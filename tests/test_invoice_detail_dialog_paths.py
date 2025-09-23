@@ -118,6 +118,7 @@ def _make_dialog():
     dialog.venta_id = None
     dialog._pdf_path = None
     dialog._json_path = None
+    dialog._open_button = None
     dialog.factura = {}
     return dialog
 
@@ -309,4 +310,89 @@ def test_open_file_location_regenerates_and_opens_canonical(tmp_path, monkeypatc
     assert dialog._pdf_path == str(expected_pdf)
     assert dialog._json_path == str(expected_json)
     assert dialog._open_button.enabled is True
+
+
+def test_sync_standard_paths_updates_db_and_reuses_canonical(tmp_path, monkeypatch):
+    dialog = _make_dialog()
+    dialog.factura = {
+        "identificacion": {
+            "tipoDte": "01",
+            "numeroControl": "CTRL-002",
+            "fecEmi": "2024-08-01",
+        },
+        "receptor": {"nombre": "Cliente"},
+    }
+    dialog.venta_id = 77
+
+    custom_dir = tmp_path / "custom"
+    custom_dir.mkdir()
+    pdf_source = custom_dir / "factura.pdf"
+    json_source = custom_dir / "factura.json"
+    pdf_source.write_bytes(b"pdf")
+    json_source.write_text("{}", encoding="utf-8")
+
+    canonical_dir = tmp_path / "canonical"
+    expected_pdf = canonical_dir / "canon.pdf"
+    expected_json = canonical_dir / "canon.json"
+
+    def fake_get_document_paths(fecha, cliente, numero_control, doc_type, root=None):
+        assert doc_type == "ConsumidorFinal"
+        expected_pdf.parent.mkdir(parents=True, exist_ok=True)
+        return str(expected_pdf), str(expected_json)
+
+    monkeypatch.setattr(
+        "dialogs.invoice_detail_dialog.get_document_paths", fake_get_document_paths
+    )
+    monkeypatch.setattr(
+        "dialogs.invoice_detail_dialog.get_dte_document_paths",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call")),
+    )
+
+    class RecordingDB:
+        def __init__(self):
+            self.paths = {}
+            self.updated = []
+
+        def update_factura_pdf_path(self, venta_id, ruta):
+            self.updated.append((venta_id, ruta))
+            self.paths[venta_id] = ruta
+
+        def get_factura_pdf(self, venta_id):
+            return self.paths.get(venta_id)
+
+    db = RecordingDB()
+    db.paths[dialog.venta_id] = str(pdf_source)
+
+    class FakeParent:
+        def __init__(self, database):
+            self.manager = types.SimpleNamespace(db=database)
+
+    parent = FakeParent(db)
+
+    dialog.parent = lambda: parent
+    dialog._pdf_path = str(pdf_source)
+    dialog._json_path = str(json_source)
+
+    dialog._sync_standard_paths()
+
+    assert expected_pdf.exists()
+    assert expected_json.exists()
+    assert dialog._pdf_path == str(expected_pdf)
+    assert dialog._json_path == str(expected_json)
+    assert db.updated == [(dialog.venta_id, str(expected_pdf))]
+    assert db.get_factura_pdf(dialog.venta_id) == str(expected_pdf)
+
+    dialog2 = _make_dialog()
+    dialog2.factura = dialog.factura
+    dialog2.venta_id = dialog.venta_id
+    dialog2.parent = lambda: parent
+    dialog2._pdf_path = None
+    dialog2._json_path = None
+
+    refreshed = dialog2._refresh_invoice_files()
+
+    assert refreshed == str(expected_pdf)
+    assert dialog2._pdf_path == str(expected_pdf)
+    assert dialog2._json_path == str(expected_json)
+    assert db.updated == [(dialog.venta_id, str(expected_pdf))]
 

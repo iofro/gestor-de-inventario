@@ -49,7 +49,7 @@ from dte import (
 from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
 import nota_credito_electronica
-from utils.docs import get_document_paths, get_dte_document_paths
+from utils.docs import get_document_paths, get_dte_document_paths, write_pdf_atomically
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
@@ -2802,16 +2802,19 @@ class FacturacionTab(QWidget):
         codigo_gen = identificacion.get("codigoGeneracion")
         num_ctrl = identificacion.get("numeroControl")
         fec_emision = identificacion.get("fecEmi") or identificacion.get("fechaEmi")
-        pdf_func(
-            venta_data,
-            detalles_pdf,
-            cliente or {},
-            distribuidor or {},
-            archivo=str(pdf_path),
-            codigo_generacion=codigo_gen,
-            numero_control=num_ctrl,
-            fecha_generacion=fec_emision,
-        )
+        def _render_note_pdf(output_path):
+            pdf_func(
+                venta_data,
+                detalles_pdf,
+                cliente or {},
+                distribuidor or {},
+                archivo=str(output_path),
+                codigo_generacion=codigo_gen,
+                numero_control=num_ctrl,
+                fecha_generacion=fec_emision,
+            )
+
+        pdf_path = write_pdf_atomically(pdf_path, _render_note_pdf)
 
         # Mostrar previsualización del PDF generado
         try:

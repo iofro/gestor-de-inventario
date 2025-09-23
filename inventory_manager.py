@@ -807,7 +807,14 @@ class InventoryManager:
             self.db.conn.execute("BEGIN")
             for vcf in data.get("ventas_credito_fiscal", []):
                 extra = vcf.get("extra")
-                extra_json = json.dumps(extra) if extra is not None else None
+                if extra is None:
+                    extra_json = None
+                elif isinstance(extra, str):
+                    extra_json = extra
+                elif isinstance(extra, (dict, list)):
+                    extra_json = json.dumps(extra)
+                else:
+                    extra_json = json.dumps(extra)
                 self.db.cursor.execute(
                     """
                     INSERT INTO ventas_credito_fiscal (

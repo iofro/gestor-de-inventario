@@ -85,6 +85,50 @@ def test_values_are_rounded(tmp_path):
     assert '10.0000' in text
 
 
+def test_consumidor_final_pdf_omits_iva_column(tmp_path):
+    venta = {
+        'sumas': 5.65,
+        'descuentos': 0,
+        'subtotal': 5.65,
+        'total': 5.65,
+        'ventas_exentas': 0,
+        'ventas_no_sujetas': 0,
+        'total_letras': '',
+        'iva': 0.65,
+    }
+    detalles = [
+        {
+            'cantidad': 1,
+            'descripcion': 'Prod CF',
+            'precio_unitario': 5.65,
+            'ventas_no_sujetas': 0,
+            'ventas_exentas': 0,
+            'ventas_gravadas': 5.0,
+            'iva': 0.65,
+        }
+    ]
+    out = tmp_path / 'fact_cf.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        'Consumidor Final',
+        archivo=str(out),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=uuid.uuid4().hex[:8].upper(),
+        fecha_generacion="01/01/2024",
+        sello_recepcion='0' * 40,
+    )
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+
+    assert 'Precio Unitario IVA' not in text
+    assert 'IVA 13%' not in text
+    assert '0.65' not in text
+
+
 def test_total_letras_is_wrapped(tmp_path):
     venta = {
         'sumas': 0,

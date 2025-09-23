@@ -27,6 +27,7 @@ import dte
 logger = logging.getLogger(__name__)
 
 
+
 _DOC_TYPE_BY_CODE = {
     "01": ("ConsumidorFinal", False),
     "03": ("CreditoFiscal", False),
@@ -260,6 +261,7 @@ class InvoiceDetailDialog(QDialog):
                     refreshed = self._determine_file_path()
                     if refreshed:
                         self._update_open_button_state()
+
                         return refreshed
 
         # If the files are still missing try to regenerate them using the
@@ -281,6 +283,7 @@ class InvoiceDetailDialog(QDialog):
                 json_candidate = os.path.splitext(pdf_path)[0] + ".json"
                 if os.path.exists(json_candidate):
                     self._json_path = json_candidate
+
                 self._sync_standard_paths()
                 refreshed = self._determine_file_path()
                 if refreshed:
@@ -400,3 +403,4 @@ class InvoiceDetailDialog(QDialog):
                 fecha, cliente, numero_control, doc_name
             )
         return pdf_path, json_path
+

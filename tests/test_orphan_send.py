@@ -128,3 +128,53 @@ def test_send_orphan_invoice(monkeypatch, qt_app, tmp_path):
     tab.send_selected_invoice()
     assert json_path in map(Path, sent["attachments"])
     assert called["path"] == str(json_path)
+
+
+def test_send_orphan_invoice_warns_with_token_detail(monkeypatch, qt_app, tmp_path):
+    pdf_path = tmp_path / "20240101_Test_ConsumidorFinal.pdf"
+    pdf_path.write_text("PDF")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+
+    db = DB(":memory:")
+    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(tmp_path))
+    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "cf"))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+
+    tab = facturacion_tab.FacturacionTab(man)
+    tab.table.selectRow(0)
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+        def setChecked(self, value):
+            self._checked = value
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = {}
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    def fake_warning(parent, title, message):
+        warnings["msg"] = message
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+
+    def fake_transmit(db_, path):
+        return {"http_status": 401, "detalle": "Credenciales revocadas"}
+
+    monkeypatch.setattr(facturacion_tab.dte, "transmitir_dte_orphan", fake_transmit)
+
+    tab.send_selected_invoice()
+    assert warnings["msg"] == "Credenciales revocadas"

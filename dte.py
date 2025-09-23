@@ -5037,10 +5037,27 @@ def _post_dte(
         data = None
 
     if resp.status_code in {401, 403}:
+        detalle: Any
+        if isinstance(data, dict):
+            detalle = data.get("detalle") or data
+        elif data is not None:
+            detalle = data
+        else:
+            detalle = text
+
+        detalle_val = detalle
+        if isinstance(detalle_val, str):
+            detalle_val = detalle_val.strip() or None
+        elif isinstance(detalle_val, dict) and not detalle_val:
+            detalle_val = None
+
+        if detalle_val in (None, ""):
+            detalle_val = "Token inválido o caducado"
+
         result = {
             "estado": "Rechazado",
-            "http_status": 401,
-            "detalle": "Token inválido o caducado",
+            "http_status": resp.status_code,
+            "detalle": detalle_val,
         }
         print(json.dumps(result, ensure_ascii=False))
         return result

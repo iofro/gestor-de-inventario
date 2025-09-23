@@ -91,12 +91,21 @@ def sign_json(
     tipo_dte: str | None = None,
 ) -> str:
     """Sign ``payload`` using the external ``svfe-api-firmador`` service."""
+    print("SIGN: START")
     if nit is None or passwordPri is None:
         nit, passwordPri, activo = _load_config()
     if not nit:
         raise RuntimeError("NIT del certificado no configurado")
     _ensure_cert_file(nit)
     url = url or _get_sign_url()
+    print(
+        "SIGN: CERT?",
+        bool(nit),
+        "KEY?",
+        bool(passwordPri),
+        "REMOTE_SIGNER?",
+        url is not None,
+    )
 
     if isinstance(payload, str):
         payload_str = payload
@@ -137,11 +146,14 @@ def sign_json(
             logger.debug("Respuesta del firmador %s: %s", status_code, resp_text)
         response.raise_for_status()
     except requests.Timeout as exc:
+        print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
         raise RuntimeError("Tiempo de espera agotado al firmar") from exc
     except requests.HTTPError as exc:
+        print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
         status = exc.response.status_code
         raise RuntimeError(f"Error HTTP {status} al firmar: {exc.response.text}") from exc
     except requests.RequestException as exc:
+        print("SIGN: ERROR", type(exc).__name__, str(exc)[:200])
         raise RuntimeError(f"Error al firmar: {exc}") from exc
 
     data = response.json()

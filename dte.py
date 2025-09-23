@@ -4626,6 +4626,7 @@ def _load_dte_api_config():
     datos = _load_datos_negocio()
     dte_api = datos.get("dte_api") or {}
     raw_datos_url = dte_api.get("url") or dte_api.get("endpoint")
+    token = dte_api.get("token")
 
     def _norm(amb):
         amb = "" if amb is None else str(amb).strip().lower()
@@ -4662,6 +4663,8 @@ def _load_dte_api_config():
     )
     url = _normalize_recepcion_url(raw_datos_url or raw_cfg_url)
     logger.info("Recepción configurada → %s", url)
+    print("CFG: AMB=", ambiente, "URL=", url)
+    print("CFG: HAS_MANUAL_TOKEN=", bool(token))
     return {"ambiente": ambiente, "url": url}
 
 
@@ -4991,6 +4994,7 @@ def _post_dte(
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
+    print("HTTP: POST_ENTER")
     token = token or ""
     if token:
         logger.debug("Token: %s...%s", token[:5], token[-5:])
@@ -5505,6 +5509,7 @@ def _enviar_documento(
 
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
+    print("DTE: START_enviar_documento", "modo=", modo)
     SUCCESS_STATES = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
     if doc_id is not None:
         row = db.cursor.execute(
@@ -5516,6 +5521,7 @@ def _enviar_documento(
             (doc_id, *SUCCESS_STATES),
         ).fetchone()
         if row:
+            print("DTE: ALREADY_SENT_GUARD", row[0] if row else None)
             raise ValueError("DTE ya enviado")
 
     config = _load_dte_api_config()
@@ -5537,7 +5543,9 @@ def _enviar_documento(
         data["identificacion"] = ident
     elif "identificador" in data:
         data["identificador"] = ident
+    manual_token = False
     token = auth.get_token()
+    print("AUTH: USING", "MANUAL" if manual_token else "AUTO")
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
     if auth_host and recep_host != auth_host:
@@ -5548,15 +5556,19 @@ def _enviar_documento(
         )
     try:
         resumen = data.get("resumen", {})
+        print("DTE: VALIDATE_IN", list((resumen or {}).keys()))
         condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
         resumen["condicionOperacion"] = condicion
         validate_pagos_basico(resumen, condicion)
         data["resumen"] = resumen
+        print("DTE: VALIDATE_OK")
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
 
+    print("DTE: BEFORE_SIGN")
     signed = jws_token or jws.sign_json(data)
+    print("DTE: SIGNED_OK")
 
     if modo == "contingencia":
         try:
@@ -5591,6 +5603,7 @@ def _enviar_documento(
     meta["codigoGeneracion"] = p_cod
 
     try:
+        print("DTE: BEFORE_POST")
         respuesta = _post_dte(url, token, signed, meta)
         sello = (
             respuesta.get("sello")

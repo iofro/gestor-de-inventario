@@ -56,3 +56,53 @@ def test_import_inventory_clears_related_tables(tmp_path):
     for table in ["pagos", "facturas_pdf", "tickets_pdf", "ventas", "clientes"]:
         db.cursor.execute(f"SELECT COUNT(*) FROM {table}")
         assert db.cursor.fetchone()[0] == 0
+
+
+def test_import_inventory_preserves_vcf_extra_string(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
+    db = manager.db
+
+    cliente_id = db.add_cliente(
+        "Cliente",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+    )
+
+    extra_payload = {"foo": "bar", "nested": {"value": 1}}
+    db.add_venta_credito_fiscal(
+        cliente_id=cliente_id,
+        fecha="2024-01-01",
+        total=10,
+        nrc="123456-7",
+        nit="06141407100012",
+        giro="Giro",
+        extra=extra_payload,
+    )
+
+    manager.refresh_data()
+
+    export_path = tmp_path / "inventario_export.json"
+    manager.exportar_inventario_json(str(export_path))
+    original_data = json.loads(export_path.read_text())
+    assert len(original_data["ventas_credito_fiscal"]) == 1
+    original_extra = original_data["ventas_credito_fiscal"][0]["extra"]
+
+    assert isinstance(original_extra, str)
+
+    manager.importar_inventario_json(str(export_path))
+
+    reexport_path = tmp_path / "inventario_reexport.json"
+    manager.exportar_inventario_json(str(reexport_path))
+    reexport_data = json.loads(reexport_path.read_text())
+    assert len(reexport_data["ventas_credito_fiscal"]) == 1
+    reexport_extra = reexport_data["ventas_credito_fiscal"][0]["extra"]
+
+    assert isinstance(reexport_extra, str)
+    assert reexport_extra == original_extra

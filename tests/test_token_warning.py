@@ -30,7 +30,17 @@ def _create_sale(db):
 
 def _make_tab(db, cid):
     man = SimpleNamespace(db=db, _clientes=[{"id": cid, "nombre": "C", "email": "c@x.com"}], _Distribuidores=[])
-    tab = facturacion_tab.FacturacionTab(man)
+    original_get = facturacion_tab.FacturacionTab._get_invoices_from_db
+    original_load = facturacion_tab.FacturacionTab.load_invoices
+    try:
+        facturacion_tab.FacturacionTab._get_invoices_from_db = lambda self: []
+        facturacion_tab.FacturacionTab.load_invoices = lambda self: None
+        tab = facturacion_tab.FacturacionTab(man)
+    finally:
+        facturacion_tab.FacturacionTab._get_invoices_from_db = original_get
+        facturacion_tab.FacturacionTab.load_invoices = original_load
+    if tab.table.rowCount() == 0:
+        tab.table.setRowCount(1)
     tab.table.selectRow(0)
     return tab
 
@@ -248,3 +258,71 @@ def test_send_selected_invoice_warns_on_exception(monkeypatch, qt_app, tmp_path)
 
     tab.send_selected_invoice()
     assert "token" in warnings["msg"].lower()
+
+
+def test_send_selected_invoice_cert_access(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, v):
+            self._checked = v
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = {}
+    criticals = {}
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: warnings.setdefault("msg", a[2]))
+
+    def fake_critical(parent, title, message):
+        criticals["title"] = title
+        criticals["message"] = message
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", fake_critical)
+
+    def fake_transmitir(db_, vid, tipo_dte="01"):
+        raise RuntimeError("CERT_ACCESS")
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    tab.send_selected_invoice()
+
+    assert criticals == {
+        "title": "Firma",
+        "message": "Error de firma: no se pudo acceder al certificado.",
+    }
+    assert "msg" not in warnings

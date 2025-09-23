@@ -27,8 +27,9 @@ from PyQt5.QtWidgets import (
     QAction,
     QFormLayout,
 )
-from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
-from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor
+from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize, QRectF
+from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage, QPainter
+from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 import os
 import re
 import logging
@@ -882,6 +883,7 @@ class FacturacionTab(QWidget):
         self.btn_remision.clicked.connect(self.abrir_dialogo_nota_remision)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
+        self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
@@ -890,6 +892,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_nota)
         btns.addWidget(self.btn_remision)
         btns.addWidget(self.btn_enviar)
+        btns.addWidget(self.btn_imprimir)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
         btns.addStretch(1)
@@ -922,6 +925,7 @@ class FacturacionTab(QWidget):
         self.table.itemDoubleClicked.connect(self.mostrar_detalle_factura)
 
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
+        self.btn_imprimir.clicked.connect(self.print_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_invoice)
 
@@ -1997,11 +2001,9 @@ class FacturacionTab(QWidget):
                         self, "Enviar a Hacienda", str(exc)
                     )
 
-    def open_pdf(self):
-        entry = self._selected_entry()
+    def _resolve_pdf_path(self, entry: dict | None) -> str | None:
         if not entry:
-            QMessageBox.warning(self, "Abrir PDF", "No se ha seleccionado ninguna factura.")
-            return
+            return None
 
         pdf_path = None
         rtype = entry.get("row_type")
@@ -2019,9 +2021,99 @@ class FacturacionTab(QWidget):
             pdf_path = entry.get("pdf")
 
         if pdf_path and os.path.exists(pdf_path):
+            return pdf_path
+        return None
+
+    def open_pdf(self):
+        entry = self._selected_entry()
+        if not entry:
+            QMessageBox.warning(self, "Abrir PDF", "No se ha seleccionado ninguna factura.")
+            return
+
+        pdf_path = self._resolve_pdf_path(entry)
+
+        if pdf_path:
             QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
         else:
             QMessageBox.warning(self, "Abrir PDF", "No se encontró el archivo PDF.")
+
+    def print_invoice(self):
+        entry = self._selected_entry()
+        if not entry:
+            QMessageBox.warning(self, "Imprimir", "No se ha seleccionado ninguna factura.")
+            return
+
+        pdf_path = self._resolve_pdf_path(entry)
+        if not pdf_path:
+            QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
+            return
+
+        try:
+            import fitz
+        except ImportError:
+            QMessageBox.critical(
+                self,
+                "Imprimir",
+                "La funcionalidad de impresión requiere la biblioteca PyMuPDF.",
+            )
+            return
+
+        printer = QPrinter(QPrinter.HighResolution)
+        dialog = QPrintDialog(printer, self)
+        dialog.setWindowTitle("Imprimir factura")
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        document = None
+        painter = QPainter()
+        try:
+            document = fitz.open(pdf_path)
+        except Exception as exc:
+            QMessageBox.critical(self, "Imprimir", f"No se pudo abrir el PDF: {exc}")
+            return
+
+        if not painter.begin(printer):
+            document.close()
+            QMessageBox.warning(self, "Imprimir", "No se pudo iniciar la impresión.")
+            return
+
+        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        try:
+            page_count = document.page_count
+            for index in range(page_count):
+                page = document.load_page(index)
+                zoom = max(printer.resolution(), 72) / 72
+                matrix = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                image_format = QImage.Format_RGB888
+                image = QImage(pix.samples, pix.width, pix.height, pix.stride, image_format)
+                if image.isNull():
+                    raise RuntimeError("No se pudo preparar la página para impresión.")
+
+                page_rect = printer.pageRect(QPrinter.DevicePixel)
+                scale = min(
+                    page_rect.width() / image.width(),
+                    page_rect.height() / image.height(),
+                )
+                target_width = image.width() * scale
+                target_height = image.height() * scale
+                x_offset = page_rect.x() + (page_rect.width() - target_width) / 2
+                y_offset = page_rect.y() + (page_rect.height() - target_height) / 2
+                target_rect = QRectF(
+                    x_offset,
+                    y_offset,
+                    target_width,
+                    target_height,
+                )
+                painter.drawImage(target_rect, image)
+                if index < page_count - 1:
+                    if not printer.newPage():
+                        raise RuntimeError("No se pudo crear una nueva página de impresión.")
+        except Exception as exc:
+            QMessageBox.critical(self, "Imprimir", f"Error al imprimir la factura: {exc}")
+        finally:
+            painter.end()
+            document.close()
 
     def mostrar_detalle_factura(self, item=None):
         factura = self._selected_factura()

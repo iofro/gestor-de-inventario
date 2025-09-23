@@ -1,6 +1,12 @@
 # -*- mode: python ; coding: utf-8 -*-
 
 from PyInstaller.utils.hooks import collect_submodules
+from PyInstaller.building.datastruct import Tree
+
+resource_trees = [
+    Tree('schema_patches', prefix='schema_patches'),
+    Tree('svfe-json-schemas', prefix='svfe-json-schemas'),
+]
 
 # Collect all barcode submodules so ReportLab barcodes such as Code93 and
 # Code128 are bundled with the executable.
@@ -10,7 +16,19 @@ a = Analysis(
     ['main.py'],
     pathex=[],
     binaries=[],
-    datas=[],
+    datas=[
+        ('avatar.jpg', '.'),
+        ('logoinventario.jpg', '.'),
+        ('style.qss', '.'),
+        ('inventario.json', '.'),
+        ('ultimo_inventario.json', '.'),
+        ('formato_factura.json', '.'),
+        ('datos_negocio.json', '.'),
+        ('config_negocio.json', '.'),
+        ('VERSION', '.'),
+        ('schema_patches', 'schema_patches'),
+        ('svfe-json-schemas', 'svfe-json-schemas'),
+    ],
     hiddenimports=hidden_imports,
     hookspath=[],
     hooksconfig={},
@@ -42,6 +60,7 @@ coll = COLLECT(
     exe,
     a.binaries,
     a.datas,
+    *resource_trees,
     strip=False,
     upx=True,
     upx_exclude=[],

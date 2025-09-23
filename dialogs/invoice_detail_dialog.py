@@ -1,4 +1,6 @@
 from typing import List, Dict
+import os
+
 from PyQt5.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -10,7 +12,8 @@ from PyQt5.QtWidgets import (
     QAbstractItemView,
     QMessageBox,
 )
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QUrl
+from PyQt5.QtGui import QDesktopServices
 
 from utils.catalogos import TRIBUTO_IVA
 from .anular_factura_dialog import AnularFacturaDialog
@@ -32,12 +35,16 @@ class InvoiceDetailDialog(QDialog):
         venta_id: int | None = None,
         numero_control: str | None = None,
         factura: Dict | None = None,
+        json_path: str | None = None,
+        pdf_path: str | None = None,
         parent=None,
     ):
         super().__init__(parent)
         self.venta_id = venta_id
         self.numero_control = numero_control
         self.factura = factura or {}
+        self._json_path = json_path
+        self._pdf_path = pdf_path
         self.anulacion_result = None
         self.setWindowTitle("Detalle de factura")
         layout = QVBoxLayout(self)
@@ -94,6 +101,12 @@ class InvoiceDetailDialog(QDialog):
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.button(QDialogButtonBox.Ok).setText("Cerrar")
+        open_path = self._determine_file_path()
+        if open_path:
+            open_btn = buttons.addButton(
+                "Abrir ubicación del archivo", QDialogButtonBox.ActionRole
+            )
+            open_btn.clicked.connect(self._open_file_location)
         if self.venta_id and self.numero_control:
             anular_btn = buttons.addButton(
                 "Anular factura", QDialogButtonBox.ActionRole
@@ -152,3 +165,25 @@ class InvoiceDetailDialog(QDialog):
         QMessageBox.information(self, "Anulación", res.get("estado", ""))
         self.anulacion_result = res
         self.accept()
+
+    def _determine_file_path(self) -> str | None:
+        """Return the most relevant file path for the current invoice."""
+
+        for path in (self._pdf_path, self._json_path):
+            if isinstance(path, str) and os.path.exists(path):
+                return path
+        return None
+
+    def _open_file_location(self):
+        path = self._determine_file_path()
+        if not path:
+            QMessageBox.warning(
+                self,
+                "Abrir ubicación",
+                "No se encontró un archivo asociado a la factura.",
+            )
+            return
+        directory = os.path.dirname(path)
+        if not directory:
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(directory))

@@ -1,4 +1,5 @@
 from typing import List, Dict
+import logging
 import os
 
 from PyQt5.QtWidgets import (
@@ -19,6 +20,9 @@ from utils.catalogos import TRIBUTO_IVA
 from .anular_factura_dialog import AnularFacturaDialog
 import anulacion
 import dte
+
+
+logger = logging.getLogger(__name__)
 
 
 class InvoiceDetailDialog(QDialog):
@@ -177,6 +181,8 @@ class InvoiceDetailDialog(QDialog):
     def _open_file_location(self):
         path = self._determine_file_path()
         if not path:
+            path = self._refresh_invoice_files()
+        if not path:
             QMessageBox.warning(
                 self,
                 "Abrir ubicación",
@@ -187,3 +193,51 @@ class InvoiceDetailDialog(QDialog):
         if not directory:
             return
         QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
+
+    def _refresh_invoice_files(self) -> str | None:
+        """Try to locate or regenerate the PDF/JSON for the invoice."""
+
+        parent = self.parent()
+        if parent is None:
+            return None
+
+        # First attempt to refresh paths from the database in case a new
+        # record was created after regeneration elsewhere.
+        if self.venta_id:
+            manager = getattr(parent, "manager", None)
+            db = getattr(manager, "db", None) if manager else None
+            if db is not None:
+                try:
+                    pdf_path = db.get_factura_pdf(self.venta_id)
+                except Exception:  # pragma: no cover - defensive
+                    pdf_path = None
+                if pdf_path:
+                    self._pdf_path = pdf_path
+                    json_candidate = os.path.splitext(pdf_path)[0] + ".json"
+                    if os.path.exists(json_candidate):
+                        self._json_path = json_candidate
+                    refreshed = self._determine_file_path()
+                    if refreshed:
+                        return refreshed
+
+        # If the files are still missing try to regenerate them using the
+        # parent tab helper.  This covers cases where old records were
+        # imported without their corresponding files.
+        if self.venta_id and hasattr(parent, "_generate_invoice_pdf"):
+            try:
+                pdf_path = parent._generate_invoice_pdf(self.venta_id)
+            except Exception as exc:  # pragma: no cover - UI feedback
+                logger.exception("No se pudo regenerar la factura", exc_info=True)
+                QMessageBox.warning(
+                    self,
+                    "Abrir ubicación",
+                    f"No se pudo regenerar la factura seleccionada: {exc}",
+                )
+                return None
+            if pdf_path and os.path.exists(pdf_path):
+                self._pdf_path = pdf_path
+                json_candidate = os.path.splitext(pdf_path)[0] + ".json"
+                if os.path.exists(json_candidate):
+                    self._json_path = json_candidate
+                return self._determine_file_path()
+        return None

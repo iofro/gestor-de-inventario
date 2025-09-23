@@ -45,12 +45,33 @@ def test_post_dte_token_invalid(monkeypatch):
         status_code = 401
         text = "Unauthorized"
         def json(self):
-            return {"foo": "bar"}
+            return {"detalle": "Token expirado en Hacienda"}
     monkeypatch.setattr(dte.requests, "post", lambda *a, **k: Resp())
     resp = dte._post_dte("https://apitest.dtes.mh.gob.sv/fesv/recepciondte", "tok", "doc")
     assert resp == {
         "estado": "Rechazado",
         "http_status": 401,
+        "detalle": "Token expirado en Hacienda",
+    }
+
+
+def test_post_dte_token_invalid_without_detail(monkeypatch):
+    monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda doc, data: {})
+    monkeypatch.setattr(dte, "format_cliente_id_from_dui", lambda dui: "cid")
+    monkeypatch.setattr(dte, "detect_user_agent", lambda ua, opts, app_version, client_id: "UA")
+    monkeypatch.setattr(dte, "build_auth_header", lambda auth, app_version, client_id: {})
+
+    class Resp:
+        status_code = 403
+        text = "Forbidden"
+        def json(self):
+            return {}
+
+    monkeypatch.setattr(dte.requests, "post", lambda *a, **k: Resp())
+    resp = dte._post_dte("https://apitest.dtes.mh.gob.sv/fesv/recepciondte", "tok", "doc")
+    assert resp == {
+        "estado": "Rechazado",
+        "http_status": 403,
         "detalle": "Token inválido o caducado",
     }
 
@@ -71,6 +92,59 @@ def test_request_new_token_raises_runtimeerror(monkeypatch):
 
 
 def test_send_selected_invoice_warns_on_token(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+        def setChecked(self, v):
+            self._checked = v
+        def isChecked(self):
+            return self._checked
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = {}
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    def fake_warning(parent, title, message):
+        warnings["msg"] = message
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+
+    def fake_transmitir(db_, vid, tipo_dte="01"):
+        return {"http_status": 401, "detalle": "Token rechazado por Hacienda"}
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    tab.send_selected_invoice()
+    assert warnings["msg"] == "Token rechazado por Hacienda"
+
+
+def test_send_selected_invoice_warns_on_token_generic(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
     pdf_path = tmp_path / "doc.pdf"

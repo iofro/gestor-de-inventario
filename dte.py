@@ -4638,6 +4638,7 @@ def _load_dte_api_config():
     ambiente = _norm(dte_api.get("ambiente") or datos.get("ambiente"))
 
     cfg_recep = cfg_url = cfg_endpoint = None
+    cfg_token = None
     try:
         with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             cfg = json.load(fh)
@@ -4646,6 +4647,7 @@ def _load_dte_api_config():
         cfg_recep = env.get("recepcion_url")
         cfg_url = env.get("url")
         cfg_endpoint = env.get("endpoint")
+        cfg_token = env.get("token")
     except Exception:
         pass
 
@@ -4662,7 +4664,10 @@ def _load_dte_api_config():
     )
     url = _normalize_recepcion_url(raw_datos_url or raw_cfg_url)
     logger.info("Recepción configurada → %s", url)
-    return {"ambiente": ambiente, "url": url}
+    token = dte_api.get("token") or cfg_token
+    if isinstance(token, str):
+        token = token.strip() or None
+    return {"ambiente": ambiente, "url": url, "token": token}
 
 
 def _assert_no_ejemplo(path: str) -> None:
@@ -5268,17 +5273,32 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     }
     config = _load_dte_api_config()
     url = config["url"]
-    token = auth.get_token()
-    auth_host = auth.get_last_auth_host()
+    manual_token = config.get("token")
     recep_host = urlparse(url).netloc
-    if auth_host and recep_host != auth_host:
-        logger.warning(
-            "Auth host %s ≠ recepción %s (esto es normal en prod)",
-            auth_host,
-            recep_host,
-        )
+
+    def _get_auto_token() -> str:
+        token = auth.get_token()
+        auth_host = auth.get_last_auth_host()
+        if auth_host and recep_host != auth_host:
+            logger.warning(
+                "Auth host %s ≠ recepción %s (esto es normal en prod)",
+                auth_host,
+                recep_host,
+            )
+        return token
+
+    if manual_token:
+        logger.info("Usando token manual configurado para recepción DTE")
+        token = manual_token
+    else:
+        token = _get_auto_token()
     try:
         respuesta = _post_dte(url, token, jws_token, meta)
+        if manual_token and isinstance(respuesta, dict) and respuesta.get("http_status") == 401:
+            logger.info("Token manual rechazado, solicitando autenticación automática")
+            manual_token = None
+            token = _get_auto_token()
+            respuesta = _post_dte(url, token, jws_token, meta)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")
@@ -5341,8 +5361,31 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
-    token = auth.get_token()
+    manual_token = config.get("token")
+    recep_host = urlparse(url).netloc
+
+    def _get_auto_token() -> str:
+        token = auth.get_token()
+        auth_host = auth.get_last_auth_host()
+        if auth_host and recep_host != auth_host:
+            logger.warning(
+                "Auth host %s ≠ recepción %s (esto es normal en prod)",
+                auth_host,
+                recep_host,
+            )
+        return token
+
+    if manual_token:
+        logger.info("Usando token manual configurado para recepción DTE")
+        token = manual_token
+    else:
+        token = _get_auto_token()
+
     respuesta = _post_dte(url, token, jws_token, meta)
+    if manual_token and isinstance(respuesta, dict) and respuesta.get("http_status") == 401:
+        logger.info("Token manual rechazado, solicitando autenticación automática")
+        token = _get_auto_token()
+        respuesta = _post_dte(url, token, jws_token, meta)
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -5520,15 +5563,25 @@ def _enviar_documento(
         data["identificacion"] = ident
     elif "identificador" in data:
         data["identificador"] = ident
-    token = auth.get_token()
-    auth_host = auth.get_last_auth_host()
+    manual_token = config.get("token")
     recep_host = urlparse(url).netloc
-    if auth_host and recep_host != auth_host:
-        logger.warning(
-            "Auth host %s ≠ recepción %s (esto es normal en prod)",
-            auth_host,
-            recep_host,
-        )
+
+    def _get_auto_token() -> str:
+        token = auth.get_token()
+        auth_host = auth.get_last_auth_host()
+        if auth_host and recep_host != auth_host:
+            logger.warning(
+                "Auth host %s ≠ recepción %s (esto es normal en prod)",
+                auth_host,
+                recep_host,
+            )
+        return token
+
+    if manual_token:
+        logger.info("Usando token manual configurado para recepción DTE")
+        token = manual_token
+    else:
+        token = _get_auto_token()
     try:
         resumen = data.get("resumen", {})
         condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
@@ -5575,6 +5628,11 @@ def _enviar_documento(
 
     try:
         respuesta = _post_dte(url, token, signed, meta)
+        if manual_token and isinstance(respuesta, dict) and respuesta.get("http_status") == 401:
+            logger.info("Token manual rechazado, solicitando autenticación automática")
+            manual_token = None
+            token = _get_auto_token()
+            respuesta = _post_dte(url, token, signed, meta)
         sello = (
             respuesta.get("sello")
             or respuesta.get("selloRecepcion")

@@ -8,7 +8,61 @@ import dte
 
 from db import DB
 from dte import transmitir_dte
+from svfe import config as svfe_config
 from tests.conftest import make_jws
+
+
+@pytest.fixture(autouse=True)
+def _datos_negocio_default(monkeypatch, tmp_path):
+    datos = {
+        "nombre": "ACME",
+        "nombreComercial": "ACME",
+        "nit": "0614-123456-102-3",
+        "nrc": "1234567",
+        "codActividad": "0000",
+        "descActividad": "Giro",
+        "tipoContribuyente": "Persona Jurídica",
+        "telefono": "",
+        "correo": "",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "Calle 1",
+        },
+        "dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"},
+    }
+    datos_path = tmp_path / "datos_negocio.json"
+    datos_path.write_text(json.dumps(datos))
+    config_path = tmp_path / "config_negocio.json"
+    config_path.write_text("{}")
+    monkeypatch.setattr(dte, "DATOS_NEGOCIO_PATH", str(datos_path))
+    monkeypatch.setattr(dte, "CONFIG_NEGOCIO_PATH", str(config_path))
+    monkeypatch.setattr(svfe_config, "DATOS_NEGOCIO_PATH", str(datos_path))
+
+
+def _datos_negocio(url):
+    return {
+        "nombre": "ACME",
+        "nombreComercial": "ACME",
+        "nit": "0614-123456-102-3",
+        "nrc": "1234567",
+        "codActividad": "0000",
+        "descActividad": "Giro",
+        "tipoContribuyente": "Persona Jurídica",
+        "telefono": "",
+        "correo": "",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "Calle 1",
+        },
+        "dte_api": {"url": url, "ambiente": "pruebas"},
+    }
+
+
+def _patch_datos_negocio(monkeypatch, url):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: _datos_negocio(url))
+    monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: _datos_negocio(url))
 
 
 def create_sale(db):
@@ -24,26 +78,8 @@ def create_sale(db):
 
 def test_transmision_exitosa(monkeypatch, tmp_path):
     db = DB(":memory:")
-    monkeypatch.setattr(
-        "dte._load_datos_negocio",
-        lambda: {
-            "nombre": "ACME",
-            "nombreComercial": "ACME",
-            "nit": "0614-123456-102-3",
-            "nrc": "1234567",
-            "codActividad": "0000",
-            "descActividad": "Giro",
-            "tipoContribuyente": "Persona Jurídica",
-            "telefono": "",
-            "correo": "",
-            "direccion": {
-                "departamento": "06",
-                "municipio": "23",
-                "complemento": "Calle 1",
-            },
-            "dte_api": {"url": recepcion_url, "ambiente": "pruebas"},
-        },
-    )
+    recepcion_url = dte.DEFAULT_RECEPCION_URL
+    _patch_datos_negocio(monkeypatch, recepcion_url)
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("P1", "X", None,  vid, None, 0, 0, 0, 1)
@@ -119,7 +155,6 @@ def test_transmision_exitosa(monkeypatch, tmp_path):
     )
 
     auth_url = "http://auth.test"
-    recepcion_url = dte.DEFAULT_RECEPCION_URL
     calls = []
 
     class Resp:
@@ -206,15 +241,14 @@ def test_http_error_negativo(monkeypatch, tmp_path, status):
             raise requests.HTTPError(self.text)
 
     monkeypatch.setattr("dte.requests.post", lambda *a, **k: Resp())
-    monkeypatch.setattr(
-        "dte._load_datos_negocio",
-        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
-    )
+    _patch_datos_negocio(monkeypatch, dte.DEFAULT_RECEPCION_URL)
+    monkeypatch.setattr("dte.generar_dte_json", lambda *a, **k: _make_minimal_dte())
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
-    with pytest.raises(requests.HTTPError) as excinfo:
-        transmitir_dte(db, venta)
-    assert f"error {status}" in str(excinfo.value)
+    resp = transmitir_dte(db, venta)
+    assert resp["estado"] == "Rechazado"
+    detalle_text = str(resp.get("detalle"))
+    assert detalle_text
     row = db.cursor.execute(
         "SELECT estado, count(*) c FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
@@ -243,10 +277,8 @@ def test_firma_fallida_negativo(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    monkeypatch.setattr(
-        "dte._load_datos_negocio",
-        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
-    )
+    _patch_datos_negocio(monkeypatch, dte.DEFAULT_RECEPCION_URL)
+    monkeypatch.setattr("dte.generar_dte_json", lambda *a, **k: _make_minimal_dte())
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
     with pytest.raises(RuntimeError):
@@ -312,16 +344,14 @@ def test_transmision_token_401_en_recepcion(monkeypatch, tmp_path):
     monkeypatch.setattr("dte.requests.post", fake_post)
     monkeypatch.setattr("auth.requests.post", fake_post)
 
-    monkeypatch.setattr(
-        "dte._load_datos_negocio",
-        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
-    )
+    _patch_datos_negocio(monkeypatch, dte.DEFAULT_RECEPCION_URL)
+    monkeypatch.setattr("dte.generar_dte_json", lambda *a, **k: _make_minimal_dte())
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
-    with pytest.raises(requests.HTTPError) as excinfo:
-        transmitir_dte(db, venta)
+    resp = transmitir_dte(db, venta)
 
-    assert "TOKEN_INVALIDO" in str(excinfo.value) or "401" in str(excinfo.value)
+    assert resp["estado"] == "Rechazado"
+    assert "TOKEN" in str(resp.get("detalle", "")).upper()
     assert calls["recepcion"] <= 2
     assert len(token_calls) <= 2
 
@@ -346,19 +376,17 @@ def test_timeout_no_modifica_extra(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    monkeypatch.setattr(
-        "dte._load_datos_negocio",
-        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
-    )
+    _patch_datos_negocio(monkeypatch, dte.DEFAULT_RECEPCION_URL)
+    monkeypatch.setattr("dte.generar_dte_json", lambda *a, **k: _make_minimal_dte())
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
-    with pytest.raises(requests.Timeout):
-        transmitir_dte(db, venta)
+    resp = transmitir_dte(db, venta)
+    assert resp["estado"] == "Error"
 
     row = db.cursor.execute(
         "SELECT estado, sello FROM dte_envios WHERE venta_id=?", (venta,)
     ).fetchone()
-    assert row["estado"] == "Rechazado"
+    assert row["estado"] == "Error"
     assert row["sello"] == ""
     extra = db.cursor.execute("SELECT extra FROM ventas WHERE id=?", (venta,)).fetchone()["extra"]
     assert not extra
@@ -371,14 +399,11 @@ def test_recepcion_url_host_mismatch(monkeypatch, tmp_path, caplog):
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "auth.example")
     monkeypatch.setattr("dte.validate_dte_json", lambda d, db=None: None)
-    monkeypatch.setattr(
-        "dte._load_datos_negocio",
-        lambda: {"dte_api": {"url": dte.DEFAULT_RECEPCION_URL, "ambiente": "pruebas"}},
-    )
+    _patch_datos_negocio(monkeypatch, dte.DEFAULT_RECEPCION_URL)
     monkeypatch.setattr(
         dte,
         "generar_dte_json",
-        lambda db, vid: {
+        lambda db, vid, **kwargs: {
             "identificacion": {
                 "ambiente": "00",
                 "version": "1",
@@ -399,3 +424,101 @@ def test_recepcion_url_host_mismatch(monkeypatch, tmp_path, caplog):
         transmitir_dte(db, venta)
     assert "Auth host auth.example ≠ recepción apitest.dtes.mh.gob.sv" in caplog.text
     assert called["url"].endswith("/fesv/recepciondte")
+
+
+def _make_minimal_dte():
+    return {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "00000000-0000-4000-8000-000000000123",
+            "version": 1,
+            "ambiente": "00",
+        },
+        "resumen": {
+            "totalLetras": "cero",
+            "condicionOperacion": 1,
+            "totalPagar": 0,
+            "montoTotalOperacion": 0,
+            "totalGravada": 0,
+            "totalNoSuj": 0,
+            "totalExenta": 0,
+        },
+    }
+
+
+def test_enviar_documento_prefiere_token_manual(monkeypatch):
+    db = DB(":memory:")
+    data = _make_minimal_dte()
+    manual_token = "Manual TOKEN"
+    url = dte.DEFAULT_RECEPCION_URL
+
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {"url": url, "ambiente": "pruebas", "token": manual_token},
+    )
+    monkeypatch.setattr(dte.jws, "sign_json", lambda payload: make_jws(payload))
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr(auth, "get_token", lambda: (_ for _ in ()).throw(AssertionError))
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+
+    usados = []
+
+    def fake_post(url, token, signed, meta):
+        usados.append(token)
+        return {"estado": "Transmitido", "sello": "S"}
+
+    monkeypatch.setattr(dte, "_post_dte", fake_post)
+
+    resp = dte._enviar_documento(db, None, data, modo="normal")
+
+    assert resp["estado"] == "Transmitido"
+    assert usados == [manual_token]
+
+
+def test_transmitir_orphan_fallback_a_token_auto(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    data = _make_minimal_dte()
+    json_path = tmp_path / "doc.json"
+    json_path.write_text(json.dumps(data), encoding="utf-8")
+    manual_token = "Manual TOKEN"
+    url = dte.DEFAULT_RECEPCION_URL
+
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {"url": url, "ambiente": "pruebas", "token": manual_token},
+    )
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda raw: raw)
+    monkeypatch.setattr(dte, "recalcular_totales", lambda *a, **k: None)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda *a, **k: {})
+    monkeypatch.setattr(dte.jws, "sign_json", lambda payload: make_jws(payload))
+
+    tokens = []
+    responses = [
+        {"estado": "Rechazado", "http_status": 401, "detalle": "Token inválido"},
+        {"estado": "Transmitido", "sello": "S"},
+    ]
+
+    def fake_post(url, token, signed, meta):
+        tokens.append(token)
+        return responses.pop(0)
+
+    monkeypatch.setattr(dte, "_post_dte", fake_post)
+
+    auto_tokens = iter(["Bearer AUTO"])
+
+    def fake_get_token():
+        try:
+            return next(auto_tokens)
+        except StopIteration:
+            raise AssertionError("get_token llamado más veces de lo esperado")
+
+    monkeypatch.setattr(auth, "get_token", fake_get_token)
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
+    monkeypatch.setattr("dte.generar_dte_json", lambda *a, **k: _make_minimal_dte())
+
+    resp = dte.transmitir_dte_orphan(db, str(json_path))
+
+    assert resp["estado"] == "Transmitido"
+    assert tokens == [manual_token, "Bearer AUTO"]

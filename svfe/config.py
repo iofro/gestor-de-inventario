@@ -4,6 +4,8 @@ import json
 from pathlib import Path
 from typing import Dict
 
+from utils.catalogos import CAT_MUNI44 as _CAT_MUNI44_COMPAT
+
 from paths import DATOS_NEGOCIO_PATH as _DATOS_NEGOCIO_PATH
 
 # CAT-012 Departamento (strings de 2 dígitos)
@@ -14,6 +16,10 @@ CAT012_DEPARTAMENTOS = {
 # CAT-013 Municipio (tal como lo entrega Hacienda; mantener códigos numéricos tal cual)
 CAT013_MUNICIPIOS = {
     "00","10","11","13","14","15","16","17","18","19","20","21","22","23","24","25","26","27","28","34","35","36"
+}
+
+CAT013_MUNICIPIOS_COMPAT: Dict[str, Dict[str, str]] = {
+    code: mapping.copy() for code, mapping in _CAT_MUNI44_COMPAT.items()
 }
 
 # Exposed path for monkeypatching in tests
@@ -80,5 +86,6 @@ __all__ = [
     "get_emisor_direccion",
     "CAT012_DEPARTAMENTOS",
     "CAT013_MUNICIPIOS",
+    "CAT013_MUNICIPIOS_COMPAT",
     "DATOS_NEGOCIO_PATH",
 ]

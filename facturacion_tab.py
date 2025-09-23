@@ -1869,6 +1869,39 @@ class FacturacionTab(QWidget):
                     )
         return True
 
+    @staticmethod
+    def _stringify_token_detail(detalle):
+        if isinstance(detalle, dict):
+            for key in ("descripcionMsg", "observaciones", "message", "detalle"):
+                val = detalle.get(key)
+                if isinstance(val, str) and val.strip():
+                    return val.strip()
+            if detalle:
+                try:
+                    return json.dumps(detalle, ensure_ascii=False)
+                except TypeError:
+                    return str(detalle)
+            return ""
+        if isinstance(detalle, str):
+            return detalle.strip()
+        if detalle is None:
+            return ""
+        try:
+            return json.dumps(detalle, ensure_ascii=False)
+        except TypeError:
+            return str(detalle)
+
+    @classmethod
+    def _token_warning_message(cls, response: dict, default: str) -> str:
+        detalle = cls._stringify_token_detail(response.get("detalle"))
+        if not detalle:
+            for key in ("descripcionMsg", "observaciones", "message"):
+                value = response.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+            return default
+        return detalle
+
     def send_selected_invoice(self):
         entry = self._selected_entry()
         if not entry:
@@ -1906,7 +1939,8 @@ class FacturacionTab(QWidget):
                 try:
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
                     if resp.get("http_status") in {401, 403}:
-                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        message = self._token_warning_message(resp, token_msg)
+                        QMessageBox.warning(self, "Enviar a Hacienda", message)
                         return
                     estado = resp.get("estado")
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
@@ -1959,7 +1993,8 @@ class FacturacionTab(QWidget):
                         tipo_dte=tipo_dte,
                     )  # tickets también se transmiten con tipo "01"
                     if resp.get("http_status") in {401, 403}:
-                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                        message = self._token_warning_message(resp, token_msg)
+                        QMessageBox.warning(self, "Enviar a Hacienda", message)
                         return
                     estado = resp.get("estado")
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":

@@ -394,30 +394,68 @@ def generar_factura_electronica_pdf(
     tabla_x = x_margin
     tabla_y = box_y - 20
     row_h = 18
-    tabla_columnas = [
-        "Cantidad",
-        "Descripción",
-        "Precio Unitario",
-        "IVA",
-        "No sujetas",
-        "Exentas",
-        "Gravadas",
-    ]
+    tipo_norm = (tipo_documento or "").strip().lower()
+    is_consumidor_final = tipo_norm.startswith("consumidor final")
+
+    if is_consumidor_final:
+        tabla_columnas = [
+            "Cantidad",
+            "Descripción",
+            "Precio Unitario",
+            "No sujetas",
+            "Exentas",
+            "Gravadas",
+        ]
+    else:
+        tabla_columnas = [
+            "Cantidad",
+            "Descripción",
+            "Precio Unitario",
+            "IVA",
+            "No sujetas",
+            "Exentas",
+            "Gravadas",
+        ]
+
     tabla_data = [tabla_columnas]
     for d in detalles:
-        tabla_data.append([
+        cantidad = Decimal(str(d.get("cantidad") or 0))
+        precio_unitario = Decimal(str(d.get("precio_unitario") or 0))
+        descuento = Decimal(str(d.get("descuento") or 0))
+        if str(d.get("descuento_tipo")).strip() == "%":
+            descuento = (cantidad * precio_unitario * descuento) / Decimal("100")
+        gravada_total = cantidad * precio_unitario - descuento
+
+        fila = [
             str(d.get("cantidad", "")),
             d.get("descripcion", ""),
-            f"{d.get('precio_unitario', 0):.4f}",
-            f"{d.get('iva', 0):.2f}",
-            f"{d.get('ventas_no_sujetas', 0):.2f}",
-            f"{d.get('ventas_exentas', 0):.2f}",
-            f"{d.get('ventas_gravadas', 0):.2f}",
-        ])
+            f"{float(precio_unitario):.4f}",
+        ]
+
+        if not is_consumidor_final:
+            fila.append(f"{d.get('iva', 0):.2f}")
+
+        ventas_no_suj = d.get("ventas_no_sujetas", 0) or 0
+        ventas_exentas = d.get("ventas_exentas", 0) or 0
+        ventas_gravadas = d.get("ventas_gravadas", 0) or 0
+
+        fila.extend(
+            [
+                f"{float(ventas_no_suj):.2f}",
+                f"{float(ventas_exentas):.2f}",
+                f"{(gravada_total if is_consumidor_final else float(ventas_gravadas)):.2f}",
+            ]
+        )
+
+        tabla_data.append(fila)
+
+    col_widths = [44, 150, 90, 50, 60, 60, 70]
+    if is_consumidor_final:
+        col_widths = [44, 170, 90, 60, 60, 90]
 
     tabla = Table(
         tabla_data,
-        colWidths=[44, 150, 90, 50, 60, 60, 70],
+        colWidths=col_widths,
         repeatRows=1,
     )
     tabla.setStyle(TableStyle([
@@ -492,12 +530,13 @@ def generar_factura_electronica_pdf(
     c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_descuentos:.2f}")
 
     texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "IVA 13%:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_iva:.2f}")
+    if not is_consumidor_final:
+        c.setFont("Helvetica-Bold", 9)
+        c.drawString(x_linea + 10, texto_y, "IVA 13%:")
+        c.setFont("Helvetica", 9)
+        c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_iva:.2f}")
+        texto_y -= salto
 
-    texto_y -= salto
     c.setFont("Helvetica-Bold", 9)
     c.drawString(x_linea + 10, texto_y, "Subtotal:")
     c.setFont("Helvetica", 9)

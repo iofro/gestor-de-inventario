@@ -1,4 +1,4 @@
-from db import DB
+from db import DB, _serialize_extra
 from PyQt5.QtCore import QAbstractTableModel, Qt
 from PyQt5.QtGui import QColor
 import json
@@ -30,6 +30,32 @@ class InventoryManagerError(Exception):
     """Errores de dominio del administrador de inventario."""
 
 
+
+
+def _normalize_import_extra(extra):
+    if extra is None:
+        return None
+
+    current = extra
+    seen: set[str] = set()
+    for _ in range(256):
+        if not isinstance(current, str):
+            break
+        stripped = current.strip()
+        if not stripped:
+            break
+        if stripped in {"null", "{}", "[]"}:
+            # Allow json.loads to interpret these normally
+            pass
+        if current in seen:
+            break
+        seen.add(current)
+        try:
+            decoded = json.loads(current)
+        except Exception:
+            break
+        current = decoded
+    return current
 
 
 class InventoryManager:
@@ -615,13 +641,9 @@ class InventoryManager:
                         old_vend_id,
                     )
 
-                extra = v.get("extra")
-                if isinstance(extra, str):
-                    try:
-                        extra = json.loads(extra)
-                    except Exception:
-                        pass
-                extra_json = json.dumps(extra) if extra is not None else None
+                extra_json = _serialize_extra(
+                    _normalize_import_extra(v.get("extra"))
+                )
 
                 estado = v.get("estado", "Pagada")
                 sincronizada = int(v.get("sincronizada", 1))
@@ -806,8 +828,9 @@ class InventoryManager:
             self.db.conn.commit()
             self.db.conn.execute("BEGIN")
             for vcf in data.get("ventas_credito_fiscal", []):
-                extra = vcf.get("extra")
-                extra_json = json.dumps(extra) if extra is not None else None
+                extra_json = _serialize_extra(
+                    _normalize_import_extra(vcf.get("extra"))
+                )
                 self.db.cursor.execute(
                     """
                     INSERT INTO ventas_credito_fiscal (

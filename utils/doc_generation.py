@@ -3,6 +3,7 @@ import os
 import uuid
 import logging
 from datetime import datetime
+from decimal import InvalidOperation
 
 import dte
 from factura_sv import generar_factura_electronica_pdf
@@ -363,18 +364,66 @@ def generate_invoice_pdf(manager, venta_id):
     except ValueError:
         logger.exception("Error al generar el DTE real")
         raise
-    resumen = json_data.get("resumen", {})
-    venta_data.update(
-        {
-            "sumas": resumen.get("sumas", 0),
-            "descuentos": resumen.get("descuentos", 0),
-            "iva": resumen.get("iva", 0),
-            "subtotal": resumen.get("subtotal", 0),
-            "ventas_exentas": resumen.get("ventasExentas", 0),
-            "ventas_no_sujetas": resumen.get("ventasNoSujetas", 0),
-            "total": resumen.get("totalPagar", 0),
-        }
-    )
+    resumen = json_data.get("resumen", {}) or {}
+
+    def _resumen_value(*keys):
+        for key in keys:
+            if key in resumen:
+                value = resumen[key]
+                if value not in (None, ""):
+                    return value
+        return None
+
+    def _normalize(value):
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            return float(D(str(value)))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    def _update(keys, *source_keys):
+        value = _resumen_value(*source_keys)
+        if value is None:
+            return
+        normalized = _normalize(value)
+        if normalized is None:
+            return
+        for key in keys:
+            venta_data[key] = normalized
+
+    _update(("subTotalVentas",), "subTotalVentas")
+    _update(("sumas",), "sumas", "subTotalVentas")
+    _update(("descuentos", "totalDescu"), "descuentos", "totalDescu")
+
+    iva_value = _resumen_value("totalIva", "iva", "ivaPerci1")
+    if iva_value is None:
+        tributos = resumen.get("tributos")
+        if isinstance(tributos, list):
+            total = None
+            for tributo in tributos:
+                if not isinstance(tributo, dict):
+                    continue
+                valor = tributo.get("valor")
+                if valor in (None, ""):
+                    continue
+                monto = _normalize(valor)
+                if monto is None:
+                    continue
+                total = (total or 0.0) + monto
+            if total is not None:
+                iva_value = total
+    iva_normalized = _normalize(iva_value) if iva_value is not None else None
+    if iva_normalized is not None:
+        venta_data["iva"] = iva_normalized
+        venta_data["totalIva"] = iva_normalized
+
+    _update(("subTotal", "subtotal"), "subTotal", "subtotal", "subTotalVentas")
+    _update(("ventas_exentas", "totalExenta"), "totalExenta", "ventasExentas", "ventas_exentas")
+    _update(("ventas_no_sujetas", "totalNoSuj"), "totalNoSuj", "ventasNoSujetas", "ventas_no_sujetas")
+    _update(("ventas_gravadas", "totalGravada"), "totalGravada", "ventas_gravadas")
+    _update(("total", "totalPagar"), "totalPagar", "total", "montoTotalOperacion")
+
     if not venta_data.get("total_letras"):
         try:
             venta_data["total_letras"] = monto_a_texto_sv(venta_data.get("total", 0))

@@ -200,8 +200,14 @@ class InvoiceDetailDialog(QDialog):
         """Return the most relevant file path for the current invoice."""
 
         for path in (self._pdf_path, self._json_path):
-            if isinstance(path, str) and os.path.exists(path):
-                return path
+            if path is None:
+                continue
+            try:
+                candidate = os.fspath(path)
+            except TypeError:
+                continue
+            if os.path.exists(candidate):
+                return candidate
         return None
 
     def _should_add_open_button(self) -> bool:
@@ -292,15 +298,24 @@ class InvoiceDetailDialog(QDialog):
         return None
 
     def _sync_standard_paths(self) -> None:
-        pdf_path = self._pdf_path if isinstance(self._pdf_path, str) else None
-        json_path = self._json_path if isinstance(self._json_path, str) else None
-        pdf_path, json_path = self._ensure_standard_location(pdf_path, json_path)
+        pdf_path, json_path = self._ensure_standard_location(
+            self._pdf_path, self._json_path
+        )
         self._pdf_path = pdf_path
         self._json_path = json_path
 
     def _ensure_standard_location(
-        self, pdf_path: str | None, json_path: str | None
+        self, pdf_path: os.PathLike | str | None, json_path: os.PathLike | str | None
     ) -> tuple[str | None, str | None]:
+        try:
+            pdf_path = os.fspath(pdf_path) if pdf_path is not None else None
+        except TypeError:
+            pdf_path = None
+        try:
+            json_path = os.fspath(json_path) if json_path is not None else None
+        except TypeError:
+            json_path = None
+
         expected = self._expected_storage_paths()
         if not expected:
             return pdf_path, json_path
@@ -346,7 +361,10 @@ class InvoiceDetailDialog(QDialog):
         elif os.path.exists(expected_json):
             json_path = expected_json
 
-        return pdf_path, json_path
+        return (
+            os.fspath(pdf_path) if pdf_path is not None else None,
+            os.fspath(json_path) if json_path is not None else None,
+        )
 
     def _expected_storage_paths(self) -> tuple[str, str] | None:
         factura = self.factura or {}

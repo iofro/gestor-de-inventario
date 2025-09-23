@@ -6,11 +6,12 @@ from datetime import datetime
 from decimal import InvalidOperation
 
 import dte
+from pathlib import Path
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado, generar_ticket_fe_pdf
 from dte import generar_ticket_json, generar_dte_json, d4, generar_cabecera_dte_data
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
-from utils.docs import get_document_paths, build_invoice_json
+from utils.docs import get_document_paths, build_invoice_json, write_pdf_atomically
 from utils.jws import sign_and_save
 from utils import versioned_dte
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
@@ -433,27 +434,32 @@ def generate_invoice_pdf(manager, venta_id):
     venta_data["codigo_generacion"] = codigo_generacion
     venta_data["numero_control"] = numero_control
 
-    file_path, json_path = get_document_paths(
+    file_path_str, json_path_str = get_document_paths(
         venta_data.get("fecha"), cliente_nombre, numero_control or venta_id, doc_key
     )
+    file_path = Path(file_path_str)
+    json_path = Path(json_path_str)
 
-    generar_factura_electronica_pdf(
-        venta_data,
-        detalles,
-        cliente or {},
-        distribuidor or {},
-        tipo_doc,
-        archivo=file_path,
-        codigo_generacion=codigo_generacion,
-        numero_control=numero_control,
-        sello_recepcion=sello_recepcion,
-        tipo_modelo=tipo_modelo,
-        tipo_operacion=tipo_operacion,
-        fecha_generacion=fecha_generacion,
-        ambiente=ambiente,
-        tipo_contingencia=tipo_contingencia,
-        motivo_contin=motivo_contin,
-    )
+    def _render_invoice_pdf(output_path: Path) -> None:
+        generar_factura_electronica_pdf(
+            venta_data,
+            detalles,
+            cliente or {},
+            distribuidor or {},
+            tipo_doc,
+            archivo=str(output_path),
+            codigo_generacion=codigo_generacion,
+            numero_control=numero_control,
+            sello_recepcion=sello_recepcion,
+            tipo_modelo=tipo_modelo,
+            tipo_operacion=tipo_operacion,
+            fecha_generacion=fecha_generacion,
+            ambiente=ambiente,
+            tipo_contingencia=tipo_contingencia,
+            motivo_contin=motivo_contin,
+        )
+
+    write_pdf_atomically(file_path, _render_invoice_pdf)
     if tipo_operacion == 2:
         manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
     try:
@@ -469,11 +475,11 @@ def generate_invoice_pdf(manager, venta_id):
         raise ValueError(f"DTE inválido: {exc}") from exc
     jws_token = None
     try:
-        _, jws_token = sign_and_save(json_data, json_path, return_token=True)
+        _, jws_token = sign_and_save(json_data, str(json_path), return_token=True)
     except Exception:
         pass
     try:
-        pend_json_path = dte.save_dte_json(json_data, filename=os.path.basename(json_path))
+        pend_json_path = dte.save_dte_json(json_data, filename=json_path.name)
         version_dir = os.path.dirname(pend_json_path)
         if jws_token:
             try:
@@ -488,10 +494,10 @@ def generate_invoice_pdf(manager, venta_id):
             pass
     except Exception:
         pass
-    if not os.path.exists(json_path):
+    if not json_path.exists():
         raise IOError(f"No se pudo guardar JSON en {json_path}")
-    manager.db.add_factura_pdf(venta_id, tipo_doc, file_path)
-    return file_path
+    manager.db.add_factura_pdf(venta_id, tipo_doc, str(file_path))
+    return str(file_path)
 
 
 def generate_ticket_pdf(manager, venta_id):

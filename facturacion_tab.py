@@ -1903,6 +1903,7 @@ class FacturacionTab(QWidget):
         return detalle
 
     def send_selected_invoice(self):
+        print("UI: SEND_START")
         entry = self._selected_entry()
         if not entry:
             QMessageBox.warning(self, "Enviar", "Seleccione un documento")
@@ -1937,6 +1938,7 @@ class FacturacionTab(QWidget):
             if rtype == "orphan" and factura:
                 json_path = factura.get("json")
                 try:
+                    print("UI: CALL_ENVIAR_DOCUMENTO")
                     resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
                     if resp.get("http_status") in {401, 403}:
                         message = self._token_warning_message(resp, token_msg)
@@ -1975,18 +1977,22 @@ class FacturacionTab(QWidget):
                             mensaje or "Fallo al enviar",
                         )
                 except dte.DTEValidationError as exc:
+                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
-                except RuntimeError:
+                except RuntimeError as exc:
+                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
+                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
                     )
             else:
                 tipo_dte = self._determine_tipo_dte(entry)
                 try:
+                    print("UI: CALL_ENVIAR_DOCUMENTO")
                     resp = transmitir_dte(
                         self.manager.db,
                         entry.get("venta_id"),
@@ -2032,12 +2038,15 @@ class FacturacionTab(QWidget):
                             mensaje or "Fallo al enviar",
                         )
                 except dte.DTEValidationError as exc:
+                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
-                except RuntimeError:
+                except RuntimeError as exc:
+                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
+                    print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
                     )

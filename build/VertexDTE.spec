@@ -71,6 +71,8 @@ resource_files = [
     'config_negocio.json',
     'inventario.json',
     'VERSION',
+    'avatar.jpg',
+
 ]
 
 existing_files = []

@@ -1983,6 +1983,14 @@ class FacturacionTab(QWidget):
                     )
                 except RuntimeError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                    exc_message = str(exc)
+                    if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
+                        QMessageBox.critical(
+                            self,
+                            "Firma",
+                            "Error de firma: no se pudo acceder al certificado.",
+                        )
+                        return
                     QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
@@ -2044,6 +2052,14 @@ class FacturacionTab(QWidget):
                     )
                 except RuntimeError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                    exc_message = str(exc)
+                    if "CERT_ACCESS" in exc_message or "Certificado no accesible" in exc_message:
+                        QMessageBox.critical(
+                            self,
+                            "Firma",
+                            "Error de firma: no se pudo acceder al certificado.",
+                        )
+                        return
                     QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])

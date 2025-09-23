@@ -70,6 +70,7 @@ resource_files = [
     'datos_negocio.json',
     'config_negocio.json',
     'inventario.json',
+    'VERSION',
 ]
 
 existing_files = []

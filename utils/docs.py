@@ -1,33 +1,93 @@
 import json
+import logging
 import os
 import re
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 from dte import _map_departamento, _map_municipio, _build_receptor_direccion
 from paths import (
-    FACTURAS_CONSUMIDOR_FINAL_DIR,
-    FACTURAS_CREDITO_FISCAL_DIR,
     TICKETS_OUTPUT_DIR,
-    NOTAS_DEBITO_DIR,
-    NOTAS_CREDITO_DIR,
-    NOTAS_REMISION_DIR,
+    get_canonical_dte_dir,
     user_data_path,
 )
 from utils import resource_path
 
+logger = logging.getLogger(__name__)
+
 BASE_DIR = user_data_path()
 
-FOLDERS = {
-    'ConsumidorFinal': Path(FACTURAS_CONSUMIDOR_FINAL_DIR),
-    'CreditoFiscal': Path(FACTURAS_CREDITO_FISCAL_DIR),
-    'Ticket': Path(TICKETS_OUTPUT_DIR),
-    'NotaDebito': Path(NOTAS_DEBITO_DIR),
-    'NotaCredito': Path(NOTAS_CREDITO_DIR),
-    'NotaRemision': Path(NOTAS_REMISION_DIR),
+_CANONICAL_TYPES = {
+    "ConsumidorFinal": "ConsumidorFinal",
+    "CreditoFiscal": "CreditoFiscal",
+    "NotaDebito": "NotaDebito",
+    "NotaCredito": "NotaCredito",
+    "NotaRemision": "NotaRemision",
 }
 
 TEMPLATE_PATH = resource_path('formato_factura.json')
+
+
+def _canonical_folder_name(doc_type: str | None) -> str:
+    if not doc_type:
+        return "documentos"
+    canonical = _CANONICAL_TYPES.get(doc_type)
+    if canonical:
+        return get_canonical_dte_dir(canonical).name
+    if doc_type == "Ticket":
+        return Path(TICKETS_OUTPUT_DIR).name
+    return sanitize_filename(doc_type or "documentos")
+
+
+def _resolve_folder(doc_type: str | None, *, root: str | os.PathLike | None) -> Path:
+    if root:
+        base = Path(root)
+        name = _canonical_folder_name(doc_type)
+        folder = base / name
+        folder.mkdir(parents=True, exist_ok=True)
+        return folder
+
+    canonical = _CANONICAL_TYPES.get(doc_type or "")
+    if canonical:
+        return get_canonical_dte_dir(canonical)
+    if doc_type == "Ticket":
+        folder = Path(TICKETS_OUTPUT_DIR)
+    else:
+        folder = Path(BASE_DIR) / sanitize_filename(doc_type or "documentos")
+    folder.mkdir(parents=True, exist_ok=True)
+    return folder
+
+
+def write_pdf_atomically(
+    destination: os.PathLike | str,
+    render: Callable[[Path], None],
+) -> Path:
+    """Render a PDF to ``destination`` atomically.
+
+    ``render`` receives a :class:`Path` pointing to a temporary location where
+    it should persist the PDF contents.  The helper ensures the destination is
+    created via ``Path.replace`` to avoid partially written files.  Any
+    failure is logged and re-raised so callers can react accordingly.
+    """
+
+    dest_path = Path(os.fspath(destination))
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = dest_path.with_suffix(dest_path.suffix + ".tmp")
+    try:
+        render(tmp_path)
+        if not tmp_path.exists():
+            raise IOError(f"No se generó PDF temporal en {tmp_path}")
+        tmp_path.replace(dest_path)
+        return dest_path
+    except Exception as exc:
+        logger.error("No se pudo escribir PDF en %s: %s", dest_path, exc)
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except OSError:
+            pass
+        raise
 
 
 def sanitize_filename(value: str) -> str:
@@ -56,13 +116,7 @@ def generate_document_name(date, cliente, identifier, doc_type) -> str:
 def get_document_paths(date, cliente, identifier, doc_type, root=None):
     """Return PDF and JSON paths for the given document."""
 
-    folder = FOLDERS.get(doc_type)
-    if folder is None:
-        folder = Path(BASE_DIR) / sanitize_filename(doc_type or "documentos")
-    if root:
-        root_path = Path(root)
-        folder = root_path / folder.name
-    folder.mkdir(parents=True, exist_ok=True)
+    folder = _resolve_folder(doc_type, root=root)
     base_name = generate_document_name(date, cliente, identifier, doc_type)
     pdf_path = folder / f"{base_name}.pdf"
     json_path = folder / f"{base_name}.json"
@@ -71,11 +125,7 @@ def get_document_paths(date, cliente, identifier, doc_type, root=None):
 
 def get_dte_document_paths(fecha, empresa, numero_control, doc_type, root=None):
     """Return paths ensuring MH-required naming for DTE notes."""
-    base = Path(root) if root else Path(BASE_DIR)
-    folder = Path(FOLDERS.get(doc_type, base))
-    if root:
-        folder = base / folder.name
-    folder.mkdir(parents=True, exist_ok=True)
+    folder = _resolve_folder(doc_type, root=root)
     if isinstance(fecha, datetime):
         d = fecha
     else:

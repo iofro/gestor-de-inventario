@@ -15,6 +15,14 @@ from paths import user_data_path
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
+def _serialize_extra(extra):
+    if extra is None or isinstance(extra, str):
+        return extra
+    if isinstance(extra, (dict, list)):
+        return json.dumps(extra)
+    return json.dumps(extra)
+
 class DB:
     def __init__(self, db_name: str | Path | None = None):
         if db_name is None:
@@ -877,7 +885,7 @@ class DB:
         # Asegura que las columnas requeridas existan antes de insertar
         self.ensure_column("ventas", "estado", "TEXT DEFAULT 'Pagada'")
         self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
-        extra_json = json.dumps(extra) if extra is not None else None
+        extra_json = _serialize_extra(extra)
         columns = ["fecha", "total", "estado", "sincronizada"]
         values = [fecha, total, estado, 1]
         if cliente_id is not None:
@@ -931,7 +939,7 @@ class DB:
         self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         try:
-            extra_json = json.dumps(extra) if extra is not None else None
+            extra_json = _serialize_extra(extra)
             cols = ["fecha", "total", "cliente_id", "estado", "sincronizada"]
             vals = [fecha, total, cliente_id, estado, 1]
             if Distribuidor_id is not None:

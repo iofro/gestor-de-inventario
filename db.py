@@ -932,6 +932,11 @@ class DB:
         self.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.ensure_column("ventas_credito_fiscal", "documento_venta_a_cuenta", "TEXT")
         try:
+            if isinstance(extra, str):
+                raise TypeError(
+                    "extra for ventas_credito_fiscal must be a mapping or list,"
+                    " not a serialized JSON string"
+                )
             extra_json = json.dumps(extra) if extra is not None else None
             cols = ["fecha", "total", "cliente_id", "estado", "sincronizada"]
             vals = [fecha, total, cliente_id, estado, 1]

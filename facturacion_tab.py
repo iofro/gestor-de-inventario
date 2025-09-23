@@ -1552,7 +1552,12 @@ class FacturacionTab(QWidget):
                 control = jdata.get("identificacion", {}).get("numeroControl")
             except Exception:
                 pass
-            return {"venta_id": venta_id, "json": json_path, "control": control}
+            return {
+                "venta_id": venta_id,
+                "json": json_path,
+                "pdf": pdf_path,
+                "control": control,
+            }
         if rtype == "orphan":
             json_path = data.get("json")
             pdf_path = data.get("pdf")
@@ -1563,6 +1568,7 @@ class FacturacionTab(QWidget):
             return {
                 "venta_id": data.get("venta_id"),
                 "json": json_path,
+                "pdf": pdf_path,
                 "control": data.get("name"),
             }
         return None
@@ -2152,6 +2158,8 @@ class FacturacionTab(QWidget):
             venta_id=factura.get("venta_id"),
             numero_control=ident.get("numeroControl"),
             factura=data,
+            json_path=json_path,
+            pdf_path=factura.get("pdf"),
             parent=self,
         )
         dlg.exec_()

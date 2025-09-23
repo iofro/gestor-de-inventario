@@ -619,9 +619,33 @@ _CAT_MUNI44_COMPAT = [
 ]
 
 CAT_MUNI44: dict[str, dict[str, str]] = {}
+CAT_MUNI44_BY_DEPTO: dict[str, dict[str, str]] = {}
 for dep_code, muni_code, name in _CAT_MUNI44_COMPAT:
     info = CAT_MUNI44.setdefault(muni_code, {})
     info[dep_code] = name
+    by_dep = CAT_MUNI44_BY_DEPTO.setdefault(dep_code, {})
+    by_dep[muni_code] = name
+
+
+def _municipality_name_candidates(muni_code: str, dep_code: str | None) -> list[tuple[str, str]]:
+    """Return ordered ``(dep, name)`` pairs for ``muni_code`` prioritising ``dep_code``."""
+
+    candidates: list[tuple[str, str]] = []
+    if dep_code is not None:
+        dep_specific = CAT_MUNI44_BY_DEPTO.get(dep_code, {}).get(muni_code)
+        if dep_specific:
+            candidates.append((dep_code, dep_specific))
+
+    info = CAT_MUNI44.get(muni_code)
+    if not info:
+        return candidates
+
+    for dep, name in info.items():
+        if dep_code is not None and dep == dep_code and candidates:
+            # Already appended the department-specific name.
+            continue
+        candidates.append((dep, name))
+    return candidates
 
 
 class GeoValidationError(ValueError):
@@ -688,11 +712,13 @@ def validar_dep_muni_por_catalogo(
 
     dep_name = CAT_DEPTOS[dep_code]
     dept_tokens = _normalize_tokens(dep_name)
-    muni_tokens = [_normalize_tokens(name) for name in info.values()]
-    matches_by_word = any(
-        _contains_token_sequence(tokens, dept_tokens) for tokens in muni_tokens if tokens
-    )
-    if matches_by_word:
+    candidates = _municipality_name_candidates(muni_code, dep_code)
+    matching_deps = [
+        dep_candidate
+        for dep_candidate, name in candidates
+        if _contains_token_sequence(_normalize_tokens(name), dept_tokens)
+    ]
+    if dep_code in matching_deps or (matching_deps and dep_code not in info):
         return dep_code, muni_code
 
     if not strict:
@@ -702,7 +728,8 @@ def validar_dep_muni_por_catalogo(
         return dep_code, muni_code
 
     allowed = ", ".join(
-        f"{dep} ({CAT_DEPTOS.get(dep, dep)}: {name})" for dep, name in sorted(info.items())
+        f"{dep} ({CAT_DEPTOS.get(dep, dep)}: {name})"
+        for dep, name in sorted(info.items())
     )
     raise GeoValidationError(
         "Municipio {muni} no coincide por palabra con el departamento {dep} "

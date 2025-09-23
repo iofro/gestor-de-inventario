@@ -298,11 +298,38 @@ class InvoiceDetailDialog(QDialog):
         return None
 
     def _sync_standard_paths(self) -> None:
+        try:
+            original_pdf = (
+                os.fspath(self._pdf_path) if self._pdf_path is not None else None
+            )
+        except TypeError:
+            original_pdf = None
+
         pdf_path, json_path = self._ensure_standard_location(
             self._pdf_path, self._json_path
         )
         self._pdf_path = pdf_path
         self._json_path = json_path
+
+        if (
+            self.venta_id
+            and original_pdf
+            and pdf_path
+            and os.path.abspath(original_pdf) != os.path.abspath(pdf_path)
+        ):
+            parent_fn = getattr(self, "parent", None)
+            parent = parent_fn() if callable(parent_fn) else None
+            manager = getattr(parent, "manager", None) if parent else None
+            db = getattr(manager, "db", None) if manager else None
+            updater = getattr(db, "update_factura_pdf_path", None) if db else None
+            if callable(updater):
+                try:
+                    updater(self.venta_id, pdf_path)
+                except Exception:
+                    logger.warning(
+                        "No se pudo actualizar la ruta canónica de la factura",
+                        exc_info=True,
+                    )
 
     def _ensure_standard_location(
         self, pdf_path: os.PathLike | str | None, json_path: os.PathLike | str | None

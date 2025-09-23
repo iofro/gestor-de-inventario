@@ -1,3 +1,4 @@
+import os
 import sqlite3
 from datetime import datetime
 import json
@@ -1612,6 +1613,32 @@ class DB:
         )
         self.conn.commit()
         return self.cursor.lastrowid
+
+    def update_factura_pdf_path(self, venta_id: int, ruta: os.PathLike | str) -> bool:
+        """Actualizar la ruta almacenada de la factura PDF más reciente."""
+
+        canonical_path = os.fspath(ruta)
+        self.cursor.execute(
+            """
+            SELECT id, ruta FROM facturas_pdf
+            WHERE venta_id=?
+            ORDER BY fecha_creacion DESC
+            LIMIT 1
+            """,
+            (venta_id,),
+        )
+        row = self.cursor.fetchone()
+        if not row:
+            return False
+        if row["ruta"] == canonical_path:
+            return False
+
+        self.cursor.execute(
+            "UPDATE facturas_pdf SET ruta=? WHERE id=?",
+            (canonical_path, row["id"]),
+        )
+        self.conn.commit()
+        return True
 
     def add_ticket_pdf(self, venta_id, ruta):
         """Almacena la ruta de un ticket generado para una venta."""

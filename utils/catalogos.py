@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import unicodedata
 from typing import Dict
 
 from utils import resource_path
@@ -568,27 +569,83 @@ TIPO_INVALIDACION = {int(k): v for k, v in _CATS["CAT-024"].items()}
 CAT_DEPTOS = _CATS["CAT-012"]
 
 # Subconjunto representativo de municipios-44.
-# Cada código está asociado a un departamento según CAT-013.
-CAT_MUNI44 = {
-    "00": {"dep": "00", "name": "OTRO"},
-    "10": {"dep": "06", "name": "SAN SALVADOR SUR"},
-    "13": {"dep": "01", "name": "AHUACHAPAN NORTE"},
-    # La Libertad (dep = 05)
-    "25": {"dep": "05", "name": "LA LIBERTAD OESTE"},
-    "26": {"dep": "05", "name": "LA LIBERTAD ESTE"},
-    "27": {"dep": "05", "name": "LA LIBERTAD COSTA"},
-    "28": {"dep": "05", "name": "LA LIBERTAD SUR"},
-    # San Salvador (dep = 06)
-    "20": {"dep": "06", "name": "SAN SALVADOR NORTE"},
-    "21": {"dep": "06", "name": "SAN SALVADOR OESTE"},
-    "22": {"dep": "06", "name": "SAN SALVADOR ESTE"},
-    "23": {"dep": "06", "name": "SAN SALVADOR CENTRO"},
-    "24": {"dep": "06", "name": "SAN SALVADOR SUR"},
-}
+# Cada código está asociado a uno o más departamentos según CAT-013.
+_CAT_MUNI44_COMPAT = [
+    ("00", "00", "Otro (Para extranjeros)"),
+    ("01", "13", "Ahuachapán Norte"),
+    ("01", "14", "Ahuachapán Centro"),
+    ("01", "15", "Ahuachapán Sur"),
+    ("02", "14", "Santa Ana Norte"),
+    ("02", "15", "Santa Ana Centro"),
+    ("02", "16", "Santa Ana Este"),
+    ("02", "17", "Santa Ana Oeste"),
+    ("03", "17", "Sonsonate Norte"),
+    ("03", "18", "Sonsonate Centro"),
+    ("03", "19", "Sonsonate Este"),
+    ("03", "20", "Sonsonate Oeste"),
+    ("04", "34", "Chalatenango Norte"),
+    ("04", "35", "Chalatenango Centro"),
+    ("04", "36", "Chalatenango Sur"),
+    ("05", "23", "La Libertad Norte"),
+    ("05", "24", "La Libertad Centro"),
+    ("05", "25", "La Libertad Oeste"),
+    ("05", "26", "La Libertad Este"),
+    ("05", "27", "La Libertad Costa"),
+    ("05", "28", "La Libertad Sur"),
+    ("06", "20", "San Salvador Norte"),
+    ("06", "21", "San Salvador Oeste"),
+    ("06", "22", "San Salvador Este"),
+    ("06", "23", "San Salvador Centro"),
+    ("06", "24", "San Salvador Sur"),
+    ("07", "17", "Cuscatlán Norte"),
+    ("07", "18", "Cuscatlán Sur"),
+    ("08", "23", "La Paz Oeste"),
+    ("08", "24", "La Paz Centro"),
+    ("08", "25", "La Paz Este"),
+    ("09", "10", "Cabañas Oeste"),
+    ("09", "11", "Cabañas Este"),
+    ("10", "14", "San Vicente Norte"),
+    ("10", "15", "San Vicente Sur"),
+    ("11", "24", "Usulután Norte"),
+    ("11", "25", "Usulután Este"),
+    ("11", "26", "Usulután Oeste"),
+    ("12", "21", "San Miguel Norte"),
+    ("12", "22", "San Miguel Centro"),
+    ("12", "23", "San Miguel Oeste"),
+    ("13", "27", "Morazán Norte"),
+    ("13", "28", "Morazán Sur"),
+    ("14", "19", "La Unión Norte"),
+    ("14", "20", "La Unión Sur"),
+]
+
+CAT_MUNI44: dict[str, dict[str, str]] = {}
+for dep_code, muni_code, name in _CAT_MUNI44_COMPAT:
+    info = CAT_MUNI44.setdefault(muni_code, {})
+    info[dep_code] = name
 
 
 class GeoValidationError(ValueError):
     """Raised when a department/municipality combination is invalid."""
+
+
+def _normalize_tokens(value: str) -> list[str]:
+    """Return a list of lower-case tokens without accents or punctuation."""
+
+    normalized = unicodedata.normalize("NFD", value or "")
+    normalized = "".join(
+        ch for ch in normalized if unicodedata.category(ch) != "Mn"
+    )
+    normalized = re.sub(r"[^0-9a-z]+", " ", normalized.lower())
+    return [token for token in normalized.split() if token]
+
+
+def _contains_token_sequence(haystack: list[str], needle: list[str]) -> bool:
+    """Check whether ``needle`` appears as a consecutive subsequence in ``haystack``."""
+
+    if not needle or not haystack or len(needle) > len(haystack):
+        return False
+    window = len(needle)
+    return any(haystack[i : i + window] == needle for i in range(len(haystack) - window + 1))
 
 
 def validar_dep_muni_por_catalogo(
@@ -610,24 +667,49 @@ def validar_dep_muni_por_catalogo(
         Códigos normalizados de departamento y municipio.
     """
 
-    try:
-        dep_code = f"{int(dep):02d}"
-    except Exception:
+    if dep is None:
         raise GeoValidationError("Departamento inválido")
+    dep_raw = str(dep).strip()
+    if not dep_raw.isdigit():
+        raise GeoValidationError("Departamento inválido")
+    dep_code = dep_raw.zfill(2)
     if dep_code not in CAT_DEPTOS:
         raise GeoValidationError("Departamento no existe en CAT-012")
 
-    muni_code = str(muni).zfill(2)
+    if muni is None:
+        raise GeoValidationError("Municipio inválido")
+    muni_raw = str(muni).strip()
+    if not muni_raw.isdigit():
+        raise GeoValidationError("Municipio inválido")
+    muni_code = muni_raw.zfill(2)
     info = CAT_MUNI44.get(muni_code)
     if not info:
         raise GeoValidationError("Municipio-44 no existe en CAT-013")
-    dep_owner = info["dep"]
-    if strict and dep_owner != dep_code:
-        raise GeoValidationError(
-            f"Municipio {muni_code} ({info['name']}) no pertenece a {dep_code} ({CAT_DEPTOS[dep_code]})"
-        )
 
-    return dep_code, muni_code
+    dep_name = CAT_DEPTOS[dep_code]
+    dept_tokens = _normalize_tokens(dep_name)
+    muni_tokens = [_normalize_tokens(name) for name in info.values()]
+    matches_by_word = any(
+        _contains_token_sequence(tokens, dept_tokens) for tokens in muni_tokens if tokens
+    )
+    if matches_by_word:
+        return dep_code, muni_code
+
+    if not strict:
+        return dep_code, muni_code
+
+    if dep_code in info:
+        return dep_code, muni_code
+
+    allowed = ", ".join(
+        f"{dep} ({CAT_DEPTOS.get(dep, dep)}: {name})" for dep, name in sorted(info.items())
+    )
+    raise GeoValidationError(
+        "Municipio {muni} no coincide por palabra con el departamento {dep} "
+        "({dep_name}). Válido según catálogo para: {allowed}".format(
+            muni=muni_code, dep=dep_code, dep_name=dep_name, allowed=allowed
+        )
+    )
 
 # Conjuntos derivados
 # Códigos permitidos en el resumen según el esquema oficial del DTE

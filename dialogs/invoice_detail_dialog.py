@@ -73,6 +73,8 @@ class InvoiceDetailDialog(QDialog):
         self.factura = factura or {}
         self._json_path = json_path
         self._pdf_path = pdf_path
+        self._source_json_path = json_path
+        self._source_pdf_path = pdf_path
         self.anulacion_result = None
         self._open_button = None
         self.setWindowTitle("Detalle de factura")
@@ -199,13 +201,26 @@ class InvoiceDetailDialog(QDialog):
     def _determine_file_path(self) -> str | None:
         """Return the most relevant file path for the current invoice."""
 
-        for path in (self._pdf_path, self._json_path):
+        seen = set()
+        for path in (
+            getattr(self, "_source_pdf_path", None),
+            getattr(self, "_source_json_path", None),
+            self._pdf_path,
+            self._json_path,
+        ):
             if path is None:
                 continue
             try:
                 candidate = os.fspath(path)
             except TypeError:
                 continue
+            try:
+                marker = os.path.abspath(candidate)
+            except (TypeError, ValueError, OSError):
+                marker = candidate
+            if marker in seen:
+                continue
+            seen.add(marker)
             if os.path.exists(candidate):
                 return candidate
         return None
@@ -260,9 +275,11 @@ class InvoiceDetailDialog(QDialog):
                     pdf_path = None
                 if pdf_path:
                     self._pdf_path = pdf_path
+                    self._source_pdf_path = pdf_path
                     json_candidate = os.path.splitext(pdf_path)[0] + ".json"
                     if os.path.exists(json_candidate):
                         self._json_path = json_candidate
+                        self._source_json_path = json_candidate
                     self._sync_standard_paths()
                     refreshed = self._determine_file_path()
                     if refreshed:
@@ -286,9 +303,11 @@ class InvoiceDetailDialog(QDialog):
                 return None
             if pdf_path and os.path.exists(pdf_path):
                 self._pdf_path = pdf_path
+                self._source_pdf_path = pdf_path
                 json_candidate = os.path.splitext(pdf_path)[0] + ".json"
                 if os.path.exists(json_candidate):
                     self._json_path = json_candidate
+                    self._source_json_path = json_candidate
 
                 self._sync_standard_paths()
                 refreshed = self._determine_file_path()

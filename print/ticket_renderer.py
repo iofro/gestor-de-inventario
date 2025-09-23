@@ -185,10 +185,11 @@ def render_ticket_pdf(
             muni_name = DTE_MUNICIPIOS.get(dep_code, {}).get(muni_code, "")
         if not muni_name and muni_code:
             muni_info = CAT_MUNI44.get(muni_code)
-            if muni_info and (
-                not dep_code or muni_info.get("dep") == dep_code
-            ):
-                muni_name = muni_info.get("name", "")
+            if muni_info:
+                if dep_code and dep_code in muni_info:
+                    muni_name = muni_info[dep_code]
+                else:
+                    muni_name = next(iter(muni_info.values()))
 
         parts: List[str] = []
         if complemento:

@@ -1,4 +1,5 @@
 import importlib.util
+import os
 import sys
 import types
 from pathlib import Path
@@ -212,4 +213,100 @@ def test_sync_standard_paths_nota_credito(tmp_path, monkeypatch):
     assert dialog._pdf_path == str(expected_pdf)
     assert dialog._json_path == str(expected_json)
     assert expected_json.read_text(encoding="utf-8") == "{\"nota\": true}"
+
+
+def test_determine_file_path_accepts_pathlike(tmp_path):
+    dialog = _make_dialog()
+    pdf_path = tmp_path / "nota.pdf"
+    pdf_path.write_text("pdf", encoding="utf-8")
+    dialog._pdf_path = pdf_path
+    dialog._json_path = None
+
+    class DummyButton:
+        def __init__(self):
+            self.enabled = None
+
+        def setEnabled(self, value):
+            self.enabled = value
+
+    button = DummyButton()
+    dialog._open_button = button
+
+    assert dialog._determine_file_path() == os.fspath(pdf_path)
+
+    dialog._update_open_button_state()
+    assert dialog._open_button.enabled is True
+
+
+def test_open_file_location_regenerates_and_opens_canonical(tmp_path, monkeypatch):
+    dialog = _make_dialog()
+    dialog.factura = {
+        "identificacion": {
+            "tipoDte": "01",
+            "numeroControl": "CTRL-001",
+            "fecEmi": "2024-07-01",
+        },
+        "receptor": {"nombre": "Cliente"},
+    }
+    dialog.venta_id = 42
+
+    class FakeButton:
+        def __init__(self):
+            self.enabled = None
+
+        def setEnabled(self, value):
+            self.enabled = value
+
+    button = FakeButton()
+    dialog._open_button = button
+
+    canonical_dir = tmp_path / "facturas_consumidor_final"
+    expected_pdf = canonical_dir / "canon.pdf"
+    expected_json = canonical_dir / "canon.json"
+
+    def fake_get_document_paths(fecha, cliente, numero_control, doc_type, root=None):
+        expected_pdf.parent.mkdir(parents=True, exist_ok=True)
+        return str(expected_pdf), str(expected_json)
+
+    monkeypatch.setattr(
+        "dialogs.invoice_detail_dialog.get_document_paths", fake_get_document_paths
+    )
+    monkeypatch.setattr(
+        "dialogs.invoice_detail_dialog.get_dte_document_paths",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not call")),
+    )
+
+    class FakeDB:
+        def get_factura_pdf(self, venta_id):
+            return None
+
+    class FakeParent:
+        def __init__(self):
+            self.manager = types.SimpleNamespace(db=FakeDB())
+
+        def _generate_invoice_pdf(self, venta_id):
+            expected_pdf.parent.mkdir(parents=True, exist_ok=True)
+            expected_pdf.write_text("pdf", encoding="utf-8")
+            expected_json.write_text("{}", encoding="utf-8")
+            return str(expected_pdf)
+
+    parent = FakeParent()
+    dialog.parent = lambda: parent
+
+    opened = []
+
+    def fake_open(url):
+        opened.append(url)
+
+    monkeypatch.setattr(invoice_detail_dialog.QDesktopServices, "openUrl", fake_open)
+
+    dialog._pdf_path = None
+    dialog._json_path = None
+
+    dialog._open_file_location()
+
+    assert opened == [str(canonical_dir)]
+    assert dialog._pdf_path == str(expected_pdf)
+    assert dialog._json_path == str(expected_json)
+    assert dialog._open_button.enabled is True
 

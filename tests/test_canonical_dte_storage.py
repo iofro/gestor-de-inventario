@@ -209,3 +209,65 @@ def test_generate_invoice_pdf_logs_and_fails_on_pdf_error(canonical_env, fake_si
     with pytest.raises(IOError):
         doc_gen.generate_invoice_pdf(manager, 5)
     assert any("No se pudo escribir PDF" in rec.message for rec in caplog.records)
+    assert not db.added_pdfs
+
+
+def test_ensure_invoice_copies_raises_on_pdf_failure(tmp_path):
+    pdf_path = tmp_path / "factura.pdf"
+    json_path = tmp_path / "factura.json"
+    payload = {"identificacion": {}}
+
+    def _fail_renderer(_):
+        raise IOError("sin permisos")
+
+    with pytest.raises(IOError):
+        doc_gen._ensure_invoice_copies(pdf_path, json_path, payload, _fail_renderer)
+
+
+def test_ensure_invoice_copies_raises_on_json_failure(tmp_path, monkeypatch):
+    pdf_path = tmp_path / "factura.pdf"
+    pdf_path.write_bytes(b"PDF")
+    json_path = tmp_path / "factura.json"
+    payload = {"identificacion": {}}
+
+    def _raise(*_args, **_kwargs):
+        raise OSError("bloqueado")
+
+    monkeypatch.setattr(doc_gen, "save_file", _raise)
+
+    with pytest.raises(OSError):
+        doc_gen._ensure_invoice_copies(pdf_path, json_path, payload, lambda path: path.write_bytes(b"PDF"))
+
+
+def test_generate_invoice_pdf_aborts_when_json_copy_cannot_be_written(
+    canonical_env,
+    fake_sign_and_save,
+    fake_save_dte,
+    fake_versioned_state,
+    fake_generar_dte,
+    fake_pdf_renderer,
+    monkeypatch,
+):
+    db = FakeDB()
+    venta = {"id": 6, "fecha": "2024-04-01", "total": 10}
+    db._ventas.append(venta)
+    db.detalles[6] = [{"cantidad": 1, "precio_unitario": 10}]
+    manager = type("Manager", (), {"db": db, "_clientes": [], "_Distribuidores": []})()
+
+    original_path_missing = doc_gen._path_missing
+
+    def _force_missing(path: Path) -> bool:
+        if Path(path).suffix == ".json":
+            return True
+        return original_path_missing(path)
+
+    def _raise_save(path, *_args, **_kwargs):
+        raise OSError(f"sin permisos para {path}")
+
+    monkeypatch.setattr(doc_gen, "_path_missing", _force_missing)
+    monkeypatch.setattr(doc_gen, "save_file", _raise_save)
+
+    with pytest.raises(OSError):
+        doc_gen.generate_invoice_pdf(manager, 6)
+
+    assert not db.added_pdfs

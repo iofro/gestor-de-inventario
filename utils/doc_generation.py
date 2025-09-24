@@ -4,6 +4,7 @@ import uuid
 import logging
 from datetime import datetime
 from decimal import InvalidOperation
+from typing import Callable
 
 import dte
 from pathlib import Path
@@ -16,9 +17,46 @@ from utils.jws import sign_and_save
 from utils import versioned_dte
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.sanitize import limpiar_documentos
+from utils.stable_json import save_file, stable_stringify
 
 
 logger = logging.getLogger(__name__)
+
+
+def _path_missing(path: Path) -> bool:
+    """Return ``True`` if ``path`` is absent or an empty file."""
+
+    try:
+        return not path.exists() or path.stat().st_size <= 0
+    except OSError:
+        return True
+
+
+def _ensure_invoice_copies(
+    pdf_path: Path,
+    json_path: Path,
+    json_payload: dict,
+    renderer: Callable[[Path], None] | None,
+) -> None:
+    """Guarantee copies of the invoice PDF and JSON exist at the target paths."""
+
+    pdf_path.parent.mkdir(parents=True, exist_ok=True)
+    if _path_missing(pdf_path) and renderer is not None:
+        logger.warning("PDF faltante; intentando regenerar %s", pdf_path)
+        try:
+            write_pdf_atomically(pdf_path, renderer)
+        except Exception:
+            logger.exception("No se pudo regenerar PDF en %s", pdf_path)
+            raise
+
+    json_path.parent.mkdir(parents=True, exist_ok=True)
+    if _path_missing(json_path):
+        logger.warning("JSON faltante; intentando reescribir %s", json_path)
+        try:
+            save_file(str(json_path), stable_stringify(json_payload, indent=2))
+        except Exception:
+            logger.exception("No se pudo garantizar copia JSON en %s", json_path)
+            raise
 
 
 def log_venta_vs_dte(manager, venta_id):
@@ -514,7 +552,10 @@ def generate_invoice_pdf(manager, venta_id):
             pass
     except Exception:
         pass
-    if not json_path.exists():
+    _ensure_invoice_copies(file_path, json_path, json_data, _render_invoice_pdf)
+    if _path_missing(file_path):
+        raise IOError(f"No se pudo guardar PDF en {file_path}")
+    if _path_missing(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     manager.db.add_factura_pdf(venta_id, tipo_doc, str(file_path))
     return str(file_path)

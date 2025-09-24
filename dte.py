@@ -3233,7 +3233,10 @@ def validate_dte_json(
         ident.pop("numeroControl", None)
     config = _load_dte_api_config()
     ambiente = "01" if config.get("ambiente") == "produccion" else "00"
-    ident.setdefault("ambiente", ambiente)
+    if ambiente == "01":
+        ident["ambiente"] = "01"
+    else:
+        ident.setdefault("ambiente", ambiente)
     amb_val = str(ident.get("ambiente", "")).lower()
     if amb_val not in {"00", "01"}:
         ident["ambiente"] = "01" if amb_val.startswith("produc") else "00"

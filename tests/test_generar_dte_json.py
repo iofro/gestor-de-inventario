@@ -1053,6 +1053,64 @@ def test_generar_dte_json_normaliza_ambiente_param(ambiente, expected, monkeypat
     assert data["identificacion"]["ambiente"] == expected
 
 
+def test_generar_dte_json_config_produccion_impone_ambiente(tmp_path, monkeypatch):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "123456",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "06", "municipio": "23", "complemento": "Calle 1"},
+        "dte_api": {"prefijo_control": "S001P001"},
+    }
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+    monkeypatch.setattr(dte_module, "DATOS_NEGOCIO_PATH", str(datos_file), raising=False)
+    monkeypatch.setattr(dte_module, "_load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(svfe_config, "DATOS_NEGOCIO_PATH", str(datos_file), raising=False)
+    monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(
+        dte_module,
+        "_load_dte_api_config",
+        lambda: {"ambiente": "produccion", "url": "https://api.example.com/fesv"},
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente",
+        "700001",
+        "06141990011019",
+        "",
+        "giro",
+        "22223333",
+        "",
+        "C",
+        "06",
+        "23",
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta(
+        "2024-01-01",
+        5,
+        cliente_id=cliente_id,
+        extra={"precios_incluyen_iva": False, "ambiente": "00"},
+    )
+    db.add_detalle_venta(venta_id, prod_id, 1, 5, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id, ambiente="pruebas")
+    assert data["identificacion"]["ambiente"] == "01"
+
+
 def test_dte_comision_sin_advertencia_total(capsys):
     db = create_db()
     db.add_vendedor("V1")

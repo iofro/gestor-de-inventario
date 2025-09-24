@@ -10,7 +10,7 @@ import shutil
 import requests as _requests
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
-from typing import Any
+from typing import Any, Mapping
 from urllib.parse import urlparse
 from db import DB
 import requests
@@ -247,6 +247,48 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         if key in schema_props:
             cleaned.setdefault(key, None)
     return cleaned
+
+
+def _venta_tercero_from_sources(*sources: Mapping[str, Any] | None) -> dict | None:
+    """Return ``ventaTercero`` payload extracted from ``sources``.
+
+    Each source can be either a mapping with ``venta_a_cuenta_de`` and
+    ``documento_venta_a_cuenta`` keys or nested dictionaries containing them.
+    Only when both values are present and the document matches the expected NIT
+    format (9 or 14 digits) a payload is returned.
+    """
+
+    candidates: list[Mapping[str, Any]] = []
+    for src in sources:
+        if not isinstance(src, Mapping):
+            continue
+        candidates.append(src)
+        nested = src.get("extra")
+        if isinstance(nested, Mapping):
+            candidates.append(nested)
+
+    nombre = ""
+    documento = ""
+    for candidate in candidates:
+        if not nombre:
+            value = candidate.get("venta_a_cuenta_de")
+            if value not in (None, ""):
+                nombre = str(value).strip()
+        if not documento:
+            value = candidate.get("documento_venta_a_cuenta")
+            if value not in (None, ""):
+                documento = str(value).strip()
+        if nombre and documento:
+            break
+
+    nombre = nombre.strip()
+    nit = solo_digitos(documento)
+    if nombre:
+        nombre = nombre[:250]
+
+    if nombre and nit and len(nit) in {9, 14}:
+        return {"nombre": nombre, "nit": nit}
+    return None
 
 
 def apply_schema_patch(data: dict) -> dict:
@@ -2067,6 +2109,8 @@ def generar_dte_json(
     if isinstance(extra_param, dict):
         extra.update(extra_param)
 
+    venta_tercero = _venta_tercero_from_sources(extra, fiscal, kwargs)
+
     fiscal_totals: dict[str, Any] = {}
 
     def _merge_fiscal_source(source: Any) -> None:
@@ -3112,7 +3156,7 @@ def generar_dte_json(
         "documentoRelacionado": None,
         "otrosDocumentos": None,
         "apendice": None,
-        "ventaTercero": None,
+        "ventaTercero": venta_tercero,
         "extension": extension,
         # ``extra`` se utiliza únicamente durante la validación para
         # transmitir banderas internas como ``es_ticket``.  No forma parte

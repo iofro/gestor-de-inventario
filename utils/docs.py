@@ -72,13 +72,44 @@ def write_pdf_atomically(
     """
 
     dest_path = Path(os.fspath(destination))
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    parent = dest_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    parent_exists = parent.exists()
+    parent_writable = os.access(parent, os.W_OK)
+    logger.info(
+        "Validando carpeta destino %s (existe=%s writable=%s)",
+        parent,
+        parent_exists,
+        parent_writable,
+    )
+    if not parent_exists:
+        raise FileNotFoundError(f"Directorio destino inexistente: {parent}")
+    if not parent_writable:
+        raise PermissionError(f"No hay permisos de escritura en {parent}")
     tmp_path = dest_path.with_suffix(dest_path.suffix + ".tmp")
     try:
+        logger.info("Escribiendo PDF temporal %s (destino final %s)", tmp_path, dest_path)
+        logger.info(
+            "TMP path parent %s existe=%s writable=%s",
+            tmp_path.parent,
+            tmp_path.parent.exists(),
+            os.access(tmp_path.parent, os.W_OK),
+        )
         render(tmp_path)
         if not tmp_path.exists():
             raise IOError(f"No se generó PDF temporal en {tmp_path}")
+        tmp_size = tmp_path.stat().st_size
+        if tmp_size <= 0:
+            raise IOError(f"PDF temporal vacío en {tmp_path}")
+        logger.info("PDF temporal creado en %s (%s bytes)", tmp_path, tmp_size)
+        logger.info("Reemplazando %s con %s", dest_path, tmp_path)
         tmp_path.replace(dest_path)
+        if not dest_path.exists():
+            raise IOError(f"No se pudo mover PDF final a {dest_path}")
+        final_size = dest_path.stat().st_size
+        if final_size <= 0:
+            raise IOError(f"PDF final vacío en {dest_path}")
+        logger.info("PDF final escrito en %s (%s bytes)", dest_path, final_size)
         return dest_path
     except Exception as exc:
         logger.error("No se pudo escribir PDF en %s: %s", dest_path, exc)

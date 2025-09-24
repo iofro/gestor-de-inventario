@@ -1902,6 +1902,42 @@ class FacturacionTab(QWidget):
             return default
         return detalle
 
+    @staticmethod
+    def _format_observaciones_message(resp: dict | None) -> str:
+        """Return a human readable message with Hacienda observations."""
+
+        def collect(value):
+            textos: list[str] = []
+            if isinstance(value, dict):
+                if "observaciones" in value:
+                    textos.extend(
+                        _gather_rejection_texts(value.get("observaciones"))
+                    )
+                for key, item in value.items():
+                    if key == "observaciones":
+                        continue
+                    textos.extend(collect(item))
+            elif isinstance(value, (list, tuple, set)):
+                for item in value:
+                    textos.extend(collect(item))
+            return textos
+
+        if not isinstance(resp, dict):
+            return ""
+
+        textos = collect(resp)
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for texto in textos:
+            text = str(texto).strip()
+            if text and text not in seen:
+                cleaned.append(text)
+                seen.add(text)
+        if not cleaned:
+            return ""
+        formatted = "\n".join(f"- {text}" for text in cleaned)
+        return f"Observaciones:\n{formatted}"
+
     def send_selected_invoice(self):
         print("UI: SEND_START")
         entry = self._selected_entry()
@@ -1952,10 +1988,14 @@ class FacturacionTab(QWidget):
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                        message = "Documento enviado y recibido correctamente"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            message = f"{message}\n\n{obs_text}"
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
-                            "Documento enviado y recibido correctamente",
+                            message,
                         )
                     else:
                         detalle = resp.get("detalle")
@@ -1968,13 +2008,22 @@ class FacturacionTab(QWidget):
                                 resp, entry=entry, factura=factura
                             ):
                                 return
-                        mensaje = resp.get("errores") or resp.get("detalle", {}).get(
-                            "descripcionMsg"
-                        )
+                        mensaje = resp.get("errores")
+                        if not mensaje:
+                            detalle_dict = detalle if isinstance(detalle, dict) else {}
+                            mensaje = detalle_dict.get("descripcionMsg")
+                        if mensaje:
+                            textos = _gather_rejection_texts(mensaje)
+                            mensaje = "\n".join(textos) if textos else str(mensaje)
+                        else:
+                            mensaje = "Fallo al enviar"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            mensaje = f"{mensaje}\n\n{obs_text}"
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            mensaje or "Fallo al enviar",
+                            mensaje,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
@@ -2018,10 +2067,14 @@ class FacturacionTab(QWidget):
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                        message = "Documento enviado y recibido correctamente"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            message = f"{message}\n\n{obs_text}"
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
-                            "Documento enviado y recibido correctamente",
+                            message,
                         )
                     else:
                         detalle = resp.get("detalle")
@@ -2037,13 +2090,22 @@ class FacturacionTab(QWidget):
                                 factura=factura,
                             ):
                                 return
-                        mensaje = resp.get("errores") or resp.get("detalle", {}).get(
-                            "descripcionMsg"
-                        )
+                        mensaje = resp.get("errores")
+                        if not mensaje:
+                            detalle_dict = detalle if isinstance(detalle, dict) else {}
+                            mensaje = detalle_dict.get("descripcionMsg")
+                        if mensaje:
+                            textos = _gather_rejection_texts(mensaje)
+                            mensaje = "\n".join(textos) if textos else str(mensaje)
+                        else:
+                            mensaje = "Fallo al enviar"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            mensaje = f"{mensaje}\n\n{obs_text}"
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            mensaje or "Fallo al enviar",
+                            mensaje,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])

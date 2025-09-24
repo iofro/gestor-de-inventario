@@ -72,13 +72,22 @@ def write_pdf_atomically(
     """
 
     dest_path = Path(os.fspath(destination))
-    dest_path.parent.mkdir(parents=True, exist_ok=True)
+    parent = dest_path.parent
+    parent.mkdir(parents=True, exist_ok=True)
+    if not parent.exists():
+        raise FileNotFoundError(f"Directorio destino inexistente: {parent}")
+    if not os.access(parent, os.W_OK):
+        raise PermissionError(f"No hay permisos de escritura en {parent}")
     tmp_path = dest_path.with_suffix(dest_path.suffix + ".tmp")
     try:
+        logger.debug("Escribiendo PDF temporal %s (destino %s)", tmp_path, dest_path)
         render(tmp_path)
         if not tmp_path.exists():
             raise IOError(f"No se generó PDF temporal en {tmp_path}")
+        logger.debug("PDF temporal creado en %s (%s bytes)", tmp_path, tmp_path.stat().st_size)
+        logger.debug("Reemplazando %s con %s", dest_path, tmp_path)
         tmp_path.replace(dest_path)
+        logger.debug("PDF final escrito en %s", dest_path)
         return dest_path
     except Exception as exc:
         logger.error("No se pudo escribir PDF en %s: %s", dest_path, exc)

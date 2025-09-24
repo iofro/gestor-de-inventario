@@ -3,6 +3,7 @@ from __future__ import annotations
 import os
 import re
 import shutil
+from functools import lru_cache
 from pathlib import Path
 
 from appdirs import user_data_dir
@@ -129,3 +130,92 @@ def migrate_datos_negocio() -> None:
 
     for filename in ("datos_negocio.json", "config_negocio.json"):
         _copy_if_missing(filename)
+
+
+def _is_windows() -> bool:
+    return os.name == "nt"
+
+
+@lru_cache()
+def _get_store_package_dirs(local_app_data: str) -> tuple[Path, ...]:
+    base = Path(local_app_data)
+    packages_dir = base / "Packages"
+    try:
+        entries = list(packages_dir.iterdir())
+    except OSError:
+        return ()
+    matches = []
+    for entry in entries:
+        try:
+            is_dir = entry.is_dir()
+        except OSError:
+            continue
+        if not is_dir:
+            continue
+        if entry.name.startswith("PythonSoftwareFoundation.Python."):
+            matches.append(entry)
+    return tuple(matches)
+def resolve_user_visible_path(path: os.PathLike[str] | str) -> str:
+    """Return a path that points to the physical file visible to the user.
+
+    When running under the Windows Store distribution of Python the
+    application is executed within an AppContainer which transparently
+    redirects writes to ``%LocalAppData%`` into the package specific
+    ``LocalCache\\Local`` directory.  The logical path is still reported to the
+    application which results in confusing messages for end users.  This helper
+    attempts to map a logical path back to its physical counterpart so paths
+    shown in the UI are consistent with what Windows Explorer exposes.
+    """
+
+    try:
+        requested = os.fspath(path)
+    except TypeError:
+        return path  # type: ignore[return-value]
+
+    if not requested:
+        return requested
+
+    if not _is_windows():
+        return requested
+
+    local_app_data = os.environ.get("LOCALAPPDATA")
+    if not local_app_data:
+        return requested
+
+    package_dirs = _get_store_package_dirs(local_app_data)
+    if not package_dirs:
+        return requested
+
+    try:
+        base_abs = os.path.abspath(local_app_data)
+        requested_abs = os.path.abspath(requested)
+    except (OSError, TypeError, ValueError):
+        return requested
+
+    try:
+        relative = os.path.relpath(requested_abs, base_abs)
+    except ValueError:
+        return requested
+
+    if relative == ".":
+        relative = ""
+
+    if relative.startswith(".."):
+        return requested
+
+    relative_path = Path(relative) if relative else None
+    if relative_path and any(part == os.pardir for part in relative_path.parts):
+        return requested
+
+    for package_dir in package_dirs:
+        physical_root = package_dir / "LocalCache" / "Local"
+        physical_path = physical_root
+        if relative_path:
+            physical_path = physical_root.joinpath(relative_path)
+        try:
+            exists = physical_path.exists()
+        except OSError:
+            continue
+        if exists:
+            return os.fspath(physical_path)
+    return requested

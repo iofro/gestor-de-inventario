@@ -19,6 +19,7 @@ from PyQt5.QtGui import QDesktopServices
 
 from utils.catalogos import TRIBUTO_IVA
 from utils.docs import get_document_paths, get_dte_document_paths
+from paths import resolve_user_visible_path
 from .anular_factura_dialog import AnularFacturaDialog
 import anulacion
 import dte
@@ -254,7 +255,8 @@ class InvoiceDetailDialog(QDialog):
         directory = os.path.dirname(path)
         if not directory:
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(directory))
+        visible_directory = resolve_user_visible_path(directory)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(visible_directory))
 
     def _refresh_invoice_files(self) -> str | None:
         """Try to locate or regenerate the PDF/JSON for the invoice."""

@@ -41,7 +41,17 @@ def _ensure_invoice_copies(
     """Guarantee copies of the invoice PDF and JSON exist at the target paths."""
 
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
-    if _path_missing(pdf_path) and renderer is not None:
+    pdf_missing = _path_missing(pdf_path)
+    json_missing = _path_missing(json_path)
+    logger.info(
+        "Verificando copias de factura PDF=%s (missing=%s) JSON=%s (missing=%s)",
+        pdf_path,
+        pdf_missing,
+        json_path,
+        json_missing,
+    )
+    if pdf_missing and renderer is not None:
+
         logger.warning("PDF faltante; intentando regenerar %s", pdf_path)
         try:
             write_pdf_atomically(pdf_path, renderer)
@@ -49,14 +59,31 @@ def _ensure_invoice_copies(
             logger.exception("No se pudo regenerar PDF en %s", pdf_path)
             raise
 
+        pdf_missing = _path_missing(pdf_path)
+
     json_path.parent.mkdir(parents=True, exist_ok=True)
-    if _path_missing(json_path):
+    if json_missing:
+
         logger.warning("JSON faltante; intentando reescribir %s", json_path)
         try:
             save_file(str(json_path), stable_stringify(json_payload, indent=2))
         except Exception:
             logger.exception("No se pudo garantizar copia JSON en %s", json_path)
             raise
+
+        json_missing = _path_missing(json_path)
+    try:
+        folder_contents = sorted(p.name for p in pdf_path.parent.iterdir())
+    except Exception:
+        folder_contents = None
+    logger.info(
+        "Resultado verificación copias -> PDF missing=%s JSON missing=%s; contenido %s: %s",
+        pdf_missing,
+        json_missing,
+        pdf_path.parent,
+        folder_contents,
+    )
+
 
 
 def log_venta_vs_dte(manager, venta_id):
@@ -517,7 +544,20 @@ def generate_invoice_pdf(manager, venta_id):
             motivo_contin=motivo_contin,
         )
 
+    logger.info(
+        "Intentando generar PDF en %s con renderer=%s",
+        file_path,
+        _render_invoice_pdf,
+    )
+    logger.info("Generando PDF de factura en %s", file_path)
     write_pdf_atomically(file_path, _render_invoice_pdf)
+    try:
+        pdf_size = file_path.stat().st_size
+    except OSError:
+        logger.warning("No se pudo obtener tamaño de PDF en %s", file_path, exc_info=True)
+        pdf_size = None
+    else:
+        logger.info("PDF de factura escrito en %s (%s bytes)", file_path, pdf_size)
     if tipo_operacion == 2:
         manager.db.add_dte_pendiente(venta_id, json_data, str(tipo_operacion))
     try:
@@ -535,7 +575,8 @@ def generate_invoice_pdf(manager, venta_id):
     try:
         _, jws_token = sign_and_save(json_data, str(json_path), return_token=True)
     except Exception:
-        pass
+        logger.exception("Fallo al firmar y guardar JSON en %s", json_path)
+        jws_token = None
     try:
         pend_json_path = dte.save_dte_json(json_data, filename=json_path.name)
         version_dir = os.path.dirname(pend_json_path)
@@ -553,10 +594,46 @@ def generate_invoice_pdf(manager, venta_id):
     except Exception:
         pass
     _ensure_invoice_copies(file_path, json_path, json_data, _render_invoice_pdf)
+    try:
+        ensured_contents = sorted(p.name for p in file_path.parent.iterdir())
+    except Exception:
+        ensured_contents = None
+    logger.info(
+        "Estado post _ensure_invoice_copies -> PDF missing=%s JSON missing=%s; contenido %s: %s",
+        _path_missing(file_path),
+        _path_missing(json_path),
+        file_path.parent,
+        ensured_contents,
+    )
     if _path_missing(file_path):
+        try:
+            contents = sorted(p.name for p in file_path.parent.iterdir())
+        except Exception:
+            contents = None
+        logger.error(
+            "No se encontró PDF en %s; contenido de la carpeta: %s",
+            file_path,
+            contents,
+        )
         raise IOError(f"No se pudo guardar PDF en {file_path}")
     if _path_missing(json_path):
+        try:
+            contents = sorted(p.name for p in json_path.parent.iterdir())
+        except Exception:
+            contents = None
+        logger.error(
+            "No se encontró JSON en %s; contenido de la carpeta: %s",
+            json_path,
+            contents,
+        )
+
         raise IOError(f"No se pudo guardar JSON en {json_path}")
+    try:
+        json_size = json_path.stat().st_size
+    except OSError:
+        logger.warning("No se pudo obtener tamaño de JSON en %s", json_path, exc_info=True)
+    else:
+        logger.info("JSON de factura escrito en %s (%s bytes)", json_path, json_size)
     manager.db.add_factura_pdf(venta_id, tipo_doc, str(file_path))
     return str(file_path)
 

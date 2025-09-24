@@ -239,6 +239,28 @@ def test_ensure_invoice_copies_raises_on_json_failure(tmp_path, monkeypatch):
         doc_gen._ensure_invoice_copies(pdf_path, json_path, payload, lambda path: path.write_bytes(b"PDF"))
 
 
+def test_write_pdf_atomically_requires_non_empty_output(tmp_path):
+    destination = tmp_path / "factura.pdf"
+
+    def _empty_renderer(output_path):
+        output_path.write_bytes(b"")
+
+    with pytest.raises(IOError):
+        docs.write_pdf_atomically(destination, _empty_renderer)
+    assert not destination.exists()
+
+
+def test_write_pdf_atomically_rejects_missing_output(tmp_path):
+    destination = tmp_path / "factura.pdf"
+
+    def _no_output(_output_path):
+        return None
+
+    with pytest.raises(IOError):
+        docs.write_pdf_atomically(destination, _no_output)
+    assert not destination.exists()
+
+
 def test_generate_invoice_pdf_aborts_when_json_copy_cannot_be_written(
     canonical_env,
     fake_sign_and_save,

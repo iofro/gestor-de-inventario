@@ -262,10 +262,30 @@ def generate_invoice_pdf(manager, venta_id):
                 "cambiará a modo normal"
             )
             tipo_operacion = 1
-    ambiente = venta_data.get("ambiente") or extra.get("ambiente") or "00"
-    if ambiente not in ("00", "01"):
-        amb_cfg = str(ambiente).lower()
-        ambiente = "01" if amb_cfg.startswith("produc") else "00"
+    ambiente_cfg = venta_data.get("ambiente") or extra.get("ambiente")
+
+    def _normalize_ambiente_label(value):
+        if value is None:
+            return None
+        label = str(value).strip().lower()
+        if not label:
+            return None
+        if label in {"00", "0", "pruebas", "test", "testing", "sandbox"}:
+            return "pruebas"
+        if label in {"01", "1", "produccion", "producción", "production"}:
+            return "produccion"
+        return label
+
+    ambiente = _normalize_ambiente_label(ambiente_cfg)
+    if ambiente is None:
+        try:
+            ambiente = _normalize_ambiente_label(
+                (dte._load_dte_api_config() or {}).get("ambiente")
+            )
+        except Exception:
+            ambiente = None
+    if ambiente is None:
+        ambiente = "pruebas"
 
     if tipo_operacion == 1 and not sello_recepcion:
         sello_recepcion = f"SELLO-{uuid.uuid4().hex[:8]}"

@@ -39,6 +39,7 @@ from paths import (
     FACTURAS_CONSUMIDOR_FINAL_DIR,
     FACTURAS_CREDITO_FISCAL_DIR,
     TICKETS_OUTPUT_DIR,
+    resolve_user_visible_path,
 )
 import logging
 
@@ -622,7 +623,12 @@ class SalesTab(QWidget):
             )
         if not file_path:
             return
-        QMessageBox.information(self, "Guardar factura", f"{doc_type} guardado en {file_path}")
+        display_path = resolve_user_visible_path(file_path)
+        QMessageBox.information(
+            self,
+            "Guardar factura",
+            f"{doc_type} guardado en {display_path}",
+        )
 
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""
@@ -639,7 +645,12 @@ class SalesTab(QWidget):
             "No se pudo generar el ticket.",
         )
         if file_path:
-            QMessageBox.information(self, "Ticket", f"Ticket guardado en {file_path}")
+            display_path = resolve_user_visible_path(file_path)
+            QMessageBox.information(
+                self,
+                "Ticket",
+                f"Ticket guardado en {display_path}",
+            )
         
     def preview_pdf(self):
         """Open the saved PDF for the selected sale."""

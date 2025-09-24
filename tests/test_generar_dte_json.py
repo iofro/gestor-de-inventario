@@ -2471,3 +2471,185 @@ def test_generar_dte_json_total_venta_cero(tmp_path):
     assert D(str(item["ventaGravada"])) == D("13.00")
     assert "totalIva" not in res
     assert "ivaItem" not in item
+
+
+def test_generar_dte_json_sets_venta_tercero_from_extra(monkeypatch):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+
+    monkeypatch.setattr(dte_module, "_load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: datos)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+
+    extra = {
+        "venta_a_cuenta_de": "Tercero Ejemplo",
+        "documento_venta_a_cuenta": "0614-1990-0110-19",
+        "receptor": {
+            "tipoDocumento": "36",
+            "numDocumento": "06141990011019",
+            "nrc": "1234567",
+            "nombre": "Consumidor Demo",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "San Salvador",
+            }
+        },
+    }
+    venta_id = db.add_venta("2024-06-01", 10, extra=extra)
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
+    assert data["ventaTercero"] == {
+        "nombre": "Tercero Ejemplo",
+        "nit": "06141990011019",
+    }
+
+
+def test_generar_dte_json_sets_venta_tercero_credito_fiscal(monkeypatch):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+
+    monkeypatch.setattr(dte_module, "_load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: datos)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+
+    db.add_cliente(
+        "Cliente FC",
+        "1234567",
+        "06141990011019",
+        "",
+        "Comercio",
+        "22223333",
+        "cli@example.com",
+        "San Salvador",
+        "06",
+        "23",
+    )
+    cliente_id = db.cursor.lastrowid
+
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id=cliente_id,
+        fecha="2024-06-02",
+        total=11.3,
+        nrc="1234567",
+        nit="06141990011019",
+        giro="Comercio",
+        venta_a_cuenta_de="Distribuidor XYZ",
+        documento_venta_a_cuenta="00798935-2",
+        sumas=10.0,
+        descuentos=0.0,
+        iva=1.3,
+        subtotal=11.3,
+        ventas_exentas=0.0,
+        ventas_no_sujetas=0.0,
+    )
+
+    db.add_detalle_venta(
+        venta_id,
+        prod_id,
+        1,
+        10,
+        tipo_fiscal="venta gravada",
+        vendedor_id=vend_id,
+    )
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
+    assert data["ventaTercero"] == {
+        "nombre": "Distribuidor XYZ",
+        "nit": "007989352",
+    }
+
+
+def test_generar_dte_json_ignores_invalid_venta_tercero_doc(monkeypatch):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "12345678",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Mi Negocio",
+        "cod_giro": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+    }
+
+    monkeypatch.setattr(dte_module, "_load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(svfe_config, "load_datos_negocio", lambda: datos)
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, None, 0, 0, 0, 10)
+    prod_id = db.cursor.lastrowid
+
+    extra = {
+        "venta_a_cuenta_de": "Nombre Incompleto",
+        "documento_venta_a_cuenta": "ABC123",
+        "receptor": {
+            "tipoDocumento": "36",
+            "numDocumento": "06141990011019",
+            "nrc": "1234567",
+            "nombre": "Consumidor Demo",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "San Salvador",
+            }
+        },
+    }
+    venta_id = db.add_venta("2024-06-03", 10, extra=extra)
+    db.add_detalle_venta(venta_id, prod_id, 1, 10, vendedor_id=vend_id)
+
+    data = dte_module.generar_dte_json(db, venta_id, tipo_dte="01")
+    assert data["ventaTercero"] is None
+

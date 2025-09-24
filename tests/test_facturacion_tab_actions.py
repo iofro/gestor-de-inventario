@@ -3,10 +3,14 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-import pytest
-from PyQt5.QtWidgets import QApplication, QDialog
+try:
+    from PyQt5.QtWidgets import QApplication, QDialog
+except ImportError as exc:  # pragma: no cover - skip when Qt is unavailable
+    pytest.skip(f"PyQt5 no disponible: {exc}", allow_module_level=True)
 
 import facturacion_tab
 from db import DB
@@ -404,3 +408,100 @@ def test_delete_orphan_invoice_removes_files(qt_app, tmp_path, monkeypatch):
     assert not (dtes_dir / f"{base}.jws").exists()
     db.cursor.execute("SELECT COUNT(*) FROM facturas_pdf")
     assert db.cursor.fetchone()[0] == 0
+
+
+def test_rejected_invoice_without_revert_keeps_correlativo(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db, credito=True)
+    correlativo = 404
+    db.set_dte_correlativo("03", "001", "001", correlativo)
+
+    control = f"DTE-03-S001P001-{correlativo:015d}"
+    factura_json = tmp_path / "factura.json"
+    factura_json.write_text(json.dumps({"identificacion": {"numeroControl": control}}))
+
+    tab = _make_tab(db, cid)
+
+    class RejectDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec_(self):
+            return QDialog.Rejected
+
+    monkeypatch.setattr(facturacion_tab, "DTERechazadoDialog", RejectDialog)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+
+    archive_called = False
+
+    def fake_archive(self, entry, factura):
+        nonlocal archive_called
+        archive_called = True
+
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "_archive_rejected_invoice", fake_archive)
+
+    resp = {
+        "identificacion": {
+            "numeroControl": control,
+            "tipoDte": "03",
+        }
+    }
+    entry = {"row_type": "venta", "venta_id": venta_id, "name": control, "control": control}
+    factura = {"json": str(factura_json), "control": control}
+
+    tab._handle_hacienda_rejection(resp, tipo_dte="03", entry=entry, factura=factura)
+
+    assert db.get_dte_correlativo("03", "001", "001") == 404
+    assert db.get_venta_by_id(venta_id) is not None
+    assert not archive_called
+
+
+def test_rejected_invoice_with_revert_rolls_back_correlativo(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db, credito=True)
+    correlativo = 404
+    db.set_dte_correlativo("03", "001", "001", correlativo)
+
+    control = f"DTE-03-S001P001-{correlativo:015d}"
+    factura_json = tmp_path / "factura.json"
+    factura_json.write_text(json.dumps({"identificacion": {"numeroControl": control}}))
+
+    tab = _make_tab(db, cid)
+
+    class AcceptDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec_(self):
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "DTERechazadoDialog", AcceptDialog)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+
+    archive_called = False
+
+    def fake_archive(self, entry, factura):
+        nonlocal archive_called
+        archive_called = True
+        self.manager.db.delete_venta(entry["venta_id"])
+
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "_archive_rejected_invoice", fake_archive)
+
+    resp = {
+        "identificacion": {
+            "numeroControl": control,
+            "tipoDte": "03",
+        }
+    }
+    entry = {"row_type": "venta", "venta_id": venta_id, "name": control, "control": control}
+    factura = {"json": str(factura_json), "control": control}
+
+    tab._handle_hacienda_rejection(resp, tipo_dte="03", entry=entry, factura=factura)
+
+    assert archive_called
+    assert db.get_dte_correlativo("03", "001", "001") == 403
+    assert db.get_venta_by_id(venta_id) is None

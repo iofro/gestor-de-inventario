@@ -1964,6 +1964,60 @@ class DB:
                         (tipo, sucursal, punto, valor),
                     )
 
+    def revert_dte_correlativo(
+        self, tipo: str, sucursal: str, punto: str, correlativo: int
+    ) -> tuple[bool, str | None]:
+        """Revierte el correlativo cuando una emisión fue descartada.
+
+        ``correlativo`` representa el número que se intentó utilizar.  Si el
+        correlativo actual en base de datos es mayor, se reduce al valor
+        inmediatamente anterior para permitir reutilizar la numeración.  Si el
+        correlativo almacenado es menor, no se modifica para evitar avanzar la
+        secuencia de manera artificial.
+
+        Returns a tuple ``(exito, motivo)`` donde ``motivo`` describe por qué no
+        se pudo revertir (cuando ``exito`` es ``False``).
+        """
+
+        objetivo = max(int(correlativo) - 1, 0)
+        with self.lock:
+            with self.conn:
+                self.cursor.execute(
+                    "SELECT correlativo FROM dte_correlativos WHERE tipo=? AND sucursal=? AND punto=?",
+                    (tipo, sucursal, punto),
+                )
+                row = self.cursor.fetchone()
+                if not row:
+                    return False, (
+                        "No existe un correlativo registrado para la serie "
+                        f"tipo {tipo}, sucursal {sucursal}, punto {punto}."
+                    )
+                actual = int(row["correlativo"])
+                if actual < objetivo:
+                    return False, (
+                        "El correlativo almacenado es {actual} pero se intentó revertir "
+                        "el número {correlativo}. La serie parece haber sido ajustada "
+                        "manualmente o revertida anteriormente."
+                    ).format(actual=actual, correlativo=correlativo)
+                if actual == objetivo:
+                    # Ya está en el valor deseado, se considera éxito porque no
+                    # es necesario aplicar cambios adicionales.
+                    return True, None
+
+                logger.info(
+                    "Revirtiendo correlativo tipo=%s sucursal=%s punto=%s de %s a %s",
+                    tipo,
+                    sucursal,
+                    punto,
+                    actual,
+                    objetivo,
+                )
+                self.cursor.execute(
+                    "UPDATE dte_correlativos SET correlativo=? WHERE tipo=? AND sucursal=? AND punto=?",
+                    (objetivo, tipo, sucursal, punto),
+                )
+                return True, None
+
     def next_dte_correlativo(self, tipo: str, sucursal: str, punto: str) -> int:
         """Obtiene y actualiza el correlativo para la combinación dada."""
         logger.debug(

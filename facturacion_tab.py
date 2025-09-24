@@ -1765,19 +1765,32 @@ class FacturacionTab(QWidget):
         sucursal = serie["sucursal"]
         punto = serie["punto"]
         correlativo = serie["correlativo"]
-        actual = self.manager.db.get_dte_correlativo(tipo, sucursal, punto)
-        if actual != correlativo:
+        try:
+            reverted, motivo = self.manager.db.revert_dte_correlativo(
+                tipo, sucursal, punto, correlativo
+            )
+        except Exception as exc:
+            logger.exception("Error al intentar revertir correlativo")
             QMessageBox.warning(
                 self,
                 "Enviar a Hacienda",
-                "No se puede revertir porque la serie avanzó.",
+                "Ocurrió un error al intentar regresar el correlativo: "
+                f"{exc}",
             )
             return False
 
-        nuevo = max(correlativo - 1, 0)
-        self.manager.db.set_dte_correlativo(tipo, sucursal, punto, nuevo)
+        if not reverted:
+            detalle = motivo or "La numeración de la serie cambió y no se puede deshacer."
+            QMessageBox.warning(
+                self,
+                "Enviar a Hacienda",
+                "No se pudo revertir el correlativo.\n" + detalle,
+            )
+            return False
+
+        nuevo = self.manager.db.get_dte_correlativo(tipo, sucursal, punto)
         logger.info(
-            "Correlativo revertido tipo=%s sucursal=%s punto=%s ambiente=%s de %s a %s por rechazo MH (no duplicado)",
+            "Correlativo revertido tipo=%s sucursal=%s punto=%s ambiente=%s de %s a %s",
             tipo,
             sucursal,
             punto,
@@ -3021,12 +3034,9 @@ class FacturacionTab(QWidget):
             if m:
                 tipo, suc, punto, corr = m.groups()
                 try:
-                    corr_int = int(corr)
-                    actual = self.manager.db.get_dte_correlativo(tipo, suc, punto)
-                    if actual == corr_int:
-                        self.manager.db.set_dte_correlativo(
-                            tipo, suc, punto, max(corr_int - 1, 0)
-                        )
+                    self.manager.db.revert_dte_correlativo(
+                        tipo, suc, punto, int(corr)
+                    )
                 except Exception:
                     pass
 

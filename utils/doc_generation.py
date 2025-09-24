@@ -51,22 +51,26 @@ def _ensure_invoice_copies(
         json_missing,
     )
     if pdf_missing and renderer is not None:
+
         logger.warning("PDF faltante; intentando regenerar %s", pdf_path)
         try:
             write_pdf_atomically(pdf_path, renderer)
         except Exception:
             logger.exception("No se pudo regenerar PDF en %s", pdf_path)
             raise
+
         pdf_missing = _path_missing(pdf_path)
 
     json_path.parent.mkdir(parents=True, exist_ok=True)
     if json_missing:
+
         logger.warning("JSON faltante; intentando reescribir %s", json_path)
         try:
             save_file(str(json_path), stable_stringify(json_payload, indent=2))
         except Exception:
             logger.exception("No se pudo garantizar copia JSON en %s", json_path)
             raise
+
         json_missing = _path_missing(json_path)
     try:
         folder_contents = sorted(p.name for p in pdf_path.parent.iterdir())
@@ -79,6 +83,7 @@ def _ensure_invoice_copies(
         pdf_path.parent,
         folder_contents,
     )
+
 
 
 def log_venta_vs_dte(manager, venta_id):
@@ -621,6 +626,7 @@ def generate_invoice_pdf(manager, venta_id):
             json_path,
             contents,
         )
+
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     try:
         json_size = json_path.stat().st_size

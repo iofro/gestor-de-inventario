@@ -110,6 +110,7 @@ def write_pdf_atomically(
         if final_size <= 0:
             raise IOError(f"PDF final vacío en {dest_path}")
         logger.info("PDF final escrito en %s (%s bytes)", dest_path, final_size)
+
         return dest_path
     except Exception as exc:
         logger.error("No se pudo escribir PDF en %s: %s", dest_path, exc)

@@ -1765,19 +1765,32 @@ class FacturacionTab(QWidget):
         sucursal = serie["sucursal"]
         punto = serie["punto"]
         correlativo = serie["correlativo"]
-        actual = self.manager.db.get_dte_correlativo(tipo, sucursal, punto)
-        if actual != correlativo:
+        try:
+            reverted, motivo = self.manager.db.revert_dte_correlativo(
+                tipo, sucursal, punto, correlativo
+            )
+        except Exception as exc:
+            logger.exception("Error al intentar revertir correlativo")
             QMessageBox.warning(
                 self,
                 "Enviar a Hacienda",
-                "No se puede revertir porque la serie avanzó.",
+                "Ocurrió un error al intentar regresar el correlativo: "
+                f"{exc}",
             )
             return False
 
-        nuevo = max(correlativo - 1, 0)
-        self.manager.db.set_dte_correlativo(tipo, sucursal, punto, nuevo)
+        if not reverted:
+            detalle = motivo or "La numeración de la serie cambió y no se puede deshacer."
+            QMessageBox.warning(
+                self,
+                "Enviar a Hacienda",
+                "No se pudo revertir el correlativo.\n" + detalle,
+            )
+            return False
+
+        nuevo = self.manager.db.get_dte_correlativo(tipo, sucursal, punto)
         logger.info(
-            "Correlativo revertido tipo=%s sucursal=%s punto=%s ambiente=%s de %s a %s por rechazo MH (no duplicado)",
+            "Correlativo revertido tipo=%s sucursal=%s punto=%s ambiente=%s de %s a %s",
             tipo,
             sucursal,
             punto,
@@ -1902,6 +1915,42 @@ class FacturacionTab(QWidget):
             return default
         return detalle
 
+    @staticmethod
+    def _format_observaciones_message(resp: dict | None) -> str:
+        """Return a human readable message with Hacienda observations."""
+
+        def collect(value):
+            textos: list[str] = []
+            if isinstance(value, dict):
+                if "observaciones" in value:
+                    textos.extend(
+                        _gather_rejection_texts(value.get("observaciones"))
+                    )
+                for key, item in value.items():
+                    if key == "observaciones":
+                        continue
+                    textos.extend(collect(item))
+            elif isinstance(value, (list, tuple, set)):
+                for item in value:
+                    textos.extend(collect(item))
+            return textos
+
+        if not isinstance(resp, dict):
+            return ""
+
+        textos = collect(resp)
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for texto in textos:
+            text = str(texto).strip()
+            if text and text not in seen:
+                cleaned.append(text)
+                seen.add(text)
+        if not cleaned:
+            return ""
+        formatted = "\n".join(f"- {text}" for text in cleaned)
+        return f"Observaciones:\n{formatted}"
+
     def send_selected_invoice(self):
         print("UI: SEND_START")
         entry = self._selected_entry()
@@ -1952,10 +2001,14 @@ class FacturacionTab(QWidget):
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                        message = "Documento enviado y recibido correctamente"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            message = f"{message}\n\n{obs_text}"
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
-                            "Documento enviado y recibido correctamente",
+                            message,
                         )
                     else:
                         detalle = resp.get("detalle")
@@ -1968,13 +2021,22 @@ class FacturacionTab(QWidget):
                                 resp, entry=entry, factura=factura
                             ):
                                 return
-                        mensaje = resp.get("errores") or resp.get("detalle", {}).get(
-                            "descripcionMsg"
-                        )
+                        mensaje = resp.get("errores")
+                        if not mensaje:
+                            detalle_dict = detalle if isinstance(detalle, dict) else {}
+                            mensaje = detalle_dict.get("descripcionMsg")
+                        if mensaje:
+                            textos = _gather_rejection_texts(mensaje)
+                            mensaje = "\n".join(textos) if textos else str(mensaje)
+                        else:
+                            mensaje = "Fallo al enviar"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            mensaje = f"{mensaje}\n\n{obs_text}"
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            mensaje or "Fallo al enviar",
+                            mensaje,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
@@ -2018,10 +2080,14 @@ class FacturacionTab(QWidget):
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
+                        message = "Documento enviado y recibido correctamente"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            message = f"{message}\n\n{obs_text}"
                         QMessageBox.information(
                             self,
                             "Enviar a Hacienda",
-                            "Documento enviado y recibido correctamente",
+                            message,
                         )
                     else:
                         detalle = resp.get("detalle")
@@ -2037,13 +2103,22 @@ class FacturacionTab(QWidget):
                                 factura=factura,
                             ):
                                 return
-                        mensaje = resp.get("errores") or resp.get("detalle", {}).get(
-                            "descripcionMsg"
-                        )
+                        mensaje = resp.get("errores")
+                        if not mensaje:
+                            detalle_dict = detalle if isinstance(detalle, dict) else {}
+                            mensaje = detalle_dict.get("descripcionMsg")
+                        if mensaje:
+                            textos = _gather_rejection_texts(mensaje)
+                            mensaje = "\n".join(textos) if textos else str(mensaje)
+                        else:
+                            mensaje = "Fallo al enviar"
+                        obs_text = self._format_observaciones_message(resp)
+                        if obs_text:
+                            mensaje = f"{mensaje}\n\n{obs_text}"
                         QMessageBox.critical(
                             self,
                             "Enviar a Hacienda",
-                            mensaje or "Fallo al enviar",
+                            mensaje,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
@@ -2109,8 +2184,40 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Imprimir", "No se ha seleccionado ninguna factura.")
             return
 
+        preferred_format = None
+        self._last_print_format = None
+        venta_id = entry.get("venta_id")
+        tipo_entry = str(entry.get("tipo") or "").strip().lower()
+        if (
+            venta_id
+            and tipo_entry
+            and tipo_entry in {"crédito fiscal", "credito fiscal", "consumidor final"}
+        ):
+            format_dialog = QMessageBox(self)
+            format_dialog.setIcon(QMessageBox.Question)
+            format_dialog.setWindowTitle("Formato de impresión")
+            format_dialog.setText(
+                "¿Desea imprimir la factura en papel tamaño carta o formato ticket?"
+            )
+            carta_button = format_dialog.addButton("Carta", QMessageBox.AcceptRole)
+            ticket_button = format_dialog.addButton("Ticket", QMessageBox.AcceptRole)
+            cancel_button = format_dialog.addButton(QMessageBox.Cancel)
+            if entry.get("row_type") == "ticket":
+                format_dialog.setDefaultButton(ticket_button)
+            else:
+                format_dialog.setDefaultButton(carta_button)
+            format_dialog.exec_()
+            clicked_button = format_dialog.clickedButton()
+            if clicked_button == cancel_button or clicked_button is None:
+                return
+            if clicked_button == ticket_button:
+                preferred_format = "ticket"
+            else:
+                preferred_format = "carta"
+            self._last_print_format = preferred_format
+
         pdf_path = self._resolve_pdf_path(entry)
-        if not pdf_path:
+        if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
             return
 
@@ -3021,12 +3128,9 @@ class FacturacionTab(QWidget):
             if m:
                 tipo, suc, punto, corr = m.groups()
                 try:
-                    corr_int = int(corr)
-                    actual = self.manager.db.get_dte_correlativo(tipo, suc, punto)
-                    if actual == corr_int:
-                        self.manager.db.set_dte_correlativo(
-                            tipo, suc, punto, max(corr_int - 1, 0)
-                        )
+                    self.manager.db.revert_dte_correlativo(
+                        tipo, suc, punto, int(corr)
+                    )
                 except Exception:
                     pass
 

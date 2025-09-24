@@ -2171,8 +2171,40 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Imprimir", "No se ha seleccionado ninguna factura.")
             return
 
+        preferred_format = None
+        self._last_print_format = None
+        venta_id = entry.get("venta_id")
+        tipo_entry = str(entry.get("tipo") or "").strip().lower()
+        if (
+            venta_id
+            and tipo_entry
+            and tipo_entry in {"crédito fiscal", "credito fiscal", "consumidor final"}
+        ):
+            format_dialog = QMessageBox(self)
+            format_dialog.setIcon(QMessageBox.Question)
+            format_dialog.setWindowTitle("Formato de impresión")
+            format_dialog.setText(
+                "¿Desea imprimir la factura en papel tamaño carta o formato ticket?"
+            )
+            carta_button = format_dialog.addButton("Carta", QMessageBox.AcceptRole)
+            ticket_button = format_dialog.addButton("Ticket", QMessageBox.AcceptRole)
+            cancel_button = format_dialog.addButton(QMessageBox.Cancel)
+            if entry.get("row_type") == "ticket":
+                format_dialog.setDefaultButton(ticket_button)
+            else:
+                format_dialog.setDefaultButton(carta_button)
+            format_dialog.exec_()
+            clicked_button = format_dialog.clickedButton()
+            if clicked_button == cancel_button or clicked_button is None:
+                return
+            if clicked_button == ticket_button:
+                preferred_format = "ticket"
+            else:
+                preferred_format = "carta"
+            self._last_print_format = preferred_format
+
         pdf_path = self._resolve_pdf_path(entry)
-        if not pdf_path:
+        if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
             return
 

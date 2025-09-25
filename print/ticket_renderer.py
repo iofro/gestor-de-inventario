@@ -22,6 +22,7 @@ from factura_sv import build_qr_url
 from utils.catalogos import (
     CAT_DEPTOS,
     CAT_MUNI44,
+    DTE_TIPOS,
     FORMA_PAGO,
     MODELO,
     OPERACION,
@@ -75,6 +76,24 @@ def q(value: Any) -> str:
 
 
 PAGO_LABELS = {code.zfill(2): value.upper() for code, value in FORMA_PAGO.items()}
+
+
+def document_title_label(ident: Dict[str, Any] | None) -> str:
+    """Return an uppercased label describing the DTE document type."""
+
+    tipo_dte = ""
+    if ident and isinstance(ident, dict):
+        tipo_dte = str(ident.get("tipoDte") or "").zfill(2)
+
+    if tipo_dte == "01":
+        return "CONSUMIDOR FINAL"
+    if tipo_dte == "03":
+        return "CRÉDITO FISCAL"
+
+    label = DTE_TIPOS.get(tipo_dte)
+    if label:
+        return label.upper()
+    return "FACTURA"
 
 
 # ---------------------------------------------------------------------------
@@ -358,8 +377,9 @@ def render_ticket_pdf(
         )
 
     # Title ----------------------------------------------------------------------
+    title_label = document_title_label(ident)
     add_text(
-        "DOCUMENTO TRIBUTARIO ELECTRÓNICO — FACTURA",
+        f"DOCUMENTO TRIBUTARIO ELECTRÓNICO — {title_label}",
         size=11,
         bold=True,
         align="center",

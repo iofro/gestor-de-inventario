@@ -52,15 +52,13 @@ def test_ticket_fe_pdf_clean(tmp_path):
 
     with fitz.open(out) as doc:
         text = "\n".join(page.get_text() for page in doc)
+    normalized = " ".join(text.split())
 
     for bad in ("apendice", "cuerpoDocumento", "falta", "None"):
         assert bad not in text
 
-    for good in (
-        "ELECTRÓNICO — FACTURA",
-        "Forma de pago:",
-        "CANT. DESCRIPCIÓN",
-    ):
+    assert "ELECTRÓNICO — CONSUMIDOR FINAL" in normalized
+    for good in ("Forma de pago:", "CANT. DESCRIPCIÓN"):
         assert good in text
 
 
@@ -176,6 +174,7 @@ def test_generate_ticket_pdf_defaults_and_persists_es_ticket(tmp_path, monkeypat
 
     with fitz.open(pdf_path) as doc:
         text = "\n".join(page.get_text() for page in doc)
+    normalized = " ".join(text.split())
 
-    assert "ELECTRÓNICO — FACTURA" in text
+    assert "ELECTRÓNICO — CONSUMIDOR FINAL" in normalized
     assert "Forma de pago:" in text

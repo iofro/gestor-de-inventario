@@ -7,7 +7,13 @@ from reportlab.graphics import renderPDF
 import json
 import os
 
-from print.ticket_renderer import PAGO_LABELS, money, q, render_ticket_pdf
+from print.ticket_renderer import (
+    PAGO_LABELS,
+    document_title_label,
+    money,
+    q,
+    render_ticket_pdf,
+)
 
 from paths import DATOS_NEGOCIO_PATH
 from factura_sv import build_qr_url
@@ -210,7 +216,12 @@ def generar_ticket_personalizado(
         y -= 1
 
     # Encabezado ---------------------------------------------------------------
-    draw_center("DOCUMENTO TRIBUTARIO ELECTRÓNICO — FACTURA", size=14, bold=True)
+    titulo = document_title_label(ident)
+    draw_center(
+        f"DOCUMENTO TRIBUTARIO ELECTRÓNICO — {titulo}",
+        size=14,
+        bold=True,
+    )
     draw_hr()
 
     # Datos del emisor --------------------------------------------------------

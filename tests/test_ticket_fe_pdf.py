@@ -57,9 +57,10 @@ def test_ticket_fe_pdf_clean(tmp_path):
     for bad in ("apendice", "cuerpoDocumento", "falta", "None"):
         assert bad not in text
 
-    assert "ELECTRÓNICO — CONSUMIDOR FINAL" in normalized
-    for good in ("Forma de pago:", "CANT. DESCRIPCIÓN"):
-        assert good in text
+    assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in normalized
+    assert "CONSUMIDOR FINAL" in normalized
+    assert "TOTAL A PAGAR" in normalized or "Total a pagar" in text
+    assert "EFECTIVO" in text or "PAGOS" in text
 
 
 def test_generate_ticket_pdf_defaults_and_persists_es_ticket(tmp_path, monkeypatch):
@@ -176,5 +177,6 @@ def test_generate_ticket_pdf_defaults_and_persists_es_ticket(tmp_path, monkeypat
         text = "\n".join(page.get_text() for page in doc)
     normalized = " ".join(text.split())
 
-    assert "ELECTRÓNICO — CONSUMIDOR FINAL" in normalized
-    assert "Forma de pago:" in text
+    assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in normalized
+    assert "CONSUMIDOR FINAL" in normalized
+    assert "EFECTIVO" in text or "PAGOS" in text

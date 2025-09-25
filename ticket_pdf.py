@@ -1,6 +1,9 @@
+from __future__ import annotations
+
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.lib.units import mm
+from reportlab.pdfbase import pdfmetrics
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.graphics import renderPDF
@@ -46,48 +49,97 @@ def generar_ticket_pdf(
         dte_json = dte_data.get("dteJson", dte_data)
         qr_url = build_qr_url(dte_json)
 
-    c = canvas.Canvas(archivo, pagesize=letter)
-    width, height = letter
-    y = height - 40
+    page_width = 58 * mm
+    margin = 5 * mm
+    content_width = page_width - 2 * margin
+    header_size = 14
+    body_size = 11
+    leading = body_size + 4
 
-    c.setFont("Helvetica-Bold", 12)
-    c.drawCentredString(width / 2, y, datos_negocio.get("nombreComercial", "TICKET"))
-    y -= 20
-    c.setFont("Helvetica", 10)
-    c.drawString(40, y, f"Fecha: {venta.get('fecha', '')}")
-    y -= 20
-    c.drawString(40, y, "Detalles:")
-    y -= 14
+    def _wrap_text(text: str) -> list[str]:
+        lines: list[str] = []
+        for paragraph in str(text or "").splitlines():
+            paragraph = paragraph.strip()
+            if not paragraph:
+                continue
+            words = paragraph.split()
+            current = ""
+            for word in words:
+                candidate = f"{current} {word}".strip()
+                if not candidate:
+                    continue
+                if (
+                    current
+                    and pdfmetrics.stringWidth(candidate, "Helvetica", body_size)
+                    > content_width
+                ):
+                    lines.append(current)
+                    current = word
+                else:
+                    current = candidate
+            if current:
+                lines.append(current)
+        if not lines:
+            lines.append("")
+        return lines
+
+    line_count = 4  # fecha, título de detalle y separadores básicos
+    line_count += sum(len(_wrap_text(d.get("descripcion", ""))) + 1 for d in detalles)
+    line_count += 2  # total y espacio adicional
+    if qr_url:
+        line_count += int((30 * mm) / leading) + 2
+
+    height = margin * 2 + header_size + line_count * leading
+    c = canvas.Canvas(archivo, pagesize=(page_width, height))
+    y = height - margin
+
+    c.setFont("Helvetica-Bold", header_size)
+    c.drawCentredString(
+        page_width / 2, y, datos_negocio.get("nombreComercial", "TICKET")
+    )
+    y -= header_size + 6
+    c.setFont("Helvetica", body_size)
+    c.drawString(margin, y, f"Fecha: {venta.get('fecha', '')}")
+    y -= leading
+    c.setFont("Helvetica-Bold", body_size)
+    c.drawString(margin, y, "Detalles:")
+    y -= leading
 
     for d in detalles:
         desc = d.get("descripcion", "")
         qty = d.get("cantidad", 0)
         pu = d.get("precio_unitario", 0)
         total = qty * pu
-        c.drawString(40, y, f"{desc} x{qty} @ {pu:.2f}")
-        c.drawRightString(width - 40, y, f"{total:.2f}")
-        y -= 14
-        if y < 60:
-            c.showPage()
-            y = height - 40
+        desc_lines = _wrap_text(desc)
+        c.setFont("Helvetica", body_size)
+        for line in desc_lines:
+            c.drawString(margin, y, line)
+            y -= leading
+        c.setFont("Helvetica", body_size)
+        c.drawString(margin, y, f"x{qty} @ {pu:.2f}")
+        c.setFont("Helvetica-Bold", body_size)
+        c.drawRightString(page_width - margin, y, f"{total:.2f}")
+        y -= leading
 
-    y -= 10
-    c.setFont("Helvetica-Bold", 12)
-    c.drawRightString(width - 40, y, f"Total: {venta.get('total', 0):.2f}")
+    y -= leading / 2
+    c.setFont("Helvetica-Bold", body_size)
+    c.drawRightString(page_width - margin, y, f"Total: {venta.get('total', 0):.2f}")
+    y -= leading
 
     if qr_url:
-        qr_size = 20 * mm
+        qr_size = min(30 * mm, content_width)
         qr_code = qr.QrCodeWidget(qr_url)
         bounds = qr_code.getBounds()
         w = bounds[2] - bounds[0]
         h = bounds[3] - bounds[1]
-        d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
+        d = Drawing(
+            qr_size,
+            qr_size,
+            transform=[qr_size / w, 0, 0, qr_size / h, 0, 0],
+        )
         d.add(qr_code)
-        if y < qr_size + 60:
-            c.showPage()
-            y = height - 40
-        qr_x = (width - qr_size) / 2
-        qr_y = y - qr_size - 20
+        qr_x = (page_width - qr_size) / 2
+        qr_y = max(margin, y - qr_size)
         renderPDF.draw(d, c, qr_x, qr_y)
         c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 

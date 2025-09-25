@@ -35,6 +35,19 @@ except Exception:  # pragma: no cover - fallback when running minimal envs
     DTE_DEPARTAMENTOS = {}
     DTE_MUNICIPIOS = {}
 
+# Thermal ticket layout tuning -------------------------------------------------
+
+PAGE_WIDTH_MM = 58
+MARGIN_X_MM = 2
+MARGIN_TOP_MM = 7
+MARGIN_BOTTOM_MM = 6
+
+BASE_FONT_SIZE = 9
+SMALL_FONT_SIZE = 8
+HEADER_FONT_SIZE = 10
+TITLE_FONT_SIZE = 10
+LEADING_EXTRA = 3
+
 # ---------------------------------------------------------------------------
 # Formatting helpers used inside the renderer
 
@@ -107,10 +120,10 @@ def render_ticket_pdf(
     items = payload.get("cuerpoDocumento", []) or []
 
     # ------------------------------------------------------------------ helpers
-    page_width = 80 * mm
-    margin_x = 4 * mm
-    margin_top = 8 * mm
-    margin_bottom = 6 * mm
+    page_width = PAGE_WIDTH_MM * mm
+    margin_x = MARGIN_X_MM * mm
+    margin_top = MARGIN_TOP_MM * mm
+    margin_bottom = MARGIN_BOTTOM_MM * mm
     content_width = page_width - 2 * margin_x
 
     def _wrap_text(text: str, width: float, font: str, size: float) -> List[str]:
@@ -141,8 +154,7 @@ def render_ticket_pdf(
 
     def _format_section_heading(title: str) -> str:
         title = title.strip().upper()
-        filler = "-" * 11
-        return f"{filler} {title} {filler}"
+        return title
 
     def _map_modelo(code: Any) -> str:
         try:
@@ -253,7 +265,7 @@ def render_ticket_pdf(
     def add_text(
         text: str,
         *,
-        size: float = 8,
+        size: float = BASE_FONT_SIZE,
         bold: bool = False,
         align: str = "left",
         spacing_before: float = 0,
@@ -268,7 +280,7 @@ def render_ticket_pdf(
                 "font": font,
                 "size": size,
                 "align": align,
-                "leading": size + 2,
+                "leading": size + LEADING_EXTRA,
                 "spacing_before": spacing_before,
                 "spacing_after": spacing_after,
             }
@@ -278,7 +290,7 @@ def render_ticket_pdf(
         label: str,
         value: str,
         *,
-        size: float = 8,
+        size: float = BASE_FONT_SIZE,
         bold_value: bool = False,
         spacing_before: float = 0,
         spacing_after: float = 2,
@@ -292,7 +304,7 @@ def render_ticket_pdf(
                 "bold_value": bold_value,
                 "spacing_before": spacing_before,
                 "spacing_after": spacing_after,
-                "leading": size + 2,
+                "leading": size + LEADING_EXTRA,
             }
         )
 
@@ -305,7 +317,7 @@ def render_ticket_pdf(
             }
         )
 
-    col_widths = [0.10, 0.55, 0.15, 0.20]
+    col_widths = [0.12, 0.50, 0.18, 0.20]
     col_widths = [w * content_width for w in col_widths]
 
     def add_table_header() -> None:
@@ -314,8 +326,8 @@ def render_ticket_pdf(
                 "type": "table_header",
                 "labels": ["CANT.", "DESCRIPCIÓN", "P. UNIT.", "TOTAL"],
                 "font": "Helvetica-Bold",
-                "size": 8,
-                "leading": 10,
+                "size": BASE_FONT_SIZE,
+                "leading": BASE_FONT_SIZE + LEADING_EXTRA,
                 "spacing_before": 4,
                 "spacing_after": 2,
             }
@@ -326,10 +338,12 @@ def render_ticket_pdf(
         precio = _to_money(item.get("precioUni", 0))
         total = _to_money(_item_totals(item))
         descripcion = str(item.get("descripcion", ""))
+        size = BASE_FONT_SIZE
+        leading = size + LEADING_EXTRA
         desc_lines = _wrap_text(
-            descripcion, col_widths[1], "Helvetica", 8
+            descripcion, col_widths[1], "Helvetica", size
         )
-        row_height = (8 + 2) * len(desc_lines)
+        row_height = leading * len(desc_lines)
         elements.append(
             {
                 "type": "table_row",
@@ -337,8 +351,8 @@ def render_ticket_pdf(
                 "precio": precio,
                 "total": total,
                 "desc_lines": desc_lines,
-                "leading": 10,
-                "size": 8,
+                "leading": leading,
+                "size": size,
                 "row_height": row_height,
                 "spacing_before": 0,
                 "spacing_after": 2,
@@ -359,79 +373,108 @@ def render_ticket_pdf(
 
     # Title ----------------------------------------------------------------------
     add_text(
-        "DOCUMENTO TRIBUTARIO ELECTRÓNICO — FACTURA",
-        size=11,
+        "DOCUMENTO TRIBUTARIO\nELECTRÓNICO — FACTURA",
+        size=TITLE_FONT_SIZE,
         bold=True,
         align="center",
         spacing_after=6,
     )
 
     # Emisor ---------------------------------------------------------------------
-    add_text(_format_section_heading("Datos del Emisor"), align="center", size=8, bold=True)
+    add_text(
+        _format_section_heading("Datos del Emisor"),
+        align="center",
+        size=HEADER_FONT_SIZE,
+        bold=True,
+    )
     emisor_nombre = emisor.get("nombreComercial") or emisor.get("nombre")
     if emisor_nombre:
-        add_text(str(emisor_nombre), bold=True, align="center", size=9, spacing_after=2)
+        add_text(
+            str(emisor_nombre),
+            bold=True,
+            align="center",
+            size=HEADER_FONT_SIZE,
+            spacing_after=2,
+        )
     if emisor.get("nit"):
-        add_text(f"NIT: {emisor.get('nit')}", size=8)
+        add_text(f"NIT: {emisor.get('nit')}", size=BASE_FONT_SIZE)
     if emisor.get("nrc"):
-        add_text(f"NRC: {emisor.get('nrc')}", size=8)
+        add_text(f"NRC: {emisor.get('nrc')}", size=BASE_FONT_SIZE)
     sucursal = emisor.get("sucursal") or emisor.get("nombreEstablecimiento")
     if not sucursal:
         sucursal = emisor.get("codEstableMH") or emisor.get("codEstable")
     if sucursal:
-        add_text(f"Sucursal: {sucursal}", size=8)
+        add_text(f"Sucursal: {sucursal}", size=BASE_FONT_SIZE)
     actividad = emisor.get("descActividad") or emisor.get("actividadEconomica")
     if actividad:
-        add_text(f"Actividad Económica: {actividad}", size=8)
+        add_text(f"Actividad Económica: {actividad}", size=BASE_FONT_SIZE)
     direccion = _format_address(emisor.get("direccion", {}))
     if direccion:
-        add_text(f"Dirección: {direccion}", size=8)
+        add_text(f"Dirección: {direccion}", size=BASE_FONT_SIZE)
 
     # Datos de factura -----------------------------------------------------------
-    add_text(_format_section_heading("Datos de Factura"), align="center", size=8, bold=True)
+    add_text(
+        _format_section_heading("Datos de Factura"),
+        align="center",
+        size=HEADER_FONT_SIZE,
+        bold=True,
+    )
     if ident.get("codigoGeneracion"):
         add_text(
             f"Código de Generación: {ident.get('codigoGeneracion')}",
-            size=8,
+            size=BASE_FONT_SIZE,
         )
     if ident.get("numeroControl"):
-        add_text(f"Número de control: {ident.get('numeroControl')}", size=8)
+        add_text(
+            f"Número de control: {ident.get('numeroControl')}",
+            size=BASE_FONT_SIZE,
+        )
     sello = sello or payload.get("selloRecibido") or ident.get("selloRecibido")
     if sello:
-        add_text(f"Sello de Recepción: {sello}", size=8)
+        add_text(f"Sello de Recepción: {sello}", size=BASE_FONT_SIZE)
     modelo = _map_modelo(ident.get("tipoModelo"))
     if modelo:
-        add_text(f"Modelo de Facturación: {modelo}", size=8)
+        add_text(f"Modelo de Facturación: {modelo}", size=BASE_FONT_SIZE)
     operacion = _map_operacion(ident.get("tipoOperacion"))
     if operacion:
-        add_text(f"Tipo de Transmisión: {operacion}", size=8)
+        add_text(f"Tipo de Transmisión: {operacion}", size=BASE_FONT_SIZE)
     fecha = ident.get("fecEmi")
     hora = ident.get("horEmi")
     if fecha or hora:
         add_text(
             f"Fecha y hora de Generación: {fecha or ''} {hora or ''}".strip(),
-            size=8,
+            size=BASE_FONT_SIZE,
         )
 
     # Receptor -------------------------------------------------------------------
-    add_text(_format_section_heading("Datos del Receptor"), align="center", size=8, bold=True)
-    add_pair("Nombre:", receptor.get("nombre") or "", size=8)
+    add_text(
+        _format_section_heading("Datos del Receptor"),
+        align="center",
+        size=HEADER_FONT_SIZE,
+        bold=True,
+    )
+    add_pair("Nombre:", receptor.get("nombre") or "", size=BASE_FONT_SIZE)
     if receptor.get("nit"):
-        add_pair("NIT:", receptor.get("nit"), size=8)
+        add_pair("NIT:", receptor.get("nit"), size=BASE_FONT_SIZE)
     doc_line = _format_document_line(receptor)
     if doc_line:
-        add_pair(doc_line[0], doc_line[1], size=8)
+        add_pair(doc_line[0], doc_line[1], size=BASE_FONT_SIZE)
     if receptor.get("nrc"):
-        add_pair("NRC:", receptor.get("nrc"), size=8)
+        add_pair("NRC:", receptor.get("nrc"), size=BASE_FONT_SIZE)
     direccion_rec = _format_address(receptor.get("direccion", {}))
     if direccion_rec:
-        add_text(f"Dirección: {direccion_rec}", size=8)
+        add_text(f"Dirección: {direccion_rec}", size=BASE_FONT_SIZE)
     correo_rec = receptor.get("correo")
     if correo_rec:
-        add_pair("Correo:", correo_rec, size=8)
+        add_pair("Correo:", correo_rec, size=BASE_FONT_SIZE)
 
     # Detalle --------------------------------------------------------------------
-    add_text(_format_section_heading("Detalle de Factura"), align="center", size=8, bold=True)
+    add_text(
+        _format_section_heading("Detalle de Factura"),
+        align="center",
+        size=HEADER_FONT_SIZE,
+        bold=True,
+    )
     add_table_header()
     for item in items:
         add_table_row(item)
@@ -486,7 +529,11 @@ def render_ticket_pdf(
     )
     total_letras = resumen.get("totalLetras")
     if total_letras:
-        add_text(f"TOTAL EN LETRAS: {total_letras}", size=8, bold=True)
+        add_text(
+            f"TOTAL EN LETRAS: {total_letras}",
+            size=HEADER_FONT_SIZE,
+            bold=True,
+        )
 
     # Pagos y otros --------------------------------------------------------------
     pagos = resumen.get("pagos") or []
@@ -494,15 +541,23 @@ def render_ticket_pdf(
         pago = pagos[0]
         code = str(pago.get("codigo")).zfill(2)
         label = PAGO_LABELS.get(code, FORMA_PAGO.get(code, "Otros")).upper()
-        add_text(f"Forma de pago: {label}", size=8, spacing_before=4)
+        add_text(
+            f"Forma de pago: {label}",
+            size=BASE_FONT_SIZE,
+            spacing_before=4,
+        )
         if pago.get("montoPago") not in (None, ""):
-            add_pair("Monto pago:", _to_money(pago.get("montoPago")), size=8)
+            add_pair(
+                "Monto pago:",
+                _to_money(pago.get("montoPago")),
+                size=BASE_FONT_SIZE,
+            )
         if pago.get("referencia"):
-            add_pair("Referencia:", pago.get("referencia"), size=8)
+            add_pair("Referencia:", pago.get("referencia"), size=BASE_FONT_SIZE)
         if pago.get("plazo"):
-            add_pair("Plazo:", pago.get("plazo"), size=8)
+            add_pair("Plazo:", pago.get("plazo"), size=BASE_FONT_SIZE)
         if pago.get("periodo"):
-            add_pair("Periodo:", pago.get("periodo"), size=8)
+            add_pair("Periodo:", pago.get("periodo"), size=BASE_FONT_SIZE)
 
     # QR -------------------------------------------------------------------------
     qr_url = None

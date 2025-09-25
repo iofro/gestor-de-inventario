@@ -92,6 +92,69 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     assert save_path.with_suffix(".json").exists()
 
 
+def test_build_ticket_format_pdf_generates_temp_file(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    cf_dir = tmp_path / "facturas_consumidor_final"
+    cf_dir.mkdir()
+    pdf_path = cf_dir / "20240101_Test.pdf"
+    pdf_path.write_text("pdf")
+    dte_payload = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "12345678-1234-1234-1234-123456789012",
+            "numeroControl": "DTE-01-0001",
+            "tipoModelo": 1,
+            "tipoOperacion": 1,
+            "fecEmi": "2024-01-01",
+            "horEmi": "12:00:00",
+        },
+        "emisor": {
+            "nombreComercial": "Farmacia X",
+            "nit": "0614-290389-102-1",
+            "nrc": "123456-7",
+            "descActividad": "Farmacia",
+            "direccion": {"complemento": "Av. Siempre Viva"},
+        },
+        "receptor": {"tipoDocumento": "37", "direccion": {"complemento": "Calle 1"}},
+        "cuerpoDocumento": [
+            {
+                "cantidad": 1,
+                "uniMedida": "59",
+                "descripcion": "Acetaminofen 500mg",
+                "precioUni": 2.0,
+                "montoTotal": 2.0,
+            }
+        ],
+        "resumen": {
+            "totalGravada": 2.0,
+            "montoTotalOperacion": 2.0,
+            "totalPagar": 2.0,
+            "condicionOperacion": 1,
+            "pagos": [{"codigo": "01", "montoPago": 2.0}],
+        },
+        "selloRecibido": "ABCD1234EFGH5678IJKL9012MNOP3456QRST789",
+    }
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text(json.dumps(dte_payload))
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tickets_dir = tmp_path / "tickets"
+    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tickets_dir))
+
+    tab = _make_tab(db, cid)
+    entry = {"row_type": "venta", "venta_id": venta_id, "tipo": "Consumidor Final"}
+
+    output = tab._build_ticket_format_pdf(entry, str(pdf_path))
+    assert output is not None
+    out_path = Path(output)
+    assert out_path.exists()
+    assert out_path.parent == tickets_dir
+    assert out_path.stat().st_size > 0
+    tab._safe_remove(output)
+    assert not out_path.exists()
+
+
 def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

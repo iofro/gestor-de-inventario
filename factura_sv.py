@@ -541,6 +541,17 @@ def generar_factura_electronica_pdf(
     total_sumas = _venta_monto("sumas", "subTotalVentas")
     total_descuentos = _venta_monto("descuentos", "totalDescu")
     total_iva = _venta_monto("totalIva", "iva")
+    if not is_consumidor_final and abs(total_iva) < 0.005:
+        total_iva_detalles = Decimal("0")
+        for detalle in detalles:
+            valor_iva = detalle.get("iva")
+            if valor_iva in (None, ""):
+                continue
+            try:
+                total_iva_detalles += Decimal(str(valor_iva))
+            except (InvalidOperation, ValueError, TypeError):
+                continue
+        total_iva = float(total_iva_detalles)
     subtotal = _venta_monto("subTotal", "subtotal", "subTotalVentas")
     total_exentas = _venta_monto("ventas_exentas", "totalExenta")
     total_no_sujetas = _venta_monto("ventas_no_sujetas", "totalNoSuj")

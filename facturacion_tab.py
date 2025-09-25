@@ -37,6 +37,7 @@ import glob
 import hashlib
 
 from ticket_pdf import generar_ticket_personalizado
+from print.ticket_renderer import render_ticket_pdf
 from factura_sv import (
     generar_nota_credito_pdf,
     generar_nota_debito_pdf,
@@ -74,6 +75,7 @@ from paths import (
 import tempfile
 import subprocess
 import shutil
+import uuid
 import dte
 import anulacion
 from db import DB
@@ -2216,14 +2218,25 @@ class FacturacionTab(QWidget):
                 preferred_format = "carta"
             self._last_print_format = preferred_format
 
-        pdf_path = self._resolve_pdf_path(entry)
+        cleanup_path = None
+        base_pdf_path = self._resolve_pdf_path(entry)
+        if preferred_format == "ticket":
+            pdf_path = self._build_ticket_format_pdf(entry, base_pdf_path)
+            cleanup_path = pdf_path
+        else:
+            pdf_path = base_pdf_path
+
         if not pdf_path or not os.path.exists(pdf_path):
+            if cleanup_path:
+                self._safe_remove(cleanup_path)
             QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
             return
 
         try:
             import fitz
         except ImportError:
+            if cleanup_path:
+                self._safe_remove(cleanup_path)
             QMessageBox.critical(
                 self,
                 "Imprimir",
@@ -2235,6 +2248,8 @@ class FacturacionTab(QWidget):
         dialog = QPrintDialog(printer, self)
         dialog.setWindowTitle("Imprimir factura")
         if dialog.exec_() != QDialog.Accepted:
+            if cleanup_path:
+                self._safe_remove(cleanup_path)
             return
 
         document = None
@@ -2242,11 +2257,15 @@ class FacturacionTab(QWidget):
         try:
             document = fitz.open(pdf_path)
         except Exception as exc:
+            if cleanup_path:
+                self._safe_remove(cleanup_path)
             QMessageBox.critical(self, "Imprimir", f"No se pudo abrir el PDF: {exc}")
             return
 
         if not painter.begin(printer):
             document.close()
+            if cleanup_path:
+                self._safe_remove(cleanup_path)
             QMessageBox.warning(self, "Imprimir", "No se pudo iniciar la impresión.")
             return
 
@@ -2287,6 +2306,130 @@ class FacturacionTab(QWidget):
         finally:
             painter.end()
             document.close()
+            if cleanup_path:
+                self._safe_remove(cleanup_path)
+
+    def _safe_remove(self, path: str | None) -> None:
+        if not path:
+            return
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+    def _build_ticket_format_pdf(
+        self,
+        entry: dict,
+        base_pdf_path: str | None = None,
+    ) -> str | None:
+        if not entry:
+            return None
+
+        venta_id = entry.get("venta_id")
+        json_path = entry.get("json")
+        if not json_path and base_pdf_path:
+            candidate = os.path.splitext(base_pdf_path)[0] + ".json"
+            if os.path.exists(candidate):
+                json_path = candidate
+
+        venta = None
+        extra_data = {}
+        if venta_id:
+            venta = next(
+                (v for v in self.manager.db.get_ventas() if v["id"] == venta_id),
+                None,
+            )
+            if venta:
+                raw_extra = venta.get("extra")
+                if raw_extra:
+                    try:
+                        extra_data = json.loads(raw_extra)
+                    except Exception:
+                        extra_data = {}
+                if not json_path:
+                    candidate = extra_data.get("dteJsonPath")
+                    if candidate and os.path.exists(candidate):
+                        json_path = candidate
+
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                "No se encontró la información de la factura para el formato ticket.",
+            )
+            return None
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                payload_data = json.load(fh)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                f"No se pudo leer la información de la factura: {exc}",
+            )
+            return None
+
+        if isinstance(payload_data, dict) and "dteJson" in payload_data:
+            dte_payload = payload_data.get("dteJson") or {}
+        else:
+            dte_payload = payload_data if isinstance(payload_data, dict) else {}
+
+        if not isinstance(dte_payload, dict) or not dte_payload:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                "El documento JSON no contiene datos válidos para el formato ticket.",
+            )
+            return None
+
+        sello = None
+        if isinstance(payload_data, dict):
+            sello = (
+                payload_data.get("selloRecibido")
+                or payload_data.get("sello")
+                or payload_data.get("acuseRecibo")
+            )
+            if not sello:
+                respuesta = payload_data.get("respuesta")
+                if isinstance(respuesta, dict):
+                    sello = respuesta.get("selloRecibido") or respuesta.get("sello")
+        if not sello and extra_data:
+            sello = extra_data.get("selloRecibido") or extra_data.get("sello")
+        if not sello and isinstance(dte_payload, dict):
+            sello = dte_payload.get("selloRecibido") or dte_payload.get("acuseRecibo")
+
+        accepted = bool(sello)
+
+        try:
+            pdf_bytes = render_ticket_pdf(dte_payload, accepted, sello=sello)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Imprimir",
+                f"No se pudo generar el ticket en PDF: {exc}",
+            )
+            return None
+
+        try:
+            os.makedirs(TICKETS_DIR, exist_ok=True)
+        except OSError:
+            pass
+
+        filename = f"ticket_print_{uuid.uuid4().hex}.pdf"
+        output_path = os.path.join(TICKETS_DIR, filename)
+        try:
+            with open(output_path, "wb") as fh:
+                fh.write(pdf_bytes)
+        except OSError as exc:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                f"No se pudo escribir el ticket temporal: {exc}",
+            )
+            return None
+
+        return output_path
 
     def mostrar_detalle_factura(self, item=None):
         factura = self._selected_factura()

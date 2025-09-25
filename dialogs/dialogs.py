@@ -1184,6 +1184,25 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         if self.precio_spin.value() <= 0:
             QMessageBox.warning(self, "Validación", "El precio debe ser mayor que cero.")
             return
+        tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
+        tercero_documento = self.venta_documento_edit.text().strip()
+        if tercero_nombre or tercero_documento:
+            nit_digits = solo_digitos(tercero_documento)
+            if tercero_documento and len(nit_digits) not in (9, 14):
+                respuesta = QMessageBox.question(
+                    self,
+                    "Venta a tercero inválida",
+                    (
+                        "El documento ingresado para 'Venta a cuenta de' debe contener "
+                        "9 o 14 dígitos luego de quitar guiones y espacios.\n\n"
+                        "Si continúas, la sección 'venta a tercero' del DTE quedará vacía.\n\n"
+                        "¿Deseas continuar sin esos datos?"
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if respuesta != QMessageBox.Yes:
+                    return
         self.accept()
 
 class ProductDialog(QDialog):
@@ -2297,6 +2316,25 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if not self.venta_items:
             QMessageBox.warning(self, "Validación", "Debe agregar al menos un producto a la venta.")
             return
+        tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
+        tercero_documento = self.venta_documento_edit.text().strip()
+        if tercero_nombre or tercero_documento:
+            nit_digits = solo_digitos(tercero_documento)
+            if tercero_documento and len(nit_digits) not in (9, 14):
+                respuesta = QMessageBox.question(
+                    self,
+                    "Venta a tercero inválida",
+                    (
+                        "El documento ingresado para 'Venta a cuenta de' debe contener "
+                        "9 o 14 dígitos luego de quitar guiones y espacios.\n\n"
+                        "Si continúas, la sección 'venta a tercero' del DTE quedará vacía.\n\n"
+                        "¿Deseas continuar sin esos datos?"
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if respuesta != QMessageBox.Yes:
+                    return
         self.accept()
 
     def get_data(self):

@@ -510,6 +510,96 @@ def generate_invoice_pdf(manager, venta_id):
     _update(("ventas_gravadas", "totalGravada"), "totalGravada", "ventas_gravadas")
     _update(("total", "totalPagar"), "totalPagar", "total", "montoTotalOperacion")
 
+    dte_items = json_data.get("cuerpoDocumento")
+
+    def _normalize_item_value(value):
+        if value in (None, ""):
+            return None
+        try:
+            return float(D(str(value)))
+        except (InvalidOperation, ValueError, TypeError):
+            return None
+
+    if isinstance(dte_items, list) and detalles:
+        index_by_num: dict[int, int] = {}
+        for idx, detalle in enumerate(detalles):
+            num_val = None
+            for key in ("numItem", "num_item", "numero", "num", "item"):
+                raw = detalle.get(key)
+                if raw in (None, ""):
+                    continue
+                try:
+                    num_val = int(str(raw).strip())
+                except (ValueError, TypeError):
+                    continue
+                else:
+                    break
+            if num_val is not None:
+                index_by_num.setdefault(num_val, idx)
+
+        used_indices: set[int] = set()
+
+        def _pick_index(item: dict) -> int | None:
+            num_raw = item.get("numItem")
+            if num_raw not in (None, ""):
+                try:
+                    num_int = int(str(num_raw).strip())
+                except (ValueError, TypeError):
+                    num_int = None
+                if num_int is not None:
+                    idx = index_by_num.get(num_int)
+                    if idx is not None and idx not in used_indices:
+                        return idx
+            for candidate in range(len(detalles)):
+                if candidate not in used_indices:
+                    return candidate
+            return None
+
+        for item in dte_items:
+            if not isinstance(item, dict):
+                continue
+            idx = _pick_index(item)
+            if idx is None:
+                continue
+            used_indices.add(idx)
+            detalle = detalles[idx]
+
+            cantidad = _normalize_item_value(item.get("cantidad"))
+            if cantidad is not None:
+                detalle["cantidad"] = cantidad
+
+            precio = _normalize_item_value(item.get("precioUni"))
+            if precio is not None:
+                detalle["precio_unitario"] = precio
+
+            descuento = _normalize_item_value(item.get("montoDescu"))
+            if descuento is not None:
+                detalle["descuento"] = descuento
+                if descuento and str(detalle.get("descuento_tipo", "")).strip() == "%":
+                    detalle["descuento_tipo"] = "$"
+
+            for dest, src in (
+                ("ventas_gravadas", "ventaGravada"),
+                ("ventas_exentas", "ventaExenta"),
+                ("ventas_no_sujetas", "ventaNoSuj"),
+            ):
+                value = _normalize_item_value(item.get(src))
+                if value is not None:
+                    detalle[dest] = value
+
+            iva_val = _normalize_item_value(item.get("ivaItem"))
+            if iva_val is None:
+                base_val = detalle.get("ventas_gravadas")
+                if base_val is None:
+                    base_val = _normalize_item_value(item.get("ventaGravada"))
+                if base_val is not None:
+                    try:
+                        iva_val = float(iva_item(D(str(base_val))))
+                    except (InvalidOperation, ValueError, TypeError):
+                        iva_val = None
+            if iva_val is not None:
+                detalle["iva"] = iva_val
+
     if not venta_data.get("total_letras"):
         try:
             venta_data["total_letras"] = monto_a_texto_sv(venta_data.get("total", 0))

@@ -926,40 +926,50 @@ class DB:
         codigo=None,
         dui=None,
         commit: bool = True,
-        trabajador_id=None,
     ):
         """Insert a new vendor.
 
         ``commit`` can be set to ``False`` when called inside an existing
         transaction to avoid committing after each insertion.
 
-        If ``trabajador_id`` is provided, the corresponding record in
-        ``trabajadores`` will be updated (and marked as vendor) instead of
-        inserting a new one.
+        When ``Distribuidor_id`` is provided the vendor is treated as a
+        supplier and no entry is created in ``trabajadores``.
         """
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
 
-        self.cursor.execute(
-            "SELECT 1 FROM trabajadores WHERE codigo=?",
-            (codigo,),
-        )
-        if self.cursor.fetchone():
-            raise ValueError("El código ya existe")
+        if Distribuidor_id is None:
+            self.cursor.execute(
+                "SELECT 1 FROM trabajadores WHERE codigo=?",
+                (codigo,),
+            )
+            if self.cursor.fetchone():
+                raise ValueError("El código ya existe")
 
-        self.cursor.execute(
-            """
-            INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)
-            VALUES (?, ?, ?, 1)
-            """,
-            (codigo, nombre, dui),
-        )
-        trabajador_id = self.cursor.lastrowid
+            self.cursor.execute(
+                """
+                INSERT INTO trabajadores (codigo, nombre, dui, es_vendedor)
+                VALUES (?, ?, ?, 1)
+                """,
+                (codigo, nombre, dui),
+            )
+            trabajador_id = self.cursor.lastrowid
 
-        self.cursor.execute(
-            "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
-            (trabajador_id, codigo, nombre, dui, descripcion, Distribuidor_id),
-        )
+            self.cursor.execute(
+                """
+                INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id)
+                VALUES (?, ?, ?, ?, ?, NULL)
+                """,
+                (trabajador_id, codigo, nombre, dui, descripcion),
+            )
+        else:
+            self.cursor.execute(
+                """
+                INSERT INTO vendedores (codigo, nombre, dui, descripcion, Distribuidor_id)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (codigo, nombre, dui, descripcion, Distribuidor_id),
+            )
         if commit:
             self.conn.commit()
 
@@ -981,9 +991,14 @@ class DB:
 
             )
             self.cursor.execute(
-                "UPDATE trabajadores SET codigo=?, nombre=?, dui=? WHERE id=?",
-                (codigo, nombre, dui, id),
+                "SELECT 1 FROM trabajadores WHERE id=?",
+                (id,),
             )
+            if self.cursor.fetchone():
+                self.cursor.execute(
+                    "UPDATE trabajadores SET codigo=?, nombre=?, dui=? WHERE id=?",
+                    (codigo, nombre, dui, id),
+                )
             self.conn.commit()
         except Exception as e:
             logger.exception("Error al actualizar vendedor: %s", e)
@@ -1012,7 +1027,12 @@ class DB:
                         f"UPDATE {table} SET {column}=? WHERE {column}=?", (reassign_to, id)
                     )
             self.cursor.execute("DELETE FROM vendedores WHERE id=?", (id,))
-            self.cursor.execute("DELETE FROM trabajadores WHERE id=?", (id,))
+            self.cursor.execute(
+                "SELECT 1 FROM trabajadores WHERE id=?",
+                (id,),
+            )
+            if self.cursor.fetchone():
+                self.cursor.execute("DELETE FROM trabajadores WHERE id=?", (id,))
             self.conn.commit()
         except ValueError:
             raise

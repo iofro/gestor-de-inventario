@@ -47,12 +47,27 @@ def test_render_ticket_pdf_clean(tmp_path):
 
     with fitz.open(out) as doc:
         text = "\n".join(page.get_text() for page in doc)
+    normalized = " ".join(text.split())
 
     assert "cuerpoDocumento" not in text
     assert "identificacion" not in text
     assert "DOCUMENTO TRIBUTARIO" in text
-    assert "ELECTRÓNICO — FACTURA" in text
+    assert "ELECTRÓNICO — CONSUMIDOR FINAL" in normalized
     assert "DETALLE DE FACTURA" in text
     assert "FORMA DE PAGO" in text or "Forma de pago" in text
     assert "Sello de Recepción: SEAL-123" in text
     assert "3.39" in text  # total
+
+
+def test_render_ticket_pdf_credito_fiscal_title(tmp_path):
+    payload = _sample_payload()
+    payload["identificacion"]["tipoDte"] = "03"
+    pdf_bytes = render_ticket_pdf(payload, accepted=True, sello="SEAL-123")
+    out = tmp_path / "ticket.pdf"
+    out.write_bytes(pdf_bytes)
+
+    with fitz.open(out) as doc:
+        text = "\n".join(page.get_text() for page in doc)
+    normalized = " ".join(text.split())
+
+    assert "ELECTRÓNICO — CRÉDITO FISCAL" in normalized

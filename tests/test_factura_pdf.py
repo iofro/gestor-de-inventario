@@ -129,6 +129,58 @@ def test_consumidor_final_pdf_omits_iva_column(tmp_path):
     assert '0.65' not in text
 
 
+def test_credito_fiscal_pdf_shows_venta_a_cuenta(tmp_path):
+    venta, detalles = _sample_data('Crédito Fiscal')
+    venta['venta_a_cuenta_de'] = 'Tercero Ejemplo'
+    venta['documento_venta_a_cuenta'] = '0614-1990-0110-19'
+    out = tmp_path / 'fact_cf_venta_cta.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        'Crédito Fiscal',
+        archivo=str(out),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=uuid.uuid4().hex[:8].upper(),
+        fecha_generacion="01/01/2024",
+        sello_recepcion='0' * 40,
+    )
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+
+    assert 'Venta a cta de: Tercero Ejemplo' in text
+    assert 'DUI/NIT: 0614-1990-0110-19' in text
+
+
+def test_consumidor_final_pdf_shows_venta_a_cuenta_from_extra(tmp_path):
+    venta, detalles = _sample_data('Consumidor Final')
+    venta['extra'] = {
+        'venta_a_cuenta_de': 'Cliente CF',
+        'documento_venta_a_cuenta': '0614-2000-1111-19',
+    }
+    out = tmp_path / 'fact_cf_extra.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        'Consumidor Final',
+        archivo=str(out),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=uuid.uuid4().hex[:8].upper(),
+        fecha_generacion="01/01/2024",
+        sello_recepcion='0' * 40,
+    )
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+
+    assert 'Venta a cta de: Cliente CF' in text
+    assert 'DUI/NIT: 0614-2000-1111-19' in text
+
+
 def test_total_letras_is_wrapped(tmp_path):
     venta = {
         'sumas': 0,

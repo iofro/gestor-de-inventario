@@ -271,6 +271,32 @@ def generar_factura_electronica_pdf(
     telefono = datos_negocio.get('telefono', '')
     correo_emisor = datos_negocio.get('correo') or datos_negocio.get('email_usuario', '')
 
+    extra_info = venta.get("extra")
+    if isinstance(extra_info, str):
+        try:
+            extra_info = json.loads(extra_info)
+        except Exception:
+            extra_info = {}
+    elif not isinstance(extra_info, dict):
+        extra_info = {}
+
+    def _clean_field(primary_value, fallback_value):
+        for candidate in (primary_value, fallback_value):
+            if candidate in (None, ""):
+                continue
+            text = str(candidate).strip()
+            if text:
+                return text
+        return ""
+
+    venta_a_cuenta_text = _clean_field(
+        venta.get("venta_a_cuenta_de"), extra_info.get("venta_a_cuenta_de")
+    )
+    documento_venta_a_cuenta_text = _clean_field(
+        venta.get("documento_venta_a_cuenta"),
+        extra_info.get("documento_venta_a_cuenta"),
+    )
+
     emisor_lines = [
         f"Nombre: {datos_negocio.get('nombre', '')}",
         f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}",
@@ -290,7 +316,7 @@ def generar_factura_electronica_pdf(
         receptor_extra += 1  # línea "Condición pago"
     receptor_line_count += receptor_extra
     receptor_line_count += 1  # Dirección
-    if venta.get('venta_a_cuenta_de') or venta.get('documento_venta_a_cuenta'):
+    if venta_a_cuenta_text or documento_venta_a_cuenta_text:
         receptor_line_count += 1
 
     box_h_emisor = 14 + line_h * emisor_line_count
@@ -383,12 +409,13 @@ def generar_factura_electronica_pdf(
         line_h,
     )
 
-    if venta.get('venta_a_cuenta_de') or venta.get('documento_venta_a_cuenta'):
-        text_y -= line_h
-        if venta.get('venta_a_cuenta_de'):
-            c.drawString(left_x, text_y, f"Venta a cta de: {venta.get('venta_a_cuenta_de')}")
-        if venta.get('documento_venta_a_cuenta'):
-            c.drawString(right_x, text_y, f"DUI/NIT: {venta.get('documento_venta_a_cuenta')}")
+    if venta_a_cuenta_text or documento_venta_a_cuenta_text:
+        spacing = max(line_h - 4, 4)
+        text_y -= spacing
+        if venta_a_cuenta_text:
+            c.drawString(left_x, text_y, f"Venta a cta de: {venta_a_cuenta_text}")
+        if documento_venta_a_cuenta_text:
+            c.drawString(right_x, text_y, f"DUI/NIT: {documento_venta_a_cuenta_text}")
 
     # Posición inicial para la tabla de productos
     tabla_x = x_margin

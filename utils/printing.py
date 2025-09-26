@@ -96,14 +96,7 @@ def _print_with_powershell(pdf_path: str, printer_name: str | None) -> None:
     quoted_path = _powershell_quote(os.path.abspath(pdf_path))
     script_parts = ["$ErrorActionPreference='Stop';"]
     if printer_name:
-        quoted_arguments = ", ".join(
-            [
-                _powershell_quote(printer_name),
-                _powershell_quote(""),
-                _powershell_quote(""),
-                _powershell_quote(""),
-            ]
-        )
+        quoted_arguments = _powershell_quote(printer_name)
         command = (
             f"$process = Start-Process -FilePath {quoted_path} -Verb {verb!r} "
             f"-ArgumentList {quoted_arguments} -PassThru"

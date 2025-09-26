@@ -569,19 +569,49 @@ class InventoryManager:
                 new_dist_id = (
                     Distribuidor_id_map.get(dist_id) if dist_id is not None else None
                 )
-                self.db.add_vendedor(
-                    vend["nombre"],
-                    vend.get("descripcion", ""),
-                    new_dist_id,
-                    vend.get("codigo"),
-                    vend.get("dui"),
-                    commit=False,
-                )
-                self.db.cursor.execute(
-                    "SELECT id FROM vendedores WHERE nombre=? ORDER BY id DESC LIMIT 1",
-                    (vend["nombre"],),
-                )
-                new_id = self.db.cursor.fetchone()["id"]
+                existing_id = None
+                codigo = vend.get("codigo")
+                if codigo:
+                    self.db.cursor.execute(
+                        "SELECT id FROM vendedores WHERE codigo=?",
+                        (codigo,),
+                    )
+                    row = self.db.cursor.fetchone()
+                    if row:
+                        existing_id = row["id"]
+
+                if existing_id is not None:
+                    self.db.cursor.execute(
+                        """
+                        UPDATE vendedores
+                        SET nombre=?, descripcion=?, Distribuidor_id=?, codigo=?, dui=?
+                        WHERE id=?
+                        """,
+                        (
+                            vend["nombre"],
+                            vend.get("descripcion", ""),
+                            new_dist_id,
+                            codigo,
+                            vend.get("dui"),
+                            existing_id,
+                        ),
+                    )
+                    new_id = existing_id
+                else:
+                    self.db.add_vendedor(
+                        vend["nombre"],
+                        vend.get("descripcion", ""),
+                        new_dist_id,
+                        codigo,
+                        vend.get("dui"),
+                        commit=False,
+                    )
+                    self.db.cursor.execute(
+                        "SELECT id FROM vendedores WHERE nombre=? ORDER BY id DESC LIMIT 1",
+                        (vend["nombre"],),
+                    )
+                    new_id = self.db.cursor.fetchone()["id"]
+
                 vendedor_id_map[vend["id"]] = new_id
 
             # Productos

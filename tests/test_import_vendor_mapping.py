@@ -201,3 +201,93 @@ def test_import_supplier_and_employee_vendors(tmp_path):
     productos = manager.db.get_productos()
     assert len(productos) == 1
     assert productos[0]["vendedor_id"] == employee_vendor["id"]
+
+
+def test_import_supplier_employee_codigo_collision(tmp_path):
+    manager = im.InventoryManager(MemoryDB())
+
+    data = {
+        "Distribuidores": [{"id": 1, "nombre": "D1"}],
+        "vendedores": [
+            {
+                "id": 20,
+                "nombre": "Proveedor Shared",
+                "Distribuidor_id": 1,
+                "codigo": "SHARED",
+                "descripcion": "Proveedor",
+            },
+            {
+                "id": 21,
+                "nombre": "Empleado Shared",
+                "Distribuidor_id": None,
+                "codigo": "SHARED",
+                "descripcion": "Empleado",
+            },
+        ],
+        "trabajadores": [
+            {
+                "id": 21,
+                "nombre": "Empleado Shared",
+                "codigo": "SHARED",
+                "dui": "00000000-0",
+                "es_vendedor": True,
+            }
+        ],
+        "productos": [
+            {
+                "id": 101,
+                "nombre": "Producto Proveedor",
+                "codigo": "PP-1",
+                "sku": "SKU-PP",
+                "vendedor_id": 20,
+                "Distribuidor_id": 1,
+                "precio_compra": 0,
+                "precio_venta_minorista": 0,
+                "precio_venta_mayorista": 0,
+                "stock": 2,
+            },
+            {
+                "id": 102,
+                "nombre": "Producto Empleado",
+                "codigo": "PE-1",
+                "sku": "SKU-PE",
+                "vendedor_id": 21,
+                "Distribuidor_id": None,
+                "precio_compra": 0,
+                "precio_venta_minorista": 0,
+                "precio_venta_mayorista": 0,
+                "stock": 1,
+            },
+        ],
+        "clientes": [],
+        "ventas": [],
+        "compras": [],
+        "detalles_venta": [],
+        "detalles_compra": [],
+        "datos_negocio": None,
+        "ventas_credito_fiscal": [],
+    }
+    path = tmp_path / "inv_shared_codigo.json"
+    path.write_text(json.dumps(data))
+
+    try:
+        manager.importar_inventario_json(str(path))
+    except sqlite3.IntegrityError as exc:  # pragma: no cover - defensive
+        pytest.fail(f"Unexpected sqlite3.IntegrityError: {exc}")
+
+    productos = manager.db.get_productos()
+    assert len(productos) == 2
+
+    productos_por_nombre = {p["nombre"]: p for p in productos}
+    prod_proveedor = productos_por_nombre["Producto Proveedor"]
+    prod_empleado = productos_por_nombre["Producto Empleado"]
+
+    assert prod_proveedor["vendedor_id"] == prod_empleado["vendedor_id"]
+
+    trabajadores = manager.db.get_trabajadores()
+    assert len(trabajadores) == 1
+    trabajador = trabajadores[0]
+
+    # Both products should resolve to the trabajador vendor despite the shared codigo
+    assert prod_proveedor["vendedor_id"] == trabajador["id"]
+    assert prod_empleado["vendedor_id"] == trabajador["id"]

@@ -6,7 +6,6 @@ from PyInstaller.building.datastruct import Tree
 resource_trees = [
     Tree('schema_patches', prefix='schema_patches'),
     Tree('svfe-json-schemas', prefix='svfe-json-schemas'),
-    Tree('templates', prefix='templates'),
 ]
 
 # Collect all barcode submodules so ReportLab barcodes such as Code93 and

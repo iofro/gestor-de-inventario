@@ -1977,7 +1977,15 @@ def generar_numero_control(
     db: DB, tipo: str, sucursal: str, punto: str
 ) -> tuple[str, int]:
     """Genera un número de control secuencial y devuelve también el correlativo."""
-    correlativo = db.next_dte_correlativo(tipo, sucursal, punto)
+    correlativo_getter = getattr(db, "next_dte_correlativo", None)
+    if callable(correlativo_getter):
+        correlativo = correlativo_getter(tipo, sucursal, punto)
+    else:
+        logger.warning(
+            "next_dte_correlativo no disponible en %s; usando correlativo=1 de emergencia",
+            type(db).__name__,
+        )
+        correlativo = 1
     numero_control = _format_numero_control(tipo, sucursal, punto, correlativo)
     return numero_control, correlativo
 

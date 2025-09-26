@@ -30,7 +30,6 @@ resource_directories = []
 # 🔒 Incluye extras (firmador) y tus carpetas de recursos
 for folder in [
     'assets',
-    'templates',
     'facturas_consumidor_final',
     'facturas_credito_fiscal',
     'notas_credito',

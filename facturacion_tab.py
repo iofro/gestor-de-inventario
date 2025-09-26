@@ -37,7 +37,7 @@ import glob
 import hashlib
 
 from ticket_pdf import generar_ticket_personalizado
-from print.ticket_renderer import render_ticket_pdf
+from ticket_pdf import render_ticket_pdf
 from factura_sv import (
     generar_nota_credito_pdf,
     generar_nota_debito_pdf,

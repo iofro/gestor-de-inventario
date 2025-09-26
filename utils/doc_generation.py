@@ -10,6 +10,7 @@ import dte
 from pathlib import Path
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado, generar_ticket_fe_pdf
+from print.ticket_renderer import render_ticket_html_to_pdf
 from dte import generar_ticket_json, generar_dte_json, d4, generar_cabecera_dte_data
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json, write_pdf_atomically
@@ -728,8 +729,26 @@ def generate_invoice_pdf(manager, venta_id):
     return str(file_path)
 
 
-def generate_ticket_pdf(manager, venta_id):
-    """Generate and store the ticket PDF for the given sale."""
+def generate_ticket_pdf(manager_or_html, venta_id_or_css, out_path: str | None = None):
+    """Generate and store the ticket PDF for a sale or render arbitrary HTML."""
+
+    def _handle_ticket_runtime_error(exc: RuntimeError):
+        logger.error("No se pudo generar el PDF del ticket: %s", exc, exc_info=True)
+        print("[Ticket] No se pudo generar el PDF:", exc)
+        return None
+
+    if isinstance(manager_or_html, str):
+        html = manager_or_html
+        css = str(venta_id_or_css)
+        if not out_path:
+            raise ValueError("out_path es obligatorio cuando se usa HTML directo")
+        try:
+            return render_ticket_html_to_pdf(html, css, out_path)
+        except RuntimeError as exc:
+            return _handle_ticket_runtime_error(exc)
+
+    manager = manager_or_html
+    venta_id = venta_id_or_css
     venta = next((v for v in manager.db.get_ventas() if v["id"] == venta_id), None)
     if not venta:
         return None
@@ -829,10 +848,13 @@ def generate_ticket_pdf(manager, venta_id):
 
     dte_data = dict(extra)
     dte_data["dteJson"] = ticket_json
-    if tipo_dte == "01" and extra.get("es_ticket"):
-        generar_ticket_fe_pdf(venta, detalles, filename, dte_data=dte_data)
-    else:
-        generar_ticket_personalizado(venta, detalles, filename, dte_data=dte_data)
+    try:
+        if tipo_dte == "01" and extra.get("es_ticket"):
+            generar_ticket_fe_pdf(venta, detalles, filename, dte_data=dte_data)
+        else:
+            generar_ticket_personalizado(venta, detalles, filename, dte_data=dte_data)
+    except RuntimeError as exc:
+        return _handle_ticket_runtime_error(exc)
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
     manager.db.add_ticket_pdf(venta_id, filename)

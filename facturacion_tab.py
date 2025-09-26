@@ -2219,17 +2219,13 @@ class FacturacionTab(QWidget):
                 preferred_format = "carta"
             self._last_print_format = preferred_format
 
-        cleanup_path = None
         base_pdf_path = self._resolve_pdf_path(entry)
         if preferred_format == "ticket":
             pdf_path = self._build_ticket_format_pdf(entry, base_pdf_path)
-            cleanup_path = pdf_path
         else:
             pdf_path = base_pdf_path
 
         if not pdf_path or not os.path.exists(pdf_path):
-            if cleanup_path:
-                self._safe_remove(cleanup_path)
             QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
             return
 
@@ -2237,8 +2233,6 @@ class FacturacionTab(QWidget):
         dialog = QPrintDialog(printer, self)
         dialog.setWindowTitle("Imprimir factura")
         if dialog.exec_() != QDialog.Accepted:
-            if cleanup_path:
-                self._safe_remove(cleanup_path)
             return
 
         printer_name = (printer.printerName() or "").strip() or None
@@ -2252,9 +2246,6 @@ class FacturacionTab(QWidget):
                 "Imprimir",
                 "El documento se envió a la impresora seleccionada.",
             )
-        finally:
-            if cleanup_path:
-                self._safe_remove(cleanup_path)
 
     def _safe_remove(self, path: str | None) -> None:
         if not path:
@@ -2358,23 +2349,54 @@ class FacturacionTab(QWidget):
             )
             return None
 
+        venta_id = entry.get("venta_id")
+        output_dir = None
+        ticket_base = None
+        if base_pdf_path:
+            output_dir = os.path.dirname(base_pdf_path)
+            ticket_base = os.path.splitext(os.path.basename(base_pdf_path))[0]
+        if not output_dir:
+            tipo_entry = str(entry.get("tipo") or "").strip().lower()
+            if tipo_entry == "consumidor final":
+                output_dir = CF_DIR
+            elif tipo_entry in {"crédito fiscal", "credito fiscal"}:
+                output_dir = CREDITO_DIR
+        if not output_dir:
+            output_dir = TICKETS_DIR
+
         try:
-            os.makedirs(TICKETS_DIR, exist_ok=True)
+            os.makedirs(output_dir, exist_ok=True)
         except OSError:
             pass
 
-        filename = f"ticket_print_{uuid.uuid4().hex}.pdf"
-        output_path = os.path.join(TICKETS_DIR, filename)
+        if ticket_base:
+            lower_name = ticket_base.lower()
+            for suffix in ("_consumidorfinal", "_creditofiscal", "_ticket"):
+                if lower_name.endswith(suffix):
+                    ticket_base = ticket_base[: -len(suffix)] + "_Ticket"
+                    break
+            else:
+                ticket_base = f"{ticket_base}_Ticket"
+        else:
+            ticket_base = f"ticket_print_{uuid.uuid4().hex}"
+
+        output_path = os.path.join(output_dir, f"{ticket_base}.pdf")
+
         try:
-            with open(output_path, "wb") as fh:
-                fh.write(pdf_bytes)
-        except OSError as exc:
+            write_pdf_atomically(output_path, lambda tmp: tmp.write_bytes(pdf_bytes))
+        except Exception as exc:
             QMessageBox.warning(
                 self,
                 "Imprimir",
-                f"No se pudo escribir el ticket temporal: {exc}",
+                f"No se pudo escribir el ticket: {exc}",
             )
             return None
+
+        if venta_id and output_dir != TICKETS_DIR:
+            try:
+                self.manager.db.add_ticket_pdf(venta_id, output_path)
+            except Exception:
+                pass
 
         return output_path
 

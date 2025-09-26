@@ -36,6 +36,8 @@ getcontext().rounding = ROUND_HALF_UP
 IVA_RATE = Decimal("0.13")
 IVA_FACTOR = Decimal("1") + IVA_RATE
 
+CREDIT_TERM_BACKEND_ROLE = Qt.UserRole + 1
+
 
 class LoginDialog(QDialog):
     def __init__(self, *args, **kwargs):
@@ -826,17 +828,22 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         self.plazo_combo = QComboBox()
         self.plazo_combo.addItem("Seleccionar", "")
-        self.plazo_combo.addItem("Días (01)", "01")
-        self.plazo_combo.addItem("Meses (02)", "02")
-        self.plazo_combo.addItem("Años (03)", "03")
+        self.plazo_combo.setItemData(0, "", CREDIT_TERM_BACKEND_ROLE)
+        self.plazo_combo.addItem("Días (01)", "D")
+        self.plazo_combo.setItemData(self.plazo_combo.count() - 1, "01", CREDIT_TERM_BACKEND_ROLE)
+        self.plazo_combo.addItem("Meses (02)", "M")
+        self.plazo_combo.setItemData(self.plazo_combo.count() - 1, "02", CREDIT_TERM_BACKEND_ROLE)
+        self.plazo_combo.addItem("Años (03)", "A")
+        self.plazo_combo.setItemData(self.plazo_combo.count() - 1, "03", CREDIT_TERM_BACKEND_ROLE)
         credit_layout.addRow("Plazo:", self.plazo_combo)
 
-        self.periodo_combo = QComboBox()
-        self.periodo_combo.addItem("Seleccionar", "")
-        self.periodo_combo.addItem("D", "D")
-        self.periodo_combo.addItem("M", "M")
-        self.periodo_combo.addItem("A", "A")
-        credit_layout.addRow("Período:", self.periodo_combo)
+        self.plazo_spin = QSpinBox()
+        self.plazo_spin.setMinimum(1)
+        self.plazo_spin.setValue(1)
+        credit_layout.addRow("Cantidad:", self.plazo_spin)
+
+        self._backend_pago_plazo = ""
+        self._backend_pago_periodo = ""
 
         self.referencia_edit = QLineEdit()
         self.referencia_edit.setPlaceholderText("Referencia (opcional)")
@@ -1066,10 +1073,17 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             total += item.get("total", 0) 
 
         condicion_operacion = self.condicion_pago_combo.currentData()
-        plazo_codigo = self.plazo_combo.currentData() if condicion_operacion == 2 else ""
-        periodo_codigo = (
-            self.periodo_combo.currentData() if condicion_operacion == 2 else ""
-        )
+        if condicion_operacion == 2:
+            # TODO(back): mapear los nuevos controles de cantidad/unidad al payload cuando el backend esté listo
+            _ = self.plazo_spin.value()
+            _ = self.plazo_combo.currentData()
+            plazo_codigo = self._backend_pago_plazo
+            periodo_codigo = self._backend_pago_periodo
+        else:
+            self._backend_pago_plazo = ""
+            self._backend_pago_periodo = ""
+            plazo_codigo = ""
+            periodo_codigo = ""
         referencia = (
             self.referencia_edit.text().strip() if condicion_operacion == 2 else ""
         )
@@ -1113,8 +1127,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.credit_fields_widget.setVisible(is_credit)
         if not is_credit:
             self.plazo_combo.setCurrentIndex(0)
-            self.periodo_combo.setCurrentIndex(0)
+            self.plazo_spin.setValue(1)
             self.referencia_edit.clear()
+            self._backend_pago_plazo = ""
+            self._backend_pago_periodo = ""
 
     def load_payment_data(self, extra):
         if not extra:
@@ -1130,6 +1146,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         else:
             return
 
+        self._backend_pago_plazo = ""
+        self._backend_pago_periodo = ""
+
         condicion = data.get("condicionOperacion")
         if condicion in {1, 2, 3}:
             idx = self.condicion_pago_combo.findData(condicion)
@@ -1138,12 +1157,25 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         pagos = data.get("pagos") or []
         if pagos:
             pago = pagos[0]
-            idx_plazo = self.plazo_combo.findData(pago.get("plazo"))
-            if idx_plazo >= 0:
-                self.plazo_combo.setCurrentIndex(idx_plazo)
-            idx_periodo = self.periodo_combo.findData(pago.get("periodo"))
-            if idx_periodo >= 0:
-                self.periodo_combo.setCurrentIndex(idx_periodo)
+            plazo_valor = pago.get("plazo")
+            self._backend_pago_plazo = str(plazo_valor) if plazo_valor not in (None, "") else ""
+            if plazo_valor in {"D", "M", "A"}:
+                plazo_valor = {"D": "01", "M": "02", "A": "03"}.get(plazo_valor, plazo_valor)
+            if plazo_valor is not None:
+                for idx in range(self.plazo_combo.count()):
+                    if (
+                        self.plazo_combo.itemData(idx, CREDIT_TERM_BACKEND_ROLE)
+                        == plazo_valor
+                    ):
+                        self.plazo_combo.setCurrentIndex(idx)
+                        break
+            periodo_valor = pago.get("periodo")
+            self._backend_pago_periodo = str(periodo_valor) if periodo_valor not in (None, "") else ""
+            if periodo_valor not in (None, ""):
+                try:
+                    self.plazo_spin.setValue(int(periodo_valor))
+                except (TypeError, ValueError):
+                    self.plazo_spin.setValue(1)
             referencia = pago.get("referencia")
             if referencia:
                 self.referencia_edit.setText(str(referencia))
@@ -1285,15 +1317,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             QMessageBox.warning(self, "Validación", "El precio debe ser mayor que cero.")
             return
         condicion_operacion = self.condicion_pago_combo.currentData()
-        if condicion_operacion == 2 and (
-            not self.plazo_combo.currentData() or not self.periodo_combo.currentData()
-        ):
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "Debe seleccionar plazo y período para crédito.",
-            )
-            return
         tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
         tercero_documento = self.venta_documento_edit.text().strip()
         if tercero_nombre or tercero_documento:
@@ -2161,17 +2184,22 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         self.plazo_combo = QComboBox()
         self.plazo_combo.addItem("Seleccionar", "")
-        self.plazo_combo.addItem("Días (01)", "01")
-        self.plazo_combo.addItem("Meses (02)", "02")
-        self.plazo_combo.addItem("Años (03)", "03")
+        self.plazo_combo.setItemData(0, "", CREDIT_TERM_BACKEND_ROLE)
+        self.plazo_combo.addItem("Días (01)", "D")
+        self.plazo_combo.setItemData(self.plazo_combo.count() - 1, "01", CREDIT_TERM_BACKEND_ROLE)
+        self.plazo_combo.addItem("Meses (02)", "M")
+        self.plazo_combo.setItemData(self.plazo_combo.count() - 1, "02", CREDIT_TERM_BACKEND_ROLE)
+        self.plazo_combo.addItem("Años (03)", "A")
+        self.plazo_combo.setItemData(self.plazo_combo.count() - 1, "03", CREDIT_TERM_BACKEND_ROLE)
         credit_layout.addRow("Plazo:", self.plazo_combo)
 
-        self.periodo_combo = QComboBox()
-        self.periodo_combo.addItem("Seleccionar", "")
-        self.periodo_combo.addItem("D", "D")
-        self.periodo_combo.addItem("M", "M")
-        self.periodo_combo.addItem("A", "A")
-        credit_layout.addRow("Período:", self.periodo_combo)
+        self.plazo_spin = QSpinBox()
+        self.plazo_spin.setMinimum(1)
+        self.plazo_spin.setValue(1)
+        credit_layout.addRow("Cantidad:", self.plazo_spin)
+
+        self._backend_pago_plazo = ""
+        self._backend_pago_periodo = ""
 
         self.referencia_edit = QLineEdit()
         self.referencia_edit.setPlaceholderText("Referencia (opcional)")
@@ -2473,15 +2501,6 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             QMessageBox.warning(self, "Validación", "Debe agregar al menos un producto a la venta.")
             return
         condicion_operacion = self.condicion_pago_combo.currentData()
-        if condicion_operacion == 2 and (
-            not self.plazo_combo.currentData() or not self.periodo_combo.currentData()
-        ):
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "Debe seleccionar plazo y período para crédito.",
-            )
-            return
         tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
         tercero_documento = self.venta_documento_edit.text().strip()
         if tercero_nombre or tercero_documento:
@@ -2537,10 +2556,17 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         total = subtotal + ventas_exentas + ventas_no_sujetas
 
         condicion_operacion = self.condicion_pago_combo.currentData()
-        plazo_codigo = self.plazo_combo.currentData() if condicion_operacion == 2 else ""
-        periodo_codigo = (
-            self.periodo_combo.currentData() if condicion_operacion == 2 else ""
-        )
+        if condicion_operacion == 2:
+            # TODO(back): mapear los nuevos controles de cantidad/unidad al payload cuando el backend esté listo
+            _ = self.plazo_spin.value()
+            _ = self.plazo_combo.currentData()
+            plazo_codigo = self._backend_pago_plazo
+            periodo_codigo = self._backend_pago_periodo
+        else:
+            self._backend_pago_plazo = ""
+            self._backend_pago_periodo = ""
+            plazo_codigo = ""
+            periodo_codigo = ""
         referencia = (
             self.referencia_edit.text().strip() if condicion_operacion == 2 else ""
         )
@@ -2590,8 +2616,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.credit_fields_widget.setVisible(is_credit)
         if not is_credit:
             self.plazo_combo.setCurrentIndex(0)
-            self.periodo_combo.setCurrentIndex(0)
+            self.plazo_spin.setValue(1)
             self.referencia_edit.clear()
+            self._backend_pago_plazo = ""
+            self._backend_pago_periodo = ""
 
     def load_payment_data(self, extra):
         if not extra:
@@ -2607,6 +2635,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         else:
             return
 
+        self._backend_pago_plazo = ""
+        self._backend_pago_periodo = ""
+
         condicion = data.get("condicionOperacion")
         if condicion in {1, 2, 3}:
             idx = self.condicion_pago_combo.findData(condicion)
@@ -2615,12 +2646,25 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         pagos = data.get("pagos") or []
         if pagos:
             pago = pagos[0]
-            idx_plazo = self.plazo_combo.findData(pago.get("plazo"))
-            if idx_plazo >= 0:
-                self.plazo_combo.setCurrentIndex(idx_plazo)
-            idx_periodo = self.periodo_combo.findData(pago.get("periodo"))
-            if idx_periodo >= 0:
-                self.periodo_combo.setCurrentIndex(idx_periodo)
+            plazo_valor = pago.get("plazo")
+            self._backend_pago_plazo = str(plazo_valor) if plazo_valor not in (None, "") else ""
+            if plazo_valor in {"D", "M", "A"}:
+                plazo_valor = {"D": "01", "M": "02", "A": "03"}.get(plazo_valor, plazo_valor)
+            if plazo_valor is not None:
+                for idx in range(self.plazo_combo.count()):
+                    if (
+                        self.plazo_combo.itemData(idx, CREDIT_TERM_BACKEND_ROLE)
+                        == plazo_valor
+                    ):
+                        self.plazo_combo.setCurrentIndex(idx)
+                        break
+            periodo_valor = pago.get("periodo")
+            self._backend_pago_periodo = str(periodo_valor) if periodo_valor not in (None, "") else ""
+            if periodo_valor not in (None, ""):
+                try:
+                    self.plazo_spin.setValue(int(periodo_valor))
+                except (TypeError, ValueError):
+                    self.plazo_spin.setValue(1)
             referencia = pago.get("referencia")
             if referencia:
                 self.referencia_edit.setText(str(referencia))

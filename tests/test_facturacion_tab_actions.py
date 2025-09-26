@@ -92,7 +92,7 @@ def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     assert save_path.with_suffix(".json").exists()
 
 
-def test_build_ticket_format_pdf_generates_temp_file(monkeypatch, qt_app, tmp_path):
+def test_build_ticket_format_pdf_saves_alongside_invoice(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
     cf_dir = tmp_path / "facturas_consumidor_final"
@@ -138,9 +138,7 @@ def test_build_ticket_format_pdf_generates_temp_file(monkeypatch, qt_app, tmp_pa
     json_path = pdf_path.with_suffix(".json")
     json_path.write_text(json.dumps(dte_payload))
     db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
-
-    tickets_dir = tmp_path / "tickets"
-    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(tickets_dir))
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(cf_dir))
 
     tab = _make_tab(db, cid)
     entry = {"row_type": "venta", "venta_id": venta_id, "tipo": "Consumidor Final"}
@@ -149,8 +147,10 @@ def test_build_ticket_format_pdf_generates_temp_file(monkeypatch, qt_app, tmp_pa
     assert output is not None
     out_path = Path(output)
     assert out_path.exists()
-    assert out_path.parent == tickets_dir
+    assert out_path.parent == cf_dir
     assert out_path.stat().st_size > 0
+    stored = db.get_ticket_pdf(venta_id)
+    assert stored == str(out_path)
     tab._safe_remove(output)
     assert not out_path.exists()
 

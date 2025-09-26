@@ -450,6 +450,15 @@ class InventoryManager:
         self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.db.conn.execute("BEGIN")
         try:
+            raw_vendedores = data.get("vendedores", [])
+            employee_vendor_data = {}
+            supplier_vendors = []
+            for vend in raw_vendedores:
+                if vend.get("Distribuidor_id") is None:
+                    employee_vendor_data[vend.get("id")] = vend
+                else:
+                    supplier_vendors.append(vend)
+
             # --- Distribuidores primero ---
             for v in data.get("distribuidores", []):
                 self.db.add_Distribuidor_detallado(v, commit=False)
@@ -460,8 +469,102 @@ class InventoryManager:
                 new_id = self.db.cursor.fetchone()["id"]
                 Distribuidor_id_map[v["id"]] = new_id
 
-            # --- Vendedores después, usando el mapeo correcto ---
-            for vend in data.get("vendedores", []):
+            for t in data.get("trabajadores", []):
+                empleado_vendor = employee_vendor_data.get(t.get("id"), {})
+                codigo = t.get("codigo") or empleado_vendor.get("codigo")
+                existing = None
+                if codigo:
+                    self.db.cursor.execute(
+                        "SELECT id FROM trabajadores WHERE codigo=?",
+                        (codigo,),
+                    )
+                    existing = self.db.cursor.fetchone()
+                if existing:
+                    tid = existing["id"]
+                    if not codigo:
+                        codigo = existing["codigo"]
+                    self.db.cursor.execute(
+                        """
+                        UPDATE trabajadores SET
+                            codigo=?, nombre=?, dui=?, nit=?, fecha_nacimiento=?, cargo=?, area=?, fecha_contratacion=?,
+                            telefono=?, email=?, direccion=?, salario_base=?, comentarios=?, es_vendedor=?
+                        WHERE id=?
+                        """,
+                        (
+                            codigo or "",
+                            t.get("nombre", ""),
+                            t.get("dui", ""),
+                            t.get("nit", ""),
+                            t.get("fecha_nacimiento", ""),
+                            t.get("cargo", ""),
+                            t.get("area", ""),
+                            t.get("fecha_contratacion", ""),
+                            t.get("telefono", ""),
+                            t.get("email", ""),
+                            t.get("direccion", ""),
+                            t.get("salario_base", None),
+                            t.get("comentarios", ""),
+                            1 if t.get("es_vendedor") else 0,
+                            tid,
+                        ),
+                    )
+                else:
+                    trabajador_data = dict(t)
+                    if codigo:
+                        trabajador_data["codigo"] = codigo
+                    self.db.add_trabajador(trabajador_data, commit=False)
+                    tid = self.db.cursor.lastrowid
+                    if not codigo:
+                        self.db.cursor.execute(
+                            "SELECT codigo FROM trabajadores WHERE id=?",
+                            (tid,),
+                        )
+                        row = self.db.cursor.fetchone()
+                        codigo = row["codigo"] if row else codigo
+                trabajador_id_map[t.get("id")] = tid
+                if t.get("es_vendedor"):
+                    dist_id = t.get("Distribuidor_id")
+                    new_dist_id = (
+                        Distribuidor_id_map.get(dist_id)
+                        if dist_id is not None
+                        else None
+                    )
+                    vendedor_codigo = codigo or empleado_vendor.get("codigo")
+                    descripcion = empleado_vendor.get(
+                        "descripcion", t.get("descripcion", "")
+                    )
+                    self.db.cursor.execute(
+                        "SELECT 1 FROM vendedores WHERE id=?",
+                        (tid,),
+                    )
+                    if not self.db.cursor.fetchone():
+                        self.db.cursor.execute(
+                            "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
+                            (
+                                tid,
+                                vendedor_codigo,
+                                t.get("nombre"),
+                                t.get("dui"),
+                                descripcion,
+                                new_dist_id,
+                            ),
+                        )
+                    else:
+                        self.db.cursor.execute(
+                            "UPDATE vendedores SET codigo=?, nombre=?, dui=?, descripcion=?, Distribuidor_id=? WHERE id=?",
+                            (
+                                vendedor_codigo,
+                                t.get("nombre"),
+                                t.get("dui"),
+                                descripcion,
+                                new_dist_id,
+                                tid,
+                            ),
+                        )
+                    vendedor_id_map[t.get("id")] = tid
+
+            # --- Vendedores distribuidores, usando el mapeo correcto ---
+            for vend in supplier_vendors:
                 dist_id = vend.get("Distribuidor_id")
                 new_dist_id = (
                     Distribuidor_id_map.get(dist_id) if dist_id is not None else None
@@ -480,70 +583,6 @@ class InventoryManager:
                 )
                 new_id = self.db.cursor.fetchone()["id"]
                 vendedor_id_map[vend["id"]] = new_id
-
-            for t in data.get("trabajadores", []):
-                codigo = t.get("codigo")
-                existing = None
-                if codigo:
-                    self.db.cursor.execute(
-                        "SELECT id FROM trabajadores WHERE codigo=?",
-                        (codigo,),
-                    )
-                    existing = self.db.cursor.fetchone()
-                if existing:
-                    tid = existing["id"]
-                    self.db.cursor.execute(
-                        """
-                        UPDATE trabajadores SET
-                            nombre=?, dui=?, nit=?, fecha_nacimiento=?, cargo=?, area=?, fecha_contratacion=?,
-                            telefono=?, email=?, direccion=?, salario_base=?, comentarios=?, es_vendedor=?
-                        WHERE id=?
-                        """,
-                        (
-                            t.get("nombre", ""),
-                            t.get("dui", ""),
-                            t.get("nit", ""),
-                            t.get("fecha_nacimiento", ""),
-                            t.get("cargo", ""),
-                            t.get("area", ""),
-                            t.get("fecha_contratacion", ""),
-                            t.get("telefono", ""),
-                            t.get("email", ""),
-                            t.get("direccion", ""),
-                            t.get("salario_base", None),
-                            t.get("comentarios", ""),
-                            1 if t.get("es_vendedor") else 0,
-                            tid,
-                        ),
-                    )
-                else:
-                    self.db.add_trabajador(t, commit=False)
-                    tid = self.db.cursor.lastrowid
-                trabajador_id_map[t.get("id")] = tid
-                if t.get("es_vendedor"):
-                    dist_id = t.get("Distribuidor_id")
-                    new_dist_id = (
-                        Distribuidor_id_map.get(dist_id)
-                        if dist_id is not None
-                        else None
-                    )
-                    self.db.cursor.execute(
-                        "SELECT 1 FROM vendedores WHERE id=?",
-                        (tid,),
-                    )
-                    if not self.db.cursor.fetchone():
-                        self.db.cursor.execute(
-                            "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
-                            (
-                                tid,
-                                t.get("codigo"),
-                                t.get("nombre"),
-                                t.get("dui"),
-                                t.get("descripcion", ""),
-                                new_dist_id,
-                            ),
-                        )
-                    vendedor_id_map[t.get("id")] = tid
 
             # Productos
             for p in data.get("productos", []):

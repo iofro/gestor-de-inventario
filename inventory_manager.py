@@ -45,8 +45,12 @@ class InventoryManager:
 
     def refresh_data(self):
         self._vendedores = self.db.get_vendedores()
+        self._vendedores_compra = self.db.get_vendedores_distribuidores()
         self._Distribuidores = self.db.get_Distribuidores()
         self._vendedores_by_id = {vend["id"]: vend["nombre"] for vend in self._vendedores}
+        self._vendedores_compra_by_id = {
+            vend["id"]: vend["nombre"] for vend in self._vendedores_compra
+        }
         self._Distribuidores_by_id = {dist["id"]: dist["nombre"] for dist in self._Distribuidores}
         self._products = self.db.get_productos(
             vendedor_id=self._filter_vendedor_id,
@@ -76,6 +80,9 @@ class InventoryManager:
 
     def get_vendedores(self):
         return self._vendedores
+
+    def get_vendedores_compra(self):
+        return self._vendedores_compra
 
     def get_Distribuidores(self):
         return self._Distribuidores

@@ -1385,6 +1385,7 @@ class RegisterPurchaseDialog(QDialog):
         self.productos = productos
         self.Distribuidores = Distribuidores
         self.Vendedores = Vendedores
+        self._vendedores_map = {v["id"]: v for v in self.Vendedores}
         self.compra_items = []
 
         layout = QVBoxLayout()
@@ -1401,7 +1402,9 @@ class RegisterPurchaseDialog(QDialog):
         vendedor_layout = QHBoxLayout()
         vendedor_layout.addWidget(QLabel("Vendedor:"))
         self.vendedor_combo = QComboBox()
-        self.vendedor_combo.addItems([v["nombre"] for v in self.Vendedores])
+        self.vendedor_combo.addItem("Seleccionar proveedor", None)
+        for v in self.Vendedores:
+            self.vendedor_combo.addItem(v["nombre"], v["id"])
         vendedor_layout.addWidget(self.vendedor_combo)
         layout.addLayout(vendedor_layout)
 
@@ -1683,23 +1686,33 @@ class RegisterPurchaseDialog(QDialog):
         producto = self.productos[idx]
         vendedor_id = producto.get("vendedor_id")
         # Selecciona el vendedor correspondiente
-        for i, v in enumerate(self.Vendedores):
-            if v["id"] == vendedor_id:
-                self.vendedor_combo.setCurrentIndex(i)
-                break
+        combo_idx = self.vendedor_combo.findData(vendedor_id)
+        self.vendedor_combo.blockSignals(True)
+        if combo_idx >= 0:
+            self.vendedor_combo.setCurrentIndex(combo_idx)
+        else:
+            self.vendedor_combo.setCurrentIndex(0)
+        self.vendedor_combo.blockSignals(False)
         self._actualizar_Distribuidor()
 
     def _actualizar_Distribuidor(self):
-        idx = self.vendedor_combo.currentIndex()
-        if idx < 0:
-            self.Distribuidor_combo.clear()
-            return
-        vendedor = self.Vendedores[idx]
-        Distribuidor_id = vendedor.get("Distribuidor_id")
+        vendedor_id = self.vendedor_combo.currentData()
         self.Distribuidor_combo.clear()
+        if vendedor_id is None:
+            self.comision_label_resumen.setText("Comisión vendedor: 0%")
+            self.comision_pct_spin.setValue(0)
+            return
+        vendedor = self._vendedores_map.get(vendedor_id)
+        if not vendedor:
+            self.comision_label_resumen.setText("Comisión vendedor: 0%")
+            self.comision_pct_spin.setValue(0)
+            return
+        Distribuidor_id = self._vendedor_Distribuidor_map.get(vendedor_id)
+        if Distribuidor_id is None:
+            Distribuidor_id = vendedor.get("Distribuidor_id")
         for d in self.Distribuidores:
             if d["id"] == Distribuidor_id:
-                self.Distribuidor_combo.addItem(d["nombre"])
+                self.Distribuidor_combo.addItem(d["nombre"], d["id"])
                 break
         # Actualiza comisión base del vendedor
         comision = vendedor.get("comision_base", 0)
@@ -1839,15 +1852,12 @@ class RegisterPurchaseDialog(QDialog):
         # Obtén los datos DIRECTAMENTE de los combos y la lista de items
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
         total_general = sum(item["total"] for item in self.compra_items)
-        vendedor_idx = self.vendedor_combo.currentIndex()
-        vendedor_id = self.Vendedores[vendedor_idx]["id"] if vendedor_idx >= 0 else None
-        Distribuidor_id = None
-        if self.Distribuidor_combo.count() > 0:
-            dist_name = self.Distribuidor_combo.currentText()
-            for d in self.Distribuidores:
-                if d["nombre"] == dist_name:
-                    Distribuidor_id = d["id"]
-                    break
+        vendedor_id = self.vendedor_combo.currentData()
+        Distribuidor_id = (
+            self.Distribuidor_combo.currentData()
+            if self.Distribuidor_combo.count() > 0
+            else None
+        )
 
         if vendedor_id is None or Distribuidor_id is None:
             respuesta = QMessageBox.question(
@@ -1897,15 +1907,12 @@ class RegisterPurchaseDialog(QDialog):
 
     def get_data(self):
         total_general = sum(item["total"] for item in self.compra_items)
-        vendedor_idx = self.vendedor_combo.currentIndex()
-        vendedor_id = self.Vendedores[vendedor_idx]["id"] if vendedor_idx >= 0 else None
-        Distribuidor_id = None
-        if self.Distribuidor_combo.count() > 0:
-            dist_name = self.Distribuidor_combo.currentText()
-            for d in self.Distribuidores:
-                if d["nombre"] == dist_name:
-                    Distribuidor_id = d["id"]
-                    break
+        vendedor_id = self.vendedor_combo.currentData()
+        Distribuidor_id = (
+            self.Distribuidor_combo.currentData()
+            if self.Distribuidor_combo.count() > 0
+            else None
+        )
         return {
             "fecha": QDate.currentDate().toString("yyyy-MM-dd"),
             "vendedor_id": vendedor_id,

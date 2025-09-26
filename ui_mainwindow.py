@@ -45,6 +45,30 @@ def redondear(valor):
     return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
 
 
+def build_payment_condition_extra(data):
+    condicion = data.get("condicion_operacion")
+    if condicion not in {1, 2, 3}:
+        return {}
+
+    extra = {"condicionOperacion": condicion}
+    if condicion == 2:
+        plazo = data.get("pago_plazo")
+        periodo = data.get("pago_periodo")
+        if not plazo or not periodo:
+            return extra
+        pago = {
+            "codigo": "01",
+            "montoPago": float(data.get("total", 0) or 0),
+            "plazo": plazo,
+            "periodo": periodo,
+        }
+        referencia = (data.get("pago_referencia") or "").strip()
+        if referencia:
+            pago["referencia"] = referencia
+        extra["pagos"] = [pago]
+    return extra
+
+
 class ExportThread(QThread):
     finished = pyqtSignal()
     error = pyqtSignal(str)
@@ -789,6 +813,9 @@ class MainWindow(QMainWindow):
                 vendedor_id = data.get("vendedor_id")
                 estado = data.get("estado", "Pagada")
                 extra = build_fiscal_extra(data)
+                payment_extra = build_payment_condition_extra(data)
+                if payment_extra:
+                    extra.update(payment_extra)
 
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
@@ -928,6 +955,9 @@ class MainWindow(QMainWindow):
                 vendedor_id = data.get("vendedor_id")
 
                 extra = build_fiscal_extra(data)
+                payment_extra = build_payment_condition_extra(data)
+                if payment_extra:
+                    extra.update(payment_extra)
 
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")

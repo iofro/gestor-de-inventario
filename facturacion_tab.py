@@ -28,7 +28,7 @@ from PyQt5.QtWidgets import (
     QFormLayout,
 )
 from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
-from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor
+from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 import os
 import re
@@ -100,6 +100,7 @@ NOTAS_CREDITO_DIR = NOTAS_CREDITO_OUTPUT_DIR
 NOTAS_REMISION_DIR = NOTAS_REMISION_OUTPUT_DIR
 import json
 from datetime import datetime, date, timedelta
+import fitz
 
 CF_DIR = FACTURAS_CONSUMIDOR_FINAL_DIR
 CREDITO_DIR = FACTURAS_CREDITO_FISCAL_DIR
@@ -146,6 +147,93 @@ TIPO_DTE_CODE_BY_DESC = {
     "nota de débito": "06",
     "nota de debito": "06",
 }
+
+
+class PdfPreviewDialog(QDialog):
+    """Simple PDF preview dialog used before sending a document to print."""
+
+    def __init__(self, pdf_path: str, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._pdf_path = pdf_path
+        self._load_error: str | None = None
+
+        self.setWindowTitle("Vista previa de impresión")
+        self.resize(900, 700)
+
+        layout = QVBoxLayout(self)
+
+        self._scroll = QScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        layout.addWidget(self._scroll)
+
+        self._pages_widget = QWidget(self._scroll)
+        self._pages_layout = QVBoxLayout(self._pages_widget)
+        self._pages_layout.setAlignment(Qt.AlignTop)
+        self._scroll.setWidget(self._pages_widget)
+
+        self._info_label = QLabel("Generando vista previa…", self)
+        self._info_label.setAlignment(Qt.AlignCenter)
+        self._info_label.setWordWrap(True)
+        self._pages_layout.addWidget(self._info_label)
+
+        self._button_box = QDialogButtonBox(
+            QDialogButtonBox.Print | QDialogButtonBox.Cancel,
+            parent=self,
+        )
+        self._button_box.accepted.connect(self.accept)
+        self._button_box.rejected.connect(self.reject)
+        layout.addWidget(self._button_box)
+
+        QTimer.singleShot(0, self._load_preview)
+
+    def _load_preview(self) -> None:
+        print_button = self._button_box.button(QDialogButtonBox.Print)
+        try:
+            document = fitz.open(self._pdf_path)
+        except Exception as exc:  # pragma: no cover - defensive
+            self._load_error = str(exc)
+            self._info_label.setText(
+                "No se pudo abrir el PDF para la vista previa.\n"
+                f"Detalle: {exc}"
+            )
+            if print_button is not None:
+                print_button.setEnabled(False)
+            return
+
+        self._pages_layout.removeWidget(self._info_label)
+        self._info_label.deleteLater()
+
+        try:
+            for page_index in range(document.page_count):
+                page = document.load_page(page_index)
+                zoom = 1.5  # ~108 DPI
+                matrix = fitz.Matrix(zoom, zoom)
+                pix = page.get_pixmap(matrix=matrix, alpha=False)
+                image = QImage(
+                    pix.samples,
+                    pix.width,
+                    pix.height,
+                    pix.stride,
+                    QImage.Format_RGB888,
+                )
+                qt_image = image.copy()
+                label = QLabel(self)
+                label.setAlignment(Qt.AlignCenter)
+                label.setStyleSheet(
+                    "background-color: #f0f0f0; border: 1px solid #d0d0d0; padding: 12px;"
+                )
+                label.setPixmap(QPixmap.fromImage(qt_image))
+                self._pages_layout.addWidget(label)
+        finally:
+            document.close()
+
+        self._pages_layout.addStretch(1)
+
+        if print_button is not None:
+            print_button.setEnabled(True)
+
+    def has_error(self) -> bool:
+        return self._load_error is not None
 
 
 def _tipo_code_from_desc(tipo: str | None) -> str | None:
@@ -2188,14 +2276,9 @@ class FacturacionTab(QWidget):
             return
 
         preferred_format = None
-        self._last_print_format = None
         venta_id = entry.get("venta_id")
-        tipo_entry = str(entry.get("tipo") or "").strip().lower()
-        if (
-            venta_id
-            and tipo_entry
-            and tipo_entry in {"crédito fiscal", "credito fiscal", "consumidor final"}
-        ):
+        row_type = str(entry.get("row_type") or "").strip().lower()
+        if venta_id and row_type != "ticket":
             format_dialog = QMessageBox(self)
             format_dialog.setIcon(QMessageBox.Question)
             format_dialog.setWindowTitle("Formato de impresión")
@@ -2205,7 +2288,8 @@ class FacturacionTab(QWidget):
             carta_button = format_dialog.addButton("Carta", QMessageBox.AcceptRole)
             ticket_button = format_dialog.addButton("Ticket", QMessageBox.AcceptRole)
             cancel_button = format_dialog.addButton(QMessageBox.Cancel)
-            if entry.get("row_type") == "ticket":
+            last_choice = getattr(self, "_last_print_format", None)
+            if last_choice == "ticket":
                 format_dialog.setDefaultButton(ticket_button)
             else:
                 format_dialog.setDefaultButton(carta_button)
@@ -2227,6 +2311,17 @@ class FacturacionTab(QWidget):
 
         if not pdf_path or not os.path.exists(pdf_path):
             QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
+            return
+
+        preview_dialog = PdfPreviewDialog(pdf_path, self)
+        if preview_dialog.exec_() != QDialog.Accepted:
+            return
+        if preview_dialog.has_error():
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                "No se pudo generar la vista previa del documento.",
+            )
             return
 
         printer = QPrinter(QPrinter.HighResolution)

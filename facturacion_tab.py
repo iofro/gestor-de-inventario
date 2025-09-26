@@ -27,8 +27,8 @@ from PyQt5.QtWidgets import (
     QAction,
     QFormLayout,
 )
-from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize, QRectF
-from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage, QPainter
+from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
+from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor
 from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 import os
 import re
@@ -57,6 +57,7 @@ from utils.jws import sign_and_save
 # ``sign_and_save`` generates both JSON and JWS files so no manual
 # stable JSON utilities are required here.
 from utils.sanitize import limpiar_doc, solo_digitos
+from utils.printing import send_pdf_to_printer, PrintError
 from utils import catalogos
 from paths import (
     DATOS_NEGOCIO_PATH,
@@ -2232,18 +2233,6 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Imprimir", "No se encontró el archivo PDF.")
             return
 
-        try:
-            import fitz
-        except ImportError:
-            if cleanup_path:
-                self._safe_remove(cleanup_path)
-            QMessageBox.critical(
-                self,
-                "Imprimir",
-                "La funcionalidad de impresión requiere la biblioteca PyMuPDF.",
-            )
-            return
-
         printer = QPrinter(QPrinter.HighResolution)
         dialog = QPrintDialog(printer, self)
         dialog.setWindowTitle("Imprimir factura")
@@ -2252,60 +2241,18 @@ class FacturacionTab(QWidget):
                 self._safe_remove(cleanup_path)
             return
 
-        document = None
-        painter = QPainter()
+        printer_name = (printer.printerName() or "").strip() or None
         try:
-            document = fitz.open(pdf_path)
-        except Exception as exc:
-            if cleanup_path:
-                self._safe_remove(cleanup_path)
-            QMessageBox.critical(self, "Imprimir", f"No se pudo abrir el PDF: {exc}")
-            return
-
-        if not painter.begin(printer):
-            document.close()
-            if cleanup_path:
-                self._safe_remove(cleanup_path)
-            QMessageBox.warning(self, "Imprimir", "No se pudo iniciar la impresión.")
-            return
-
-        painter.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        try:
-            page_count = document.page_count
-            for index in range(page_count):
-                page = document.load_page(index)
-                zoom = max(printer.resolution(), 72) / 72
-                matrix = fitz.Matrix(zoom, zoom)
-                pix = page.get_pixmap(matrix=matrix, alpha=False)
-                image_format = QImage.Format_RGB888
-                image = QImage(pix.samples, pix.width, pix.height, pix.stride, image_format)
-                if image.isNull():
-                    raise RuntimeError("No se pudo preparar la página para impresión.")
-
-                page_rect = printer.pageRect(QPrinter.DevicePixel)
-                scale = min(
-                    page_rect.width() / image.width(),
-                    page_rect.height() / image.height(),
-                )
-                target_width = image.width() * scale
-                target_height = image.height() * scale
-                x_offset = page_rect.x() + (page_rect.width() - target_width) / 2
-                y_offset = page_rect.y() + (page_rect.height() - target_height) / 2
-                target_rect = QRectF(
-                    x_offset,
-                    y_offset,
-                    target_width,
-                    target_height,
-                )
-                painter.drawImage(target_rect, image)
-                if index < page_count - 1:
-                    if not printer.newPage():
-                        raise RuntimeError("No se pudo crear una nueva página de impresión.")
-        except Exception as exc:
-            QMessageBox.critical(self, "Imprimir", f"Error al imprimir la factura: {exc}")
+            send_pdf_to_printer(pdf_path, printer_name)
+        except PrintError as exc:
+            QMessageBox.critical(self, "Imprimir", str(exc))
+        else:
+            QMessageBox.information(
+                self,
+                "Imprimir",
+                "El documento se envió a la impresora seleccionada.",
+            )
         finally:
-            painter.end()
-            document.close()
             if cleanup_path:
                 self._safe_remove(cleanup_path)
 

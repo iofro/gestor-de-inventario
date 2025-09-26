@@ -48,6 +48,50 @@ def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
     assert calls["n"] == 2
 
 
+def test_get_token_reuses_cached_on_new_process(monkeypatch, tmp_path):
+    setup_paths(monkeypatch, tmp_path)
+
+    auth._access_token = None
+    auth._expires_at = 0.0
+    auth._obtained_at = 0.0
+    auth._token_len = 0
+    auth._token_type = ""
+    auth._current_user = None
+    auth._current_pwd = None
+
+    def fake_request(nit, pwd, url):
+        return "Bearer " + LONG_TOKEN, 300, "Bearer"
+
+    monkeypatch.setattr(auth, "_request_new_token", fake_request)
+
+    first_token = auth.get_token(refresh=True)
+    assert first_token == "Bearer " + LONG_TOKEN
+
+    auth._access_token = None
+    auth._expires_at = 0.0
+    auth._obtained_at = 0.0
+    auth._token_len = 0
+    auth._token_type = ""
+    auth._current_user = None
+    auth._current_pwd = None
+
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("_request_new_token should not be called")
+
+    monkeypatch.setattr(auth, "_request_new_token", unexpected_request)
+
+    reused_token = auth.get_token()
+    assert reused_token == first_token
+
+    auth._access_token = None
+    auth._expires_at = 0.0
+    auth._obtained_at = 0.0
+    auth._token_len = 0
+    auth._token_type = ""
+    auth._current_user = None
+    auth._current_pwd = None
+
+
 def test_get_token_expired(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 

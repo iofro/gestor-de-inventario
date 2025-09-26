@@ -5483,10 +5483,11 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
             ],
         }
 
+        auth_headers = build_auth_header({"access_token": token})
         headers = {
             "Content-Type": "application/json",
             "Accept": "application/json",
-            "Authorization": f"Bearer {token}",
+            **auth_headers,
         }
 
         try:
@@ -5519,9 +5520,10 @@ def consultar_estado_lote(codigo_lote: str) -> dict:
     cfg = _load_dte_api_config()
     url = cfg["url"].rstrip("/") + f"/lote/{codigo_lote}"
     token = auth.get_token()
+    auth_headers = build_auth_header({"access_token": token})
     headers = {
         "Accept": "application/json",
-        "Authorization": f"Bearer {token}",
+        **auth_headers,
     }
     try:
         resp = requests.get(url, headers=headers, timeout=20)

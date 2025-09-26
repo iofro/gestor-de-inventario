@@ -24,10 +24,12 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QDate, QUrl, QSize
 from PyQt5.QtGui import QDesktopServices, QPixmap
+from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 from datetime import datetime, date, timedelta
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
+from utils.printing import send_pdf_to_printer, PrintError
 import tempfile
 import subprocess
 import shutil
@@ -680,12 +682,62 @@ class SalesTab(QWidget):
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(pdf_path)))
 
     def print_pdf(self):
-        """Print the selected sale using the saved PDF."""
+        """Print the selected sale using the stored PDF file."""
+
         if self.sales_table.currentRow() < 0:
             QMessageBox.warning(self, "Imprimir", "Seleccione una factura primero.")
             return
-        # Reuse preview_pdf to open the file
-        self.preview_pdf()
+
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        if not venta or int(venta.get("id", 0)) != venta_id:
+            QMessageBox.warning(self, "Imprimir", "No se encontró la venta seleccionada.")
+            return
+
+        title = "Imprimir"
+        if self._is_ticket_sale(venta):
+            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            failure_message = "No se pudo generar el ticket."
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._safe_generate(
+                    self._generate_ticket_pdf,
+                    venta_id,
+                    title,
+                    failure_message,
+                )
+        else:
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            failure_message = "No se pudo generar la factura."
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._safe_generate(
+                    self._generate_invoice_pdf,
+                    venta_id,
+                    title,
+                    failure_message,
+                )
+
+        if not pdf_path or not os.path.exists(pdf_path):
+            return
+
+        printer = QPrinter(QPrinter.HighResolution)
+        dialog = QPrintDialog(printer, self)
+        dialog.setWindowTitle("Imprimir documento")
+        if dialog.exec_() != QDialog.Accepted:
+            return
+
+        printer_name = (printer.printerName() or "").strip() or None
+        try:
+            send_pdf_to_printer(pdf_path, printer_name)
+        except PrintError as exc:
+            QMessageBox.critical(self, title, str(exc))
+            return
+
+        QMessageBox.information(
+            self,
+            title,
+            "El documento se envió a la impresora seleccionada.",
+        )
 
     def send_email(self):
         """Send the selected document via email in a background thread."""

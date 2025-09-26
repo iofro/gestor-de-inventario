@@ -303,7 +303,7 @@ class MainWindow(QMainWindow):
         filtros_layout = QHBoxLayout()
         self.vendedor_combo_filtro = QComboBox()
         self.vendedor_combo_filtro.addItem("Todos", None)
-        for v in self.manager._vendedores:
+        for v in self.manager.get_vendedores_compra():
             self.vendedor_combo_filtro.addItem(v["nombre"], v["id"])
 
         self.vendedor_combo_filtro.currentIndexChanged.connect(self.filter_products)
@@ -872,10 +872,11 @@ class MainWindow(QMainWindow):
     def registrar_compra(self):
         productos = [dict(p) for p in self.manager._products]
         Distribuidores = [dict(v) for v in self.manager._Distribuidores]
+        proveedores = [dict(v) for v in self.manager.get_vendedores_compra()]
         dialog = RegisterPurchaseDialog(
             productos,
             Distribuidores,
-            self.manager._vendedores,
+            proveedores,
             self
         )
         try:
@@ -1341,7 +1342,7 @@ class MainWindow(QMainWindow):
 
     def _actualizar_arbol_vendedores(self):
         self.vendedores_tree.clear()
-        for vend in self.manager._vendedores:
+        for vend in self.manager.get_vendedores_compra():
             text = f"{vend.get('codigo', '')} - {vend['nombre']}"
             vend_item = QTreeWidgetItem([text])
             vend_item.setData(0, Qt.UserRole, vend.get("id"))
@@ -1353,7 +1354,11 @@ class MainWindow(QMainWindow):
         for dist in self.manager._Distribuidores:
             dist_item = QTreeWidgetItem([dist["nombre"]])
             dist_item.setData(0, Qt.UserRole, dist.get("id"))
-            vendedores = [v for v in self.manager._vendedores if v.get("Distribuidor_id") == dist["id"]]
+            vendedores = [
+                v
+                for v in self.manager.get_vendedores_compra()
+                if v.get("Distribuidor_id") == dist["id"]
+            ]
             for vend in vendedores:
                 text = f"{vend.get('codigo', '')} - {vend['nombre']}"
                 vend_item = QTreeWidgetItem([text])
@@ -1394,7 +1399,14 @@ class MainWindow(QMainWindow):
             return
         item = selected_items[0]
         vendedor_id = item.data(0, Qt.UserRole)
-        vendedor = next((c for c in self.manager._vendedores if c["id"] == vendedor_id), None)
+        vendedor = next(
+            (
+                c
+                for c in self.manager.get_vendedores_compra()
+                if c["id"] == vendedor_id
+            ),
+            None,
+        )
         if not vendedor:
             QMessageBox.warning(self, "Editar vendedor", "No se encontró la vendedor seleccionada.")
             return

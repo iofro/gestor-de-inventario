@@ -294,7 +294,7 @@ def _save_token(token: str, expires_in: int, obtained_at: float, token_len: int)
 
 
 def _load_cached_token() -> None:
-    """Carga token almacenado en disco si aún es válido."""
+    """Carga token almacenado en disco y lo reutiliza sin importar su vigencia."""
 
     global _access_token, _expires_at, _obtained_at, _token_len
 
@@ -320,40 +320,36 @@ def _load_cached_token() -> None:
     if not token:
         return
 
+    expires_in = cached.get("expires_in")
+    obtained_at = cached.get("obtained_at")
+
     try:
-        expires_in = float(cached.get("expires_in", "0"))
-        obtained_at = float(cached.get("obtained_at", "0"))
+        expires_in_value = float(expires_in) if expires_in is not None else 0.0
     except (TypeError, ValueError):
-        return
+        expires_in_value = 0.0
 
-    if expires_in <= 0:
-        return
-
-    expires_at = obtained_at + expires_in
-    if expires_at <= time.time():
-        return
+    try:
+        obtained_at_value = float(obtained_at) if obtained_at is not None else 0.0
+    except (TypeError, ValueError):
+        obtained_at_value = 0.0
 
     _access_token = token
-    _obtained_at = obtained_at
-    _expires_at = expires_at
+    _obtained_at = obtained_at_value
+    _expires_at = obtained_at_value + expires_in_value if expires_in_value else 0.0
+
     token_len_value = cached.get("token_len")
     try:
         _token_len = int(token_len_value) if token_len_value is not None else 0
     except (TypeError, ValueError):
         _token_len = 0
 
-    stripped = token.strip()
-    payload = stripped[7:].strip() if stripped.lower().startswith("bearer ") else stripped
-    jwt_len = len(payload)
-
-    if not _token_len or _token_len != jwt_len:
-        try:
-            _check_and_update_token_len(token)
-        except Exception:
-            _access_token = None
-            _obtained_at = 0.0
-            _expires_at = 0.0
-            _token_len = 0
+    try:
+        _check_and_update_token_len(token)
+    except Exception:
+        _access_token = None
+        _obtained_at = 0.0
+        _expires_at = 0.0
+        _token_len = 0
 
 
 
@@ -398,10 +394,16 @@ def get_token(
         if nit != _current_user or pwd != _current_pwd:
             _current_user, _current_pwd = nit, pwd
 
-    now = time.time()
-    if not refresh and _access_token and now < _expires_at - 60:
-        _check_and_update_token_len(_access_token)
-        return _access_token
+    if not refresh and _access_token:
+        try:
+            _check_and_update_token_len(_access_token)
+        except Exception:
+            _access_token = None
+            _expires_at = 0.0
+            _obtained_at = 0.0
+            _token_len = 0
+        else:
+            return _access_token
 
     url = _get_auth_url()
     global _last_auth_url, _last_auth_host

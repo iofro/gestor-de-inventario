@@ -7,9 +7,13 @@ from typing import Any, Iterable, Mapping
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
+from reportlab.lib import colors
+from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
 from reportlab.lib.pagesizes import letter
-from reportlab.lib.units import mm
+from reportlab.lib.styles import ParagraphStyle
 from reportlab.pdfgen import canvas
+from reportlab.platypus import Flowable, Image, Paragraph, Spacer, Table, TableStyle
+from xml.sax.saxutils import escape
 import json
 import os
 
@@ -17,6 +21,502 @@ from utils.catalogos import DTE_TIPOS, FORMA_PAGO
 
 from paths import DATOS_NEGOCIO_PATH
 from factura_sv import build_qr_url
+
+
+PT_PER_MM = 72 / 25.4
+
+
+def mm(value: float) -> float:
+    return value * PT_PER_MM
+
+
+TICKET_WIDTH_MM = 58
+MARGINS = {
+    "left": mm(3),
+    "right": mm(3),
+    "top": mm(3),
+    "bottom": mm(10),
+}
+TICKET_WIDTH_PT = mm(TICKET_WIDTH_MM)
+CONTENT_WIDTH_PT = TICKET_WIDTH_PT - (MARGINS["left"] + MARGINS["right"])
+MIN_PAGE_HEIGHT_PT = mm(180)
+BLOCK_SPACING = mm(2.5)
+QR_MAX_SIZE = mm(48)
+
+TICKET_STYLES = {
+    "doc_label": ParagraphStyle(
+        "DocLabel",
+        fontName="Helvetica-Bold",
+        fontSize=16,
+        leading=20,
+        alignment=TA_CENTER,
+    ),
+    "business_name": ParagraphStyle(
+        "BusinessName",
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        leading=17,
+        alignment=TA_CENTER,
+    ),
+    "center_text": ParagraphStyle(
+        "CenterText",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_CENTER,
+    ),
+    "section_header": ParagraphStyle(
+        "SectionHeader",
+        fontName="Helvetica-Bold",
+        fontSize=14,
+        leading=17,
+        alignment=TA_LEFT,
+    ),
+    "kv_label": ParagraphStyle(
+        "KVLabel",
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+    ),
+    "kv_value": ParagraphStyle(
+        "KVValue",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_RIGHT,
+    ),
+    "table_header": ParagraphStyle(
+        "TableHeader",
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        alignment=TA_LEFT,
+    ),
+    "table_header_right": ParagraphStyle(
+        "TableHeaderRight",
+        fontName="Helvetica-Bold",
+        fontSize=12,
+        leading=15,
+        alignment=TA_RIGHT,
+    ),
+    "table_cell": ParagraphStyle(
+        "TableCell",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+    ),
+    "table_cell_right": ParagraphStyle(
+        "TableCellRight",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_RIGHT,
+    ),
+    "table_desc": ParagraphStyle(
+        "TableDesc",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+    ),
+    "totals_label": ParagraphStyle(
+        "TotalsLabel",
+        fontName="Helvetica-Bold",
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
+    ),
+    "totals_value": ParagraphStyle(
+        "TotalsValue",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_RIGHT,
+    ),
+    "total_pay_label": ParagraphStyle(
+        "TotalPayLabel",
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        leading=16,
+        alignment=TA_LEFT,
+    ),
+    "total_pay_value": ParagraphStyle(
+        "TotalPayValue",
+        fontName="Helvetica-Bold",
+        fontSize=13,
+        leading=16,
+        alignment=TA_RIGHT,
+    ),
+    "small_center": ParagraphStyle(
+        "SmallCenter",
+        fontName="Helvetica",
+        fontSize=10,
+        leading=12,
+        alignment=TA_CENTER,
+    ),
+}
+
+
+class QRFlowable(Flowable):
+    """Flowable to render a QR code centered within the content width."""
+
+    def __init__(self, url: str, size: float):
+        super().__init__()
+        self.url = url
+        self.size = size
+        qr_code = qr.QrCodeWidget(url)
+        bounds = qr_code.getBounds()
+        width = bounds[2] - bounds[0]
+        height = bounds[3] - bounds[1]
+        scale = min(size / width, size / height)
+        self.drawing = Drawing(size, size, transform=[scale, 0, 0, scale, 0, 0])
+        self.drawing.add(qr_code)
+        self._available_width = size
+
+    def wrap(self, availWidth, availHeight):
+        self._available_width = availWidth
+        return self.size, self.size
+
+    def draw(self):
+        x = (self._available_width - self.size) / 2
+        renderPDF.draw(self.drawing, self.canv, x, 0)
+        self.canv.linkURL(self.url, (x, 0, x + self.size, self.size), relative=0)
+
+
+def _load_datos_negocio(datos_negocio: Mapping[str, Any] | None) -> Mapping[str, Any]:
+    if datos_negocio is not None:
+        return datos_negocio
+
+    resultado: dict[str, Any] = {}
+    if os.path.exists(DATOS_NEGOCIO_PATH):
+        try:
+            with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                resultado = json.load(fh)
+        except Exception:
+            resultado = {}
+    return resultado
+
+
+def _build_ticket_flowables(
+    datos_negocio: Mapping[str, Any],
+    venta: Mapping[str, Any] | None,
+    detalles: Iterable[Mapping[str, Any]] | None,
+    dte_json: Mapping[str, Any] | None,
+    sello: str | None,
+    firma: str | None,
+    qr_url: str | None,
+) -> list[Flowable]:
+    flowables: list[Flowable] = []
+    venta = venta or {}
+    dte_json = dte_json or {}
+    detalles_lista = list(detalles or [])
+    if not detalles_lista:
+        detalles_lista = list(dte_json.get("cuerpoDocumento") or [])
+
+    ident = dte_json.get("identificacion", {}) or {}
+    receptor = dte_json.get("receptor", {}) or {}
+    titulo = document_title_label(ident)
+
+    flowables.append(
+        Paragraph(
+            f"DOCUMENTO TRIBUTARIO ELECTRÓNICO — {escape(titulo)}",
+            TICKET_STYLES["doc_label"],
+        )
+    )
+    flowables.append(Spacer(1, BLOCK_SPACING))
+
+    emisor_json = dte_json.get("emisor", {}) or {}
+    nombre_emisor = (
+        datos_negocio.get("nombreComercial")
+        or datos_negocio.get("nombre")
+        or datos_negocio.get("razonSocial")
+        or emisor_json.get("nombreComercial")
+        or emisor_json.get("nombre")
+        or emisor_json.get("razonSocial")
+        or ""
+    )
+    if nombre_emisor:
+        flowables.append(
+            Paragraph(escape(nombre_emisor.strip()), TICKET_STYLES["business_name"])
+        )
+    nit = (
+        datos_negocio.get("nit")
+        or emisor_json.get("nit")
+        or ""
+    )
+    nrc = (
+        datos_negocio.get("nrc")
+        or emisor_json.get("nrc")
+        or ""
+    )
+    if nit or nrc:
+        flowables.append(
+            Paragraph(
+                escape(f"NIT: {_with_falta(nit)}   NRC: {_with_falta(nrc)}"),
+                TICKET_STYLES["center_text"],
+            )
+        )
+    giro = (
+        datos_negocio.get("descActividad")
+        or datos_negocio.get("actividad")
+        or emisor_json.get("descActividad")
+        or emisor_json.get("actividad")
+        or ""
+    )
+    if giro:
+        flowables.append(
+            Paragraph(
+                escape(f"Actividad: {_with_falta(giro)}"), TICKET_STYLES["center_text"]
+            )
+        )
+    direccion = datos_negocio.get("direccion") or emisor_json.get("direccion") or {}
+    direccion_txt = (
+        direccion.get("complemento")
+        or direccion.get("direccion")
+        or direccion.get("descripcion")
+        or ""
+    )
+    if direccion_txt:
+        flowables.append(
+            Paragraph(
+                escape(f"Dirección: {_with_falta(direccion_txt)}"),
+                TICKET_STYLES["center_text"],
+            )
+        )
+
+    flowables.append(Spacer(1, BLOCK_SPACING))
+
+    kv_rows = [
+        ("Fecha:", _with_falta(venta.get("fecha") or ident.get("fecEmi") or "")),
+        ("No. Control:", _with_falta(ident.get("numeroControl"))),
+        ("Código Gen.:", _with_falta(ident.get("codigoGeneracion"))),
+        ("Cliente:", _with_falta(receptor.get("nombre") or venta.get("cliente"))),
+        (
+            "Documento:",
+            _with_falta(
+                receptor.get("nit")
+                or receptor.get("dui")
+                or receptor.get("numDocumento")
+                or venta.get("documento")
+            ),
+        ),
+    ]
+    kv_data = [
+        [
+            Paragraph(escape(label), TICKET_STYLES["kv_label"]),
+            Paragraph(escape(str(value)), TICKET_STYLES["kv_value"]),
+        ]
+        for label, value in kv_rows
+    ]
+    kv_table = Table(kv_data, colWidths=[CONTENT_WIDTH_PT * 0.45, CONTENT_WIDTH_PT * 0.55])
+    kv_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), mm(0.5)),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), mm(0.5)),
+            ]
+        )
+    )
+    flowables.append(kv_table)
+    flowables.append(Spacer(1, BLOCK_SPACING))
+
+    flowables.append(Paragraph("Detalle de productos", TICKET_STYLES["section_header"]))
+    flowables.append(Spacer(1, mm(1.5)))
+
+    qty_width = mm(10)
+    unit_width = mm(18)
+    total_width = mm(20)
+    desc_width = max(CONTENT_WIDTH_PT - qty_width - unit_width - total_width, mm(20))
+
+    items_data = [
+        [
+            Paragraph("Cant.", TICKET_STYLES["table_header"]),
+            Paragraph("Descripción", TICKET_STYLES["table_header"]),
+            Paragraph("P. Unit.", TICKET_STYLES["table_header_right"]),
+            Paragraph("Total", TICKET_STYLES["table_header_right"]),
+        ]
+    ]
+    for entry in detalles_lista:
+        qty = q(entry.get("cantidad") or entry.get("cantidadUniMedida") or entry.get("uniCantidad") or 0)
+        desc = _with_falta(entry.get("descripcion"))
+        unit = money(
+            entry.get("precio_unitario")
+            or entry.get("precioUnitario")
+            or entry.get("precioUnit")
+            or entry.get("precioUni")
+            or entry.get("precio")
+            or 0
+        )
+        line_total = _calculate_item_total(entry)
+        items_data.append(
+            [
+                Paragraph(escape(qty), TICKET_STYLES["table_cell"]),
+                Paragraph(escape(desc), TICKET_STYLES["table_desc"]),
+                Paragraph(escape(unit), TICKET_STYLES["table_cell_right"]),
+                Paragraph(escape(money(line_total)), TICKET_STYLES["table_cell_right"]),
+            ]
+        )
+
+    items_table = Table(
+        items_data,
+        colWidths=[qty_width, desc_width, unit_width, total_width],
+        hAlign="LEFT",
+    )
+    items_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), mm(0.6)),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), mm(0.6)),
+                ("ALIGN", (2, 0), (-1, -1), "RIGHT"),
+                ("LINEBELOW", (0, 0), (-1, 0), 0.5, colors.black),
+            ]
+        )
+    )
+    flowables.append(items_table)
+    flowables.append(Spacer(1, BLOCK_SPACING))
+
+    flowables.append(Paragraph("Totales", TICKET_STYLES["section_header"]))
+    flowables.append(Spacer(1, mm(1)))
+
+    sub_total = sum(_calculate_item_total(entry) for entry in detalles_lista)
+    total = venta.get("total")
+    if total is None:
+        total = _to_decimal(sub_total)
+    total = _to_decimal(total)
+    iva = venta.get("iva")
+    if iva is None:
+        iva = max(total - _to_decimal(sub_total), Decimal("0"))
+    else:
+        iva = _to_decimal(iva)
+
+    totals_data = [
+        [
+            Paragraph("Sub-total", TICKET_STYLES["totals_label"]),
+            Paragraph(money(sub_total), TICKET_STYLES["totals_value"]),
+        ],
+        [
+            Paragraph("IVA", TICKET_STYLES["totals_label"]),
+            Paragraph(money(iva), TICKET_STYLES["totals_value"]),
+        ],
+        [
+            Paragraph("Total a pagar", TICKET_STYLES["total_pay_label"]),
+            Paragraph(money(total), TICKET_STYLES["total_pay_value"]),
+        ],
+    ]
+    totals_table = Table(
+        totals_data,
+        colWidths=[CONTENT_WIDTH_PT * 0.55, CONTENT_WIDTH_PT * 0.45],
+    )
+    totals_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                ("TOPPADDING", (0, 0), (-1, -1), mm(0.6)),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), mm(0.6)),
+            ]
+        )
+    )
+    flowables.append(totals_table)
+
+    forma_pago = venta.get("forma_pago")
+    pago_monto = money(total)
+    pagos_resumen = dte_json.get("resumen", {}).get("pagos") or []
+    if not forma_pago and pagos_resumen:
+        pago = pagos_resumen[0]
+        code = str(pago.get("codigo") or "").zfill(2)
+        forma_pago = PAGO_LABELS.get(code, "Otro")
+        pago_monto = money(pago.get("montoPago") or total)
+    if forma_pago:
+        flowables.append(Spacer(1, BLOCK_SPACING))
+        flowables.append(Paragraph("Pago", TICKET_STYLES["section_header"]))
+        pagos_table = Table(
+            [
+                [
+                    Paragraph(
+                        escape(f"Pago: {_with_falta(forma_pago)}"),
+                        TICKET_STYLES["kv_label"],
+                    ),
+                    Paragraph(escape(pago_monto), TICKET_STYLES["kv_value"]),
+                ]
+            ],
+            colWidths=[CONTENT_WIDTH_PT * 0.55, CONTENT_WIDTH_PT * 0.45],
+        )
+        pagos_table.setStyle(
+            TableStyle(
+                [
+                    ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), mm(0.6)),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), mm(0.6)),
+                ]
+            )
+        )
+        flowables.append(pagos_table)
+
+    if sello or firma:
+        flowables.append(Spacer(1, BLOCK_SPACING))
+    if sello:
+        flowables.append(
+            Paragraph(
+                escape(f"Sello recibido: {_with_falta(sello)}"),
+                TICKET_STYLES["small_center"],
+            )
+        )
+    if firma:
+        flowables.append(
+            Paragraph(
+                escape(f"Firma electrónica: {_with_falta(firma)}"),
+                TICKET_STYLES["small_center"],
+            )
+        )
+
+    if qr_url:
+        flowables.append(Spacer(1, BLOCK_SPACING))
+        flowables.append(QRFlowable(qr_url, min(QR_MAX_SIZE, CONTENT_WIDTH_PT)))
+
+    return flowables
+
+
+def _render_ticket_pdf(flowables: list[Flowable]) -> bytes:
+    heights: list[float] = []
+    total_height = 0.0
+    for flowable in flowables:
+        _, height = flowable.wrap(CONTENT_WIDTH_PT, 100000)
+        heights.append(height)
+        total_height += height
+
+    page_height = max(total_height + MARGINS["top"] + MARGINS["bottom"], MIN_PAGE_HEIGHT_PT)
+
+    buffer = BytesIO()
+    canv = canvas.Canvas(buffer, pagesize=(TICKET_WIDTH_PT, page_height))
+    y = page_height - MARGINS["top"]
+
+    for flowable, height in zip(flowables, heights):
+        available_height = y - MARGINS["bottom"]
+        if height > available_height and y < page_height - MARGINS["top"]:
+            canv.showPage()
+            canv.setPageSize((TICKET_WIDTH_PT, page_height))
+            y = page_height - MARGINS["top"]
+            available_height = y - MARGINS["bottom"]
+        flowable.wrapOn(canv, CONTENT_WIDTH_PT, available_height)
+        flowable.drawOn(canv, MARGINS["left"], y - height)
+        y -= height
+
+    canv.save()
+    pdf_bytes = buffer.getvalue()
+    buffer.close()
+    return pdf_bytes
 
 
 def _to_decimal(value: Any) -> Decimal:
@@ -117,10 +617,10 @@ def render_ticket_pdf(
     """
 
     buffer = BytesIO()
-    width = 58 * mm
-    height = 280 * mm
-    margin = 4 * mm
-    line_height = 5 * mm
+    width = mm(58)
+    height = mm(280)
+    margin = mm(4)
+    line_height = mm(5)
     c = canvas.Canvas(buffer, pagesize=(width, height))
     y = height - margin
 
@@ -315,7 +815,7 @@ def render_ticket_pdf(
 
     if qr_url:
         ensure_space(extra=35)
-        qr_size = 30 * mm
+        qr_size = mm(30)
         qr_code = qr.QrCodeWidget(qr_url)
         bounds = qr_code.getBounds()
         w = bounds[2] - bounds[0]
@@ -399,7 +899,7 @@ def generar_ticket_pdf(
     c.drawRightString(width - 40, y, f"Total: {venta.get('total', 0):.2f}")
 
     if qr_url:
-        qr_size = 20 * mm
+        qr_size = mm(20)
         qr_code = qr.QrCodeWidget(qr_url)
         bounds = qr_code.getBounds()
         w = bounds[2] - bounds[0]
@@ -425,19 +925,26 @@ def generar_ticket_fe_pdf(
     datos_negocio=None,
     dte_data=None,
 ):
-    """Genera un ticket de Factura Electrónica utilizando ``render_ticket_pdf``.
+    """Genera un ticket de Factura Electrónica con ancho de 58 mm."""
 
-    ``dte_data`` debe contener al menos la clave ``dteJson`` con el payload
-    del DTE.  Cuando ``selloRecibido`` está presente se considera que el DTE fue
-    aceptado y se mostrará la URL de consulta pública.
-    """
+    datos_negocio = _load_datos_negocio(datos_negocio)
+    dte_data = dte_data or {}
+    dte_json = dte_data.get("dteJson") or {}
+    sello = dte_data.get("selloRecibido")
+    firma = dte_data.get("firmaElectronica")
+    qr_url = build_qr_url(dte_json) if dte_json else None
 
-    if dte_data is None:
-        dte_data = {}
+    flowables = _build_ticket_flowables(
+        datos_negocio,
+        venta or {},
+        detalles,
+        dte_json,
+        sello,
+        firma,
+        qr_url,
+    )
 
-    payload = dte_data.get("dteJson", {})
-    accepted = bool(dte_data.get("selloRecibido"))
-    pdf_bytes = render_ticket_pdf(payload, accepted, sello=dte_data.get("selloRecibido"))
+    pdf_bytes = _render_ticket_pdf(flowables)
 
     with open(archivo, "wb") as fh:
         fh.write(pdf_bytes)
@@ -451,198 +958,38 @@ def generar_ticket_personalizado(
     logo_path=None,
     dte_data=None,
 ):
-    """Genera un ticket con un formato personalizado.
+    """Genera un ticket con un formato personalizado térmico de 58 mm."""
 
-    Parameters
-    ----------
-    venta : dict
-        Datos de la venta.
-    detalles : list[dict]
-        Lineas de la venta.
-    archivo : str, optional
-        Ruta del PDF de salida.
-    datos_negocio : dict, optional
-        Datos de encabezado del negocio.
-    logo_path : str, optional
-        Ruta opcional a un logo para mostrar en la cabecera.
-    dte_data : dict, optional
-        Diccionario con información del DTE. Puede contener las claves
-        ``selloRecibido``, ``firmaElectronica`` y ``dteJson``.
-    """
-
-    if datos_negocio is None:
-        datos_negocio = {}
-        if os.path.exists(DATOS_NEGOCIO_PATH):
-            try:
-                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
-                    datos_negocio = json.load(f)
-            except Exception:
-                datos_negocio = {}
-
-    if dte_data is None:
-        dte_data = {}
-
+    datos_negocio = _load_datos_negocio(datos_negocio)
+    dte_data = dte_data or {}
+    dte_json = dte_data.get("dteJson") or {}
     sello = dte_data.get("selloRecibido")
     firma = dte_data.get("firmaElectronica")
-    dte_json = dte_data.get("dteJson", {})
     qr_url = build_qr_url(dte_json) if dte_json else None
-    ident = dte_json.get("identificacion", {})
-    receptor = dte_json.get("receptor", {})
 
-    width, height = letter
-    margin = 15 * mm
-    line_height = 5 * mm
-
-    c = canvas.Canvas(archivo, pagesize=letter)
-    y = height - margin
-
-    # Logo opcional centrado en la parte superior
+    flowables: list[Flowable] = []
     if logo_path and os.path.exists(logo_path):
-        logo_w = 30 * mm
-        c.drawImage(
-            logo_path,
-            (width - logo_w) / 2,
-            y - logo_w,
-            width=logo_w,
-            preserveAspectRatio=True,
+        logo_width = min(mm(30), CONTENT_WIDTH_PT)
+        logo = Image(logo_path)
+        logo._restrictSize(logo_width, logo_width)
+        logo.hAlign = "CENTER"
+        flowables.append(logo)
+        flowables.append(Spacer(1, BLOCK_SPACING))
+
+    flowables.extend(
+        _build_ticket_flowables(
+            datos_negocio,
+            venta or {},
+            detalles,
+            dte_json,
+            sello,
+            firma,
+            qr_url,
         )
-        y -= logo_w + line_height
-
-    def draw_center(text: str, size: int = 10, bold: bool = False):
-        nonlocal y
-        font = "Helvetica-Bold" if bold else "Helvetica"
-        c.setFont(font, size)
-        c.drawCentredString(width / 2, y, text)
-        y -= line_height
-
-    def draw_left_right(left: str, right: str, size: int = 10, bold_left: bool = False, bold_right: bool = False):
-        nonlocal y
-        font_left = "Helvetica-Bold" if bold_left else "Helvetica"
-        font_right = "Helvetica-Bold" if bold_right else "Helvetica"
-        c.setFont(font_left, size)
-        c.drawString(margin, y, left)
-        c.setFont(font_right, size)
-        c.drawRightString(width - margin, y, right)
-        y -= line_height
-
-    def draw_hr():
-        nonlocal y
-        y -= 1
-        c.setLineWidth(0.5)
-        c.line(margin, y, width - margin, y)
-        y -= 1
-
-    # Encabezado ---------------------------------------------------------------
-    titulo = document_title_label(ident)
-    draw_center(
-        f"DOCUMENTO TRIBUTARIO ELECTRÓNICO — {titulo}",
-        size=14,
-        bold=True,
     )
-    draw_hr()
 
-    # Datos del emisor --------------------------------------------------------
-    draw_center(_with_falta(datos_negocio.get("nombreComercial")), size=12, bold=True)
-    nit = datos_negocio.get("nit")
-    nrc = datos_negocio.get("nrc")
-    draw_center(f"NIT: {_with_falta(nit)}   NRC: {_with_falta(nrc)}", size=10)
-    giro = datos_negocio.get("descActividad")
-    draw_center(f"Actividad: {_with_falta(giro)}", size=9)
-    direccion = datos_negocio.get("direccion", {}).get("complemento")
-    draw_center(f"Dirección: {_with_falta(direccion)}", size=9)
-    draw_hr()
+    pdf_bytes = _render_ticket_pdf(flowables)
 
-    # Datos de factura y receptor ---------------------------------------------
-    fecha = venta.get("fecha") or ident.get("fecEmi", "")
-    draw_left_right("Fecha:", _with_falta(fecha))
-    draw_left_right("No. Control:", _with_falta(ident.get("numeroControl")))
-    draw_left_right("Código Gen.:", _with_falta(ident.get("codigoGeneracion")))
-    draw_left_right("Cliente:", _with_falta(receptor.get("nombre")))
-    doc = receptor.get("nit") or receptor.get("dui") or receptor.get("numDocumento")
-    draw_left_right("Documento:", _with_falta(doc))
-    draw_hr()
+    with open(archivo, "wb") as fh:
+        fh.write(pdf_bytes)
 
-    # Tabla de ítems ---------------------------------------------------------
-    c.setFont("Helvetica-Bold", 10)
-    x_qty = margin
-    x_desc = margin + 25 * mm
-    x_unit = width - margin - 40 * mm
-    x_total = width - margin
-    c.drawString(x_qty, y, "Cant.")
-    c.drawString(x_desc, y, "Descripción")
-    c.drawRightString(x_unit, y, "P. Unit.")
-    c.drawRightString(x_total, y, "Total")
-    y -= line_height
-    draw_hr()
-
-    c.setFont("Helvetica", 10)
-    for d in detalles:
-        qty = q(d.get("cantidad", 0))
-        desc = _with_falta(d.get("descripcion"))
-        pu = money(d.get("precio_unitario", 0))
-        line_total = (
-            d.get("monto_total")
-            or d.get("venta_gravada")
-            or d.get("ventas_gravadas")
-            or d.get("cantidad", 0) * d.get("precio_unitario", 0)
-        )
-        c.drawString(x_qty, y, qty)
-        c.drawString(x_desc, y, desc)
-        c.drawRightString(x_unit, y, pu)
-        c.drawRightString(x_total, y, money(line_total))
-        y -= line_height
-
-    draw_hr()
-
-    # Totales -----------------------------------------------------------------
-    sub_total = sum(
-        d.get("monto_total")
-        or d.get("venta_gravada")
-        or d.get("ventas_gravadas")
-        or d.get("cantidad", 0) * d.get("precio_unitario", 0)
-        for d in detalles
-    )
-    total = venta.get("total", sub_total)
-    iva = venta.get("iva")
-    if iva is None:
-        iva = max(total - sub_total, 0)
-    draw_left_right("Sub-total", money(sub_total))
-    draw_left_right("IVA", money(iva))
-    draw_left_right("Total a pagar", money(total), bold_left=True, bold_right=True)
-
-    # Formas de pago ----------------------------------------------------------
-    forma_pago = venta.get("forma_pago")
-    pago_monto = money(total)
-    pagos = dte_json.get("resumen", {}).get("pagos") or []
-    if not forma_pago and pagos:
-        p = pagos[0]
-        code = str(p.get("codigo")).zfill(2)
-        forma_pago = PAGO_LABELS.get(code, "Otro")
-        pago_monto = money(p.get("montoPago", total))
-    if forma_pago:
-        draw_hr()
-        draw_left_right(f"Pago: {forma_pago}", pago_monto)
-
-    # Información fiscal ------------------------------------------------------
-    if sello:
-        draw_hr()
-        draw_center(f"Sello recibido: {_with_falta(sello)}", size=8)
-    if firma:
-        draw_center(f"Firma electrónica: {_with_falta(firma)}", size=8)
-
-    # Código QR ---------------------------------------------------------------
-    if qr_url:
-        qr_size = 30 * mm
-        qr_code = qr.QrCodeWidget(qr_url)
-        bounds = qr_code.getBounds()
-        w = bounds[2] - bounds[0]
-        h = bounds[3] - bounds[1]
-        d = Drawing(qr_size, qr_size, transform=[qr_size / w, 0, 0, qr_size / h, 0, 0])
-        d.add(qr_code)
-        qr_x = (width - qr_size) / 2
-        qr_y = margin
-        renderPDF.draw(d, c, qr_x, qr_y)
-        c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
-
-    c.showPage()
-    c.save()

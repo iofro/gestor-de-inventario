@@ -16,7 +16,6 @@ a = Analysis(
         ('inventario.json', '.'),
         ('ultimo_inventario.json', '.'),
         ('avatar.jpg', '.'),
-        ('templates', 'templates'),
     ],
     hiddenimports=[],
     hookspath=[],

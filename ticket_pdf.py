@@ -1,22 +1,339 @@
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-from reportlab.lib.units import mm
+from __future__ import annotations
+
+from decimal import ROUND_HALF_UP, Decimal
+from io import BytesIO
+from typing import Any, Iterable, Mapping
+
+from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
-from reportlab.graphics import renderPDF
+from reportlab.lib.pagesizes import letter
+from reportlab.lib.units import mm
+from reportlab.pdfgen import canvas
 import json
 import os
 
-from print.ticket_renderer import (
-    PAGO_LABELS,
-    document_title_label,
-    money,
-    q,
-    render_ticket_pdf,
-)
+from utils.catalogos import DTE_TIPOS, FORMA_PAGO
 
 from paths import DATOS_NEGOCIO_PATH
 from factura_sv import build_qr_url
+
+
+def _to_decimal(value: Any) -> Decimal:
+    """Return *value* converted to :class:`~decimal.Decimal`."""
+
+    if value is None:
+        return Decimal("0")
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return Decimal("0")
+
+
+def money(value: Any) -> str:
+    """Format ``value`` as a monetary string with two decimals."""
+
+    quantize = Decimal("0.01")
+    return f"{_to_decimal(value).quantize(quantize, rounding=ROUND_HALF_UP):,.2f}"
+
+
+def q(value: Any) -> str:
+    """Format a quantity removing trailing zeros."""
+
+    dec = _to_decimal(value)
+    normalized = f"{dec.normalize():f}"
+    if "." in normalized:
+        normalized = normalized.rstrip("0").rstrip(".")
+    return normalized
+
+
+def document_title_label(ident: Mapping[str, Any] | None) -> str:
+    """Return a label describing the DTE document type."""
+
+    tipo_dte = ""
+    if ident and isinstance(ident, Mapping):
+        tipo_dte = str(ident.get("tipoDte") or "").zfill(2)
+
+    if tipo_dte == "01":
+        return "CONSUMIDOR FINAL"
+    if tipo_dte == "03":
+        return "CRÉDITO FISCAL"
+
+    label = DTE_TIPOS.get(tipo_dte)
+    if label:
+        return label.upper()
+    return "FACTURA"
+
+
+PAGO_LABELS = {code.zfill(2): value.upper() for code, value in FORMA_PAGO.items()}
+PAGO_LABELS["01"] = "EFECTIVO"
+
+
+def _calculate_item_total(entry: Mapping[str, Any]) -> Decimal:
+    """Return the total amount for an item entry."""
+
+    for key in (
+        "montoTotal",
+        "montoTotalOperacion",
+        "ventaGravada",
+        "ventaExenta",
+        "ventaNoSuj",
+        "subTotal",
+        "ventas_gravadas",
+    ):
+        if entry.get(key) is not None:
+            value = _to_decimal(entry.get(key))
+            if value != 0:
+                return value
+
+    qty = _to_decimal(
+        entry.get("cantidad")
+        or entry.get("cantidadUniMedida")
+        or entry.get("uniCantidad")
+        or 0
+    )
+    unit = _to_decimal(
+        entry.get("precio_unitario")
+        or entry.get("precioUnitario")
+        or entry.get("precioUnit")
+        or entry.get("precioUni")
+        or entry.get("precio")
+        or 0
+    )
+    return (qty * unit).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def render_ticket_pdf(
+    payload: Mapping[str, Any],
+    accepted: bool,
+    sello: str | None = None,
+) -> bytes:
+    """Render a ticket PDF directly using ReportLab.
+
+    The implementation keeps a compact thermal layout while avoiding
+    additional HTML rendering engines or native dependencies.
+    """
+
+    buffer = BytesIO()
+    width = 58 * mm
+    height = 280 * mm
+    margin = 4 * mm
+    line_height = 5 * mm
+    c = canvas.Canvas(buffer, pagesize=(width, height))
+    y = height - margin
+
+    def ensure_space(lines: int = 1, extra: float = 0.0) -> None:
+        nonlocal y
+        required = lines * line_height + extra + margin
+        if y - required < margin:
+            c.showPage()
+            y = height - margin
+
+    def draw_center(text: str, size: int = 9, bold: bool = False) -> None:
+        nonlocal y
+        ensure_space()
+        font = "Helvetica-Bold" if bold else "Helvetica"
+        c.setFont(font, size)
+        c.drawCentredString(width / 2, y, text)
+        y -= line_height
+
+    def draw_left(text: str, size: int = 8, bold: bool = False) -> None:
+        nonlocal y
+        ensure_space()
+        font = "Helvetica-Bold" if bold else "Helvetica"
+        c.setFont(font, size)
+        c.drawString(margin, y, text)
+        y -= line_height
+
+    def draw_left_right(left: str, right: str, size: int = 8, bold: bool = False) -> None:
+        nonlocal y
+        ensure_space()
+        font = "Helvetica-Bold" if bold else "Helvetica"
+        c.setFont(font, size)
+        c.drawString(margin, y, left)
+        c.drawRightString(width - margin, y, right)
+        y -= line_height
+
+    def draw_rule() -> None:
+        nonlocal y
+        ensure_space(extra=1)
+        y -= 1
+        c.setLineWidth(0.4)
+        c.line(margin, y, width - margin, y)
+        y -= 1
+
+    ident = payload.get("identificacion", {}) or {}
+    emisor = payload.get("emisor", {}) or {}
+    receptor = payload.get("receptor", {}) or {}
+    items: Iterable[Mapping[str, Any]] = payload.get("cuerpoDocumento") or []
+    resumen = payload.get("resumen", {}) or {}
+    pagos = resumen.get("pagos") or []
+
+    draw_center("DOCUMENTO TRIBUTARIO", size=10, bold=True)
+    draw_center("ELECTRÓNICO —", size=10, bold=True)
+    draw_center(document_title_label(ident), size=10, bold=True)
+    draw_rule()
+
+    nombre_emisor = (
+        emisor.get("nombreComercial")
+        or emisor.get("nombre")
+        or emisor.get("razonSocial")
+        or ""
+    )
+    if nombre_emisor:
+        draw_center(nombre_emisor.strip(), size=9, bold=True)
+    nit = str(emisor.get("nit") or "").strip()
+    nrc = str(emisor.get("nrc") or "").strip()
+    if nit or nrc:
+        draw_center(f"NIT: {nit or '—'}   NRC: {nrc or '—'}", size=8)
+    giro = str(emisor.get("descActividad") or emisor.get("actividad") or "").strip()
+    if giro:
+        draw_center(f"Actividad: {giro}", size=7)
+    direccion = emisor.get("direccion", {}) or {}
+    direccion_txt = str(direccion.get("complemento") or direccion.get("direccion") or "").strip()
+    if direccion_txt:
+        draw_center(direccion_txt, size=7)
+    draw_rule()
+
+    fecha = ident.get("fecEmi") or payload.get("fecha") or ""
+    hora = ident.get("horEmi") or ""
+    fecha_hora = " ".join(v for v in (str(fecha).strip(), str(hora).strip()) if v)
+    if fecha_hora:
+        draw_left(f"Fecha: {fecha_hora}", bold=True)
+    numero_control = ident.get("numeroControl")
+    if numero_control:
+        draw_left(f"Número de control: {numero_control}")
+    codigo_generacion = ident.get("codigoGeneracion")
+    if codigo_generacion:
+        draw_left(f"Código de generación: {codigo_generacion}")
+
+    receptor_nombre = (
+        receptor.get("nombre")
+        or receptor.get("razonSocial")
+        or receptor.get("denominacionSocial")
+        or ""
+    )
+    if receptor_nombre:
+        draw_left(f"Cliente: {receptor_nombre}")
+    doc = (
+        receptor.get("numDocumento")
+        or receptor.get("numeroDocumento")
+        or receptor.get("nit")
+        or receptor.get("dui")
+        or ""
+    )
+    if doc:
+        draw_left(f"Documento: {doc}")
+    draw_rule()
+
+    draw_left("DETALLE DE FACTURA", bold=True)
+    for entry in items:
+        descripcion = (
+            entry.get("descripcion")
+            or entry.get("nombre")
+            or entry.get("detalle")
+            or ""
+        )
+        descripcion = str(descripcion).strip() or "—"
+        qty = q(
+            entry.get("cantidad")
+            or entry.get("cantidadUniMedida")
+            or entry.get("uniCantidad")
+            or 0
+        )
+        unit = money(
+            entry.get("precio_unitario")
+            or entry.get("precioUnitario")
+            or entry.get("precioUnit")
+            or entry.get("precioUni")
+            or entry.get("precio")
+            or 0
+        )
+        total_line = money(_calculate_item_total(entry))
+
+        draw_left(descripcion)
+        draw_left_right(f"  {qty} x {unit}", total_line)
+
+    draw_rule()
+
+    subtotal = _to_decimal(
+        resumen.get("subTotal")
+        or resumen.get("totalGravada")
+        or resumen.get("totalGravadaConIva")
+        or 0
+    )
+    if subtotal == 0:
+        subtotal = sum((_calculate_item_total(entry) for entry in items), Decimal("0"))
+
+    total = _to_decimal(
+        resumen.get("montoTotalOperacion")
+        or resumen.get("totalPagar")
+        or resumen.get("totalCompra")
+        or 0
+    )
+    if total == 0:
+        total = subtotal
+
+    iva = _to_decimal(resumen.get("totalIva") or resumen.get("iva") or (total - subtotal))
+
+    draw_left_right("Sub-total", money(subtotal))
+    draw_left_right("IVA", money(iva))
+    draw_left_right("Total a pagar", money(total), bold=True)
+
+    forma_pago = None
+    monto_pago = total
+    if pagos:
+        pago = pagos[0]
+        codigo = str(pago.get("codigo") or "").zfill(2)
+        forma_pago = PAGO_LABELS.get(codigo, "OTRO")
+        monto_pago = _to_decimal(pago.get("montoPago") or monto_pago)
+
+    if forma_pago or resumen.get("condicionOperacion"):
+        draw_rule()
+        draw_left("FORMA DE PAGO", bold=True)
+        if forma_pago:
+            draw_left_right(forma_pago, money(monto_pago))
+        condicion = resumen.get("condicionOperacion")
+        if condicion is not None:
+            draw_left(str(condicion).upper())
+
+    if accepted and sello:
+        draw_rule()
+        draw_left(f"Sello de Recepción: {sello}")
+    elif not accepted:
+        draw_rule()
+        draw_left("Documento en proceso de validación")
+
+    qr_url = None
+    if accepted:
+        try:
+            qr_url = build_qr_url(payload)
+        except Exception:
+            qr_url = None
+
+    if qr_url:
+        ensure_space(extra=35)
+        qr_size = 30 * mm
+        qr_code = qr.QrCodeWidget(qr_url)
+        bounds = qr_code.getBounds()
+        w = bounds[2] - bounds[0]
+        h = bounds[3] - bounds[1]
+        drawing = Drawing(
+            qr_size,
+            qr_size,
+            transform=[qr_size / w, 0, 0, qr_size / h, 0, 0],
+        )
+        drawing.add(qr_code)
+        qr_x = (width - qr_size) / 2
+        qr_y = y - qr_size - 5
+        renderPDF.draw(drawing, c, qr_x, qr_y)
+        c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
+        y = qr_y - line_height
+
+    c.save()
+    return buffer.getvalue()
 
 
 def _with_falta(value):

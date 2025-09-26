@@ -1,7 +1,7 @@
 import fitz
 from decimal import Decimal
 
-from print.ticket_renderer import render_ticket_pdf
+from ticket_pdf import render_ticket_pdf
 
 
 def _sample_payload():

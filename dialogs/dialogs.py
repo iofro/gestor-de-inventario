@@ -630,7 +630,15 @@ class ProductDialogBase:
 
 
 class RegisterSaleDialog(QDialog, ProductDialogBase):
-    def __init__(self, productos, Distribuidores, vendedores_trabajadores, parent=None, db=None):
+    def __init__(
+        self,
+        productos,
+        Distribuidores,
+        vendedores_trabajadores,
+        parent=None,
+        db=None,
+        venta_extra=None,
+    ):
         super().__init__(parent)
         self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta")
@@ -801,6 +809,41 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         right_layout.addWidget(self.subtotal_label)
         right_layout.addWidget(self.total_label)
 
+        right_layout.addWidget(QLabel("Condición de pago:"))
+        self.condicion_pago_combo = QComboBox()
+        self.condicion_pago_combo.addItem("Contado", 1)
+        self.condicion_pago_combo.addItem("Crédito", 2)
+        self.condicion_pago_combo.addItem("Otros", 3)
+        right_layout.addWidget(self.condicion_pago_combo)
+
+        self.condicion_pago_combo.currentIndexChanged.connect(
+            self._update_condicion_pago_fields
+        )
+
+        self.credit_fields_widget = QWidget()
+        credit_layout = QFormLayout(self.credit_fields_widget)
+        credit_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.plazo_combo = QComboBox()
+        self.plazo_combo.addItem("Seleccionar", "")
+        self.plazo_combo.addItem("Días (01)", "01")
+        self.plazo_combo.addItem("Meses (02)", "02")
+        self.plazo_combo.addItem("Años (03)", "03")
+        credit_layout.addRow("Plazo:", self.plazo_combo)
+
+        self.periodo_combo = QComboBox()
+        self.periodo_combo.addItem("Seleccionar", "")
+        self.periodo_combo.addItem("D", "D")
+        self.periodo_combo.addItem("M", "M")
+        self.periodo_combo.addItem("A", "A")
+        credit_layout.addRow("Período:", self.periodo_combo)
+
+        self.referencia_edit = QLineEdit()
+        self.referencia_edit.setPlaceholderText("Referencia (opcional)")
+        credit_layout.addRow("Referencia:", self.referencia_edit)
+
+        right_layout.addWidget(self.credit_fields_widget)
+
         right_layout.addWidget(QLabel("Estado:"))
         self.estado_combo = QComboBox()
         self.estado_combo.addItems(["Pagada", "Pendiente"])
@@ -869,6 +912,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         # Ajusta el máximo del descuento según el tipo seleccionado
         self._on_descuento_tipo_changed()
+        self._update_condicion_pago_fields()
+        self.load_payment_data(venta_extra)
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -1020,8 +1065,17 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 ventas_no_sujetas += item["subtotal_con_descuento"]
             total += item.get("total", 0) 
 
+        condicion_operacion = self.condicion_pago_combo.currentData()
+        plazo_codigo = self.plazo_combo.currentData() if condicion_operacion == 2 else ""
+        periodo_codigo = (
+            self.periodo_combo.currentData() if condicion_operacion == 2 else ""
+        )
+        referencia = (
+            self.referencia_edit.text().strip() if condicion_operacion == 2 else ""
+        )
+
         return {
-        "cliente": self.selected_cliente if self.selected_cliente else {},
+            "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
             "tipo_venta": (
                 "Minorista" if self.tipo_minorista.isChecked()
@@ -1047,8 +1101,54 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             ),
             "vendedor_id": vendedor_id,
             "estado": self.estado_combo.currentText(),
+            "condicion_operacion": condicion_operacion,
+            "pago_plazo": plazo_codigo,
+            "pago_periodo": periodo_codigo,
+            "pago_referencia": referencia,
+            "condicion_pago": self.condicion_pago_combo.currentText(),
         }
-    
+
+    def _update_condicion_pago_fields(self):
+        is_credit = self.condicion_pago_combo.currentData() == 2
+        self.credit_fields_widget.setVisible(is_credit)
+        if not is_credit:
+            self.plazo_combo.setCurrentIndex(0)
+            self.periodo_combo.setCurrentIndex(0)
+            self.referencia_edit.clear()
+
+    def load_payment_data(self, extra):
+        if not extra:
+            return
+        data = {}
+        if isinstance(extra, str):
+            try:
+                data = json.loads(extra)
+            except (TypeError, ValueError):
+                return
+        elif isinstance(extra, dict):
+            data = extra
+        else:
+            return
+
+        condicion = data.get("condicionOperacion")
+        if condicion in {1, 2, 3}:
+            idx = self.condicion_pago_combo.findData(condicion)
+            if idx >= 0:
+                self.condicion_pago_combo.setCurrentIndex(idx)
+        pagos = data.get("pagos") or []
+        if pagos:
+            pago = pagos[0]
+            idx_plazo = self.plazo_combo.findData(pago.get("plazo"))
+            if idx_plazo >= 0:
+                self.plazo_combo.setCurrentIndex(idx_plazo)
+            idx_periodo = self.periodo_combo.findData(pago.get("periodo"))
+            if idx_periodo >= 0:
+                self.periodo_combo.setCurrentIndex(idx_periodo)
+            referencia = pago.get("referencia")
+            if referencia:
+                self.referencia_edit.setText(str(referencia))
+        self._update_condicion_pago_fields()
+
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
         if idx < 0:
@@ -1183,6 +1283,16 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             return
         if self.precio_spin.value() <= 0:
             QMessageBox.warning(self, "Validación", "El precio debe ser mayor que cero.")
+            return
+        condicion_operacion = self.condicion_pago_combo.currentData()
+        if condicion_operacion == 2 and (
+            not self.plazo_combo.currentData() or not self.periodo_combo.currentData()
+        ):
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "Debe seleccionar plazo y período para crédito.",
+            )
             return
         tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
         tercero_documento = self.venta_documento_edit.text().strip()
@@ -1807,7 +1917,15 @@ class RegisterPurchaseDialog(QDialog):
         }
     
 class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
-    def __init__(self, productos, Distribuidores, vendedores_trabajadores, parent=None, db=None):
+    def __init__(
+        self,
+        productos,
+        Distribuidores,
+        vendedores_trabajadores,
+        parent=None,
+        db=None,
+        venta_extra=None,
+    ):
         super().__init__(parent)
         self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta a Crédito Fiscal")
@@ -2021,9 +2139,38 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         right_layout.addWidget(QLabel("Condición de pago:"))
         self.condicion_pago_combo = QComboBox()
-        self.condicion_pago_combo.setEditable(True)  
-        self.condicion_pago_combo.addItems(["Contado", "Crédito", "Otro..."])
+        self.condicion_pago_combo.addItem("Contado", 1)
+        self.condicion_pago_combo.addItem("Crédito", 2)
+        self.condicion_pago_combo.addItem("Otros", 3)
         right_layout.addWidget(self.condicion_pago_combo)
+
+        self.condicion_pago_combo.currentIndexChanged.connect(
+            self._update_condicion_pago_fields
+        )
+
+        self.credit_fields_widget = QWidget()
+        credit_layout = QFormLayout(self.credit_fields_widget)
+        credit_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.plazo_combo = QComboBox()
+        self.plazo_combo.addItem("Seleccionar", "")
+        self.plazo_combo.addItem("Días (01)", "01")
+        self.plazo_combo.addItem("Meses (02)", "02")
+        self.plazo_combo.addItem("Años (03)", "03")
+        credit_layout.addRow("Plazo:", self.plazo_combo)
+
+        self.periodo_combo = QComboBox()
+        self.periodo_combo.addItem("Seleccionar", "")
+        self.periodo_combo.addItem("D", "D")
+        self.periodo_combo.addItem("M", "M")
+        self.periodo_combo.addItem("A", "A")
+        credit_layout.addRow("Período:", self.periodo_combo)
+
+        self.referencia_edit = QLineEdit()
+        self.referencia_edit.setPlaceholderText("Referencia (opcional)")
+        credit_layout.addRow("Referencia:", self.referencia_edit)
+
+        right_layout.addWidget(self.credit_fields_widget)
 
         right_layout.addWidget(QLabel("Venta a cuenta de:"))
         self.venta_a_cuenta_de_edit = QLineEdit()
@@ -2072,6 +2219,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self._actualizar_precio_defecto()
         self._actualizar_resumen()
         self._on_descuento_tipo_changed()
+        self._update_condicion_pago_fields()
+        self.load_payment_data(venta_extra)
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -2316,6 +2465,16 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         if not self.venta_items:
             QMessageBox.warning(self, "Validación", "Debe agregar al menos un producto a la venta.")
             return
+        condicion_operacion = self.condicion_pago_combo.currentData()
+        if condicion_operacion == 2 and (
+            not self.plazo_combo.currentData() or not self.periodo_combo.currentData()
+        ):
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "Debe seleccionar plazo y período para crédito.",
+            )
+            return
         tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
         tercero_documento = self.venta_documento_edit.text().strip()
         if tercero_nombre or tercero_documento:
@@ -2370,6 +2529,15 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         subtotal = (sumas - descuentos) + iva
         total = subtotal + ventas_exentas + ventas_no_sujetas
 
+        condicion_operacion = self.condicion_pago_combo.currentData()
+        plazo_codigo = self.plazo_combo.currentData() if condicion_operacion == 2 else ""
+        periodo_codigo = (
+            self.periodo_combo.currentData() if condicion_operacion == 2 else ""
+        )
+        referencia = (
+            self.referencia_edit.text().strip() if condicion_operacion == 2 else ""
+        )
+
         return {
             "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
@@ -2403,8 +2571,53 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 self.Distribuidor_combo.currentIndex()
                 if self.Distribuidor_combo.currentIndex() >= 0 else None
             ),
-            "vendedor_id": vendedor_id
+            "vendedor_id": vendedor_id,
+            "condicion_operacion": condicion_operacion,
+            "pago_plazo": plazo_codigo,
+            "pago_periodo": periodo_codigo,
+            "pago_referencia": referencia,
         }
+
+    def _update_condicion_pago_fields(self):
+        is_credit = self.condicion_pago_combo.currentData() == 2
+        self.credit_fields_widget.setVisible(is_credit)
+        if not is_credit:
+            self.plazo_combo.setCurrentIndex(0)
+            self.periodo_combo.setCurrentIndex(0)
+            self.referencia_edit.clear()
+
+    def load_payment_data(self, extra):
+        if not extra:
+            return
+        data = {}
+        if isinstance(extra, str):
+            try:
+                data = json.loads(extra)
+            except (TypeError, ValueError):
+                return
+        elif isinstance(extra, dict):
+            data = extra
+        else:
+            return
+
+        condicion = data.get("condicionOperacion")
+        if condicion in {1, 2, 3}:
+            idx = self.condicion_pago_combo.findData(condicion)
+            if idx >= 0:
+                self.condicion_pago_combo.setCurrentIndex(idx)
+        pagos = data.get("pagos") or []
+        if pagos:
+            pago = pagos[0]
+            idx_plazo = self.plazo_combo.findData(pago.get("plazo"))
+            if idx_plazo >= 0:
+                self.plazo_combo.setCurrentIndex(idx_plazo)
+            idx_periodo = self.periodo_combo.findData(pago.get("periodo"))
+            if idx_periodo >= 0:
+                self.periodo_combo.setCurrentIndex(idx_periodo)
+            referencia = pago.get("referencia")
+            if referencia:
+                self.referencia_edit.setText(str(referencia))
+        self._update_condicion_pago_fields()
 
 class DistribuidorDialog(QDialog):
     def __init__(self, parent=None, Distribuidor=None):

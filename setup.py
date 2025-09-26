@@ -18,6 +18,8 @@ PyInstaller.__main__.run([
     f'--add-data=inventario.json{SEP}.',
     f'--add-data=ultimo_inventario.json{SEP}.',
     f'--add-data=avatar.jpg{SEP}.',
+    f'--add-data=templates{SEP}templates',
+    f'--add-data=gtk3{SEP}gtk3',
     # Agrega aquí otros archivos necesarios (imágenes, .ui, etc.)
 ])
 

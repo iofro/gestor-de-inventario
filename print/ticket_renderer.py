@@ -16,9 +16,63 @@ from io import BytesIO
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Sequence
 
+import os
+import sys
+
 import qrcode
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-from weasyprint import CSS, HTML
+
+# --- Bootstrap DLLs GTK/Pango/Cairo en Windows ---
+if sys.platform.startswith("win"):
+    here = os.path.dirname(__file__)
+    # 1) Ruta local dentro del repo: repo_root/gtk3/bin
+    repo_bin = os.path.abspath(os.path.join(here, "..", "gtk3", "bin"))
+    if os.path.isdir(repo_bin):
+        try:
+            os.add_dll_directory(repo_bin)  # Python 3.8+
+        except Exception:
+            pass
+    # 2) (Opcional) override por variable de entorno
+    gtk_bin = os.environ.get("GTK_BIN")
+    if gtk_bin and os.path.isdir(gtk_bin):
+        try:
+            os.add_dll_directory(gtk_bin)
+        except Exception:
+            pass
+# --- Fin bootstrap ---
+
+_HTML = _CSS = None
+_weasy_error = None
+
+
+def _ensure_weasyprint() -> None:
+    """Import WeasyPrint de forma diferida y controlar errores de dependencias."""
+
+    global _HTML, _CSS, _weasy_error
+    if _HTML and _CSS:
+        return
+    try:
+        from weasyprint import HTML as __HTML, CSS as __CSS
+
+        _HTML, _CSS = __HTML, __CSS
+        _weasy_error = None
+    except Exception as e:  # pragma: no cover - depende de entorno externo
+        _weasy_error = e
+        raise RuntimeError(
+            "WeasyPrint no está disponible. Instala las dependencias nativas (GTK/Pango/Cairo) "
+            "y el paquete Python WeasyPrint. Detalle: " + str(e)
+        )
+
+
+def _base_templates_dir() -> Path:
+    """Return the base path where templates live, supporting PyInstaller."""
+
+    meipass = getattr(sys, "_MEIPASS", None)
+    if meipass:
+        candidate = Path(meipass) / "templates"
+        if candidate.exists():
+            return candidate
+    return Path(__file__).resolve().parent.parent / "templates"
 
 from factura_sv import build_qr_url
 from utils.catalogos import (
@@ -42,8 +96,16 @@ except Exception:  # pragma: no cover - fallback when running minimal envs
     DTE_MUNICIPIOS = {}
 
 
-TEMPLATES_DIR = Path(__file__).resolve().parent.parent / "templates"
+TEMPLATES_DIR = _base_templates_dir()
 CSS_PATH = TEMPLATES_DIR / "ticket-58mm.css"
+
+
+def render_ticket_html_to_pdf(html_str: str, css_path: str, out_path: str) -> str:
+    """Render *html_str* + *css_path* to *out_path* using WeasyPrint."""
+
+    _ensure_weasyprint()
+    _HTML(string=html_str).write_pdf(out_path, stylesheets=[_CSS(filename=css_path)])
+    return out_path
 
 
 # ---------------------------------------------------------------------------
@@ -560,7 +622,10 @@ def render_ticket_pdf(
     }
 
     html = template.render(**context)
-    stylesheets = [CSS(filename=str(CSS_PATH))]
-    pdf_bytes = HTML(string=html, base_url=str(TEMPLATES_DIR)).write_pdf(stylesheets=stylesheets)
+    _ensure_weasyprint()
+    stylesheets = [_CSS(filename=str(CSS_PATH))]
+    pdf_bytes = _HTML(string=html, base_url=str(TEMPLATES_DIR)).write_pdf(
+        stylesheets=stylesheets
+    )
     return pdf_bytes
 

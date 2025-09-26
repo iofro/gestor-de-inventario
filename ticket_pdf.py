@@ -32,14 +32,14 @@ def mm(value: float) -> float:
 
 TICKET_WIDTH_MM = 58
 MARGINS = {
-    "left": mm(3),
-    "right": mm(3),
+    "left": mm(2),
+    "right": mm(2),
     "top": mm(3),
     "bottom": mm(10),
 }
-TICKET_WIDTH_PT = mm(TICKET_WIDTH_MM)
-CONTENT_WIDTH_PT = TICKET_WIDTH_PT - (MARGINS["left"] + MARGINS["right"])
-MIN_PAGE_HEIGHT_PT = mm(180)
+PAGE_WIDTH_PT = mm(TICKET_WIDTH_MM)
+CONTENT_W = PAGE_WIDTH_PT - (MARGINS["left"] + MARGINS["right"])
+MIN_PAGE_HEIGHT_PT = mm(120)
 BLOCK_SPACING = mm(2.5)
 QR_MAX_SIZE = mm(48)
 
@@ -310,7 +310,7 @@ def _build_ticket_flowables(
         ]
         for label, value in kv_rows
     ]
-    kv_table = Table(kv_data, colWidths=[CONTENT_WIDTH_PT * 0.45, CONTENT_WIDTH_PT * 0.55])
+    kv_table = Table(kv_data, colWidths=[CONTENT_W * 0.45, CONTENT_W * 0.55])
     kv_table.setStyle(
         TableStyle(
             [
@@ -331,7 +331,7 @@ def _build_ticket_flowables(
     qty_width = mm(10)
     unit_width = mm(18)
     total_width = mm(20)
-    desc_width = max(CONTENT_WIDTH_PT - qty_width - unit_width - total_width, mm(20))
+    desc_width = max(CONTENT_W - qty_width - unit_width - total_width, mm(20))
 
     items_data = [
         [
@@ -413,7 +413,7 @@ def _build_ticket_flowables(
     ]
     totals_table = Table(
         totals_data,
-        colWidths=[CONTENT_WIDTH_PT * 0.55, CONTENT_WIDTH_PT * 0.45],
+        colWidths=[CONTENT_W * 0.55, CONTENT_W * 0.45],
     )
     totals_table.setStyle(
         TableStyle(
@@ -449,7 +449,7 @@ def _build_ticket_flowables(
                     Paragraph(escape(pago_monto), TICKET_STYLES["kv_value"]),
                 ]
             ],
-            colWidths=[CONTENT_WIDTH_PT * 0.55, CONTENT_WIDTH_PT * 0.45],
+            colWidths=[CONTENT_W * 0.55, CONTENT_W * 0.45],
         )
         pagos_table.setStyle(
             TableStyle(
@@ -483,7 +483,7 @@ def _build_ticket_flowables(
 
     if qr_url:
         flowables.append(Spacer(1, BLOCK_SPACING))
-        flowables.append(QRFlowable(qr_url, min(QR_MAX_SIZE, CONTENT_WIDTH_PT)))
+        flowables.append(QRFlowable(qr_url, min(QR_MAX_SIZE, CONTENT_W)))
 
     return flowables
 
@@ -492,24 +492,21 @@ def _render_ticket_pdf(flowables: list[Flowable]) -> bytes:
     heights: list[float] = []
     total_height = 0.0
     for flowable in flowables:
-        _, height = flowable.wrap(CONTENT_WIDTH_PT, 100000)
+        _, height = flowable.wrap(CONTENT_W, 100000)
         heights.append(height)
         total_height += height
 
-    page_height = max(total_height + MARGINS["top"] + MARGINS["bottom"], MIN_PAGE_HEIGHT_PT)
+    page_height = max(
+        MARGINS["top"] + total_height + MARGINS["bottom"],
+        MIN_PAGE_HEIGHT_PT,
+    )
 
     buffer = BytesIO()
-    canv = canvas.Canvas(buffer, pagesize=(TICKET_WIDTH_PT, page_height))
+    canv = canvas.Canvas(buffer, pagesize=(PAGE_WIDTH_PT, page_height))
     y = page_height - MARGINS["top"]
 
     for flowable, height in zip(flowables, heights):
-        available_height = y - MARGINS["bottom"]
-        if height > available_height and y < page_height - MARGINS["top"]:
-            canv.showPage()
-            canv.setPageSize((TICKET_WIDTH_PT, page_height))
-            y = page_height - MARGINS["top"]
-            available_height = y - MARGINS["bottom"]
-        flowable.wrapOn(canv, CONTENT_WIDTH_PT, available_height)
+        flowable.wrapOn(canv, CONTENT_W, height)
         flowable.drawOn(canv, MARGINS["left"], y - height)
         y -= height
 
@@ -969,7 +966,7 @@ def generar_ticket_personalizado(
 
     flowables: list[Flowable] = []
     if logo_path and os.path.exists(logo_path):
-        logo_width = min(mm(30), CONTENT_WIDTH_PT)
+        logo_width = min(mm(30), CONTENT_W)
         logo = Image(logo_path)
         logo._restrictSize(logo_width, logo_width)
         logo.hAlign = "CENTER"

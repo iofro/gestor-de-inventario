@@ -177,8 +177,11 @@ class PdfPreviewDialog(QDialog):
         self._pages_layout.addWidget(self._info_label)
 
         self._button_box = QDialogButtonBox(
-            QDialogButtonBox.Print | QDialogButtonBox.Cancel,
+            QDialogButtonBox.Cancel,
             parent=self,
+        )
+        self._print_button: QPushButton = self._button_box.addButton(
+            "Imprimir", QDialogButtonBox.AcceptRole
         )
         self._button_box.accepted.connect(self.accept)
         self._button_box.rejected.connect(self.reject)
@@ -187,7 +190,7 @@ class PdfPreviewDialog(QDialog):
         QTimer.singleShot(0, self._load_preview)
 
     def _load_preview(self) -> None:
-        print_button = self._button_box.button(QDialogButtonBox.Print)
+        print_button = self._print_button
         try:
             document = fitz.open(self._pdf_path)
         except Exception as exc:  # pragma: no cover - defensive

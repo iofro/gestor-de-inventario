@@ -1,20 +1,14 @@
-@page {
-  size: 58mm;
-  margin: 0;
-}
-
 html,
 body {
   margin: 0;
   padding: 0;
-  width: 58mm;
   background: #fff;
 }
 
 body {
   font-family: "DejaVu Sans", Arial, sans-serif;
   font-size: 10pt;
-  line-height: 1.2;
+  line-height: 1.25;
   letter-spacing: 0;
   color: #000;
   -webkit-font-smoothing: antialiased;
@@ -23,12 +17,17 @@ body {
 
 .ticket {
   box-sizing: border-box;
-  width: 57mm;
-  min-height: 100%;
   padding: 3mm 3mm 9mm;
   display: flex;
   flex-direction: column;
   gap: 2mm;
+  break-after: page;
+  page-break-after: always;
+  overflow-wrap: anywhere;
+}
+
+.ticket:last-child {
+  page-break-after: auto;
 }
 
 .ticket,
@@ -42,6 +41,7 @@ body {
 .qr,
 .footer {
   break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .header {
@@ -53,15 +53,19 @@ body {
 
 .header .title {
   font-weight: 700;
-  font-size: 18pt;
+  font-size: 16pt;
   letter-spacing: 0.3pt;
   text-transform: uppercase;
+  line-height: 1.35;
+  margin: 0 0 2mm;
 }
 
 .header .doc-label {
-  font-size: 16pt;
+  font-size: 14pt;
   font-weight: 600;
   text-transform: uppercase;
+  line-height: 1.35;
+  margin: 0 0 2mm;
 }
 
 .header .meta {
@@ -87,11 +91,28 @@ body {
 }
 
 .section-title {
-  font-size: 16pt;
+  font-size: 15pt;
   font-weight: 600;
-  margin: 2mm 0 0.6mm;
+  line-height: 1.35;
+  margin: 0 0 2mm;
   text-transform: uppercase;
   letter-spacing: 0.3pt;
+}
+
+@media print {
+  @page {
+    size: 58mm 400mm;
+    margin: 0;
+  }
+
+  html,
+  body {
+    width: 58mm;
+  }
+
+  .ticket {
+    width: 57mm;
+  }
 }
 
 .divider {
@@ -129,6 +150,7 @@ body {
   flex-direction: column;
   gap: 0.8mm;
   break-inside: avoid;
+  page-break-inside: avoid;
 }
 
 .item-desc {
@@ -218,9 +240,13 @@ body {
 }
 
 .qr img {
-  max-width: 50mm;
+  display: block;
+  margin: 0 auto;
+  max-width: 48mm;
+  max-height: 48mm;
   width: 100%;
   height: auto;
+  object-fit: contain;
 }
 
 .qr .caption {
@@ -256,7 +282,7 @@ em {
 
 @media print {
   @page {
-    size: 58mm;
+    size: 58mm 400mm;
     margin: 0;
   }
 

@@ -293,6 +293,70 @@ def _save_token(token: str, expires_in: int, obtained_at: float, token_len: int)
         pass
 
 
+def _load_cached_token() -> None:
+    """Carga token almacenado en disco si aún es válido."""
+
+    global _access_token, _expires_at, _obtained_at, _token_len
+
+    if _access_token:
+        return
+
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT key, value FROM tokens WHERE key IN "
+                "('access_token', 'expires_in', 'obtained_at', 'token_len')"
+            )
+            rows = cur.fetchall()
+    except sqlite3.Error:
+        return
+
+    if not rows:
+        return
+
+    cached = {key: value for key, value in rows}
+    token = cached.get("access_token")
+    if not token:
+        return
+
+    try:
+        expires_in = float(cached.get("expires_in", "0"))
+        obtained_at = float(cached.get("obtained_at", "0"))
+    except (TypeError, ValueError):
+        return
+
+    if expires_in <= 0:
+        return
+
+    expires_at = obtained_at + expires_in
+    if expires_at <= time.time():
+        return
+
+    _access_token = token
+    _obtained_at = obtained_at
+    _expires_at = expires_at
+    token_len_value = cached.get("token_len")
+    try:
+        _token_len = int(token_len_value) if token_len_value is not None else 0
+    except (TypeError, ValueError):
+        _token_len = 0
+
+    stripped = token.strip()
+    payload = stripped[7:].strip() if stripped.lower().startswith("bearer ") else stripped
+    jwt_len = len(payload)
+
+    if not _token_len or _token_len != jwt_len:
+        try:
+            _check_and_update_token_len(token)
+        except Exception:
+            _access_token = None
+            _obtained_at = 0.0
+            _expires_at = 0.0
+            _token_len = 0
+
+
+
 def delete_token() -> None:
     """Elimina el token almacenado y limpia la caché."""
     global _access_token, _expires_at, _obtained_at, _token_type, _token_len
@@ -319,6 +383,9 @@ def get_token(
 ) -> str:
     """Devuelve un token válido. Puede recibir credenciales explícitas."""
     global _access_token, _expires_at, _obtained_at, _token_type, _current_user, _current_pwd
+
+    if not _access_token:
+        _load_cached_token()
 
     if nit is not None and pwd is not None:
         if nit != _current_user or pwd != _current_pwd:

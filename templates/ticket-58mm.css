@@ -1,5 +1,5 @@
 @page {
-  size: 58mm auto;
+  size: 58mm;
   margin: 0;
 }
 
@@ -12,9 +12,10 @@ body {
 }
 
 body {
-  font-family: "Inter", "Roboto", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
-  font-size: 15pt;
-  line-height: 1.35;
+  font-family: "DejaVu Sans", Arial, sans-serif;
+  font-size: 10pt;
+  line-height: 1.2;
+  letter-spacing: 0;
   color: #000;
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
@@ -255,7 +256,7 @@ em {
 
 @media print {
   @page {
-    size: 58mm auto;
+    size: 58mm;
     margin: 0;
   }
 

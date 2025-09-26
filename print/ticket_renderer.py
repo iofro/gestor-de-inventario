@@ -104,7 +104,9 @@ def render_ticket_html_to_pdf(html_str: str, css_path: str, out_path: str) -> st
     """Render *html_str* + *css_path* to *out_path* using WeasyPrint."""
 
     _ensure_weasyprint()
-    _HTML(string=html_str).write_pdf(out_path, stylesheets=[_CSS(filename=css_path)])
+    html = _HTML(string=html_str, base_url=str(TEMPLATES_DIR))
+    stylesheet = _CSS(filename=str(css_path))
+    html.write_pdf(str(out_path), stylesheets=[stylesheet])
     return out_path
 
 

@@ -92,25 +92,22 @@ def test_get_token_reuses_cached_on_new_process(monkeypatch, tmp_path):
     auth._current_pwd = None
 
 
-def test_get_token_expired(monkeypatch, tmp_path):
+def test_get_token_expired_keeps_cached(monkeypatch, tmp_path):
     setup_paths(monkeypatch, tmp_path)
 
     def fake_request(nit, pwd, url):
         return f"Bearer {LONG_TOKEN}x", 1, "Bearer"
 
     monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    auth.get_token(refresh=True)
+    token1 = auth.get_token(refresh=True)
     auth._expires_at = time.time() - 1
-    calls = {"n": 0}
 
-    def fake_request2(nit, pwd, url):
-        calls["n"] += 1
-        return f"Bearer {LONG_TOKEN}{calls['n']}", 1, "Bearer"
+    def unexpected_request(*args, **kwargs):
+        raise AssertionError("_request_new_token should not be called automatically")
 
-    monkeypatch.setattr(auth, "_request_new_token", fake_request2)
+    monkeypatch.setattr(auth, "_request_new_token", unexpected_request)
     token2 = auth.get_token()
-    assert token2 == f"Bearer {LONG_TOKEN}1"
-    assert calls["n"] == 1
+    assert token2 == token1
 
 
 def test_request_error(monkeypatch, tmp_path):

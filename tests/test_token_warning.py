@@ -49,7 +49,7 @@ def test_post_dte_token_invalid(monkeypatch):
     monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda doc, data: {})
     monkeypatch.setattr(dte, "format_cliente_id_from_dui", lambda dui: "cid")
     monkeypatch.setattr(dte, "detect_user_agent", lambda ua, opts, app_version, client_id: "UA")
-    monkeypatch.setattr(dte, "build_auth_header", lambda auth, app_version, client_id: {})
+    monkeypatch.setattr(dte, "auth_headers", lambda extra=None: {})
 
     class Resp:
         status_code = 401
@@ -61,7 +61,7 @@ def test_post_dte_token_invalid(monkeypatch):
     assert resp == {
         "estado": "Rechazado",
         "http_status": 401,
-        "detalle": "Token expirado en Hacienda",
+        "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
     }
 
 
@@ -69,7 +69,7 @@ def test_post_dte_token_invalid_without_detail(monkeypatch):
     monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda doc, data: {})
     monkeypatch.setattr(dte, "format_cliente_id_from_dui", lambda dui: "cid")
     monkeypatch.setattr(dte, "detect_user_agent", lambda ua, opts, app_version, client_id: "UA")
-    monkeypatch.setattr(dte, "build_auth_header", lambda auth, app_version, client_id: {})
+    monkeypatch.setattr(dte, "auth_headers", lambda extra=None: {})
 
     class Resp:
         status_code = 403
@@ -82,7 +82,7 @@ def test_post_dte_token_invalid_without_detail(monkeypatch):
     assert resp == {
         "estado": "Rechazado",
         "http_status": 403,
-        "detalle": "Token inválido o caducado",
+        "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
     }
 
 

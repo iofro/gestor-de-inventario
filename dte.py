@@ -5685,7 +5685,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from utils.jws import sign_json
     from utils.stable_json import save_file, stable_stringify
 
-    ident = data.get("identificacion", {})
+    ident = data.get("identificacion", {}) or {}
     receptor = data.get("receptor", {}) or {}
     _, json_path = get_dte_document_paths(
         ident.get("fecEmi"),
@@ -5698,7 +5698,17 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     if os.path.exists(jws_path):
         try:
             with open(jws_path, "r", encoding="utf-8") as fh:
-                jws_token = fh.read()
+                cached_token = fh.read().strip()
+            if cached_token:
+                payload = _decode_jws_payload(cached_token)
+                payload_ident = payload.get("identificacion") or {}
+                if (
+                    payload_ident.get("codigoGeneracion")
+                    == ident.get("codigoGeneracion")
+                    and payload_ident.get("numeroControl")
+                    == ident.get("numeroControl")
+                ):
+                    jws_token = cached_token
         except Exception:
             jws_token = None
     if jws_token is None:
@@ -5731,7 +5741,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from utils.jws import sign_json
     from utils.stable_json import save_file, stable_stringify
 
-    ident = data.get("identificacion", {})
+    ident = data.get("identificacion", {}) or {}
     receptor = data.get("receptor", {}) or {}
     _, json_path = get_dte_document_paths(
         ident.get("fecEmi"),
@@ -5744,7 +5754,17 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     if os.path.exists(jws_path):
         try:
             with open(jws_path, "r", encoding="utf-8") as fh:
-                jws_token = fh.read()
+                cached_token = fh.read().strip()
+            if cached_token:
+                payload = _decode_jws_payload(cached_token)
+                payload_ident = payload.get("identificacion") or {}
+                if (
+                    payload_ident.get("codigoGeneracion")
+                    == ident.get("codigoGeneracion")
+                    and payload_ident.get("numeroControl")
+                    == ident.get("numeroControl")
+                ):
+                    jws_token = cached_token
         except Exception:
             jws_token = None
     if jws_token is None:

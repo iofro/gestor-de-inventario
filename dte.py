@@ -5494,19 +5494,27 @@ def _enviar_documento(
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
     print("DTE: START_enviar_documento", "modo=", modo)
+    ident = data.get("identificacion") or data.get("identificador") or {}
+    ident_codigo = (ident.get("codigoGeneracion") or "").upper()
+    ident_control = (ident.get("numeroControl") or "").upper()
     SUCCESS_STATES = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
     if doc_id is not None:
+        db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        db.ensure_column("dte_envios", "numero_control", "TEXT")
         row = db.cursor.execute(
             """
-            SELECT estado FROM dte_envios
+            SELECT estado, codigo_generacion, numero_control FROM dte_envios
             WHERE venta_id=? AND UPPER(estado) IN (?, ?, ?, ?)
             ORDER BY id DESC LIMIT 1
             """,
             (doc_id, *SUCCESS_STATES),
         ).fetchone()
         if row:
-            print("DTE: ALREADY_SENT_GUARD", row[0] if row else None)
-            raise ValueError("DTE ya enviado")
+            prev_codigo = (row[1] or "").upper()
+            prev_control = (row[2] or "").upper()
+            if prev_codigo == ident_codigo and prev_control == ident_control:
+                print("DTE: ALREADY_SENT_GUARD", row[0] if row else None)
+                raise ValueError("DTE ya enviado")
 
     config = _load_dte_api_config()
 
@@ -5514,7 +5522,6 @@ def _enviar_documento(
         raise ValueError("El total en letras es obligatorio")
 
     url = config["url"]
-    ident = data.get("identificacion") or data.get("identificador") or {}
     meta = {
         "ambiente": ident.get("ambiente"),
         "version": ident.get("version"),

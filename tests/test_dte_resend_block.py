@@ -20,7 +20,14 @@ def create_sale(db: DB) -> int:
 def test_enviar_documento_rechaza_reenvio_exitoso(monkeypatch):
     db = DB(":memory:")
     venta = create_sale(db)
-    db.registrar_envio_dte(venta, "normal", "PROCESADO", "S")
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "PROCESADO",
+        "S",
+        codigo_generacion="ABC",
+        numero_control="NC1",
+    )
     db.registrar_envio_dte(venta, "normal", "Rechazado", "")
 
     called = {"sign": 0, "post": 0}
@@ -33,7 +40,7 @@ def test_enviar_documento_rechaza_reenvio_exitoso(monkeypatch):
         called["sign"] += 1
         return "token"
 
-    def fake_post(url, token, signed, meta):  # pragma: no cover - should not be called
+    def fake_post(url, documento, dte_data, *args, **kwargs):  # pragma: no cover - should not be called
         called["post"] += 1
         return {"estado": "Procesado"}
 
@@ -41,7 +48,11 @@ def test_enviar_documento_rechaza_reenvio_exitoso(monkeypatch):
     monkeypatch.setattr(dte, "_post_dte", fake_post)
 
     data = {
-        "identificacion": {"tipoDte": "01", "codigoGeneracion": "A"},
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "abc",
+            "numeroControl": "nc1",
+        },
         "resumen": {"totalLetras": "X"},
     }
     with pytest.raises(ValueError):
@@ -49,6 +60,53 @@ def test_enviar_documento_rechaza_reenvio_exitoso(monkeypatch):
 
     assert called["sign"] == 0
     assert called["post"] == 0
+
+
+def test_enviar_documento_reenvio_con_uuid_nuevo(monkeypatch):
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "PROCESADO",
+        "S",
+        codigo_generacion="OLD-UUID",
+        numero_control="NC-OLD",
+    )
+
+    called = {"sign": 0, "post": 0}
+
+    monkeypatch.setattr(auth, "get_token", lambda: "T")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+
+    def fake_sign(data):
+        called["sign"] += 1
+        return "token"
+
+    def fake_post(url, documento, dte_data, *args, **kwargs):
+        called["post"] += 1
+        return {"estado": "Procesado"}
+
+    data = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "NEW-uuid",
+            "numeroControl": "NC-NEW",
+        },
+        "resumen": {"totalLetras": "X"},
+    }
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+    monkeypatch.setattr(dte, "_decode_jws_payload", lambda token: {"identificacion": data["identificacion"]})
+    monkeypatch.setattr(dte, "_post_dte", fake_post)
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *args, **kwargs: None)
+
+    resp = dte._enviar_documento(db, venta, data, "normal")
+
+    assert resp["estado"] == "Procesado"
+    assert called["sign"] == 1
+    assert called["post"] == 1
 
 
 def test_detectar_estado_factura_prioriza_exitosos(monkeypatch):

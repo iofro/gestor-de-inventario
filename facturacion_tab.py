@@ -2082,7 +2082,13 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     print("UI: CALL_ENVIAR_DOCUMENTO")
-                    resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
+                    note_kind = self._resolve_orphan_note_kind(entry)
+                    if note_kind == "credito":
+                        resp = self._reenviar_nota_credito(entry, factura)
+                    elif note_kind == "debito":
+                        resp = self._reenviar_nota_debito(entry, factura)
+                    else:
+                        resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
                     if resp.get("http_status") in {401, 403}:
                         message = self._token_warning_message(resp, token_msg)
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
@@ -2235,6 +2241,79 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", str(exc)
                     )
+
+    def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:
+        if not entry:
+            return None
+        tipo = str(entry.get("tipo") or "").strip().lower()
+        if tipo in {"nota de crédito", "nota de credito"}:
+            return "credito"
+        if tipo in {"nota de débito", "nota de debito"}:
+            return "debito"
+        return None
+
+    def _reenviar_nota_credito(self, entry: dict, factura: dict) -> dict:
+        return self._reenviar_nota(entry, factura, "credito")
+
+    def _reenviar_nota_debito(self, entry: dict, factura: dict) -> dict:
+        return self._reenviar_nota(entry, factura, "debito")
+
+    def _reenviar_nota(self, entry: dict, factura: dict, expected_tipo: str) -> dict:
+        nota_id = self._buscar_nota_id(factura, expected_tipo)
+        if nota_id is None:
+            raise ValueError("No se encontró la nota asociada al documento seleccionado")
+        if expected_tipo == "credito":
+            resp = dte.enviar_nota_credito(self.manager.db, nota_id)
+        else:
+            resp = dte.enviar_nota_debito(self.manager.db, nota_id)
+        try:
+            self.load_invoices()
+        except Exception:
+            pass
+        return resp
+
+    def _buscar_nota_id(self, factura: dict, expected_tipo: str) -> int | None:
+        json_path = factura.get("json") if factura else None
+        if not json_path or not os.path.exists(json_path):
+            raise ValueError("El archivo JSON de la nota no está disponible")
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception as exc:
+            raise ValueError(f"No se pudo leer el JSON de la nota: {exc}") from exc
+        ident = data.get("identificacion") or data.get("identificador") or {}
+        numero_control = str(ident.get("numeroControl") or "").strip()
+        codigo_generacion = str(ident.get("codigoGeneracion") or "").strip().upper()
+        if not numero_control and not codigo_generacion:
+            raise ValueError("El JSON de la nota no contiene identificadores válidos")
+        db = self.manager.db
+        try:
+            db.ensure_column("dte_envios", "numero_control", "TEXT")
+            db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        except Exception:
+            pass
+        clauses = []
+        params: list[str] = []
+        if numero_control:
+            clauses.append("UPPER(e.numero_control)=?")
+            params.append(numero_control.upper())
+        if codigo_generacion:
+            clauses.append("e.codigo_generacion=?")
+            params.append(codigo_generacion)
+        if not clauses:
+            return None
+        query = (
+            "SELECT n.id, n.tipo FROM notas AS n "
+            "JOIN dte_envios AS e ON n.id = e.venta_id "
+            f"WHERE {' OR '.join(clauses)} ORDER BY e.id DESC"
+        )
+        rows = db.cursor.execute(query, params).fetchall()
+        expected = expected_tipo.lower()
+        for row in rows:
+            nota_tipo = str(row["tipo"]).strip().lower()
+            if nota_tipo == expected:
+                return row["id"]
+        return None
 
     def _resolve_pdf_path(self, entry: dict | None) -> str | None:
         if not entry:

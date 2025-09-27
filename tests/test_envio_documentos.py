@@ -1,3 +1,4 @@
+import copy
 import json
 import logging
 import os
@@ -440,6 +441,118 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
     assert res["estado"] == "Transmitido"
     assert captured["token"] == "SIGNED"
     assert sign_calls["count"] == 1
+
+
+def test_enviar_nota_credito_resigns_after_rechazo(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta = create_sale(db)
+    nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
+
+    template = {
+        "receptor": {"nombre": "Cliente"},
+        "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
+        "resumen": {
+            "totalNoSuj": 0,
+            "totalExenta": 0,
+            "totalGravada": 10,
+            "subTotalVentas": 10,
+            "descuNoSuj": 0,
+            "descuExenta": 0,
+            "descuGravada": 0,
+            "porcentajeDescuento": 0,
+            "totalDescu": 0,
+            "tributos": [],
+            "subTotal": 10,
+            "ivaRete1": 0,
+            "reteRenta": 0,
+            "montoTotalOperacion": 10,
+            "totalNoGravado": 0,
+            "totalPagar": 10,
+            "totalLetras": "DIEZ",
+            "saldoFavor": 0,
+            "condicionOperacion": 1,
+            "pagos": None,
+            "numPagoElectronico": None,
+        },
+        "identificacion": {
+            "tipoDte": "01",
+            "version": 2,
+            "ambiente": "00",
+            "codigoGeneracion": "UUID-1",
+            "numeroControl": "NC-1",
+            "fecEmi": "2024-01-02",
+        },
+    }
+
+    call_state = {"count": 0}
+
+    def fake_generate(db_obj, nid):
+        idx = call_state["count"]
+        call_state["count"] += 1
+        payload = copy.deepcopy(template)
+        payload["identificacion"]["codigoGeneracion"] = f"UUID-{idx + 1}"
+        return payload
+
+    monkeypatch.setattr(
+        "dte.generar_nota_credito_json",
+        fake_generate,
+    )
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: make_jws(data))
+
+    orig_paths = docs.get_dte_document_paths
+
+    def fake_paths(fecha, empresa, numero_control, doc_type, root=None):
+        return orig_paths(fecha, empresa, numero_control, doc_type, root=tmp_path)
+
+    monkeypatch.setattr(docs, "get_dte_document_paths", fake_paths)
+
+    _, json_path = fake_paths(
+        template["identificacion"]["fecEmi"],
+        template["receptor"]["nombre"],
+        template["identificacion"]["numeroControl"],
+        "NotaCredito",
+    )
+    jws_path = os.path.splitext(json_path)[0] + ".jws"
+
+    posts = []
+
+    def fake_post(url, documento, meta, *args, **kwargs):
+        posts.append({"meta": dict(meta), "documento": documento})
+        if len(posts) == 1:
+            return {"estado": "Rechazado", "sello": ""}
+        return {"estado": "Transmitido", "sello": "XYZ"}
+
+    monkeypatch.setattr(dte, "_post_dte", fake_post)
+
+    monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
+
+    orig_load = dte._load_datos_negocio
+
+    def fake_load():
+        cfg = orig_load()
+        cfg.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
+        cfg["dte_api"]["ambiente"] = "pruebas"
+        return cfg
+
+    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
+
+    res1 = enviar_nota_credito(db, nota_id)
+    assert res1["estado"] == "Rechazado"
+    assert len(posts) == 1
+    assert posts[0]["meta"]["codigoGeneracion"] == "UUID-1"
+    with open(jws_path, "r", encoding="utf-8") as fh:
+        first_token = fh.read()
+
+    res2 = enviar_nota_credito(db, nota_id)
+    assert res2["estado"] == "Transmitido"
+    assert len(posts) == 2
+    assert posts[1]["meta"]["codigoGeneracion"] == "UUID-2"
+    with open(jws_path, "r", encoding="utf-8") as fh:
+        second_token = fh.read()
+
+    assert first_token != second_token
+    assert posts[0]["documento"] != posts[1]["documento"]
 
 
 def test_post_dte_packs_jws_in_json_body(monkeypatch):

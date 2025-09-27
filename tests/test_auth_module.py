@@ -1,301 +1,48 @@
-import json
-import time
-import os
-import logging
+from types import SimpleNamespace
+
 import pytest
-import requests
+
 import auth
-import sqlite3
+import dte
 
-LONG_TOKEN = "a" * 120 + "." + "b" * 120 + "." + "c" * 120
-
-
-def write_config(tmp_path, nit="123", pwd="pwd"):
-    cfg = tmp_path / "config.json"
-    cfg.write_text(json.dumps({"nit": nit, "api_pwd": pwd}))
-    return cfg
+def test_get_token_returns_manual(monkeypatch):
+    monkeypatch.setattr(auth, "get_manual_token", lambda: "Bearer TOKEN")
+    monkeypatch.setattr("mh_auth.get_manual_token", lambda: "Bearer TOKEN")
+    assert auth.get_token() == "Bearer TOKEN"
 
 
-def setup_paths(monkeypatch, tmp_path):
-    cfg = write_config(tmp_path)
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
-
-
-def test_get_credentials_missing(monkeypatch, tmp_path):
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(tmp_path / "missing.json"))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "missing.db"))
+def test_get_token_missing_raises(monkeypatch):
+    monkeypatch.setattr(auth, "get_manual_token", lambda: None)
+    monkeypatch.setattr("mh_auth.get_manual_token", lambda: None)
     with pytest.raises(RuntimeError):
-        auth._get_credentials()
+        auth.get_token()
 
 
-def test_get_token_caching_and_refresh(monkeypatch, tmp_path):
-    setup_paths(monkeypatch, tmp_path)
-    calls = {"n": 0}
+def test_post_dte_uses_manual_token(monkeypatch):
+    captured = {}
 
-    def fake_request(nit, pwd, url):
-        calls["n"] += 1
-        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
+    def fake_post(url, headers, json=None, timeout=None):
+        captured["headers"] = headers
+        return SimpleNamespace(status_code=200, json=lambda: {"estado": "Recibido"}, text="OK")
 
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    t1 = auth.get_token(refresh=True)
-    assert t1 == f"Bearer {LONG_TOKEN}1"
-    t2 = auth.get_token()
-    assert t2 == f"Bearer {LONG_TOKEN}1"
-    assert calls["n"] == 1
-    t3 = auth.get_token(refresh=True)
-    assert t3 == f"Bearer {LONG_TOKEN}2"
-    assert calls["n"] == 2
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    monkeypatch.setattr(auth, "get_manual_token", lambda: "Bearer TOKEN")
+    monkeypatch.setattr("mh_auth.get_manual_token", lambda: "Bearer TOKEN")
+    meta = {"ambiente": "00", "version": 1, "tipoDte": "01", "codigoGeneracion": "A" * 36}
+    response = dte._post_dte(dte.DEFAULT_RECEPCION_URL, "payload", meta)
+    assert response["estado"] == "Recibido"
+    assert captured["headers"]["Authorization"] == "Bearer TOKEN"
 
 
-def test_get_token_reuses_cached_on_new_process(monkeypatch, tmp_path):
-    setup_paths(monkeypatch, tmp_path)
+def test_post_dte_401_returns_manual_message(monkeypatch):
+    def fake_post(url, headers, json=None, timeout=None):
+        return SimpleNamespace(status_code=401, json=lambda: {"detalle": "Unauthorized"}, text="Unauthorized")
 
-    auth._access_token = None
-    auth._expires_at = 0.0
-    auth._obtained_at = 0.0
-    auth._token_len = 0
-    auth._token_type = ""
-    auth._current_user = None
-    auth._current_pwd = None
-
-    def fake_request(nit, pwd, url):
-        return "Bearer " + LONG_TOKEN, 300, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-
-    first_token = auth.get_token(refresh=True)
-    assert first_token == "Bearer " + LONG_TOKEN
-
-    auth._access_token = None
-    auth._expires_at = 0.0
-    auth._obtained_at = 0.0
-    auth._token_len = 0
-    auth._token_type = ""
-    auth._current_user = None
-    auth._current_pwd = None
-
-    def unexpected_request(*args, **kwargs):
-        raise AssertionError("_request_new_token should not be called")
-
-    monkeypatch.setattr(auth, "_request_new_token", unexpected_request)
-
-    reused_token = auth.get_token()
-    assert reused_token == first_token
-
-    auth._access_token = None
-    auth._expires_at = 0.0
-    auth._obtained_at = 0.0
-    auth._token_len = 0
-    auth._token_type = ""
-    auth._current_user = None
-    auth._current_pwd = None
-
-
-def test_get_token_expired_keeps_cached(monkeypatch, tmp_path):
-    setup_paths(monkeypatch, tmp_path)
-
-    def fake_request(nit, pwd, url):
-        return f"Bearer {LONG_TOKEN}x", 1, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    token1 = auth.get_token(refresh=True)
-    auth._expires_at = time.time() - 1
-
-    def unexpected_request(*args, **kwargs):
-        raise AssertionError("_request_new_token should not be called automatically")
-
-    monkeypatch.setattr(auth, "_request_new_token", unexpected_request)
-    token2 = auth.get_token()
-    assert token2 == token1
-
-
-def test_request_error(monkeypatch, tmp_path):
-    setup_paths(monkeypatch, tmp_path)
-
-    def fake_post(url, data, headers, timeout):
-        raise requests.HTTPError("boom")
-
-    monkeypatch.setattr(auth.requests, "post", fake_post)
-    with pytest.raises(requests.HTTPError):
-        auth.get_token(refresh=True)
-
-
-def test_missing_token_includes_response(monkeypatch):
-    def fake_post(url, data, headers, timeout):
-        class Resp:
-            status_code = 200
-            text = '{"status":"OK","body":{"mensaje":"sin token"}}'
-
-            def raise_for_status(self):
-                return None
-
-            def json(self):
-                return {"status": "OK", "body": {"mensaje": "sin token"}}
-
-        return Resp()
-
-    monkeypatch.setattr(auth.requests, "post", fake_post)
-    monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake")
-    with pytest.raises(ValueError) as excinfo:
-        auth._request_new_token("nit", "pwd")
-    msg = str(excinfo.value)
-    assert "sin token" in msg
-    assert "Respuesta de autenticación sin token" in msg
-
-
-def test_request_new_token_preserves_bearer(monkeypatch):
-    """El token devuelto mantiene el prefijo Bearer cuando está presente."""
-
-    def fake_post(url, data, headers, timeout):
-        class Resp:
-            status_code = 200
-
-            def raise_for_status(self):
-                return None
-
-            def json(self):
-                return {
-                    "status": "OK",
-                    "body": {
-                        "token": "Bearer ABC.DEF.GHI",
-                        "tokenType": "Bearer",
-                        "expiresIn": 60,
-                    },
-                }
-
-        return Resp()
-
-    monkeypatch.setattr(auth.requests, "post", fake_post)
-    monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake")
-    token, expires_in, token_type = auth._request_new_token("nit", "pwd")
-    assert token == "Bearer ABC.DEF.GHI"
-    assert token_type == "Bearer"
-    assert expires_in == 60
-
-
-def test_env_specific_credentials(monkeypatch, tmp_path):
-    data = {
-        "ambiente": "pruebas",
-        "pruebas": {
-            "firma_electronica": {
-                "nit": "env_nit",
-                "passwordPri": "env_pwd",
-            }
-        },
-    }
-    cfg = tmp_path / "config_env.json"
-    cfg.write_text(json.dumps(data))
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
-    nit, pwd = auth._read_config_credentials()
-    assert nit == "env_nit"
-    assert pwd == "env_pwd"
-
-
-def test_read_config_api_user(monkeypatch, tmp_path):
-    data = {"api_user": "user1", "api_pwd": "pass1"}
-    cfg = tmp_path / "cfg.json"
-    cfg.write_text(json.dumps(data))
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
-    nit, pwd = auth._read_config_credentials()
-    assert nit == "user1"
-    assert pwd == "pass1"
-
-
-def test_get_token_with_explicit_credentials(monkeypatch):
-    calls = {"n": 0}
-
-    def fake_request(nit, pwd, url):
-        calls["n"] += 1
-        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    monkeypatch.setattr(auth, "_get_config_nit_and_url", lambda: (None, None))
-    t1 = auth.get_token(refresh=True, nit="u", pwd="p")
-    assert t1 == f"Bearer {LONG_TOKEN}1"
-    t2 = auth.get_token(nit="u", pwd="p")
-    assert t2 == f"Bearer {LONG_TOKEN}1"
-    assert calls["n"] == 1
-    auth.get_token(nit="u2", pwd="p2")
-    assert calls["n"] == 2
-
-
-def test_delete_token(monkeypatch, tmp_path):
-    setup_paths(monkeypatch, tmp_path)
-    calls = {"n": 0}
-
-    def fake_request(nit, pwd, url):
-        calls["n"] += 1
-        return f"Bearer {LONG_TOKEN}{calls['n']}", 120, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    auth.get_token(refresh=True)
-    auth.delete_token()
-    with sqlite3.connect(auth.DB_PATH) as conn:
-        cur = conn.cursor()
-        cur.execute("SELECT value FROM tokens WHERE key='access_token'")
-        assert cur.fetchone() is None
-    t2 = auth.get_token()
-    assert t2 == f"Bearer {LONG_TOKEN}2"
-    assert calls["n"] == 2
-
-
-def test_reauth_logs_nit_and_url(monkeypatch, tmp_path, caplog):
-    data = {
-        "ambiente": "pruebas",
-        "pruebas": {
-            "auth_url": "http://auth.example",
-            "auth": {"nitUsuario": "123", "pwd": "pwd"},
-        },
-    }
-    cfg = tmp_path / "cfg.json"
-    cfg.write_text(json.dumps(data))
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
-    caplog.set_level(logging.INFO)
-
-    def fake_request(nit, pwd, url):
-        assert nit == "123"
-        assert url == "http://auth.example"
-        return f"Bearer {LONG_TOKEN}1", 120, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    token = auth.get_token(refresh=True)
-    assert token == f"Bearer {LONG_TOKEN}1"
-    assert "Reautenticando con NIT 123 y URL http://auth.example" in caplog.text
-
-
-def test_reauth_mismatch_nit(monkeypatch, tmp_path):
-    data = {
-        "ambiente": "pruebas",
-        "pruebas": {
-            "auth_url": "http://auth.example",
-            "auth": {"nitUsuario": "123", "pwd": "pwd"},
-        },
-    }
-    cfg = tmp_path / "cfg.json"
-    cfg.write_text(json.dumps(data))
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
-
-    def fake_request(nit, pwd, url):
-        return f"Bearer {LONG_TOKEN}1", 120, "Bearer"
-
-    monkeypatch.setattr(auth, "_request_new_token", fake_request)
-    with pytest.raises(ValueError):
-        auth.get_token(refresh=True, nit="999", pwd="pwd")
-
-
-def test_records_last_auth_host(monkeypatch, tmp_path):
-    data = {"ambiente": "pruebas", "pruebas": {"auth_url": "http://auth.example"}}
-    cfg = tmp_path / "cfg.json"
-    cfg.write_text(json.dumps(data))
-    monkeypatch.setattr(auth, "CONFIG_PATH", str(cfg))
-    monkeypatch.setattr(auth, "DB_PATH", str(tmp_path / "db.sqlite"))
-    monkeypatch.setattr(
-        auth, "_request_new_token", lambda nit, pwd, url: (f"Bearer {LONG_TOKEN}1", 120, "Bearer")
-    )
-    auth.get_token(refresh=True, nit="user", pwd="pwd")
-    assert auth.get_last_auth_host() == "auth.example"
+    monkeypatch.setattr("dte.requests.post", fake_post)
+    monkeypatch.setattr(auth, "get_manual_token", lambda: "Bearer TOKEN")
+    monkeypatch.setattr("mh_auth.get_manual_token", lambda: "Bearer TOKEN")
+    meta = {"ambiente": "00", "version": 1, "tipoDte": "01", "codigoGeneracion": "A" * 36}
+    result = dte._post_dte(dte.DEFAULT_RECEPCION_URL, "payload", meta)
+    assert result["estado"] == "Rechazado"
+    assert result["http_status"] == 401
+    assert "Token inválido" in result["detalle"]

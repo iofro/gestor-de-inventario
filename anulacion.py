@@ -24,7 +24,6 @@ from dte import (
     _decode_jws_payload,
     format_cliente_id_from_dui,
     detect_user_agent,
-    build_auth_header,
     _parse_error_response,
     APP_VERSION,
 )

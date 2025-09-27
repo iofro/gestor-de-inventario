@@ -99,11 +99,11 @@ def _print_with_powershell(pdf_path: str, printer_name: str | None) -> None:
         quoted_arguments = _powershell_quote(printer_name)
         command = (
             f"$process = Start-Process -FilePath {quoted_path} -Verb {verb!r} "
-            f"-ArgumentList {quoted_arguments} -PassThru"
+            f"-ArgumentList {quoted_arguments} -PassThru;"
         )
     else:
         command = (
-            f"$process = Start-Process -FilePath {quoted_path} -Verb {verb!r} -PassThru"
+            f"$process = Start-Process -FilePath {quoted_path} -Verb {verb!r} -PassThru;"
         )
     script_parts.append(command)
     script_parts.append("Wait-Process -Id $process.Id")

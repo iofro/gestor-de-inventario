@@ -10,6 +10,7 @@ from urllib.parse import urlparse
 import requests
 
 import auth
+from mh_auth import auth_headers
 from db import DB
 from utils import stable_json
 from utils import resource_path
@@ -722,7 +723,6 @@ def _quick_invalidacion_checks(
 
 def _post_invalidacion(
     url: str,
-    token: str,
     evento_data: dict,
     *,
     ambiente_config: str | None = None,
@@ -733,7 +733,6 @@ def _post_invalidacion(
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
-    token = token or ""
     pu = urlparse(url)
     assert pu.netloc in {
         "apitest.dtes.mh.gob.sv",
@@ -830,31 +829,39 @@ def _post_invalidacion(
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
-    auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
-        app_version=app_version or APP_VERSION,
-        client_id=client_id,
+    headers = auth_headers(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": ua,
+            "app-version": str(app_version or APP_VERSION),
+        }
     )
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": ua,
-        **auth_headers,
-    }
+    if client_id:
+        headers.setdefault("cliente-id", str(client_id))
 
     try:
         resp = requests.post(url, headers=headers, json=body, timeout=20)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
-    text = getattr(resp, "text", "")
+    text_body = getattr(resp, "text", "")
     try:
         data = resp.json()
     except Exception:
         data = None
 
+    if resp.status_code in {401, 403}:
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
     if isinstance(resp.status_code, int) and resp.status_code >= 400:
-        detalle = data if data is not None else text
+        detalle = data if data is not None else text_body
         result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
         if isinstance(data, dict):
             detalle_info = data.get("detalle") if isinstance(data.get("detalle"), dict) else data
@@ -867,10 +874,9 @@ def _post_invalidacion(
         print(json.dumps(result, ensure_ascii=False))
         return result
 
-    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    result = data if data is not None else {"estado": "Recibido", "detalle": text_body}
     print(json.dumps(result, ensure_ascii=False))
     return result
-
 
 def build_invalidacion_json(
     factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
@@ -1226,12 +1232,10 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
                 "No se pudo guardar el evento de anulación %s",
                 codigo_generacion or "",
             )
-    token = auth.get_token()
     ambiente_cfg = config.get("ambiente")
     _quick_invalidacion_checks(data, ambiente_raiz=ambiente_cfg, db=db)
     respuesta = _post_invalidacion(
         url,
-        token,
         data,
         ambiente_config=ambiente_cfg,
     )

@@ -19,6 +19,7 @@ from utils import jws
 from utils import versioned_dte
 from utils.stable_json import stable_stringify, save_file, hash_json
 import auth
+from mh_auth import auth_headers
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 from utils.catalogos import (
@@ -4998,63 +4999,17 @@ def detect_user_agent(
     return base
 
 
-def build_auth_header(
-    auth: dict | None,
-    app_version: str | None = None,
-    client_id: str | None = None,
-) -> dict:
-    headers: dict = {}
-    if auth:
-        # 1) Authorization explícito
-        if auth.get("authorization"):
-            headers["Authorization"] = str(auth["authorization"])
-        # 2) Bearer
-        elif auth.get("access_token") or auth.get("bearer"):
-            token = auth.get("access_token") or auth.get("bearer")
-            token = str(token).strip()
-            if token.lower().startswith("bearer "):
-                headers["Authorization"] = token
-            else:
-                headers["Authorization"] = f"Bearer {token}" if token else ""
-        # 3) Basic
-        elif auth.get("basic_user") and auth.get("basic_password"):
-            creds = f"{auth['basic_user']}:{auth['basic_password']}"
-            b64 = base64.b64encode(creds.encode()).decode()
-            headers["Authorization"] = f"Basic {b64}"
-        # 4) Esquema personalizado
-        elif auth.get("scheme") and auth.get("credentials"):
-            headers["Authorization"] = f"{auth['scheme']} {auth['credentials']}"
-
-        # 5) Mezclar headers extra
-        if isinstance(auth.get("headers"), dict):
-            headers.update(auth["headers"])
-
-    # Metadatos de trazabilidad:
-    if app_version:
-        headers.setdefault("app-version", str(app_version))
-    if client_id:
-        headers.setdefault("cliente-id", str(client_id))
-    return headers
-
-
 def _post_dte(
     url: str,
-    token: str,
     documento: str,
     dte_data: dict | None = None,
     user_agent: str | None = None,
-    auth: dict | None = None,
     opts: dict | None = None,
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
     print("HTTP: POST_ENTER")
-    token = token or ""
-    if token:
-        logger.debug("Token: %s...%s", token[:5], token[-5:])
-    else:
-        logger.debug("Token: <empty>")
 
     pu = urlparse(url)
     assert pu.netloc in {
@@ -5069,17 +5024,16 @@ def _post_dte(
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
-    auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
-        app_version=app_version or APP_VERSION,
-        client_id=client_id,
+    headers = auth_headers(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": ua,
+            "app-version": str(app_version or APP_VERSION),
+        }
     )
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": ua,
-        **auth_headers,
-    }
+    if client_id:
+        headers.setdefault("cliente-id", str(client_id))
 
     try:
         print(json.dumps(sobre, ensure_ascii=False))
@@ -5089,40 +5043,23 @@ def _post_dte(
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
-    text = getattr(resp, "text", "")
+    text_body = getattr(resp, "text", "")
     try:
         data = resp.json()
     except Exception:
         data = None
 
     if resp.status_code in {401, 403}:
-        detalle: Any
-        if isinstance(data, dict):
-            detalle = data.get("detalle") or data
-        elif data is not None:
-            detalle = data
-        else:
-            detalle = text
-
-        detalle_val = detalle
-        if isinstance(detalle_val, str):
-            detalle_val = detalle_val.strip() or None
-        elif isinstance(detalle_val, dict) and not detalle_val:
-            detalle_val = None
-
-        if detalle_val in (None, ""):
-            detalle_val = "Token inválido o caducado"
-
         result = {
             "estado": "Rechazado",
             "http_status": resp.status_code,
-            "detalle": detalle_val,
+            "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
         }
         print(json.dumps(result, ensure_ascii=False))
         return result
 
     if isinstance(resp.status_code, int) and resp.status_code >= 400:
-        detalle = data if data is not None else text
+        detalle = data if data is not None else text_body
         result = {
             "estado": "Rechazado",
             "http_status": resp.status_code,
@@ -5139,29 +5076,20 @@ def _post_dte(
         print(json.dumps(result, ensure_ascii=False))
         return result
 
-    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    result = data if data is not None else {"estado": "Recibido", "detalle": text_body}
     print(json.dumps(result, ensure_ascii=False))
     return result
 
-
 def _post_evento(
     url: str,
-    token: str,
     evento: str,
     evento_data: dict | None = None,
     user_agent: str | None = None,
-    auth: dict | None = None,
     opts: dict | None = None,
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
 ) -> dict:
-    token = token or ""
-    if token:
-        logger.debug("Token: %s...%s", token[:5], token[-5:])
-    else:
-        logger.debug("Token: <empty>")
-
     pu = urlparse(url)
     assert pu.netloc in {
         "apitest.dtes.mh.gob.sv",
@@ -5181,17 +5109,16 @@ def _post_evento(
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
-    auth_headers = build_auth_header(
-        auth if auth is not None else {"access_token": token},
-        app_version=app_version or APP_VERSION,
-        client_id=client_id,
+    headers = auth_headers(
+        {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": ua,
+            "app-version": str(app_version or APP_VERSION),
+        }
     )
-    headers = {
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": ua,
-        **auth_headers,
-    }
+    if client_id:
+        headers.setdefault("cliente-id", str(client_id))
 
     try:
         print(json.dumps(body, ensure_ascii=False))
@@ -5199,22 +5126,30 @@ def _post_evento(
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
-    text = getattr(resp, "text", "")
+    text_body = getattr(resp, "text", "")
     try:
         data = resp.json()
     except Exception:
         data = None
 
+    if resp.status_code in {401, 403}:
+        result = {
+            "estado": "Rechazado",
+            "http_status": resp.status_code,
+            "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+        }
+        print(json.dumps(result, ensure_ascii=False))
+        return result
+
     if isinstance(resp.status_code, int) and resp.status_code >= 400:
-        detalle = data if data is not None else text
+        detalle = data if data is not None else text_body
         result = {"estado": "Rechazado", "http_status": resp.status_code, "detalle": detalle}
         print(json.dumps(result, ensure_ascii=False))
         return result
 
-    result = data if data is not None else {"estado": "Recibido", "detalle": text}
+    result = data if data is not None else {"estado": "Recibido", "detalle": text_body}
     print(json.dumps(result, ensure_ascii=False))
     return result
-
 
 def transmitir_dte(
     db: DB, venta_id: int, modo: str | None = None, tipo_dte: str = "01"
@@ -5344,7 +5279,6 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
     }
     config = _load_dte_api_config()
     url = config["url"]
-    token = auth.get_token()
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
     if auth_host and recep_host != auth_host:
@@ -5354,7 +5288,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             recep_host,
         )
     try:
-        respuesta = _post_dte(url, token, jws_token, meta)
+        respuesta = _post_dte(url, jws_token, meta)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")
@@ -5417,8 +5351,7 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
-    token = auth.get_token()
-    respuesta = _post_dte(url, token, jws_token, meta)
+    respuesta = _post_dte(url, jws_token, meta)
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -5446,7 +5379,6 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
 
     cfg = _load_dte_api_config()
     url = cfg["url"].rstrip("/") + "/lote"
-    token = auth.get_token()
 
     resultados = []
     for i in range(0, len(pendientes), 100):
@@ -5483,12 +5415,12 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
             ],
         }
 
-        auth_headers = build_auth_header({"access_token": token})
-        headers = {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            **auth_headers,
-        }
+        headers = auth_headers(
+            {
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            }
+        )
 
         try:
             resp = requests.post(url, headers=headers, json=body, timeout=20)
@@ -5519,12 +5451,7 @@ def consultar_estado_lote(codigo_lote: str) -> dict:
 
     cfg = _load_dte_api_config()
     url = cfg["url"].rstrip("/") + f"/lote/{codigo_lote}"
-    token = auth.get_token()
-    auth_headers = build_auth_header({"access_token": token})
-    headers = {
-        "Accept": "application/json",
-        **auth_headers,
-    }
+    headers = auth_headers({"Accept": "application/json"})
     try:
         resp = requests.get(url, headers=headers, timeout=20)
         return resp.json()
@@ -5600,9 +5527,6 @@ def _enviar_documento(
         data["identificacion"] = ident
     elif "identificador" in data:
         data["identificador"] = ident
-    manual_token = False
-    token = auth.get_token()
-    print("AUTH: USING", "MANUAL" if manual_token else "AUTO")
     auth_host = auth.get_last_auth_host()
     recep_host = urlparse(url).netloc
     if auth_host and recep_host != auth_host:
@@ -5661,7 +5585,7 @@ def _enviar_documento(
 
     try:
         print("DTE: BEFORE_POST")
-        respuesta = _post_dte(url, token, signed, meta)
+        respuesta = _post_dte(url, signed, meta)
         sello = (
             respuesta.get("sello")
             or respuesta.get("selloRecepcion")
@@ -5863,11 +5787,10 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     pu = urlparse(config["url"])
     url = f"{pu.scheme}://{pu.netloc}/fesv/contingencia"
     signed = jws.sign_json(data)
-    token = auth.get_token()
     ident = data.get("identificacion") or data.get("identificador") or {}
 
     try:
-        respuesta = _post_evento(url, token, signed, data)
+        respuesta = _post_evento(url, signed, data)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")

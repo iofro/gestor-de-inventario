@@ -1,16 +1,20 @@
 import json
 from pathlib import Path
-import json
-from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+
+pytest.importorskip("PyQt5.QtWidgets", exc_type=ImportError)
 from PyQt5.QtWidgets import QDialog
 
 import dte
 import facturacion_tab
 from db import DB
 from tests.conftest import make_jws
+from tests.test_envio_documentos import create_sale
+
+import utils.docs as docs_utils
+import utils.stable_json as stable_json
 
 
 def test_transmitir_dte_orphan_signs(monkeypatch, tmp_path):
@@ -178,3 +182,176 @@ def test_send_orphan_invoice_warns_with_token_detail(monkeypatch, qt_app, tmp_pa
 
     tab.send_selected_invoice()
     assert warnings["msg"] == "Credenciales revocadas"
+
+
+def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
+    old_code = "00000000-0000-4000-8000-OLDNC000000"
+    numero_control = "DTE-05-S001P001-000000000000123"
+    db.registrar_envio_dte(
+        nota_id,
+        "normal",
+        "Rechazado",
+        "",
+        codigo_generacion=old_code,
+        numero_control=numero_control,
+    )
+
+    nota_dir = tmp_path / "notas_credito"
+    nota_dir.mkdir()
+    base = "20240102_Test_DTE-05-S001P001-000000000000123_NotaCredito"
+    pdf_path = nota_dir / f"{base}.pdf"
+    pdf_path.write_text("PDF", encoding="utf-8")
+    json_path = nota_dir / f"{base}.json"
+    json_path.write_text(
+        json.dumps(
+            {
+                "identificacion": {
+                    "tipoDte": "05",
+                    "version": 1,
+                    "ambiente": "00",
+                    "codigoGeneracion": old_code,
+                    "numeroControl": numero_control,
+                    "fecEmi": "2024-01-02",
+                },
+                "receptor": {"nombre": "Cliente"},
+                "resumen": {
+                    "montoTotalOperacion": 10,
+                    "totalLetras": "DIEZ",
+                    "condicionOperacion": 1,
+                    "pagos": None,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    other_dirs = {
+        "CF_DIR": tmp_path / "cf",
+        "CREDITO_DIR": tmp_path / "cf2",
+        "TICKETS_DIR": tmp_path / "tickets",
+        "NOTAS_DEBITO_DIR": tmp_path / "notas_debito",
+        "NOTAS_REMISION_DIR": tmp_path / "notas_remision",
+    }
+    for attr, path in other_dirs.items():
+        path.mkdir(exist_ok=True)
+        monkeypatch.setattr(facturacion_tab, attr, str(path))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(nota_dir))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+
+    class DummyCheck:
+        def __init__(self, checked):
+            self._checked = checked
+
+        def setChecked(self, value):
+            self._checked = value
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck(False)
+            self.hacienda_cb = DummyCheck(True)
+
+        def exec_(self):
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    new_code = "11111111-2222-4333-8444-999999999999"
+    new_control = "DTE-05-S001P001-000000000000999"
+
+    def fake_generar_nota_credito_json(db_obj, note_id):
+        assert note_id == nota_id
+        return {
+            "identificacion": {
+                "tipoDte": "05",
+                "version": 1,
+                "ambiente": "00",
+                "codigoGeneracion": new_code,
+                "numeroControl": new_control,
+                "fecEmi": "2024-01-03",
+            },
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {
+                "montoTotalOperacion": 10,
+                "totalLetras": "DIEZ",
+                "condicionOperacion": 1,
+                "pagos": None,
+            },
+            "cuerpoDocumento": [],
+        }
+
+    monkeypatch.setattr(dte, "generar_nota_credito_json", fake_generar_nota_credito_json)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda data: data)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda _: {})
+
+    def fake_get_paths(fecha, nombre, numero, doc_type):
+        return pdf_path, json_path
+
+    monkeypatch.setattr(docs_utils, "get_dte_document_paths", fake_get_paths)
+
+    def fake_save_file(path, content, add_final_newline=True):
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            text = content
+        else:
+            text = json.dumps(content)
+        if add_final_newline and not text.endswith("\n"):
+            text += "\n"
+        target.write_text(text, encoding="utf-8")
+
+    monkeypatch.setattr(stable_json, "save_file", fake_save_file)
+    monkeypatch.setattr(dte.jws, "sign_json", make_jws)
+    monkeypatch.setattr(dte, "_save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {"url": "https://apitest.dtes.mh.gob.sv/fesv/recepciondte", "ambiente": "pruebas"},
+    )
+    monkeypatch.setattr(dte.auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
+    monkeypatch.setattr(dte, "auth_headers", lambda headers: {**headers, "Authorization": "Bearer T"})
+
+    captured = {}
+
+    def fake_post(url, documento, meta, *args, **kwargs):
+        captured["meta"] = dict(meta)
+        return {"estado": "PROCESADO", "sello": "SELLO"}
+
+    monkeypatch.setattr(dte, "_post_dte", fake_post)
+
+    man = SimpleNamespace(
+        db=db,
+        refresh_data=lambda: None,
+        _clientes=[],
+        _Distribuidores=[],
+    )
+
+    tab = facturacion_tab.FacturacionTab(man)
+    tab.table.selectRow(0)
+
+    tab.send_selected_invoice()
+
+    assert captured["meta"]["codigoGeneracion"] == new_code
+    assert captured["meta"]["codigoGeneracion"] != old_code
+
+    row = db.cursor.execute(
+        "SELECT codigo_generacion, estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        (nota_id,),
+    ).fetchone()
+    assert row["codigo_generacion"] == new_code
+    assert row["estado"].upper() == "PROCESADO"
+
+    entry = tab._selected_entry()
+    assert entry["envio"] == "PROCESADO"
+    assert entry.get("json") == str(json_path)
+    with open(json_path, "r", encoding="utf-8") as fh:
+        refreshed = json.load(fh)
+    assert refreshed["identificacion"]["codigoGeneracion"] == new_code

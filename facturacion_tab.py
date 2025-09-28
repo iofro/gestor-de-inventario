@@ -2338,6 +2338,27 @@ class FacturacionTab(QWidget):
             return pdf_path
         return None
 
+    def _resolve_ticket_pdf(
+        self,
+        entry: dict | None,
+        base_pdf_path: str | None = None,
+    ) -> str | None:
+        if not entry:
+            return None
+
+        venta_id = entry.get("venta_id")
+        if venta_id:
+            try:
+                stored_path = self.manager.db.get_ticket_pdf(venta_id)
+            except Exception:
+                stored_path = None
+            if stored_path:
+                canonical = os.fspath(stored_path)
+                if os.path.exists(canonical):
+                    return canonical
+
+        return self._build_ticket_format_pdf(entry, base_pdf_path)
+
     def open_pdf(self):
         entry = self._selected_entry()
         if not entry:
@@ -2403,7 +2424,7 @@ class FacturacionTab(QWidget):
 
         base_pdf_path = self._resolve_pdf_path(entry)
         if preferred_format == "ticket":
-            pdf_path = self._build_ticket_format_pdf(entry, base_pdf_path)
+            pdf_path = self._resolve_ticket_pdf(entry, base_pdf_path)
         else:
             pdf_path = base_pdf_path
 

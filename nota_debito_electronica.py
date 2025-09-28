@@ -28,9 +28,44 @@ from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 from utils.receptor import ensure_receptor_completo
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
 from utils.monto import d2, monto_a_texto_sv
+from utils.sanitize import solo_digitos
 
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_dui(value: str | None) -> str | None:
+    """Return a 9-digit representation of ``value`` if possible."""
+
+    digits = solo_digitos(value)
+    if not digits:
+        return None
+    digits = digits[-9:]
+    return digits.zfill(9)
+
+
+def _search_dui(data: object) -> str | None:
+    """Search ``data`` recursively for a DUI (``tipoDocumento`` ``13``)."""
+
+    if isinstance(data, dict):
+        tipo_doc = data.get("tipoDocumento")
+        if tipo_doc is not None:
+            tipo_doc = str(tipo_doc).zfill(2)
+            if tipo_doc == "13":
+                for key in ("numDocumento", "numDoc", "numeroDocumento"):
+                    dui = _normalize_dui(data.get(key))
+                    if dui:
+                        return dui
+        for value in data.values():
+            dui = _search_dui(value)
+            if dui:
+                return dui
+    elif isinstance(data, (list, tuple)):
+        for item in data:
+            dui = _search_dui(item)
+            if dui:
+                return dui
+    return None
 
 def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
     """Genera una NDE basada en la nota registrada en ``notas``."""
@@ -128,7 +163,22 @@ def generar_nde_desde_dte(
     ]
 
     emisor = copy.deepcopy(dte_origen.get("emisor", {}))
-    receptor = ensure_receptor_completo(dte_origen.get("receptor"), ambiente)
+    receptor_origen = dte_origen.get("receptor") or {}
+    receptor = ensure_receptor_completo(receptor_origen, ambiente)
+
+    preserve_nrc_null = False
+    if tipo_doc_rel == "01":
+        dui = (
+            _search_dui(receptor_origen)
+            or _search_dui(dte_origen.get("extension"))
+            or _search_dui(dte_origen.get("otrosDocumentos"))
+        )
+        if dui:
+            receptor["nit"] = dui
+        nrc_original = receptor_origen.get("nrc")
+        if not nrc_original or str(nrc_original).strip() in {"", "0"}:
+            receptor["nrc"] = None
+            preserve_nrc_null = True
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
@@ -329,6 +379,8 @@ def generar_nde_desde_dte(
     )
     schema = catalogos.get_dte_schema("06")
     result = sanitize_dte_payload(data, schema)
+    if preserve_nrc_null:
+        result.setdefault("receptor", {})["nrc"] = None
     return result
 
 

@@ -28,7 +28,7 @@ from dte import (
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
 from utils.receptor import ensure_receptor_completo
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
+from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
 from utils.monto import d2, monto_a_texto_sv, to_base_iva
 
 
@@ -69,15 +69,18 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     if venta_id is None:
         raise ValueError("La nota no está asociada a una venta")
 
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id, total FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
-    if not venta_row:
+    venta = db.get_venta_by_id(venta_id)
+    if not venta:
         raise ValueError("Venta no encontrada")
     credito_fiscal = db.get_venta_credito_fiscal(venta_id)
     tipo_doc = "03" if credito_fiscal else "01"
 
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+    fecha_origen = normalizar_fecha_iso(venta.get("fecha")) if venta else None
+    if fecha_origen:
+        identificacion = dte_origen.get("identificacion")
+        if isinstance(identificacion, dict):
+            identificacion["fecEmi"] = fecha_origen
 
     detalles = None
     if nota.get("detalles"):

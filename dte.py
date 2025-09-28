@@ -4691,7 +4691,9 @@ def _load_dte_api_config():
     datos = _load_datos_negocio()
     dte_api = datos.get("dte_api") or {}
     raw_datos_url = dte_api.get("url") or dte_api.get("endpoint")
-    token = dte_api.get("token")
+    token_configured = any(
+        dte_api.get(field) for field in ("token_pruebas", "token_produccion")
+    )
 
     def _norm(amb):
         amb = "" if amb is None else str(amb).strip().lower()
@@ -4729,7 +4731,7 @@ def _load_dte_api_config():
     url = _normalize_recepcion_url(raw_datos_url or raw_cfg_url)
     logger.info("Recepción configurada → %s", url)
     print("CFG: AMB=", ambiente, "URL=", url)
-    print("CFG: HAS_MANUAL_TOKEN=", bool(token))
+    print("CFG: HAS_MANUAL_TOKEN=", bool(token_configured))
     return {"ambiente": ambiente, "url": url}
 
 
@@ -5017,6 +5019,7 @@ def _post_dte(
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
+    ambiente_config: str | None = None,
 ) -> dict:
     print("HTTP: POST_ENTER")
 
@@ -5039,7 +5042,8 @@ def _post_dte(
             "Accept": "application/json",
             "User-Agent": ua,
             "app-version": str(app_version or APP_VERSION),
-        }
+        },
+        ambiente=ambiente_config,
     )
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
@@ -5098,6 +5102,7 @@ def _post_evento(
     app_version: str | None = None,
     dui: str | None = None,
     client_id: str | None = None,
+    ambiente_config: str | None = None,
 ) -> dict:
     pu = urlparse(url)
     assert pu.netloc in {
@@ -5124,7 +5129,8 @@ def _post_evento(
             "Accept": "application/json",
             "User-Agent": ua,
             "app-version": str(app_version or APP_VERSION),
-        }
+        },
+        ambiente=ambiente_config,
     )
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
@@ -5297,7 +5303,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             recep_host,
         )
     try:
-        respuesta = _post_dte(url, jws_token, meta)
+        respuesta = _post_dte(url, jws_token, meta, ambiente_config=config.get("ambiente"))
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")
@@ -5360,7 +5366,7 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
-    respuesta = _post_dte(url, jws_token, meta)
+    respuesta = _post_dte(url, jws_token, meta, ambiente_config=config.get("ambiente"))
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -5428,7 +5434,8 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
             {
                 "Content-Type": "application/json",
                 "Accept": "application/json",
-            }
+            },
+            ambiente=cfg.get("ambiente"),
         )
 
         try:
@@ -5460,7 +5467,7 @@ def consultar_estado_lote(codigo_lote: str) -> dict:
 
     cfg = _load_dte_api_config()
     url = cfg["url"].rstrip("/") + f"/lote/{codigo_lote}"
-    headers = auth_headers({"Accept": "application/json"})
+    headers = auth_headers({"Accept": "application/json"}, ambiente=cfg.get("ambiente"))
     try:
         resp = requests.get(url, headers=headers, timeout=20)
         return resp.json()
@@ -5601,7 +5608,7 @@ def _enviar_documento(
 
     try:
         print("DTE: BEFORE_POST")
-        respuesta = _post_dte(url, signed, meta)
+        respuesta = _post_dte(url, signed, meta, ambiente_config=config.get("ambiente"))
         sello = (
             respuesta.get("sello")
             or respuesta.get("selloRecepcion")
@@ -5826,7 +5833,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     ident = data.get("identificacion") or data.get("identificador") or {}
 
     try:
-        respuesta = _post_evento(url, signed, data)
+        respuesta = _post_evento(url, signed, data, ambiente_config=config.get("ambiente"))
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")

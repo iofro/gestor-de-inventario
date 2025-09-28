@@ -182,7 +182,7 @@ def test_generar_nde_consumidor_final_sin_nit(monkeypatch):
     assert data["identificacion"]["tipoDte"] == "06"
     assert data["receptor"]["nit"] == "00000000000000"
     assert data["receptor"]["correo"] == "demo@example.com"
-    assert "otrosDocumentos" in data
+    assert "otrosDocumentos" not in data
 
 
 def test_generar_nde_receptor_placeholder_en_pruebas(monkeypatch):

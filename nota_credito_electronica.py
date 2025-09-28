@@ -402,7 +402,6 @@ def generar_nce_desde_dte(
         "ventaTercero": None,
         "extension": None,
         "apendice": None,
-        "otrosDocumentos": None,
     }
 
     logger.info(
@@ -415,6 +414,5 @@ def generar_nce_desde_dte(
     )
     schema = catalogos.get_dte_schema("05")
     result = sanitize_dte_payload(data, schema)
-    result.setdefault("otrosDocumentos", None)
     return result
 

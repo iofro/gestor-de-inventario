@@ -11,10 +11,12 @@ from pathlib import Path
 from decimal import Decimal
 from typing import Any
 
+from utils import versioned_dte
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
-from paths import get_canonical_dte_dir, user_data_path
+from utils.snapshot import Snapshot
+from paths import DTES_DIR, get_canonical_dte_dir, user_data_path
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -1327,6 +1329,64 @@ class DB:
                     pass
             return data
         return None
+
+    def get_snapshot_by_venta(self, venta_id: int | None) -> Snapshot | None:
+        """Return the stored snapshot for ``venta_id`` if available."""
+
+        if venta_id is None:
+            return None
+        self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        with self.lock:
+            self.cursor.execute(
+                "SELECT codigo_generacion FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                (venta_id,),
+            )
+            row = self.cursor.fetchone()
+        if not row:
+            return None
+        codigo = row[0] if isinstance(row, tuple) else row["codigo_generacion"]
+        codigo = (codigo or "").strip()
+        if not codigo:
+            return None
+        try:
+            version_dir = versioned_dte.resolve_version_dir(DTES_DIR, codigo)
+        except ValueError:
+            return None
+        json_path = os.path.join(version_dir, "documento.json")
+        if not os.path.exists(json_path):
+            return None
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except Exception:
+            logger.exception(
+                "No se pudo leer snapshot %s para venta %s", codigo, venta_id
+            )
+            return None
+        if not isinstance(data, dict):
+            return None
+        ident = data.get("identificacion") or {}
+        tipo_raw = ident.get("tipoDte")
+        if isinstance(tipo_raw, int):
+            tipo_doc = f"{tipo_raw:02d}"
+        elif isinstance(tipo_raw, str):
+            tipo_str = tipo_raw.strip()
+            if tipo_str.isdigit() and len(tipo_str) <= 2:
+                tipo_doc = f"{int(tipo_str):02d}"
+            elif tipo_str:
+                tipo_doc = tipo_str
+            else:
+                tipo_doc = None
+        else:
+            tipo_doc = None
+        fecha = ident.get("fecEmi") or ident.get("fechaEmision")
+        return Snapshot(
+            uuid=str(codigo).upper(),
+            path=json_path,
+            tipo_documento=tipo_doc,
+            fecha_emision=fecha,
+            payload=data,
+        )
 
     def get_compras(self):
         self.cursor.execute("SELECT * FROM compras")

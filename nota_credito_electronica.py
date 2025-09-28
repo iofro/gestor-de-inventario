@@ -11,6 +11,7 @@ proyecto ``gestor-de-inventario``.
 """
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
@@ -27,10 +28,14 @@ from dte import (
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
+from utils.identificacion import is_valid_nit, normalize_dui_to_nit9
+from utils.env import env_flag
+from utils import metrics
 from utils.receptor import ensure_receptor_completo
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
 from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import solo_digitos
+from utils.snapshot import SnapshotNotFoundError, normalize_snapshot
 
 
 logger = logging.getLogger(__name__)
@@ -41,15 +46,21 @@ Decimal_1 = Decimal("1")
 Q4 = Decimal("0.0001")
 IVA = Decimal("0.13")
 
+STRICT_SNAPSHOT_DEFAULT = env_flag("STRICT_SNAPSHOT", default=True)
+
 
 def _normalize_dui(value: str | None) -> str | None:
     """Return a 9-digit representation of ``value`` if possible."""
 
-    digits = solo_digitos(value)
-    if not digits:
+    if value is None:
         return None
-    digits = digits[-9:]
-    return digits.zfill(9)
+    try:
+        return normalize_dui_to_nit9(value)
+    except ValueError:
+        digits = solo_digitos(value)
+        if len(digits) == 9:
+            return digits
+    return None
 
 
 def _search_dui(data: object) -> str | None:
@@ -81,7 +92,13 @@ def _pct_label(ratio: Decimal) -> str:
     return str((ratio * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
+def generar_nce_desde_nota(
+    db: DB,
+    nota_id: int,
+    *,
+    ambiente: str = "00",
+    strict_snapshot: bool | None = None,
+) -> dict:
     """Genera una NCE basada en la nota registrada en ``notas``.
 
     Parameters
@@ -93,6 +110,9 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     ambiente:
         Código de ambiente (``00`` pruebas, ``01`` producción).
     """
+
+    strict = STRICT_SNAPSHOT_DEFAULT if strict_snapshot is None else bool(strict_snapshot)
+    start = time.perf_counter()
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
     if not row:
         raise ValueError("Nota no encontrada")
@@ -101,24 +121,40 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
         raise ValueError("La nota indicada no es de crédito")
 
     venta_id = nota.get("venta_id")
-
     venta = db.get_venta_by_id(venta_id) if venta_id is not None else None
     credito_fiscal = (
         db.get_venta_credito_fiscal(venta_id) if venta_id is not None else None
     )
     tipo_doc = "03" if credito_fiscal else "01"
 
-    dte_origen = generar_dte_json(
-        db,
-        venta_id,
-        tipo_dte=tipo_doc,
-        ambiente=ambiente,
-        _allow_missing_venta=True,
-    )
-    fecha_origen = normalizar_fecha_iso(venta.get("fecha")) if venta else None
+    snapshot = db.get_snapshot_by_venta(venta_id) if venta_id is not None else None
+    source_used = "db"
+    if snapshot:
+        dte_origen = normalize_snapshot(snapshot.payload)
+        source_used = "snapshot"
+        uuid_origen = snapshot.uuid.upper() if snapshot.uuid else None
+    else:
+        if strict and venta_id is not None:
+            raise SnapshotNotFoundError(venta_id, nota_id)
+        dte_origen = generar_dte_json(
+            db,
+            venta_id,
+            tipo_dte=tipo_doc,
+            ambiente=ambiente,
+            _allow_missing_venta=True,
+        )
+        origen_ident_tmp = dte_origen.get("identificacion") or {}
+        codigo_tmp = origen_ident_tmp.get("codigoGeneracion")
+        uuid_origen = str(codigo_tmp).upper() if codigo_tmp else None
+
+    fecha_origen = None
+    if snapshot and snapshot.fecha_emision:
+        fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
+    elif venta:
+        fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")
-        if isinstance(identificacion, dict):
+        if isinstance(identificacion, dict) and not identificacion.get("fecEmi"):
             identificacion["fecEmi"] = fecha_origen
 
     detalles = None
@@ -129,7 +165,7 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
             detalles = None
 
     if detalles:
-        return generar_nce_desde_dte(
+        resultado = generar_nce_desde_dte(
             db,
             dte_origen,
             None,
@@ -137,30 +173,46 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
             ambiente=ambiente,
             motivo=nota.get("motivo"),
         )
-
-    resumen_origen = dte_origen.get("resumen", {})
-    total_origen = Decimal(
-        str(
-            resumen_origen.get("montoTotalOperacion")
-            or resumen_origen.get("totalPagar")
-            or 0
+    else:
+        resumen_origen = dte_origen.get("resumen", {})
+        total_origen = Decimal(
+            str(
+                resumen_origen.get("montoTotalOperacion")
+                or resumen_origen.get("totalPagar")
+                or 0
+            )
         )
-    )
-    monto_nc = Decimal(str(nota.get("monto", 0)))
-    if total_origen <= Decimal_0:
-        raise ValueError("El documento de origen no tiene total válido")
-    if monto_nc > total_origen:
-        raise ValueError("Monto excede total del documento de origen")
-    ratio = (monto_nc / total_origen).quantize(Decimal("0.0001"))
+        monto_nc = Decimal(str(nota.get("monto", 0)))
+        if total_origen <= Decimal_0:
+            raise ValueError("El documento de origen no tiene total válido")
+        if monto_nc > total_origen:
+            raise ValueError("Monto excede total del documento de origen")
+        ratio = (monto_nc / total_origen).quantize(Decimal("0.0001"))
+        resultado = generar_nce_desde_dte(
+            db,
+            dte_origen,
+            ratio,
+            ambiente=ambiente,
+            motivo=nota.get("motivo"),
+            monto=monto_nc,
+        )
 
-    return generar_nce_desde_dte(
-        db,
-        dte_origen,
-        ratio,
-        ambiente=ambiente,
-        motivo=nota.get("motivo"),
-        monto=monto_nc,
+    doc_rel = resultado.get("documentoRelacionado") or []
+    rel = doc_rel[0] if doc_rel else {}
+    duration_ms = (time.perf_counter() - start) * 1000
+    metrics.inc(f"notes_source_used.{source_used}")
+    logger.info(
+        "NCE relaciona tipo=%s uuid=%s num=%s fec=%s fuente=%s nota_id=%s venta_id=%s dur_ms=%.3f",
+        rel.get("tipoDocumento"),
+        uuid_origen,
+        rel.get("numeroDocumento"),
+        rel.get("fechaEmision"),
+        source_used,
+        nota_id,
+        venta_id,
+        duration_ms,
     )
+    return resultado
 
 
 def generar_nce_desde_dte(
@@ -197,37 +249,74 @@ def generar_nce_desde_dte(
     }
 
     receptor_origen = dte_origen.get("receptor") or {}
-    tipo_doc_rel = str(origen_ident.get("tipoDte") or "").zfill(2) if origen_ident.get("tipoDte") else None
+    tipo_raw = origen_ident.get("tipoDte")
+    if isinstance(tipo_raw, int):
+        tipo_doc_rel = f"{tipo_raw:02d}"
+    elif isinstance(tipo_raw, str):
+        tipo_str = tipo_raw.strip()
+        if tipo_str.isdigit() and len(tipo_str) <= 2:
+            tipo_doc_rel = f"{int(tipo_str):02d}"
+        else:
+            tipo_doc_rel = tipo_str or None
+    else:
+        tipo_doc_rel = None
     if not tipo_doc_rel:
         tipo_doc_rel = "03" if receptor_origen.get("nrc") else "01"
-    numero_documento = origen_ident.get("codigoGeneracion") or ""
-    if isinstance(numero_documento, str):
-        numero_documento = numero_documento.upper()
+
+    codigo_generacion = origen_ident.get("codigoGeneracion")
+    if codigo_generacion:
+        numero_documento = str(codigo_generacion).upper()
+        tipo_generacion = 2
+    else:
+        tipo_generacion = 1
+        numero_documento = (
+            origen_ident.get("numeroDocumento")
+            or origen_ident.get("numeroControl")
+            or ""
+        )
+        numero_documento = str(numero_documento).strip()
+
+    fecha_doc_rel = normalizar_fecha_iso(
+        origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
+    )
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,
-            "tipoGeneracion": 2,
+            "tipoGeneracion": tipo_generacion,
             "numeroDocumento": numero_documento,
-            "fechaEmision": origen_ident.get("fecEmi"),
+            "fechaEmision": fecha_doc_rel,
         }
     ]
 
     emisor = deepcopy(dte_origen.get("emisor") or {})
-    receptor = ensure_receptor_completo(receptor_origen, ambiente)
-
-    preserve_nrc_null = False
-    if tipo_doc_rel == "01":
+    receptor_base = deepcopy(receptor_origen)
+    nit_digits = solo_digitos(receptor_base.get("nit"))
+    if nit_digits and is_valid_nit(nit_digits):
+        receptor_base["nit"] = nit_digits
+    else:
+        receptor_base.pop("nit", None)
+    if not (nit_digits and is_valid_nit(nit_digits)):
         dui = (
             _search_dui(receptor_origen)
             or _search_dui(dte_origen.get("extension"))
             or _search_dui(dte_origen.get("otrosDocumentos"))
         )
         if dui:
-            receptor["nit"] = dui
-        nrc_original = receptor_origen.get("nrc")
-        if not nrc_original or str(nrc_original).strip() in {"", "0"}:
-            receptor["nrc"] = None
-            preserve_nrc_null = True
+            receptor_base["nit"] = dui
+    receptor = ensure_receptor_completo(receptor_base, ambiente)
+    final_nit = solo_digitos(receptor.get("nit"))
+    if final_nit and is_valid_nit(final_nit):
+        receptor["nit"] = final_nit
+
+    nrc_original = receptor_origen.get("nrc")
+    preserve_nrc_null = False
+    if (
+        tipo_doc_rel == "01"
+        or not nrc_original
+        or str(nrc_original).strip() in {"", "0"}
+    ):
+        receptor["nrc"] = None
+        preserve_nrc_null = True
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []

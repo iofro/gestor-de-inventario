@@ -155,6 +155,54 @@ def test_build_ticket_format_pdf_saves_alongside_invoice(monkeypatch, qt_app, tm
     assert not out_path.exists()
 
 
+def test_resolve_ticket_pdf_reuses_existing(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    existing = tmp_path / "existing.pdf"
+    existing.write_text("pdf")
+    db.add_ticket_pdf(venta_id, str(existing))
+
+    tab = _make_tab(db, cid)
+    entry = {"row_type": "venta", "venta_id": venta_id}
+
+    called = {}
+
+    def fake_build(entry_arg, base):
+        called["called"] = True
+        return "new"
+
+    monkeypatch.setattr(tab, "_build_ticket_format_pdf", fake_build)
+
+    resolved = tab._resolve_ticket_pdf(entry, None)
+
+    assert resolved == str(existing)
+    assert "called" not in called
+
+
+def test_resolve_ticket_pdf_builds_when_missing(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    missing = tmp_path / "missing.pdf"
+    db.add_ticket_pdf(venta_id, str(missing))
+
+    tab = _make_tab(db, cid)
+    entry = {"row_type": "venta", "venta_id": venta_id}
+
+    generated = tmp_path / "generated.pdf"
+    flags = {}
+
+    def fake_build(entry_arg, base):
+        flags["called"] = True
+        return str(generated)
+
+    monkeypatch.setattr(tab, "_build_ticket_format_pdf", fake_build)
+
+    resolved = tab._resolve_ticket_pdf(entry, None)
+
+    assert resolved == str(generated)
+    assert flags.get("called") is True
+
+
 def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

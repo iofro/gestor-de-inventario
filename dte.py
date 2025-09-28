@@ -2070,10 +2070,12 @@ def generar_dte_json(
 
     ``kwargs`` se acepta para compatibilidad con parámetros obsoletos.
     """
+    allow_missing_venta = kwargs.get("_allow_missing_venta")
+
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
     if row is not None:
         venta = dict(row)
-    elif kwargs.get("_allow_missing_venta"):
+    elif allow_missing_venta:
         venta = {}
     else:
         raise ValueError("Venta no encontrada")
@@ -2090,7 +2092,7 @@ def generar_dte_json(
         total = venta.get("total")
         if total is not None:
             venta["total_letras"] = numero_a_letras(total)
-    if not venta.get("total_letras"):
+    if not venta.get("total_letras") and not allow_missing_venta:
         raise ValueError("El total en letras es obligatorio")
 
     detalles = db.get_detalles_venta(venta_id)
@@ -4375,12 +4377,19 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
         raise ValueError("La nota indicada no es de débito")
 
     venta_id = nota.get("venta_id")
-    venta_row = db.cursor.execute(
-        "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-    ).fetchone()
+    venta_row = None
+    if venta_id is not None:
+        venta_row = db.cursor.execute(
+            "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
+        ).fetchone()
     credito_fiscal = db.get_venta_credito_fiscal(venta_id) if venta_row else None
     tipo_doc = "03" if credito_fiscal else "01"
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc)
+    dte_origen = generar_dte_json(
+        db,
+        venta_id,
+        tipo_dte=tipo_doc,
+        _allow_missing_venta=True,
+    )
     detalles = None
     if nota.get("detalles"):
         try:

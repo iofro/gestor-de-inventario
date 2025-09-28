@@ -25,9 +25,9 @@ from dte import (
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
+from utils.receptor import ensure_receptor_completo
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
-from utils.sanitize import limpiar_documentos
 
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,8 @@ def generar_nde_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     venta_row = db.cursor.execute(
         "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,),
     ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
+    credito_fiscal = db.get_venta_credito_fiscal(venta_id) if venta_row else None
+    tipo_doc = "03" if credito_fiscal else "01"
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
 
     detalles = None
@@ -88,7 +85,7 @@ def generar_nde_desde_dte(
         "ambiente": ambiente,
         "tipoDte": "06",
         "numeroControl": cabecera["numero_control"],
-        "codigoGeneracion": cabecera["codigo_generacion"],
+        "codigoGeneracion": cabecera["codigo_generacion"].upper(),
         "tipoModelo": cabecera["tipo_modelo"],
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
@@ -98,21 +95,23 @@ def generar_nde_desde_dte(
         "tipoMoneda": "USD",
     }
 
+    tipo_doc_rel = str(origen_ident.get("tipoDte") or "").zfill(2) if origen_ident.get("tipoDte") else None
+    if not tipo_doc_rel:
+        tipo_doc_rel = "03" if (dte_origen.get("receptor") or {}).get("nrc") else "01"
+    numero_documento = origen_ident.get("codigoGeneracion") or ""
+    if isinstance(numero_documento, str):
+        numero_documento = numero_documento.upper()
     doc_rel = [
         {
-            "tipoDocumento": origen_ident.get("tipoDte"),
+            "tipoDocumento": tipo_doc_rel,
             "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "numeroDocumento": numero_documento,
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]
 
     emisor = copy.deepcopy(dte_origen.get("emisor", {}))
-    receptor = copy.deepcopy(dte_origen.get("receptor", {}))
-    receptor.setdefault("nombreComercial", None)
-    receptor.setdefault("nit", None)
-    limpiar_documentos(emisor)
-    limpiar_documentos(receptor)
+    receptor = ensure_receptor_completo(dte_origen.get("receptor"), ambiente)
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
@@ -301,6 +300,7 @@ def generar_nde_desde_dte(
         "ventaTercero": None,
         "extension": None,
         "apendice": None,
+        "otrosDocumentos": None,
     }
 
     logger.info(
@@ -312,7 +312,9 @@ def generar_nde_desde_dte(
         dte_origen.get("selloRecibido"),
     )
     schema = catalogos.get_dte_schema("06")
-    return sanitize_dte_payload(data, schema)
+    result = sanitize_dte_payload(data, schema)
+    result.setdefault("otrosDocumentos", None)
+    return result
 
 
 __all__ = ["generar_nde_desde_dte", "generar_nde_desde_nota"]

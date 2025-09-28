@@ -78,16 +78,190 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
         cliente_id, "2024-01-01", 10, "123", "06141407100012", "giro", descuentos=0
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
-    assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
+    assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
         == dte_origen["identificacion"]["codigoGeneracion"]
     )
-    assert "-" not in data["receptor"].get("nit", "")
+    receptor = data["receptor"]
+    assert "-" not in receptor.get("nit", "")
+    assert receptor.get("nit")
+    assert receptor.get("nrc") == "123"
+    assert receptor.get("nombreComercial") in {None, "Cliente"}
 
 
+def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    db.add_cliente(
+        "Cliente", "123", "06141407100012", "", "giro", "22223333", "cli@example.com", "Dir", "05", "24", nombreComercial="Cliente"
+    )
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        10,
+        "123",
+        "06141407100012",
+        "giro",
+        descuentos=0,
+    )
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 10, 'Dev')",
+        (venta_id,),
+    ).lastrowid
+
+    nce = generar_nce_desde_nota(db, nota_id)
+    doc_rel = nce["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    receptor_nota = nce["receptor"]
+    assert receptor_nota["nit"] == "06141407100012"
+    assert receptor_nota["nrc"] == "123"
+    assert receptor_nota.get("nombreComercial") in {None, "Cliente"}
+
+
+def test_generar_nce_receptor_placeholder_en_pruebas(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": str(src.get("departamento", "05")).zfill(2), "municipio": str(src.get("municipio", "24")).zfill(2), "complemento": src.get("complemento", "Dir")},
+    )
+
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {},
+        "receptor": {"nombre": "Consumidor Final"},
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 1.0,
+                "montoDescu": 0.0,
+                "ventaGravada": 1.0,
+                "ventaExenta": 0.0,
+                "ventaNoSuj": 0.0,
+                "tributos": [],
+            }
+        ],
+        "resumen": {
+            "totalNoSuj": 0.0,
+            "totalExenta": 0.0,
+            "totalGravada": 1.0,
+            "subTotal": 1.0,
+            "subTotalVentas": 1.0,
+            "descuNoSuj": 0.0,
+            "descuExenta": 0.0,
+            "descuGravada": 0.0,
+            "totalDescu": 0.0,
+            "ivaPerci1": 0.0,
+            "ivaRete1": 0.0,
+            "reteRenta": 0.0,
+            "condicionOperacion": 1,
+            "tributos": [],
+            "montoTotalOperacion": 1.0,
+            "totalLetras": "UNO",
+        },
+    }
+
+    nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"), ambiente="00")
+    receptor = nce["receptor"]
+    assert receptor["nit"] == "00000000000000"
+    assert receptor["nrc"] == "0"
+    assert receptor["correo"] == "demo@example.com"
+    assert receptor["telefono"] == "00000000"
+    assert receptor["direccion"]["departamento"] == "01"
+    assert receptor["direccion"]["municipio"] == "01"
+    assert "otrosDocumentos" in nce
+
+
+def test_generar_nce_receptor_incompleto_en_produccion(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": str(src.get("departamento", "05")).zfill(2), "municipio": str(src.get("municipio", "24")).zfill(2), "complemento": src.get("complemento", "Dir")},
+    )
+
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {},
+        "receptor": {"nombre": "Consumidor Final"},
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 1.0,
+                "montoDescu": 0.0,
+                "ventaGravada": 1.0,
+                "ventaExenta": 0.0,
+                "ventaNoSuj": 0.0,
+                "tributos": [],
+            }
+        ],
+        "resumen": {
+            "totalNoSuj": 0.0,
+            "totalExenta": 0.0,
+            "totalGravada": 1.0,
+            "subTotal": 1.0,
+            "subTotalVentas": 1.0,
+            "descuNoSuj": 0.0,
+            "descuExenta": 0.0,
+            "descuGravada": 0.0,
+            "totalDescu": 0.0,
+            "ivaPerci1": 0.0,
+            "ivaRete1": 0.0,
+            "reteRenta": 0.0,
+            "condicionOperacion": 1,
+            "tributos": [],
+            "montoTotalOperacion": 1.0,
+            "totalLetras": "UNO",
+        },
+    }
+
+    with pytest.raises(ValueError) as exc:
+        generar_nce_desde_dte(db, dte_origen, Decimal("1"), ambiente="01")
+
+    assert "nit" in str(exc.value)
+    assert "nrc" in str(exc.value)
 def test_nota_credito_total_nueve(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",

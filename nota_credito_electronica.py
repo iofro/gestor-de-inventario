@@ -11,6 +11,7 @@ proyecto ``gestor-de-inventario``.
 """
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP
 import json
@@ -26,9 +27,9 @@ from dte import (
 )
 from utils import catalogos
 from utils.catalogos import TRIBUTO_IVA, TRIBUTOS
+from utils.receptor import ensure_receptor_completo
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv, to_base_iva
-from utils.sanitize import limpiar_documentos
 
 
 logger = logging.getLogger(__name__)
@@ -73,11 +74,8 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     ).fetchone()
     if not venta_row:
         raise ValueError("Venta no encontrada")
-    venta = dict(venta_row)
-    tipo_doc = "01"
-    if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-        # Se asume comprobante de crédito fiscal cuando no hay cliente asociado
-        tipo_doc = "03"
+    credito_fiscal = db.get_venta_credito_fiscal(venta_id)
+    tipo_doc = "03" if credito_fiscal else "01"
 
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
 
@@ -98,7 +96,14 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
             motivo=nota.get("motivo"),
         )
 
-    total_origen = Decimal(str(dte_origen.get("resumen", {}).get("montoTotalOperacion", 0)))
+    resumen_origen = dte_origen.get("resumen", {})
+    total_origen = Decimal(
+        str(
+            resumen_origen.get("montoTotalOperacion")
+            or resumen_origen.get("totalPagar")
+            or 0
+        )
+    )
     monto_nc = Decimal(str(nota.get("monto", 0)))
     if total_origen <= Decimal_0:
         raise ValueError("El documento de origen no tiene total válido")
@@ -139,7 +144,7 @@ def generar_nce_desde_dte(
         "ambiente": ambiente,
         "tipoDte": "05",
         "numeroControl": cabecera["numero_control"],
-        "codigoGeneracion": cabecera["codigo_generacion"],
+        "codigoGeneracion": cabecera["codigo_generacion"].upper(),
         "tipoModelo": cabecera["tipo_modelo"],
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
@@ -149,19 +154,23 @@ def generar_nce_desde_dte(
         "tipoMoneda": "USD",
     }
 
+    tipo_doc_rel = str(origen_ident.get("tipoDte") or "").zfill(2) if origen_ident.get("tipoDte") else None
+    if not tipo_doc_rel:
+        tipo_doc_rel = "03" if (dte_origen.get("receptor") or {}).get("nrc") else "01"
+    numero_documento = origen_ident.get("codigoGeneracion") or ""
+    if isinstance(numero_documento, str):
+        numero_documento = numero_documento.upper()
     doc_rel = [
         {
-            "tipoDocumento": origen_ident.get("tipoDte"),
+            "tipoDocumento": tipo_doc_rel,
             "tipoGeneracion": 2,
-            "numeroDocumento": origen_ident.get("codigoGeneracion"),
+            "numeroDocumento": numero_documento,
             "fechaEmision": origen_ident.get("fecEmi"),
         }
     ]
 
-    emisor = dte_origen.get("emisor")
-    receptor = dte_origen.get("receptor")
-    limpiar_documentos(emisor)
-    limpiar_documentos(receptor)
+    emisor = deepcopy(dte_origen.get("emisor") or {})
+    receptor = ensure_receptor_completo(dte_origen.get("receptor"), ambiente)
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
@@ -346,7 +355,12 @@ def generar_nce_desde_dte(
                     }
                 )
             subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-            orig_total = Decimal(str(orig_resumen.get("montoTotalOperacion", 0))) * ratio_val
+            orig_total_base = (
+                orig_resumen.get("montoTotalOperacion")
+                or orig_resumen.get("totalPagar")
+                or 0
+            )
+            orig_total = Decimal(str(orig_total_base)) * ratio_val
             iva_val = d2(orig_total - subtotal_ventas)
             monto_total_operacion = d2(orig_total)
 
@@ -388,6 +402,7 @@ def generar_nce_desde_dte(
         "ventaTercero": None,
         "extension": None,
         "apendice": None,
+        "otrosDocumentos": None,
     }
 
     logger.info(
@@ -399,5 +414,7 @@ def generar_nce_desde_dte(
         dte_origen.get("selloRecibido"),
     )
     schema = catalogos.get_dte_schema("05")
-    return sanitize_dte_payload(data, schema)
+    result = sanitize_dte_payload(data, schema)
+    result.setdefault("otrosDocumentos", None)
+    return result
 

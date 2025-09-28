@@ -4375,11 +4375,8 @@ def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
     venta_row = db.cursor.execute(
         "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
     ).fetchone()
-    tipo_doc = "01"
-    if venta_row:
-        venta = dict(venta_row)
-        if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-            tipo_doc = "03"
+    credito_fiscal = db.get_venta_credito_fiscal(venta_id) if venta_row else None
+    tipo_doc = "03" if credito_fiscal else "01"
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc)
     detalles = None
     if nota.get("detalles"):

@@ -2071,9 +2071,12 @@ def generar_dte_json(
     ``kwargs`` se acepta para compatibilidad con parámetros obsoletos.
     """
     row = db.cursor.execute("SELECT * FROM ventas WHERE id=?", (venta_id,)).fetchone()
-    if not row:
+    if row is not None:
+        venta = dict(row)
+    elif kwargs.get("_allow_missing_venta"):
+        venta = {}
+    else:
         raise ValueError("Venta no encontrada")
-    venta = dict(row)
 
     if tipo_operacion is None:
         modo = get_default_modo_transmision()

@@ -16,6 +16,7 @@ _CONDICION_OPERACION_BY_NAME = {
     "credito": 2,
     "crédito": 2,
     "otro": 3,
+    "otros": 3,
 }
 
 
@@ -37,6 +38,23 @@ def normalize_condicion_operacion(value: Any) -> int:
             code = _CONDICION_OPERACION_BY_NAME.get(val)
     if code not in CONDICION_OPERACION_CATALOG:
         raise ValueError(f"condicionOperacion inválida: {value}")
+    return code
+
+
+def sync_condicion_operacion_flags(extra: dict | None, value: Any) -> int:
+    """Store ``value`` under both camelCase and snake_case keys.
+
+    The canonical representation inside ``extra`` uses ``condicion_operacion``
+    while the camelCase variant is preserved for legacy payloads that expect
+    it.  The helper returns the normalized catalog code so callers can reuse
+    it without recomputing.
+    """
+
+    if extra is None:
+        extra = {}
+    code = normalize_condicion_operacion(value)
+    extra["condicion_operacion"] = code
+    extra["condicionOperacion"] = code
     return code
 
 
@@ -69,9 +87,16 @@ def validate_pagos_basico(resumen: dict, condicion: int) -> None:
 
     if condicion == 2:
         first = pagos[0]
-        plazo = first.get("plazo") or 0
-        periodo = str(first.get("periodo") or "").zfill(2)
-        if not plazo or periodo not in catalogos.PLAZO:
+        plazo_code = str(first.get("plazo", "")).zfill(2)
+        if plazo_code not in {"01", "02", "03"}:
             raise ValueError(
-                "Para operaciones a crédito, pagos[0] requiere plazo>0 y periodo válido"
+                "Crédito: unidad inválida (01=días, 02=meses, 03=años)"
             )
+
+        periodo_raw = first.get("periodo", 0)
+        try:
+            periodo = int(periodo_raw)
+        except (TypeError, ValueError):
+            raise ValueError("Crédito: periodo debe ser entero > 0") from None
+        if periodo <= 0:
+            raise ValueError("Crédito: periodo debe ser entero > 0")

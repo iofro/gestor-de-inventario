@@ -1149,7 +1149,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self._backend_pago_plazo = ""
         self._backend_pago_periodo = ""
 
-        condicion = data.get("condicionOperacion")
+        condicion = data.get("condicion_operacion")
+        if condicion not in {1, 2, 3}:
+            condicion = data.get("condicionOperacion")
         if condicion in {1, 2, 3}:
             idx = self.condicion_pago_combo.findData(condicion)
             if idx >= 0:
@@ -2638,7 +2640,9 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._backend_pago_plazo = ""
         self._backend_pago_periodo = ""
 
-        condicion = data.get("condicionOperacion")
+        condicion = data.get("condicion_operacion")
+        if condicion not in {1, 2, 3}:
+            condicion = data.get("condicionOperacion")
         if condicion in {1, 2, 3}:
             idx = self.condicion_pago_combo.findData(condicion)
             if idx >= 0:

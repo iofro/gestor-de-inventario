@@ -72,9 +72,11 @@ def test_validar_dep_muni_normaliza_codigos():
         ("03", "24"),
     ],
 )
-def test_validar_dep_muni_rejects_invalid_combinations(departamento, municipio):
-    with pytest.raises(GeoValidationError, match="no coincide por palabra"):
-        validar_dep_muni_por_catalogo(departamento, municipio)
+def test_validar_dep_muni_invalid_combinations_use_default(departamento, municipio):
+    with pytest.warns(UserWarning):
+        dep, muni = validar_dep_muni_por_catalogo(departamento, municipio)
+    assert dep == DEFAULT_ADDRESS["departamento"]
+    assert muni == DEFAULT_ADDRESS["municipio"]
 
 
 def test_validar_dep_muni_accepts_extranjeros():
@@ -98,10 +100,12 @@ def test_validar_dep_muni_shared_code_relies_on_name(monkeypatch):
         monkeypatch.setitem(CAT_MUNI44, "24", original)
 
 
-def test_norm_receptor_invalid_geo_raises():
+def test_norm_receptor_invalid_geo_uses_default():
     r = {"direccion": {"departamento": "05", "municipio": "20", "complemento": "abcdef"}}
-    with pytest.raises(GeoValidationError):
-        norm_receptor(r)
+    res = norm_receptor(r)
+    assert res["direccion"]["departamento"] == DEFAULT_ADDRESS["departamento"]
+    assert res["direccion"]["municipio"] == DEFAULT_ADDRESS["municipio"]
+    assert res["direccion"]["complemento"] == "abcdef"
 
 
 def test_norm_receptor_ticket_fallback():

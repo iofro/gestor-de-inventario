@@ -1060,14 +1060,26 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
 
     if condicion == 2:
         first = pagos[0]
-        plazo_val = int(first.get("plazo") or 0)
-        periodo_val = str(first.get("periodo") or "").zfill(2)
-        if not plazo_val or periodo_val not in catalogos.PLAZO:
+        plazo_code = str(first.get("plazo") or "").zfill(2)
+        if plazo_code not in {"01", "02", "03"}:
             raise ValidationError(
-                "condicionOperacion=2 requiere pago con plazo>0 y periodo válido",
+                "Crédito: unidad inválida (01=días, 02=meses, 03=años)",
             )
-        first["plazo"] = plazo_val if not plazo_is_str else str(plazo_val).zfill(2)
-        first["periodo"] = periodo_val if periodo_is_str else int(periodo_val)
+
+        periodo_raw = first.get("periodo", 0)
+        try:
+            periodo_val = int(periodo_raw)
+        except (TypeError, ValueError):
+            raise ValidationError("Crédito: periodo debe ser entero > 0") from None
+        if periodo_val <= 0:
+            raise ValidationError("Crédito: periodo debe ser entero > 0")
+
+        first["plazo"] = (
+            plazo_code if plazo_is_str else int(plazo_code)
+        )
+        first["periodo"] = (
+            str(periodo_val) if periodo_is_str else periodo_val
+        )
 
     for p in pagos:
         p["montoPago"] = money(p["montoPago"])

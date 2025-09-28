@@ -66,13 +66,11 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
         raise ValueError("La nota indicada no es de crédito")
 
     venta_id = nota.get("venta_id")
-    if venta_id is None:
-        raise ValueError("La nota no está asociada a una venta")
 
-    venta = db.get_venta_by_id(venta_id)
-    if not venta:
-        raise ValueError("Venta no encontrada")
-    credito_fiscal = db.get_venta_credito_fiscal(venta_id)
+    venta = db.get_venta_by_id(venta_id) if venta_id is not None else None
+    credito_fiscal = (
+        db.get_venta_credito_fiscal(venta_id) if venta_id is not None else None
+    )
     tipo_doc = "03" if credito_fiscal else "01"
 
     dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)

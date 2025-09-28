@@ -4364,34 +4364,9 @@ def generar_nde_desde_dte(
 
 def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
     """Genera la estructura JSON para una nota de débito."""
-    row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
-    if not row:
-        raise ValueError("Nota no encontrada")
-    nota = dict(row)
-    if nota.get("tipo") != "debito":
-        raise ValueError("La nota indicada no es de débito")
+    from nota_debito_electronica import generar_nde_desde_nota
 
-    venta_id = nota.get("venta_id")
-    venta_row = None
-    if venta_id is not None:
-        venta_row = db.cursor.execute(
-            "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-        ).fetchone()
-    credito_fiscal = db.get_venta_credito_fiscal(venta_id) if venta_row else None
-    tipo_doc = "03" if credito_fiscal else "01"
-    dte_origen = generar_dte_json(
-        db,
-        venta_id,
-        tipo_dte=tipo_doc,
-        _allow_missing_venta=True,
-    )
-    detalles = None
-    if nota.get("detalles"):
-        try:
-            detalles = json.loads(nota["detalles"])
-        except Exception:
-            detalles = None
-    return generar_nde_desde_dte(db, dte_origen, detalles, nota.get("monto"), nota.get("motivo"))
+    return generar_nde_desde_nota(db, nota_id)
 
 
 def generar_nota_remision_json(

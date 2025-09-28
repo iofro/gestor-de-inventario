@@ -6,6 +6,7 @@ from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_no
 import pytest
 from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
+from utils.snapshot import Snapshot, SnapshotNotFoundError
 
 
 def create_db():
@@ -134,6 +135,208 @@ def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
     assert receptor_nota["nit"] == "06141407100012"
     assert receptor_nota["nrc"] == "123"
     assert receptor_nota.get("nombreComercial") in {None, "Cliente"}
+
+
+def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    venta_id = db.add_venta("2023-08-01", 100)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2023-08-05', 10, 'Ajuste')",
+        (venta_id,),
+    ).lastrowid
+
+    payload = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2023-08-01",
+            "numeroControl": "DTE-03-00100001",
+        },
+        "emisor": {"nombre": "Emisor"},
+        "receptor": {
+            "nombre": "Cliente Snapshot",
+            "nit": "0614-140710-001-2",
+            "nrc": None,
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+        },
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "descripcion": "Producto",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 100,
+                "montoDescu": 0,
+                "ventaGravada": 100,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [catalogos.TRIBUTO_IVA],
+            }
+        ],
+        "resumen": {
+            "totalGravada": 100,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "montoTotalOperacion": 100,
+        },
+        "firma": "SIGNATURE",
+    }
+    snapshot = Snapshot(
+        uuid=payload["identificacion"]["codigoGeneracion"],
+        path=str(tmp_path / "documento.json"),
+        tipo_documento="03",
+        fecha_emision="2023-08-01",
+        payload=payload,
+    )
+
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: snapshot if vid == venta_id else None)
+
+    def _fail_generar_dte(*_args, **_kwargs):
+        raise AssertionError("No se debe regenerar desde la base de datos")
+
+    monkeypatch.setattr("nota_credito_electronica.generar_dte_json", _fail_generar_dte)
+    metrics_calls = []
+    monkeypatch.setattr(
+        "nota_credito_electronica.metrics.inc", lambda name: metrics_calls.append(name)
+    )
+
+    nce = generar_nce_desde_nota(db, nota_id)
+
+    receptor = nce["receptor"]
+    assert receptor["nit"] == "06141407100012"
+    assert receptor["nrc"] is None
+
+    doc_rel = nce["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["tipoGeneracion"] == 2
+    assert (
+        doc_rel["numeroDocumento"]
+        == payload["identificacion"]["codigoGeneracion"].upper()
+    )
+    assert doc_rel["fechaEmision"] == "2023-08-01"
+    assert metrics_calls == ["notes_source_used.snapshot"]
+    assert payload["firma"] == "SIGNATURE"
+
+
+def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    venta_id = db.add_venta("2023-09-01", 40)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2023-09-03', 8, 'Devolución')",
+        (venta_id,),
+    ).lastrowid
+
+    payload = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "12345678-DCBA-4321-DCBA-0987654321FF",
+            "fecEmi": "2023-09-01",
+            "numeroControl": "DTE-01-00001234",
+        },
+        "emisor": {"nombre": "Emisor"},
+        "receptor": {
+            "nombre": "Consumidor Final",
+            "tipoDocumento": "13",
+            "numDocumento": "01234567-8",
+        },
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 40,
+                "montoDescu": 0,
+                "ventaGravada": 40,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [catalogos.TRIBUTO_IVA],
+            }
+        ],
+        "resumen": {
+            "totalGravada": 40,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "montoTotalOperacion": 40,
+        },
+        "firma": "ORIGINAL-FIRMA",
+    }
+
+    snapshot = Snapshot(
+        uuid=payload["identificacion"]["codigoGeneracion"],
+        path=str(tmp_path / "documento.json"),
+        tipo_documento="01",
+        fecha_emision="2023-09-01",
+        payload=payload,
+    )
+
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: snapshot if vid == venta_id else None)
+    monkeypatch.setattr(
+        "nota_credito_electronica.generar_dte_json",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("Debe usar snapshot")),
+    )
+
+    nce = generar_nce_desde_nota(db, nota_id)
+
+    receptor = nce["receptor"]
+    assert receptor["nit"] == "012345678"
+    assert receptor["nrc"] is None
+
+    doc_rel = nce["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "01"
+    assert doc_rel["tipoGeneracion"] == 2
+    assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
+    assert doc_rel["fechaEmision"] == "2023-09-01"
+
+
+def test_generar_nce_desde_nota_strict_snapshot(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    venta_id = db.add_venta("2023-08-01", 50)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2023-08-05', 5, 'Ajuste')",
+        (venta_id,),
+    ).lastrowid
+
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda _vid: None)
+
+    with pytest.raises(SnapshotNotFoundError) as exc:
+        generar_nce_desde_nota(db, nota_id, strict_snapshot=True)
+
+    message = str(exc.value)
+    assert str(venta_id) in message
+    assert str(nota_id) in message
 
 
 def test_generar_nce_receptor_placeholder_en_pruebas(monkeypatch):

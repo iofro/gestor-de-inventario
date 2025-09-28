@@ -20,6 +20,16 @@ def decode_jws_payload(token: str) -> dict:
     return json.loads(data.decode("utf-8"))
 
 
+def resolve_version_dir(base_dir: str | None, codigo: str) -> str:
+    """Return the directory that stores ``codigo`` within ``base_dir``."""
+
+    base = os.path.abspath(base_dir or DTES_DIR)
+    codigo = (codigo or "").strip()
+    if not codigo:
+        raise ValueError("codigo_generacion inválido para snapshot")
+    return os.path.join(base, codigo)
+
+
 def ensure_version(dte_json: dict, base_dir: str | None = None) -> tuple[str, str]:
     """Ensure a directory for the given ``dte_json`` exists.
 
@@ -31,8 +41,7 @@ def ensure_version(dte_json: dict, base_dir: str | None = None) -> tuple[str, st
     ident = dte_json.get("identificacion", {})
     codigo = ident.get("codigoGeneracion") or "SIN-CODIGO"
     json_hash = hash_json(dte_json)
-    base_dir = os.path.abspath(base_dir or DTES_DIR)
-    version_dir = os.path.join(base_dir, codigo)
+    version_dir = resolve_version_dir(base_dir, codigo)
     os.makedirs(version_dir, exist_ok=True)
     save_file(
         os.path.join(version_dir, "documento.json"),
@@ -80,4 +89,5 @@ __all__ = [
     "save_estado",
     "decode_jws_payload",
     "hash_json",
+    "resolve_version_dir",
 ]

@@ -36,7 +36,6 @@ import glob
 import hashlib
 
 from ticket_pdf import generar_ticket_personalizado
-from ticket_pdf import render_ticket_pdf
 from factura_sv import (
     generar_nota_credito_pdf,
     generar_nota_debito_pdf,
@@ -50,6 +49,7 @@ from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
 import nota_credito_electronica
 from utils.docs import get_document_paths, get_dte_document_paths, write_pdf_atomically
+from utils.ticket_adapters import dte_to_legacy_ticket_payload
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
 from utils.jws import sign_and_save
@@ -2583,6 +2583,13 @@ class FacturacionTab(QWidget):
                     if candidate and os.path.exists(candidate):
                         json_path = candidate
 
+        detalles_venta = []
+        if venta_id:
+            try:
+                detalles_venta = self.manager.db.get_detalles_venta(venta_id)
+            except Exception:
+                detalles_venta = []
+
         if not json_path or not os.path.exists(json_path):
             QMessageBox.warning(
                 self,
@@ -2616,6 +2623,7 @@ class FacturacionTab(QWidget):
             return None
 
         sello = None
+        firma = None
         if isinstance(payload_data, dict):
             sello = (
                 payload_data.get("selloRecibido")
@@ -2626,22 +2634,43 @@ class FacturacionTab(QWidget):
                 respuesta = payload_data.get("respuesta")
                 if isinstance(respuesta, dict):
                     sello = respuesta.get("selloRecibido") or respuesta.get("sello")
-        if not sello and extra_data:
-            sello = extra_data.get("selloRecibido") or extra_data.get("sello")
-        if not sello and isinstance(dte_payload, dict):
-            sello = dte_payload.get("selloRecibido") or dte_payload.get("acuseRecibo")
-
-        accepted = bool(sello)
+            firma = (
+                payload_data.get("firmaElectronica")
+                or payload_data.get("firma")
+                or payload_data.get("acuseFirma")
+            )
+            if not firma:
+                respuesta = payload_data.get("respuesta")
+                if isinstance(respuesta, dict):
+                    firma = respuesta.get("firmaElectronica") or respuesta.get("firma")
+        if extra_data:
+            if not sello:
+                sello = extra_data.get("selloRecibido") or extra_data.get("sello")
+            if not firma:
+                firma = extra_data.get("firmaElectronica") or extra_data.get("firma")
+        if isinstance(dte_payload, dict):
+            if not sello:
+                sello = dte_payload.get("selloRecibido") or dte_payload.get("acuseRecibo")
+            if not firma:
+                firma = dte_payload.get("firmaElectronica") or dte_payload.get("firma")
 
         try:
-            pdf_bytes = render_ticket_pdf(dte_payload, accepted, sello=sello)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Imprimir",
-                f"No se pudo generar el ticket en PDF: {exc}",
-            )
-            return None
+            datos_negocio = dte._load_datos_negocio() or {}
+        except Exception:
+            datos_negocio = {}
+
+        payload = dte_to_legacy_ticket_payload(
+            dte_payload,
+            venta or {},
+            detalles_venta,
+            datos_negocio,
+        )
+        dte_data = payload.get("dte_data") or {}
+        if sello:
+            dte_data.setdefault("selloRecibido", sello)
+        if firma:
+            dte_data.setdefault("firmaElectronica", firma)
+        payload["dte_data"] = dte_data
 
         venta_id = entry.get("venta_id")
         output_dir = None
@@ -2676,8 +2705,27 @@ class FacturacionTab(QWidget):
 
         output_path = os.path.join(output_dir, f"{ticket_base}.pdf")
 
+        def _render_ticket(tmp_path):
+            try:
+                generar_ticket_personalizado(
+                    payload.get("venta", {}),
+                    payload.get("detalles", []),
+                    archivo=str(tmp_path),
+                    datos_negocio=payload.get("datos_negocio"),
+                    dte_data=payload.get("dte_data"),
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                raise RuntimeError(str(exc)) from exc
+
         try:
-            write_pdf_atomically(output_path, lambda tmp: tmp.write_bytes(pdf_bytes))
+            write_pdf_atomically(output_path, _render_ticket)
+        except RuntimeError as exc:
+            QMessageBox.critical(
+                self,
+                "Imprimir",
+                f"No se pudo generar el ticket en PDF: {exc}",
+            )
+            return None
         except Exception as exc:
             QMessageBox.warning(
                 self,

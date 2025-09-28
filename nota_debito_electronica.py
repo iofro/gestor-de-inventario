@@ -300,7 +300,6 @@ def generar_nde_desde_dte(
         "ventaTercero": None,
         "extension": None,
         "apendice": None,
-        "otrosDocumentos": None,
     }
 
     logger.info(
@@ -313,7 +312,6 @@ def generar_nde_desde_dte(
     )
     schema = catalogos.get_dte_schema("06")
     result = sanitize_dte_payload(data, schema)
-    result.setdefault("otrosDocumentos", None)
     return result
 
 

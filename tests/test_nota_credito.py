@@ -199,7 +199,7 @@ def test_generar_nce_receptor_placeholder_en_pruebas(monkeypatch):
     assert receptor["telefono"] == "00000000"
     assert receptor["direccion"]["departamento"] == "01"
     assert receptor["direccion"]["municipio"] == "01"
-    assert "otrosDocumentos" in nce
+    assert "otrosDocumentos" not in nce
 
 
 def test_generar_nce_receptor_incompleto_en_produccion(monkeypatch):

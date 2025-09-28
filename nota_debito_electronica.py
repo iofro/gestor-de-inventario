@@ -106,12 +106,18 @@ def generar_nde_desde_dte(
     numero_documento = origen_ident.get("codigoGeneracion") or ""
     if isinstance(numero_documento, str):
         numero_documento = numero_documento.upper()
+    fecha_doc_rel = normalizar_fecha_iso(origen_ident.get("fecEmi"))
+    if fecha_doc_rel:
+        origen_ident["fecEmi"] = fecha_doc_rel
+    else:
+        fecha_doc_rel = origen_ident.get("fecEmi")
+
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,
             "tipoGeneracion": 2,
             "numeroDocumento": numero_documento,
-            "fechaEmision": origen_ident.get("fecEmi"),
+            "fechaEmision": fecha_doc_rel,
         }
     ]
 

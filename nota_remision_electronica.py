@@ -20,7 +20,7 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
+from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
 from utils.monto import d2, monto_a_texto_sv
 import warnings
 
@@ -225,12 +225,17 @@ def generar_nota_remision_desde_factura(
     receptor.setdefault("bienTitulo", "01")
     detalles = detalles or factura.get("cuerpoDocumento", [])
     ident = factura.get("identificacion", {})
+    fecha_emision = normalizar_fecha_iso(ident.get("fecEmi"))
+    if fecha_emision:
+        ident["fecEmi"] = fecha_emision
+    else:
+        fecha_emision = ident.get("fecEmi")
     doc_rel = [
         {
             "tipoDocumento": ident.get("tipoDte"),
             "tipoGeneracion": 2,
             "numeroDocumento": ident.get("codigoGeneracion"),
-            "fechaEmision": ident.get("fecEmi"),
+            "fechaEmision": fecha_emision,
         }
     ]
     ext = extension.copy() if extension else None

@@ -22,14 +22,13 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
 )
-from PyQt5.QtCore import Qt, QDate, QUrl, QSize
-from PyQt5.QtGui import QDesktopServices, QPixmap
-from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
+from PyQt5.QtCore import Qt, QDate, QSize
+from PyQt5.QtGui import QPixmap
 from datetime import datetime, date, timedelta
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
-from utils.printing import send_pdf_to_printer, PrintError
+from utils.printing import open_pdf as open_pdf_file
 import tempfile
 import subprocess
 import shutil
@@ -679,7 +678,17 @@ class SalesTab(QWidget):
                 self, "Previsualizar", "No hay PDF guardado para esta venta."
             )
             return
-        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.abspath(pdf_path)))
+        absolute_path = os.path.abspath(pdf_path)
+        if not open_pdf_file(absolute_path):
+            QMessageBox.warning(
+                self,
+                "Abrir PDF",
+                (
+                    "No se pudo abrir el archivo PDF automáticamente.\n"
+                    "Puedes abrirlo manualmente desde:\n"
+                    f"{absolute_path}"
+                ),
+            )
 
     def print_pdf(self):
         """Print the selected sale using the stored PDF file."""
@@ -720,24 +729,17 @@ class SalesTab(QWidget):
         if not pdf_path or not os.path.exists(pdf_path):
             return
 
-        printer = QPrinter(QPrinter.HighResolution)
-        dialog = QPrintDialog(printer, self)
-        dialog.setWindowTitle("Imprimir documento")
-        if dialog.exec_() != QDialog.Accepted:
-            return
-
-        printer_name = (printer.printerName() or "").strip() or None
-        try:
-            send_pdf_to_printer(pdf_path, printer_name)
-        except PrintError as exc:
-            QMessageBox.critical(self, title, str(exc))
-            return
-
-        QMessageBox.information(
-            self,
-            title,
-            "El documento se envió a la impresora seleccionada.",
-        )
+        absolute_path = os.path.abspath(pdf_path)
+        if not open_pdf_file(absolute_path):
+            QMessageBox.warning(
+                self,
+                "Abrir PDF",
+                (
+                    "No se pudo abrir el archivo PDF automáticamente.\n"
+                    "Puedes abrirlo manualmente desde:\n"
+                    f"{absolute_path}"
+                ),
+            )
 
     def send_email(self):
         """Send the selected document via email in a background thread."""

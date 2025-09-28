@@ -36,9 +36,19 @@ def normalizar_fecha_iso(value: Union[str, datetime, date, None]) -> Optional[st
         fecha_dt = None
 
     if fecha_dt is None:
-        try:
-            fecha_dt = datetime.strptime(text[:10], "%Y-%m-%d")
-        except ValueError:
+        patrones = [
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+        ]
+        for patron in patrones:
+            try:
+                fecha_dt = datetime.strptime(text[:10], patron)
+                break
+            except ValueError:
+                continue
+        else:
             return None
 
     return fecha_dt.date().isoformat()

@@ -2259,18 +2259,43 @@ class FacturacionTab(QWidget):
         return self._reenviar_nota(entry, factura, "debito")
 
     def _reenviar_nota(self, entry: dict, factura: dict, expected_tipo: str) -> dict:
-        nota_id = self._buscar_nota_id(factura, expected_tipo)
-        if nota_id is None:
-            raise ValueError("No se encontró la nota asociada al documento seleccionado")
-        if expected_tipo == "credito":
-            resp = dte.enviar_nota_credito(self.manager.db, nota_id)
-        else:
-            resp = dte.enviar_nota_debito(self.manager.db, nota_id)
+        nota_id = None
+        nota_error: ValueError | None = None
         try:
-            self.load_invoices()
-        except Exception:
-            pass
-        return resp
+            nota_id = self._buscar_nota_id(factura, expected_tipo)
+        except ValueError as exc:
+            nota_error = exc
+
+        if nota_id is not None:
+            if expected_tipo == "credito":
+                resp = dte.enviar_nota_credito(self.manager.db, nota_id)
+            else:
+                resp = dte.enviar_nota_debito(self.manager.db, nota_id)
+            try:
+                self.load_invoices()
+            except Exception:
+                pass
+            return resp
+
+        json_path = factura.get("json") if factura else None
+        if json_path and os.path.exists(json_path):
+            if nota_error:
+                logger.warning(
+                    'No se pudo localizar la nota en la base de datos, se reenviará "%s" como DTE huérfano: %s',
+                    expected_tipo,
+                    nota_error,
+                )
+
+            resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
+            try:
+                self.load_invoices()
+            except Exception:
+                pass
+            return resp
+
+        if nota_error:
+            raise nota_error
+        raise ValueError("No se encontró la nota asociada al documento seleccionado")
 
     def _buscar_nota_id(self, factura: dict, expected_tipo: str) -> int | None:
         json_path = factura.get("json") if factura else None

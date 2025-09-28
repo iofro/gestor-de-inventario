@@ -20,7 +20,11 @@ class DummyDialog:
         return True
 
     def get_data(self):
-        return {"token": "nuevo", "ambiente": "pruebas"}, {}, {}
+        return (
+            {"token_pruebas": "Bearer nuevo", "ambiente": "pruebas"},
+            {},
+            {},
+        )
 
 
 class EnvChangeDialog:
@@ -33,7 +37,10 @@ class EnvChangeDialog:
         return True
 
     def get_data(self):
-        new_api = {"token": "nuevo", "ambiente": "produccion"}
+        new_api = {
+            "token_produccion": "Bearer nuevo",
+            "ambiente": "produccion",
+        }
         new_fe = {"cert": "nuevo"}
         new_urls = {"auth_url": "a", "recepcion_url": "r"}
         return new_api, new_fe, new_urls
@@ -57,7 +64,15 @@ class CaptureDialog:
 def test_datos_negocio_preserved(tmp_path, monkeypatch, qt_app):
     datos_file = tmp_path / "datos_negocio.json"
     config_file = tmp_path / "config_negocio.json"
-    datos_file.write_text(json.dumps({"nit": "123", "nombre": "Farmacia", "dte_api": {"token": "viejo"}}))
+    datos_file.write_text(
+        json.dumps(
+            {
+                "nit": "123",
+                "nombre": "Farmacia",
+                "dte_api": {"token_pruebas": "viejo"},
+            }
+        )
+    )
     config_file.write_text("{}")
 
     monkeypatch.setattr(im, "DB", MemoryDB)
@@ -72,7 +87,10 @@ def test_datos_negocio_preserved(tmp_path, monkeypatch, qt_app):
     guardados = json.loads(datos_file.read_text())
     assert guardados["nit"] == "123"
     assert guardados["nombre"] == "Farmacia"
-    assert guardados["dte_api"] == {"token": "nuevo", "ambiente": "pruebas"}
+    assert guardados["dte_api"] == {
+        "token_pruebas": "Bearer nuevo",
+        "ambiente": "pruebas",
+    }
 
 
 def test_environment_change_saved_and_reloaded(tmp_path, monkeypatch, qt_app):
@@ -100,3 +118,4 @@ def test_environment_change_saved_and_reloaded(tmp_path, monkeypatch, qt_app):
     captured = CaptureDialog.last
     assert captured["env_conf"]["firma_electronica"] == {"cert": "nuevo"}
     assert captured["dte_api"]["ambiente"] == "produccion"
+    assert captured["dte_api"].get("token_produccion") == "Bearer nuevo"

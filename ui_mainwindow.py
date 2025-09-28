@@ -37,6 +37,7 @@ from utils.fiscal_extra import build_fiscal_extra
 from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
+from mh_auth import invalidate_token_cache
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1857,7 +1858,18 @@ class MainWindow(QMainWindow):
         ambiente = config.get("ambiente", "pruebas")
         env_conf = config.get(ambiente, {})
         fe_config = env_conf.get("firma_electronica", {})
-        dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self, db=self.manager.db)
+
+        dialog_kwargs = {}
+        try:
+            import inspect
+
+            params = inspect.signature(DTEConfigDialog.__init__).parameters
+            if "db" in params:
+                dialog_kwargs["db"] = self.manager.db
+        except (AttributeError, ValueError, TypeError):  # pragma: no cover - defensive
+            pass
+
+        dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self, **dialog_kwargs)
         if dlg.exec_():
             new_dte_api, new_fe, new_urls = dlg.get_data()
             ambiente = new_dte_api["ambiente"]
@@ -1873,6 +1885,7 @@ class MainWindow(QMainWindow):
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
+            invalidate_token_cache()
             QMessageBox.information(self, "Facturación electrónica", "Datos guardados correctamente.")
 
     def _abrir_config_usuarios(self):

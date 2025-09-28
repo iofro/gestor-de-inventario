@@ -834,7 +834,8 @@ def _post_invalidacion(
             "Accept": "application/json",
             "User-Agent": ua,
             "app-version": str(app_version or APP_VERSION),
-        }
+        },
+        ambiente=ambiente_raiz,
     )
     if client_id:
         headers.setdefault("cliente-id", str(client_id))

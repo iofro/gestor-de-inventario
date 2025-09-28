@@ -34,6 +34,7 @@ from num2words import num2words  # Instala las dependencias con: pip install -r 
 from factura_sv import generar_factura_electronica_pdf
 from decimal import Decimal, ROUND_HALF_UP
 from utils.fiscal_extra import build_fiscal_extra
+from utils.resumen import sync_condicion_operacion_flags
 from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
@@ -51,7 +52,8 @@ def build_payment_condition_extra(data):
     if condicion not in {1, 2, 3}:
         return {}
 
-    extra = {"condicionOperacion": condicion}
+    extra: dict = {}
+    sync_condicion_operacion_flags(extra, condicion)
     if condicion == 2:
         plazo = data.get("pago_plazo")
         periodo = data.get("pago_periodo")
@@ -67,6 +69,10 @@ def build_payment_condition_extra(data):
         if referencia:
             pago["referencia"] = referencia
         extra["pagos"] = [pago]
+        extra["pago_plazo"] = plazo
+        extra["pago_periodo"] = periodo
+        if referencia:
+            extra["pago_referencia"] = referencia
     return extra
 
 

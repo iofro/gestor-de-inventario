@@ -15,12 +15,61 @@ from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import get_document_paths, build_invoice_json, write_pdf_atomically
 from utils.jws import sign_and_save
 from utils import versioned_dte
-from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
+from utils.resumen import (
+    normalize_condicion_operacion,
+    sync_condicion_operacion_flags,
+    validate_pagos_basico,
+)
 from utils.sanitize import limpiar_documentos
 from utils.stable_json import save_file, stable_stringify
 
 
 logger = logging.getLogger(__name__)
+
+
+def normalize_payment_condition(data: dict) -> dict:
+    """Normalize credit payment fields prior to DTE generation.
+
+    The function ensures the UI supplied ``pago_plazo``/``pago_periodo`` values
+    adhere to the MH schema expectations. Only the relevant keys are touched so
+    the caller can update the persisted ``extra`` payload without affecting any
+    other structure.
+    """
+
+    cond_raw = data.get("condicion_operacion")
+    try:
+        condicion = normalize_condicion_operacion(cond_raw)
+    except ValueError:
+        logger.warning(
+            "condicion_operacion inválida %r; normalizando a Contado", cond_raw
+        )
+        condicion = 1
+
+    data["condicion_operacion"] = condicion
+    if condicion == 2:
+        unidad_raw = data.get("pago_plazo")
+        unidad = str(unidad_raw or "").strip().upper()
+        letras_a_codigo = {"D": "01", "M": "02", "A": "03"}
+        if unidad in letras_a_codigo:
+            data["pago_plazo"] = letras_a_codigo[unidad]
+        elif unidad in {"01", "02", "03"}:
+            data["pago_plazo"] = unidad
+        else:
+            raise ValueError("Crédito: unidad inválida (esperado D/M/A o 01/02/03)")
+
+        cantidad_raw = data.get("pago_periodo")
+        try:
+            cantidad = int(cantidad_raw)
+        except (TypeError, ValueError):
+            raise ValueError("Crédito: periodo debe ser entero > 0") from None
+        if cantidad <= 0:
+            raise ValueError("Crédito: periodo debe ser entero > 0")
+        data["pago_periodo"] = cantidad
+    else:
+        data["pago_plazo"] = None
+        data["pago_periodo"] = None
+
+    return data
 
 
 def _path_missing(path: Path) -> bool:
@@ -253,6 +302,105 @@ def generate_invoice_pdf(manager, venta_id):
             extra = {}
     venta_data["extra"] = extra
     precios_incluyen_iva = bool(extra.get("precios_incluyen_iva"))
+
+    condicion_operacion = (
+        extra.get("condicion_operacion")
+        or extra.get("condicionOperacion")
+        or venta_data.get("condicion_operacion")
+    )
+    pagos_raw = extra.get("pagos")
+    pago_plazo = extra.get("pago_plazo")
+    pago_periodo = extra.get("pago_periodo")
+    if isinstance(pagos_raw, list) and pagos_raw:
+        first_pago = pagos_raw[0]
+        if isinstance(first_pago, dict):
+            if pago_plazo in (None, ""):
+                pago_plazo = first_pago.get("plazo")
+            if pago_periodo in (None, ""):
+                pago_periodo = first_pago.get("periodo")
+    try:
+        normalized_payment = normalize_payment_condition(
+            {
+                "condicion_operacion": condicion_operacion,
+                "pago_plazo": pago_plazo,
+                "pago_periodo": pago_periodo,
+            }
+        )
+    except ValueError as exc:
+        logger.error("Validación de condición de pago inválida: %s", exc)
+        raise
+
+    condicion_norm = normalized_payment.get("condicion_operacion", 1)
+    if condicion_norm not in {1, 2, 3}:
+        condicion_norm = 1
+    original_cond_camel = extra.get("condicionOperacion")
+    original_cond_snake = extra.get("condicion_operacion")
+    condicion_changed = (
+        original_cond_snake != condicion_norm
+        or original_cond_camel != condicion_norm
+    )
+    if condicion_changed:
+        sync_condicion_operacion_flags(extra, condicion_norm)
+    pagos_updated = False
+    payment_fields_changed = False
+    if condicion_norm == 2:
+        if not (isinstance(pagos_raw, list) and pagos_raw and isinstance(pagos_raw[0], dict)):
+            raise ValueError("Crédito: pagos no detallados correctamente")
+        plazo_code = normalized_payment["pago_plazo"]
+        periodo_val = normalized_payment["pago_periodo"]
+        if extra.get("pago_plazo") != plazo_code:
+            extra["pago_plazo"] = plazo_code
+            payment_fields_changed = True
+        if extra.get("pago_periodo") != periodo_val:
+            extra["pago_periodo"] = periodo_val
+            payment_fields_changed = True
+        first_pago = pagos_raw[0]
+        if first_pago.get("plazo") != plazo_code:
+            first_pago["plazo"] = plazo_code
+            pagos_updated = True
+        if first_pago.get("periodo") != periodo_val:
+            first_pago["periodo"] = periodo_val
+            pagos_updated = True
+        referencia_val = first_pago.get("referencia")
+        if extra.get("pago_referencia") != referencia_val:
+            extra["pago_referencia"] = referencia_val
+            payment_fields_changed = True
+    else:
+        if extra.get("pago_plazo") not in (None, ""):
+            extra["pago_plazo"] = None
+            payment_fields_changed = True
+        if extra.get("pago_periodo") not in (None, ""):
+            extra["pago_periodo"] = None
+            payment_fields_changed = True
+        if extra.get("pago_referencia") not in (None, ""):
+            extra["pago_referencia"] = None
+            payment_fields_changed = True
+        if isinstance(pagos_raw, list) and pagos_raw and isinstance(pagos_raw[0], dict):
+            first_pago = pagos_raw[0]
+            if first_pago.get("plazo") not in (None, ""):
+                first_pago["plazo"] = None
+                pagos_updated = True
+            if first_pago.get("periodo") not in (None, ""):
+                first_pago["periodo"] = None
+                pagos_updated = True
+            if first_pago.get("referencia") not in (None, ""):
+                first_pago["referencia"] = None
+                pagos_updated = True
+    if condicion_changed or pagos_updated or payment_fields_changed:
+        try:
+            manager.db.update_venta_extra(
+                venta_id,
+                {
+                    "condicionOperacion": extra.get("condicionOperacion"),
+                    "condicion_operacion": extra.get("condicion_operacion"),
+                    "pagos": extra.get("pagos"),
+                    "pago_plazo": extra.get("pago_plazo"),
+                    "pago_periodo": extra.get("pago_periodo"),
+                    "pago_referencia": extra.get("pago_referencia"),
+                },
+            )
+        except Exception:
+            logger.debug("No se pudo actualizar pagos normalizados", exc_info=True)
 
     if venta_data.get("vendedor_id"):
         trabajador = manager.db.get_trabajador(venta_data["vendedor_id"])

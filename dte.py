@@ -831,6 +831,7 @@ _CONDICION_OPERACION_BY_NAME = {
     v.lower(): k for k, v in CONDICION_OPERACION_CATALOG.items()
 }
 _CONDICION_OPERACION_BY_NAME["credito"] = 2
+_CONDICION_OPERACION_BY_NAME["otros"] = 3
 
 
 def _parse_condicion_operacion(value):
@@ -841,19 +842,13 @@ def _parse_condicion_operacion(value):
     the catalog is normalized to ``1`` without raising an exception.
     """
 
-    if value in (None, ""):
-        code = 1
-    elif isinstance(value, (int, float)):
-        code = int(value)
-    else:
-        val = str(value).strip().lower().replace("...", "")
-        if val.isdigit():
-            code = int(val)
-        else:
-            code = _CONDICION_OPERACION_BY_NAME.get(val, 1)
-    if code not in CONDICION_OPERACION_CATALOG:
-        code = 1
-    return code
+    try:
+        return normalize_condicion_operacion(value)
+    except ValueError:
+        logger.warning(
+            "condicionOperacion inválida %r detectada en DTE; usando Contado", value
+        )
+        return 1
 
 
 # Valores por defecto del resumen según el tipo de DTE

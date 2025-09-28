@@ -6,6 +6,7 @@ from PyQt5.QtWidgets import QTableWidgetItem, QMessageBox
 
 import sales_tab
 from sales_tab import SalesTab
+from dialogs.dialogs import EmailConfigDialog
 
 warnings.filterwarnings(
     "ignore", message="Credenciales SMTP incompletas.*"
@@ -73,6 +74,17 @@ def _setup_tab(venta, cliente, producto, monkeypatch=None):
     tab.sales_table.setRowCount(1)
     tab.sales_table.setItem(0, 0, QTableWidgetItem(str(venta["id"])))
     return db, tab
+
+
+def test_email_config_dialog_uses_defaults_without_smtp_data(qt_app):
+    dialog = EmailConfigDialog(datos={
+        "email_provider": "Gmail",
+        "smtp_server": "",
+        "smtp_port": "",
+    })
+
+    assert dialog.smtp_server.text() == "smtp.gmail.com"
+    assert dialog.smtp_port.text() == "587"
 
 
 def test_send_email_builds_message_and_marks_status(

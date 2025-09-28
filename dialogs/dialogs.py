@@ -3469,8 +3469,15 @@ class EmailConfigDialog(QDialog):
 
     def set_data(self, datos):
         self.combo_email_provider.setCurrentText(datos.get("email_provider", "Gmail"))
-        self.smtp_server.setText(datos.get("smtp_server", ""))
-        self.smtp_port.setText(str(datos.get("smtp_port", "")))
+
+        smtp_server = datos.get("smtp_server")
+        if smtp_server:
+            self.smtp_server.setText(smtp_server)
+
+        smtp_port = datos.get("smtp_port")
+        if smtp_port:
+            self.smtp_port.setText(str(smtp_port))
+
         self.email_usuario.setText(datos.get("email_usuario", ""))
         self.email_contrasena.setText(datos.get("email_contrasena", ""))
 

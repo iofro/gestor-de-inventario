@@ -24,7 +24,9 @@ def open_pdf_with_default_viewer(path: str) -> bool:
 def open_pdf_cross_platform(path: str) -> bool:
     """Open ``path`` using the platform's default mechanism."""
 
-    absolute_path = os.fspath(Path(path).resolve())
+    resolved_path = Path(path).resolve()
+    absolute_path = os.fspath(resolved_path)
+    file_uri = resolved_path.as_uri()
 
     try:
         if sys.platform.startswith("win"):
@@ -36,7 +38,7 @@ def open_pdf_cross_platform(path: str) -> bool:
         return True
     except Exception:
         try:
-            return webbrowser.open(f"file://{absolute_path}", new=2)
+            return webbrowser.open(file_uri, new=2)
         except Exception:
             return False
 

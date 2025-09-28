@@ -1,3 +1,4 @@
+from pathlib import PureWindowsPath
 from types import SimpleNamespace
 
 import facturacion_tab
@@ -25,3 +26,32 @@ def test_open_pdf(monkeypatch, qt_app, tmp_path):
     tab.open_pdf()
 
     assert opened["path"] == str(pdf_path)
+
+
+def test_open_pdf_windows_fallback(monkeypatch):
+    from utils import printing
+
+    class DummyWindowsPath(PureWindowsPath):
+        def resolve(self):  # type: ignore[override]
+            return self
+
+    monkeypatch.setattr(printing, "Path", DummyWindowsPath)
+    monkeypatch.setattr(printing.sys, "platform", "win32")
+
+    def failing_startfile(path):
+        raise OSError("boom")
+
+    monkeypatch.setattr(printing.os, "startfile", failing_startfile, raising=False)
+
+    opened = {}
+
+    def fake_webbrowser_open(url, new=0):
+        opened["url"] = url
+        opened["new"] = new
+        return True
+
+    monkeypatch.setattr(printing.webbrowser, "open", fake_webbrowser_open)
+
+    assert printing.open_pdf_cross_platform("C:/Users/test/doc.pdf") is True
+    assert opened["url"] == "file:///C:/Users/test/doc.pdf"
+    assert opened["new"] == 2

@@ -29,7 +29,6 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage
-from PyQt5.QtPrintSupport import QPrinter, QPrintDialog
 import os
 import re
 import logging
@@ -57,7 +56,7 @@ from utils.jws import sign_and_save
 # ``sign_and_save`` generates both JSON and JWS files so no manual
 # stable JSON utilities are required here.
 from utils.sanitize import limpiar_doc, solo_digitos
-from utils.printing import send_pdf_to_printer, PrintError
+from utils.printing import open_pdf as open_pdf_file
 from utils import catalogos
 from paths import (
     DATOS_NEGOCIO_PATH,
@@ -2347,7 +2346,17 @@ class FacturacionTab(QWidget):
         pdf_path = self._resolve_pdf_path(entry)
 
         if pdf_path:
-            QDesktopServices.openUrl(QUrl.fromLocalFile(pdf_path))
+            absolute_path = os.path.abspath(pdf_path)
+            if not open_pdf_file(absolute_path):
+                QMessageBox.warning(
+                    self,
+                    "Abrir PDF",
+                    (
+                        "No se pudo abrir el archivo PDF automáticamente.\n"
+                        "Puedes abrirlo manualmente desde:\n"
+                        f"{absolute_path}"
+                    ),
+                )
         else:
             QMessageBox.warning(self, "Abrir PDF", "No se encontró el archivo PDF.")
 
@@ -2406,22 +2415,16 @@ class FacturacionTab(QWidget):
             )
             return
 
-        printer = QPrinter(QPrinter.HighResolution)
-        dialog = QPrintDialog(printer, self)
-        dialog.setWindowTitle("Imprimir factura")
-        if dialog.exec_() != QDialog.Accepted:
-            return
-
-        printer_name = (printer.printerName() or "").strip() or None
-        try:
-            send_pdf_to_printer(pdf_path, printer_name)
-        except PrintError as exc:
-            QMessageBox.critical(self, "Imprimir", str(exc))
-        else:
-            QMessageBox.information(
+        absolute_path = os.path.abspath(pdf_path)
+        if not open_pdf_file(absolute_path):
+            QMessageBox.warning(
                 self,
-                "Imprimir",
-                "El documento se envió a la impresora seleccionada.",
+                "Abrir PDF",
+                (
+                    "No se pudo abrir el archivo PDF automáticamente.\n"
+                    "Puedes abrirlo manualmente desde:\n"
+                    f"{absolute_path}"
+                ),
             )
 
     def _safe_remove(self, path: str | None) -> None:

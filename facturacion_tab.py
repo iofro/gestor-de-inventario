@@ -2419,9 +2419,14 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Imprimir", "No se ha seleccionado ninguna factura.")
             return
 
-        preferred_format = None
         venta_id = entry.get("venta_id")
-        if venta_id:
+        base_pdf_path = self._resolve_pdf_path(entry)
+
+        supports_format_choice = bool(venta_id) and self._is_cf_or_ccf(entry)
+
+        preferred_format = None
+        if supports_format_choice:
+
             format_dialog = QMessageBox(self)
             format_dialog.setIcon(QMessageBox.Question)
             format_dialog.setWindowTitle("Formato de impresión")
@@ -2446,20 +2451,30 @@ class FacturacionTab(QWidget):
                 preferred_format = "carta"
             self._last_print_format = preferred_format
 
-        carta_pdf_path = None
-        if venta_id:
-            try:
-                carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            except Exception:
-                carta_pdf_path = None
-            if not carta_pdf_path or not os.path.exists(carta_pdf_path):
-                carta_pdf_path = self._generate_invoice_pdf(venta_id)
+            carta_pdf_path = None
+            if preferred_format in ("carta", "ticket"):
+                try:
+                    carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                except Exception:
+                    carta_pdf_path = None
+                if not carta_pdf_path or not os.path.exists(carta_pdf_path):
+                    carta_pdf_path = self._generate_invoice_pdf(venta_id)
 
-        base_pdf_path = self._resolve_pdf_path(entry)
-        if preferred_format == "ticket":
-            pdf_path = self._resolve_ticket_pdf(entry, carta_pdf_path)
-        elif preferred_format == "carta":
-            pdf_path = carta_pdf_path
+            if preferred_format == "ticket":
+                pdf_path = self._resolve_ticket_pdf(entry, carta_pdf_path)
+            elif preferred_format == "carta":
+                if carta_pdf_path and os.path.exists(carta_pdf_path):
+                    pdf_path = carta_pdf_path
+                else:
+                    QMessageBox.warning(
+                        self,
+                        "Imprimir",
+                        "No se pudo generar la factura en carta.",
+                    )
+                    return
+            else:
+                return
+
         else:
             pdf_path = base_pdf_path
 
@@ -2468,9 +2483,10 @@ class FacturacionTab(QWidget):
             return
 
         preview_dialog = PdfPreviewDialog(pdf_path, self)
-        if preview_dialog.exec_() != QDialog.Accepted:
-            return
-        if preview_dialog.has_error():
+        if (
+            preview_dialog.exec_() != QDialog.Accepted
+            or preview_dialog.has_error()
+        ):
             QMessageBox.warning(
                 self,
                 "Imprimir",
@@ -2503,6 +2519,35 @@ class FacturacionTab(QWidget):
             os.remove(path)
         except OSError:
             pass
+
+    def _is_cf_or_ccf(self, entry: dict | None) -> bool:
+        if not entry:
+            return False
+
+        json_path = entry.get("json")
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+                tipo_dte = str(
+                    payload.get("identificacion", {}).get("tipoDte", "")
+                ).zfill(2)
+                if tipo_dte in {"01", "03"}:
+                    return True
+            except Exception:
+                pass
+
+        tipo_codigo = entry.get("tipo_codigo")
+        if tipo_codigo is not None:
+            try:
+                tipo_codigo_str = str(tipo_codigo).zfill(2)
+            except Exception:
+                tipo_codigo_str = str(tipo_codigo)
+            if tipo_codigo_str in {"01", "03"}:
+                return True
+
+        tipo_desc = str(entry.get("tipo") or "").strip().lower()
+        return tipo_desc in {"consumidor final", "crédito fiscal", "credito fiscal"}
 
     def _build_ticket_format_pdf(
         self,

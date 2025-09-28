@@ -64,8 +64,8 @@ def validate_pagos_basico(resumen: dict, condicion: int) -> None:
     Verifica que los códigos de pago sean válidos según ``CAT-017`` y que la
     suma de ``montoPago`` coincida con ``totalPagar``.  Cuando la
     ``condicionOperacion`` es 2 (crédito) se requiere que el primer pago
-    contenga ``plazo`` mayor a cero y ``periodo`` perteneciente al catálogo
-    ``PLAZO``.
+    contenga ``plazo`` dentro de ``{"01", "02", "03"}`` (días, meses o años)
+    y que ``periodo`` sea un entero estrictamente positivo.
     """
 
     pagos: Iterable[dict] | None = resumen.get("pagos")

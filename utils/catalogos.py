@@ -12,6 +12,7 @@ import json
 import os
 import re
 import unicodedata
+import warnings
 from typing import Dict
 
 from utils import resource_path
@@ -691,24 +692,34 @@ def validar_dep_muni_por_catalogo(
         Códigos normalizados de departamento y municipio.
     """
 
+    def _fallback(reason: str) -> tuple[str, str]:
+        warnings.warn(
+            (
+                f"{reason}; utilizando valores por defecto de dirección "
+                "(06-San Salvador / 23-San Salvador Sur)"
+            ),
+            UserWarning,
+        )
+        return "06", "23"
+
     if dep is None:
-        raise GeoValidationError("Departamento inválido")
+        return _fallback("Departamento ausente")
     dep_raw = str(dep).strip()
     if not dep_raw.isdigit():
-        raise GeoValidationError("Departamento inválido")
+        return _fallback("Departamento inválido")
     dep_code = dep_raw.zfill(2)
     if dep_code not in CAT_DEPTOS:
-        raise GeoValidationError("Departamento no existe en CAT-012")
+        return _fallback("Departamento no existe en CAT-012")
 
     if muni is None:
-        raise GeoValidationError("Municipio inválido")
+        return _fallback("Municipio ausente")
     muni_raw = str(muni).strip()
     if not muni_raw.isdigit():
-        raise GeoValidationError("Municipio inválido")
+        return _fallback("Municipio inválido")
     muni_code = muni_raw.zfill(2)
     info = CAT_MUNI44.get(muni_code)
     if not info:
-        raise GeoValidationError("Municipio-44 no existe en CAT-013")
+        return _fallback("Municipio-44 no existe en CAT-013")
 
     dep_name = CAT_DEPTOS[dep_code]
     dept_tokens = _normalize_tokens(dep_name)
@@ -731,12 +742,17 @@ def validar_dep_muni_por_catalogo(
         f"{dep} ({CAT_DEPTOS.get(dep, dep)}: {name})"
         for dep, name in sorted(info.items())
     )
-    raise GeoValidationError(
-        "Municipio {muni} no coincide por palabra con el departamento {dep} "
-        "({dep_name}). Válido según catálogo para: {allowed}".format(
+    warnings.warn(
+        (
+            "Municipio {muni} no coincide por palabra con el departamento {dep} "
+            "({dep_name}). Válido según catálogo para: {allowed}; utilizando "
+            "valores por defecto de dirección (06-San Salvador / 23-San Salvador Sur)"
+        ).format(
             muni=muni_code, dep=dep_code, dep_name=dep_name, allowed=allowed
-        )
+        ),
+        UserWarning,
     )
+    return "06", "23"
 
 # Conjuntos derivados
 # Códigos permitidos en el resumen según el esquema oficial del DTE

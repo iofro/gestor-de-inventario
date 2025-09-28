@@ -71,6 +71,7 @@ from paths import (
     DTES_PENDIENTES_DIR,
     FACTURAS_ARCHIVE_CF_DIR,
     FACTURAS_ARCHIVE_CREDITO_DIR,
+    resolve_user_visible_path,
 )
 import tempfile
 import subprocess
@@ -2347,6 +2348,8 @@ class FacturacionTab(QWidget):
 
         if pdf_path:
             absolute_path = os.path.abspath(pdf_path)
+            display_path = resolve_user_visible_path(absolute_path)
+            logger.info("Intentando abrir PDF desde FacturacionTab.open_pdf: %s", absolute_path)
             if not open_pdf_file(absolute_path):
                 QMessageBox.warning(
                     self,
@@ -2354,7 +2357,7 @@ class FacturacionTab(QWidget):
                     (
                         "No se pudo abrir el archivo PDF automáticamente.\n"
                         "Puedes abrirlo manualmente desde:\n"
-                        f"{absolute_path}"
+                        f"{display_path}"
                     ),
                 )
         else:
@@ -2416,6 +2419,11 @@ class FacturacionTab(QWidget):
             return
 
         absolute_path = os.path.abspath(pdf_path)
+        display_path = resolve_user_visible_path(absolute_path)
+        logger.info(
+            "Intentando abrir PDF para impresión desde FacturacionTab.print_invoice: %s",
+            absolute_path,
+        )
         if not open_pdf_file(absolute_path):
             QMessageBox.warning(
                 self,
@@ -2423,7 +2431,7 @@ class FacturacionTab(QWidget):
                 (
                     "No se pudo abrir el archivo PDF automáticamente.\n"
                     "Puedes abrirlo manualmente desde:\n"
-                    f"{absolute_path}"
+                    f"{display_path}"
                 ),
             )
 

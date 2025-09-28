@@ -370,13 +370,14 @@ def _generar(db: DB, tipo: str) -> Dict[str, Any]:
         "documentoRelacionado": _documento_relacionado(tipo),
         "emisor": _emisor(),
         "receptor": _receptor(tipo),
-        "otrosDocumentos": None,
         "ventaTercero": None,
         "cuerpoDocumento": _cuerpo_documento(tipo),
         "resumen": _resumen(tipo),
         "extension": None,
         "apendice": None,
     }
+    if "otrosDocumentos" in schema.get("properties", {}):
+        data["otrosDocumentos"] = None
     data["emisor"]["direccion"] = get_emisor_direccion()
     _validate_direccion(data["emisor"]["direccion"], "emisor")
     _validate_direccion(data["receptor"].get("direccion", {}), "receptor")

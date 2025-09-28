@@ -52,6 +52,7 @@ def test_open_pdf_windows_fallback(monkeypatch):
 
     monkeypatch.setattr(printing.webbrowser, "open", fake_webbrowser_open)
 
-    assert printing.open_pdf_cross_platform("C:/Users/test/doc.pdf") is True
-    assert opened["url"] == "file:///C:/Users/test/doc.pdf"
+    windows_path = "C:/Users/test/doc.pdf"
+    assert printing.open_pdf_cross_platform(windows_path) is True
+    assert opened["url"] == DummyWindowsPath(windows_path).as_uri()
     assert opened["new"] == 2

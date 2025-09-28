@@ -26,7 +26,6 @@ def open_pdf_cross_platform(path: str) -> bool:
 
     resolved_path = Path(path).resolve()
     absolute_path = os.fspath(resolved_path)
-    file_uri = resolved_path.as_uri()
 
     try:
         if sys.platform.startswith("win"):
@@ -38,7 +37,8 @@ def open_pdf_cross_platform(path: str) -> bool:
         return True
     except Exception:
         try:
-            return webbrowser.open(file_uri, new=2)
+            browser_safe_uri = resolved_path.as_uri()
+            return webbrowser.open(browser_safe_uri, new=2)
         except Exception:
             return False
 

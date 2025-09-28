@@ -2347,17 +2347,21 @@ class FacturacionTab(QWidget):
         pdf_path = self._resolve_pdf_path(entry)
 
         if pdf_path:
-            absolute_path = os.path.abspath(pdf_path)
-            display_path = resolve_user_visible_path(absolute_path)
-            logger.info("Intentando abrir PDF desde FacturacionTab.open_pdf: %s", absolute_path)
-            if not open_pdf_file(absolute_path):
+            logical_path = os.path.abspath(pdf_path)
+            visible_path = resolve_user_visible_path(logical_path)
+            path_to_open = visible_path or logical_path
+            logger.info(
+                "Intentando abrir PDF desde FacturacionTab.open_pdf: %s",
+                logical_path,
+            )
+            if not open_pdf_file(path_to_open):
                 QMessageBox.warning(
                     self,
                     "Abrir PDF",
                     (
                         "No se pudo abrir el archivo PDF automáticamente.\n"
                         "Puedes abrirlo manualmente desde:\n"
-                        f"{display_path}"
+                        f"{path_to_open}"
                     ),
                 )
         else:
@@ -2418,20 +2422,21 @@ class FacturacionTab(QWidget):
             )
             return
 
-        absolute_path = os.path.abspath(pdf_path)
-        display_path = resolve_user_visible_path(absolute_path)
+        logical_path = os.path.abspath(pdf_path)
+        visible_path = resolve_user_visible_path(logical_path)
+        path_to_open = visible_path or logical_path
         logger.info(
             "Intentando abrir PDF para impresión desde FacturacionTab.print_invoice: %s",
-            absolute_path,
+            logical_path,
         )
-        if not open_pdf_file(absolute_path):
+        if not open_pdf_file(path_to_open):
             QMessageBox.warning(
                 self,
                 "Abrir PDF",
                 (
                     "No se pudo abrir el archivo PDF automáticamente.\n"
                     "Puedes abrirlo manualmente desde:\n"
-                    f"{display_path}"
+                    f"{path_to_open}"
                 ),
             )
 

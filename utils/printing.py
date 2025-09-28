@@ -7,6 +7,8 @@ import sys
 import webbrowser
 from pathlib import Path
 
+from paths import resolve_user_visible_path
+
 
 def open_pdf_with_default_viewer(path: str) -> bool:
     """Try to open ``path`` using ``QDesktopServices`` if Qt is available."""
@@ -46,15 +48,31 @@ def open_pdf_cross_platform(path: str) -> bool:
 def open_pdf(path: str) -> bool:
     """Open the PDF located at ``path`` with the user's preferred application."""
 
-    if not path or not Path(path).exists():
+    if not path:
+        return False
+
+    physical_path = resolve_user_visible_path(path)
+    candidate_path = physical_path if physical_path != path else path
+
+    def _path_exists(target: str) -> bool:
+        try:
+            return Path(target).exists()
+        except OSError:
+            return False
+
+    if candidate_path and _path_exists(candidate_path):
+        usable_path = candidate_path
+    elif candidate_path != path and path and _path_exists(path):
+        usable_path = path
+    else:
         return False
 
     try:
-        if open_pdf_with_default_viewer(path):
+        if open_pdf_with_default_viewer(usable_path):
             return True
     except Exception:
         # If Qt is available but fails, continue with the fallback strategy.
         pass
 
-    return open_pdf_cross_platform(path)
+    return open_pdf_cross_platform(usable_path)
 

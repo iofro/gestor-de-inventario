@@ -2426,6 +2426,7 @@ class FacturacionTab(QWidget):
 
         preferred_format = None
         if supports_format_choice:
+
             format_dialog = QMessageBox(self)
             format_dialog.setIcon(QMessageBox.Question)
             format_dialog.setWindowTitle("Formato de impresión")
@@ -2473,6 +2474,7 @@ class FacturacionTab(QWidget):
                     return
             else:
                 return
+
         else:
             pdf_path = base_pdf_path
 

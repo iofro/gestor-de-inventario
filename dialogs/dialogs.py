@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame
 )
-from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression
+from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker
 from PyQt5.QtGui import (
     QColor,
     QDesktopServices,
@@ -30,7 +30,6 @@ from db import DB
 from utils import jws
 from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
-
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_UP
 IVA_RATE = Decimal("0.13")
@@ -3617,6 +3616,9 @@ class DTEConfigDialog(QDialog):
         self.ambiente_hacienda = QComboBox()
         self.ambiente_hacienda.addItems(["00 - Pruebas", "01 - Producción"])
         self.token_hacienda = QLineEdit()
+        self._token_pruebas = ""
+        self._token_produccion = ""
+        self._ambiente_actual = "pruebas"
         self.token_btn = QPushButton("Obtener")
         self.endpoint_hacienda = QLineEdit()
         self.auth_url = QLineEdit()
@@ -3673,9 +3675,11 @@ class DTEConfigDialog(QDialog):
         restaurar.clicked.connect(self._set_default_urls)
         self.token_btn.clicked.connect(self._fetch_token)
         self.cert_btn.clicked.connect(self._select_cert)
+        self.ambiente_hacienda.currentIndexChanged.connect(self._handle_ambiente_changed)
         self.ambiente_hacienda.currentTextChanged.connect(self._set_default_urls)
         self.endpoint_hacienda.textChanged.connect(self._set_default_urls)
         self.correlativos_btn.clicked.connect(self._open_correlativos)
+        self._ambiente_actual = self._current_env_key()
         if dte_api or fe_config or env_config:
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
         else:
@@ -3713,11 +3717,15 @@ class DTEConfigDialog(QDialog):
         self.prefijo_control.setText(dte_api.get("prefijo_control", "DTE-01-S001P001"))
         self.modo_transmision.setCurrentText(dte_api.get("modo_transmision", "1 - Normal"))
         ambiente = str(dte_api.get("ambiente", "00")).lower()
-        if ambiente in {"01", "1", "produccion", "producción"}:
-            self.ambiente_hacienda.setCurrentIndex(1)
-        else:
-            self.ambiente_hacienda.setCurrentIndex(0)
-        self.token_hacienda.setText(dte_api.get("token", ""))
+        with QSignalBlocker(self.ambiente_hacienda):
+            if ambiente in {"01", "1", "produccion", "producción"}:
+                self.ambiente_hacienda.setCurrentIndex(1)
+            else:
+                self.ambiente_hacienda.setCurrentIndex(0)
+        self._ambiente_actual = self._current_env_key()
+        self._token_pruebas = str(dte_api.get("token_pruebas") or "")
+        self._token_produccion = str(dte_api.get("token_produccion") or "")
+        self._apply_token_for_env(self._ambiente_actual)
         self.endpoint_hacienda.setText(dte_api.get("url", ""))
         self.auth_url.setText(env_config.get("auth_url", ""))
         self.recepcion_url.setText(env_config.get("recepcion_url", ""))
@@ -3754,6 +3762,25 @@ class DTEConfigDialog(QDialog):
         base = base.rstrip("/")
         self.auth_url.setText(f"{base}/seguridad/auth")
         self.recepcion_url.setText(f"{base}/fesv/recepciondte")
+
+    def _current_env_key(self) -> str:
+        return "produccion" if self.ambiente_hacienda.currentIndex() == 1 else "pruebas"
+
+    def _store_current_token(self) -> None:
+        value = self.token_hacienda.text()
+        if self._ambiente_actual == "produccion":
+            self._token_produccion = value
+        else:
+            self._token_pruebas = value
+
+    def _apply_token_for_env(self, env: str) -> None:
+        token = self._token_produccion if env == "produccion" else self._token_pruebas
+        self.token_hacienda.setText(token or "")
+
+    def _handle_ambiente_changed(self, index: int) -> None:
+        self._store_current_token()
+        self._ambiente_actual = self._current_env_key()
+        self._apply_token_for_env(self._ambiente_actual)
 
     def _fetch_token(self):
         nit_default = self.api_user.text().strip()
@@ -3831,10 +3858,13 @@ class DTEConfigDialog(QDialog):
             QMessageBox.critical(self, "Error", f"No se pudo copiar el certificado: {exc}")
 
     def get_data(self):
+        self._store_current_token()
+        self._ambiente_actual = self._current_env_key()
+        token_pruebas = self._token_pruebas
+        token_produccion = self._token_produccion
         dte_api = {
             "url": self.endpoint_hacienda.text().strip(),
             "ambiente": self.ambiente_hacienda.currentText().split(" - ", 1)[0],
-            "token": self.token_hacienda.text(),
             "prefijo_control": self.prefijo_control.text(),
             "modo_transmision": self.modo_transmision.currentText(),
             "envio_automatico": self.envio_automatico.isChecked(),
@@ -3843,6 +3873,10 @@ class DTEConfigDialog(QDialog):
             "guardar_respuesta": self.guardar_respuesta_bd.isChecked(),
             "tipo_contribuyente": self.tipo_contribuyente.currentText(),
         }
+        if token_pruebas is not None and token_pruebas != "":
+            dte_api["token_pruebas"] = token_pruebas
+        if token_produccion is not None and token_produccion != "":
+            dte_api["token_produccion"] = token_produccion
         fe_config = {
             "nit": self.dte_nit.text(),
             "passwordPri": base64.b64encode(self.dte_pass.text().encode()).decode() if self.dte_pass.text() else "",
@@ -3861,6 +3895,7 @@ class DTEConfigDialog(QDialog):
         if recep:
             urls["recepcion_url"] = recep
         return dte_api, fe_config, urls
+
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):
         super().__init__(parent)

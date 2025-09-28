@@ -219,6 +219,7 @@ def test_print_invoice_ticket_entry_allows_format_selection(
         "codigo": "01",
         "tipo": "Consumidor Final",
     }
+
     monkeypatch.setattr(tab, "_selected_entry", lambda: entry)
 
     ticket_pdf = tmp_path / "ticket.pdf"
@@ -406,6 +407,7 @@ def test_print_invoice_notes_skip_format_selection(monkeypatch, qt_app, tmp_path
     assert preview_paths[-1] == str(nota_path)
     assert opened_paths[-1] == str(nota_path)
     assert TrackingMessageBox.instances == []
+
 
 
 def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):

@@ -1,3 +1,4 @@
+from copy import deepcopy
 from db import DB
 from PyQt5.QtCore import QAbstractTableModel, Qt
 from PyQt5.QtGui import QColor
@@ -24,6 +25,36 @@ from inventory_validator import (
 )
 
 logger = logging.getLogger(__name__)
+
+
+_TOKEN_FIELDS = ("token_pruebas", "token_produccion")
+
+
+def _extract_manual_tokens(datos_negocio: dict | None) -> dict:
+    if not isinstance(datos_negocio, dict):
+        return {}
+    dte_api = datos_negocio.get("dte_api")
+    if not isinstance(dte_api, dict):
+        return {}
+    tokens: dict[str, str] = {}
+    for field in _TOKEN_FIELDS:
+        value = dte_api.get(field)
+        if value:
+            tokens[field] = value
+    return tokens
+
+
+def _sanitize_datos_negocio(datos_negocio: dict | None) -> dict:
+    if not isinstance(datos_negocio, dict):
+        return {}
+    sanitized = deepcopy(datos_negocio)
+    dte_api = sanitized.get("dte_api")
+    if isinstance(dte_api, dict):
+        for field in _TOKEN_FIELDS:
+            dte_api.pop(field, None)
+        if not dte_api:
+            sanitized.pop("dte_api", None)
+    return sanitized
 
 
 class InventoryManagerError(Exception):
@@ -220,8 +251,11 @@ class InventoryManager:
             try:
                 with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
                     datos_negocio = json.load(f)
+                    if not isinstance(datos_negocio, dict):
+                        datos_negocio = {}
             except Exception:
                 logger.exception("Failed to parse %s", DATOS_NEGOCIO_PATH)
+                datos_negocio = {}
 
         def write_kv(key, value):
             nonlocal first_section
@@ -309,14 +343,17 @@ class InventoryManager:
                     "tickets_pdf",
                     (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
                 )
-                if datos_negocio:
+                sanitized_negocio = _sanitize_datos_negocio(datos_negocio)
+                if sanitized_negocio:
                     f.write(",\n\"datos_negocio\":")
                     try:
-                        json.dump(datos_negocio, f, ensure_ascii=False)
+                        json.dump(sanitized_negocio, f, ensure_ascii=False)
                     except TypeError:
                         f.write(
                             json.dumps(
-                                datos_negocio, ensure_ascii=False, cls=DecimalEncoder
+                                sanitized_negocio,
+                                ensure_ascii=False,
+                                cls=DecimalEncoder,
                             )
                         )
                     except Exception:
@@ -934,11 +971,24 @@ class InventoryManager:
         self.refresh_data()
 
         datos_path = DATOS_NEGOCIO_PATH
+        existing_tokens = {}
+        if os.path.exists(datos_path):
+            try:
+                with open(datos_path, "r", encoding="utf-8") as f:
+                    existing_tokens = _extract_manual_tokens(json.load(f))
+            except Exception:
+                logger.exception("Failed to parse %s", datos_path)
+                existing_tokens = {}
+
         if "datos_negocio" in data:
             datos_negocio = data.get("datos_negocio")
             if datos_negocio is not None:
+                sanitized = _sanitize_datos_negocio(datos_negocio)
+                if existing_tokens:
+                    dte_api = sanitized.setdefault("dte_api", {})
+                    dte_api.update(existing_tokens)
                 with open(datos_path, "w", encoding="utf-8") as f:
-                    json.dump(datos_negocio, f, ensure_ascii=False, indent=2)
+                    json.dump(sanitized, f, ensure_ascii=False, indent=2)
             elif os.path.exists(datos_path):
                 os.remove(datos_path)
 

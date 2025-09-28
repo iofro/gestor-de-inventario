@@ -203,6 +203,129 @@ def test_resolve_ticket_pdf_builds_when_missing(monkeypatch, qt_app, tmp_path):
     assert flags.get("called") is True
 
 
+def test_print_invoice_ticket_entry_allows_format_selection(
+    monkeypatch, qt_app, tmp_path
+):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    carta_path = tmp_path / "invoice.pdf"
+    carta_path.write_text("pdf")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(carta_path))
+
+    tab = _make_tab(db, cid)
+    entry = {"row_type": "ticket", "venta_id": venta_id}
+    monkeypatch.setattr(tab, "_selected_entry", lambda: entry)
+
+    ticket_pdf = tmp_path / "ticket.pdf"
+    ticket_pdf.write_text("ticket")
+
+    ticket_calls = []
+
+    def fake_resolve_ticket(entry_arg, base_path):
+        ticket_calls.append((entry_arg, base_path))
+        return str(ticket_pdf)
+
+    monkeypatch.setattr(tab, "_resolve_ticket_pdf", fake_resolve_ticket)
+
+    preview_paths = []
+
+    class DummyPreview:
+        def __init__(self, path, parent=None):
+            preview_paths.append(path)
+
+        def exec_(self):
+            return facturacion_tab.QDialog.Accepted
+
+        def has_error(self):
+            return False
+
+    monkeypatch.setattr(facturacion_tab, "PdfPreviewDialog", DummyPreview)
+
+    opened_paths = []
+    monkeypatch.setattr(
+        facturacion_tab,
+        "open_pdf_file",
+        lambda path: opened_paths.append(path) or True,
+    )
+    monkeypatch.setattr(
+        facturacion_tab,
+        "resolve_user_visible_path",
+        lambda path: None,
+    )
+
+    class FakeMessageBox:
+        AcceptRole = object()
+        Question = object()
+        Cancel = object()
+        _next_choice = "carta"
+        warnings = []
+
+        def __init__(self, parent=None):
+            self._carta_button = None
+            self._ticket_button = None
+            self._cancel_button = None
+            self._clicked = None
+
+        def setIcon(self, icon):
+            pass
+
+        def setWindowTitle(self, title):
+            pass
+
+        def setText(self, text):
+            self.text = text
+
+        def addButton(self, text_or_button, role=None):
+            if text_or_button is self.Cancel:
+                button = SimpleNamespace(kind="cancel")
+                self._cancel_button = button
+            else:
+                button = SimpleNamespace(kind="text", text=text_or_button, role=role)
+                if text_or_button == "Carta":
+                    self._carta_button = button
+                elif text_or_button == "Ticket":
+                    self._ticket_button = button
+            return button
+
+        def setDefaultButton(self, button):
+            self._default = button
+
+        def exec_(self):
+            choice = self.__class__._next_choice
+            if choice == "ticket":
+                self._clicked = self._ticket_button
+            elif choice == "cancel":
+                self._clicked = self._cancel_button
+            else:
+                self._clicked = self._carta_button
+            return 0
+
+        def clickedButton(self):
+            return self._clicked
+
+        @classmethod
+        def warning(cls, *args, **kwargs):
+            cls.warnings.append((args, kwargs))
+            return None
+
+    monkeypatch.setattr(facturacion_tab, "QMessageBox", FakeMessageBox)
+
+    FakeMessageBox._next_choice = "carta"
+    tab.print_invoice()
+
+    assert preview_paths[-1] == str(carta_path)
+    assert opened_paths[-1] == str(carta_path)
+    assert ticket_calls == []
+
+    FakeMessageBox._next_choice = "ticket"
+    tab.print_invoice()
+
+    assert ticket_calls == [(entry, str(carta_path))]
+    assert preview_paths[-1] == str(ticket_pdf)
+    assert opened_paths[-1] == str(ticket_pdf)
+    assert FakeMessageBox.warnings == []
+
+
 def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

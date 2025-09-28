@@ -2421,8 +2421,7 @@ class FacturacionTab(QWidget):
 
         preferred_format = None
         venta_id = entry.get("venta_id")
-        row_type = str(entry.get("row_type") or "").strip().lower()
-        if venta_id and row_type != "ticket":
+        if venta_id:
             format_dialog = QMessageBox(self)
             format_dialog.setIcon(QMessageBox.Question)
             format_dialog.setWindowTitle("Formato de impresión")
@@ -2447,9 +2446,20 @@ class FacturacionTab(QWidget):
                 preferred_format = "carta"
             self._last_print_format = preferred_format
 
+        carta_pdf_path = None
+        if venta_id:
+            try:
+                carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            except Exception:
+                carta_pdf_path = None
+            if not carta_pdf_path or not os.path.exists(carta_pdf_path):
+                carta_pdf_path = self._generate_invoice_pdf(venta_id)
+
         base_pdf_path = self._resolve_pdf_path(entry)
         if preferred_format == "ticket":
-            pdf_path = self._resolve_ticket_pdf(entry, base_pdf_path)
+            pdf_path = self._resolve_ticket_pdf(entry, carta_pdf_path)
+        elif preferred_format == "carta":
+            pdf_path = carta_pdf_path
         else:
             pdf_path = base_pdf_path
 

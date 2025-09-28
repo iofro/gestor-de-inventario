@@ -2870,10 +2870,45 @@ class FacturacionTab(QWidget):
         self.email_thread.start()
 
     def _send_orphan_email(self, entry):
-        json_path = entry.get("json")
-        pdf_path = entry.get("pdf")
+        json_path = entry.get("json") if isinstance(entry, dict) else None
+        pdf_path = entry.get("pdf") if isinstance(entry, dict) else None
+        default_email = ""
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    json_data = json.load(fh)
+                receptor = json_data.get("receptor", {}) if isinstance(json_data, dict) else {}
+                if isinstance(receptor, dict):
+                    default_email = (
+                        receptor.get("correo")
+                        or receptor.get("email")
+                        or ""
+                    )
+            except Exception:
+                default_email = ""
+
+        if not default_email and isinstance(entry, dict):
+            cliente_id = entry.get("cliente_id")
+            db = getattr(getattr(self, "manager", None), "db", None)
+            cliente_getter = getattr(db, "get_cliente", None) if db else None
+            if cliente_id and callable(cliente_getter):
+                try:
+                    cliente_data = cliente_getter(cliente_id)
+                except Exception:
+                    cliente_data = None
+                if isinstance(cliente_data, dict):
+                    default_email = (
+                        cliente_data.get("correo")
+                        or cliente_data.get("email")
+                        or ""
+                    )
+
         dest, ok = QInputDialog.getText(
-            self, "Enviar por correo", "Correo del destinatario:")
+            self,
+            "Enviar por correo",
+            "Correo del destinatario:",
+            text=default_email,
+        )
         if not ok or not dest:
             return
         if not json_path or not os.path.exists(json_path):

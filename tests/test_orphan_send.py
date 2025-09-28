@@ -355,3 +355,42 @@ def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
     with open(json_path, "r", encoding="utf-8") as fh:
         refreshed = json.load(fh)
     assert refreshed["identificacion"]["codigoGeneracion"] == new_code
+
+
+def test_resend_credit_note_without_db_entry_transmits_orphan(
+    monkeypatch, qt_app, tmp_path
+):
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "load_invoices", lambda self: None)
+
+    db = DB(":memory:")
+    man = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    tab = facturacion_tab.FacturacionTab(man)
+
+    json_path = tmp_path / "nota_credito.json"
+    json_path.write_text("{}", encoding="utf-8")
+
+    def fake_buscar(self, factura, expected):
+        raise ValueError("No se encontró la nota asociada al documento seleccionado")
+
+    monkeypatch.setattr(facturacion_tab.FacturacionTab, "_buscar_nota_id", fake_buscar)
+
+    def fail_enviar(*args, **kwargs):  # pragma: no cover - guard against regressions
+        pytest.fail("enviar_nota_credito no debe llamarse cuando falta la nota")
+
+    monkeypatch.setattr(facturacion_tab.dte, "enviar_nota_credito", fail_enviar)
+
+    called = {}
+
+    def fake_transmit(db_obj, path):
+        called["path"] = path
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(facturacion_tab.dte, "transmitir_dte_orphan", fake_transmit)
+
+    entry = {"row_type": "orphan", "tipo": "Nota de crédito"}
+    factura = {"json": str(json_path)}
+
+    resp = tab._reenviar_nota_credito(entry, factura)
+
+    assert called["path"] == str(json_path)
+    assert resp["estado"] == "Transmitido"

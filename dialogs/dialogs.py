@@ -629,6 +629,35 @@ class ProductDialogBase:
                     if widget is not None:
                         widget.setText(get_field(cli, key, ""))
 
+    def _sync_credit_term_payload(self):
+        """Mantiene los códigos de plazo y periodo en el formato requerido."""
+
+        if not hasattr(self, "_backend_pago_plazo"):
+            self._backend_pago_plazo = ""
+        if not hasattr(self, "_backend_pago_periodo"):
+            self._backend_pago_periodo = ""
+
+        condicion_combo = getattr(self, "condicion_pago_combo", None)
+        if condicion_combo is None or condicion_combo.currentData() != 2:
+            self._backend_pago_plazo = ""
+            self._backend_pago_periodo = ""
+            return
+
+        plazo_combo = getattr(self, "plazo_combo", None)
+        if plazo_combo is not None:
+            backend_code_raw = plazo_combo.itemData(
+                plazo_combo.currentIndex(), CREDIT_TERM_BACKEND_ROLE
+            )
+            backend_code = "" if backend_code_raw is None else str(backend_code_raw).strip()
+            if backend_code not in {"01", "02", "03"}:
+                backend_code = ""
+            self._backend_pago_plazo = backend_code
+
+        plazo_spin = getattr(self, "plazo_spin", None)
+        if plazo_spin is not None:
+            periodo_value = int(plazo_spin.value())
+            self._backend_pago_periodo = str(periodo_value) if periodo_value > 0 else ""
+
 
 class RegisterSaleDialog(QDialog, ProductDialogBase):
     def __init__(
@@ -843,6 +872,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         self._backend_pago_plazo = ""
         self._backend_pago_periodo = ""
+
+        self.plazo_combo.currentIndexChanged.connect(self._sync_credit_term_payload)
+        self.plazo_spin.valueChanged.connect(self._sync_credit_term_payload)
+        self._sync_credit_term_payload()
 
         self.referencia_edit = QLineEdit()
         self.referencia_edit.setPlaceholderText("Referencia (opcional)")
@@ -1130,6 +1163,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self.referencia_edit.clear()
             self._backend_pago_plazo = ""
             self._backend_pago_periodo = ""
+        self._sync_credit_term_payload()
 
     def load_payment_data(self, extra):
         if not extra:
@@ -2202,6 +2236,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._backend_pago_plazo = ""
         self._backend_pago_periodo = ""
 
+        self.plazo_combo.currentIndexChanged.connect(self._sync_credit_term_payload)
+        self.plazo_spin.valueChanged.connect(self._sync_credit_term_payload)
+        self._sync_credit_term_payload()
+
         self.referencia_edit = QLineEdit()
         self.referencia_edit.setPlaceholderText("Referencia (opcional)")
         credit_layout.addRow("Referencia:", self.referencia_edit)
@@ -2621,6 +2659,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.referencia_edit.clear()
             self._backend_pago_plazo = ""
             self._backend_pago_periodo = ""
+        self._sync_credit_term_payload()
 
     def load_payment_data(self, extra):
         if not extra:

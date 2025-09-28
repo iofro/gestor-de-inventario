@@ -25,7 +25,7 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str
+from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
 from utils.monto import monto_a_texto_sv, d2
 import warnings
 
@@ -179,12 +179,17 @@ def generar_nota_remision(
         detalles = detalles or factura.get("cuerpoDocumento", [])
         if documento_relacionado is None:
             ident = factura.get("identificacion", {})
+            fecha_emision = normalizar_fecha_iso(ident.get("fecEmi"))
+            if fecha_emision:
+                ident["fecEmi"] = fecha_emision
+            else:
+                fecha_emision = ident.get("fecEmi")
             documento_relacionado = [
                 {
                     "tipoDocumento": ident.get("tipoDte"),
                     "tipoGeneracion": 2,
                     "numeroDocumento": ident.get("codigoGeneracion"),
-                    "fechaEmision": ident.get("fecEmi"),
+                    "fechaEmision": fecha_emision,
                 }
             ]
         # Para notas derivadas de factura la extensión puede omitirse
@@ -335,18 +340,20 @@ def generar_nota_remision_desde_db(
 
     venta_id = nota.get("venta_id")
     if venta_id:
-        venta_row = db.cursor.execute(
-            "SELECT cliente_id FROM ventas WHERE id=?", (venta_id,)
-        ).fetchone()
+        venta = db.get_venta_by_id(venta_id)
         tipo_doc = "01"
-        if venta_row:
-            venta = dict(venta_row)
-            if not db.get_venta_credito_fiscal(venta_id) and not venta.get("cliente_id"):
-                tipo_doc = "03"
+        if venta and not db.get_venta_credito_fiscal(venta_id) and not venta.get(
+            "cliente_id"
+        ):
+            tipo_doc = "03"
 
         from dte import generar_dte_json
 
+        fecha_origen = normalizar_fecha_iso(venta.get("fecha")) if venta else None
         dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+        if fecha_origen:
+            dte_ident = dte_origen.setdefault("identificacion", {})
+            dte_ident["fecEmi"] = fecha_origen
         extension = extra.get("extension") or {}
         return generar_nota_remision(
             db, factura=dte_origen, extension=extension, ambiente=ambiente

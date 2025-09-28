@@ -108,7 +108,13 @@ def generar_nce_desde_nota(db: DB, nota_id: int, *, ambiente: str = "00") -> dic
     )
     tipo_doc = "03" if credito_fiscal else "01"
 
-    dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
+    dte_origen = generar_dte_json(
+        db,
+        venta_id,
+        tipo_dte=tipo_doc,
+        ambiente=ambiente,
+        _allow_missing_venta=True,
+    )
     fecha_origen = normalizar_fecha_iso(venta.get("fecha")) if venta else None
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")

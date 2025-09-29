@@ -17,7 +17,9 @@ from xml.sax.saxutils import escape
 import json
 import os
 
-from utils.catalogos import DTE_TIPOS, FORMA_PAGO
+import unicodedata
+
+from utils.catalogos import CONDICION_OPERACION, DTE_TIPOS
 
 from paths import DATOS_NEGOCIO_PATH
 from factura_sv import build_qr_url
@@ -217,6 +219,7 @@ def _build_ticket_flowables(
 
     ident = dte_json.get("identificacion", {}) or {}
     receptor = dte_json.get("receptor", {}) or {}
+    resumen = dte_json.get("resumen", {}) or {}
     titulo = document_title_label(ident)
 
     flowables.append(
@@ -428,25 +431,29 @@ def _build_ticket_flowables(
     )
     flowables.append(totals_table)
 
-    forma_pago = venta.get("forma_pago")
-    pago_monto = money(total)
-    pagos_resumen = dte_json.get("resumen", {}).get("pagos") or []
-    if not forma_pago and pagos_resumen:
-        pago = pagos_resumen[0]
-        code = str(pago.get("codigo") or "").zfill(2)
-        forma_pago = PAGO_LABELS.get(code, "Otro")
-        pago_monto = money(pago.get("montoPago") or total)
-    if forma_pago:
+    pagos_resumen = resumen.get("pagos") or []
+    condicion_pago = _resolve_condicion_pago(venta, resumen)
+    condicion_monto: Decimal | None = None
+    if condicion_pago:
+        if pagos_resumen:
+            pago = pagos_resumen[0]
+            condicion_monto = _to_decimal(pago.get("montoPago") or total)
+        else:
+            condicion_monto = total
+
+    if condicion_pago:
         flowables.append(Spacer(1, BLOCK_SPACING))
-        flowables.append(Paragraph("Pago", TICKET_STYLES["section_header"]))
+        flowables.append(Paragraph("Condición de pago", TICKET_STYLES["section_header"]))
+
+        monto_texto = money(condicion_monto) if condicion_monto is not None else ""
         pagos_table = Table(
             [
                 [
                     Paragraph(
-                        escape(f"Pago: {_with_falta(forma_pago)}"),
+                        escape(f"Condición: {_with_falta(condicion_pago)}"),
                         TICKET_STYLES["kv_label"],
                     ),
-                    Paragraph(escape(pago_monto), TICKET_STYLES["kv_value"]),
+                    Paragraph(escape(monto_texto), TICKET_STYLES["kv_value"]),
                 ]
             ],
             colWidths=[CONTENT_W * 0.55, CONTENT_W * 0.45],
@@ -564,8 +571,70 @@ def document_title_label(ident: Mapping[str, Any] | None) -> str:
     return "FACTURA"
 
 
-PAGO_LABELS = {code.zfill(2): value.upper() for code, value in FORMA_PAGO.items()}
-PAGO_LABELS["01"] = "EFECTIVO"
+
+def _normalize_condition_key(value: str) -> str:
+    normalized = unicodedata.normalize("NFKD", value)
+    stripped = "".join(ch for ch in normalized if not unicodedata.combining(ch))
+    return stripped.lower().strip()
+
+
+_CONDICION_OPERACION_LOOKUP: dict[str, int] = {}
+for _code, _label in CONDICION_OPERACION.items():
+    _CONDICION_OPERACION_LOOKUP[str(_code)] = _code
+    _CONDICION_OPERACION_LOOKUP[str(_code).zfill(2)] = _code
+    _CONDICION_OPERACION_LOOKUP[_normalize_condition_key(_label)] = _code
+
+if "otros" in _CONDICION_OPERACION_LOOKUP:
+    _CONDICION_OPERACION_LOOKUP.setdefault("otro", _CONDICION_OPERACION_LOOKUP["otros"])
+
+
+def _resolve_condicion_pago(
+    venta: Mapping[str, Any] | None = None,
+    resumen: Mapping[str, Any] | None = None,
+) -> str | None:
+    venta = venta or {}
+    resumen = resumen or {}
+
+    valor = venta.get("condicion_pago") or venta.get("condicionPago")
+    if valor is None:
+        valor = (
+            resumen.get("condicion_operacion")
+            or resumen.get("condicionOperacion")
+        )
+
+    if valor is None:
+        return None
+
+    code: int | None = None
+
+    if isinstance(valor, (int, float, Decimal)):
+        try:
+            code = int(valor)
+        except (TypeError, ValueError, ArithmeticError):
+            code = None
+    else:
+        texto = str(valor).strip()
+        if not texto:
+            return None
+
+        normalizado = _normalize_condition_key(texto)
+        code = _CONDICION_OPERACION_LOOKUP.get(normalizado)
+        if code is None:
+            if texto.isdigit():
+                code = int(texto)
+            elif normalizado.isdigit():
+                code = int(normalizado)
+
+    if code is not None:
+        etiqueta = CONDICION_OPERACION.get(code)
+        if etiqueta:
+            return etiqueta
+
+    if isinstance(valor, str):
+        texto = valor.strip()
+        return texto or None
+
+    return str(valor)
 
 
 def _calculate_item_total(entry: Mapping[str, Any]) -> Decimal:
@@ -779,22 +848,22 @@ def render_ticket_pdf(
     draw_left_right("IVA", money(iva))
     draw_left_right("Total a pagar", money(total), bold=True)
 
-    forma_pago = None
-    monto_pago = total
-    if pagos:
-        pago = pagos[0]
-        codigo = str(pago.get("codigo") or "").zfill(2)
-        forma_pago = PAGO_LABELS.get(codigo, "OTRO")
-        monto_pago = _to_decimal(pago.get("montoPago") or monto_pago)
+    condicion_pago = _resolve_condicion_pago(payload.get("venta"), resumen)
+    monto_pago = None
+    if condicion_pago:
+        if pagos:
+            pago = pagos[0]
+            monto_pago = _to_decimal(pago.get("montoPago") or total)
+        else:
+            monto_pago = total
 
-    if forma_pago or resumen.get("condicionOperacion"):
+    if condicion_pago:
         draw_rule()
-        draw_left("FORMA DE PAGO", bold=True)
-        if forma_pago:
-            draw_left_right(forma_pago, money(monto_pago))
-        condicion = resumen.get("condicionOperacion")
-        if condicion is not None:
-            draw_left(str(condicion).upper())
+        draw_left("CONDICIÓN DE PAGO", bold=True)
+        if monto_pago is not None:
+            draw_left_right(condicion_pago, money(monto_pago))
+        else:
+            draw_left(condicion_pago)
 
     if accepted and sello:
         draw_rule()

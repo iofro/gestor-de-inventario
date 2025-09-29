@@ -19,6 +19,7 @@ class _DummyResponse:
         return self._payload
 
 
+
 def _make_token(sub: str, ttl: int = 3600) -> str:
     header = base64.urlsafe_b64encode(json.dumps({"alg": "none"}).encode("utf-8")).rstrip(b"=")
     now = int(time.time())

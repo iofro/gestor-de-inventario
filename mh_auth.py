@@ -284,6 +284,7 @@ def acquire_token(ambiente: str) -> str:
             },
             timeout=20,
         )
+
     except Exception as exc:  # pragma: no cover - network failure
         raise RuntimeError("No se pudo conectar con el servicio de autenticación") from exc
 

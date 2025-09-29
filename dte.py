@@ -6372,32 +6372,6 @@ def _rehydrate_snapshot_from_fs(db: DB, nota_id: int, venta_id: int, expected_ti
     if tipo not in {"credito", "debito"}:
         return False
 
-    generator: Any
-    if tipo == "credito":
-        generator = generar_nota_credito_json
-    else:
-        generator = generar_nota_debito_json
-
-    try:
-        nota_json = generator(db, nota_id)
-    except Exception:
-        return False
-
-    referencias: list[dict[str, Any]] = []
-
-    def _collect_related(value: Any) -> None:
-        if isinstance(value, dict):
-            referencias.append(value)
-        elif isinstance(value, list) and value:
-            first = value[0]
-            if isinstance(first, dict):
-                referencias.append(first)
-
-    _collect_related(nota_json.get("documentoRelacionado"))
-    resumen = nota_json.get("resumen") or {}
-    if isinstance(resumen, dict):
-        _collect_related(resumen.get("documentoRelacionado"))
-
     def _normalize(value: Any) -> str:
         if value is None:
             return ""
@@ -6406,22 +6380,120 @@ def _rehydrate_snapshot_from_fs(db: DB, nota_id: int, venta_id: int, expected_ti
             return ""
         return text.upper()
 
-    target_code = ""
-    fallback_codes: list[str] = []
-    for ref in referencias:
-        codigo = _normalize(ref.get("codigoGeneracion") or ref.get("numeroDocumento"))
-        if codigo:
-            target_code = codigo
-            break
-        numero_control = _normalize(ref.get("numeroControl"))
-        if numero_control:
-            fallback_codes.append(numero_control)
-    if not target_code and fallback_codes:
-        target_code = fallback_codes[0]
-    if not target_code:
+    def _row_get(row_obj: Any, key: str, idx: int) -> Any:
+        if row_obj is None:
+            return None
+        if isinstance(row_obj, Mapping):
+            return row_obj.get(key)
+        try:
+            return row_obj[key]  # type: ignore[index]
+        except Exception:
+            pass
+        try:
+            return row_obj[idx]
+        except Exception:
+            return None
+
+    codigo_generacion = ""
+    numero_control = ""
+
+    cursor = getattr(db, "cursor", None)
+    if cursor is None:
         return False
 
-    search_keys = {target_code, *fallback_codes}
+    try:
+        row = cursor.execute(
+            """
+            SELECT codigo_generacion, numero_control
+            FROM dte_envios
+            WHERE venta_id = ?
+            ORDER BY id DESC
+            LIMIT 1
+            """,
+            (venta_id,),
+        ).fetchone()
+    except Exception:
+        row = None
+
+    if row:
+        codigo_generacion = _row_get(row, "codigo_generacion", 0)
+        numero_control = _row_get(row, "numero_control", 1)
+
+    codigo_generacion_norm = _normalize(codigo_generacion)
+    numero_control_norm = _normalize(numero_control)
+
+    search_keys_ordered: list[str] = []
+    if codigo_generacion_norm:
+        search_keys_ordered.append(codigo_generacion_norm)
+    if numero_control_norm and numero_control_norm not in search_keys_ordered:
+        search_keys_ordered.append(numero_control_norm)
+
+    def _extend_from_related(source: Any) -> None:
+        if not source:
+            return
+        containers: list[Any] = []
+        if isinstance(source, (list, tuple, set)):
+            containers.extend(source)
+        else:
+            containers.append(source)
+        for item in containers:
+            if isinstance(item, dict):
+                codigo_val = _normalize(item.get("codigoGeneracion") or item.get("codigo_generacion"))
+                numero_val = _normalize(item.get("numeroControl") or item.get("numero_control"))
+                for value in (codigo_val, numero_val):
+                    if value and value not in search_keys_ordered:
+                        search_keys_ordered.append(value)
+
+    if not search_keys_ordered:
+        detalles_row = None
+        try:
+            detalles_row = cursor.execute(
+                "SELECT detalles FROM notas WHERE id=?",
+                (nota_id,),
+            ).fetchone()
+        except Exception:
+            detalles_row = None
+
+        detalles_payload: Any = None
+        if detalles_row:
+            detalles_value: Any = None
+            if isinstance(detalles_row, dict):
+                detalles_value = detalles_row.get("detalles")
+            else:
+                detalles_value = _row_get(detalles_row, "detalles", 0)
+            if isinstance(detalles_value, (bytes, bytearray)):
+                try:
+                    detalles_value = detalles_value.decode("utf-8")
+                except Exception:
+                    detalles_value = None
+            if isinstance(detalles_value, str):
+                try:
+                    detalles_payload = json.loads(detalles_value)
+                except Exception:
+                    detalles_payload = None
+            elif isinstance(detalles_value, dict):
+                detalles_payload = detalles_value
+
+        if isinstance(detalles_payload, dict):
+            related_candidates: list[Any] = []
+            for key in (
+                "documentoRelacionado",
+                "documentosRelacionados",
+                "documento_relacionado",
+                "documentos_relacionados",
+            ):
+                rel = detalles_payload.get(key)
+                if rel:
+                    related_candidates.append(rel)
+            for rel in related_candidates:
+                _extend_from_related(rel)
+
+    search_keys_ordered = [value for value in search_keys_ordered if value]
+    if not search_keys_ordered:
+        return False
+
+    search_keys = set(search_keys_ordered)
+    canonical_code = codigo_generacion_norm or search_keys_ordered[0]
 
     candidate_dirs: list[str] = []
     for directory in (
@@ -6441,6 +6513,11 @@ def _rehydrate_snapshot_from_fs(db: DB, nota_id: int, venta_id: int, expected_ti
     for t in typed:
         if t and t not in candidate_dirs:
             candidate_dirs.append(t)
+
+    try:
+        setter = getattr(db, "set_snapshot_path")
+    except AttributeError:
+        setter = None
 
     for directory in candidate_dirs:
         try:
@@ -6470,28 +6547,74 @@ def _rehydrate_snapshot_from_fs(db: DB, nota_id: int, venta_id: int, expected_ti
             numero_control = _normalize(ident.get("numeroControl"))
             if codigo not in search_keys and numero_control not in search_keys:
                 continue
-            dest_dir = Path(DTES_DIR) / (codigo or target_code)
+            dest_code = _normalize(ident.get("codigoGeneracion")) or canonical_code
+            if not dest_code:
+                dest_code = _normalize(ident.get("numeroControl"))
+            if not dest_code and search_keys_ordered:
+                dest_code = search_keys_ordered[0]
+            if not dest_code:
+                continue
+            dest_dir = Path(DTES_DIR) / dest_code
             try:
                 dest_dir.mkdir(parents=True, exist_ok=True)
             except Exception:
                 continue
             dest_path = dest_dir / "documento.json"
+            entry_resolved = entry
+            dest_resolved = dest_path
             try:
-                with dest_path.open("w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, ensure_ascii=False)
+                entry_resolved = entry.resolve()
             except Exception:
+                pass
+            try:
+                dest_resolved = dest_path.resolve()
+            except FileNotFoundError:
+                dest_resolved = dest_path
+            except Exception:
+                dest_resolved = dest_path
+            if entry_resolved == dest_resolved:
+                logger.info("SNAPSHOT: ya existía %s", dest_path)
+                if callable(setter):
+                    try:
+                        setter(venta_id, str(dest_path))
+                    except Exception:
+                        pass
+                return True
+            tmp_path = dest_path.with_suffix(".json.tmp")
+            try:
+                if tmp_path.exists():
+                    tmp_path.unlink()
+            except Exception:
+                pass
+            try:
+                shutil.copyfile(entry, tmp_path)
+                os.replace(tmp_path, dest_path)
+            except shutil.SameFileError:
+                if callable(setter):
+                    try:
+                        setter(venta_id, str(dest_path))
+                    except Exception:
+                        pass
+                return True
+            except Exception:
+                try:
+                    if tmp_path.exists():
+                        tmp_path.unlink()
+                except Exception:
+                    pass
                 continue
             logger.info("SNAPSHOT: rehidratado %s → %s", entry, dest_path)
-            try:
-                setter = getattr(db, "set_snapshot_path")
-            except AttributeError:
-                setter = None
             if callable(setter):
                 try:
                     setter(venta_id, str(dest_path))
                 except Exception:
                     pass
             return True
+    logger.warning(
+        "SNAPSHOT: no se encontró JSON para claves=%s en %d dirs",
+        search_keys_ordered,
+        len(candidate_dirs),
+    )
     return False
 
 

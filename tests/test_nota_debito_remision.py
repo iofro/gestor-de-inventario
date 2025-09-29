@@ -1,4 +1,5 @@
 import fitz
+import json
 from copy import deepcopy
 from decimal import Decimal
 import pytest
@@ -197,9 +198,18 @@ def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
         (venta_id,),
     ).lastrowid
 
+    fecha_envio = "2024-04-12"
+    db.registrar_envio_dte(
+        venta_id,
+        "auto",
+        "procesado",
+        "SELLO",
+        respuesta_json=json.dumps({"fhProcesamiento": f"{fecha_envio}T08:15:00"}),
+    )
+
     nde = generar_nde_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nde["documentoRelacionado"][0]
-    assert doc_rel["fechaEmision"] == venta_fecha
+    assert doc_rel["fechaEmision"] == fecha_envio
 
 
 def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):

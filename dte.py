@@ -43,6 +43,7 @@ from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
 from utils import resource_path
+from utils.env import env_flag
 
 FISCAL_TOTAL_FIELDS = {
     "sumas",
@@ -959,7 +960,7 @@ RESUMEN_DEFAULTS = {
 import re
 
 
-def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
+def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1, *, contexto=None):
     """Normaliza la lista de pagos al formato del esquema."""
 
     allowed = set(catalogos.FORMA_PAGO.keys())
@@ -1058,28 +1059,55 @@ def normalizar_pagos(pagos_raw, total, tipo_dte="01", condicion=1):
             )
         pagos[-1]["montoPago"] = nuevo
 
-    if condicion == 2:
+    if condicion == 2 and pagos:
         first = pagos[0]
         plazo_code = str(first.get("plazo") or "").zfill(2)
+        soft_validation = env_flag("SOFT_VALIDATION", default=True)
+        contexto = contexto or {}
+        context_parts: list[str] = []
+        for key in ("venta_id", "nota_id", "uuid"):
+            value = contexto.get(key)
+            if value:
+                context_parts.append(f"{key}={value}")
+        context_suffix = f" {' '.join(context_parts)}" if context_parts else ""
+
         if plazo_code not in {"01", "02", "03"}:
-            raise ValidationError(
-                "Crédito: unidad inválida (01=días, 02=meses, 03=años)",
-            )
+            if soft_validation:
+                logger.warning(
+                    "Crédito sin plazo/periodo válidos (validación local desactivada)%s",
+                    context_suffix,
+                )
+            else:
+                raise ValidationError(
+                    "Crédito: unidad inválida (01=días, 02=meses, 03=años)",
+                )
+        else:
+            periodo_raw = first.get("periodo", 0)
+            periodo_error = False
+            try:
+                periodo_val = int(periodo_raw)
+            except (TypeError, ValueError):
+                periodo_error = True
+                periodo_val = None  # type: ignore[assignment]
+            else:
+                if periodo_val <= 0:
+                    periodo_error = True
 
-        periodo_raw = first.get("periodo", 0)
-        try:
-            periodo_val = int(periodo_raw)
-        except (TypeError, ValueError):
-            raise ValidationError("Crédito: periodo debe ser entero > 0") from None
-        if periodo_val <= 0:
-            raise ValidationError("Crédito: periodo debe ser entero > 0")
-
-        first["plazo"] = (
-            plazo_code if plazo_is_str else int(plazo_code)
-        )
-        first["periodo"] = (
-            str(periodo_val) if periodo_is_str else periodo_val
-        )
+            if periodo_error:
+                if soft_validation:
+                    logger.warning(
+                        "Crédito sin plazo/periodo válidos (validación local desactivada)%s",
+                        context_suffix,
+                    )
+                else:
+                    raise ValidationError("Crédito: periodo debe ser entero > 0")
+            else:
+                first["plazo"] = (
+                    plazo_code if plazo_is_str else int(plazo_code)
+                )
+                first["periodo"] = (
+                    str(periodo_val) if periodo_is_str else periodo_val
+                )
 
     for p in pagos:
         p["montoPago"] = money(p["montoPago"])
@@ -2339,9 +2367,13 @@ def generar_dte_json(
     if not rec.get("numDocumento") and rec.get("dui"):
         formatted = _format_dui(rec.get("dui"))
         if not formatted:
-            raise ValueError("DUI inválido")
-        rec["tipoDocumento"] = rec.get("tipoDocumento") or "13"
-        rec["numDocumento"] = formatted
+            logger.warning(
+                "DUI no normalizable; se continúa sin bloquear venta_id=%s",
+                venta_id,
+            )
+        else:
+            rec["tipoDocumento"] = rec.get("tipoDocumento") or "13"
+            rec["numDocumento"] = formatted
     rec.pop("dui", None)
 
     def _clean_nit(nit):
@@ -2371,7 +2403,10 @@ def generar_dte_json(
             num_doc = "00000000000000"
     elif tipo_doc == "13":
         if num_doc and not re.fullmatch(r"[0-9]{8}-[0-9]", num_doc):
-            raise ValueError("DUI inválido")
+            logger.warning(
+                "DUI no normalizable; se continúa sin bloquear venta_id=%s",
+                venta_id,
+            )
 
     receptor = {
         "tipoDocumento": tipo_doc if tipo_doc is not None else None,
@@ -3525,6 +3560,9 @@ def validate_dte_json(
             receptor.pop("tipoDocumento", None)
             receptor.pop("numDocumento", None)
         else:
+            ident_uuid = (payload.get("identificacion") or {}).get(
+                "codigoGeneracion"
+            )
             tipo_doc = receptor.get("tipoDocumento")
             if nit_field is not None:
                 receptor["numDocumento"] = _clean_nit(nit_field)
@@ -3534,9 +3572,13 @@ def validate_dte_json(
             if "numDocumento" not in receptor and receptor.get("dui"):
                 formatted = _format_dui(receptor.get("dui"))
                 if not formatted:
-                    raise ValueError("DUI inválido")
-                receptor["numDocumento"] = formatted
-                tipo_doc = tipo_doc or "13"
+                    logger.warning(
+                        "DUI no normalizable; se continúa sin bloquear uuid=%s",
+                        ident_uuid,
+                    )
+                else:
+                    receptor["numDocumento"] = formatted
+                    tipo_doc = tipo_doc or "13"
             num_doc = solo_digitos(receptor.get("numDocumento"))
             receptor.pop("dui", None)
             nrc_raw = receptor.get("nrc")
@@ -3554,12 +3596,16 @@ def validate_dte_json(
                 raise ValueError("tipoDocumento inválido en receptor")
             if tipo_doc == "13":
                 if len(num_doc) != 9:
-                    raise ValueError("DUI inválido")
-                if nrc_raw:
-                    warnings.warn(
-                        "Se removió NRC porque el documento es DUI", UserWarning,
+                    logger.warning(
+                        "DUI no normalizable; se continúa sin bloquear uuid=%s",
+                        ident_uuid,
                     )
-                receptor.pop("nrc", None)
+                else:
+                    if nrc_raw:
+                        warnings.warn(
+                            "Se removió NRC porque el documento es DUI", UserWarning,
+                        )
+                    receptor.pop("nrc", None)
             elif tipo_doc == "36":
                 if len(num_doc) != 14:
                     raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
@@ -3925,6 +3971,7 @@ def validate_dte_json(
         resumen["totalPagar"],
         tipo_dte=ident.get("tipoDte"),
         condicion=resumen.get("condicionOperacion", 1),
+        contexto={"uuid": ident.get("codigoGeneracion")},
     )
     delta = money(
         D(str(resumen["totalPagar"]))
@@ -4028,8 +4075,12 @@ def validate_dte_json(
         if tipo_rec == "13":  # DUI
             digits = re.sub(r"\D", "", str(receptor_doc))
             if len(digits) != 9:
-                raise ValueError("DUI inválido en receptor")
-            payload["receptor"]["numDocumento"] = f"{digits[:8]}-{digits[8]}"
+                logger.warning(
+                    "DUI no normalizable; se continúa sin bloquear uuid=%s",
+                    ident.get("codigoGeneracion"),
+                )
+            else:
+                payload["receptor"]["numDocumento"] = f"{digits[:8]}-{digits[8]}"
         elif tipo_rec == "36":  # NIT
             clean_doc = limpiar_doc(receptor_doc)
             if not clean_doc.isdigit() or len(clean_doc) not in (9, catalogos.NIT_LENGTH):
@@ -4446,8 +4497,12 @@ def generar_nota_remision_json(
     nrc = receptor.get("nrc")
     if tipo_doc == "13":
         if not re.fullmatch(r"\d{9}", num_doc or ""):
-            raise ValueError("DUI inválido en receptor")
-        receptor.pop("nrc", None)
+            logger.warning(
+                "DUI no normalizable; se continúa sin bloquear uuid=%s",
+                ident_factura.get("codigoGeneracion"),
+            )
+        else:
+            receptor.pop("nrc", None)
     elif tipo_doc == "36":
         if not re.fullmatch(r"\d{14}", num_doc or ""):
             raise ValueError("NIT inválido en receptor")

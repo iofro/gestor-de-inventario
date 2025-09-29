@@ -155,6 +155,17 @@ def generar_nde_desde_nota(
     rel = doc_rel[0] if doc_rel else {}
     duration_ms = (time.perf_counter() - start) * 1000
     metrics.inc(f"notes_source_used.{source_used}")
+    if (
+        fecha_origen
+        and rel.get("fechaEmision")
+        and rel.get("fechaEmision") != fecha_origen
+    ):
+        logger.warning(
+            "documentoRelacionado.fechaEmision: valor no verificable localmente nota_id=%s venta_id=%s uuid=%s",
+            nota_id,
+            venta_id,
+            uuid_origen,
+        )
     logger.info(
         "NDE relaciona tipo=%s uuid=%s num=%s fec=%s fuente=%s nota_id=%s venta_id=%s dur_ms=%.3f",
         rel.get("tipoDocumento"),

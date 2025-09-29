@@ -1,4 +1,6 @@
 from decimal import Decimal as D
+import logging
+
 import pytest
 
 from dte import calcular_resumen, normalizar_pagos, money, recalcular_totales
@@ -261,10 +263,12 @@ def test_pagos_exceso_previo_error():
         normalizar_pagos(pagos, total)
 
 
-def test_credito_requiere_plazo_periodo():
+def test_credito_requiere_plazo_periodo(caplog):
     pagos = [{'codigo': '01', 'montoPago': 5}]
-    with pytest.raises(Exception):
-        normalizar_pagos(pagos, D('5'), condicion=2)
+    with caplog.at_level(logging.WARNING):
+        result = normalizar_pagos(pagos, D('5'), condicion=2)
+    assert result[0]['periodo'] is None
+    assert "Crédito sin plazo/periodo válidos" in caplog.text
 
 
 def test_codigo_pago_tipo_schema(monkeypatch):

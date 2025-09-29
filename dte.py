@@ -71,6 +71,13 @@ from paths import (
     DTES_DIR,
     DTE_FALLIDOS_DIR,
     DTES_PENDIENTES_DIR,
+    FACTURAS_CONSUMIDOR_FINAL_DIR,
+    FACTURAS_CREDITO_FISCAL_DIR,
+    TICKETS_OUTPUT_DIR,
+    NOTAS_CREDITO_DIR,
+    NOTAS_DEBITO_DIR,
+    FACTURAS_ARCHIVE_CF_DIR,
+    FACTURAS_ARCHIVE_CREDITO_DIR,
 )
 from xml.etree.ElementTree import Element, SubElement
 
@@ -5904,8 +5911,9 @@ def transmitir_dte(
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
     resp = _enviar_documento(db, venta_id, data, modo)
-    if resp.get("sello"):
-        db.update_venta_extra(venta_id, {"selloRecibido": resp["sello"]})
+    sello = resp.get("sello")
+    if sello:
+        db.update_venta_extra(venta_id, {"selloRecibido": sello})
     return resp
 
 
@@ -6357,6 +6365,136 @@ def _enviar_documento(
     return res
 
 
+def _rehydrate_snapshot_from_fs(db: DB, nota_id: int, venta_id: int, expected_tipo: str | None) -> bool:
+    """Recrear el snapshot faltante buscando el DTE base en el disco."""
+
+    tipo = (expected_tipo or "").strip().lower()
+    if tipo not in {"credito", "debito"}:
+        return False
+
+    generator: Any
+    if tipo == "credito":
+        generator = generar_nota_credito_json
+    else:
+        generator = generar_nota_debito_json
+
+    try:
+        nota_json = generator(db, nota_id)
+    except Exception:
+        return False
+
+    referencias: list[dict[str, Any]] = []
+
+    def _collect_related(value: Any) -> None:
+        if isinstance(value, dict):
+            referencias.append(value)
+        elif isinstance(value, list) and value:
+            first = value[0]
+            if isinstance(first, dict):
+                referencias.append(first)
+
+    _collect_related(nota_json.get("documentoRelacionado"))
+    resumen = nota_json.get("resumen") or {}
+    if isinstance(resumen, dict):
+        _collect_related(resumen.get("documentoRelacionado"))
+
+    def _normalize(value: Any) -> str:
+        if value is None:
+            return ""
+        text = str(value).strip()
+        if not text:
+            return ""
+        return text.upper()
+
+    target_code = ""
+    fallback_codes: list[str] = []
+    for ref in referencias:
+        codigo = _normalize(ref.get("codigoGeneracion") or ref.get("numeroDocumento"))
+        if codigo:
+            target_code = codigo
+            break
+        numero_control = _normalize(ref.get("numeroControl"))
+        if numero_control:
+            fallback_codes.append(numero_control)
+    if not target_code and fallback_codes:
+        target_code = fallback_codes[0]
+    if not target_code:
+        return False
+
+    search_keys = {target_code, *fallback_codes}
+
+    candidate_dirs: list[str] = []
+    for directory in (
+        DTES_DIR,
+        FACTURAS_CONSUMIDOR_FINAL_DIR,
+        FACTURAS_CREDITO_FISCAL_DIR,
+        TICKETS_OUTPUT_DIR,
+        NOTAS_CREDITO_DIR,
+        NOTAS_DEBITO_DIR,
+        FACTURAS_ARCHIVE_CF_DIR,
+        FACTURAS_ARCHIVE_CREDITO_DIR,
+    ):
+        if directory and directory not in candidate_dirs:
+            candidate_dirs.append(directory)
+
+    typed = [os.path.join(DTES_DIR, sub) for sub in ("fcf", "ccf", "nc", "nd") if DTES_DIR]
+    for t in typed:
+        if t and t not in candidate_dirs:
+            candidate_dirs.append(t)
+
+    for directory in candidate_dirs:
+        try:
+            base = Path(directory)
+        except TypeError:
+            continue
+        if not base.exists():
+            continue
+        try:
+            entries: list[Path] = []
+            for pattern in ("*.json", "*/*.json"):
+                entries.extend(base.glob(pattern))
+        except Exception:
+            continue
+        for entry in entries:
+            try:
+                with entry.open("r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except Exception:
+                continue
+            if not isinstance(payload, dict):
+                continue
+            ident = payload.get("identificacion") or {}
+            if not isinstance(ident, dict):
+                ident = {}
+            codigo = _normalize(ident.get("codigoGeneracion"))
+            numero_control = _normalize(ident.get("numeroControl"))
+            if codigo not in search_keys and numero_control not in search_keys:
+                continue
+            dest_dir = Path(DTES_DIR) / (codigo or target_code)
+            try:
+                dest_dir.mkdir(parents=True, exist_ok=True)
+            except Exception:
+                continue
+            dest_path = dest_dir / "documento.json"
+            try:
+                with dest_path.open("w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False)
+            except Exception:
+                continue
+            logger.info("SNAPSHOT: rehidratado %s → %s", entry, dest_path)
+            try:
+                setter = getattr(db, "set_snapshot_path")
+            except AttributeError:
+                setter = None
+            if callable(setter):
+                try:
+                    setter(venta_id, str(dest_path))
+                except Exception:
+                    pass
+            return True
+    return False
+
+
 def _ensure_nota_snapshot(db: DB, nota_id: int, *, expected_tipo: str | None = None) -> None:
     """Ensure that a stored snapshot exists for ``nota_id`` before sending."""
 
@@ -6393,6 +6531,9 @@ def _ensure_nota_snapshot(db: DB, nota_id: int, *, expected_tipo: str | None = N
         return
 
     if snapshot is None:
+        tipo_hint = expected_tipo or nota_tipo
+        if _rehydrate_snapshot_from_fs(db, nota_id, venta_id, tipo_hint):
+            return
         raise SnapshotNotFoundError(venta_id, nota_id)
 
 

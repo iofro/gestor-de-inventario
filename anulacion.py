@@ -3,7 +3,7 @@ import logging
 import os
 import uuid
 import re
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlparse
 
@@ -27,9 +27,11 @@ from dte import (
     _parse_error_response,
     APP_VERSION,
     _log_http_exchange,
+    _log_jwt_diagnostics,
     TIMEOUT,
 )
 from utils.jws import sign_json
+from utils.env import env_flag
 
 
 logger = logging.getLogger(__name__)
@@ -843,6 +845,10 @@ def _post_invalidacion(
         headers.setdefault("cliente-id", str(client_id))
 
     _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+    allow_redirects = not _no_redirects
+
+    t0_local = datetime.now(timezone.utc)
+    t1_local: datetime | None = None
 
     try:
         resp = requests.post(
@@ -850,9 +856,10 @@ def _post_invalidacion(
             headers=headers,
             json=body,
             timeout=TIMEOUT,
-            allow_redirects=not _no_redirects,
+            allow_redirects=allow_redirects,
         )
-        _log_http_exchange(resp, _no_redirects)
+        t1_local = datetime.now(timezone.utc)
+        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
@@ -863,6 +870,20 @@ def _post_invalidacion(
         data = None
 
     if resp.status_code in {401, 403}:
+        _log_jwt_diagnostics(
+            headers.get("Authorization"),
+            now=t1_local or datetime.now(timezone.utc),
+        )
+        if env_flag("DTE_DEBUG_HTTP"):
+            www_auth = resp.headers.get("WWW-Authenticate")
+            content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
+            body_len = len(resp.content or b"")
+            if (
+                not (www_auth and str(www_auth).strip())
+                and (str(content_length or "").strip() in {"", "0"})
+                and body_len == 0
+            ):
+                logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
         result = {
             "estado": "Rechazado",
             "http_status": resp.status_code,

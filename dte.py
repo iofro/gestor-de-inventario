@@ -9,10 +9,11 @@ import re
 import shutil
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from typing import Any, Mapping
 from urllib.parse import urlparse
+from email.utils import parsedate_to_datetime
 
 from db import DB
 import requests
@@ -21,7 +22,7 @@ from utils import jws
 from utils import versioned_dte
 from utils.stable_json import stable_stringify, save_file, hash_json
 import auth
-from mh_auth import auth_headers
+from mh_auth import auth_headers, decode_jwt_claims
 from jsonschema import ValidationError, RefResolver
 from utils import catalogos
 from utils.catalogos import (
@@ -91,13 +92,27 @@ def _fp_auth(hdr_val: str) -> str:
     return hashlib.sha1(hdr_val.encode("utf-8")).hexdigest()[:10]
 
 
-def _log_http_exchange(resp, no_redirects: bool | None = None):
+def _log_http_exchange(
+    resp,
+    allow_redirects: bool | None = None,
+    *,
+    t0_local: datetime | None = None,
+    t1_local: datetime | None = None,
+):
     """Loguea request final, history de redirects y cabeceras clave sin exponer secretos."""
+
+    if not env_flag("DTE_DEBUG_HTTP"):
+        return
 
     try:
         req = resp.request
         final_host = urlparse(req.url).netloc
         auth_hdr = req.headers.get("Authorization")
+        content_type = req.headers.get("Content-Type") or req.headers.get("content-type")
+        user_agent = req.headers.get("User-Agent")
+        app_version = req.headers.get("app-version") or req.headers.get("App-Version")
+        cliente_id = req.headers.get("cliente-id") or req.headers.get("Cliente-Id")
+
         latency_sec = None
         try:
             if resp.elapsed is not None:
@@ -105,21 +120,55 @@ def _log_http_exchange(resp, no_redirects: bool | None = None):
         except Exception:
             latency_sec = None
         latency_val = f"{latency_sec:.3f}s" if latency_sec is not None else "unknown"
+
+        body = getattr(req, "body", None)
+        if body is None:
+            body_len = 0
+            body_hash = ""
+        else:
+            if isinstance(body, bytes):
+                body_bytes = body
+            else:
+                body_bytes = str(body).encode("utf-8", errors="ignore")
+            body_len = len(body_bytes)
+            body_hash = hashlib.sha256(body_bytes).hexdigest()[:12]
+
+        def _fmt_dt(value: datetime | None) -> str | None:
+            if value is None:
+                return None
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            return value.astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+
+        t0_iso = _fmt_dt(t0_local)
+        t1_iso = _fmt_dt(t1_local)
+
+        history = resp.history or []
         logger.info(
-            "HTTP: FINAL status=%s url=%s host=%s auth_fp=%s history=%d latency=%s no_redirects=%s",
+            "HTTP: FINAL method=%s status=%s url=%s host=%s allow_redirects=%s history=%d auth_fp=%s content_type=%s user_agent=%s app_version=%s cliente_id=%s req_body_len=%s req_body_sha256=%s latency=%s t0_local=%s t1_local=%s",
+            getattr(req, "method", ""),
             resp.status_code,
             req.url,
             final_host,
+            bool(allow_redirects) if allow_redirects is not None else None,
+            len(history),
             _fp_auth(auth_hdr),
-            len(resp.history),
+            content_type,
+            user_agent,
+            app_version,
+            cliente_id,
+            body_len,
+            body_hash,
             latency_val,
-            bool(no_redirects),
+            t0_iso,
+            t1_iso,
         )
-        for i, hop in enumerate(resp.history):
+
+        for i, hop in enumerate(history):
             hop_host = urlparse(hop.request.url).netloc
             loc = hop.headers.get("Location")
             logger.info(
-                "HTTP: HOP[%d] %s %s (host=%s) auth_fp=%s -> Location=%s",
+                "HTTP: HOP[%d] status=%s url=%s host=%s auth_fp=%s location=%s",
                 i,
                 hop.status_code,
                 hop.request.url,
@@ -127,20 +176,122 @@ def _log_http_exchange(resp, no_redirects: bool | None = None):
                 _fp_auth(hop.request.headers.get("Authorization")),
                 loc,
             )
+
         s = resp.headers
+        content_length = s.get("Content-Length") or s.get("content-length")
+        date_hdr = s.get("Date")
+        www_auth = s.get("WWW-Authenticate")
+        x_request_id = s.get("x-request-id") or s.get("X-Request-Id")
+        x_correlation_id = s.get("x-correlation-id") or s.get("X-Correlation-Id")
+
         logger.info(
-            "HTTP: RESP_HDRS server=%s via=%s date=%s www-auth=%s x-request-id=%s x-correlation-id=%s content-type=%s content-length=%s",
+            "HTTP: RESP_HDRS status=%s content_type=%s content_length=%s server=%s via=%s date=%s www-auth=%s x-request-id=%s x-correlation-id=%s",
+            resp.status_code,
+            s.get("Content-Type"),
+            content_length,
             s.get("Server"),
             s.get("Via"),
-            s.get("Date"),
-            s.get("WWW-Authenticate"),
-            s.get("x-request-id") or s.get("X-Request-Id"),
-            s.get("x-correlation-id") or s.get("X-Correlation-Id"),
-            s.get("Content-Type"),
-            s.get("Content-Length") or s.get("content-length"),
+            date_hdr,
+            www_auth,
+            x_request_id,
+            x_correlation_id,
         )
-    except Exception as e:
-        logger.warning("HTTP: LOG_ERROR %r", e)
+
+        if date_hdr:
+            try:
+                server_dt = parsedate_to_datetime(date_hdr)
+                if server_dt is not None and server_dt.tzinfo is None:
+                    server_dt = server_dt.replace(tzinfo=timezone.utc)
+                now_dt = t1_local or datetime.now(timezone.utc)
+                if server_dt is not None:
+                    skew = (server_dt - now_dt).total_seconds()
+                    msg = "HTTP: CLOCK_SKEW server_minus_local_s=%+.3f"
+                    if abs(skew) > 120:
+                        logger.warning(msg, skew)
+                    else:
+                        logger.info(msg, skew)
+            except Exception:
+                logger.info("HTTP: CLOCK_SKEW parse_error")
+
+        if env_flag("DTE_DEBUG_DUMP_RESP_BODY"):
+            body_bytes = resp.content or b""
+            body_hash = hashlib.sha256(body_bytes).hexdigest()[:12] if body_bytes else ""
+            preview = resp.text or ""
+            if len(preview) > 512:
+                preview = preview[:512] + "…"
+            logger.info(
+                "HTTP: RESP_BODY sha256=%s preview=%s",
+                body_hash,
+                preview.replace("\n", "\\n"),
+            )
+    except Exception as exc:  # pragma: no cover - logging should be best-effort
+        logger.warning("HTTP: LOG_ERROR %s", exc)
+
+
+def _log_jwt_diagnostics(auth_header: str | None, *, now: datetime | None = None) -> None:
+    """Registra información derivada del JWT sin exponer el token."""
+
+    if not env_flag("DTE_DEBUG_HTTP"):
+        return
+
+    claims = decode_jwt_claims(auth_header or "")
+    if not claims:
+        logger.info("JWT: sin claims decodificables")
+        return
+
+    now_dt = now or datetime.now(timezone.utc)
+
+    def _to_datetime(raw):
+        if raw is None:
+            return None
+        if isinstance(raw, (int, float)):
+            return datetime.fromtimestamp(float(raw), tz=timezone.utc)
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return None
+            if text.isdigit():
+                try:
+                    return datetime.fromtimestamp(float(text), tz=timezone.utc)
+                except Exception:
+                    return None
+            try:
+                if text.endswith("Z"):
+                    return datetime.fromisoformat(text[:-1]).replace(tzinfo=timezone.utc)
+                dt = datetime.fromisoformat(text)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=timezone.utc)
+                return dt
+            except Exception:
+                return None
+        return None
+
+    def _fmt(dt: datetime | None) -> str | None:
+        if dt is None:
+            return None
+        return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+    iat_dt = _to_datetime(claims.get("iat"))
+    exp_dt = _to_datetime(claims.get("exp"))
+    age_s = int((now_dt - iat_dt).total_seconds()) if iat_dt else None
+    seconds_to_exp = int((exp_dt - now_dt).total_seconds()) if exp_dt else None
+    roles = claims.get("roles")
+    if isinstance(roles, (list, tuple, set)):
+        roles_len = len(roles)
+    elif isinstance(roles, str):
+        roles_len = len(roles.split(",")) if "," in roles else len(roles)
+    else:
+        roles_len = 0
+
+    logger.info(
+        "JWT: sub=%s iat=%s exp=%s age_s=%s sec_to_exp=%s roles_len=%s",
+        claims.get("sub"),
+        _fmt(iat_dt),
+        _fmt(exp_dt),
+        age_s,
+        seconds_to_exp,
+        roles_len,
+    )
 DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 DEFAULT_EVENTO_URL = "https://apitest.dtes.mh.gob.sv/fesv/contingencia"
 PATCHES_DIR = resource_path("schema_patches")
@@ -5149,6 +5300,10 @@ def _post_dte(
         headers.setdefault("cliente-id", str(client_id))
 
     _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+    allow_redirects = not _no_redirects
+
+    t0_local = datetime.now(timezone.utc)
+    t1_local: datetime | None = None
 
     try:
         print(json.dumps(sobre, ensure_ascii=False))
@@ -5157,9 +5312,10 @@ def _post_dte(
             headers=headers,
             json=sobre,
             timeout=TIMEOUT,
-            allow_redirects=not _no_redirects,
+            allow_redirects=allow_redirects,
         )
-        _log_http_exchange(resp, _no_redirects)
+        t1_local = datetime.now(timezone.utc)
+        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
     except (requests.ConnectionError, requests.Timeout):
         return {"estado": "Error", "detalle": "Sin conexión a Internet"}
     except requests.RequestException as exc:
@@ -5172,6 +5328,20 @@ def _post_dte(
         data = None
 
     if resp.status_code in {401, 403}:
+        _log_jwt_diagnostics(
+            headers.get("Authorization"),
+            now=t1_local or datetime.now(timezone.utc),
+        )
+        if env_flag("DTE_DEBUG_HTTP"):
+            www_auth = resp.headers.get("WWW-Authenticate")
+            content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
+            body_len = len(resp.content or b"")
+            if (
+                not (www_auth and str(www_auth).strip())
+                and (str(content_length or "").strip() in {"", "0"})
+                and body_len == 0
+            ):
+                logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
         result = {
             "estado": "Rechazado",
             "http_status": resp.status_code,
@@ -5245,6 +5415,10 @@ def _post_evento(
         headers.setdefault("cliente-id", str(client_id))
 
     _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+    allow_redirects = not _no_redirects
+
+    t0_local = datetime.now(timezone.utc)
+    t1_local: datetime | None = None
 
     try:
         print(json.dumps(body, ensure_ascii=False))
@@ -5253,9 +5427,10 @@ def _post_evento(
             headers=headers,
             json=body,
             timeout=TIMEOUT,
-            allow_redirects=not _no_redirects,
+            allow_redirects=allow_redirects,
         )
-        _log_http_exchange(resp, _no_redirects)
+        t1_local = datetime.now(timezone.utc)
+        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
@@ -5266,6 +5441,20 @@ def _post_evento(
         data = None
 
     if resp.status_code in {401, 403}:
+        _log_jwt_diagnostics(
+            headers.get("Authorization"),
+            now=t1_local or datetime.now(timezone.utc),
+        )
+        if env_flag("DTE_DEBUG_HTTP"):
+            www_auth = resp.headers.get("WWW-Authenticate")
+            content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
+            body_len = len(resp.content or b"")
+            if (
+                not (www_auth and str(www_auth).strip())
+                and (str(content_length or "").strip() in {"", "0"})
+                and body_len == 0
+            ):
+                logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
         result = {
             "estado": "Rechazado",
             "http_status": resp.status_code,
@@ -5557,16 +5746,35 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
         )
 
         _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+        allow_redirects = not _no_redirects
 
         try:
+            t0_local = datetime.now(timezone.utc)
+            t1_local: datetime | None = None
             resp = requests.post(
                 url,
                 headers=headers,
                 json=body,
                 timeout=TIMEOUT,
-                allow_redirects=not _no_redirects,
+                allow_redirects=allow_redirects,
             )
-            _log_http_exchange(resp, _no_redirects)
+            t1_local = datetime.now(timezone.utc)
+            _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
+            if resp.status_code in {401, 403}:
+                _log_jwt_diagnostics(
+                    headers.get("Authorization"),
+                    now=t1_local or datetime.now(timezone.utc),
+                )
+                if env_flag("DTE_DEBUG_HTTP"):
+                    www_auth = resp.headers.get("WWW-Authenticate")
+                    content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
+                    body_len = len(resp.content or b"")
+                    if (
+                        not (www_auth and str(www_auth).strip())
+                        and (str(content_length or "").strip() in {"", "0"})
+                        and body_len == 0
+                    ):
+                        logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
             data_resp = resp.json() if resp.content else {}
         except Exception as exc:  # pragma: no cover - defensive
             data_resp = {"estado": "Error", "detalle": str(exc)}

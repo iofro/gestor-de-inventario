@@ -22,7 +22,7 @@ from PyQt5.QtWidgets import (
     QCheckBox,
     QComboBox,
 )
-from PyQt5.QtCore import Qt, QDate, QSize
+from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker
 from PyQt5.QtGui import QPixmap
 from datetime import datetime, date, timedelta
 from utils.email_sender import EmailSender
@@ -284,8 +284,10 @@ class SalesTab(QWidget):
             self.gen_label.setText("Generado: ")
             self.sent_label.setText("Último envío: ")
             self.email_label.setText("Correo destinatario: ")
-            self.email_subject_edit.clear()
-            self.email_body_edit.clear()
+            with QSignalBlocker(self.email_subject_edit):
+                self.email_subject_edit.clear()
+            with QSignalBlocker(self.email_body_edit):
+                self.email_body_edit.clear()
             self._clear_preview_files()
             return
 

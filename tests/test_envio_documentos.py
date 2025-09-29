@@ -2,6 +2,7 @@ import copy
 import json
 import logging
 import os
+import sqlite3
 import pytest
 import requests
 
@@ -232,35 +233,46 @@ def test_ensure_nota_snapshot_rehydrates_from_saved_json(tmp_path, monkeypatch):
     monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", str(archive_cf_dir))
     monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", str(archive_credito_dir))
 
-    monkeypatch.setattr(
-        dte,
-        "generar_nota_credito_json",
-        lambda db_obj, nota_ref: {"documentoRelacionado": [{"codigoGeneracion": base_code}]},
-    )
-
     venta_id = 42
     nota_id = 99
 
     class DummyCursor:
-        def __init__(self, row):
-            self._row = row
+        def __init__(self, nota_row, envio_row, detalles_row=None):
+            self._nota_row = nota_row
+            self._envio_row = envio_row
+            self._detalles_row = detalles_row if detalles_row is not None else nota_row
+            self._last_query = ""
 
         def execute(self, *_args, **_kwargs):
+            query = _args[0] if _args else ""
+            if isinstance(query, str):
+                self._last_query = query
             return self
 
         def fetchone(self):
-            return self._row
+            if "FROM notas" in self._last_query:
+                if "detalles" in self._last_query.lower():
+                    return self._detalles_row
+                return self._nota_row
+            if "FROM dte_envios" in self._last_query:
+                return self._envio_row
+            return None
 
     class DummyDB:
         def __init__(self):
-            self.cursor = DummyCursor({"venta_id": venta_id, "tipo": "credito"})
+            nota_row = {"venta_id": venta_id, "tipo": "credito"}
+            detalles_row = {"detalles": json.dumps({"documentoRelacionado": [{"codigoGeneracion": base_code}]})}
+            envio_row = {"codigo_generacion": base_code, "numero_control": "NC-001"}
+            self.cursor = DummyCursor(nota_row, envio_row, detalles_row)
             self._snapshots = {}
+            self.set_calls: list[tuple[int, str]] = []
 
         def get_snapshot_by_venta(self, venta_ref):
             return self._snapshots.get(venta_ref)
 
         def set_snapshot_path(self, venta_ref, path):
             self._snapshots[venta_ref] = path
+            self.set_calls.append((venta_ref, path))
 
     db = DummyDB()
     assert db.get_snapshot_by_venta(venta_id) is None
@@ -273,6 +285,98 @@ def test_ensure_nota_snapshot_rehydrates_from_saved_json(tmp_path, monkeypatch):
         persisted = json.load(fh)
     assert persisted["identificacion"]["codigoGeneracion"] == base_code
     assert db.get_snapshot_by_venta(venta_id) == str(stored_path)
+    assert db.set_calls == [(venta_id, str(stored_path))]
+
+
+def test_ensure_nota_snapshot_fallbacks_to_nota_detalles(tmp_path, monkeypatch):
+    base_code = "FALLBACK123456"
+    origen_payload = {
+        "identificacion": {
+            "codigoGeneracion": base_code,
+            "numeroControl": "DTE-07-001",
+        }
+    }
+
+    source_dir = tmp_path / "facturas_credito_fiscal"
+    source_dir.mkdir()
+    (source_dir / "legacy.json").write_text(json.dumps(origen_payload), encoding="utf-8")
+
+    dtes_dir = tmp_path / "dtes"
+    consumidor_dir = tmp_path / "consumidor"
+    notas_credito_dir = tmp_path / "notas_credito"
+    for directory in (dtes_dir, consumidor_dir, notas_credito_dir):
+        directory.mkdir()
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CONSUMIDOR_FINAL_DIR", str(consumidor_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CREDITO_FISCAL_DIR", str(source_dir))
+    monkeypatch.setattr(dte, "TICKETS_OUTPUT_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_CREDITO_DIR", str(notas_credito_dir))
+    monkeypatch.setattr(dte, "NOTAS_DEBITO_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", "")
+
+    venta_id = 2112
+    nota_id = 1225
+
+    class DummyCursor:
+        def __init__(self, nota_row, envio_row, detalles_row=None):
+            self._nota_row = nota_row
+            self._envio_row = envio_row
+            self._detalles_row = detalles_row if detalles_row is not None else nota_row
+            self._last_query = ""
+
+        def execute(self, *_args, **_kwargs):
+            query = _args[0] if _args else ""
+            if isinstance(query, str):
+                self._last_query = query
+            return self
+
+        def fetchone(self):
+            if "FROM notas" in self._last_query:
+                if "detalles" in self._last_query.lower():
+                    return self._detalles_row
+                return self._nota_row
+            if "FROM dte_envios" in self._last_query:
+                return self._envio_row
+            return None
+
+    class DummyDB:
+        def __init__(self):
+            nota_row = {"venta_id": venta_id, "tipo": "credito"}
+            detalles_row = {
+                "detalles": json.dumps(
+                    {
+                        "documentoRelacionado": [
+                            {
+                                "codigoGeneracion": base_code,
+                                "numeroControl": "FALL-001",
+                            }
+                        ]
+                    }
+                )
+            }
+            envio_row = None
+            self.cursor = DummyCursor(nota_row, envio_row, detalles_row)
+            self._snapshots = {}
+            self.set_calls: list[tuple[int, str]] = []
+
+        def get_snapshot_by_venta(self, venta_ref):
+            return self._snapshots.get(venta_ref)
+
+        def set_snapshot_path(self, venta_ref, path):
+            self._snapshots[venta_ref] = path
+            self.set_calls.append((venta_ref, path))
+
+    db = DummyDB()
+    assert db.get_snapshot_by_venta(venta_id) is None
+
+    dte._ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+
+    stored_path = dtes_dir / base_code / "documento.json"
+    assert stored_path.exists()
+    assert db.get_snapshot_by_venta(venta_id) == str(stored_path)
+    assert db.set_calls == [(venta_id, str(stored_path))]
 
 
 def test_ensure_nota_snapshot_rehydrates_from_typed_subdir(tmp_path, monkeypatch, caplog):
@@ -298,35 +402,46 @@ def test_ensure_nota_snapshot_rehydrates_from_typed_subdir(tmp_path, monkeypatch
     monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", "")
     monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", "")
 
-    monkeypatch.setattr(
-        dte,
-        "generar_nota_credito_json",
-        lambda db_obj, nota_ref: {"documentoRelacionado": [{"codigoGeneracion": base_code}]},
-    )
-
     venta_id = 314
     nota_id = 2718
 
     class DummyCursor:
-        def __init__(self, row):
-            self._row = row
+        def __init__(self, nota_row, envio_row, detalles_row=None):
+            self._nota_row = nota_row
+            self._envio_row = envio_row
+            self._detalles_row = detalles_row if detalles_row is not None else nota_row
+            self._last_query = ""
 
         def execute(self, *_args, **_kwargs):
+            query = _args[0] if _args else ""
+            if isinstance(query, str):
+                self._last_query = query
             return self
 
         def fetchone(self):
-            return self._row
+            if "FROM notas" in self._last_query:
+                if "detalles" in self._last_query.lower():
+                    return self._detalles_row
+                return self._nota_row
+            if "FROM dte_envios" in self._last_query:
+                return self._envio_row
+            return None
 
     class DummyDB:
         def __init__(self):
-            self.cursor = DummyCursor({"venta_id": venta_id, "tipo": "credito"})
+            nota_row = {"venta_id": venta_id, "tipo": "credito"}
+            detalles_row = {"detalles": json.dumps({"documentoRelacionado": [{"codigoGeneracion": base_code}]})}
+            envio_row = {"codigo_generacion": base_code, "numero_control": "NC-002"}
+            self.cursor = DummyCursor(nota_row, envio_row, detalles_row)
             self._snapshots = {}
+            self.set_calls: list[tuple[int, str]] = []
 
         def get_snapshot_by_venta(self, venta_ref):
             return self._snapshots.get(venta_ref)
 
         def set_snapshot_path(self, venta_ref, path):
             self._snapshots[venta_ref] = path
+            self.set_calls.append((venta_ref, path))
 
     db = DummyDB()
     assert db.get_snapshot_by_venta(venta_id) is None
@@ -338,6 +453,185 @@ def test_ensure_nota_snapshot_rehydrates_from_typed_subdir(tmp_path, monkeypatch
     assert stored_path.exists()
     assert db.get_snapshot_by_venta(venta_id) == str(stored_path)
     assert any("SNAPSHOT: rehidratado" in rec.getMessage() for rec in caplog.records)
+    assert db.set_calls == [(venta_id, str(stored_path))]
+
+
+def test_ensure_nota_snapshot_handles_sqlite_row_metadata(tmp_path, monkeypatch):
+    base_code = "ROWMETA321"
+    payload = {
+        "identificacion": {
+            "codigoGeneracion": base_code,
+            "numeroControl": "DTE-05-009",
+        }
+    }
+
+    source_dir = tmp_path / "facturas_credito_fiscal"
+    source_dir.mkdir()
+    (source_dir / "legacy.json").write_text(json.dumps(payload), encoding="utf-8")
+
+    dtes_dir = tmp_path / "dtes"
+    dtes_dir.mkdir()
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CONSUMIDOR_FINAL_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_CREDITO_FISCAL_DIR", str(source_dir))
+    monkeypatch.setattr(dte, "TICKETS_OUTPUT_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_CREDITO_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_DEBITO_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", "")
+
+    venta_id = 918
+    nota_id = 273
+
+    sql_conn = sqlite3.connect(":memory:")
+    sql_conn.row_factory = sqlite3.Row
+    sql_cur = sql_conn.cursor()
+    sql_cur.execute(
+        "select ? as codigo_generacion, ? as numero_control",
+        (base_code, "NC-ROW-001"),
+    )
+    envio_row = sql_cur.fetchone()
+
+    sql_cur.execute(
+        "select ? as detalles",
+        (
+            json.dumps(
+                {
+                    "documentoRelacionado": [
+                        {
+                            "codigoGeneracion": base_code,
+                            "numeroControl": "ROW-CTRL-1",
+                        }
+                    ]
+                }
+            ),
+        ),
+    )
+    detalles_row = sql_cur.fetchone()
+    sql_conn.close()
+
+    class DummyCursor:
+        def __init__(self, nota_row, envio_row_obj, detalles_row_obj):
+            self._nota_row = nota_row
+            self._envio_row = envio_row_obj
+            self._detalles_row = detalles_row_obj
+            self._last_query = ""
+
+        def execute(self, *_args, **_kwargs):
+            query = _args[0] if _args else ""
+            if isinstance(query, str):
+                self._last_query = query
+            return self
+
+        def fetchone(self):
+            if "FROM notas" in self._last_query:
+                if "detalles" in self._last_query.lower():
+                    return self._detalles_row
+                return self._nota_row
+            if "FROM dte_envios" in self._last_query:
+                return self._envio_row
+            return None
+
+    class DummyDB:
+        def __init__(self):
+            nota_row = {"venta_id": venta_id, "tipo": "credito"}
+            self.cursor = DummyCursor(nota_row, envio_row, detalles_row)
+            self._snapshots = {}
+            self.set_calls: list[tuple[int, str]] = []
+
+        def get_snapshot_by_venta(self, venta_ref):
+            return self._snapshots.get(venta_ref)
+
+        def set_snapshot_path(self, venta_ref, path):
+            self._snapshots[venta_ref] = path
+            self.set_calls.append((venta_ref, path))
+
+    db = DummyDB()
+    assert db.get_snapshot_by_venta(venta_id) is None
+
+    dte._ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+
+    stored_path = dtes_dir / base_code / "documento.json"
+    assert stored_path.exists()
+    assert db.get_snapshot_by_venta(venta_id) == str(stored_path)
+    assert db.set_calls == [(venta_id, str(stored_path))]
+
+
+def test_ensure_nota_snapshot_when_canonical_exists(tmp_path, monkeypatch, caplog):
+    base_code = "EXISTE555"
+    payload = {
+        "identificacion": {
+            "codigoGeneracion": base_code,
+            "numeroControl": "DTE-06-444",
+        }
+    }
+
+    dtes_dir = tmp_path / "dtes"
+    canonical_path = dtes_dir / base_code / "documento.json"
+    canonical_path.parent.mkdir(parents=True, exist_ok=True)
+    canonical_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CONSUMIDOR_FINAL_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CREDITO_FISCAL_DIR", "")
+    monkeypatch.setattr(dte, "TICKETS_OUTPUT_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_CREDITO_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_DEBITO_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", "")
+
+    venta_id = 551
+    nota_id = 552
+
+    class DummyCursor:
+        def __init__(self, nota_row, envio_row):
+            self._nota_row = nota_row
+            self._envio_row = envio_row
+            self._last_query = ""
+
+        def execute(self, *_args, **_kwargs):
+            query = _args[0] if _args else ""
+            if isinstance(query, str):
+                self._last_query = query
+            return self
+
+        def fetchone(self):
+            if "FROM notas" in self._last_query:
+                return self._nota_row
+            if "FROM dte_envios" in self._last_query:
+                return self._envio_row
+            return None
+
+    class DummyDB:
+        def __init__(self):
+            nota_row = {"venta_id": venta_id, "tipo": "credito"}
+            envio_row = {"codigo_generacion": base_code, "numero_control": "NC-EXISTE"}
+            self.cursor = DummyCursor(nota_row, envio_row)
+            self._snapshots = {}
+            self.set_calls: list[tuple[int, str]] = []
+
+        def get_snapshot_by_venta(self, venta_ref):
+            return self._snapshots.get(venta_ref)
+
+        def set_snapshot_path(self, venta_ref, path):
+            self._snapshots[venta_ref] = path
+            self.set_calls.append((venta_ref, path))
+
+    db = DummyDB()
+    assert db.get_snapshot_by_venta(venta_id) is None
+
+    def fail_copy(src, dst):  # pragma: no cover - should not be called
+        raise AssertionError("copyfile should not be called when canonical exists")
+
+    monkeypatch.setattr(dte.shutil, "copyfile", fail_copy)
+
+    caplog.set_level(logging.INFO)
+    dte._ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+
+    assert db.get_snapshot_by_venta(venta_id) == str(canonical_path)
+    assert db.set_calls == [(venta_id, str(canonical_path))]
+    assert any("SNAPSHOT: ya existía" in rec.getMessage() for rec in caplog.records)
 
 
 def test_no_envia_si_validacion_falla(monkeypatch):

@@ -15,6 +15,7 @@ from tests.test_envio_documentos import create_sale
 
 import utils.docs as docs_utils
 import utils.stable_json as stable_json
+from utils.snapshot import Snapshot
 
 
 def test_transmitir_dte_orphan_signs(monkeypatch, tmp_path):
@@ -188,6 +189,18 @@ def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
+    )
     old_code = "00000000-0000-4000-8000-OLDNC000000"
     numero_control = "DTE-05-S001P001-000000000000123"
     db.registrar_envio_dte(

@@ -1,8 +1,10 @@
 import copy
 import json
 import logging
+import json
 import os
 import pytest
+import requests
 
 from pathlib import Path
 from db import DB
@@ -20,6 +22,48 @@ import dte
 import auth
 from tests.conftest import make_jws
 from utils import docs
+from utils.snapshot import Snapshot
+
+
+@pytest.fixture(autouse=True)
+def _stub_auth_headers(monkeypatch):
+    def fake_auth_headers(extra=None, *, ambiente=None):
+        headers = {"Authorization": "Bearer JWT"}
+        if isinstance(extra, dict):
+            headers.update(extra)
+        return headers
+
+    monkeypatch.setattr(dte, "auth_headers", fake_auth_headers)
+
+
+class DummyResponse:
+    def __init__(self, url, headers, payload, *, status_code=200, response_headers=None):
+        self.status_code = status_code
+        self._payload = payload
+        self.headers = dict(response_headers or {})
+        self.request = type(
+            "Req",
+            (),
+            {
+                "url": url,
+                "headers": headers or {},
+                "method": "POST",
+            },
+        )()
+        self.elapsed = None
+        self.history = []
+        if isinstance(payload, (dict, list)):
+            self.text = json.dumps(payload)
+        else:
+            self.text = str(payload)
+        self.content = self.text.encode("utf-8")
+
+    def json(self):
+        return self._payload
+
+    def raise_for_status(self):
+        if 400 <= int(self.status_code) < 600:
+            raise requests.HTTPError(f"HTTP {self.status_code}")
 
 
 def create_sale(db):
@@ -93,20 +137,10 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         calls.append((url, headers, json))
         data = responses.pop(0)
-
-        class R:
-            status_code = 200
-
-            def json(self):
-                return data
-
-            def raise_for_status(self):
-                pass
-
-        return R()
+        return DummyResponse(url, headers, data)
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
@@ -163,7 +197,7 @@ def test_no_envia_si_validacion_falla(monkeypatch):
 
     sent = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         sent.append(True)
 
     monkeypatch.setattr("dte.requests.post", fake_post)
@@ -246,6 +280,32 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     venta = create_sale(db)
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
 
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
+    )
+
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
+    )
+
     sign_calls = {"count": 0, "tokens": []}
 
     def fake_sign(data):
@@ -296,20 +356,20 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     )
 
     calls = []
+    orig_paths = docs.get_dte_document_paths
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_paths(fecha, empresa, numero_control, doc_type, root=None):
+        return orig_paths(fecha, empresa, numero_control, doc_type, root=tmp_path)
+
+    monkeypatch.setattr(docs, "get_dte_document_paths", fake_paths)
+
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         calls.append((url, headers, json))
-
-        class R:
-            status_code = 200
-
-            def json(self):
-                return {"estado": "Transmitido", "sello": "XYZ"}
-
-            def raise_for_status(self):
-                pass
-
-        return R()
+        return DummyResponse(
+            url,
+            headers,
+            {"estado": "Transmitido", "sello": "XYZ"},
+        )
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
@@ -342,6 +402,19 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
+
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
+    )
 
     data = {
         "receptor": {"nombre": "Cliente"},
@@ -408,19 +481,13 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
 
     captured = {}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         captured["token"] = json["documento"]
-
-        class R:
-            status_code = 200
-
-            def json(self):
-                return {"estado": "Transmitido", "sello": "XYZ"}
-
-            def raise_for_status(self):
-                pass
-
-        return R()
+        return DummyResponse(
+            url,
+            headers,
+            {"estado": "Transmitido", "sello": "XYZ"},
+        )
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
@@ -447,6 +514,19 @@ def test_enviar_nota_credito_resigns_after_rechazo(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
+
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
+    )
 
     template = {
         "receptor": {"nombre": "Cliente"},
@@ -558,20 +638,9 @@ def test_enviar_nota_credito_resigns_after_rechazo(monkeypatch, tmp_path):
 def test_post_dte_packs_jws_in_json_body(monkeypatch):
     captured = {}
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         captured["body"] = json
-
-        class R:
-            status_code = 200
-            text = ""
-
-            def json(self):
-                return {}
-
-            def raise_for_status(self):
-                pass
-
-        return R()
+        return DummyResponse(url, headers, {})
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
@@ -606,23 +675,17 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         calls.append((url, headers, json))
-
-        class R:
-            status_code = 200
-
-            def json(self):
-                return {
-                    "estado": "Rechazado",
-                    "descripcionMsg": "Fallo",
-                    "observaciones": {"campo": "invalido"},
-                }
-
-            def raise_for_status(self):
-                pass
-
-        return R()
+        return DummyResponse(
+            url,
+            headers,
+            {
+                "estado": "Rechazado",
+                "descripcionMsg": "Fallo",
+                "observaciones": {"campo": "invalido"},
+            },
+        )
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
@@ -680,19 +743,13 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_post(url, json=None, headers=None, timeout=20):
+    def fake_post(url, json=None, headers=None, timeout=20, **kwargs):
         calls.append((url, headers, json))
-
-        class R:
-            status_code = 200
-
-            def json(self):
-                return {"estado": "Transmitido", "sello": "SSS"}
-
-            def raise_for_status(self):
-                pass
-
-        return R()
+        return DummyResponse(
+            url,
+            headers,
+            {"estado": "Transmitido", "sello": "SSS"},
+        )
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
@@ -765,6 +822,19 @@ def test_enviar_nota_credito_default_contingencia(monkeypatch, tmp_path):
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
 
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
+    )
+
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
@@ -805,6 +875,19 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "debito", "2024-01-02", 10, "motivo")
+
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
+    )
 
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})

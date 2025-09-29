@@ -132,8 +132,9 @@ def generar_nde_desde_nota(
         fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")
-        if isinstance(identificacion, dict) and not identificacion.get("fecEmi"):
-            identificacion["fecEmi"] = fecha_origen
+        if isinstance(identificacion, dict):
+            if identificacion.get("fecEmi") != fecha_origen:
+                identificacion["fecEmi"] = fecha_origen
 
     detalles = None
     if nota.get("detalles"):
@@ -149,6 +150,7 @@ def generar_nde_desde_nota(
         nota.get("monto"),
         nota.get("motivo"),
         ambiente=ambiente,
+        fecha_origen=fecha_origen,
     )
 
     doc_rel = resultado.get("documentoRelacionado") or []
@@ -188,6 +190,7 @@ def generar_nde_desde_dte(
     motivo: str | None = None,
     *,
     ambiente: str = "00",
+    fecha_origen: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
     origen_ident = dte_origen.get("identificacion", {})
@@ -239,6 +242,8 @@ def generar_nde_desde_dte(
     fecha_doc_rel = normalizar_fecha_iso(
         origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
     )
+    if not fecha_doc_rel and fecha_origen:
+        fecha_doc_rel = normalizar_fecha_iso(fecha_origen)
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,

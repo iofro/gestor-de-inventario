@@ -1,4 +1,5 @@
 import fitz
+from copy import deepcopy
 from decimal import Decimal
 import pytest
 from db import DB
@@ -152,6 +153,53 @@ def test_generar_nde_desde_nota_credito_fiscal(monkeypatch):
     assert receptor["nit"] == "06141407100012"
     assert receptor["nrc"] == "123"
     assert receptor.get("nombreComercial") in {None, "Cliente"}
+
+
+def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_fecha = "2024-04-10"
+    venta_id = db.add_venta(venta_fecha, 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    dte_base = generar_dte_json(db, venta_id, tipo_dte="01")
+    dte_alterado = deepcopy(dte_base)
+    dte_alterado["identificacion"]["fecEmi"] = "2024-04-12"
+
+    monkeypatch.setattr(
+        "nota_debito_electronica.generar_dte_json",
+        lambda *args, **kwargs: deepcopy(dte_alterado),
+    )
+
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'debito', '2024-04-15', 10, 'Ajuste')",
+        (venta_id,),
+    ).lastrowid
+
+    nde = generar_nde_desde_nota(db, nota_id, strict_snapshot=False)
+    doc_rel = nde["documentoRelacionado"][0]
+    assert doc_rel["fechaEmision"] == venta_fecha
 
 
 def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):

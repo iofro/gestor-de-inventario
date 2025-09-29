@@ -128,7 +128,11 @@ def generar_nde_desde_nota(
     fecha_origen = None
     if snapshot and snapshot.fecha_emision:
         fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
-    elif venta:
+    if not fecha_origen and venta_id is not None:
+        fecha_envio = db.get_envio_fecha_emision(venta_id)
+        if fecha_envio:
+            fecha_origen = normalizar_fecha_iso(fecha_envio)
+    if not fecha_origen and venta:
         fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")

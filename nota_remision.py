@@ -27,6 +27,7 @@ from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
 from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
 from utils.monto import monto_a_texto_sv, d2
+from utils.snapshot import normalize_snapshot
 import warnings
 
 from utils.sanitize import limpiar_documentos, solo_digitos
@@ -349,14 +350,43 @@ def generar_nota_remision_desde_db(
 
         from dte import generar_dte_json
 
-        fecha_origen = normalizar_fecha_iso(venta.get("fecha")) if venta else None
-        dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
-        if fecha_origen:
+        fecha_origen = None
+        snapshot = db.get_snapshot_by_venta(venta_id)
+        if snapshot:
+            try:
+                dte_origen = normalize_snapshot(snapshot.payload)
+            except Exception:
+                dte_origen = None
+            else:
+                if snapshot.fecha_emision:
+                    fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
+        else:
+            dte_origen = None
+
+        if dte_origen is None:
+            dte_origen = generar_dte_json(
+                db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente
+            )
+
+        if not fecha_origen and venta_id is not None:
+            fecha_envio = db.get_envio_fecha_emision(venta_id)
+            if fecha_envio:
+                fecha_origen = normalizar_fecha_iso(fecha_envio)
+
+        if not fecha_origen and venta:
+            fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
+
+        if fecha_origen and isinstance(dte_origen, dict):
             dte_ident = dte_origen.setdefault("identificacion", {})
-            dte_ident["fecEmi"] = fecha_origen
+            if isinstance(dte_ident, dict):
+                dte_ident["fecEmi"] = fecha_origen
+
         extension = extra.get("extension") or {}
         return generar_nota_remision(
-            db, factura=dte_origen, extension=extension, ambiente=ambiente
+            db,
+            factura=dte_origen,
+            extension=extension,
+            ambiente=ambiente,
         )
 
     factura = extra.get("factura")

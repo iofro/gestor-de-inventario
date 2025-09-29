@@ -1,6 +1,8 @@
-import fitz
 from copy import deepcopy
 from decimal import Decimal
+import json
+
+import fitz
 import pytest
 from db import DB
 from nota_debito_electronica import generar_nde_desde_dte, generar_nde_desde_nota
@@ -73,7 +75,18 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "1234567", "06141407100012", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "1234567",
+        "06141407100012",
+        "",
+        "giro",
+        "22223456",
+        "cliente@example.com",
+        "",
+        "",
+        "",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "1234567", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
@@ -197,9 +210,18 @@ def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
         (venta_id,),
     ).lastrowid
 
+    fecha_envio = "2024-04-12"
+    db.registrar_envio_dte(
+        venta_id,
+        "auto",
+        "procesado",
+        "SELLO",
+        respuesta_json=json.dumps({"fhProcesamiento": f"{fecha_envio}T08:15:00"}),
+    )
+
     nde = generar_nde_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nde["documentoRelacionado"][0]
-    assert doc_rel["fechaEmision"] == venta_fecha
+    assert doc_rel["fechaEmision"] == fecha_envio
 
 
 def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
@@ -701,7 +723,18 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    db.add_cliente("Cliente", "1234567", "06141407100012", "", "giro", "", "", "", "", "")
+    db.add_cliente(
+        "Cliente",
+        "1234567",
+        "06141407100012",
+        "",
+        "giro",
+        "22223456",
+        "cliente@example.com",
+        "",
+        "",
+        "",
+    )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "1234567", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
@@ -717,10 +750,20 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
         "remision", venta_id, "2024-01-02", 0, "Envio", detalles=extra
     )
 
+    fecha_envio = "2024-01-03"
+    db.registrar_envio_dte(
+        venta_id,
+        "auto",
+        "procesado",
+        "SELLO",
+        respuesta_json=json.dumps({"fhProcesamiento": f"{fecha_envio}T08:00:00"}),
+    )
+
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "04"
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert data["extension"]["nombEntrega"] == "Juan"
+    assert data["documentoRelacionado"][0]["fechaEmision"] == fecha_envio
 
 
 def test_nota_debito_pdf(tmp_path):

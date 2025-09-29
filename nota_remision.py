@@ -22,10 +22,12 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Iterable, Optional
 
+import logging
+
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
+from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str
 from utils.monto import monto_a_texto_sv, d2
 from utils.snapshot import normalize_snapshot
 import warnings
@@ -33,6 +35,9 @@ import warnings
 from utils.sanitize import limpiar_documentos, solo_digitos
 
 Decimal_0 = Decimal("0")
+
+
+logger = logging.getLogger(__name__)
 
 
 def _build_items(
@@ -141,16 +146,15 @@ def _normalizar_documento_relacionado(doc_rel: list[dict]) -> list[dict]:
         raise ValueError(
             "documento_relacionado requiere numeroDocumento y fechaEmision"
         )
-    try:
-        datetime.fromisoformat(fecha)
-    except Exception as exc:
-        raise ValueError("fechaEmision inválida en documento_relacionado") from exc
+    fecha_normalizada = fecha_ddmmaaaa(fecha)
+    if not fecha_normalizada:
+        raise ValueError("fechaEmision inválida en documento_relacionado")
     return [
         {
             "tipoDocumento": tipo,
             "tipoGeneracion": 2,
             "numeroDocumento": numero,
-            "fechaEmision": fecha,
+            "fechaEmision": fecha_normalizada,
         }
     ]
 
@@ -180,16 +184,26 @@ def generar_nota_remision(
         detalles = detalles or factura.get("cuerpoDocumento", [])
         if documento_relacionado is None:
             ident = factura.get("identificacion", {})
-            fecha_emision = normalizar_fecha_iso(ident.get("fecEmi"))
+            fecha_emision = fecha_ddmmaaaa(
+                ident.get("fecEmi") or ident.get("fechaEmision")
+            )
+            if not fecha_emision:
+                fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
             if fecha_emision:
                 ident["fecEmi"] = fecha_emision
+            codigo_generacion = ident.get("codigoGeneracion")
+            numero_control = ident.get("numeroControl")
+            if codigo_generacion:
+                numero_documento = str(codigo_generacion).upper()
+                tipo_generacion = 2
             else:
-                fecha_emision = ident.get("fecEmi")
+                numero_documento = str(numero_control or "").strip()
+                tipo_generacion = 1
             documento_relacionado = [
                 {
                     "tipoDocumento": ident.get("tipoDte"),
-                    "tipoGeneracion": 2,
-                    "numeroDocumento": ident.get("codigoGeneracion"),
+                    "tipoGeneracion": tipo_generacion,
+                    "numeroDocumento": numero_documento,
                     "fechaEmision": fecha_emision,
                 }
             ]
@@ -257,6 +271,7 @@ def generar_nota_remision(
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
+    fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
     identificacion = {
         "version": DTE_VERSIONES["04"],
         "ambiente": ambiente,
@@ -267,13 +282,16 @@ def generar_nota_remision(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_emision_hoy_str(now),
+        "fecEmi": fecha_emision_por_defecto,
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
 
     if documento_relacionado:
         documento_relacionado = _normalizar_documento_relacionado(documento_relacionado)
+        fecha_relacionada = documento_relacionado[0].get("fechaEmision")
+        if fecha_relacionada:
+            identificacion["fecEmi"] = fecha_relacionada
     numero_doc = (
         documento_relacionado[0].get("numeroDocumento")
         if documento_relacionado
@@ -351,6 +369,7 @@ def generar_nota_remision_desde_db(
         from dte import generar_dte_json
 
         fecha_origen = None
+        fecha_origen_source = None
         snapshot = db.get_snapshot_by_venta(venta_id)
         if snapshot:
             try:
@@ -359,7 +378,9 @@ def generar_nota_remision_desde_db(
                 dte_origen = None
             else:
                 if snapshot.fecha_emision:
-                    fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
+                    fecha_origen = fecha_ddmmaaaa(snapshot.fecha_emision)
+                    if fecha_origen:
+                        fecha_origen_source = "snapshot"
         else:
             dte_origen = None
 
@@ -371,15 +392,25 @@ def generar_nota_remision_desde_db(
         if not fecha_origen and venta_id is not None:
             fecha_envio = db.get_envio_fecha_emision(venta_id)
             if fecha_envio:
-                fecha_origen = normalizar_fecha_iso(fecha_envio)
+                fecha_origen = fecha_envio
+                fecha_origen_source = "envio"
 
         if not fecha_origen and venta:
-            fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
+            fecha_origen = fecha_ddmmaaaa(venta.get("fecha"))
+            if fecha_origen:
+                fecha_origen_source = "venta"
 
         if fecha_origen and isinstance(dte_origen, dict):
             dte_ident = dte_origen.setdefault("identificacion", {})
             if isinstance(dte_ident, dict):
                 dte_ident["fecEmi"] = fecha_origen
+
+        logger.info(
+            "fecha relacionada para nota %s = %s (origen: %s)",
+            nota_id,
+            fecha_origen,
+            fecha_origen_source or "desconocido",
+        )
 
         extension = extra.get("extension") or {}
         return generar_nota_remision(

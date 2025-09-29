@@ -30,7 +30,7 @@ from utils.identificacion import is_valid_nit, normalize_dui_to_nit9
 from utils.env import env_flag
 from utils import metrics
 from utils.receptor import ensure_receptor_completo
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
+from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
 from utils.sanitize import solo_digitos
 from utils.snapshot import SnapshotNotFoundError, normalize_snapshot
@@ -126,19 +126,31 @@ def generar_nde_desde_nota(
         uuid_origen = str(codigo_tmp).upper() if codigo_tmp else None
 
     fecha_origen = None
+    fecha_origen_source = None
     if snapshot and snapshot.fecha_emision:
-        fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
+        fecha_origen = fecha_ddmmaaaa(snapshot.fecha_emision)
+        if fecha_origen:
+            fecha_origen_source = "snapshot"
     if not fecha_origen and venta_id is not None:
         fecha_envio = db.get_envio_fecha_emision(venta_id)
         if fecha_envio:
-            fecha_origen = normalizar_fecha_iso(fecha_envio)
+            fecha_origen = fecha_envio
+            fecha_origen_source = "envio"
     if not fecha_origen and venta:
-        fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
+        fecha_origen = fecha_ddmmaaaa(venta.get("fecha"))
+        if fecha_origen:
+            fecha_origen_source = "venta"
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")
         if isinstance(identificacion, dict):
             if identificacion.get("fecEmi") != fecha_origen:
                 identificacion["fecEmi"] = fecha_origen
+    logger.info(
+        "fecha relacionada para nota %s = %s (origen: %s)",
+        nota_id,
+        fecha_origen,
+        fecha_origen_source or "desconocido",
+    )
 
     detalles = None
     if nota.get("detalles"):
@@ -201,6 +213,7 @@ def generar_nde_desde_dte(
 
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
+    fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
     identificacion = {
         "version": DTE_VERSIONES["06"],
         "ambiente": ambiente,
@@ -211,7 +224,7 @@ def generar_nde_desde_dte(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_emision_hoy_str(now),
+        "fecEmi": fecha_emision_por_defecto,
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
@@ -231,23 +244,26 @@ def generar_nde_desde_dte(
         tipo_doc_rel = "03" if (dte_origen.get("receptor") or {}).get("nrc") else "01"
 
     codigo_generacion = origen_ident.get("codigoGeneracion")
+    numero_control = origen_ident.get("numeroControl")
     if codigo_generacion:
         numero_documento = str(codigo_generacion).upper()
         tipo_generacion = 2
     else:
         tipo_generacion = 1
-        numero_documento = (
-            origen_ident.get("numeroDocumento")
-            or origen_ident.get("numeroControl")
-            or ""
-        )
-        numero_documento = str(numero_documento).strip()
+        numero_documento = str(numero_control or "").strip()
 
-    fecha_doc_rel = normalizar_fecha_iso(
+    fecha_doc_rel = fecha_ddmmaaaa(
         origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
     )
     if not fecha_doc_rel and fecha_origen:
-        fecha_doc_rel = normalizar_fecha_iso(fecha_origen)
+        fecha_doc_rel = fecha_ddmmaaaa(fecha_origen)
+
+    fecha_emision_nota = fecha_origen or fecha_doc_rel or fecha_emision_por_defecto
+    if fecha_emision_nota:
+        identificacion["fecEmi"] = fecha_emision_nota
+    if not fecha_doc_rel:
+        fecha_doc_rel = fecha_emision_nota
+
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,

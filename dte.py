@@ -87,7 +87,7 @@ TIMEOUT = int(os.getenv("DTE_HTTP_TIMEOUT", "20"))
 # - DTE_DEBUG_HTTP=0
 # - DTE_DEBUG_NO_REDIRECTS=0
 # - DTE_RETRY_401_EMPTY=1
-# - DTE_BACKOFF_MS=350
+# - DTE_BACKOFF_MS=8000
 # - DTE_RATE_LIMIT_MS=0
 # - DTE_HTTP_TIMEOUT=20
 # - DTE_DEBUG_DUMP_REQ_BODY=0
@@ -377,10 +377,10 @@ def _post_json(url: str, headers: Mapping[str, Any], body: Any, *, tag: str):
             logger.warning("HTTP: RATE_LIMIT inválido=%s", raw_rate)
     backoff_ms_raw = os.getenv("DTE_BACKOFF_MS")
     try:
-        backoff_ms = max(0, int(float(backoff_ms_raw))) if backoff_ms_raw else 350
+        backoff_ms = max(0, int(float(backoff_ms_raw))) if backoff_ms_raw else 8000
     except Exception:
         logger.warning("HTTP: BACKOFF inválido=%s", backoff_ms_raw)
-        backoff_ms = 350
+        backoff_ms = 8000
     retry_401_enabled = env_flag("DTE_RETRY_401_EMPTY", default=True)
     allow_redirects = not env_flag("DTE_DEBUG_NO_REDIRECTS")
 

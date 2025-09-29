@@ -101,6 +101,18 @@ def _normalize_bearer_value(token_raw: Any) -> str:
     return _dte_normalize_bearer(str(token_raw or ""))
 
 
+def _default_user_agent() -> str:
+    try:
+        from dte import detect_user_agent
+    except Exception:
+        return "Vertex-DTE/1.0"
+
+    try:
+        return detect_user_agent(None, None, None, None)
+    except Exception:
+        return "Vertex-DTE/1.0"
+
+
 def _to_timestamp(raw: Any) -> float | None:
     if raw is None:
         return None
@@ -262,7 +274,17 @@ def acquire_token(ambiente: str) -> str:
     env = _normalize_environment(ambiente)
     url, user, pwd = _resolve_auth_params(env)
     try:
-        resp = requests.post(url, data={"user": user, "pwd": pwd}, timeout=20)
+        resp = requests.post(
+            url,
+            data={"user": user, "pwd": pwd},
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Accept": "application/json",
+                "User-Agent": _default_user_agent(),
+            },
+            timeout=20,
+        )
+
     except Exception as exc:  # pragma: no cover - network failure
         raise RuntimeError("No se pudo conectar con el servicio de autenticación") from exc
 

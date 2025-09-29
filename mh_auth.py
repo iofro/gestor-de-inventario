@@ -1,3 +1,4 @@
+import base64
 import json
 import logging
 
@@ -95,3 +96,47 @@ def auth_headers(extra: dict | None = None, *, ambiente: str | None = None) -> d
     fingerprint = token[-8:] if len(token) >= 8 else token
     log.info("AUTH: USING MANUAL TOKEN (amb=%s fp=%s)", env, fingerprint)
     return headers
+
+
+def decode_jwt_claims(auth_header: str | None) -> dict:
+    """Extrae claims seguros del JWT contenido en ``auth_header``.
+
+    La firma no se valida: el objetivo es inspeccionar rápidamente el contenido
+    del payload para propósitos de diagnóstico. Nunca se devuelve ni se registra
+    el token completo.
+    """
+
+    if not isinstance(auth_header, str):
+        return {}
+
+    token = auth_header.strip()
+    if not token:
+        return {}
+
+    if token.lower().startswith("bearer "):
+        token = token[7:].strip()
+
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+
+    payload_b64 = parts[1]
+    padding = "=" * (-len(payload_b64) % 4)
+    try:
+        payload_bytes = base64.urlsafe_b64decode((payload_b64 + padding).encode("ascii"))
+    except Exception:
+        return {}
+
+    try:
+        payload = json.loads(payload_bytes.decode("utf-8"))
+    except Exception:
+        return {}
+
+    if not isinstance(payload, dict):
+        return {}
+
+    claims: dict = {}
+    for key in ("sub", "iat", "exp", "roles"):
+        if key in payload:
+            claims[key] = payload[key]
+    return claims

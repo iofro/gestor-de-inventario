@@ -512,6 +512,45 @@ def _post_json(url: str, headers: Mapping[str, Any], body: Any, *, tag: str):
         else:
             last_no_www = False
 
+        should_force_refresh = (
+            retry_401_enabled
+            and last_resp is not None
+            and last_resp.status_code == 401
+            and last_resp.text == ""
+            and last_no_www
+            and resp.status_code == 401
+            and text_body == ""
+            and no_www_auth
+            and attempt == 2
+        )
+
+        if should_force_refresh:
+            host_text = (host or "").lower()
+            ambiente_detectado = "apitest" if "apitest" in host_text else "produccion"
+            try:
+                from mh_auth import ensure_valid_bearer  # Lazy import to avoid cycles
+
+                refreshed = ensure_valid_bearer(
+                    ambiente_detectado,
+                    headers_dict.get("Authorization"),
+                    force=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "AUTH: no se pudo refrescar token para retry tag=%s: %s",
+                    tag,
+                    exc,
+                )
+            else:
+                if refreshed:
+                    logger.info(
+                        "AUTH: refreshed token for retry (fp=%s)",
+                        _fp_auth(refreshed),
+                    )
+                    headers_dict["Authorization"] = refreshed
+                    last_resp = resp
+                    continue
+
         if (
             last_resp is not None
             and last_resp.status_code == 401

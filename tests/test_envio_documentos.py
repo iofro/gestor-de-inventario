@@ -718,6 +718,342 @@ def test_transmitir_dte_tipo03_preserves_tipo(monkeypatch, tmp_path):
     assert payload["identificacion"]["tipoDte"] == "03"
 
 
+def test_enviar_nota_credito_canonicalizes_snapshot(tmp_path, monkeypatch):
+    base_code = "UUID-CREDITO-BASE"
+    note_code = "UUID-CREDITO-NOTA"
+    dtes_dir = tmp_path / "dtes"
+    typed_path = dtes_dir / "fcf" / base_code / "documento.json"
+    typed_path.parent.mkdir(parents=True, exist_ok=True)
+    typed_payload = {"identificacion": {"codigoGeneracion": base_code}}
+    typed_path.write_text(json.dumps(typed_payload), encoding="utf-8")
+
+    canonical_path = dtes_dir / base_code / "documento.json"
+    assert not canonical_path.exists()
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+
+    venta_id = 123
+    nota_id = 456
+
+    class DummyCursor:
+        def __init__(self):
+            self._last_query = ""
+
+        def execute(self, query, params):
+            self._last_query = query
+            return self
+
+        def fetchone(self):
+            if "FROM notas" in self._last_query:
+                return {"venta_id": venta_id, "tipo": "credito"}
+            return None
+
+    class DummyDB:
+        def __init__(self):
+            self.cursor = DummyCursor()
+            self.snapshot = Snapshot(
+                uuid=base_code,
+                path=str(typed_path),
+                tipo_documento="01",
+                fecha_emision="2024-01-01",
+                payload=typed_payload,
+            )
+            self.set_calls: list[tuple[int, str]] = []
+
+        def get_snapshot_by_venta(self, venta_ref):
+            if venta_ref == venta_id:
+                return self.snapshot
+            return None
+
+        def set_snapshot_path(self, venta_ref, path):
+            self.set_calls.append((venta_ref, path))
+
+        def update_venta_extra(self, *_args, **_kwargs):
+            pass
+
+    db = DummyDB()
+
+    payload = {
+        "identificacion": {
+            "codigoGeneracion": note_code,
+            "numeroControl": "NC-001",
+        },
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {
+            "totalLetras": "DIEZ",
+            "documentoRelacionado": [
+                {"codigoGeneracion": base_code, "numeroControl": "DTE-BASE-001"}
+            ],
+        },
+    }
+
+    monkeypatch.setattr("dte.generar_nota_credito_json", lambda _db, _nid: payload)
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _codigo: {})
+
+    out_dir = tmp_path / "out_nc"
+
+    def fake_paths(fecha, empresa, numero_control, doc_type, root=None):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir, str(out_dir / "documento.json")
+
+    monkeypatch.setattr(docs, "get_dte_document_paths", fake_paths)
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+
+    def fake_save_file(path, content, **kwargs):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            Path(path).write_text(content, encoding="utf-8")
+        else:
+            Path(path).write_text(str(content), encoding="utf-8")
+
+    monkeypatch.setattr("utils.stable_json.save_file", fake_save_file)
+
+    captured = {}
+
+    def fake_enviar_documento(db_obj, doc_id, data_obj, modo, jws_token=None):
+        captured["payload"] = data_obj
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar_documento)
+
+    enviar_nota_credito(db, nota_id, modo="normal")
+
+    assert canonical_path.exists()
+    assert json.loads(canonical_path.read_text(encoding="utf-8")) == typed_payload
+    assert db.set_calls == [(venta_id, str(canonical_path))]
+    assert captured.get("payload") is payload
+
+
+def test_enviar_nota_credito_canonicalizes_snapshot_without_metadata(
+    tmp_path, monkeypatch, caplog
+):
+    base_code = "UUID-CREDITO-BASE-MIN"
+    note_code = "UUID-CREDITO-NOTA-MIN"
+    dtes_dir = tmp_path / "dtes"
+    typed_path = dtes_dir / "fcf" / base_code / "documento.json"
+    typed_path.parent.mkdir(parents=True, exist_ok=True)
+    typed_payload = {"identificacion": {"codigoGeneracion": base_code}}
+    typed_path.write_text(json.dumps(typed_payload), encoding="utf-8")
+
+    canonical_path = dtes_dir / base_code / "documento.json"
+    assert not canonical_path.exists()
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+
+    venta_id = 2024
+    nota_id = 3030
+
+    class DummyCursor:
+        def __init__(self):
+            self._last_query = ""
+
+        def execute(self, query, params):
+            self._last_query = query
+            return self
+
+        def fetchone(self):
+            if "FROM notas" in self._last_query:
+                return {"venta_id": venta_id, "tipo": "credito"}
+            return None
+
+    class DummyDB:
+        def __init__(self):
+            self.cursor = DummyCursor()
+            self.snapshot = Snapshot(
+                uuid=base_code,
+                path=str(typed_path),
+                tipo_documento="01",
+                fecha_emision="2024-02-01",
+                payload=typed_payload,
+            )
+            self.set_calls: list[tuple[int, str]] = []
+
+        def get_snapshot_by_venta(self, venta_ref):
+            if venta_ref == venta_id:
+                return self.snapshot
+            return None
+
+        def set_snapshot_path(self, venta_ref, path):
+            self.set_calls.append((venta_ref, path))
+
+        def update_venta_extra(self, *_args, **_kwargs):
+            pass
+
+    db = DummyDB()
+
+    payload = {
+        "identificacion": {
+            "codigoGeneracion": note_code,
+            "numeroControl": "NC-002",
+        },
+        "receptor": {"nombre": "Cliente"},
+        "cuerpoDocumento": [
+            {
+                "cantidad": 1,
+                "precioUni": 10,
+                "descripcion": "Producto",
+            }
+        ],
+        "resumen": {"totalLetras": "DIEZ"},
+    }
+
+    monkeypatch.setattr("dte.generar_nota_credito_json", lambda _db, _nid: payload)
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _codigo: {})
+
+    out_dir = tmp_path / "out_nc_sin_meta"
+
+    def fake_paths(fecha, empresa, numero_control, doc_type, root=None):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir, str(out_dir / "documento.json")
+
+    monkeypatch.setattr(docs, "get_dte_document_paths", fake_paths)
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+
+    def fake_save_file(path, content, **kwargs):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            Path(path).write_text(content, encoding="utf-8")
+        else:
+            Path(path).write_text(str(content), encoding="utf-8")
+
+    monkeypatch.setattr("utils.stable_json.save_file", fake_save_file)
+
+    captured = {}
+
+    def fake_enviar_documento(db_obj, doc_id, data_obj, modo, jws_token=None):
+        captured["payload"] = data_obj
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar_documento)
+
+    caplog.set_level(logging.INFO)
+
+    enviar_nota_credito(db, nota_id, modo="normal")
+
+    assert canonical_path.exists()
+    assert json.loads(canonical_path.read_text(encoding="utf-8")) == typed_payload
+    assert db.set_calls == [(venta_id, str(canonical_path))]
+    assert any(
+        "source_path.parent" in record.getMessage()
+        and base_code in record.getMessage()
+        for record in caplog.records
+    )
+    assert captured.get("payload") is payload
+
+
+def test_enviar_nota_debito_respects_existing_canonical_snapshot(tmp_path, monkeypatch):
+    base_code = "UUID-DEBITO-BASE"
+    note_code = "UUID-DEBITO-NOTA"
+    dtes_dir = tmp_path / "dtes"
+    canonical_path = dtes_dir / base_code / "documento.json"
+    canonical_path.parent.mkdir(parents=True, exist_ok=True)
+    canonical_payload = {"identificacion": {"codigoGeneracion": base_code, "campo": "canon"}}
+    canonical_path.write_text(json.dumps(canonical_payload), encoding="utf-8")
+    before_mtime = canonical_path.stat().st_mtime_ns
+
+    typed_path = dtes_dir / "ccf" / base_code / "documento.json"
+    typed_path.parent.mkdir(parents=True, exist_ok=True)
+    typed_payload = {"identificacion": {"codigoGeneracion": base_code, "campo": "typed"}}
+    typed_path.write_text(json.dumps(typed_payload), encoding="utf-8")
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+
+    venta_id = 789
+    nota_id = 321
+
+    class DummyCursor:
+        def __init__(self):
+            self._last_query = ""
+
+        def execute(self, query, params):
+            self._last_query = query
+            return self
+
+        def fetchone(self):
+            if "FROM notas" in self._last_query:
+                return {"venta_id": venta_id, "tipo": "debito"}
+            return None
+
+    class DummyDB:
+        def __init__(self):
+            self.cursor = DummyCursor()
+            self.snapshot = Snapshot(
+                uuid=base_code,
+                path=str(typed_path),
+                tipo_documento="01",
+                fecha_emision="2024-01-02",
+                payload=typed_payload,
+            )
+            self.set_calls: list[tuple[int, str]] = []
+
+        def get_snapshot_by_venta(self, venta_ref):
+            if venta_ref == venta_id:
+                return self.snapshot
+            return None
+
+        def set_snapshot_path(self, venta_ref, path):
+            self.set_calls.append((venta_ref, path))
+
+        def update_venta_extra(self, *_args, **_kwargs):
+            pass
+
+    db = DummyDB()
+
+    payload = {
+        "identificacion": {
+            "codigoGeneracion": note_code,
+            "numeroControl": "ND-001",
+        },
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {
+            "totalLetras": "QUINCE",
+            "documentoRelacionado": [
+                {"codigoGeneracion": base_code, "numeroControl": "DTE-BASE-002"}
+            ],
+        },
+    }
+
+    monkeypatch.setattr("dte.generar_nota_debito_json", lambda _db, _nid: payload)
+    monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _codigo: {})
+
+    out_dir = tmp_path / "out_nd"
+
+    def fake_paths_debito(fecha, empresa, numero_control, doc_type, root=None):
+        out_dir.mkdir(parents=True, exist_ok=True)
+        return out_dir, str(out_dir / "documento.json")
+
+    monkeypatch.setattr(docs, "get_dte_document_paths", fake_paths_debito)
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+
+    def fake_save_file_debito(path, content, **kwargs):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        if isinstance(content, str):
+            Path(path).write_text(content, encoding="utf-8")
+        else:
+            Path(path).write_text(str(content), encoding="utf-8")
+
+    monkeypatch.setattr("utils.stable_json.save_file", fake_save_file_debito)
+
+    captured = {}
+
+    def fake_enviar_documento(db_obj, doc_id, data_obj, modo, jws_token=None):
+        captured["payload"] = data_obj
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar_documento)
+
+    enviar_nota_debito(db, nota_id, modo="normal")
+
+    assert canonical_path.exists()
+    assert json.loads(canonical_path.read_text(encoding="utf-8")) == canonical_payload
+    assert canonical_path.stat().st_mtime_ns == before_mtime
+    assert db.set_calls == [(venta_id, str(canonical_path))]
+    assert captured.get("payload") is payload
+
+
 def test_enviar_nota_credito(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta = create_sale(db)

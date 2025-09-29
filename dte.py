@@ -12,7 +12,7 @@ import logging
 import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, getcontext
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 from urllib.parse import urlparse
 from email.utils import parsedate_to_datetime
 
@@ -6660,6 +6660,162 @@ def _ensure_nota_snapshot(db: DB, nota_id: int, *, expected_tipo: str | None = N
         raise SnapshotNotFoundError(venta_id, nota_id)
 
 
+def _ensure_canonical_snapshot(
+    source_path: str | None,
+    codigo: str,
+    *,
+    venta_id: int,
+    db: DB,
+) -> Optional[Path]:
+    """Ensure that the canonical snapshot ``dtes/<codigo>/documento.json`` exists.
+
+    This helper performs best-effort copying from ``source_path`` to the canonical
+    location using an atomic ``os.replace`` strategy.  Any error is logged as a
+    warning to avoid interrupting the note generation flow.
+    """
+
+    codigo_norm = str(codigo or "").strip()
+    if not codigo_norm:
+        return None
+
+    if not DTES_DIR:
+        return None
+
+    try:
+        dest_dir = Path(DTES_DIR) / codigo_norm
+    except TypeError:
+        logger.warning("SNAPSHOT: destino inválido para código %s", codigo_norm)
+        return None
+
+    dest_path = dest_dir / "documento.json"
+
+    def _update_db(path_exists: bool) -> None:
+        if not path_exists:
+            return
+        try:
+            setter = getattr(db, "set_snapshot_path")
+        except AttributeError:
+            return
+        if not callable(setter):
+            return
+        try:
+            setter(venta_id, str(dest_path))
+        except Exception:
+            pass
+
+    try:
+        if dest_path.exists():
+            logger.info("SNAPSHOT: canónico ya presente %s", dest_path)
+            _update_db(True)
+            return dest_path
+    except Exception as exc:
+        logger.warning("SNAPSHOT: error verificando destino %s: %s", dest_path, exc)
+        return dest_path
+
+    if not source_path:
+        return dest_path
+
+    try:
+        source = Path(source_path)
+    except Exception as exc:
+        logger.warning("SNAPSHOT: ruta de origen inválida %s: %s", source_path, exc)
+        return dest_path
+
+    try:
+        source_cmp = source.resolve(strict=False)
+    except Exception:
+        source_cmp = source
+    try:
+        dest_cmp = dest_path.resolve(strict=False)
+    except Exception:
+        dest_cmp = dest_path
+    if str(source_cmp) == str(dest_cmp):
+        return dest_path
+
+    try:
+        if not source.exists():
+            logger.warning("SNAPSHOT: origen inexistente %s", source)
+            return dest_path
+    except Exception as exc:
+        logger.warning("SNAPSHOT: error accediendo origen %s: %s", source, exc)
+        return dest_path
+
+    tmp_path = dest_path.with_name(dest_path.name + ".tmp")
+
+    try:
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        if tmp_path.exists():
+            tmp_path.unlink()
+    except Exception as exc:
+        logger.warning("SNAPSHOT: no se pudo preparar destino %s: %s", dest_path, exc)
+        return dest_path
+
+    try:
+        shutil.copyfile(source, tmp_path)
+        os.replace(tmp_path, dest_path)
+        logger.info("SNAPSHOT: canonicalized %s → %s", source, dest_path)
+    except Exception as exc:
+        logger.warning("SNAPSHOT: fallo al canonicalizar %s → %s: %s", source, dest_path, exc)
+        try:
+            if tmp_path.exists():
+                tmp_path.unlink()
+        except Exception:
+            pass
+        return dest_path
+
+    try:
+        exists_now = dest_path.exists()
+    except Exception:
+        exists_now = False
+    _update_db(exists_now)
+
+    return dest_path
+
+
+def _resolve_base_document_code(
+    data: Mapping[str, Any], source_path: str | None
+) -> tuple[str | None, str | None]:
+    """Extract the codigoGeneracion/numeroControl of the related base document."""
+
+    related = None
+    try:
+        resumen = data.get("resumen")  # type: ignore[attr-defined]
+    except AttributeError:
+        resumen = None
+    if isinstance(resumen, Mapping):
+        related = resumen.get("documentoRelacionado")
+    if related is None:
+        related = data.get("documentoRelacionado")
+
+    entries: list[Any] = []
+    if isinstance(related, Mapping):
+        entries = [related]
+    elif isinstance(related, list):
+        entries = list(related)
+
+    for entry in entries:
+        if not isinstance(entry, Mapping):
+            continue
+        for key in ("codigoGeneracion", "numeroControl"):
+            value = entry.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text:
+                return text, f"documentoRelacionado.{key}"
+
+    if source_path:
+        try:
+            candidate = Path(source_path).parent.name
+        except Exception:
+            candidate = ""
+        candidate = str(candidate or "").strip()
+        if candidate:
+            return candidate, "source_path.parent"
+
+    return None, None
+
+
 def enviar_factura(db: DB, venta_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una factura electrónica."""
     if modo is None:
@@ -6690,6 +6846,77 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
 
     data = generar_nota_credito_json(db, nota_id)
+    venta_id_base = None
+    try:
+        row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
+    except Exception:
+        row = None
+    if row is not None:
+        try:
+            venta_id_base = row["venta_id"]
+        except Exception:
+            try:
+                venta_id_base = row[0]
+            except Exception:
+                venta_id_base = None
+
+    source_path: str | None = None
+    venta_id_lookup = venta_id_base
+    if venta_id_lookup not in (None, ""):
+        try:
+            snapshot_obj = db.get_snapshot_by_venta(venta_id_lookup)
+        except AttributeError:
+            snapshot_obj = None
+        except Exception as exc:
+            logger.warning(
+                "SNAPSHOT: error obteniendo snapshot venta_id=%s: %s",
+                venta_id_lookup,
+                exc,
+            )
+            snapshot_obj = None
+        if snapshot_obj is not None:
+            source_attr = getattr(snapshot_obj, "path", snapshot_obj)
+            if source_attr:
+                source_path = str(source_attr)
+
+    if venta_id_base in (None, ""):
+        venta_id_base = nota_id
+
+    base_code, base_origin = _resolve_base_document_code(data, source_path)
+    if base_code and base_origin:
+        logger.info(
+            "SNAPSHOT: código base %s derivado desde %s", base_code, base_origin
+        )
+    elif not base_code:
+        ident_data = data.get("identificacion") or {}
+        nota_code = str(
+            ident_data.get("codigoGeneracion")
+            or ident_data.get("numeroControl")
+            or nota_id
+        ).strip()
+        logger.warning(
+            "SNAPSHOT: no se pudo inferir código base para nota %s (source=%s)",
+            nota_code,
+            source_path or "desconocido",
+        )
+    dest_path = _ensure_canonical_snapshot(
+        source_path, str(base_code or ""), venta_id=venta_id_base, db=db
+    )
+    if dest_path is not None:
+        try:
+            if not dest_path.exists():
+                logger.warning(
+                    "SNAPSHOT: destino canónico ausente tras intento (codigo_base=%s, venta_id=%s, source=%s)",
+                    base_code or "",
+                    venta_id_base,
+                    source_path or "desconocido",
+                )
+        except Exception as exc:
+            logger.warning(
+                "SNAPSHOT: error verificando canónico tras intento %s: %s",
+                dest_path,
+                exc,
+            )
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("05")
     # Validación omitida.
@@ -6748,6 +6975,77 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
 
     data = generar_nota_debito_json(db, nota_id)
+    venta_id_base = None
+    try:
+        row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
+    except Exception:
+        row = None
+    if row is not None:
+        try:
+            venta_id_base = row["venta_id"]
+        except Exception:
+            try:
+                venta_id_base = row[0]
+            except Exception:
+                venta_id_base = None
+
+    source_path: str | None = None
+    venta_id_lookup = venta_id_base
+    if venta_id_lookup not in (None, ""):
+        try:
+            snapshot_obj = db.get_snapshot_by_venta(venta_id_lookup)
+        except AttributeError:
+            snapshot_obj = None
+        except Exception as exc:
+            logger.warning(
+                "SNAPSHOT: error obteniendo snapshot venta_id=%s: %s",
+                venta_id_lookup,
+                exc,
+            )
+            snapshot_obj = None
+        if snapshot_obj is not None:
+            source_attr = getattr(snapshot_obj, "path", snapshot_obj)
+            if source_attr:
+                source_path = str(source_attr)
+
+    if venta_id_base in (None, ""):
+        venta_id_base = nota_id
+
+    base_code, base_origin = _resolve_base_document_code(data, source_path)
+    if base_code and base_origin:
+        logger.info(
+            "SNAPSHOT: código base %s derivado desde %s", base_code, base_origin
+        )
+    elif not base_code:
+        ident_data = data.get("identificacion") or {}
+        nota_code = str(
+            ident_data.get("codigoGeneracion")
+            or ident_data.get("numeroControl")
+            or nota_id
+        ).strip()
+        logger.warning(
+            "SNAPSHOT: no se pudo inferir código base para nota %s (source=%s)",
+            nota_code,
+            source_path or "desconocido",
+        )
+    dest_path = _ensure_canonical_snapshot(
+        source_path, str(base_code or ""), venta_id=venta_id_base, db=db
+    )
+    if dest_path is not None:
+        try:
+            if not dest_path.exists():
+                logger.warning(
+                    "SNAPSHOT: destino canónico ausente tras intento (codigo_base=%s, venta_id=%s, source=%s)",
+                    base_code or "",
+                    venta_id_base,
+                    source_path or "desconocido",
+                )
+        except Exception as exc:
+            logger.warning(
+                "SNAPSHOT: error verificando canónico tras intento %s: %s",
+                dest_path,
+                exc,
+            )
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("06")
     # Validación omitida.

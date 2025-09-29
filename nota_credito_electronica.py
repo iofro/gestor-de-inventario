@@ -32,7 +32,7 @@ from utils.identificacion import is_valid_nit, normalize_dui_to_nit9
 from utils.env import env_flag
 from utils import metrics
 from utils.receptor import ensure_receptor_completo
-from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str
+from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str, fecha_iso
 from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import solo_digitos
 from utils.snapshot import SnapshotNotFoundError, normalize_snapshot
@@ -275,7 +275,7 @@ def generar_nce_desde_dte(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_emision_por_defecto,
+        "fecEmi": fecha_iso(fecha_emision_por_defecto),
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
@@ -304,24 +304,26 @@ def generar_nce_desde_dte(
         tipo_generacion = 1
         numero_documento = str(numero_control or "").strip()
 
-    fecha_doc_rel = fecha_ddmmaaaa(
+    fecha_doc_rel_base = fecha_ddmmaaaa(
         origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
     )
-    if not fecha_doc_rel and fecha_origen:
-        fecha_doc_rel = fecha_ddmmaaaa(fecha_origen)
+    if not fecha_doc_rel_base and fecha_origen:
+        fecha_doc_rel_base = fecha_ddmmaaaa(fecha_origen)
 
-    fecha_emision_nota = fecha_origen or fecha_doc_rel or fecha_emision_por_defecto
-    if fecha_emision_nota:
-        identificacion["fecEmi"] = fecha_emision_nota
-    if not fecha_doc_rel:
-        fecha_doc_rel = fecha_emision_nota
+    fecha_emision_nota_base = (
+        fecha_origen or fecha_doc_rel_base or fecha_emision_por_defecto
+    )
+    if fecha_emision_nota_base:
+        identificacion["fecEmi"] = fecha_iso(fecha_emision_nota_base)
+    if not fecha_doc_rel_base:
+        fecha_doc_rel_base = fecha_emision_nota_base
 
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,
             "tipoGeneracion": tipo_generacion,
             "numeroDocumento": numero_documento,
-            "fechaEmision": fecha_doc_rel,
+            "fechaEmision": fecha_iso(fecha_doc_rel_base),
         }
     ]
 

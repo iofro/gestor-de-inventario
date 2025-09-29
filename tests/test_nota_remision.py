@@ -38,7 +38,7 @@ def _sample_doc_rel():
             "tipoDocumento": "03",
             "tipoGeneracion": 2,
             "numeroDocumento": "12345678-ABCD-1234-ABCD-1234567890AB",
-            "fechaEmision": "01/01/2024",
+            "fechaEmision": "2024-01-01",
         }
     ]
 
@@ -69,9 +69,9 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
-    assert doc_rel["fechaEmision"] == "01/01/2024"
+    assert doc_rel["fechaEmision"] == "2024-01-01"
     assert factura["identificacion"]["fecEmi"] == "01/01/2024"
-    assert data["identificacion"]["fecEmi"] == "01/01/2024"
+    assert data["identificacion"]["fecEmi"] == "2024-01-01"
     item = data["cuerpoDocumento"][0]
     assert item["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
     assert item["codTributo"] is None

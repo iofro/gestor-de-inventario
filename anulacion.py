@@ -26,6 +26,8 @@ from dte import (
     detect_user_agent,
     _parse_error_response,
     APP_VERSION,
+    _log_http_exchange,
+    TIMEOUT,
 )
 from utils.jws import sign_json
 
@@ -840,8 +842,17 @@ def _post_invalidacion(
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
+    _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+
     try:
-        resp = requests.post(url, headers=headers, json=body, timeout=20)
+        resp = requests.post(
+            url,
+            headers=headers,
+            json=body,
+            timeout=TIMEOUT,
+            allow_redirects=not _no_redirects,
+        )
+        _log_http_exchange(resp, _no_redirects)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 

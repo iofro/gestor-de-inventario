@@ -7,11 +7,13 @@ import platform
 import sys
 import re
 import shutil
-import requests as _requests
+import hashlib
+import logging
 from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from typing import Any, Mapping
 from urllib.parse import urlparse
+
 from db import DB
 import requests
 from configparser import ConfigParser
@@ -31,7 +33,6 @@ from utils.catalogos import (
     validar_dep_muni_por_catalogo,
     GeoValidationError,
 )
-import logging
 import warnings
 import xml.etree.ElementTree as ET
 from utils.fiscal_extra import normalize_tipo_fiscal
@@ -78,6 +79,68 @@ except Exception:  # pragma: no cover - fallback when VERSION is missing
     APP_VERSION = "1.0.0"
 
 logger = logging.getLogger(__name__)
+TIMEOUT = int(os.getenv("DTE_HTTP_TIMEOUT", "20"))
+
+
+def _fp_auth(hdr_val: str) -> str:
+    """Devuelve un fingerprint seguro del Authorization real enviado.
+    No loguear el token; solo un SHA-1 truncado o 'MISSING'."""
+
+    if not hdr_val:
+        return "MISSING"
+    return hashlib.sha1(hdr_val.encode("utf-8")).hexdigest()[:10]
+
+
+def _log_http_exchange(resp, no_redirects: bool | None = None):
+    """Loguea request final, history de redirects y cabeceras clave sin exponer secretos."""
+
+    try:
+        req = resp.request
+        final_host = urlparse(req.url).netloc
+        auth_hdr = req.headers.get("Authorization")
+        latency_sec = None
+        try:
+            if resp.elapsed is not None:
+                latency_sec = resp.elapsed.total_seconds()
+        except Exception:
+            latency_sec = None
+        latency_val = f"{latency_sec:.3f}s" if latency_sec is not None else "unknown"
+        logger.info(
+            "HTTP: FINAL status=%s url=%s host=%s auth_fp=%s history=%d latency=%s no_redirects=%s",
+            resp.status_code,
+            req.url,
+            final_host,
+            _fp_auth(auth_hdr),
+            len(resp.history),
+            latency_val,
+            bool(no_redirects),
+        )
+        for i, hop in enumerate(resp.history):
+            hop_host = urlparse(hop.request.url).netloc
+            loc = hop.headers.get("Location")
+            logger.info(
+                "HTTP: HOP[%d] %s %s (host=%s) auth_fp=%s -> Location=%s",
+                i,
+                hop.status_code,
+                hop.request.url,
+                hop_host,
+                _fp_auth(hop.request.headers.get("Authorization")),
+                loc,
+            )
+        s = resp.headers
+        logger.info(
+            "HTTP: RESP_HDRS server=%s via=%s date=%s www-auth=%s x-request-id=%s x-correlation-id=%s content-type=%s content-length=%s",
+            s.get("Server"),
+            s.get("Via"),
+            s.get("Date"),
+            s.get("WWW-Authenticate"),
+            s.get("x-request-id") or s.get("X-Request-Id"),
+            s.get("x-correlation-id") or s.get("X-Correlation-Id"),
+            s.get("Content-Type"),
+            s.get("Content-Length") or s.get("content-length"),
+        )
+    except Exception as e:
+        logger.warning("HTTP: LOG_ERROR %r", e)
 DEFAULT_RECEPCION_URL = "https://apitest.dtes.mh.gob.sv/fesv/recepciondte"
 DEFAULT_EVENTO_URL = "https://apitest.dtes.mh.gob.sv/fesv/contingencia"
 PATCHES_DIR = resource_path("schema_patches")
@@ -5085,9 +5148,18 @@ def _post_dte(
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
+    _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+
     try:
         print(json.dumps(sobre, ensure_ascii=False))
-        resp = requests.post(url, headers=headers, json=sobre, timeout=20)
+        resp = requests.post(
+            url,
+            headers=headers,
+            json=sobre,
+            timeout=TIMEOUT,
+            allow_redirects=not _no_redirects,
+        )
+        _log_http_exchange(resp, _no_redirects)
     except (requests.ConnectionError, requests.Timeout):
         return {"estado": "Error", "detalle": "Sin conexión a Internet"}
     except requests.RequestException as exc:
@@ -5172,9 +5244,18 @@ def _post_evento(
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
+    _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+
     try:
         print(json.dumps(body, ensure_ascii=False))
-        resp = requests.post(url, headers=headers, json=body, timeout=20)
+        resp = requests.post(
+            url,
+            headers=headers,
+            json=body,
+            timeout=TIMEOUT,
+            allow_redirects=not _no_redirects,
+        )
+        _log_http_exchange(resp, _no_redirects)
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
@@ -5475,8 +5556,17 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
             ambiente=cfg.get("ambiente"),
         )
 
+        _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
+
         try:
-            resp = requests.post(url, headers=headers, json=body, timeout=20)
+            resp = requests.post(
+                url,
+                headers=headers,
+                json=body,
+                timeout=TIMEOUT,
+                allow_redirects=not _no_redirects,
+            )
+            _log_http_exchange(resp, _no_redirects)
             data_resp = resp.json() if resp.content else {}
         except Exception as exc:  # pragma: no cover - defensive
             data_resp = {"estado": "Error", "detalle": str(exc)}

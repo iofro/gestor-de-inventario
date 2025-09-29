@@ -1,4 +1,5 @@
 import fitz
+from copy import deepcopy
 from decimal import Decimal, ROUND_HALF_UP
 from db import DB
 from dte import generar_dte_json
@@ -135,6 +136,45 @@ def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
     assert receptor_nota["nit"] == "06141407100012"
     assert receptor_nota["nrc"] == "123"
     assert receptor_nota.get("nombreComercial") in {None, "Cliente"}
+
+
+def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_fecha = "2024-03-15"
+    venta_id = db.add_venta(venta_fecha, 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+
+    dte_base = generar_dte_json(db, venta_id, tipo_dte="01")
+    dte_alterado = deepcopy(dte_base)
+    dte_alterado["identificacion"]["fecEmi"] = "2024-03-18"
+
+    monkeypatch.setattr(
+        "nota_credito_electronica.generar_dte_json",
+        lambda *args, **kwargs: deepcopy(dte_alterado),
+    )
+
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-03-20', 10, 'Dev')",
+        (venta_id,),
+    ).lastrowid
+
+    nce = generar_nce_desde_nota(db, nota_id, strict_snapshot=False)
+    doc_rel = nce["documentoRelacionado"][0]
+    assert doc_rel["fechaEmision"] == venta_fecha
 
 
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):

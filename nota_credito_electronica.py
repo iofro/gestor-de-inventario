@@ -154,8 +154,9 @@ def generar_nce_desde_nota(
         fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")
-        if isinstance(identificacion, dict) and not identificacion.get("fecEmi"):
-            identificacion["fecEmi"] = fecha_origen
+        if isinstance(identificacion, dict):
+            if identificacion.get("fecEmi") != fecha_origen:
+                identificacion["fecEmi"] = fecha_origen
 
     detalles = None
     if nota.get("detalles"):
@@ -172,6 +173,7 @@ def generar_nce_desde_nota(
             detalles=detalles,
             ambiente=ambiente,
             motivo=nota.get("motivo"),
+            fecha_origen=fecha_origen,
         )
     else:
         resumen_origen = dte_origen.get("resumen", {})
@@ -195,6 +197,7 @@ def generar_nce_desde_nota(
             ambiente=ambiente,
             motivo=nota.get("motivo"),
             monto=monto_nc,
+            fecha_origen=fecha_origen,
         )
 
     doc_rel = resultado.get("documentoRelacionado") or []
@@ -235,6 +238,7 @@ def generar_nce_desde_dte(
     ambiente: str = "00",
     motivo: Optional[str] = None,
     monto: Decimal | None = None,
+    fecha_origen: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una NCE."""
     if detalles is None:
@@ -290,6 +294,8 @@ def generar_nce_desde_dte(
     fecha_doc_rel = normalizar_fecha_iso(
         origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
     )
+    if not fecha_doc_rel and fecha_origen:
+        fecha_doc_rel = normalizar_fecha_iso(fecha_origen)
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,

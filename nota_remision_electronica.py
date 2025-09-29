@@ -217,6 +217,7 @@ def generar_nota_remision_desde_factura(
     detalles: Optional[Iterable[dict]] = None,
     extension: Optional[dict] = None,
     ambiente: str = "00",
+    fecha_origen: Optional[str] = None,
 ) -> dict:
     """Genera una NR reutilizando los datos de una factura ``factura``."""
 
@@ -224,12 +225,23 @@ def generar_nota_remision_desde_factura(
     receptor = factura.get("receptor", {})
     receptor.setdefault("bienTitulo", "01")
     detalles = detalles or factura.get("cuerpoDocumento", [])
-    ident = factura.get("identificacion", {})
-    fecha_emision = normalizar_fecha_iso(ident.get("fecEmi"))
-    if fecha_emision:
-        ident["fecEmi"] = fecha_emision
-    else:
-        fecha_emision = ident.get("fecEmi")
+    ident = factura.get("identificacion") or {}
+    if not isinstance(ident, dict):
+        ident = {}
+        factura["identificacion"] = ident
+    fecha_emision = None
+    if fecha_origen:
+        fecha_normalizada = normalizar_fecha_iso(fecha_origen)
+        if fecha_normalizada:
+            fecha_emision = fecha_normalizada
+            ident["fecEmi"] = fecha_emision
+    if not fecha_emision:
+        fecha_normalizada = normalizar_fecha_iso(ident.get("fecEmi"))
+        if fecha_normalizada:
+            fecha_emision = fecha_normalizada
+            ident["fecEmi"] = fecha_emision
+        else:
+            fecha_emision = ident.get("fecEmi")
     doc_rel = [
         {
             "tipoDocumento": ident.get("tipoDte"),

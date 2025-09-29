@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 from datetime import timedelta
+from typing import Any
 from types import SimpleNamespace
 from unittest import mock
 
@@ -149,6 +150,51 @@ def test_post_json_retry_on_empty_401(requests_mock, monkeypatch, caplog):
     assert second_request.headers.get("Connection") == "close"
     retry_msgs = [rec.message for rec in caplog.records if "401 vacío" in rec.message]
     assert len(retry_msgs) >= 2
+
+
+@pytest.mark.parametrize("host", ["apitest.dtes.mh.gob.sv", "api.dtes.mh.gob.sv"])
+def test_post_json_refreshes_token_on_persistent_empty_401(requests_mock, monkeypatch, caplog, host):
+    url = f"https://{host}/fesv/recepciondte"
+    headers = _base_headers()
+    body = {"ambiente": "00"}
+    monkeypatch.setenv("DTE_BACKOFF_MS", "0")
+    caplog.set_level(logging.INFO, logger="dte")
+
+    ensure_calls: dict[str, Any] = {}
+
+    def fake_ensure(env, current, *, min_ttl_s=300, force):
+        ensure_calls.setdefault("count", 0)
+        ensure_calls["count"] += 1
+        ensure_calls["env"] = env
+        ensure_calls["current"] = current
+        ensure_calls["min_ttl_s"] = min_ttl_s
+        ensure_calls["force"] = force
+        return "Bearer REFRESHED"
+
+    monkeypatch.setattr("mh_auth.ensure_valid_bearer", fake_ensure)
+
+    requests_mock.post(
+        url,
+        [
+            {"status_code": 401, "text": "", "headers": {}},
+            {"status_code": 401, "text": "", "headers": {}},
+            {"status_code": 200, "json": {"estado": "RECIBIDO"}},
+        ],
+    )
+
+    resp, data, _ = _post_json(url, headers, body, tag="test_retry_refresh")
+
+    assert resp.status_code == 200
+    assert data == {"estado": "RECIBIDO"}
+    assert len(requests_mock.request_history) == 3
+    assert requests_mock.request_history[2].headers.get("Authorization") == "Bearer REFRESHED"
+    expected_env = "apitest" if "apitest" in host else "produccion"
+    assert ensure_calls["env"] == expected_env
+    assert ensure_calls["current"] == "Bearer token"
+    assert ensure_calls["force"] is True
+    assert ensure_calls["min_ttl_s"] == 300
+    assert ensure_calls["count"] == 1
+    assert any("AUTH: refreshed token for retry" in rec.message for rec in caplog.records)
 
 
 def test_post_json_normalizes_authorization(requests_mock, caplog):

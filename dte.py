@@ -87,7 +87,7 @@ TIMEOUT = int(os.getenv("DTE_HTTP_TIMEOUT", "20"))
 # - DTE_DEBUG_HTTP=0
 # - DTE_DEBUG_NO_REDIRECTS=0
 # - DTE_RETRY_401_EMPTY=1
-# - DTE_BACKOFF_MS=350
+# - DTE_BACKOFF_MS=8000
 # - DTE_RATE_LIMIT_MS=0
 # - DTE_HTTP_TIMEOUT=20
 # - DTE_DEBUG_DUMP_REQ_BODY=0
@@ -377,10 +377,10 @@ def _post_json(url: str, headers: Mapping[str, Any], body: Any, *, tag: str):
             logger.warning("HTTP: RATE_LIMIT inválido=%s", raw_rate)
     backoff_ms_raw = os.getenv("DTE_BACKOFF_MS")
     try:
-        backoff_ms = max(0, int(float(backoff_ms_raw))) if backoff_ms_raw else 350
+        backoff_ms = max(0, int(float(backoff_ms_raw))) if backoff_ms_raw else 8000
     except Exception:
         logger.warning("HTTP: BACKOFF inválido=%s", backoff_ms_raw)
-        backoff_ms = 350
+        backoff_ms = 8000
     retry_401_enabled = env_flag("DTE_RETRY_401_EMPTY", default=True)
     allow_redirects = not env_flag("DTE_DEBUG_NO_REDIRECTS")
 
@@ -511,6 +511,45 @@ def _post_json(url: str, headers: Mapping[str, Any], body: Any, *, tag: str):
             last_no_www = (last_www is None) or (str(last_www).strip() == "")
         else:
             last_no_www = False
+
+        should_force_refresh = (
+            retry_401_enabled
+            and last_resp is not None
+            and last_resp.status_code == 401
+            and last_resp.text == ""
+            and last_no_www
+            and resp.status_code == 401
+            and text_body == ""
+            and no_www_auth
+            and attempt == 2
+        )
+
+        if should_force_refresh:
+            host_text = (host or "").lower()
+            ambiente_detectado = "apitest" if "apitest" in host_text else "produccion"
+            try:
+                from mh_auth import ensure_valid_bearer  # Lazy import to avoid cycles
+
+                refreshed = ensure_valid_bearer(
+                    ambiente_detectado,
+                    headers_dict.get("Authorization"),
+                    force=True,
+                )
+            except Exception as exc:
+                logger.warning(
+                    "AUTH: no se pudo refrescar token para retry tag=%s: %s",
+                    tag,
+                    exc,
+                )
+            else:
+                if refreshed:
+                    logger.info(
+                        "AUTH: refreshed token for retry (fp=%s)",
+                        _fp_auth(refreshed),
+                    )
+                    headers_dict["Authorization"] = refreshed
+                    last_resp = resp
+                    continue
 
         if (
             last_resp is not None

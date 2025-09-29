@@ -9,7 +9,12 @@ from utils.doc_generation import generate_ticket_pdf
 
 
 def test_ticket_fe_pdf_clean(tmp_path):
-    venta = {"fecha": "2025-01-01", "total": 2.0}
+    venta = {
+        "fecha": "2025-01-01",
+        "total": 2.0,
+        "cliente": "Cliente Demo",
+        "documento": "00000000-0",
+    }
     detalles = [{"descripcion": "Acetaminofen 500mg", "cantidad": 1, "precio_unitario": 2.0}]
     dte_json = {
         "identificacion": {
@@ -60,11 +65,19 @@ def test_ticket_fe_pdf_clean(tmp_path):
     assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in normalized
     assert "CONSUMIDOR FINAL" in normalized
     assert "TOTAL A PAGAR" in normalized or "Total a pagar" in text
-    assert "EFECTIVO" in text or "PAGOS" in text
+    lower_text = text.lower()
+    assert "condición de pago" in lower_text
+    assert "contado" in lower_text
 
 
 def test_generate_ticket_pdf_defaults_and_persists_es_ticket(tmp_path, monkeypatch):
-    venta = {"id": 1, "fecha": "2025-02-01", "total": 2.0}
+    venta = {
+        "id": 1,
+        "fecha": "2025-02-01",
+        "total": 2.0,
+        "cliente": "Cliente Demo",
+        "documento": "00000000-0",
+    }
     detalles = [
         {"cantidad": 1, "precio_unitario": 2.0, "descripcion": "Acetaminofen 500mg"}
     ]
@@ -179,4 +192,6 @@ def test_generate_ticket_pdf_defaults_and_persists_es_ticket(tmp_path, monkeypat
 
     assert "DOCUMENTO TRIBUTARIO ELECTRÓNICO" in normalized
     assert "CONSUMIDOR FINAL" in normalized
-    assert "EFECTIVO" in text or "PAGOS" in text
+    lower_text = text.lower()
+    assert "condición de pago" in lower_text
+    assert "contado" in lower_text

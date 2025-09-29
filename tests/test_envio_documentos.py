@@ -36,6 +36,11 @@ def _stub_auth_headers(monkeypatch):
     monkeypatch.setattr(dte, "auth_headers", fake_auth_headers)
 
 
+@pytest.fixture(autouse=True)
+def _freeze_nota_fecemi(monkeypatch):
+    monkeypatch.setattr(dte, "fecha_emision_hoy_str", lambda now=None: "2024-01-02")
+
+
 class DummyResponse:
     def __init__(self, url, headers, payload, *, status_code=200, response_headers=None):
         self.status_code = status_code
@@ -1059,18 +1064,8 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     venta = create_sale(db)
     nota_id = db.add_nota(venta, "credito", "2024-01-02", 10, "motivo")
 
-    dummy_snapshot = Snapshot(
-        uuid="SNAPSHOT",
-        path=str(tmp_path / "snapshot.json"),
-        tipo_documento="01",
-        fecha_emision="2024-01-01",
-        payload={},
-    )
-    monkeypatch.setattr(
-        db,
-        "get_snapshot_by_venta",
-        lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
-    )
+    forced_today = "2025-09-29"
+    monkeypatch.setattr(dte, "fecha_emision_hoy_str", lambda now=None: forced_today)
 
     dummy_snapshot = Snapshot(
         uuid="SNAPSHOT",
@@ -1085,10 +1080,24 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
         lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
     )
 
-    sign_calls = {"count": 0, "tokens": []}
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta or str(vid) == str(venta)) else None,
+    )
+
+    sign_calls = {"count": 0, "tokens": [], "payloads": []}
 
     def fake_sign(data):
         sign_calls["count"] += 1
+        sign_calls["payloads"].append(json.loads(json.dumps(data)))
         token = make_jws(data)
         sign_calls["tokens"].append(token)
         return token
@@ -1102,6 +1111,13 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
         lambda db_obj, nid: {
             "receptor": {"nombre": "Cliente"},
             "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
+            "documentoRelacionado": [
+                {
+                    "tipoDocumento": "01",
+                    "numeroDocumento": "BASE",
+                    "fechaEmision": "2024-01-01",
+                }
+            ],
             "resumen": {
                 "totalNoSuj": 0,
                 "totalExenta": 0,
@@ -1175,6 +1191,11 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
     assert headers["User-Agent"] == "Vertex-DTE/1.0"
+
+    assert sign_calls["payloads"], "Se esperaba capturar el payload firmado"
+    signed_payload = sign_calls["payloads"][0]
+    assert signed_payload["identificacion"]["fecEmi"] == forced_today
+    assert signed_payload["documentoRelacionado"][0]["fechaEmision"] == "2024-01-01"
 
 
 def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
@@ -1668,6 +1689,9 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
         lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
     )
 
+    forced_today = "2025-09-29"
+    monkeypatch.setattr(dte, "fecha_emision_hoy_str", lambda now=None: forced_today)
+
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
@@ -1676,6 +1700,13 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
             "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
             "receptor": {"nombre": "C"},
             "resumen": {"totalLetras": "X"},
+            "documentoRelacionado": [
+                {
+                    "tipoDocumento": "01",
+                    "numeroDocumento": "BASE",
+                    "fechaEmision": "2024-01-01",
+                }
+            ],
         },
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
@@ -1686,7 +1717,13 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
         "utils.docs.get_dte_document_paths",
         lambda *a, **k: (tmp_path / "x.pdf", tmp_path / "x.json"),
     )
-    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+    signed_payloads: list[dict] = []
+
+    def fake_sign(payload):
+        signed_payloads.append(json.loads(json.dumps(payload)))
+        return "TOKEN"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr("utils.stable_json.save_file", lambda *a, **k: None)
     monkeypatch.setattr("utils.stable_json.stable_stringify", lambda d, indent=2: "{}")
     monkeypatch.setattr(
@@ -1701,6 +1738,9 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
     ).fetchone()
     assert row["estado"] == "Pendiente"
     assert row["modo"] == "contingencia"
+    assert signed_payloads, "Se esperaba capturar el payload firmado"
+    assert signed_payloads[0]["identificacion"]["fecEmi"] == forced_today
+    assert signed_payloads[0]["documentoRelacionado"][0]["fechaEmision"] == "2024-01-01"
 
 
 def test_enviar_nota_remision_default_contingencia(monkeypatch):
@@ -1708,18 +1748,38 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "remision", "2024-01-02", 10, "motivo")
 
+    forced_today = "2025-09-29"
+    monkeypatch.setattr(dte, "fecha_emision_hoy_str", lambda now=None: forced_today)
+
     monkeypatch.setattr(dte, "get_default_modo_transmision", lambda: "contingencia")
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
         "nota_remision.generar_nota_remision_desde_db",
-        lambda db_obj, nid: {"resumen": {"totalLetras": "X"}},
+        lambda db_obj, nid: {
+            "identificacion": {"numeroControl": "1"},
+            "documentoRelacionado": [
+                {
+                    "tipoDocumento": "01",
+                    "numeroDocumento": "BASE",
+                    "fechaEmision": "2024-01-01",
+                }
+            ],
+            "resumen": {"totalLetras": "X"},
+        },
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
     monkeypatch.setattr(auth, "get_token", lambda: "T")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
     monkeypatch.setattr("dte._save_signed_dte", lambda *a, **k: None)
-    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+
+    signed_payloads: list[dict] = []
+
+    def fake_sign(payload):
+        signed_payloads.append(json.loads(json.dumps(payload)))
+        return "TOKEN"
+
+    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
     monkeypatch.setattr(
         "dte.requests.post",
         lambda *a, **k: (_ for _ in ()).throw(AssertionError("should not post")),
@@ -1732,4 +1792,7 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     ).fetchone()
     assert row["estado"] == "Pendiente"
     assert row["modo"] == "contingencia"
+    assert signed_payloads, "Se esperaba capturar el payload firmado"
+    assert signed_payloads[0]["identificacion"]["fecEmi"] == forced_today
+    assert signed_payloads[0]["documentoRelacionado"][0]["fechaEmision"] == "2024-01-01"
 

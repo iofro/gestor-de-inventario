@@ -26,9 +26,8 @@ from dte import (
     detect_user_agent,
     _parse_error_response,
     APP_VERSION,
-    _log_http_exchange,
     _log_jwt_diagnostics,
-    TIMEOUT,
+    _post_json,
 )
 from utils.jws import sign_json
 from utils.env import env_flag
@@ -840,39 +839,19 @@ def _post_invalidacion(
             "app-version": str(app_version or APP_VERSION),
         },
         ambiente=ambiente_raiz,
-    )
+    ).copy()
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
-    _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
-    allow_redirects = not _no_redirects
-
-    t0_local = datetime.now(timezone.utc)
-    t1_local: datetime | None = None
-
     try:
-        resp = requests.post(
-            url,
-            headers=headers,
-            json=body,
-            timeout=TIMEOUT,
-            allow_redirects=allow_redirects,
-        )
-        t1_local = datetime.now(timezone.utc)
-        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
+        resp, data, text_body = _post_json(url, headers, body, tag="post_invalidacion")
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
-
-    text_body = getattr(resp, "text", "")
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
 
     if resp.status_code in {401, 403}:
         _log_jwt_diagnostics(
             headers.get("Authorization"),
-            now=t1_local or datetime.now(timezone.utc),
+            now=datetime.now(timezone.utc),
         )
         if env_flag("DTE_DEBUG_HTTP"):
             www_auth = resp.headers.get("WWW-Authenticate")

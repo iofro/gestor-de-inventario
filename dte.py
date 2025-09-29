@@ -9,6 +9,7 @@ import re
 import shutil
 import hashlib
 import logging
+import time
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from typing import Any, Mapping
@@ -82,6 +83,15 @@ except Exception:  # pragma: no cover - fallback when VERSION is missing
 logger = logging.getLogger(__name__)
 TIMEOUT = int(os.getenv("DTE_HTTP_TIMEOUT", "20"))
 
+# Flags y valores por defecto esperados para diagnósticos HTTP:
+# - DTE_DEBUG_HTTP=0
+# - DTE_DEBUG_NO_REDIRECTS=0
+# - DTE_RETRY_401_EMPTY=1
+# - DTE_BACKOFF_MS=350
+# - DTE_RATE_LIMIT_MS=0
+# - DTE_HTTP_TIMEOUT=20
+# - DTE_DEBUG_DUMP_REQ_BODY=0
+
 
 def _fp_auth(hdr_val: str) -> str:
     """Devuelve un fingerprint seguro del Authorization real enviado.
@@ -90,6 +100,34 @@ def _fp_auth(hdr_val: str) -> str:
     if not hdr_val:
         return "MISSING"
     return hashlib.sha1(hdr_val.encode("utf-8")).hexdigest()[:10]
+
+
+def _normalize_bearer(token_raw: str) -> str:
+    text = str(token_raw or "")
+    text = (
+        text.replace("\u200b", " ")
+        .replace("\r", " ")
+        .replace("\n", " ")
+        .replace("\t", " ")
+    )
+    text = text.strip()
+    lowered = text.lower()
+    while lowered.startswith("bearer "):
+        text = text[7:].lstrip()
+        lowered = text.lower()
+    compact = " ".join(text.split())
+    return f"Bearer {compact}"
+
+
+def _jwt_peek(token_raw: str | None) -> dict[str, Any]:
+    claims = decode_jwt_claims(token_raw)
+    if not isinstance(claims, Mapping):
+        return {}
+    result: dict[str, Any] = {}
+    for key in ("sub", "iat", "exp"):
+        if key in claims:
+            result[key] = claims[key]
+    return result
 
 
 def _log_http_exchange(
@@ -228,6 +266,265 @@ def _log_http_exchange(
         logger.warning("HTTP: LOG_ERROR %s", exc)
 
 
+def _post_json(url: str, headers: Mapping[str, Any], body: Any, *, tag: str):
+    headers_dict = dict(headers or {})
+    parsed_url = urlparse(url)
+    host = parsed_url.netloc
+    logger.info("HTTP: POST_ENTER tag=%s host=%s", tag, host)
+
+    content_type = str(headers_dict.get("Content-Type") or "").strip()
+    base_content_type = content_type.split(";")[0].strip().lower()
+    assert base_content_type == "application/json", "Content-Type inválido para POST JSON"
+
+    auth_value = headers_dict.get("Authorization")
+    if auth_value:
+        auth_text = str(auth_value)
+        parts_len = len(auth_text.split())
+        if not auth_text.startswith("Bearer ") or parts_len != 2:
+            normalized = _normalize_bearer(auth_text)
+            headers_dict["Authorization"] = normalized
+            logger.warning("AUTH: header corregido (fp=%s)", _fp_auth(normalized))
+            auth_text = normalized
+        else:
+            normalized = _normalize_bearer(auth_text)
+            if normalized != auth_text:
+                headers_dict["Authorization"] = normalized
+                logger.warning("AUTH: header corregido (fp=%s)", _fp_auth(normalized))
+                auth_text = normalized
+        logger.info(
+            "AUTH: header fp=%s len=%s tag=%s",
+            _fp_auth(auth_text),
+            len(auth_text),
+            tag,
+        )
+    else:
+        logger.warning("AUTH: header ausente tag=%s", tag)
+
+    jwt_info = _jwt_peek(headers_dict.get("Authorization"))
+    if jwt_info:
+        now_dt = datetime.now(timezone.utc)
+
+        def _to_timestamp(raw: Any) -> float | None:
+            if raw is None:
+                return None
+            if isinstance(raw, (int, float)):
+                return float(raw)
+            if isinstance(raw, str):
+                text = raw.strip()
+                if not text:
+                    return None
+                if text.isdigit():
+                    return float(text)
+                try:
+                    return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+                except Exception:
+                    return None
+            return None
+
+        exp_ts = _to_timestamp(jwt_info.get("exp"))
+        iat_ts = _to_timestamp(jwt_info.get("iat"))
+        lifetime = (exp_ts - iat_ts) if exp_ts is not None and iat_ts is not None else None
+        remaining = exp_ts - now_dt.timestamp() if exp_ts is not None else None
+        logger.info(
+            "JWT: peek tag=%s sub=%s lifetime_s=%s remaining_s=%s",
+            tag,
+            jwt_info.get("sub"),
+            int(lifetime) if lifetime is not None else None,
+            int(remaining) if remaining is not None else None,
+        )
+        cliente_id_hdr = headers_dict.get("cliente-id")
+        if cliente_id_hdr:
+            cliente_id_text = str(cliente_id_hdr).strip()
+            sub_text = str(jwt_info.get("sub") or "").strip()
+            if sub_text and cliente_id_text and cliente_id_text != sub_text:
+                logger.warning(
+                    "JWT: cliente-id mismatch tag=%s cliente-id=%s sub=%s",
+                    tag,
+                    cliente_id_text,
+                    sub_text,
+                )
+            elif sub_text and cliente_id_text:
+                logger.info("JWT: cliente-id coincide con sub tag=%s", tag)
+
+    user_agent = headers_dict.get("User-Agent")
+    cliente_id = headers_dict.get("cliente-id")
+    ambiente_body = None
+    if isinstance(body, Mapping):
+        ambiente_body = body.get("ambiente")
+    logger.info(
+        "HTTP: CLIENT_META tag=%s user_agent=%s cliente_id=%s ambiente=%s host=%s",
+        tag,
+        user_agent,
+        cliente_id,
+        ambiente_body,
+        host,
+    )
+
+    if host and "apitest" in host and ambiente_body not in (None, "00"):
+        logger.warning(
+            "HTTP: ambiente body=%s inesperado para host=%s tag=%s",
+            ambiente_body,
+            host,
+            tag,
+        )
+
+    rate_limit_ms: int | None = None
+    raw_rate = os.getenv("DTE_RATE_LIMIT_MS")
+    if raw_rate:
+        try:
+            rate_limit_ms = max(0, int(float(raw_rate)))
+        except Exception:
+            logger.warning("HTTP: RATE_LIMIT inválido=%s", raw_rate)
+    backoff_ms_raw = os.getenv("DTE_BACKOFF_MS")
+    try:
+        backoff_ms = max(0, int(float(backoff_ms_raw))) if backoff_ms_raw else 350
+    except Exception:
+        logger.warning("HTTP: BACKOFF inválido=%s", backoff_ms_raw)
+        backoff_ms = 350
+    retry_401_enabled = env_flag("DTE_RETRY_401_EMPTY", default=True)
+    allow_redirects = not env_flag("DTE_DEBUG_NO_REDIRECTS")
+
+    logger.info(
+        "HTTP: FLAGS tag=%s allow_redirects=%s retry_401_empty=%s backoff_ms=%s rate_limit_ms=%s",
+        tag,
+        allow_redirects,
+        retry_401_enabled,
+        backoff_ms,
+        rate_limit_ms,
+    )
+
+    if rate_limit_ms and rate_limit_ms > 0:
+        logger.info("HTTP: RATE_LIMIT_SLEEP tag=%s sleep_ms=%s", tag, rate_limit_ms)
+        time.sleep(rate_limit_ms / 1000)
+
+    proxies_info = (
+        bool(os.getenv("HTTPS_PROXY") or os.getenv("https_proxy")),
+        bool(os.getenv("HTTP_PROXY") or os.getenv("http_proxy")),
+        bool(os.getenv("NO_PROXY") or os.getenv("no_proxy")),
+    )
+    logger.info(
+        "HTTP: PROXY_ENV tag=%s HTTPS_PROXY=%s HTTP_PROXY=%s NO_PROXY=%s",
+        tag,
+        *proxies_info,
+    )
+
+    try:
+        body_serialized = stable_stringify(body)
+    except Exception:
+        try:
+            body_serialized = json.dumps(body, ensure_ascii=False, sort_keys=True, default=str)
+        except Exception:
+            body_serialized = repr(body)
+    body_bytes = body_serialized.encode("utf-8", errors="ignore")
+    body_hash = hashlib.sha256(body_bytes).hexdigest()
+    body_len = len(body_bytes)
+
+    if env_flag("DTE_DEBUG_DUMP_REQ_BODY"):
+        preview = body_serialized
+        if len(preview) > 512:
+            preview = preview[:512] + "…"
+        preview = preview.replace("\n", "\\n")
+        logger.info(
+            "HTTP: REQ_BODY tag=%s auth_fp=%s sha256=%s len=%s preview=%s",
+            tag,
+            _fp_auth(str(headers_dict.get("Authorization") or "")),
+            body_hash[:12],
+            body_len,
+            preview,
+        )
+
+    attempt = 0
+    last_resp = None
+    while True:
+        attempt += 1
+        headers_items = sorted((str(k), str(v)) for k, v in headers_dict.items())
+        headers_fingerprint = hashlib.sha1(
+            repr(headers_items).encode("utf-8", errors="ignore")
+        ).hexdigest()
+        logger.info(
+            "HTTP: HEADERS_FP tag=%s attempt=%s id=%s sha1=%s auth_fp=%s",
+            tag,
+            attempt,
+            id(headers_dict),
+            headers_fingerprint,
+            _fp_auth(str(headers_dict.get("Authorization") or "")),
+        )
+        logger.info("HTTP: POST_ATTEMPT tag=%s attempt=%s", tag, attempt)
+        t0_local = datetime.now(timezone.utc)
+        resp = requests.post(
+            url,
+            headers=headers_dict,
+            json=body,
+            timeout=TIMEOUT,
+            allow_redirects=allow_redirects,
+        )
+        t1_local = datetime.now(timezone.utc)
+        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
+        req_ct = resp.request.headers.get("Content-Type") if resp.request else None
+        logger.info(
+            "HTTP: REQ_META tag=%s req_ct=%s body_sha256=%s body_len=%s",
+            tag,
+            req_ct,
+            body_hash,
+            body_len,
+        )
+
+        date_hdr = resp.headers.get("Date")
+        if date_hdr:
+            try:
+                server_dt = parsedate_to_datetime(date_hdr)
+                if server_dt is not None and server_dt.tzinfo is None:
+                    server_dt = server_dt.replace(tzinfo=timezone.utc)
+                now_dt = datetime.now(timezone.utc)
+                skew = (server_dt - now_dt).total_seconds()
+                logger.info("HTTP: RESP_SKEW tag=%s skew_sec=%+.3f", tag, skew)
+            except Exception:
+                logger.info("HTTP: RESP_SKEW tag=%s parse_error", tag)
+
+        text_body = getattr(resp, "text", "")
+        try:
+            data = resp.json()
+        except Exception:
+            data = None
+
+        www_auth = resp.headers.get("WWW-Authenticate")
+        no_www_auth = (www_auth is None) or (str(www_auth).strip() == "")
+
+        if (
+            retry_401_enabled
+            and attempt == 1
+            and resp.status_code == 401
+            and not text_body
+            and no_www_auth
+        ):
+            logger.warning(
+                "HTTP: 401 vacío (posible gateway/WAF). Se reintentará con Connection: close tag=%s",
+                tag,
+            )
+            time.sleep(backoff_ms / 1000 if backoff_ms else 0)
+            headers_dict["Connection"] = "close"
+            last_resp = resp
+            continue
+
+        if last_resp is not None:
+            last_www = last_resp.headers.get("WWW-Authenticate")
+            last_no_www = (last_www is None) or (str(last_www).strip() == "")
+        else:
+            last_no_www = False
+
+        if (
+            last_resp is not None
+            and last_resp.status_code == 401
+            and last_resp.text == ""
+            and last_no_www
+            and attempt == 2
+        ):
+            logger.info(
+                "HTTP: 401 vacío (posible gateway/WAF). Se reintentó con Connection: close tag=%s",
+                tag,
+            )
+
+        return resp, data, text_body
 def _log_jwt_diagnostics(auth_header: str | None, *, now: datetime | None = None) -> None:
     """Registra información derivada del JWT sin exponer el token."""
 
@@ -5272,8 +5569,6 @@ def _post_dte(
     client_id: str | None = None,
     ambiente_config: str | None = None,
 ) -> dict:
-    print("HTTP: POST_ENTER")
-
     pu = urlparse(url)
     assert pu.netloc in {
         "apitest.dtes.mh.gob.sv",
@@ -5295,42 +5590,21 @@ def _post_dte(
             "app-version": str(app_version or APP_VERSION),
         },
         ambiente=ambiente_config,
-    )
+    ).copy()
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
-    _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
-    allow_redirects = not _no_redirects
-
-    t0_local = datetime.now(timezone.utc)
-    t1_local: datetime | None = None
-
     try:
-        print(json.dumps(sobre, ensure_ascii=False))
-        resp = requests.post(
-            url,
-            headers=headers,
-            json=sobre,
-            timeout=TIMEOUT,
-            allow_redirects=allow_redirects,
-        )
-        t1_local = datetime.now(timezone.utc)
-        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
+        resp, data, text_body = _post_json(url, headers, sobre, tag="post_dte")
     except (requests.ConnectionError, requests.Timeout):
         return {"estado": "Error", "detalle": "Sin conexión a Internet"}
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
 
-    text_body = getattr(resp, "text", "")
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
-
     if resp.status_code in {401, 403}:
         _log_jwt_diagnostics(
             headers.get("Authorization"),
-            now=t1_local or datetime.now(timezone.utc),
+            now=datetime.now(timezone.utc),
         )
         if env_flag("DTE_DEBUG_HTTP"):
             www_auth = resp.headers.get("WWW-Authenticate")
@@ -5410,40 +5684,19 @@ def _post_evento(
             "app-version": str(app_version or APP_VERSION),
         },
         ambiente=ambiente_config,
-    )
+    ).copy()
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
-    _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
-    allow_redirects = not _no_redirects
-
-    t0_local = datetime.now(timezone.utc)
-    t1_local: datetime | None = None
-
     try:
-        print(json.dumps(body, ensure_ascii=False))
-        resp = requests.post(
-            url,
-            headers=headers,
-            json=body,
-            timeout=TIMEOUT,
-            allow_redirects=allow_redirects,
-        )
-        t1_local = datetime.now(timezone.utc)
-        _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
+        resp, data, text_body = _post_json(url, headers, body, tag="post_evento")
     except requests.RequestException as exc:
         return {"estado": "Error", "detalle": str(exc)}
-
-    text_body = getattr(resp, "text", "")
-    try:
-        data = resp.json()
-    except Exception:
-        data = None
 
     if resp.status_code in {401, 403}:
         _log_jwt_diagnostics(
             headers.get("Authorization"),
-            now=t1_local or datetime.now(timezone.utc),
+            now=datetime.now(timezone.utc),
         )
         if env_flag("DTE_DEBUG_HTTP"):
             www_auth = resp.headers.get("WWW-Authenticate")
@@ -5743,27 +5996,15 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
                 "Accept": "application/json",
             },
             ambiente=cfg.get("ambiente"),
-        )
-
-        _no_redirects = os.getenv("DTE_DEBUG_NO_REDIRECTS") in ("1", "true", "True")
-        allow_redirects = not _no_redirects
+        ).copy()
 
         try:
-            t0_local = datetime.now(timezone.utc)
-            t1_local: datetime | None = None
-            resp = requests.post(
-                url,
-                headers=headers,
-                json=body,
-                timeout=TIMEOUT,
-                allow_redirects=allow_redirects,
-            )
-            t1_local = datetime.now(timezone.utc)
-            _log_http_exchange(resp, allow_redirects, t0_local=t0_local, t1_local=t1_local)
+            tag = f"post_lote[{i // 100}]"
+            resp, data_resp, text_body = _post_json(url, headers, body, tag=tag)
             if resp.status_code in {401, 403}:
                 _log_jwt_diagnostics(
                     headers.get("Authorization"),
-                    now=t1_local or datetime.now(timezone.utc),
+                    now=datetime.now(timezone.utc),
                 )
                 if env_flag("DTE_DEBUG_HTTP"):
                     www_auth = resp.headers.get("WWW-Authenticate")
@@ -5775,7 +6016,8 @@ def enviar_lote_dtes(pendientes, db: DB | None = None):
                         and body_len == 0
                     ):
                         logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
-            data_resp = resp.json() if resp.content else {}
+            if data_resp is None:
+                data_resp = {"detalle": text_body} if text_body else {}
         except Exception as exc:  # pragma: no cover - defensive
             data_resp = {"estado": "Error", "detalle": str(exc)}
 

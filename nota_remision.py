@@ -27,7 +27,12 @@ import logging
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str
+from utils.fecha import (
+    TZ_EL_SALVADOR,
+    fecha_ddmmaaaa,
+    fecha_emision_hoy_str,
+    fecha_iso,
+)
 from utils.monto import monto_a_texto_sv, d2
 from utils.snapshot import normalize_snapshot
 import warnings
@@ -154,7 +159,7 @@ def _normalizar_documento_relacionado(doc_rel: list[dict]) -> list[dict]:
             "tipoDocumento": tipo,
             "tipoGeneracion": 2,
             "numeroDocumento": numero,
-            "fechaEmision": fecha_normalizada,
+            "fechaEmision": fecha_iso(fecha_normalizada),
         }
     ]
 
@@ -204,7 +209,7 @@ def generar_nota_remision(
                     "tipoDocumento": ident.get("tipoDte"),
                     "tipoGeneracion": tipo_generacion,
                     "numeroDocumento": numero_documento,
-                    "fechaEmision": fecha_emision,
+                    "fechaEmision": fecha_iso(fecha_emision),
                 }
             ]
         # Para notas derivadas de factura la extensión puede omitirse
@@ -282,7 +287,7 @@ def generar_nota_remision(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_emision_por_defecto,
+        "fecEmi": fecha_iso(fecha_emision_por_defecto),
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
@@ -291,7 +296,7 @@ def generar_nota_remision(
         documento_relacionado = _normalizar_documento_relacionado(documento_relacionado)
         fecha_relacionada = documento_relacionado[0].get("fechaEmision")
         if fecha_relacionada:
-            identificacion["fecEmi"] = fecha_relacionada
+            identificacion["fecEmi"] = fecha_iso(fecha_relacionada)
     numero_doc = (
         documento_relacionado[0].get("numeroDocumento")
         if documento_relacionado

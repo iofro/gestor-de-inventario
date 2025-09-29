@@ -47,7 +47,7 @@ def _doc_rel():
             "tipoDocumento": "01",
             "tipoGeneracion": 2,
             "numeroDocumento": "12345678-ABCD-1234-ABCD-1234567890AB",
-            "fechaEmision": "01/01/2024",
+            "fechaEmision": "2024-01-01",
         }
     ]
 
@@ -162,8 +162,8 @@ def test_generar_nde_desde_nota_credito_fiscal(monkeypatch):
     nde = generar_nde_desde_nota(db, nota_id)
     doc_rel = nde["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
-    assert doc_rel["fechaEmision"] == "01/01/2024"
-    assert nde["identificacion"]["fecEmi"] == "01/01/2024"
+    assert doc_rel["fechaEmision"] == "2024-01-01"
+    assert nde["identificacion"]["fecEmi"] == "2024-01-01"
     receptor = nde["receptor"]
     assert receptor["nit"] == "06141407100012"
     assert receptor["nrc"] == "123"
@@ -213,7 +213,6 @@ def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
     ).lastrowid
 
     fecha_envio_iso = "2024-04-12"
-    fecha_envio_ddmm = "12/04/2024"
     db.registrar_envio_dte(
         venta_id,
         "auto",
@@ -224,8 +223,8 @@ def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
 
     nde = generar_nde_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nde["documentoRelacionado"][0]
-    assert doc_rel["fechaEmision"] == fecha_envio_ddmm
-    assert nde["identificacion"]["fecEmi"] == fecha_envio_ddmm
+    assert doc_rel["fechaEmision"] == fecha_envio_iso
+    assert nde["identificacion"]["fecEmi"] == fecha_envio_iso
 
 
 def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
@@ -305,7 +304,7 @@ def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
         uuid=payload["identificacion"]["codigoGeneracion"],
         path=str(tmp_path / "documento.json"),
         tipo_documento="03",
-        fecha_emision="2023-08-01",
+        fecha_emision="01/08/2023",
         payload=payload,
     )
 
@@ -333,8 +332,8 @@ def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
         doc_rel["numeroDocumento"]
         == payload["identificacion"]["codigoGeneracion"].upper()
     )
-    assert doc_rel["fechaEmision"] == "01/08/2023"
-    assert nde["identificacion"]["fecEmi"] == "01/08/2023"
+    assert doc_rel["fechaEmision"] == "2023-08-01"
+    assert nde["identificacion"]["fecEmi"] == "2023-08-01"
     assert metrics_calls == ["notes_source_used.snapshot"]
     assert payload["firma"] == "SIGNATURE"
 
@@ -406,7 +405,7 @@ def test_generar_nde_desde_nota_snapshot_dui(monkeypatch, tmp_path):
         uuid=payload["identificacion"]["codigoGeneracion"],
         path=str(tmp_path / "documento.json"),
         tipo_documento="01",
-        fecha_emision="2023-09-01",
+        fecha_emision="01/09/2023",
         payload=payload,
     )
 
@@ -426,8 +425,8 @@ def test_generar_nde_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
-    assert doc_rel["fechaEmision"] == "01/09/2023"
-    assert nde["identificacion"]["fecEmi"] == "01/09/2023"
+    assert doc_rel["fechaEmision"] == "2023-09-01"
+    assert nde["identificacion"]["fecEmi"] == "2023-09-01"
 
 
 def test_generar_nde_desde_nota_strict_snapshot(monkeypatch):
@@ -757,7 +756,6 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     )
 
     fecha_envio_iso = "2024-01-03"
-    fecha_envio_ddmm = "03/01/2024"
     db.registrar_envio_dte(
         venta_id,
         "auto",
@@ -770,8 +768,8 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     assert data["identificacion"]["tipoDte"] == "04"
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert data["extension"]["nombEntrega"] == "Juan"
-    assert data["documentoRelacionado"][0]["fechaEmision"] == fecha_envio_ddmm
-    assert data["identificacion"]["fecEmi"] == fecha_envio_ddmm
+    assert data["documentoRelacionado"][0]["fechaEmision"] == fecha_envio_iso
+    assert data["identificacion"]["fecEmi"] == fecha_envio_iso
 
 
 def test_nota_debito_pdf(tmp_path):

@@ -1,7 +1,6 @@
 import copy
 import json
 import logging
-import json
 import os
 import pytest
 import requests
@@ -189,6 +188,156 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         assert headers["Content-Type"] == "application/json"
         assert headers["Accept"] == "application/json"
         assert headers["User-Agent"] == "Vertex-DTE/1.0"
+
+
+def test_ensure_nota_snapshot_rehydrates_from_saved_json(tmp_path, monkeypatch):
+    base_code = "ABC123XYZ789"
+    origen_payload = {
+        "identificacion": {
+            "codigoGeneracion": base_code,
+            "numeroControl": "DTE-03-001",
+        }
+    }
+    source_dir = tmp_path / "facturas_credito_fiscal"
+    source_dir.mkdir()
+    (source_dir / "origen.json").write_text(json.dumps(origen_payload), encoding="utf-8")
+
+    dtes_dir = tmp_path / "dtes"
+    fcf_dir = tmp_path / "fcf"
+    consumidor_dir = tmp_path / "consumidor"
+    tickets_dir = tmp_path / "tickets"
+    notas_credito_dir = tmp_path / "notas_credito"
+    notas_debito_dir = tmp_path / "notas_debito"
+    archive_cf_dir = tmp_path / "archive_cf"
+    archive_credito_dir = tmp_path / "archive_credito"
+
+    for directory in (
+        dtes_dir,
+        fcf_dir,
+        consumidor_dir,
+        tickets_dir,
+        notas_credito_dir,
+        notas_debito_dir,
+        archive_cf_dir,
+        archive_credito_dir,
+    ):
+        directory.mkdir()
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CONSUMIDOR_FINAL_DIR", str(consumidor_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CREDITO_FISCAL_DIR", str(source_dir))
+    monkeypatch.setattr(dte, "TICKETS_OUTPUT_DIR", str(tickets_dir))
+    monkeypatch.setattr(dte, "NOTAS_CREDITO_DIR", str(notas_credito_dir))
+    monkeypatch.setattr(dte, "NOTAS_DEBITO_DIR", str(notas_debito_dir))
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", str(archive_cf_dir))
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", str(archive_credito_dir))
+
+    monkeypatch.setattr(
+        dte,
+        "generar_nota_credito_json",
+        lambda db_obj, nota_ref: {"documentoRelacionado": [{"codigoGeneracion": base_code}]},
+    )
+
+    venta_id = 42
+    nota_id = 99
+
+    class DummyCursor:
+        def __init__(self, row):
+            self._row = row
+
+        def execute(self, *_args, **_kwargs):
+            return self
+
+        def fetchone(self):
+            return self._row
+
+    class DummyDB:
+        def __init__(self):
+            self.cursor = DummyCursor({"venta_id": venta_id, "tipo": "credito"})
+            self._snapshots = {}
+
+        def get_snapshot_by_venta(self, venta_ref):
+            return self._snapshots.get(venta_ref)
+
+        def set_snapshot_path(self, venta_ref, path):
+            self._snapshots[venta_ref] = path
+
+    db = DummyDB()
+    assert db.get_snapshot_by_venta(venta_id) is None
+
+    dte._ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+
+    stored_path = dtes_dir / base_code / "documento.json"
+    assert stored_path.exists()
+    with stored_path.open("r", encoding="utf-8") as fh:
+        persisted = json.load(fh)
+    assert persisted["identificacion"]["codigoGeneracion"] == base_code
+    assert db.get_snapshot_by_venta(venta_id) == str(stored_path)
+
+
+def test_ensure_nota_snapshot_rehydrates_from_typed_subdir(tmp_path, monkeypatch, caplog):
+    base_code = "TIPEDIR123"
+    payload = {
+        "identificacion": {
+            "codigoGeneracion": base_code,
+            "numeroControl": "DTE-04-001",
+        }
+    }
+
+    dtes_dir = tmp_path / "dtes"
+    source_path = dtes_dir / "fcf" / base_code / "documento.json"
+    source_path.parent.mkdir(parents=True, exist_ok=True)
+    source_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(dte, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte, "FACTURAS_CONSUMIDOR_FINAL_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_CREDITO_FISCAL_DIR", "")
+    monkeypatch.setattr(dte, "TICKETS_OUTPUT_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_CREDITO_DIR", "")
+    monkeypatch.setattr(dte, "NOTAS_DEBITO_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CF_DIR", "")
+    monkeypatch.setattr(dte, "FACTURAS_ARCHIVE_CREDITO_DIR", "")
+
+    monkeypatch.setattr(
+        dte,
+        "generar_nota_credito_json",
+        lambda db_obj, nota_ref: {"documentoRelacionado": [{"codigoGeneracion": base_code}]},
+    )
+
+    venta_id = 314
+    nota_id = 2718
+
+    class DummyCursor:
+        def __init__(self, row):
+            self._row = row
+
+        def execute(self, *_args, **_kwargs):
+            return self
+
+        def fetchone(self):
+            return self._row
+
+    class DummyDB:
+        def __init__(self):
+            self.cursor = DummyCursor({"venta_id": venta_id, "tipo": "credito"})
+            self._snapshots = {}
+
+        def get_snapshot_by_venta(self, venta_ref):
+            return self._snapshots.get(venta_ref)
+
+        def set_snapshot_path(self, venta_ref, path):
+            self._snapshots[venta_ref] = path
+
+    db = DummyDB()
+    assert db.get_snapshot_by_venta(venta_id) is None
+
+    caplog.set_level(logging.INFO)
+    dte._ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
+
+    stored_path = dtes_dir / base_code / "documento.json"
+    assert stored_path.exists()
+    assert db.get_snapshot_by_venta(venta_id) == str(stored_path)
+    assert any("SNAPSHOT: rehidratado" in rec.getMessage() for rec in caplog.records)
 
 
 def test_no_envia_si_validacion_falla(monkeypatch):

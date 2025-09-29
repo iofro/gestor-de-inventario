@@ -41,6 +41,7 @@ from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.monto import monto_a_texto_sv, iva_item, to_base_iva, d2, d4, d8, money
 from utils.line_totals import compute_line_totals
 from utils.sanitize import limpiar_documentos, limpiar_doc, solo_digitos
+from utils.snapshot import SnapshotNotFoundError
 from num2words import num2words
 from utils.resumen import normalize_condicion_operacion, validate_pagos_basico
 from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
@@ -5597,6 +5598,47 @@ def detect_user_agent(
     return base
 
 
+_TOKEN_INVALID_SENTINEL = "token inválido o caducado"
+
+
+def _extract_auth_detail(value, fallback_text: str | None = None) -> str:
+    if isinstance(value, dict):
+        for key in ("detalle", "descripcionMsg", "message", "observaciones"):
+            if key in value:
+                extracted = _extract_auth_detail(value.get(key))
+                if extracted:
+                    return extracted
+        if value:
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                return str(value)
+        return ""
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            extracted = _extract_auth_detail(item)
+            if extracted:
+                return extracted
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if value is None:
+        return (fallback_text or "").strip() if fallback_text else ""
+    try:
+        return json.dumps(value, ensure_ascii=False)
+    except TypeError:
+        return str(value)
+
+
+def _contains_token_invalid_phrase(*values: str) -> bool:
+    for value in values:
+        if not value:
+            continue
+        if _TOKEN_INVALID_SENTINEL in value.casefold():
+            return True
+    return False
+
+
 def _post_dte(
     url: str,
     documento: str,
@@ -5645,21 +5687,37 @@ def _post_dte(
             headers.get("Authorization"),
             now=datetime.now(timezone.utc),
         )
+        www_auth_header = resp.headers.get("WWW-Authenticate")
         if env_flag("DTE_DEBUG_HTTP"):
-            www_auth = resp.headers.get("WWW-Authenticate")
             content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
             body_len = len(resp.content or b"")
             if (
-                not (www_auth and str(www_auth).strip())
+                not (www_auth_header and str(www_auth_header).strip())
                 and (str(content_length or "").strip() in {"", "0"})
                 and body_len == 0
             ):
                 logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
-        result = {
+        detail_payload = data if data is not None else text_body
+        detail_text = _extract_auth_detail(detail_payload, text_body if isinstance(text_body, str) else None)
+        www_auth_text = str(www_auth_header or "").strip()
+        token_phrase = _contains_token_invalid_phrase(detail_text, text_body if isinstance(text_body, str) else None)
+        auth_error = bool(www_auth_text) or token_phrase
+        result: dict[str, Any] = {
             "estado": "Rechazado",
             "http_status": resp.status_code,
-            "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+            "auth_error": auth_error,
         }
+        if auth_error:
+            result["detalle"] = (
+                "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente."
+            )
+            if detail_text and not token_phrase:
+                result["descripcionMsg"] = detail_text
+        else:
+            fallback_text = detail_text or f"HTTP {resp.status_code} sin detalle"
+            result["detalle"] = fallback_text
+            if isinstance(detail_payload, dict) and detail_payload:
+                result["detalle_respuesta"] = detail_payload
         print(json.dumps(result, ensure_ascii=False))
         return result
 
@@ -5737,21 +5795,37 @@ def _post_evento(
             headers.get("Authorization"),
             now=datetime.now(timezone.utc),
         )
+        www_auth_header = resp.headers.get("WWW-Authenticate")
         if env_flag("DTE_DEBUG_HTTP"):
-            www_auth = resp.headers.get("WWW-Authenticate")
             content_length = resp.headers.get("Content-Length") or resp.headers.get("content-length")
             body_len = len(resp.content or b"")
             if (
-                not (www_auth and str(www_auth).strip())
+                not (www_auth_header and str(www_auth_header).strip())
                 and (str(content_length or "").strip() in {"", "0"})
                 and body_len == 0
             ):
                 logger.info("HTTP: %s sin cuerpo y sin WWW-Authenticate", resp.status_code)
-        result = {
+        detail_payload = data if data is not None else text_body
+        detail_text = _extract_auth_detail(detail_payload, text_body if isinstance(text_body, str) else None)
+        www_auth_text = str(www_auth_header or "").strip()
+        token_phrase = _contains_token_invalid_phrase(detail_text, text_body if isinstance(text_body, str) else None)
+        auth_error = bool(www_auth_text) or token_phrase
+        result: dict[str, Any] = {
             "estado": "Rechazado",
             "http_status": resp.status_code,
-            "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+            "auth_error": auth_error,
         }
+        if auth_error:
+            result["detalle"] = (
+                "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente."
+            )
+            if detail_text and not token_phrase:
+                result["descripcionMsg"] = detail_text
+        else:
+            fallback_text = detail_text or f"HTTP {resp.status_code} sin detalle"
+            result["detalle"] = fallback_text
+            if isinstance(detail_payload, dict) and detail_payload:
+                result["detalle_respuesta"] = detail_payload
         print(json.dumps(result, ensure_ascii=False))
         return result
 
@@ -6283,6 +6357,45 @@ def _enviar_documento(
     return res
 
 
+def _ensure_nota_snapshot(db: DB, nota_id: int, *, expected_tipo: str | None = None) -> None:
+    """Ensure that a stored snapshot exists for ``nota_id`` before sending."""
+
+    if not hasattr(db, "cursor"):
+        return
+
+    try:
+        row = db.cursor.execute(
+            "SELECT venta_id, tipo FROM notas WHERE id=?",
+            (nota_id,),
+        ).fetchone()
+    except Exception:
+        return
+
+    if not row:
+        return
+
+    try:
+        nota_data = dict(row)
+    except Exception:
+        nota_data = {"venta_id": row[0] if len(row) else None, "tipo": row[1] if len(row) > 1 else None}
+
+    nota_tipo = str(nota_data.get("tipo") or "").strip().lower()
+    if expected_tipo and nota_tipo and nota_tipo != expected_tipo.lower():
+        return
+
+    venta_id = nota_data.get("venta_id")
+    if venta_id in (None, ""):
+        return
+
+    try:
+        snapshot = db.get_snapshot_by_venta(venta_id)
+    except AttributeError:
+        return
+
+    if snapshot is None:
+        raise SnapshotNotFoundError(venta_id, nota_id)
+
+
 def enviar_factura(db: DB, venta_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una factura electrónica."""
     if modo is None:
@@ -6309,6 +6422,8 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una nota de crédito."""
     if modo is None:
         modo = get_default_modo_transmision()
+
+    _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
 
     data = generar_nota_credito_json(db, nota_id)
     data = apply_schema_patch(data)
@@ -6365,6 +6480,8 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     """Genera y transmite una nota de débito."""
     if modo is None:
         modo = get_default_modo_transmision()
+
+    _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
 
     data = generar_nota_debito_json(db, nota_id)
     data = apply_schema_patch(data)

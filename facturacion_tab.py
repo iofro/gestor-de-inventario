@@ -86,9 +86,16 @@ from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
 from decimal import Decimal
 from utils.monto import iva_item
+from utils.snapshot import SnapshotNotFoundError
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
 
 logger = logging.getLogger(__name__)
+
+SNAPSHOT_MISSING_MESSAGE = (
+    "No se encontró el snapshot del documento base para esta nota. "
+    "Seleccione el documento original o regenere el snapshot antes de enviar."
+)
+GENERIC_SEND_ERROR = "No se pudo enviar el documento. Revise los registros y reintente."
 
 # Directory where debit notes will be stored
 # Paths are provided by ``paths`` to keep user data outside the installation
@@ -2010,6 +2017,44 @@ class FacturacionTab(QWidget):
         return detalle
 
     @staticmethod
+    def _is_auth_runtime_error(exc: Exception) -> bool:
+        text = str(exc or "").strip().lower()
+        if not text:
+            return False
+        keywords = (
+            "token",
+            "autentic",
+            "bearer",
+            "credencial",
+            "jwt",
+        )
+        return any(keyword in text for keyword in keywords)
+
+    def _report_snapshot_missing(self, exc: SnapshotNotFoundError) -> None:
+        venta_id = getattr(exc, "venta_id", None)
+        nota_id = getattr(exc, "nota_id", None)
+        print(
+            "UI: SHOW_ERROR=snapshot_missing",
+            f"venta={venta_id if venta_id is not None else 'n/a'}",
+            f"nota={nota_id if nota_id is not None else 'n/a'}",
+        )
+        QMessageBox.warning(self, "Enviar a Hacienda", SNAPSHOT_MISSING_MESSAGE)
+
+    def _auth_error_message(self, response: dict, default: str) -> str:
+        if response.get("auth_error", True):
+            return self._token_warning_message(response, default)
+        detalle = self._stringify_token_detail(response.get("detalle"))
+        if detalle:
+            return detalle
+        descripcion = self._stringify_token_detail(response.get("descripcionMsg"))
+        if descripcion:
+            return descripcion
+        status = response.get("http_status")
+        if status:
+            return f"Hacienda devolvió HTTP {status} sin detalle"
+        return "La recepción de Hacienda devolvió un error sin detalle"
+
+    @staticmethod
     def _format_observaciones_message(resp: dict | None) -> str:
         """Return a human readable message with Hacienda observations."""
 
@@ -2090,7 +2135,7 @@ class FacturacionTab(QWidget):
                     else:
                         resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
                     if resp.get("http_status") in {401, 403}:
-                        message = self._token_warning_message(resp, token_msg)
+                        message = self._auth_error_message(resp, token_msg)
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
                         return
                     estado = resp.get("estado")
@@ -2143,6 +2188,9 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
+                except SnapshotNotFoundError as exc:
+                    self._report_snapshot_missing(exc)
+                    return
                 except RuntimeError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     exc_message = str(exc)
@@ -2153,11 +2201,22 @@ class FacturacionTab(QWidget):
                             "Error de firma: no se pudo acceder al certificado.",
                         )
                         return
-                    QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                    if self._is_auth_runtime_error(exc):
+                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                    else:
+                        logger.exception("Error al enviar documento", exc_info=exc)
+                        QMessageBox.critical(
+                            self,
+                            "Enviar a Hacienda",
+                            GENERIC_SEND_ERROR,
+                        )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                    logger.exception("Error inesperado al enviar documento", exc_info=exc)
                     QMessageBox.critical(
-                        self, "Enviar a Hacienda", str(exc)
+                        self,
+                        "Enviar a Hacienda",
+                        GENERIC_SEND_ERROR,
                     )
             else:
                 tipo_dte = self._determine_tipo_dte(entry)
@@ -2169,7 +2228,7 @@ class FacturacionTab(QWidget):
                         tipo_dte=tipo_dte,
                     )  # tickets también se transmiten con tipo "01"
                     if resp.get("http_status") in {401, 403}:
-                        message = self._token_warning_message(resp, token_msg)
+                        message = self._auth_error_message(resp, token_msg)
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
                         return
                     estado = resp.get("estado")
@@ -2225,6 +2284,9 @@ class FacturacionTab(QWidget):
                     QMessageBox.critical(
                         self, "Enviar a Hacienda", "\n".join(exc.errors)
                     )
+                except SnapshotNotFoundError as exc:
+                    self._report_snapshot_missing(exc)
+                    return
                 except RuntimeError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     exc_message = str(exc)
@@ -2235,11 +2297,22 @@ class FacturacionTab(QWidget):
                             "Error de firma: no se pudo acceder al certificado.",
                         )
                         return
-                    QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                    if self._is_auth_runtime_error(exc):
+                        QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
+                    else:
+                        logger.exception("Error al enviar documento", exc_info=exc)
+                        QMessageBox.critical(
+                            self,
+                            "Enviar a Hacienda",
+                            GENERIC_SEND_ERROR,
+                        )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
+                    logger.exception("Error inesperado al enviar documento", exc_info=exc)
                     QMessageBox.critical(
-                        self, "Enviar a Hacienda", str(exc)
+                        self,
+                        "Enviar a Hacienda",
+                        GENERIC_SEND_ERROR,
                     )
 
     def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:

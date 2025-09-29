@@ -11,6 +11,7 @@ import dte
 import nota_remision
 import utils.docs
 import utils.jws
+from utils.snapshot import Snapshot
 from utils import versioned_dte
 from tests.conftest import make_jws
 
@@ -120,6 +121,18 @@ def test_enviar_nota_credito_guarda_sello(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
+    )
     monkeypatch.setattr(dte, "generar_nota_credito_json", lambda db_obj, nid: {"identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"}, "receptor": {"nombre": "Cliente"}, "resumen": {"totalLetras": "X"}})
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
@@ -138,6 +151,18 @@ def test_enviar_nota_debito_guarda_sello(monkeypatch, tmp_path):
     db = DB(":memory:")
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "debito", "2024-01-02", 10, "motivo")
+    dummy_snapshot = Snapshot(
+        uuid="SNAPSHOT",
+        path=str(tmp_path / "snapshot.json"),
+        tipo_documento="01",
+        fecha_emision="2024-01-01",
+        payload={},
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
+    )
     monkeypatch.setattr(dte, "generar_nota_debito_json", lambda db_obj, nid: {"identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"}, "receptor": {"nombre": "Cliente"}, "resumen": {"totalLetras": "X"}})
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})

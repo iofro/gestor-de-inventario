@@ -61,7 +61,9 @@ def test_post_dte_token_invalid(monkeypatch):
     assert resp == {
         "estado": "Rechazado",
         "http_status": 401,
-        "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+        "auth_error": False,
+        "detalle": "Token expirado en Hacienda",
+        "detalle_respuesta": {"detalle": "Token expirado en Hacienda"},
     }
 
 
@@ -82,7 +84,8 @@ def test_post_dte_token_invalid_without_detail(monkeypatch):
     assert resp == {
         "estado": "Rechazado",
         "http_status": 403,
-        "detalle": "Token inválido o caducado. Obtenga un nuevo token en Configuración > Facturación Electrónica y reintente.",
+        "auth_error": False,
+        "detalle": "HTTP 403 sin detalle",
     }
 
 
@@ -205,6 +208,199 @@ def test_send_selected_invoice_warns_on_token_generic(monkeypatch, qt_app, tmp_p
 
     tab.send_selected_invoice()
     assert "token" in warnings["msg"].lower()
+
+
+def test_send_orphan_credit_note_snapshot_missing(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: None)
+
+    tab = _make_tab(db, cid)
+
+    json_path = tmp_path / "nota.json"
+    json_path.write_text("{}", encoding="utf-8")
+
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "orphan", "tipo": "Nota de crédito", "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"json": str(json_path)},
+    )
+    monkeypatch.setattr(
+        facturacion_tab.FacturacionTab,
+        "_buscar_nota_id",
+        lambda self, factura, expected: nota_id,
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, value):
+            self._checked = value
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = {}
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    def fake_warning(parent, title, message):
+        warnings["msg"] = message
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+    monkeypatch.setattr(dte, "generar_nota_credito_json", lambda *a, **k: pytest.fail("no debe generarse"))
+    monkeypatch.setattr(dte, "_enviar_documento", lambda *a, **k: pytest.fail("no debe enviarse"))
+
+    tab.send_selected_invoice()
+
+    assert warnings["msg"] == facturacion_tab.SNAPSHOT_MISSING_MESSAGE
+
+
+def test_send_selected_invoice_token_auth_error(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, value):
+            self._checked = value
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = {}
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    def fake_warning(parent, title, message):
+        warnings["msg"] = message
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+
+    def fake_transmitir(db_obj, vid, tipo_dte="01"):
+        return {"http_status": 401, "auth_error": True}
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    tab.send_selected_invoice()
+
+    assert warnings["msg"] == (
+        "El token está desactualizado. Debe generar uno nuevo desde la configuración de facturación."
+    )
+
+
+def test_send_selected_invoice_success(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, value):
+            self._checked = value
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = {}
+    info = {}
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: warnings.setdefault("msg", a[2]))
+
+    def fake_information(parent, title, message):
+        info["msg"] = message
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", fake_information)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    def fake_transmitir(db_obj, vid, tipo_dte="01"):
+        return {"estado": "Transmitido", "sello": "XYZ"}
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    tab.send_selected_invoice()
+
+    assert warnings == {}
+    assert "Documento enviado" in info.get("msg", "")
 
 
 def test_send_selected_invoice_warns_on_exception(monkeypatch, qt_app, tmp_path):

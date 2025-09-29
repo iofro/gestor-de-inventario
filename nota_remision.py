@@ -25,8 +25,14 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
+from utils.fecha import (
+    TZ_EL_SALVADOR,
+    fecha_ddmmaaaa,
+    fecha_emision_hoy_str,
+    normalizar_fecha_iso,
+)
 from utils.monto import monto_a_texto_sv, d2
+from utils.snapshot import normalize_snapshot
 import warnings
 
 from utils.sanitize import limpiar_documentos, solo_digitos
@@ -140,16 +146,15 @@ def _normalizar_documento_relacionado(doc_rel: list[dict]) -> list[dict]:
         raise ValueError(
             "documento_relacionado requiere numeroDocumento y fechaEmision"
         )
-    try:
-        datetime.fromisoformat(fecha)
-    except Exception as exc:
-        raise ValueError("fechaEmision inválida en documento_relacionado") from exc
+    fecha_formateada = fecha_ddmmaaaa(fecha)
+    if not fecha_formateada:
+        raise ValueError("fechaEmision inválida en documento_relacionado")
     return [
         {
             "tipoDocumento": tipo,
             "tipoGeneracion": 2,
             "numeroDocumento": numero,
-            "fechaEmision": fecha,
+            "fechaEmision": fecha_formateada,
         }
     ]
 
@@ -179,17 +184,23 @@ def generar_nota_remision(
         detalles = detalles or factura.get("cuerpoDocumento", [])
         if documento_relacionado is None:
             ident = factura.get("identificacion", {})
-            fecha_emision = normalizar_fecha_iso(ident.get("fecEmi"))
+            fecha_base = ident.get("fecEmi") or ident.get("fechaEmision")
+            fecha_emision = normalizar_fecha_iso(fecha_base)
             if fecha_emision:
                 ident["fecEmi"] = fecha_emision
             else:
                 fecha_emision = ident.get("fecEmi")
+            fecha_doc_rel = (
+                fecha_ddmmaaaa(fecha_base)
+                or fecha_ddmmaaaa(fecha_emision)
+                or fecha_emision
+            )
             documento_relacionado = [
                 {
                     "tipoDocumento": ident.get("tipoDte"),
                     "tipoGeneracion": 2,
                     "numeroDocumento": ident.get("codigoGeneracion"),
-                    "fechaEmision": fecha_emision,
+                    "fechaEmision": fecha_doc_rel,
                 }
             ]
         # Para notas derivadas de factura la extensión puede omitirse
@@ -349,14 +360,43 @@ def generar_nota_remision_desde_db(
 
         from dte import generar_dte_json
 
-        fecha_origen = normalizar_fecha_iso(venta.get("fecha")) if venta else None
-        dte_origen = generar_dte_json(db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente)
-        if fecha_origen:
+        fecha_origen = None
+        snapshot = db.get_snapshot_by_venta(venta_id)
+        if snapshot:
+            try:
+                dte_origen = normalize_snapshot(snapshot.payload)
+            except Exception:
+                dte_origen = None
+            else:
+                if snapshot.fecha_emision:
+                    fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
+        else:
+            dte_origen = None
+
+        if dte_origen is None:
+            dte_origen = generar_dte_json(
+                db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente
+            )
+
+        if not fecha_origen and venta_id is not None:
+            fecha_envio = db.get_envio_fecha_emision(venta_id)
+            if fecha_envio:
+                fecha_origen = normalizar_fecha_iso(fecha_envio)
+
+        if not fecha_origen and venta:
+            fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
+
+        if fecha_origen and isinstance(dte_origen, dict):
             dte_ident = dte_origen.setdefault("identificacion", {})
-            dte_ident["fecEmi"] = fecha_origen
+            if isinstance(dte_ident, dict):
+                dte_ident["fecEmi"] = fecha_origen
+
         extension = extra.get("extension") or {}
         return generar_nota_remision(
-            db, factura=dte_origen, extension=extension, ambiente=ambiente
+            db,
+            factura=dte_origen,
+            extension=extension,
+            ambiente=ambiente,
         )
 
     factura = extra.get("factura")

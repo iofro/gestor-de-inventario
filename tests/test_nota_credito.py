@@ -1,5 +1,6 @@
 import fitz
 from copy import deepcopy
+import json
 from decimal import Decimal, ROUND_HALF_UP
 from db import DB
 from dte import generar_dte_json
@@ -8,6 +9,7 @@ import pytest
 from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
 from utils.snapshot import Snapshot, SnapshotNotFoundError
+from utils.fecha import fecha_ddmmaaaa
 
 
 def create_db():
@@ -172,9 +174,18 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
         (venta_id,),
     ).lastrowid
 
+    fecha_envio = "2024-03-18"
+    db.registrar_envio_dte(
+        venta_id,
+        "auto",
+        "procesado",
+        "SELLO",
+        respuesta_json=json.dumps({"fhProcesamiento": f"{fecha_envio}T12:34:56"}),
+    )
+
     nce = generar_nce_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nce["documentoRelacionado"][0]
-    assert doc_rel["fechaEmision"] == venta_fecha
+    assert doc_rel["fechaEmision"] == fecha_ddmmaaaa(fecha_envio)
 
 
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
@@ -264,7 +275,7 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
         doc_rel["numeroDocumento"]
         == payload["identificacion"]["codigoGeneracion"].upper()
     )
-    assert doc_rel["fechaEmision"] == "2023-08-01"
+    assert doc_rel["fechaEmision"] == fecha_ddmmaaaa("2023-08-01")
     assert metrics_calls == ["notes_source_used.snapshot"]
     assert payload["firma"] == "SIGNATURE"
 
@@ -348,7 +359,7 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
-    assert doc_rel["fechaEmision"] == "2023-09-01"
+    assert doc_rel["fechaEmision"] == fecha_ddmmaaaa("2023-09-01")
 
 
 def test_generar_nce_desde_nota_strict_snapshot(monkeypatch):

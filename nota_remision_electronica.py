@@ -20,7 +20,12 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
+from utils.fecha import (
+    TZ_EL_SALVADOR,
+    fecha_ddmmaaaa,
+    fecha_emision_hoy_str,
+    normalizar_fecha_iso,
+)
 from utils.monto import d2, monto_a_texto_sv
 import warnings
 
@@ -217,6 +222,7 @@ def generar_nota_remision_desde_factura(
     detalles: Optional[Iterable[dict]] = None,
     extension: Optional[dict] = None,
     ambiente: str = "00",
+    fecha_origen: Optional[str] = None,
 ) -> dict:
     """Genera una NR reutilizando los datos de una factura ``factura``."""
 
@@ -224,18 +230,34 @@ def generar_nota_remision_desde_factura(
     receptor = factura.get("receptor", {})
     receptor.setdefault("bienTitulo", "01")
     detalles = detalles or factura.get("cuerpoDocumento", [])
-    ident = factura.get("identificacion", {})
-    fecha_emision = normalizar_fecha_iso(ident.get("fecEmi"))
-    if fecha_emision:
-        ident["fecEmi"] = fecha_emision
-    else:
-        fecha_emision = ident.get("fecEmi")
+    ident = factura.get("identificacion") or {}
+    if not isinstance(ident, dict):
+        ident = {}
+        factura["identificacion"] = ident
+    fecha_emision = None
+    if fecha_origen:
+        fecha_normalizada = normalizar_fecha_iso(fecha_origen)
+        if fecha_normalizada:
+            fecha_emision = fecha_normalizada
+            ident["fecEmi"] = fecha_emision
+    if not fecha_emision:
+        fecha_normalizada = normalizar_fecha_iso(ident.get("fecEmi"))
+        if fecha_normalizada:
+            fecha_emision = fecha_normalizada
+            ident["fecEmi"] = fecha_emision
+        else:
+            fecha_emision = ident.get("fecEmi")
+    fecha_doc_rel = (
+        fecha_ddmmaaaa(fecha_emision)
+        or fecha_ddmmaaaa(ident.get("fecEmi"))
+        or fecha_emision
+    )
     doc_rel = [
         {
             "tipoDocumento": ident.get("tipoDte"),
             "tipoGeneracion": 2,
             "numeroDocumento": ident.get("codigoGeneracion"),
-            "fechaEmision": fecha_emision,
+            "fechaEmision": fecha_doc_rel,
         }
     ]
     ext = extension.copy() if extension else None

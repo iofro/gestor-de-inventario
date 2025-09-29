@@ -16,6 +16,7 @@ from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.snapshot import Snapshot
+from utils.fecha import normalizar_fecha_iso
 from paths import DTES_DIR, get_canonical_dte_dir, user_data_path
 
 logging.basicConfig(level=logging.INFO)
@@ -2712,6 +2713,38 @@ class DB:
             return json.loads(row[0])
         except Exception:
             return {}
+
+    def get_envio_fecha_emision(self, venta_id):
+        """Obtiene la fecha de emisión del último envío registrado para la venta."""
+
+        self.ensure_column("dte_envios", "respuesta", "TEXT")
+        row = self.cursor.execute(
+            "SELECT fecha_hora, respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+            (venta_id,),
+        ).fetchone()
+        if not row:
+            return None
+
+        fh_procesamiento = None
+        raw_respuesta = row["respuesta"] if isinstance(row, sqlite3.Row) else row[1]
+        if raw_respuesta:
+            try:
+                respuesta = json.loads(raw_respuesta)
+            except Exception:
+                respuesta = None
+            if isinstance(respuesta, dict):
+                fh_procesamiento = respuesta.get("fhProcesamiento")
+                if not fh_procesamiento:
+                    body = respuesta.get("body")
+                    if isinstance(body, dict):
+                        fh_procesamiento = body.get("fhProcesamiento")
+        if fh_procesamiento:
+            fecha_procesada = normalizar_fecha_iso(fh_procesamiento)
+            if fecha_procesada:
+                return fecha_procesada
+
+        fecha_hora = row["fecha_hora"] if isinstance(row, sqlite3.Row) else row[0]
+        return normalizar_fecha_iso(fecha_hora)
 
     def listar_dtes(self, fecha_inicio=None, fecha_fin=None, estado=None):
         """Lista registros de ``dte_envios`` filtrando por fecha y estado."""

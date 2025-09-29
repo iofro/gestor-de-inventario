@@ -30,7 +30,12 @@ from utils.identificacion import is_valid_nit, normalize_dui_to_nit9
 from utils.env import env_flag
 from utils import metrics
 from utils.receptor import ensure_receptor_completo
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
+from utils.fecha import (
+    TZ_EL_SALVADOR,
+    fecha_ddmmaaaa,
+    fecha_emision_hoy_str,
+    normalizar_fecha_iso,
+)
 from utils.monto import d2, monto_a_texto_sv
 from utils.sanitize import solo_digitos
 from utils.snapshot import SnapshotNotFoundError, normalize_snapshot
@@ -107,10 +112,19 @@ def generar_nde_desde_nota(
 
     snapshot = db.get_snapshot_by_venta(venta_id) if venta_id is not None else None
     source_used = "db"
+    fecha_relacionada_ddmmaa = None
     if snapshot:
         dte_origen = normalize_snapshot(snapshot.payload)
         source_used = "snapshot"
         uuid_origen = snapshot.uuid.upper() if snapshot.uuid else None
+        ident_snapshot = (
+            snapshot.payload.get("identificacion") if isinstance(snapshot.payload, dict) else None
+        )
+        if isinstance(ident_snapshot, dict):
+            base_fec_snapshot = (
+                ident_snapshot.get("fecEmi") or ident_snapshot.get("fechaEmision")
+            )
+            fecha_relacionada_ddmmaa = fecha_ddmmaaaa(base_fec_snapshot)
     else:
         if strict and venta_id is not None:
             raise SnapshotNotFoundError(venta_id, nota_id)
@@ -128,13 +142,19 @@ def generar_nde_desde_nota(
     fecha_origen = None
     if snapshot and snapshot.fecha_emision:
         fecha_origen = normalizar_fecha_iso(snapshot.fecha_emision)
-    elif venta:
+    if not fecha_origen and venta_id is not None:
+        fecha_envio = db.get_envio_fecha_emision(venta_id)
+        if fecha_envio:
+            fecha_origen = normalizar_fecha_iso(fecha_envio)
+    if not fecha_origen and venta:
         fecha_origen = normalizar_fecha_iso(venta.get("fecha"))
     if fecha_origen:
         identificacion = dte_origen.get("identificacion")
         if isinstance(identificacion, dict):
             if identificacion.get("fecEmi") != fecha_origen:
                 identificacion["fecEmi"] = fecha_origen
+    if not fecha_relacionada_ddmmaa:
+        fecha_relacionada_ddmmaa = fecha_ddmmaaaa(fecha_origen)
 
     detalles = None
     if nota.get("detalles"):
@@ -151,23 +171,29 @@ def generar_nde_desde_nota(
         nota.get("motivo"),
         ambiente=ambiente,
         fecha_origen=fecha_origen,
+        fecha_relacionada_ddmmaa=fecha_relacionada_ddmmaa,
     )
 
     doc_rel = resultado.get("documentoRelacionado") or []
     rel = doc_rel[0] if doc_rel else {}
     duration_ms = (time.perf_counter() - start) * 1000
     metrics.inc(f"notes_source_used.{source_used}")
-    if (
-        fecha_origen
-        and rel.get("fechaEmision")
-        and rel.get("fechaEmision") != fecha_origen
-    ):
-        logger.warning(
-            "documentoRelacionado.fechaEmision: valor no verificable localmente nota_id=%s venta_id=%s uuid=%s",
-            nota_id,
-            venta_id,
-            uuid_origen,
-        )
+    if fecha_origen and rel.get("fechaEmision"):
+        rel_iso = normalizar_fecha_iso(rel.get("fechaEmision"))
+        if rel_iso and rel_iso != fecha_origen:
+            logger.warning(
+                "documentoRelacionado.fechaEmision: valor no verificable localmente nota_id=%s venta_id=%s uuid=%s",
+                nota_id,
+                venta_id,
+                uuid_origen,
+            )
+        elif not rel_iso:
+            logger.warning(
+                "documentoRelacionado.fechaEmision no se pudo normalizar nota_id=%s venta_id=%s uuid=%s",
+                nota_id,
+                venta_id,
+                uuid_origen,
+            )
     logger.info(
         "NDE relaciona tipo=%s uuid=%s num=%s fec=%s fuente=%s nota_id=%s venta_id=%s dur_ms=%.3f",
         rel.get("tipoDocumento"),
@@ -191,6 +217,7 @@ def generar_nde_desde_dte(
     *,
     ambiente: str = "00",
     fecha_origen: Optional[str] = None,
+    fecha_relacionada_ddmmaa: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
     origen_ident = dte_origen.get("identificacion", {})
@@ -239,11 +266,11 @@ def generar_nde_desde_dte(
         )
         numero_documento = str(numero_documento).strip()
 
-    fecha_doc_rel = normalizar_fecha_iso(
+    fecha_doc_rel = fecha_relacionada_ddmmaa or fecha_ddmmaaaa(
         origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
     )
     if not fecha_doc_rel and fecha_origen:
-        fecha_doc_rel = normalizar_fecha_iso(fecha_origen)
+        fecha_doc_rel = fecha_ddmmaaaa(fecha_origen)
     doc_rel = [
         {
             "tipoDocumento": tipo_doc_rel,

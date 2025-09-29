@@ -133,6 +133,8 @@ def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
     nce = generar_nce_desde_nota(db, nota_id)
     doc_rel = nce["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["fechaEmision"] == "01/01/2024"
+    assert nce["identificacion"]["fecEmi"] == "01/01/2024"
     receptor_nota = nce["receptor"]
     assert receptor_nota["nit"] == "06141407100012"
     assert receptor_nota["nrc"] == "123"
@@ -173,18 +175,20 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
         (venta_id,),
     ).lastrowid
 
-    fecha_envio = "2024-03-18"
+    fecha_envio_iso = "2024-03-18"
+    fecha_envio_ddmm = "18/03/2024"
     db.registrar_envio_dte(
         venta_id,
         "auto",
         "procesado",
         "SELLO",
-        respuesta_json=json.dumps({"fhProcesamiento": f"{fecha_envio}T12:34:56"}),
+        respuesta_json=json.dumps({"fhProcesamiento": f"{fecha_envio_iso}T12:34:56"}),
     )
 
     nce = generar_nce_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nce["documentoRelacionado"][0]
-    assert doc_rel["fechaEmision"] == fecha_envio
+    assert doc_rel["fechaEmision"] == fecha_envio_ddmm
+    assert nce["identificacion"]["fecEmi"] == fecha_envio_ddmm
 
 
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
@@ -274,7 +278,8 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
         doc_rel["numeroDocumento"]
         == payload["identificacion"]["codigoGeneracion"].upper()
     )
-    assert doc_rel["fechaEmision"] == "2023-08-01"
+    assert doc_rel["fechaEmision"] == "01/08/2023"
+    assert nce["identificacion"]["fecEmi"] == "01/08/2023"
     assert metrics_calls == ["notes_source_used.snapshot"]
     assert payload["firma"] == "SIGNATURE"
 
@@ -358,7 +363,8 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
-    assert doc_rel["fechaEmision"] == "2023-09-01"
+    assert doc_rel["fechaEmision"] == "01/09/2023"
+    assert nce["identificacion"]["fecEmi"] == "01/09/2023"
 
 
 def test_generar_nce_desde_nota_strict_snapshot(monkeypatch):

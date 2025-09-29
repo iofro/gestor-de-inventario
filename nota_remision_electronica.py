@@ -20,7 +20,7 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from utils import catalogos
-from utils.fecha import TZ_EL_SALVADOR, fecha_emision_hoy_str, normalizar_fecha_iso
+from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str
 from utils.monto import d2, monto_a_texto_sv
 import warnings
 
@@ -146,6 +146,7 @@ def _generar_base(
 
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
+    fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
     identificacion = {
         "version": DTE_VERSIONES["04"],
         "ambiente": ambiente,
@@ -156,11 +157,15 @@ def _generar_base(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_emision_hoy_str(now),
+        "fecEmi": fecha_emision_por_defecto,
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
 
+    if documento_relacionado:
+        fecha_relacionada = documento_relacionado[0].get("fechaEmision")
+        if fecha_relacionada:
+            identificacion["fecEmi"] = fecha_relacionada
     numero_doc = documento_relacionado[0].get("numeroDocumento")
     items = _build_items(detalles, numero_doc)
 
@@ -231,22 +236,28 @@ def generar_nota_remision_desde_factura(
         factura["identificacion"] = ident
     fecha_emision = None
     if fecha_origen:
-        fecha_normalizada = normalizar_fecha_iso(fecha_origen)
-        if fecha_normalizada:
-            fecha_emision = fecha_normalizada
-            ident["fecEmi"] = fecha_emision
+        fecha_emision = fecha_ddmmaaaa(fecha_origen)
     if not fecha_emision:
-        fecha_normalizada = normalizar_fecha_iso(ident.get("fecEmi"))
-        if fecha_normalizada:
-            fecha_emision = fecha_normalizada
-            ident["fecEmi"] = fecha_emision
-        else:
-            fecha_emision = ident.get("fecEmi")
+        fecha_emision = fecha_ddmmaaaa(
+            ident.get("fecEmi") or ident.get("fechaEmision")
+        )
+    if not fecha_emision:
+        fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
+    if fecha_emision:
+        ident["fecEmi"] = fecha_emision
+    codigo_generacion = ident.get("codigoGeneracion")
+    numero_control = ident.get("numeroControl")
+    if codigo_generacion:
+        numero_documento = str(codigo_generacion).upper()
+        tipo_generacion = 2
+    else:
+        numero_documento = str(numero_control or "").strip()
+        tipo_generacion = 1
     doc_rel = [
         {
             "tipoDocumento": ident.get("tipoDte"),
-            "tipoGeneracion": 2,
-            "numeroDocumento": ident.get("codigoGeneracion"),
+            "tipoGeneracion": tipo_generacion,
+            "numeroDocumento": numero_documento,
             "fechaEmision": fecha_emision,
         }
     ]

@@ -52,3 +52,21 @@ def normalizar_fecha_iso(value: Union[str, datetime, date, None]) -> Optional[st
             return None
 
     return fecha_dt.date().isoformat()
+
+
+def fecha_ddmmaaaa(value: Union[str, datetime, date, None]) -> Optional[str]:
+    """Convierte ``value`` en una fecha ``DD/MM/AAAA``.
+
+    Acepta cadenas en formato ISO (con o sin hora), ``DD/MM/AAAA`` con o sin
+    hora y objetos :class:`datetime`/ :class:`date`.  Si la fecha no puede
+    interpretarse retorna ``None``.
+    """
+
+    fecha_iso = normalizar_fecha_iso(value)
+    if not fecha_iso:
+        return None
+    try:
+        fecha_obj = date.fromisoformat(fecha_iso)
+    except ValueError:
+        return None
+    return fecha_obj.strftime("%d/%m/%Y")

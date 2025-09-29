@@ -33,6 +33,7 @@ def _sample_payload():
             "subTotal": Decimal("3.00"),
             "totalIva": Decimal("0.39"),
             "montoTotalOperacion": Decimal("3.39"),
+            "condicionOperacion": 1,
             "pagos": [{"codigo": "01", "montoPago": Decimal("3.39")}],
         },
         "extra": {"es_ticket": True},
@@ -54,7 +55,8 @@ def test_render_ticket_pdf_clean(tmp_path):
     assert "DOCUMENTO TRIBUTARIO" in text
     assert "ELECTRÓNICO — CONSUMIDOR FINAL" in normalized
     assert "DETALLE DE FACTURA" in text
-    assert "FORMA DE PAGO" in text or "Forma de pago" in text
+    assert "CONDICIÓN DE PAGO" in text or "Condición de pago" in text
+    assert "Contado" in text or "CONTADO" in text
     assert "Sello de Recepción: SEAL-123" in text
     assert "3.39" in text  # total
 

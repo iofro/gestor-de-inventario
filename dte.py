@@ -6846,6 +6846,9 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
 
     data = generar_nota_credito_json(db, nota_id)
+    ident = data.get("identificacion") or {}
+    ident["fecEmi"] = fecha_emision_hoy_str()
+    data["identificacion"] = ident
     venta_id_base = None
     try:
         row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -6952,6 +6955,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
                     == ident.get("codigoGeneracion")
                     and payload_ident.get("numeroControl")
                     == ident.get("numeroControl")
+                    and payload_ident.get("fecEmi") == ident.get("fecEmi")
                 ):
                     jws_token = cached_token
         except Exception:
@@ -6975,6 +6979,9 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
 
     data = generar_nota_debito_json(db, nota_id)
+    ident = data.get("identificacion") or {}
+    ident["fecEmi"] = fecha_emision_hoy_str()
+    data["identificacion"] = ident
     venta_id_base = None
     try:
         row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -7081,6 +7088,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
                     == ident.get("codigoGeneracion")
                     and payload_ident.get("numeroControl")
                     == ident.get("numeroControl")
+                    and payload_ident.get("fecEmi") == ident.get("fecEmi")
                 ):
                     jws_token = cached_token
         except Exception:
@@ -7104,6 +7112,9 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from nota_remision import generar_nota_remision_desde_db
 
     data = generar_nota_remision_desde_db(db, nota_id)
+    ident = data.get("identificacion") or {}
+    ident["fecEmi"] = fecha_emision_hoy_str()
+    data["identificacion"] = ident
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("04")
     # Validación omitida.

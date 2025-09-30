@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import json
 import re
 from typing import Iterable, Optional
 
@@ -31,6 +32,7 @@ from dte import (
     generar_cabecera_dte_data,
     sanitize_dte_payload,
     normalize_uuid_v4_upper,
+    _map_estado_hacienda,
 )
 from utils import catalogos
 from utils.fecha import (
@@ -75,6 +77,179 @@ _ESTADOS_REL_PERMITIDOS = {"Enviado", "Aceptado"}
 
 
 logger = logging.getLogger(__name__)
+
+
+def _fetch_envio_estado_ui(
+    db: DB, *, codigo: Optional[str], numero: Optional[str]
+) -> Optional[str]:
+    """Obtiene ``estado_ui`` (o equivalente) de ``dte_envios`` para NR."""
+
+    for column, definition in (
+        ("codigo_generacion", "TEXT"),
+        ("numero_control", "TEXT"),
+        ("estado_ui", "TEXT"),
+        ("estado", "TEXT"),
+        ("respuesta", "TEXT"),
+    ):
+        db.ensure_column("dte_envios", column, definition)
+
+    cur = db.cursor
+    row = None
+    row_source = None
+    codigo = (codigo or "").strip()
+    numero = (numero or "").strip()
+    if codigo:
+        row = cur.execute(
+            """
+            SELECT id, estado_ui, estado, respuesta
+            FROM dte_envios
+            WHERE codigo_generacion IS NOT NULL AND codigo_generacion = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (codigo,),
+        ).fetchone()
+        if row is not None:
+            row_source = "codigo"
+    if row is None and numero:
+        row = cur.execute(
+            """
+            SELECT id, estado_ui, estado, respuesta
+            FROM dte_envios
+            WHERE numero_control IS NOT NULL AND numero_control = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (numero,),
+        ).fetchone()
+        if row is not None:
+            row_source = "numero"
+
+    if row is None:
+        token = codigo or numero
+        if token:
+            patterns: list[str] = []
+            if codigo:
+                patterns.append(f'%"codigoGeneracion":"{codigo}"%')
+                patterns.append(f'%"codigoGeneracion":"{codigo}%')
+            if numero:
+                patterns.append(f'%"numeroControl":"{numero}"%')
+                patterns.append(f'%"numeroControl":"{numero}%')
+            patterns.append(f"%{token}%")
+            for pattern in patterns:
+                row = cur.execute(
+                    """
+                    SELECT id, estado_ui, estado, respuesta
+                    FROM dte_envios
+                    WHERE respuesta LIKE ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (pattern,),
+                ).fetchone()
+                if row is not None:
+                    row_source = "respuesta"
+                    break
+
+    if row is None:
+        logger.debug(
+            "NR relacionado: sin coincidencia para codigo=%s numero=%s", codigo, numero
+        )
+        return None
+
+    try:
+        row_id = row["id"]
+        estado_ui = (row["estado_ui"] or "").strip()
+        estado_raw = (row["estado"] or "").strip()
+        respuesta_raw = row["respuesta"] or ""
+    except Exception:
+        row_id = row[0]
+        estado_ui = (row[1] or "").strip()
+        estado_raw = (row[2] or "").strip()
+        respuesta_raw = row[3] or ""
+
+    if estado_ui:
+        logger.debug(
+            "NR relacionado: estado_ui=%s obtenido por %s (id=%s)",
+            estado_ui,
+            row_source,
+            row_id,
+        )
+        return estado_ui
+
+    try:
+        respuesta_json = json.loads(respuesta_raw) if respuesta_raw else {}
+    except Exception:
+        respuesta_json = {}
+
+    if respuesta_json:
+        try:
+            estado_map = _map_estado_hacienda(respuesta_json)
+        except Exception:
+            estado_map = {}
+        ui = (estado_map.get("ui") or "").strip() if isinstance(estado_map, dict) else ""
+        if ui:
+            if not estado_ui and row_id is not None:
+                try:
+                    cur.execute(
+                        "UPDATE dte_envios SET estado_ui = ? WHERE id = ?",
+                        (ui, row_id),
+                    )
+                    db.conn.commit()
+                    logger.info(
+                        "NR relacionado: backfill estado_ui=%s por JSON (id=%s, fuente=%s)",
+                        ui,
+                        row_id,
+                        row_source,
+                    )
+                except Exception:
+                    logger.exception(
+                        "NR relacionado: fallo backfill estado_ui=%s id=%s", ui, row_id
+                    )
+            logger.debug(
+                "NR relacionado: ui derivado de JSON=%s (id=%s, fuente=%s)",
+                ui,
+                row_id,
+                row_source,
+            )
+            return ui
+
+    estado_up = estado_raw.upper()
+    ui = None
+    if "ACEPT" in estado_up:
+        ui = "Aceptado"
+    elif any(token in estado_up for token in ("PROCES", "RECIB", "TRANSMIT")):
+        ui = "Enviado"
+    elif "RECHAZ" in estado_up:
+        ui = "Rechazado"
+
+    if ui and not estado_ui and row_id is not None:
+        try:
+            cur.execute(
+                "UPDATE dte_envios SET estado_ui = ? WHERE id = ?",
+                (ui, row_id),
+            )
+            db.conn.commit()
+            logger.info(
+                "NR relacionado: backfill estado_ui=%s por estado (id=%s, fuente=%s)",
+                ui,
+                row_id,
+                row_source,
+            )
+        except Exception:
+            logger.exception(
+                "NR relacionado: fallo backfill estado_ui=%s id=%s", ui, row_id
+            )
+
+    if ui:
+        logger.debug(
+            "NR relacionado: ui derivado de estado=%s (id=%s, fuente=%s)",
+            ui,
+            row_id,
+            row_source,
+        )
+    else:
+        logger.debug(
+            "NR relacionado: sin ui derivado (id=%s, fuente=%s)", row_id, row_source
+        )
+    return ui
 
 
 def _build_items(
@@ -271,63 +446,36 @@ def _verificar_documento_relacionado_recepcionado(db: DB, doc_rel: list[dict]) -
 
     doc = doc_rel[0]
     tipo_generacion = doc.get("tipoGeneracion")
-    codigo_generacion = doc.get("codigoGeneracion")
-    numero_documento = doc.get("numeroDocumento")
+    codigo_generacion = (doc.get("codigoGeneracion") or "").strip().upper()
+    numero_documento = (doc.get("numeroDocumento") or "").strip().upper()
 
-    codigo_consulta = None
-    numero_consulta = None
+    codigo_consulta: Optional[str] = None
+    numero_consulta: Optional[str] = None
     if tipo_generacion == 2:
-        codigo_consulta = (codigo_generacion or numero_documento or "").strip().upper()
+        codigo_consulta = codigo_generacion or numero_documento or None
     elif tipo_generacion == 1:
-        numero_consulta = (numero_documento or "").strip().upper()
+        numero_consulta = numero_documento or None
         if codigo_generacion:
-            codigo_consulta = str(codigo_generacion).strip().upper()
+            codigo_consulta = codigo_generacion
     else:
         if codigo_generacion:
-            codigo_consulta = str(codigo_generacion).strip().upper()
+            codigo_consulta = codigo_generacion
         if not codigo_consulta and numero_documento:
-            numero_consulta = str(numero_documento).strip().upper()
+            numero_consulta = numero_documento or None
 
-    for column, definition in (
-        ("codigo_lote", "TEXT"),
-        ("codigo_generacion", "TEXT"),
-        ("numero_control", "TEXT"),
-        ("estado_ui", "TEXT"),
-        ("estado_ui_tag", "TEXT"),
-    ):
-        db.ensure_column("dte_envios", column, definition)
+    estado_ui = _fetch_envio_estado_ui(
+        db, codigo=codigo_consulta, numero=numero_consulta
+    )
 
-    row = None
-    if codigo_consulta:
-        row = db.cursor.execute(
-            """
-            SELECT estado_ui FROM dte_envios
-            WHERE codigo_generacion IS NOT NULL AND codigo_generacion = ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (codigo_consulta,),
-        ).fetchone()
-    if row is None and numero_consulta:
-        row = db.cursor.execute(
-            """
-            SELECT estado_ui FROM dte_envios
-            WHERE numero_control IS NOT NULL AND numero_control = ?
-            ORDER BY id DESC LIMIT 1
-            """,
-            (numero_consulta,),
-        ).fetchone()
-
-    if row is None:
+    if estado_ui is None:
         raise ValueError(
             "El documento relacionado aún no ha sido recepcionado por MH (sin registro local)"
         )
 
-    try:
-        estado_ui = row["estado_ui"]
-    except Exception:
-        estado_ui = row[0] if row else None
+    if estado_ui == "Rechazado":
+        raise ValueError("El documento relacionado fue RECHAZADO por MH")
 
-    if (estado_ui or "").strip() not in _ESTADOS_REL_PERMITIDOS:
+    if estado_ui not in _ESTADOS_REL_PERMITIDOS:
         raise ValueError(
             "El documento relacionado aún no ha sido recepcionado por MH"
         )

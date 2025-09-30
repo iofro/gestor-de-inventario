@@ -7031,6 +7031,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         ident.get("fecEmi"),
         (related_entry or {}).get("fechaEmision"),
     )
+
     payload_json = stable_stringify(data, indent=2)
     save_file(json_path, payload_json)
     if jws_token is None:
@@ -7048,6 +7049,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             "fecEmi"
         )
     primary_ident = data.get("identificacion") or {}
+
     logger.info(
         "SAVE->SEND fecEmi=%s rel.fechaEmision=%s",
         primary_ident.get("fecEmi"),
@@ -7234,6 +7236,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         ident.get("fecEmi"),
         (related_entry or {}).get("fechaEmision"),
     )
+
     payload_json = stable_stringify(data, indent=2)
     save_file(json_path, payload_json)
     if jws_token is None:
@@ -7251,6 +7254,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             "fecEmi"
         )
     primary_ident = data.get("identificacion") or {}
+
     logger.info(
         "SAVE->SEND fecEmi=%s rel.fechaEmision=%s",
         primary_ident.get("fecEmi"),
@@ -7319,6 +7323,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
         )
     data["identificacion"] = ident
     saved_fecemi = ident.get("fecEmi")
+
     from utils.docs import get_dte_document_paths
     from utils.stable_json import save_file, stable_stringify
 
@@ -7329,6 +7334,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
         ident.get("numeroControl"),
         "NotaRemision",
     )
+
     related = data.get("documentoRelacionado")
     related_entry: Mapping[str, Any] | None = None
     if isinstance(related, list):
@@ -7346,6 +7352,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     payload_json = stable_stringify(data, indent=2)
     save_file(json_path, payload_json)
     logger.info(
+
         "SAVE->SEND fecEmi=%s rel.fechaEmision=%s",
         ident.get("fecEmi"),
         (related_entry or {}).get("fechaEmision"),

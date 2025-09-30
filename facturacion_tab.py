@@ -1124,6 +1124,16 @@ class FacturacionTab(QWidget):
             return "Enviado"
         return "Pendiente de envío"
 
+    @staticmethod
+    def _has_successful_envio_status(envio: str | None) -> bool:
+        if not envio:
+            return False
+        envio_norm = str(envio).strip().lower()
+        for prefix in ("enviado", "aceptado", "recibido", "procesado"):
+            if envio_norm.startswith(prefix):
+                return True
+        return False
+
     @classmethod
     def _detectar_estado_factura(
         cls,
@@ -2152,6 +2162,77 @@ class FacturacionTab(QWidget):
         else:
             QMessageBox.critical(self, title, mensaje)
 
+    def _document_already_sent(self, entry: dict | None, factura: dict | None) -> bool:
+        if not entry:
+            return False
+
+        envio_val = entry.get("envio")
+        if self._has_successful_envio_status(envio_val):
+            return True
+
+        db = getattr(self.manager, "db", None)
+        if db is None:
+            return False
+
+        venta_id = entry.get("venta_id")
+        if factura and factura.get("venta_id"):
+            venta_id = venta_id or factura.get("venta_id")
+
+        envio_state = None
+        if venta_id:
+            try:
+                row = db.cursor.execute(
+                    "SELECT estado_ui, estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                    (venta_id,),
+                ).fetchone()
+            except Exception:
+                row = None
+            if row:
+                envio_state = row["estado_ui"]
+                if not (isinstance(envio_state, str) and envio_state.strip()):
+                    envio_state = self._map_envio_state(row["estado"])
+                if self._has_successful_envio_status(envio_state):
+                    return True
+
+        json_path = factura.get("json") if factura else None
+        numero_control = None
+        codigo_generacion = None
+        if factura:
+            numero_control = factura.get("control")
+        if json_path and os.path.exists(json_path):
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+                ident = data.get("identificacion") or data.get("identificador") or {}
+                numero_control = ident.get("numeroControl") or numero_control
+                codigo_generacion = ident.get("codigoGeneracion") or codigo_generacion
+            except Exception:
+                pass
+        if not numero_control and isinstance(entry.get("name"), str):
+            maybe_ctrl = entry.get("name").strip()
+            if maybe_ctrl:
+                numero_control = numero_control or maybe_ctrl
+
+        cur = getattr(db, "cursor", None)
+        if cur is not None:
+            try:
+                _, envio_state = self._detectar_estado_factura(
+                    None,
+                    None,
+                    json_path,
+                    cur,
+                    venta_id=venta_id,
+                    numero_control=numero_control,
+                    codigo_generacion=codigo_generacion,
+                    doc_tipo=entry.get("tipo"),
+                )
+            except Exception:
+                envio_state = None
+            if self._has_successful_envio_status(envio_state):
+                return True
+
+        return False
+
     def send_selected_invoice(self):
         print("UI: SEND_START")
         entry = self._selected_entry()
@@ -2185,6 +2266,16 @@ class FacturacionTab(QWidget):
             elif rtype == "orphan" and factura:
                 self._send_orphan_email(entry)
         if dialog.hacienda_cb.isChecked():
+            if self._document_already_sent(entry, factura):
+                answer = QMessageBox.question(
+                    self,
+                    "Enviar a Hacienda",
+                    "Este documento ya fue enviado. Enviarlo nuevamente puede causar conflictos. ¿Estás seguro de continuar?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.No,
+                )
+                if answer != QMessageBox.Yes:
+                    return
             if rtype == "orphan" and factura:
                 json_path = factura.get("json")
                 try:

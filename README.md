@@ -29,12 +29,47 @@ Se cargará el último inventario si está disponible y podrás comenzar a regis
 
 ## Empaquetado y distribución
 
-El proyecto incluye scripts listos para generar el ejecutable y el instalador
-para Windows. Consulta [BUILD.md](BUILD.md) para pasos detallados sobre cómo:
+### Generar el ejecutable *onefile*
 
-* Ejecutar PyInstaller en modo *onedir* (`build/build.ps1`).
-* Empaquetar el instalador `VertexDTE-Setup.exe` con Inno Setup.
-* Realizar las pruebas manuales recomendadas en una máquina sin dependencias.
+El script `setup.py` genera el binario autocontenido de PyInstaller y recopila
+los recursos necesarios recorriendo el repositorio. De forma automática:
+
+* Utiliza el separador correcto (`;` en Windows, `:` en Linux/macOS) al crear
+  las entradas `--add-data`.
+* Omite directorios y artefactos que no deben distribuirse, incluyendo
+  `.git/`, `node_modules/`, `build/`, `dist/`, `tests/`, `__pycache__/`,
+  entornos virtuales y otros directorios de herramientas.
+* Excluye archivos sensibles o temporales (`*.key`, `*.pem`, `*.pub`, `*.pyc`,
+  `*.log`, etc.).
+* Detecta los módulos dinámicos de `reportlab.graphics.barcode` y los añade
+  como `hidden-imports` para evitar errores en tiempo de ejecución.
+
+Pasos sugeridos:
+
+1. (Opcional) Crea un entorno virtual limpio y ejecuta `pip install -r requirements.txt`.
+2. Lanza la compilación:
+
+   ```bash
+   python setup.py
+   ```
+
+   El ejecutable quedará en `dist/InventarioFarmacia` (en Windows se generará
+   `InventarioFarmacia.exe`).
+
+3. Prueba el resultado en un entorno sin el código fuente. En Linux puedes
+   validar que los recursos estén presentes ejecutando:
+
+   ```bash
+   QT_QPA_PLATFORM=offscreen dist/InventarioFarmacia --help
+   ```
+
+   Si aparece un error de bibliotecas del sistema (por ejemplo `libGL.so.1`),
+   instala los paquetes de OpenGL del sistema (`apt-get install libgl1` en
+   Debian/Ubuntu) antes de volver a ejecutar el binario.
+
+El script sigue siendo compatible con el proceso descrito en
+[BUILD.md](BUILD.md) para generar paquetes de Windows usando PowerShell e Inno
+Setup.
 
 Si la interfaz no aparece al ejecutar el binario, inicia el programa desde una terminal para ver los mensajes de error.
 

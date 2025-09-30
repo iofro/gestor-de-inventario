@@ -118,13 +118,99 @@ def test_detectar_estado_factura_prioriza_exitosos(monkeypatch):
 
     db = DB(":memory:")
     venta = create_sale(db)
-    db.registrar_envio_dte(venta, "normal", "PROCESADO", "S")
-    db.registrar_envio_dte(venta, "normal", "Rechazado", "")
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "PROCESADO",
+        "S",
+        {"estado": "Procesado"},
+        codigo_generacion="ABC",
+        numero_control="NC1",
+    )
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "Rechazado",
+        "",
+        {"estado": "Rechazado"},
+        codigo_generacion="ABC",
+        numero_control="NC1",
+    )
 
     _, envio = FacturacionTab._detectar_estado_factura(
-        {}, cur=db.cursor, venta_id=venta
+        {},
+        cur=db.cursor,
+        venta_id=venta,
+        codigo_generacion="ABC",
+        numero_control="NC1",
     )
-    assert envio == "Enviado"
+    assert envio == "Rechazado"
+
+
+def test_detectar_estado_factura_muestra_observado(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    facturacion_tab = pytest.importorskip(
+        "facturacion_tab", reason="PyQt5 no disponible", exc_type=ImportError
+    )
+    FacturacionTab = facturacion_tab.FacturacionTab
+
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "PROCESADO",
+        "S",
+        {
+            "estado": "Procesado",
+            "descripcionMsg": "RECIBIDO CON OBSERVACIONES",
+            "observaciones": ["detalle"],
+        },
+        codigo_generacion="ABC-OBS",
+    )
+
+    _, envio = FacturacionTab._detectar_estado_factura(
+        {},
+        cur=db.cursor,
+        venta_id=venta,
+        codigo_generacion="ABC-OBS",
+        numero_control=None,
+    )
+
+    assert envio == "Enviado (observado)"
+
+
+def test_detectar_estado_factura_muestra_tag_rechazado(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    facturacion_tab = pytest.importorskip(
+        "facturacion_tab", reason="PyQt5 no disponible", exc_type=ImportError
+    )
+    FacturacionTab = facturacion_tab.FacturacionTab
+
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "RECHAZADO",
+        "S",
+        {
+            "estado": "Rechazado",
+            "codigoMsg": "096",
+            "descripcionMsg": "DOCUMENTO NO CUMPLE ESQUEMA JSON",
+        },
+        codigo_generacion="ABC-RECH",
+    )
+
+    _, envio = FacturacionTab._detectar_estado_factura(
+        {},
+        cur=db.cursor,
+        venta_id=venta,
+        codigo_generacion="ABC-RECH",
+        numero_control=None,
+    )
+
+    assert envio == "Rechazado (schema)"
 
 
 def test_detectar_estado_factura_nota_remision(tmp_path):

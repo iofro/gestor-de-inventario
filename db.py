@@ -2,14 +2,14 @@ import os
 import re
 import shutil
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 import json
 import logging
 import threading
 import unicodedata
 from pathlib import Path
 from decimal import Decimal
-from typing import Any
+from typing import Any, Mapping
 
 from utils import versioned_dte
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
@@ -2664,27 +2664,126 @@ class DB:
     ):
         """Guarda un registro del estado de transmisión de un DTE.
 
-        Siempre asegura las columnas ``codigo_generacion`` y ``numero_control`` y
-        almacena ``codigo_generacion`` en mayúsculas cuando se provee.
+        Adicionalmente, preserva un ``estado_ui`` estable calculado en
+        función de la respuesta de Hacienda y del último registro previo
+        del mismo documento.
         """
 
         self.ensure_column("dte_envios", "respuesta", "TEXT")
         self.ensure_column("dte_envios", "codigo_lote", "TEXT")
         self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
         self.ensure_column("dte_envios", "numero_control", "TEXT")
+        self.ensure_column("dte_envios", "estado_ui", "TEXT")
+        self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
 
-        # Normaliza valores
-        codigo_generacion = (codigo_generacion or "").upper() or None
-        numero_control = numero_control or None
+        try:
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_envios_codgen_upper ON dte_envios(UPPER(codigo_generacion))"
+            )
+        except Exception:
+            pass
+        try:
+            self.cursor.execute(
+                "CREATE INDEX IF NOT EXISTS idx_envios_numctrl_upper ON dte_envios(UPPER(numero_control))"
+            )
+        except Exception:
+            pass
 
-        fecha_hora = datetime.now().isoformat()
+        # Importación tardía para evitar ciclos en tiempo de carga.
+        from dte import (  # type: ignore circular
+            _map_estado_hacienda,
+            _merge_estado_tag,
+            _merge_estado_ui,
+        )
+
+        respuesta_dict: Mapping[str, Any] | None = None
+        respuesta_text: str = ""
+        if isinstance(respuesta_json, Mapping):
+            respuesta_dict = respuesta_json
+            try:
+                respuesta_text = json.dumps(respuesta_json, ensure_ascii=False)
+            except Exception:
+                respuesta_text = json.dumps(respuesta_json)
+        elif isinstance(respuesta_json, str):
+            respuesta_text = respuesta_json
+            if respuesta_json.strip():
+                try:
+                    respuesta_dict = json.loads(respuesta_json)
+                except Exception:
+                    respuesta_dict = None
+        elif respuesta_json is None:
+            respuesta_text = ""
+        else:
+            try:
+                respuesta_text = json.dumps(respuesta_json)
+            except Exception:
+                respuesta_text = str(respuesta_json)
+
+        mapped_estado = _map_estado_hacienda(respuesta_dict)
+        new_ui = mapped_estado["ui"]
+        if new_ui == "Pendiente":
+            estado_base = mapped_estado.get("raw") or str(estado or "").strip().upper()
+            if estado_base == "ACEPTADO":
+                new_ui = "Aceptado"
+            elif estado_base == "RECHAZADO":
+                new_ui = "Rechazado"
+            elif estado_base in {"TRANSMITIDO", "RECIBIDO", "PROCESADO"}:
+                new_ui = "Enviado"
+
+        # Normaliza valores utilizados para consultas
+        codigo_generacion_val = (codigo_generacion or "").strip().upper()
+        codigo_generacion_upper = codigo_generacion_val or None
+        numero_control_val = (numero_control or "").strip().upper()
+        numero_control_upper = numero_control_val or None
+
+        prev_ui = None
+        prev_tag = None
+        row = None
+        if codigo_generacion_upper:
+            row = self.cursor.execute(
+                """
+                SELECT estado_ui, estado_ui_tag FROM dte_envios
+                WHERE codigo_generacion IS NOT NULL AND codigo_generacion = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (codigo_generacion_upper,),
+            ).fetchone()
+        if (row is None) and numero_control_upper:
+            row = self.cursor.execute(
+                """
+                SELECT estado_ui, estado_ui_tag FROM dte_envios
+                WHERE numero_control IS NOT NULL AND numero_control = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (numero_control_upper,),
+            ).fetchone()
+        if row is not None:
+            try:
+                prev_ui = row["estado_ui"]
+            except Exception:
+                try:
+                    prev_ui = row[0]
+                except Exception:
+                    prev_ui = None
+            try:
+                prev_tag = row["estado_ui_tag"]
+            except Exception:
+                try:
+                    prev_tag = row[1]
+                except Exception:
+                    prev_tag = None
+
+        merged_ui = _merge_estado_ui(prev_ui, new_ui)
+        merged_tag = _merge_estado_tag(prev_tag, mapped_estado.get("tag"), merged_ui)
+
+        fecha_hora = datetime.now(timezone.utc).isoformat()
         self.cursor.execute(
             """
             INSERT INTO dte_envios (
                 venta_id, modo, estado, sello, fecha_hora,
-                respuesta, codigo_lote, codigo_generacion, numero_control
+                respuesta, codigo_lote, codigo_generacion, numero_control, estado_ui, estado_ui_tag
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 venta_id,
@@ -2692,10 +2791,12 @@ class DB:
                 estado,
                 sello,
                 fecha_hora,
-                respuesta_json,
+                respuesta_text,
                 codigo_lote,
-                codigo_generacion,
-                numero_control,
+                codigo_generacion_upper,
+                numero_control_upper,
+                merged_ui,
+                merged_tag,
             ),
         )
         self.conn.commit()

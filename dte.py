@@ -992,6 +992,14 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
     limpiar_documentos(cleaned)
     cleaned = _remove_nulls(cleaned)
 
+    tipo_dte = str(cleaned.get("identificacion", {}).get("tipoDte") or "")
+    if tipo_dte == "04":
+        rec_clean = cleaned.get("receptor")
+        if isinstance(rec_clean, dict):
+            tipo_doc_rec = str(rec_clean.get("tipoDocumento") or "").zfill(2)
+            if tipo_doc_rec != "36":
+                rec_clean.setdefault("nrc", None)
+
     schema_props = set(schema.get("properties", {}))
     for key in (
         "documentoRelacionado",
@@ -4356,17 +4364,30 @@ def validate_dte_json(
                     )
                 else:
                     if nrc_raw:
-                        warnings.warn(
-                            "Se removió NRC porque el documento es DUI", UserWarning,
-                        )
-                    receptor.pop("nrc", None)
+                        if tipo_dte == "04":
+                            warnings.warn(
+                                "Se forzó NRC=null porque el documento es DUI",
+                                UserWarning,
+                            )
+                        else:
+                            warnings.warn(
+                                "Se removió NRC porque el documento es DUI",
+                                UserWarning,
+                            )
+                    if tipo_dte == "04":
+                        receptor["nrc"] = None
+                    else:
+                        receptor.pop("nrc", None)
             elif tipo_doc == "36":
                 if len(num_doc) != 14:
                     raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
                 if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
                     raise ValueError("NRC requerido (6–7 dígitos)")
             else:
-                receptor.pop("nrc", None)
+                if tipo_dte == "04":
+                    receptor["nrc"] = None
+                else:
+                    receptor.pop("nrc", None)
             receptor["tipoDocumento"] = tipo_doc
             receptor["numDocumento"] = num_doc
 

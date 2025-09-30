@@ -135,16 +135,16 @@ def normalizar_receptor(receptor: dict) -> dict:
         if nrc:
             receptor["nrc"] = nrc
         else:
-            receptor.pop("nrc", None)
+            receptor["nrc"] = None
 
     if tipo == "13":
         if len(num) != 9:
             raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
         if nrc_raw:
             warnings.warn(
-                "Se removió NRC porque el documento es DUI", UserWarning
+                "Se forzó NRC=null porque el documento es DUI", UserWarning
             )
-        receptor.pop("nrc", None)
+        receptor["nrc"] = None
     elif tipo == "36":
         if len(num) != 14:
             raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
@@ -152,7 +152,7 @@ def normalizar_receptor(receptor: dict) -> dict:
         if not nrc or len(nrc) not in (6, 7):
             raise ValueError("NRC requerido (6–7 dígitos)")
     elif tipo in {"37", "03", "02"}:
-        receptor.pop("nrc", None)
+        receptor["nrc"] = None
     else:
         raise ValueError("tipoDocumento inválido en receptor")
     # Campos adicionales requeridos para receptores

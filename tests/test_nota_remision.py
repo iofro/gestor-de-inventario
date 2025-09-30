@@ -7,6 +7,7 @@ from nota_remision_electronica import (
     generar_nota_remision_independiente,
 )
 import dte
+from utils.fecha import fecha_emision_hoy_str
 
 
 def _sample_emisor():
@@ -70,8 +71,9 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
     assert doc_rel["fechaEmision"] == "2024-01-01"
-    assert factura["identificacion"]["fecEmi"] == "01/01/2024"
-    assert data["identificacion"]["fecEmi"] == "2024-01-01"
+    assert factura["identificacion"]["fecEmi"] == "2024-01-01T08:15:30"
+    today_str = fecha_emision_hoy_str()
+    assert data["identificacion"]["fecEmi"] == today_str
     item = data["cuerpoDocumento"][0]
     assert item["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
     assert item["codTributo"] is None

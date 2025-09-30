@@ -9,12 +9,18 @@ from nota_debito_electronica import generar_nde_desde_dte, generar_nde_desde_not
 from dte import generar_dte_json
 from nota_remision import generar_nota_remision_desde_db, generar_nota_remision
 from factura_sv import generar_nota_debito_pdf, generar_nota_remision_pdf
+from utils.fecha import fecha_emision_hoy_str
 from utils.snapshot import Snapshot, SnapshotNotFoundError
 import utils.catalogos as catalogos
 
 
 def create_db():
     return DB(":memory:")
+
+
+@pytest.fixture(autouse=True)
+def _disable_strict_snapshot(monkeypatch):
+    monkeypatch.setattr("nota_debito_electronica.STRICT_SNAPSHOT_DEFAULT", False)
 
 
 def _sample_data():
@@ -163,7 +169,8 @@ def test_generar_nde_desde_nota_credito_fiscal(monkeypatch):
     doc_rel = nde["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["fechaEmision"] == "2024-01-01"
-    assert nde["identificacion"]["fecEmi"] == "2024-01-01"
+    today_str = fecha_emision_hoy_str()
+    assert nde["identificacion"]["fecEmi"] == today_str
     receptor = nde["receptor"]
     assert receptor["nit"] == "06141407100012"
     assert receptor["nrc"] == "123"
@@ -224,7 +231,8 @@ def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
     nde = generar_nde_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nde["documentoRelacionado"][0]
     assert doc_rel["fechaEmision"] == fecha_envio_iso
-    assert nde["identificacion"]["fecEmi"] == fecha_envio_iso
+    today_str = fecha_emision_hoy_str()
+    assert nde["identificacion"]["fecEmi"] == today_str
 
 
 def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
@@ -333,7 +341,8 @@ def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
         == payload["identificacion"]["codigoGeneracion"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
-    assert nde["identificacion"]["fecEmi"] == "2023-08-01"
+    today_str = fecha_emision_hoy_str()
+    assert nde["identificacion"]["fecEmi"] == today_str
     assert metrics_calls == ["notes_source_used.snapshot"]
     assert payload["firma"] == "SIGNATURE"
 
@@ -426,7 +435,8 @@ def test_generar_nde_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
     assert doc_rel["fechaEmision"] == "2023-09-01"
-    assert nde["identificacion"]["fecEmi"] == "2023-09-01"
+    today_str = fecha_emision_hoy_str()
+    assert nde["identificacion"]["fecEmi"] == today_str
 
 
 def test_generar_nde_desde_nota_strict_snapshot(monkeypatch):
@@ -570,7 +580,7 @@ def test_generar_nde_receptor_placeholder_en_pruebas(monkeypatch):
     nde = generar_nde_desde_dte(db, dte_origen, None, 1.0, "Ajuste", ambiente="00")
     receptor = nde["receptor"]
     assert receptor["nit"] == "00000000000000"
-    assert receptor["nrc"] == "0"
+    assert receptor["nrc"] is None
     assert receptor["telefono"] == "00000000"
     assert receptor["direccion"]["departamento"] == "01"
 
@@ -769,7 +779,8 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert data["extension"]["nombEntrega"] == "Juan"
     assert data["documentoRelacionado"][0]["fechaEmision"] == fecha_envio_iso
-    assert data["identificacion"]["fecEmi"] == fecha_envio_iso
+    today_str = fecha_emision_hoy_str()
+    assert data["identificacion"]["fecEmi"] == today_str
 
 
 def test_nota_debito_pdf(tmp_path):
@@ -790,6 +801,9 @@ def test_nota_debito_pdf(tmp_path):
         datos_negocio={},
         doc_relacionado=doc_rel,
         motivo="Intereses",
+        codigo_generacion="ND-TEST-1234567890",
+        numero_control="DTE-06-S001P001-000000000000001",
+        fecha_generacion="03/02/2024, 08:15:00",
     )
     assert out.exists()
     with fitz.open(out) as doc:
@@ -805,7 +819,17 @@ def test_nota_debito_pdf(tmp_path):
 def test_nota_remision_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
-    generar_nota_remision_pdf(venta, detalles, {}, {}, archivo=str(out), datos_negocio={})
+    generar_nota_remision_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        archivo=str(out),
+        datos_negocio={},
+        codigo_generacion="NR-TEST-1234567890",
+        numero_control="DTE-04-S001P001-000000000000001",
+        fecha_generacion="04/02/2024, 14:45:00",
+    )
     assert out.exists()
     with fitz.open(out) as doc:
         text = "".join(p.get_text() for p in doc)
@@ -876,6 +900,10 @@ def test_generar_nota_remision_desde_db_independiente(monkeypatch):
         "nombre": "Cliente",
         "tipoDocumento": "13",
         "numDocumento": "12345678-9",
+        "codActividad": "222222",
+        "descActividad": "Servicios",
+        "telefono": "78901234",
+        "correo": "cliente@example.com",
         "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
     }
     detalles = [
@@ -926,6 +954,15 @@ def test_generar_nota_remision_desde_db_factura_sin_venta(monkeypatch):
             "numDocumento": "0614-140710-001-2",
             "nrc": "1234567",
             "nombre": "Cliente",
+            "codActividad": "333333",
+            "descActividad": "Comercio",
+            "telefono": "23456789",
+            "correo": "cliente@example.com",
+            "direccion": {
+                "departamento": "05",
+                "municipio": "24",
+                "complemento": "Dir",
+            },
         },
         "cuerpoDocumento": [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}],
     }

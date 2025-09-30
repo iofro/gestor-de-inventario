@@ -1015,7 +1015,7 @@ class FacturacionTab(QWidget):
 
         # Connect signals
         self.update_btn.clicked.connect(self.refresh_and_reload)
-        self.search_bar.textChanged.connect(self.load_invoices)
+        self.search_bar.returnPressed.connect(self.load_invoices)
         self.client_filter.currentIndexChanged.connect(self.load_invoices)
         self.vendedor_filter.currentIndexChanged.connect(self.load_invoices)
         self.tipo_filter.currentIndexChanged.connect(self.load_invoices)

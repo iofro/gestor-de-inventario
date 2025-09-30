@@ -88,7 +88,6 @@ def normalizar_receptor(receptor: dict) -> dict:
     num = solo_digitos(receptor.get("numDocumento"))
     if not num:
         raise ValueError("receptor requiere numDocumento")
-    receptor["numDocumento"] = num
 
     nrc_raw = receptor.get("nrc")
     if nrc_raw is not None:

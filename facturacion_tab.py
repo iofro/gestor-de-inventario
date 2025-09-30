@@ -1115,16 +1115,14 @@ class FacturacionTab(QWidget):
 
     @staticmethod
     def _map_envio_state(state):
-        est = str(state).lower()
-        if est == "aceptado":
+        est = str(state or "").strip().upper()
+        if est == "ACEPTADO":
             return "Aceptado"
-        if est == "rechazado":
+        if est == "RECHAZADO":
             return "Rechazado"
-        if est == "error":
-            return "Error"
-        if est in {"transmitido", "recibido", "procesado"}:
+        if est in {"TRANSMITIDO", "RECIBIDO", "PROCESADO"}:
             return "Enviado"
-        return "Pendiente"
+        return "Pendiente de envío"
 
     @classmethod
     def _detectar_estado_factura(
@@ -1161,66 +1159,85 @@ class FacturacionTab(QWidget):
                 estado = "Sin venta" if pdf_exists and json_exists else "Incompleta"
 
         envio = "Pendiente de envío"
+
+        def _row_get(row, key):
+            if row is None:
+                return None
+            try:
+                return row[key]
+            except Exception:
+                pass
+            getter = getattr(row, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key)
+                except Exception:
+                    return None
+            try:
+                keys = row.keys()
+            except Exception:
+                return None
+            try:
+                index = list(keys).index(key)
+            except Exception:
+                return None
+            try:
+                return row[index]
+            except Exception:
+                return None
+
+        def _map_row_estado(row):
+            if not row:
+                return "Pendiente de envío"
+            ui_val = _row_get(row, "estado_ui")
+            tag_val = _row_get(row, "estado_ui_tag")
+            if isinstance(ui_val, str) and ui_val.strip():
+                base = ui_val.strip()
+                if base == "Pendiente":
+                    base = "Pendiente de envío"
+                if isinstance(tag_val, str):
+                    tag_norm = tag_val.strip().lower()
+                    if tag_norm and base in {"Enviado", "Rechazado"}:
+                        return f"{base} ({tag_norm})"
+                return base
+            estado_val = _row_get(row, "estado")
+            return cls._map_envio_state(estado_val)
+
         env_row = None
-        success_states = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
         try:
-            if cur is not None:
-                if venta_id is not None:
-                    success = cur.execute(
+            if cur is not None and (codigo_generacion or numero_control):
+                env_row = cur.execute(
+                    """
+                    SELECT estado_ui, estado_ui_tag, estado FROM dte_envios
+                    WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?)
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (codigo_generacion or "",),
+                ).fetchone()
+                if not env_row:
+                    env_row = cur.execute(
                         """
-                        SELECT estado FROM dte_envios
-                        WHERE venta_id=? AND UPPER(estado) IN (?, ?, ?, ?)
+                        SELECT estado_ui, estado_ui_tag, estado FROM dte_envios
+                        WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?)
                         ORDER BY id DESC LIMIT 1
                         """,
-                        (venta_id, *success_states),
+                        (numero_control or "",),
                     ).fetchone()
-                    if success:
-                        env_row = success
-                    else:
+                if not env_row:
+                    like_val = codigo_generacion or numero_control
+                    if like_val:
                         env_row = cur.execute(
-                            "SELECT estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
-                            (venta_id,),
+                            """
+                            SELECT estado FROM dte_envios
+                            WHERE respuesta LIKE ?
+                            ORDER BY id DESC LIMIT 1
+                            """,
+                            (f"%{like_val}%",),
                         ).fetchone()
-                elif codigo_generacion or numero_control:
-                    query_success = (
-                        "SELECT estado FROM dte_envios "
-                        "WHERE venta_id IS NULL AND respuesta LIKE ? "
-                        "AND UPPER(estado) IN (?, ?, ?, ?) "
-                        "ORDER BY id DESC LIMIT 1"
-                    )
-                    query_latest = (
-                        "SELECT estado FROM dte_envios WHERE venta_id IS NULL AND respuesta LIKE ? ORDER BY id DESC LIMIT 1"
-                    )
-                    if codigo_generacion:
-                        env_row = cur.execute(
-                            query_success,
-                            (
-                                f"%{codigo_generacion}%",
-                                *success_states,
-                            ),
-                        ).fetchone()
-                        if not env_row:
-                            env_row = cur.execute(
-                                query_latest,
-                                (f"%{codigo_generacion}%",),
-                            ).fetchone()
-                    if not env_row and numero_control:
-                        env_row = cur.execute(
-                            query_success,
-                            (
-                                f"%{numero_control}%",
-                                *success_states,
-                            ),
-                        ).fetchone()
-                        if not env_row:
-                            env_row = cur.execute(
-                                query_latest,
-                                (f"%{numero_control}%",),
-                            ).fetchone()
         except Exception:
             env_row = None
-        if env_row:
-            envio = cls._map_envio_state(env_row["estado"])
+
+        envio = _map_row_estado(env_row)
 
         return estado, envio
 

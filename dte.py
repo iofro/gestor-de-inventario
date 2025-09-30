@@ -10,6 +10,7 @@ import shutil
 import hashlib
 import logging
 import time
+from collections.abc import Mapping as AbcMapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from typing import Any, Mapping, Optional
@@ -90,6 +91,201 @@ except Exception:  # pragma: no cover - fallback when VERSION is missing
 
 logger = logging.getLogger(__name__)
 TIMEOUT = int(os.getenv("DTE_HTTP_TIMEOUT", "20"))
+
+SUCCESS_RAW = {"TRANSMITIDO", "RECIBIDO", "PROCESADO"}
+ACCEPT_RAW = {"ACEPTADO"}
+REJECT_RAW = {"RECHAZADO"}
+
+
+def _get_in(mapping: Mapping[str, Any] | None, key: str) -> Any:
+    if not isinstance(mapping, AbcMapping):
+        return None
+
+    visited: set[int] = set()
+
+    def _walk(node: Any) -> Any:
+        if isinstance(node, AbcMapping):
+            marker = id(node)
+            if marker in visited:
+                return None
+            visited.add(marker)
+            if key in node:
+                return node[key]
+            for value in node.values():
+                found = _walk(value)
+                if found is not None:
+                    return found
+        elif isinstance(node, Sequence) and not isinstance(node, (str, bytes, bytearray)):
+            marker = id(node)
+            if marker in visited:
+                return None
+            visited.add(marker)
+            for item in node:
+                found = _walk(item)
+                if found is not None:
+                    return found
+        return None
+
+    try:
+        return _walk(mapping)
+    except RecursionError:
+        return None
+
+
+def _extract_raw_estado(resp: Mapping[str, Any] | None) -> str:
+    if not isinstance(resp, AbcMapping):
+        return ""
+    for key in (
+        "estado",
+        "estadoDte",
+        "estadoEvento",
+        "descripcionEstado",
+        "descripcionEstadoDte",
+    ):
+        value = _get_in(resp, key)
+        if isinstance(value, str) and value.strip():
+            return value.strip().upper()
+    return ""
+
+
+def _extract_meta(resp: Mapping[str, Any] | None) -> dict[str, Any]:
+    descripcion = _get_in(resp, "descripcionMsg")
+    clasifica = _get_in(resp, "clasificaMsg")
+    codigo = _get_in(resp, "codigoMsg")
+    observaciones_raw = _get_in(resp, "observaciones")
+
+    if isinstance(descripcion, str):
+        descripcion_up = descripcion.strip().upper()
+    else:
+        descripcion_up = ""
+
+    if isinstance(clasifica, str):
+        clasifica_up = clasifica.strip().upper()
+    else:
+        clasifica_up = ""
+
+    if isinstance(codigo, str):
+        codigo_up = codigo.strip().upper()
+    elif isinstance(codigo, (int, float)):
+        codigo_up = str(codigo).strip().upper()
+    else:
+        codigo_up = ""
+
+    observaciones_list: list[Any] = []
+    if isinstance(observaciones_raw, (list, tuple, set)):
+        observaciones_list = [obs for obs in observaciones_raw if obs not in (None, "")]
+    elif isinstance(observaciones_raw, str) and observaciones_raw.strip():
+        observaciones_list = [observaciones_raw.strip()]
+
+    return {
+        "descripcion": descripcion_up,
+        "clasifica": clasifica_up,
+        "codigo": codigo_up,
+        "observaciones": observaciones_list,
+    }
+
+
+def _map_estado_hacienda(resp: Mapping[str, Any] | None) -> dict[str, str]:
+    raw = _extract_raw_estado(resp)
+    meta = _extract_meta(resp)
+    descripcion = meta["descripcion"]
+    clasifica = meta["clasifica"]
+    codigo = meta["codigo"]
+    observaciones = meta["observaciones"]
+
+    raw_upper = raw.strip().upper() if isinstance(raw, str) else ""
+
+    text_pool = (raw_upper, descripcion, clasifica)
+
+    ui = "Pendiente"
+    if any("RECHAZ" in value for value in text_pool if value):
+        ui = "Rechazado"
+    elif any("ACEPT" in value for value in text_pool if value):
+        ui = "Aceptado"
+    elif any(value and token in value for value in text_pool for token in ("PROCES", "RECIB", "TRANSMIT")):
+        ui = "Enviado"
+    elif any(
+        value and token in value
+        for value in (descripcion, clasifica)
+        for token in ("RECIBIDO", "PROCESADO")
+    ):
+        ui = "Enviado"
+
+    tag = ""
+    code_int: int | None = None
+    if codigo:
+        try:
+            code_int = int(codigo.lstrip("0") or "0")
+        except Exception:
+            code_int = None
+    if ui == "Enviado":
+        has_observaciones = bool(observaciones) or (
+            descripcion and "OBSERVACION" in descripcion
+        )
+        if has_observaciones:
+            allow_tag = False
+            if not clasifica:
+                allow_tag = True
+            elif clasifica == "10":
+                if (code_int is not None and code_int in (1, 2)) or codigo in {"001", "002"}:
+                    allow_tag = True
+            if allow_tag:
+                tag = "observado"
+    elif ui == "Rechazado":
+        if (code_int == 96) or codigo == "096" or (
+            descripcion and "ESQUEMA JSON" in descripcion
+        ):
+            tag = "schema"
+        elif (code_int == 17) or codigo == "017" or (
+            descripcion and "FECHA NO ES CORRECTA" in descripcion
+        ):
+            tag = "fecha"
+        elif (code_int == 14) or codigo == "014" or (
+            descripcion and "NO EXISTE UN REGISTRO" in descripcion
+        ):
+            tag = "no_registro"
+
+    return {"ui": ui, "tag": tag, "raw": raw_upper, "code": codigo, "desc": descripcion}
+
+
+def _merge_estado_ui(prev_ui: str | None, new_ui: str) -> str:
+    prev = (prev_ui or "").strip().capitalize()
+    new = (new_ui or "").strip().capitalize()
+    if prev == "Aceptado":
+        return "Aceptado"
+    if new == "Aceptado":
+        return "Aceptado"
+    if prev == "Rechazado" and new == "Pendiente":
+        return "Rechazado"
+    if new == "Rechazado":
+        return "Rechazado"
+    if prev == "Rechazado" and new == "Enviado":
+        return "Rechazado"
+    if not prev or prev == "Pendiente":
+        return new
+    if prev == "Enviado" and new == "Enviado":
+        return "Enviado"
+    return prev
+
+
+def _merge_estado_tag(prev_tag: str | None, new_tag: str | None, merged_ui: str) -> str:
+    merged = (merged_ui or "").strip().capitalize()
+    prev = (prev_tag or "").strip().lower()
+    new = (new_tag or "").strip().lower()
+
+    if merged == "Aceptado":
+        return ""
+    if merged == "Rechazado":
+        if new:
+            return new
+        return prev
+    if merged == "Enviado":
+        if new == "observado":
+            return "observado"
+        if prev == "observado":
+            return "observado"
+        return ""
+    return new or prev
 
 # Flags y valores por defecto esperados para diagnósticos HTTP:
 # - DTE_DEBUG_HTTP=0

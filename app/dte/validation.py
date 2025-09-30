@@ -9,16 +9,19 @@ from typing import Any, Dict, List
 from decimal import Decimal
 from jsonschema import Draft7Validator, validators
 
+from utils import resource_path
+
 SCHEMA_MAP = {
-    "04": "fe-nr-v3.json",
-    "06": "fe-nd-v3.json",
+    "04": "fe-nr-v3.json",  # Nota de Remisión
+    "05": "fe-nc-v3.json",  # Nota de Crédito
+    "06": "fe-nd-v3.json",  # Nota de Débito
 }
 
-SCHEMAS_DIR = Path(__file__).resolve().parents[2] / "svfe-json-schemas"
+SCHEMAS_DIR = resource_path("svfe-json-schemas")
 
 
 def _load_schema(tipo: str) -> Dict[str, Any]:
-    schema_file = SCHEMAS_DIR / SCHEMA_MAP[tipo]
+    schema_file = Path(resource_path("svfe-json-schemas", SCHEMA_MAP[tipo]))
     with schema_file.open("r", encoding="utf-8") as fh:
         return json.load(fh)
 

@@ -8,6 +8,8 @@ from pathlib import Path
 
 from appdirs import user_data_dir
 
+from utils import resource_path
+
 
 _CANONICAL_DTE_SUBDIRS = {
     "ConsumidorFinal": "facturas_consumidor_final",
@@ -91,7 +93,7 @@ def get_canonical_dte_dir(tipo_dte: str | int | os.PathLike | None) -> Path:
 
 
 def _copy_if_missing(filename: str) -> None:
-    src = Path(__file__).resolve().parent / filename
+    src = resource_path(filename)
     dst = user_data_path(filename)
     if src.exists() and not dst.exists():
         try:

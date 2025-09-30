@@ -11,7 +11,7 @@ def fecha_emision_hoy_str(now: Optional[datetime] = None) -> str:
         now = datetime.now(TZ_EL_SALVADOR)
     else:
         now = now.astimezone(TZ_EL_SALVADOR)
-    return now.strftime("%Y-%m-%d")
+    return now.date().isoformat()
 
 
 def normalizar_fecha_iso(value: Union[str, datetime, date, None]) -> Optional[str]:

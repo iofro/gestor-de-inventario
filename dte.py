@@ -6966,7 +6966,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from utils.jws import sign_json
     from utils.stable_json import save_file, stable_stringify
 
-    ident = data.get("identificacion", {}) or {}
+    ident = data.get("identificacion") or {}
     hoy_fec = fecha_emision_hoy_str()
     if ident.get("fecEmi") != hoy_fec:
         logger.info(
@@ -6977,6 +6977,7 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             ident.get("fecEmi") or "<sin fecha>",
             hoy_fec,
         )
+        ident["fecEmi"] = hoy_fec
     else:
         logger.info(
             "NotaCredito %s: fecEmi confirmado como %s antes de firmar",
@@ -6985,8 +6986,8 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             or nota_id,
             hoy_fec,
         )
-    ident["fecEmi"] = hoy_fec
     data["identificacion"] = ident
+    saved_fecemi = ident.get("fecEmi")
     receptor = data.get("receptor", {}) or {}
     _, json_path = get_dte_document_paths(
         ident.get("fecEmi"),
@@ -7016,6 +7017,21 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         except Exception:
             jws_token = None
             cached_payload = None
+    related = data.get("documentoRelacionado")
+    related_entry: Mapping[str, Any] | None = None
+    if isinstance(related, list):
+        for candidate in related:
+            if isinstance(candidate, Mapping):
+                related_entry = candidate
+                break
+    elif isinstance(related, Mapping):
+        related_entry = related
+    logger.info(
+        "WILL_SAVE fecEmi=%s rel.fechaEmision=%s",
+        ident.get("fecEmi"),
+        (related_entry or {}).get("fechaEmision"),
+    )
+
     payload_json = stable_stringify(data, indent=2)
     save_file(json_path, payload_json)
     if jws_token is None:
@@ -7033,21 +7049,31 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             "fecEmi"
         )
     primary_ident = data.get("identificacion") or {}
-    related = data.get("documentoRelacionado")
-    related_entry: Mapping[str, Any] | None = None
-    if isinstance(related, list):
-        for candidate in related:
-            if isinstance(candidate, Mapping):
-                related_entry = candidate
-                break
-    elif isinstance(related, Mapping):
-        related_entry = related
+
     logger.info(
         "SAVE->SEND fecEmi=%s rel.fechaEmision=%s",
         primary_ident.get("fecEmi"),
         (related_entry or {}).get("fechaEmision"),
     )
     resp = _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
+    final_fecemi = (data.get("identificacion") or {}).get("fecEmi")
+    if final_fecemi == saved_fecemi:
+        logger.info(
+            "NotaCredito %s: fecEmi guardado y enviado coinciden en %s",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            final_fecemi,
+        )
+    else:
+        logger.warning(
+            "NotaCredito %s: fecEmi guardado=%s difiere de enviado=%s",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            saved_fecemi,
+            final_fecemi,
+        )
     if resp.get("sello"):
         db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})
     return resp
@@ -7145,7 +7171,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from utils.jws import sign_json
     from utils.stable_json import save_file, stable_stringify
 
-    ident = data.get("identificacion", {}) or {}
+    ident = data.get("identificacion") or {}
     hoy_fec = fecha_emision_hoy_str()
     if ident.get("fecEmi") != hoy_fec:
         logger.info(
@@ -7156,6 +7182,7 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             ident.get("fecEmi") or "<sin fecha>",
             hoy_fec,
         )
+        ident["fecEmi"] = hoy_fec
     else:
         logger.info(
             "NotaDebito %s: fecEmi confirmado como %s antes de firmar",
@@ -7164,8 +7191,8 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             or nota_id,
             hoy_fec,
         )
-    ident["fecEmi"] = hoy_fec
     data["identificacion"] = ident
+    saved_fecemi = ident.get("fecEmi")
     receptor = data.get("receptor", {}) or {}
     _, json_path = get_dte_document_paths(
         ident.get("fecEmi"),
@@ -7195,6 +7222,21 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
         except Exception:
             jws_token = None
             cached_payload = None
+    related = data.get("documentoRelacionado")
+    related_entry: Mapping[str, Any] | None = None
+    if isinstance(related, list):
+        for candidate in related:
+            if isinstance(candidate, Mapping):
+                related_entry = candidate
+                break
+    elif isinstance(related, Mapping):
+        related_entry = related
+    logger.info(
+        "WILL_SAVE fecEmi=%s rel.fechaEmision=%s",
+        ident.get("fecEmi"),
+        (related_entry or {}).get("fechaEmision"),
+    )
+
     payload_json = stable_stringify(data, indent=2)
     save_file(json_path, payload_json)
     if jws_token is None:
@@ -7212,21 +7254,31 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
             "fecEmi"
         )
     primary_ident = data.get("identificacion") or {}
-    related = data.get("documentoRelacionado")
-    related_entry: Mapping[str, Any] | None = None
-    if isinstance(related, list):
-        for candidate in related:
-            if isinstance(candidate, Mapping):
-                related_entry = candidate
-                break
-    elif isinstance(related, Mapping):
-        related_entry = related
+
     logger.info(
         "SAVE->SEND fecEmi=%s rel.fechaEmision=%s",
         primary_ident.get("fecEmi"),
         (related_entry or {}).get("fechaEmision"),
     )
     resp = _enviar_documento(db, nota_id, data, modo, jws_token=jws_token)
+    final_fecemi = (data.get("identificacion") or {}).get("fecEmi")
+    if final_fecemi == saved_fecemi:
+        logger.info(
+            "NotaDebito %s: fecEmi guardado y enviado coinciden en %s",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            final_fecemi,
+        )
+    else:
+        logger.warning(
+            "NotaDebito %s: fecEmi guardado=%s difiere de enviado=%s",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            saved_fecemi,
+            final_fecemi,
+        )
     if resp.get("sello"):
         db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})
     return resp
@@ -7260,6 +7312,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
             ident.get("fecEmi") or "<sin fecha>",
             hoy_fec,
         )
+        ident["fecEmi"] = hoy_fec
     else:
         logger.info(
             "NotaRemision %s: fecEmi confirmado como %s antes de firmar",
@@ -7268,8 +7321,9 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
             or nota_id,
             hoy_fec,
         )
-    ident["fecEmi"] = hoy_fec
     data["identificacion"] = ident
+    saved_fecemi = ident.get("fecEmi")
+
     from utils.docs import get_dte_document_paths
     from utils.stable_json import save_file, stable_stringify
 
@@ -7280,8 +7334,7 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
         ident.get("numeroControl"),
         "NotaRemision",
     )
-    payload_json = stable_stringify(data, indent=2)
-    save_file(json_path, payload_json)
+
     related = data.get("documentoRelacionado")
     related_entry: Mapping[str, Any] | None = None
     if isinstance(related, list):
@@ -7292,11 +7345,37 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     elif isinstance(related, Mapping):
         related_entry = related
     logger.info(
+        "WILL_SAVE fecEmi=%s rel.fechaEmision=%s",
+        ident.get("fecEmi"),
+        (related_entry or {}).get("fechaEmision"),
+    )
+    payload_json = stable_stringify(data, indent=2)
+    save_file(json_path, payload_json)
+    logger.info(
+
         "SAVE->SEND fecEmi=%s rel.fechaEmision=%s",
         ident.get("fecEmi"),
         (related_entry or {}).get("fechaEmision"),
     )
     resp = _enviar_documento(db, nota_id, data, modo)
+    final_fecemi = (data.get("identificacion") or {}).get("fecEmi")
+    if final_fecemi == saved_fecemi:
+        logger.info(
+            "NotaRemision %s: fecEmi guardado y enviado coinciden en %s",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            final_fecemi,
+        )
+    else:
+        logger.warning(
+            "NotaRemision %s: fecEmi guardado=%s difiere de enviado=%s",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            saved_fecemi,
+            final_fecemi,
+        )
     if resp.get("sello"):
         db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})
     return resp

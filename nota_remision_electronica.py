@@ -19,6 +19,10 @@ from typing import Iterable, Optional
 
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
+from nota_remision import (
+    _normalizar_documento_relacionado as _normalizar_doc_rel_nr,
+    _verificar_documento_relacionado_recepcionado as _verificar_doc_rel_nr,
+)
 from utils import catalogos
 from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str, fecha_iso
 from utils.monto import d2, monto_a_texto_sv
@@ -138,6 +142,9 @@ def _generar_base(
     """Construye la estructura base común de una NR."""
     if not documento_relacionado:
         raise ValueError("documento_relacionado es obligatorio")
+
+    documento_relacionado = _normalizar_doc_rel_nr(documento_relacionado)
+    _verificar_doc_rel_nr(db, documento_relacionado)
 
     limpiar_documentos(emisor)
     emisor.setdefault("tipoEstablecimiento", "01")

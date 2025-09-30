@@ -1,7 +1,10 @@
+from datetime import datetime
+
 import pytest
 import warnings
 
 from db import DB
+import nota_remision
 from nota_remision_electronica import (
     generar_nota_remision_desde_factura,
     generar_nota_remision_independiente,
@@ -44,6 +47,48 @@ def _sample_doc_rel():
     ]
 
 
+def _registrar_envio_relacionado(
+    db: DB,
+    *,
+    codigo_generacion: str | None = None,
+    numero_control: str | None = None,
+    estado_ui: str = "Aceptado",
+):
+    for column, definition in (
+        ("codigo_lote", "TEXT"),
+        ("codigo_generacion", "TEXT"),
+        ("numero_control", "TEXT"),
+        ("estado_ui", "TEXT"),
+        ("estado_ui_tag", "TEXT"),
+    ):
+        db.ensure_column("dte_envios", column, definition)
+    codigo_val = (codigo_generacion or "").strip().upper() or None
+    numero_val = (numero_control or "").strip().upper() or None
+    db.cursor.execute(
+        """
+        INSERT INTO dte_envios (
+            venta_id, modo, estado, sello, fecha_hora,
+            respuesta, codigo_lote, codigo_generacion, numero_control, estado_ui, estado_ui_tag
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            None,
+            None,
+            "PROCESADO",
+            "",
+            datetime.utcnow().isoformat(),
+            "",
+            None,
+            codigo_val,
+            numero_val,
+            estado_ui,
+            "" if estado_ui in {"Aceptado", "Enviado"} else "no_recepcion",
+        ),
+    )
+    db.conn.commit()
+
+
 def test_nr_desde_factura_documento_relacionado(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
@@ -66,6 +111,10 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion="12345678-ABCD-1234-ABCD-1234567890AB",
+    )
     data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
@@ -92,6 +141,40 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     assert float(resumen["descuGravada"]) == 0.0
 
 
+def test_nr_documento_relacionado_con_numero_control(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-S001P001-000000000000447",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": _sample_receptor(),
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    _registrar_envio_relacionado(
+        db,
+        numero_control="DTE-03-S001P001-000000000000447",
+        estado_ui="Enviado",
+    )
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["numeroDocumento"] == "DTE-03-S001P001-000000000000447"
+    assert doc_rel["tipoGeneracion"] == 1
+
+
 def test_nr_desde_factura_extension(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
@@ -112,6 +195,10 @@ def test_nr_desde_factura_extension(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion="12345678-ABCD-1234-ABCD-1234567890AB",
+    )
     data = generar_nota_remision_desde_factura(
         db, factura, extension=extension
     )
@@ -119,6 +206,52 @@ def test_nr_desde_factura_extension(monkeypatch):
     rec = data["receptor"]
     assert "nombreComercial" in rec
     assert rec["nombreComercial"] is None
+
+
+def test_normalizar_documento_relacionado_preserva_prefijo():
+    doc_rel = [
+        {
+            "tipoDocumento": "03",
+            "numeroDocumento": "DTE-03-S001P001-000000000000447",
+            "fechaEmision": "2024-09-30",
+        }
+    ]
+    normalized = nota_remision._normalizar_documento_relacionado(doc_rel)
+    assert normalized[0]["numeroDocumento"] == "DTE-03-S001P001-000000000000447"
+    assert normalized[0]["tipoGeneracion"] == 1
+
+
+def test_normalizar_documento_relacionado_codigo_generacion():
+    doc_rel = [
+        {
+            "tipoDocumento": "03",
+            "codigoGeneracion": "a8748223-7cd8-42a3-84b2-c7d2473504dc",
+            "fechaEmision": "30/09/2025",
+        }
+    ]
+    normalized = nota_remision._normalizar_documento_relacionado(doc_rel)
+    assert normalized[0]["tipoGeneracion"] == 2
+    assert (
+        normalized[0]["numeroDocumento"]
+        == "A8748223-7CD8-42A3-84B2-C7D2473504DC"
+    )
+    assert (
+        normalized[0]["codigoGeneracion"]
+        == "A8748223-7CD8-42A3-84B2-C7D2473504DC"
+    )
+    assert normalized[0]["fechaEmision"] == "2025-09-30"
+
+
+def test_normalizar_documento_relacionado_tipo_incoherente():
+    doc_rel = [
+        {
+            "tipoDocumento": "01",
+            "numeroDocumento": "DTE-03-S001P001-000000000000447",
+            "fechaEmision": "2024-09-30",
+        }
+    ]
+    with pytest.raises(ValueError, match="prefijo de numeroDocumento"):
+        nota_remision._normalizar_documento_relacionado(doc_rel)
 
 
 def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
@@ -155,7 +288,12 @@ def test_nr_desde_factura_extension_actualiza_receptor(monkeypatch):
         "docuRecibe": "0614-140710-001-2",
         "tipoDocRecibe": "36",
         "nrcRecibe": "1234567",
+        "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion="12345678-ABCD-1234-ABCD-1234567890AB",
+    )
     data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     rec = data["receptor"]
     assert rec["tipoDocumento"] == "36"
@@ -181,6 +319,10 @@ def test_nr_independiente_extension(monkeypatch):
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
     doc_rel = _sample_doc_rel()
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=doc_rel[0]["numeroDocumento"],
+    )
     data = generar_nota_remision_independiente(
         db,
         emisor=emisor,
@@ -222,6 +364,10 @@ def test_nr_independiente_extension_sin_observaciones(monkeypatch):
         "docuRecibe": "1234 5678",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
     with pytest.raises(ValueError):
         generar_nota_remision_independiente(
             db,
@@ -246,6 +392,10 @@ def test_nr_independiente_extension_observaciones_vacia(monkeypatch):
         "observaciones": "   ",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
     with pytest.raises(ValueError):
         generar_nota_remision_independiente(
             db,
@@ -270,6 +420,10 @@ def test_nr_item_validation(monkeypatch):
             "docuRecibe": "456",
             "observaciones": "Obs",
         }
+        _registrar_envio_relacionado(
+            db,
+            codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+        )
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
@@ -285,6 +439,10 @@ def test_nr_item_validation(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
     data = generar_nota_remision_independiente(
         db,
         emisor=emisor,
@@ -329,6 +487,10 @@ def test_receptor_dui_sin_nrc(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=factura["identificacion"]["codigoGeneracion"],
+    )
     with warnings.catch_warnings(record=True) as w:
         data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     rec = data["receptor"]
@@ -366,6 +528,10 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         "observaciones": "Obs",
     }
     detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
     with pytest.raises(ValueError):
         generar_nota_remision_independiente(
             db,
@@ -392,6 +558,10 @@ def test_receptor_campo_obligatorio_faltante(monkeypatch, campo):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
     with pytest.raises(ValueError, match=f"receptor requiere {campo}"):
         generar_nota_remision_independiente(
             db,
@@ -417,6 +587,10 @@ def test_receptor_direccion_complemento_faltante(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
     with pytest.raises(ValueError, match="receptor requiere direccion.complemento"):
         generar_nota_remision_independiente(
             db,
@@ -426,3 +600,60 @@ def test_receptor_direccion_complemento_faltante(monkeypatch):
             documento_relacionado=_sample_doc_rel(),
             extension=extension,
         )
+
+
+def test_nr_documento_relacionado_rechazado(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-S001P001-000000000000447",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": _sample_receptor(),
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    _registrar_envio_relacionado(
+        db,
+        numero_control="DTE-03-S001P001-000000000000447",
+        estado_ui="Rechazado",
+    )
+    with pytest.raises(ValueError, match="aún no ha sido recepcionado por MH"):
+        generar_nota_remision_desde_factura(db, factura, extension=extension)
+
+
+def test_nr_documento_relacionado_inexistente(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-S001P001-000000000000999",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": _sample_receptor(),
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    with pytest.raises(ValueError, match="sin registro local"):
+        generar_nota_remision_desde_factura(db, factura, extension=extension)

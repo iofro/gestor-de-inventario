@@ -20,12 +20,18 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import re
 from typing import Iterable, Optional
 
 import logging
 
 from db import DB
-from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
+from dte import (
+    DTE_VERSIONES,
+    generar_cabecera_dte_data,
+    sanitize_dte_payload,
+    normalize_uuid_v4_upper,
+)
 from utils import catalogos
 from utils.fecha import (
     TZ_EL_SALVADOR,
@@ -40,6 +46,32 @@ import warnings
 from utils.sanitize import limpiar_documentos, solo_digitos
 
 Decimal_0 = Decimal("0")
+
+
+_RE_NUM_CONTROL = re.compile(r"^DTE-(\d{2})-S\d{3}P\d{3}-\d{15}$", re.IGNORECASE)
+
+
+def _tipos_dte_validos() -> set[str]:
+    """Obtiene el conjunto de tipos de DTE válidos desde el catálogo."""
+
+    tipos: set[str] = set()
+    for key in catalogos.DTE_TIPOS.keys():
+        if isinstance(key, int):
+            tipos.add(f"{key:02d}")
+            continue
+        key_str = str(key).strip()
+        if key_str.isdigit():
+            try:
+                tipos.add(f"{int(key_str):02d}")
+            except Exception:
+                tipos.add(key_str)
+        elif key_str:
+            tipos.add(key_str)
+    return tipos
+
+
+_TIPOS_DTE_VALIDOS = _tipos_dte_validos()
+_ESTADOS_REL_PERMITIDOS = {"Enviado", "Aceptado"}
 
 
 logger = logging.getLogger(__name__)
@@ -137,31 +169,169 @@ def normalizar_receptor(receptor: dict) -> dict:
 
 
 def _normalizar_documento_relacionado(doc_rel: list[dict]) -> list[dict]:
-    """Valida y normaliza ``documento_relacionado`` si está presente."""
+    """Valida y normaliza ``documento_relacionado`` respetando el número original."""
 
     if not isinstance(doc_rel, list) or not doc_rel:
         raise ValueError("documento_relacionado debe ser una lista no vacía")
-    doc = doc_rel[0] or {}
-    tipo = doc.get("tipoDocumento")
-    numero = doc.get("numeroDocumento")
-    fecha = doc.get("fechaEmision")
-    if tipo not in {"01", "03", "11"}:
+
+    raw = doc_rel[0] or {}
+    tipo_raw = raw.get("tipoDocumento")
+    if isinstance(tipo_raw, int):
+        tipo = f"{tipo_raw:02d}"
+    elif isinstance(tipo_raw, str):
+        tipo_str = tipo_raw.strip()
+        if tipo_str.isdigit() and len(tipo_str) <= 2:
+            tipo = f"{int(tipo_str):02d}"
+        else:
+            tipo = tipo_str or None
+    else:
+        tipo = None
+
+    if tipo not in _TIPOS_DTE_VALIDOS:
         raise ValueError("tipoDocumento inválido en documento_relacionado")
-    if not numero or not fecha:
+
+    numero = raw.get("numeroDocumento")
+    codigo_generacion = raw.get("codigoGeneracion")
+    if codigo_generacion:
+        codigo_generacion_str = str(codigo_generacion).strip()
+        if not codigo_generacion_str:
+            raise ValueError("codigoGeneracion inválido en documento_relacionado")
+        try:
+            codigo_generacion = normalize_uuid_v4_upper(codigo_generacion_str)
+        except Exception:
+            codigo_generacion = codigo_generacion_str.upper()
+        numero = codigo_generacion
+    if not numero:
         raise ValueError(
             "documento_relacionado requiere numeroDocumento y fechaEmision"
         )
+    numero = str(numero).strip()
+
+    fecha = raw.get("fechaEmision")
     fecha_normalizada = fecha_ddmmaaaa(fecha)
     if not fecha_normalizada:
         raise ValueError("fechaEmision inválida en documento_relacionado")
-    return [
-        {
-            "tipoDocumento": tipo,
-            "tipoGeneracion": 2,
-            "numeroDocumento": numero,
-            "fechaEmision": fecha_iso(fecha_normalizada),
-        }
-    ]
+
+    tipo_generacion = raw.get("tipoGeneracion")
+    if isinstance(tipo_generacion, str) and tipo_generacion.isdigit():
+        tipo_generacion = int(tipo_generacion)
+    if tipo_generacion not in {1, 2}:
+        if codigo_generacion:
+            tipo_generacion = 2
+        elif _RE_NUM_CONTROL.fullmatch(numero):
+            tipo_generacion = 1
+        else:
+            try:
+                numero = normalize_uuid_v4_upper(numero)
+            except Exception:
+                tipo_generacion = 1
+            else:
+                tipo_generacion = 2
+
+    if tipo_generacion == 2:
+        try:
+            numero_documento = normalize_uuid_v4_upper(numero)
+        except Exception:
+            numero_documento = str(numero).strip().upper()
+            if not numero_documento:
+                raise ValueError(
+                    "numeroDocumento inválido para tipoGeneracion=2"
+                )
+    else:
+        if not _RE_NUM_CONTROL.fullmatch(numero):
+            raise ValueError(
+                "numeroDocumento inválido para tipoGeneracion=1"
+            )
+        numero_documento = numero.upper()
+        if tipo_generacion == 1:
+            match = _RE_NUM_CONTROL.fullmatch(numero_documento)
+            if match:
+                tipo_from_num = match.group(1)
+                if tipo_from_num != tipo:
+                    raise ValueError(
+                        "tipoDocumento no coincide con el prefijo de numeroDocumento"
+                    )
+
+    resultado = {
+        "tipoDocumento": tipo,
+        "tipoGeneracion": tipo_generacion,
+        "numeroDocumento": numero_documento,
+        "fechaEmision": fecha_iso(fecha_normalizada),
+    }
+    if codigo_generacion:
+        resultado["codigoGeneracion"] = codigo_generacion
+
+    return [resultado]
+
+
+def _verificar_documento_relacionado_recepcionado(db: DB, doc_rel: list[dict]) -> None:
+    """Valida que el documento relacionado tenga estado recepcionado localmente."""
+
+    if not doc_rel:
+        return
+
+    doc = doc_rel[0]
+    tipo_generacion = doc.get("tipoGeneracion")
+    codigo_generacion = doc.get("codigoGeneracion")
+    numero_documento = doc.get("numeroDocumento")
+
+    codigo_consulta = None
+    numero_consulta = None
+    if tipo_generacion == 2:
+        codigo_consulta = (codigo_generacion or numero_documento or "").strip().upper()
+    elif tipo_generacion == 1:
+        numero_consulta = (numero_documento or "").strip().upper()
+        if codigo_generacion:
+            codigo_consulta = str(codigo_generacion).strip().upper()
+    else:
+        if codigo_generacion:
+            codigo_consulta = str(codigo_generacion).strip().upper()
+        if not codigo_consulta and numero_documento:
+            numero_consulta = str(numero_documento).strip().upper()
+
+    for column, definition in (
+        ("codigo_lote", "TEXT"),
+        ("codigo_generacion", "TEXT"),
+        ("numero_control", "TEXT"),
+        ("estado_ui", "TEXT"),
+        ("estado_ui_tag", "TEXT"),
+    ):
+        db.ensure_column("dte_envios", column, definition)
+
+    row = None
+    if codigo_consulta:
+        row = db.cursor.execute(
+            """
+            SELECT estado_ui FROM dte_envios
+            WHERE codigo_generacion IS NOT NULL AND codigo_generacion = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (codigo_consulta,),
+        ).fetchone()
+    if row is None and numero_consulta:
+        row = db.cursor.execute(
+            """
+            SELECT estado_ui FROM dte_envios
+            WHERE numero_control IS NOT NULL AND numero_control = ?
+            ORDER BY id DESC LIMIT 1
+            """,
+            (numero_consulta,),
+        ).fetchone()
+
+    if row is None:
+        raise ValueError(
+            "El documento relacionado aún no ha sido recepcionado por MH (sin registro local)"
+        )
+
+    try:
+        estado_ui = row["estado_ui"]
+    except Exception:
+        estado_ui = row[0] if row else None
+
+    if (estado_ui or "").strip() not in _ESTADOS_REL_PERMITIDOS:
+        raise ValueError(
+            "El documento relacionado aún no ha sido recepcionado por MH"
+        )
 
 
 def generar_nota_remision(
@@ -298,6 +468,7 @@ def generar_nota_remision(
 
     if documento_relacionado:
         documento_relacionado = _normalizar_documento_relacionado(documento_relacionado)
+        _verificar_documento_relacionado_recepcionado(db, documento_relacionado)
     numero_doc = (
         documento_relacionado[0].get("numeroDocumento")
         if documento_relacionado

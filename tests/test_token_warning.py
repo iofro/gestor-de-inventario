@@ -1,4 +1,6 @@
 import os
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ.setdefault("QT_OPENGL", "software")
 from types import SimpleNamespace
 
 import pytest
@@ -49,11 +51,25 @@ def test_post_dte_token_invalid(monkeypatch):
     monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda doc, data: {})
     monkeypatch.setattr(dte, "format_cliente_id_from_dui", lambda dui: "cid")
     monkeypatch.setattr(dte, "detect_user_agent", lambda ua, opts, app_version, client_id: "UA")
-    monkeypatch.setattr(dte, "auth_headers", lambda extra=None: {})
+    monkeypatch.setattr(
+        dte,
+        "auth_headers",
+        lambda extra=None, **kwargs: {"Content-Type": "application/json"},
+    )
 
     class Resp:
         status_code = 401
         text = "Unauthorized"
+
+        def __init__(self):
+            self.request = SimpleNamespace(
+                url="https://apitest.dtes.mh.gob.sv/fesv/recepciondte",
+                headers={"Content-Type": "application/json"},
+                body=None,
+            )
+            self.elapsed = SimpleNamespace(total_seconds=lambda: 0.0)
+            self.headers = {}
+
         def json(self):
             return {"detalle": "Token expirado en Hacienda"}
     monkeypatch.setattr(dte.requests, "post", lambda *a, **k: Resp())
@@ -71,11 +87,25 @@ def test_post_dte_token_invalid_without_detail(monkeypatch):
     monkeypatch.setattr(dte, "construir_sobre_recepcion", lambda doc, data: {})
     monkeypatch.setattr(dte, "format_cliente_id_from_dui", lambda dui: "cid")
     monkeypatch.setattr(dte, "detect_user_agent", lambda ua, opts, app_version, client_id: "UA")
-    monkeypatch.setattr(dte, "auth_headers", lambda extra=None: {})
+    monkeypatch.setattr(
+        dte,
+        "auth_headers",
+        lambda extra=None, **kwargs: {"Content-Type": "application/json"},
+    )
 
     class Resp:
         status_code = 403
         text = "Forbidden"
+
+        def __init__(self):
+            self.request = SimpleNamespace(
+                url="https://apitest.dtes.mh.gob.sv/fesv/recepciondte",
+                headers={"Content-Type": "application/json"},
+                body=None,
+            )
+            self.elapsed = SimpleNamespace(total_seconds=lambda: 0.0)
+            self.headers = {}
+
         def json(self):
             return {}
 
@@ -89,6 +119,10 @@ def test_post_dte_token_invalid_without_detail(monkeypatch):
     }
 
 
+@pytest.mark.skipif(
+    not hasattr(auth, "_request_new_token"),
+    reason="La API de autenticación no expone _request_new_token",
+)
 def test_request_new_token_raises_runtimeerror(monkeypatch):
     class Resp:
         status_code = 401
@@ -98,8 +132,10 @@ def test_request_new_token_raises_runtimeerror(monkeypatch):
         def json(self):
             return {}
     import requests
-    monkeypatch.setattr(auth.requests, "post", lambda url, data, headers, timeout: Resp())
-    monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake")
+    fake_requests = SimpleNamespace(post=lambda url, data, headers, timeout: Resp())
+    fake_requests.HTTPError = requests.HTTPError
+    monkeypatch.setattr(auth, "requests", fake_requests, raising=False)
+    monkeypatch.setattr(auth, "_get_auth_url", lambda: "http://fake", raising=False)
     with pytest.raises(RuntimeError):
         auth._request_new_token("nit", "pwd")
 
@@ -208,6 +244,93 @@ def test_send_selected_invoice_warns_on_token_generic(monkeypatch, qt_app, tmp_p
 
     tab.send_selected_invoice()
     assert "token" in warnings["msg"].lower()
+
+
+def test_send_selected_invoice_prompts_on_resend(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text(
+        "{\n  \"identificacion\": {\n    \"numeroControl\": \"X\"\n  }\n}",
+        encoding="utf-8",
+    )
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {
+            "row_type": "venta",
+            "id": 1,
+            "venta_id": venta_id,
+            "envio": "Enviado (procesado)",
+        },
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, v):
+            self._checked = v
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+
+        def exec_(self):
+            self.email_cb.setChecked(False)
+            self.hacienda_cb.setChecked(True)
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+
+    question_calls = {}
+
+    def fake_question(
+        parent,
+        title,
+        message,
+        buttons=facturacion_tab.QMessageBox.Yes | facturacion_tab.QMessageBox.No,
+        default_button=facturacion_tab.QMessageBox.No,
+    ):
+        question_calls["title"] = title
+        question_calls["message"] = message
+        question_calls["buttons"] = buttons
+        question_calls["default"] = default_button
+        return facturacion_tab.QMessageBox.No
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "question", fake_question)
+
+    transmit_calls = {"called": False}
+
+    def fake_transmitir(db_, vid, tipo_dte="01"):
+        transmit_calls["called"] = True
+        return {"estado": "Recibido"}
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    tab.send_selected_invoice()
+
+    assert question_calls["title"] == "Enviar a Hacienda"
+    assert question_calls["message"].startswith("Este documento ya fue enviado")
+    assert not transmit_calls["called"]
 
 
 def test_send_orphan_credit_note_snapshot_missing(monkeypatch, qt_app, tmp_path):

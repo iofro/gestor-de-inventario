@@ -496,9 +496,13 @@ def test_receptor_dui_sin_nrc(monkeypatch):
     rec = data["receptor"]
     assert rec["tipoDocumento"] == "13"
     assert rec["numDocumento"] == "123456789"
-    assert "nrc" not in rec
+    assert rec["nrc"] is None
     assert rec["nombreComercial"] is None
-    assert any("Se removió NRC" in str(warn.message) for warn in w)
+    assert any(
+        "Se forzó NRC=null" in str(warn.message)
+        or "Se removió NRC" in str(warn.message)
+        for warn in w
+    )
 
 
 def test_receptor_nit_sin_nrc_error(monkeypatch):
@@ -533,6 +537,142 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
     )
     with pytest.raises(ValueError):
+        generar_nota_remision_independiente(
+            db,
+            emisor=emisor,
+            receptor=receptor,
+            detalles=detalles,
+            documento_relacionado=_sample_doc_rel(),
+            extension=extension,
+        )
+
+
+@pytest.mark.parametrize(
+    "tipo_doc,num_doc",
+    [
+        ("02", "A1234567"),
+        ("03", "CE123456"),
+        ("37", "123456789"),
+    ],
+)
+def test_receptor_no_nit_nrc_null(monkeypatch, tipo_doc, num_doc):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = {
+        "tipoDocumento": tipo_doc,
+        "numDocumento": num_doc,
+        "nrc": "1234567",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "San Salvador",
+        },
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
+    data = generar_nota_remision_independiente(
+        db,
+        emisor=emisor,
+        receptor=receptor,
+        detalles=detalles,
+        documento_relacionado=_sample_doc_rel(),
+        extension=extension,
+    )
+    rec = data["receptor"]
+    assert rec["tipoDocumento"] == tipo_doc
+    assert rec["nrc"] is None
+
+
+@pytest.mark.parametrize(
+    "tipo_doc,num_doc",
+    [
+        ("13", "012345678"),
+        ("02", "P1234567"),
+        ("03", "CE123456"),
+        ("37", "123456789"),
+    ],
+)
+def test_receptor_nrc_null_persists_after_double_sanitize(monkeypatch, tipo_doc, num_doc):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    receptor = {
+        "tipoDocumento": tipo_doc,
+        "numDocumento": num_doc,
+        "nrc": "7654321",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "San Salvador",
+        },
+    }
+    with warnings.catch_warnings(record=True):
+        normalizado = nota_remision.normalizar_receptor(receptor)
+
+    payload = {
+        "identificacion": {"tipoDte": "04"},
+        "receptor": normalizado,
+    }
+
+    cleaned = dte.sanitize_dte_payload(payload)
+    assert "nrc" in cleaned["receptor"]
+    assert cleaned["receptor"]["nrc"] is None
+
+
+def test_receptor_nit_nueve_digitos_error(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = {
+        "tipoDocumento": "36",
+        "numDocumento": "061414071",
+        "nrc": "1234567",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "San Salvador",
+        },
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
+    with pytest.raises(ValueError, match="NIT debe tener 14 dígitos"):
         generar_nota_remision_independiente(
             db,
             emisor=emisor,

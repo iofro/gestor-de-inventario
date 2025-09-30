@@ -13,7 +13,7 @@ from PyQt5.QtWidgets import (
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame
 )
-from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker
+from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker, QEvent
 from PyQt5.QtGui import (
     QColor,
     QDesktopServices,
@@ -1381,6 +1381,7 @@ class ProductDialog(QDialog):
 
         # Datos básicos del producto
         self.codigo_edit = QLineEdit()
+        self.codigo_edit.installEventFilter(self)
         self.sku_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.precio_compra_spin = QDoubleSpinBox()
@@ -1424,6 +1425,22 @@ class ProductDialog(QDialog):
             self.precio_compra_spin.setValue(producto.get("precio_compra", 0))
             self.precio_venta_minorista_spin.setValue(producto.get("precio_venta_minorista", 0))
             self.precio_venta_mayorista_spin.setValue(producto.get("precio_venta_mayorista", 0))
+
+    def _handle_scanned_code(self):
+        codigo = self.codigo_edit.text().strip()
+        if not codigo:
+            return
+        self.sku_edit.setText(codigo)
+        self.codigo_edit.clear()
+        self.sku_edit.setFocus()
+        self.sku_edit.selectAll()
+
+    def eventFilter(self, obj, event):
+        if obj is self.codigo_edit and event.type() == QEvent.KeyPress:
+            if event.key() in (Qt.Key_Return, Qt.Key_Enter):
+                self._handle_scanned_code()
+                return True
+        return super().eventFilter(obj, event)
 
     def get_data(self):
         return {

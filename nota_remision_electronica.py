@@ -147,6 +147,7 @@ def _generar_base(
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
+    fec_emi_hoy_iso = fecha_iso(fecha_emision_por_defecto)
     identificacion = {
         "version": DTE_VERSIONES["04"],
         "ambiente": ambiente,
@@ -157,15 +158,14 @@ def _generar_base(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_iso(fecha_emision_por_defecto),
+        "fecEmi": fec_emi_hoy_iso,
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
-
-    if documento_relacionado:
-        fecha_relacionada = documento_relacionado[0].get("fechaEmision")
-        if fecha_relacionada:
-            identificacion["fecEmi"] = fecha_iso(fecha_relacionada)
+    # NOTAS (04/05/06):
+    # - identificacion.fecEmi = hoy (se reafirma en enviar_* y _enviar_documento).
+    # - documentoRelacionado[].fechaEmision = fecha histórica del DTE base.
+    #   Nunca copiar la histórica hacia fecEmi.
     numero_doc = documento_relacionado[0].get("numeroDocumento")
     items = _build_items(detalles, numero_doc)
 
@@ -243,8 +243,6 @@ def generar_nota_remision_desde_factura(
         )
     if not fecha_emision:
         fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
-    if fecha_emision:
-        ident["fecEmi"] = fecha_emision
     codigo_generacion = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")
     if codigo_generacion:

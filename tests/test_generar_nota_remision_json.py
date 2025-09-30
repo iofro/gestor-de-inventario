@@ -3,6 +3,7 @@ from decimal import Decimal
 import uuid
 
 from dte import generar_nota_remision_json
+from utils.fecha import fecha_emision_hoy_str
 
 
 def test_generar_nota_remision_json_from_dte(db_conn):
@@ -38,6 +39,8 @@ def test_generar_nota_remision_json_from_dte(db_conn):
         ],
     }
 
+    original_fec_emi = factura["identificacion"]["fecEmi"]
+
     nr = generar_nota_remision_json(
         db_conn,
         factura,
@@ -50,7 +53,8 @@ def test_generar_nota_remision_json_from_dte(db_conn):
     assert doc_rel["tipoDocumento"] == ident["tipoDte"]
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["numeroDocumento"] == ident["codigoGeneracion"]
-    assert doc_rel["fechaEmision"] == ident["fecEmi"]
+    assert doc_rel["fechaEmision"] == original_fec_emi
+    assert nr["identificacion"]["fecEmi"] == fecha_emision_hoy_str()
 
     # receptor sanitized
     assert nr["receptor"]["numDocumento"] == "06141234561023"

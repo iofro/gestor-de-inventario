@@ -174,6 +174,7 @@ def generar_nota_remision(
     receptor: Optional[dict] = None,
     extension: Optional[dict] = None,
     ambiente: str = "00",
+    fecha_documento_relacionado: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una Nota de Remisión."""
     allowed_ext_keys = {
@@ -194,8 +195,6 @@ def generar_nota_remision(
             )
             if not fecha_emision:
                 fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
-            if fecha_emision:
-                ident["fecEmi"] = fecha_emision
             codigo_generacion = ident.get("codigoGeneracion")
             numero_control = ident.get("numeroControl")
             if codigo_generacion:
@@ -277,6 +276,7 @@ def generar_nota_remision(
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
+    fec_emi_hoy_iso = fecha_iso(fecha_emision_por_defecto)
     identificacion = {
         "version": DTE_VERSIONES["04"],
         "ambiente": ambiente,
@@ -287,16 +287,17 @@ def generar_nota_remision(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_iso(fecha_emision_por_defecto),
+        "fecEmi": fec_emi_hoy_iso,
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
+    # NOTAS (04/05/06):
+    # - identificacion.fecEmi = hoy (se reafirma en enviar_* y _enviar_documento).
+    # - documentoRelacionado[].fechaEmision = fecha histórica del DTE base.
+    #   Nunca copiar la histórica hacia fecEmi.
 
     if documento_relacionado:
         documento_relacionado = _normalizar_documento_relacionado(documento_relacionado)
-        fecha_relacionada = documento_relacionado[0].get("fechaEmision")
-        if fecha_relacionada:
-            identificacion["fecEmi"] = fecha_iso(fecha_relacionada)
     numero_doc = (
         documento_relacionado[0].get("numeroDocumento")
         if documento_relacionado
@@ -330,6 +331,10 @@ def generar_nota_remision(
         "apendice": None,
     }
     if documento_relacionado:
+        if fecha_documento_relacionado:
+            fecha_doc = fecha_ddmmaaaa(fecha_documento_relacionado)
+            if fecha_doc:
+                documento_relacionado[0]["fechaEmision"] = fecha_iso(fecha_doc)
         data["documentoRelacionado"] = documento_relacionado
 
     schema = catalogos.get_dte_schema("04")
@@ -405,11 +410,6 @@ def generar_nota_remision_desde_db(
             if fecha_origen:
                 fecha_origen_source = "venta"
 
-        if fecha_origen and isinstance(dte_origen, dict):
-            dte_ident = dte_origen.setdefault("identificacion", {})
-            if isinstance(dte_ident, dict):
-                dte_ident["fecEmi"] = fecha_origen
-
         logger.info(
             "fecha relacionada para nota %s = %s (origen: %s)",
             nota_id,
@@ -423,13 +423,18 @@ def generar_nota_remision_desde_db(
             factura=dte_origen,
             extension=extension,
             ambiente=ambiente,
+            fecha_documento_relacionado=fecha_origen,
         )
 
     factura = extra.get("factura")
     if factura:
         extension = extra.get("extension") or {}
         return generar_nota_remision(
-            db, factura=factura, extension=extension, ambiente=ambiente
+            db,
+            factura=factura,
+            extension=extension,
+            ambiente=ambiente,
+            fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
         )
 
     # Nota independiente (sin venta asociada)
@@ -449,6 +454,7 @@ def generar_nota_remision_desde_db(
         documento_relacionado=doc_rel,
         extension=extension,
         ambiente=ambiente,
+        fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
     )
 
 

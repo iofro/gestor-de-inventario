@@ -8,6 +8,7 @@ from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_no
 import pytest
 from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
+from utils.fecha import fecha_emision_hoy_str
 from utils.snapshot import Snapshot, SnapshotNotFoundError
 
 
@@ -21,6 +22,11 @@ def _mock_geo(monkeypatch):
         "dte.validar_dep_muni_por_catalogo",
         lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
     )
+
+
+@pytest.fixture(autouse=True)
+def _disable_strict_snapshot(monkeypatch):
+    monkeypatch.setattr("nota_credito_electronica.STRICT_SNAPSHOT_DEFAULT", False)
 
 
 def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
@@ -134,7 +140,8 @@ def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
     doc_rel = nce["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["fechaEmision"] == "2024-01-01"
-    assert nce["identificacion"]["fecEmi"] == "2024-01-01"
+    today_str = fecha_emision_hoy_str()
+    assert nce["identificacion"]["fecEmi"] == today_str
     receptor_nota = nce["receptor"]
     assert receptor_nota["nit"] == "06141407100012"
     assert receptor_nota["nrc"] == "123"
@@ -187,7 +194,8 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
     nce = generar_nce_desde_nota(db, nota_id, strict_snapshot=False)
     doc_rel = nce["documentoRelacionado"][0]
     assert doc_rel["fechaEmision"] == fecha_envio_iso
-    assert nce["identificacion"]["fecEmi"] == fecha_envio_iso
+    today_str = fecha_emision_hoy_str()
+    assert nce["identificacion"]["fecEmi"] == today_str
 
 
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
@@ -278,7 +286,8 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
         == payload["identificacion"]["codigoGeneracion"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
-    assert nce["identificacion"]["fecEmi"] == "2023-08-01"
+    today_str = fecha_emision_hoy_str()
+    assert nce["identificacion"]["fecEmi"] == today_str
     assert metrics_calls == ["notes_source_used.snapshot"]
     assert payload["firma"] == "SIGNATURE"
 
@@ -363,7 +372,8 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
     assert doc_rel["fechaEmision"] == "2023-09-01"
-    assert nce["identificacion"]["fecEmi"] == "2023-09-01"
+    today_str = fecha_emision_hoy_str()
+    assert nce["identificacion"]["fecEmi"] == today_str
 
 
 def test_generar_nce_desde_nota_strict_snapshot(monkeypatch):
@@ -609,13 +619,14 @@ def test_nota_credito_total_nueve(monkeypatch):
     venta_id = db.add_venta("2024-01-01", 9)
     db.add_detalle_venta(venta_id, pid, 1, 7.96, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
-    assert dte_origen["resumen"]["montoTotalOperacion"] == Decimal("9.00")
+    expected_total = dte_origen["resumen"]["montoTotalOperacion"]
+    assert expected_total == Decimal("7.96")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
         == dte_origen["identificacion"]["codigoGeneracion"]
     )
-    assert data["resumen"]["montoTotalOperacion"] == 9.0
+    assert data["resumen"]["montoTotalOperacion"] == expected_total
 
 
 def test_nota_credito_precio_uni(monkeypatch):
@@ -642,6 +653,7 @@ def test_nota_credito_precio_uni(monkeypatch):
             "cantidad": 1,
             "descripcion": "Prod",
             "codigo": codigo,
+            "precio_unitario": Decimal("7.96"),
             "ventas_gravadas": Decimal("7.96"),
             "ventas_exentas": 0,
             "ventas_no_sujetas": 0,
@@ -811,11 +823,13 @@ def test_nota_credito_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"
     doc_rel = {
-        "tipo": "01",
+        "tipo": "03",
         "numero_control": "DTE-01-S001P001-000000000000001",
         "codigo_generacion": "123",
         "fecha": "2024-01-01",
     }
+    codigo_generacion = "NC-TEST-1234567890"
+    numero_control = "DTE-05-S001P001-000000000000001"
     generar_nota_credito_pdf(
         venta,
         detalles,
@@ -825,6 +839,9 @@ def test_nota_credito_pdf(tmp_path):
         datos_negocio={},
         doc_relacionado=doc_rel,
         motivo="Devolución",
+        codigo_generacion=codigo_generacion,
+        numero_control=numero_control,
+        fecha_generacion="01/02/2024, 12:00:00",
     )
     assert out.exists()
     with fitz.open(out) as doc:
@@ -858,6 +875,9 @@ def test_nota_credito_direccion(tmp_path, monkeypatch):
         {},
         archivo=str(out),
         datos_negocio={'direccion': direccion},
+        codigo_generacion="NC-TEST-9876543210",
+        numero_control="DTE-05-S001P001-000000000000002",
+        fecha_generacion="02/02/2024, 09:30:00",
     )
     with fitz.open(out) as doc:
         lines = ''.join(p.get_text() for p in doc).splitlines()

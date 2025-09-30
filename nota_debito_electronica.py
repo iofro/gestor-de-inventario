@@ -140,11 +140,6 @@ def generar_nde_desde_nota(
         fecha_origen = fecha_ddmmaaaa(venta.get("fecha"))
         if fecha_origen:
             fecha_origen_source = "venta"
-    if fecha_origen:
-        identificacion = dte_origen.get("identificacion")
-        if isinstance(identificacion, dict):
-            if identificacion.get("fecEmi") != fecha_origen:
-                identificacion["fecEmi"] = fecha_origen
     logger.info(
         "fecha relacionada para nota %s = %s (origen: %s)",
         nota_id,
@@ -214,6 +209,7 @@ def generar_nde_desde_dte(
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
+    fec_emi_hoy_iso = fecha_iso(fecha_emision_por_defecto)
     identificacion = {
         "version": DTE_VERSIONES["06"],
         "ambiente": ambiente,
@@ -224,10 +220,14 @@ def generar_nde_desde_dte(
         "tipoOperacion": cabecera["tipo_operacion"],
         "tipoContingencia": cabecera["tipo_contingencia"],
         "motivoContin": cabecera["motivo_contin"],
-        "fecEmi": fecha_iso(fecha_emision_por_defecto),
+        "fecEmi": fec_emi_hoy_iso,
         "horEmi": now.strftime("%H:%M:%S"),
         "tipoMoneda": "USD",
     }
+    # NOTAS (04/05/06):
+    # - identificacion.fecEmi = hoy (se reafirma en enviar_* y _enviar_documento).
+    # - documentoRelacionado[].fechaEmision = fecha histórica del DTE base.
+    #   Nunca copiar la histórica hacia fecEmi.
 
     tipo_raw = origen_ident.get("tipoDte")
     if isinstance(tipo_raw, int):
@@ -252,19 +252,15 @@ def generar_nde_desde_dte(
         tipo_generacion = 1
         numero_documento = str(numero_control or "").strip()
 
-    fecha_doc_rel_base = fecha_ddmmaaaa(
-        origen_ident.get("fecEmi") or origen_ident.get("fechaEmision")
-    )
-    if not fecha_doc_rel_base and fecha_origen:
+    fecha_doc_rel_base = None
+    if fecha_origen:
         fecha_doc_rel_base = fecha_ddmmaaaa(fecha_origen)
-
-    fecha_emision_nota_base = (
-        fecha_origen or fecha_doc_rel_base or fecha_emision_por_defecto
-    )
-    if fecha_emision_nota_base:
-        identificacion["fecEmi"] = fecha_iso(fecha_emision_nota_base)
     if not fecha_doc_rel_base:
-        fecha_doc_rel_base = fecha_emision_nota_base
+        fecha_doc_rel_base = fecha_ddmmaaaa(
+            origen_ident.get("fechaEmision") or origen_ident.get("fecEmi")
+        )
+    if not fecha_doc_rel_base:
+        fecha_doc_rel_base = fecha_emision_por_defecto
 
     doc_rel = [
         {

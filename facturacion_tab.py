@@ -3389,6 +3389,15 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
             return
 
+        tipo_dte = str(data.get("identificacion", {}).get("tipoDte", "")).zfill(2)
+        if tipo in {"credito", "debito"} and tipo_dte == "01":
+            QMessageBox.warning(
+                self,
+                "Nota",
+                "No se pueden crear notas de crédito y débito a partir de facturas de consumidor final.",
+            )
+            return
+
         # Intenta obtener el sello de recepción desde dte_envios
         sello = data.get("selloRecibido")
         if not sello and venta_id:

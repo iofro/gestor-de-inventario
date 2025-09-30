@@ -6209,6 +6209,9 @@ def _enviar_documento(
     """
     print("DTE: START_enviar_documento", "modo=", modo)
     ident = data.get("identificacion") or data.get("identificador") or {}
+    doc_ref = ident.get("numeroControl") or ident.get("codigoGeneracion") or doc_id
+    tipo_dte = ident.get("tipoDte") or ident.get("tipoDocumento")
+    nota_types = {"04", "05", "06"}
     ident_codigo = (ident.get("codigoGeneracion") or "").upper()
     ident_control = (ident.get("numeroControl") or "").upper()
     SUCCESS_STATES = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
@@ -6239,10 +6242,14 @@ def _enviar_documento(
     meta = {
         "ambiente": ident.get("ambiente"),
         "version": ident.get("version"),
-        "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
+        "tipoDte": tipo_dte,
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
-    ident["fecEmi"] = fecha_emision_hoy_str()
+    today_str = None
+    if tipo_dte in nota_types:
+        today_str = fecha_emision_hoy_str()
+        if ident.get("fecEmi") != today_str:
+            ident["fecEmi"] = today_str
     ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
     if "identificacion" in data:
         data["identificacion"] = ident
@@ -6268,6 +6275,33 @@ def _enviar_documento(
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
 
+    if jws_token and today_str:
+        try:
+            token_payload = _decode_jws_payload(jws_token)
+        except Exception:
+            logger.info("DTE %s: jws_token inválido; se re-firma", doc_ref)
+            jws_token = None
+        else:
+            payload_ident = (
+                token_payload.get("identificacion")
+                or token_payload.get("identificador")
+                or {}
+            )
+            payload_fec = payload_ident.get("fecEmi")
+            if payload_fec != today_str:
+                logger.info(
+                    "DTE %s: jws_token descartado por fecEmi %s (esperado %s)",
+                    doc_ref,
+                    payload_fec or "<sin fecha>",
+                    today_str,
+                )
+                jws_token = None
+            else:
+                logger.info(
+                    "DTE %s: reutilizando jws_token con fecEmi %s",
+                    doc_ref,
+                    payload_fec,
+                )
     print("DTE: BEFORE_SIGN")
     signed = jws_token or jws.sign_json(data)
     print("DTE: SIGNED_OK")
@@ -6846,9 +6880,6 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
 
     data = generar_nota_credito_json(db, nota_id)
-    ident = data.get("identificacion") or {}
-    ident["fecEmi"] = fecha_emision_hoy_str()
-    data["identificacion"] = ident
     venta_id_base = None
     try:
         row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -6934,6 +6965,26 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from utils.stable_json import save_file, stable_stringify
 
     ident = data.get("identificacion", {}) or {}
+    hoy_fec = fecha_emision_hoy_str()
+    if ident.get("fecEmi") != hoy_fec:
+        logger.info(
+            "NotaCredito %s: fecEmi ajustado de %s a %s antes de firmar",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            ident.get("fecEmi") or "<sin fecha>",
+            hoy_fec,
+        )
+    else:
+        logger.info(
+            "NotaCredito %s: fecEmi confirmado como %s antes de firmar",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            hoy_fec,
+        )
+    ident["fecEmi"] = hoy_fec
+    data["identificacion"] = ident
     receptor = data.get("receptor", {}) or {}
     _, json_path = get_dte_document_paths(
         ident.get("fecEmi"),
@@ -6979,9 +7030,6 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
 
     data = generar_nota_debito_json(db, nota_id)
-    ident = data.get("identificacion") or {}
-    ident["fecEmi"] = fecha_emision_hoy_str()
-    data["identificacion"] = ident
     venta_id_base = None
     try:
         row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -7067,6 +7115,26 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from utils.stable_json import save_file, stable_stringify
 
     ident = data.get("identificacion", {}) or {}
+    hoy_fec = fecha_emision_hoy_str()
+    if ident.get("fecEmi") != hoy_fec:
+        logger.info(
+            "NotaDebito %s: fecEmi ajustado de %s a %s antes de firmar",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            ident.get("fecEmi") or "<sin fecha>",
+            hoy_fec,
+        )
+    else:
+        logger.info(
+            "NotaDebito %s: fecEmi confirmado como %s antes de firmar",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            hoy_fec,
+        )
+    ident["fecEmi"] = hoy_fec
+    data["identificacion"] = ident
     receptor = data.get("receptor", {}) or {}
     _, json_path = get_dte_document_paths(
         ident.get("fecEmi"),
@@ -7112,9 +7180,6 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     from nota_remision import generar_nota_remision_desde_db
 
     data = generar_nota_remision_desde_db(db, nota_id)
-    ident = data.get("identificacion") or {}
-    ident["fecEmi"] = fecha_emision_hoy_str()
-    data["identificacion"] = ident
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("04")
     # Validación omitida.
@@ -7124,6 +7189,27 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
     #     json_path = save_dte_json(data)
     #     errors = _format_validation_errors(exc)
     #     raise DTEValidationError(errors, json_path) from exc
+    ident = data.get("identificacion") or {}
+    hoy_fec = fecha_emision_hoy_str()
+    if ident.get("fecEmi") != hoy_fec:
+        logger.info(
+            "NotaRemision %s: fecEmi ajustado de %s a %s antes de firmar",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            ident.get("fecEmi") or "<sin fecha>",
+            hoy_fec,
+        )
+    else:
+        logger.info(
+            "NotaRemision %s: fecEmi confirmado como %s antes de firmar",
+            ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or nota_id,
+            hoy_fec,
+        )
+    ident["fecEmi"] = hoy_fec
+    data["identificacion"] = ident
     resp = _enviar_documento(db, nota_id, data, modo)
     if resp.get("sello"):
         db.update_venta_extra(nota_id, {"selloRecibido": resp["sello"]})

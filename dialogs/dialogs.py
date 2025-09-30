@@ -11,7 +11,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView, QFrame
+    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter
 )
 from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker
 from PyQt5.QtGui import (
@@ -1460,9 +1460,28 @@ class RegisterPurchaseDialog(QDialog):
         vendedor_layout = QHBoxLayout()
         vendedor_layout.addWidget(QLabel("Vendedor:"))
         self.vendedor_combo = QComboBox()
+        self.vendedor_combo.setEditable(True)
+        self.vendedor_combo.setInsertPolicy(QComboBox.NoInsert)
+        line_edit = self.vendedor_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText("Buscar por nombre o código")
         self.vendedor_combo.addItem("Seleccionar proveedor", None)
         for v in self.Vendedores:
-            self.vendedor_combo.addItem(v["nombre"], v["id"])
+            vendedor_codigo = v.get("codigo", "") or ""
+            display_text = f"{v['nombre']} — {vendedor_codigo}" if vendedor_codigo else v["nombre"]
+            self.vendedor_combo.addItem(display_text, v["id"])
+        completer = QCompleter(self.vendedor_combo.model(), self.vendedor_combo)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        if line_edit is not None:
+            line_edit.setCompleter(completer)
+
+            def _on_completer_activated(text):
+                idx = self.vendedor_combo.findText(text, Qt.MatchExactly)
+                if idx != -1:
+                    self.vendedor_combo.setCurrentIndex(idx)
+
+            completer.activated[str].connect(_on_completer_activated)
         vendedor_layout.addWidget(self.vendedor_combo)
         layout.addLayout(vendedor_layout)
 

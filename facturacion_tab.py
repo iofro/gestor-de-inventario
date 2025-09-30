@@ -2090,6 +2090,51 @@ class FacturacionTab(QWidget):
         formatted = "\n".join(f"- {text}" for text in cleaned)
         return f"Observaciones:\n{formatted}"
 
+    def _mostrar_respuesta_hacienda(
+        self, resp: dict | None, title: str = "Enviar a Hacienda"
+    ) -> None:
+        if not isinstance(resp, dict):
+            return
+
+        estado_value = resp.get("estado")
+        estado = str(estado_value or "").strip()
+        estado_line = f"Estado: {estado or 'Desconocido'}"
+
+        detail_values = [
+            resp.get("detalle"),
+            resp.get("errores"),
+            resp.get("descripcionMsg"),
+            resp.get("message"),
+        ]
+        textos_detalle = _gather_rejection_texts(*detail_values)
+        detalle_limpio: list[str] = []
+        vistos: set[str] = set()
+        for texto in textos_detalle:
+            text = str(texto).strip()
+            if text and text not in vistos:
+                detalle_limpio.append(text)
+                vistos.add(text)
+
+        obs_text = self._format_observaciones_message(resp)
+
+        secciones = [estado_line]
+        if detalle_limpio:
+            secciones.append("\n".join(detalle_limpio))
+        if obs_text:
+            secciones.append(obs_text)
+        mensaje = "\n\n".join(secciones)
+
+        estado_normalizado = estado.lower()
+        aceptado = estado_normalizado.startswith("acept")
+        recibido = estado_normalizado.startswith("recib")
+        transmitido = estado_normalizado.startswith("transmit")
+        procesado = estado_normalizado.startswith("proces")
+
+        if aceptado or recibido or transmitido or procesado:
+            QMessageBox.information(self, title, mensaje)
+        else:
+            QMessageBox.critical(self, title, mensaje)
+
     def send_selected_invoice(self):
         print("UI: SEND_START")
         entry = self._selected_entry()
@@ -3285,12 +3330,15 @@ class FacturacionTab(QWidget):
         if transmitir and nota_id is not None:
             try:
                 resp = enviar_nota_remision(self.manager.db, nota_id)
-                if resp and resp.get("estado") == "Error":
-                    QMessageBox.critical(self, "Nota", resp.get("detalle", "Error"))
+                estado = str(resp.get("estado", "") if resp else "").lower()
+                if estado == "error":
+                    self._mostrar_respuesta_hacienda(resp, title="Nota")
                 else:
                     QMessageBox.information(
                         self, "Nota", "Nota registrada y transmitida"
                     )
+                    if resp:
+                        self._mostrar_respuesta_hacienda(resp, title="Nota")
             except dte.DTEValidationError as exc:
                 self._show_validation_errors(exc.errors, exc.json_path)
             except Exception as exc:
@@ -3558,10 +3606,13 @@ class FacturacionTab(QWidget):
             resp = dte._enviar_documento(
                 self.manager.db, nota_id, nota_json, jws_token=token
             )
-            if resp and resp.get("estado") == "Error":
-                QMessageBox.critical(self, "Nota", resp.get("detalle", "Error"))
+            estado = str(resp.get("estado", "") if resp else "").lower()
+            if estado == "error":
+                self._mostrar_respuesta_hacienda(resp, title="Nota")
             else:
                 QMessageBox.information(self, "Nota", "Nota registrada y transmitida")
+                if resp:
+                    self._mostrar_respuesta_hacienda(resp, title="Nota")
         except dte.DTEValidationError as exc:
             self._show_validation_errors(exc.errors, exc.json_path)
         except Exception as exc:

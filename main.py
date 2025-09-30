@@ -28,12 +28,14 @@ from ui_mainwindow import MainWindow
 from user_picker_dialog import UserPickerDialog
 from db import DB
 from utils import resource_path
-from paths import LAST_INVENTORY_PATH, migrate_datos_negocio
+from paths import LAST_INVENTORY_PATH, migrate_datos_negocio, user_data_path
+from dte import APP_VERSION
 
 LAST_FILE_PATH = Path(LAST_INVENTORY_PATH)
 DEFAULT_INVENTORY = resource_path("inventario.json")
 
 logger = logging.getLogger(__name__)
+startup_logger = logging.getLogger("startup")
 
 
 def handle_exception(exc_type, exc_value, exc_traceback):
@@ -75,6 +77,27 @@ def cargar_ultimo_archivo():
 
 if __name__ == "__main__":
     migrate_datos_negocio()
+    if getattr(sys, "frozen", False):
+        checks = {
+            "schema_NR": resource_path("svfe-json-schemas", "fe-nr-v3.json"),
+            "datos_negocio": resource_path("datos_negocio.json"),
+            "config_negocio": resource_path("config_negocio.json"),
+            "VERSION": resource_path("VERSION"),
+        }
+        for name, path in checks.items():
+            path_obj = Path(path)
+            startup_logger.info(
+                "resource[%s]=%s exists=%s", name, path_obj, path_obj.exists()
+            )
+
+        db_path = user_data_path("inventario.db")
+        try:
+            size = db_path.stat().st_size
+        except OSError:
+            size = 0
+        startup_logger.info("user_data_dir=%s", user_data_path())
+        startup_logger.info("db_path=%s size=%s", db_path, size)
+        startup_logger.info("APP_VERSION=%s resources_root=%s", APP_VERSION, resource_path())
     app = QApplication(sys.argv)
     sys.excepthook = handle_exception
     style_path = resource_path("style.qss")

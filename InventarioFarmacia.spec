@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import Tree
+
 
 a = Analysis(
     ['main.py'],
@@ -21,10 +23,25 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=[
+        'tests', '__pycache__', '.git', 'venv',
+        '*.pem', '*.pfx', '*.key', '*.log', '*.db',
+        '.env', '.env.*'
+    ],
     noarchive=False,
     optimize=0,
 )
+
+datas = [
+    ('VERSION', '.'),
+    ('datos_negocio.json', '.'),
+    ('config_negocio.json', '.'),
+    Tree('svfe-json-schemas', prefix='svfe-json-schemas'),
+    Tree('schema_patches', prefix='schema_patches'),
+    Tree('utils/catalogos', prefix='utils/catalogos'),
+]
+
+a.datas += datas
 pyz = PYZ(a.pure)
 
 exe = EXE(

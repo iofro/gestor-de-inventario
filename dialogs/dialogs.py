@@ -3708,6 +3708,7 @@ class DTEConfigDialog(QDialog):
         self.endpoint_hacienda = QLineEdit()
         self.auth_url = QLineEdit()
         self.recepcion_url = QLineEdit()
+        self.evento_contingencia_url = QLineEdit()
         self.envio_automatico = QCheckBox("Activar envío automático a Hacienda")
         self.adjuntar_json_correo = QCheckBox("Adjuntar JSON firmado en correo al cliente")
         self.incluir_sello_pdf = QCheckBox("Incluir sello de recepción en el PDF (si existe)")
@@ -3748,6 +3749,7 @@ class DTEConfigDialog(QDialog):
         form.addRow("Endpoint API:", self.endpoint_hacienda)
         form.addRow("URL autenticación:", self.auth_url)
         form.addRow("URL recepción:", self.recepcion_url)
+        form.addRow("URL evento contingencia:", self.evento_contingencia_url)
         form.addRow(self.envio_automatico)
         form.addRow(self.adjuntar_json_correo)
         form.addRow(self.incluir_sello_pdf)
@@ -3838,10 +3840,14 @@ class DTEConfigDialog(QDialog):
         self.endpoint_hacienda.setText(dte_api.get("url", ""))
         self.auth_url.setText(env_config.get("auth_url", ""))
         self.recepcion_url.setText(env_config.get("recepcion_url", ""))
+        self.evento_contingencia_url.setText(
+            env_config.get("evento_contingencia_url", "")
+        )
         if (
             not self.endpoint_hacienda.text()
             or not self.auth_url.text()
             or not self.recepcion_url.text()
+            or not self.evento_contingencia_url.text()
         ):
             self._set_default_urls()
         self.envio_automatico.setChecked(dte_api.get("envio_automatico", False))
@@ -3859,6 +3865,7 @@ class DTEConfigDialog(QDialog):
         self.endpoint_hacienda.clear()
         self.auth_url.clear()
         self.recepcion_url.clear()
+        self.evento_contingencia_url.clear()
 
     def _set_default_urls(self):
         base = self.endpoint_hacienda.text().strip()
@@ -3871,6 +3878,7 @@ class DTEConfigDialog(QDialog):
         base = base.rstrip("/")
         self.auth_url.setText(f"{base}/seguridad/auth")
         self.recepcion_url.setText(f"{base}/fesv/recepciondte")
+        self.evento_contingencia_url.setText(f"{base}/fesv/contingencia")
 
     def _current_env_key(self) -> str:
         return "produccion" if self.ambiente_hacienda.currentIndex() == 1 else "pruebas"
@@ -4003,6 +4011,9 @@ class DTEConfigDialog(QDialog):
         recep = self.recepcion_url.text().strip()
         if recep:
             urls["recepcion_url"] = recep
+        evento = self.evento_contingencia_url.text().strip()
+        if evento:
+            urls["evento_contingencia_url"] = evento
         if self._contingencia_tipo is not None:
             dte_api["tipo_contingencia"] = int(self._contingencia_tipo)
         else:

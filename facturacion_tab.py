@@ -91,6 +91,13 @@ from utils.monto import iva_item
 from utils.snapshot import SnapshotNotFoundError
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
 from utils.fecha import TZ_EL_SALVADOR
+from utils.stable_json import stable_stringify
+from evento_contingencia import (
+    build_evento_contingencia,
+    collect_contingencia_dtes,
+    make_event_filename,
+    save_evento_contingencia_json,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -946,16 +953,16 @@ class EventoContingenciaDialog(QDialog):
 
         self.evento_listo = False
         self._validation_active = False
-        self._all_pending_dtes: list[dict] = []
         self._filtered_dtes: list[dict] = []
+        self._current_payload: dict | None = None
+        self._suggested_filename: str | None = None
+        self._last_save_dir: Path | None = None
         (
             self._default_tipo,
             self._default_motivo,
-            self._ambiente_text,
         ) = self._load_defaults()
 
         self._build_ui()
-        self._load_pending_dtes()
         self._update_end_minimum()
         self._handle_range_change()
         self._update_motivo_counter()
@@ -1115,6 +1122,10 @@ class EventoContingenciaDialog(QDialog):
         )
         self.generate_btn.setDefault(True)
         self.generate_btn.setEnabled(False)
+        self.save_btn = self.button_box.addButton(
+            "Guardar…", QDialogButtonBox.ActionRole
+        )
+        self.save_btn.setEnabled(False)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
 
@@ -1130,6 +1141,7 @@ class EventoContingenciaDialog(QDialog):
         self.tipo_combo.currentIndexChanged.connect(self._on_tipo_changed)
         self.motivo_edit.textChanged.connect(self._on_motivo_changed)
         self.generate_btn.clicked.connect(self._on_generate_clicked)
+        self.save_btn.clicked.connect(self._on_save_clicked)
 
     @staticmethod
     def _to_qdatetime(value: datetime) -> QDateTime:
@@ -1152,10 +1164,9 @@ class EventoContingenciaDialog(QDialog):
         layout.addWidget(error_label)
         return container, error_label
 
-    def _load_defaults(self) -> tuple[int | None, str, str]:
+    def _load_defaults(self) -> tuple[int | None, str]:
         tipo: int | None = None
         motivo = ""
-        ambiente = "pruebas"
         try:
             datos = dte._load_datos_negocio()
         except Exception:
@@ -1172,11 +1183,7 @@ class EventoContingenciaDialog(QDialog):
 
         motivo = str(dte_api.get("motivo_contin") or "").strip()
 
-        ambiente_raw = str(dte_api.get("ambiente") or "").strip().lower()
-        if ambiente_raw.startswith("produc"):
-            ambiente = "producción"
-
-        return tipo, motivo[: self.MOTIVO_MAX_CHARS], ambiente
+        return tipo, motivo[: self.MOTIVO_MAX_CHARS]
 
     def _on_start_changed(self, _value: QDateTime) -> None:
         self._update_end_minimum()
@@ -1197,19 +1204,52 @@ class EventoContingenciaDialog(QDialog):
         if start_dt.isValid():
             self.fin_edit.setMinimumDateTime(start_dt.addSecs(1))
 
+    @staticmethod
+    def _normalize_range_input(value: datetime | None) -> datetime | None:
+        if value is None:
+            return None
+        if value.tzinfo is None:
+            return value.replace(tzinfo=TZ_EL_SALVADOR)
+        return value.astimezone(TZ_EL_SALVADOR)
+
     def _refresh_filtered_dtes(self) -> None:
-        start_py = self._to_py_datetime(self.inicio_edit.dateTime())
-        end_py = self._to_py_datetime(self.fin_edit.dateTime())
-        if start_py and end_py:
-            filtered = [
-                entry
-                for entry in self._all_pending_dtes
-                if start_py <= entry["timestamp"] <= end_py
-            ]
-        else:
-            filtered = []
-        filtered.sort(key=lambda item: item["timestamp"])
-        self._filtered_dtes = filtered
+        start_raw = self._to_py_datetime(self.inicio_edit.dateTime())
+        end_raw = self._to_py_datetime(self.fin_edit.dateTime())
+        start_py = self._normalize_range_input(start_raw)
+        end_py = self._normalize_range_input(end_raw)
+        if not (start_py and end_py):
+            self._filtered_dtes = []
+            return
+
+        db = getattr(getattr(self, "manager", None), "db", None)
+        try:
+            collected = collect_contingencia_dtes(db, start_py, end_py)
+        except Exception:
+            logger.exception("Error al recolectar DTE en contingencia")
+            collected = []
+
+        enriched: list[dict] = []
+        for entry in collected:
+            codigo = entry.get("codigoGeneracion")
+            tipo_doc = entry.get("tipoDoc")
+            timestamp = entry.get("timestamp")
+            if not codigo or not tipo_doc or not isinstance(timestamp, datetime):
+                continue
+            if timestamp.tzinfo is None:
+                ts_local = timestamp.replace(tzinfo=TZ_EL_SALVADOR)
+            else:
+                ts_local = timestamp.astimezone(TZ_EL_SALVADOR)
+            enriched.append(
+                {
+                    "codigoGeneracion": str(codigo).strip().upper(),
+                    "tipoDoc": str(tipo_doc).zfill(2),
+                    "timestamp": timestamp,
+                    "timestamp_local": ts_local,
+                    "tipo_desc": TIPO_DTE_DESC.get(str(tipo_doc).zfill(2), str(tipo_doc).zfill(2)),
+                }
+            )
+
+        self._filtered_dtes = enriched
 
     @staticmethod
     def _to_py_datetime(value: QDateTime) -> datetime | None:
@@ -1221,10 +1261,13 @@ class EventoContingenciaDialog(QDialog):
         self.dte_list.setUpdatesEnabled(False)
         self.dte_list.clear()
         for entry in self._filtered_dtes[: self.EVENTO_MAX_DTES]:
-            timestamp = entry["timestamp"]
-            fecha = timestamp.strftime("%Y-%m-%d %H:%M")
-            descripcion = entry.get("tipo_desc") or entry.get("tipo")
-            codigo = entry.get("codigo_upper") or entry.get("codigo")
+            timestamp = entry.get("timestamp_local") or entry.get("timestamp")
+            if isinstance(timestamp, datetime):
+                fecha = timestamp.strftime("%Y-%m-%d %H:%M")
+            else:
+                fecha = ""
+            descripcion = entry.get("tipo_desc") or entry.get("tipoDoc")
+            codigo = entry.get("codigoGeneracion") or entry.get("codigo")
             item = QListWidgetItem(f"{fecha} · {descripcion} · {codigo}")
             self.dte_list.addItem(item)
         self.dte_list.setUpdatesEnabled(True)
@@ -1237,7 +1280,17 @@ class EventoContingenciaDialog(QDialog):
         self.dte_counter_label.setText(counter_text)
 
         self.dte_empty_label.setVisible(total == 0)
-        self.dte_warning_label.setVisible(total > self.EVENTO_MAX_DTES)
+        if total > self.EVENTO_MAX_DTES:
+            self.dte_warning_label.setText(
+                (
+                    "Se mostrarán los primeros "
+                    f"{self.EVENTO_MAX_DTES} de {total} DTE pendientes. "
+                    "Máximo 1000 por evento."
+                )
+            )
+            self.dte_warning_label.setVisible(True)
+        else:
+            self.dte_warning_label.setVisible(False)
 
     def _current_tipo(self) -> int | None:
         data = self.tipo_combo.currentData()
@@ -1269,6 +1322,9 @@ class EventoContingenciaDialog(QDialog):
                     "Motivo es obligatorio cuando el tipo es “Otro” (máx. 500)."
                 )
                 first_key = first_key or "motivo"
+            elif len(motivo) > self.MOTIVO_MAX_CHARS:
+                errors["motivo"] = "El motivo no puede exceder 500 caracteres."
+                first_key = first_key or "motivo"
 
         inicio_dt = self._to_py_datetime(self.inicio_edit.dateTime())
         fin_dt = self._to_py_datetime(self.fin_edit.dateTime())
@@ -1279,16 +1335,10 @@ class EventoContingenciaDialog(QDialog):
         if fin_dt is None:
             errors["fin"] = "Completa la fecha y hora de fin."
             first_key = first_key or "fin"
-        if inicio_dt and fin_dt and not (fin_dt > inicio_dt):
-            errors["fin"] = "La fecha/hora final debe ser mayor que la inicial."
-            first_key = first_key or "fin"
 
         total = len(self._filtered_dtes)
         if total == 0:
             errors["dtes"] = "Debe existir al menos un DTE pendiente."
-            first_key = first_key or "dtes"
-        elif total > self.EVENTO_MAX_DTES:
-            errors["dtes"] = "Máximo 1000 DTE por evento."
             first_key = first_key or "dtes"
 
         return errors, first_key
@@ -1329,60 +1379,27 @@ class EventoContingenciaDialog(QDialog):
             self._apply_errors(errors)
         else:
             self._apply_errors({})
+        self._update_save_button()
         return errors, first_key
 
     def _update_preview(self) -> None:
-        tipo = self._current_tipo()
-        inicio_dt = self._to_py_datetime(self.inicio_edit.dateTime())
-        fin_dt = self._to_py_datetime(self.fin_edit.dateTime())
-        inicio_fecha = inicio_dt.strftime("%Y-%m-%d") if inicio_dt else ""
-        inicio_hora = inicio_dt.strftime("%H:%M:%S") if inicio_dt else ""
-        fin_fecha = fin_dt.strftime("%Y-%m-%d") if fin_dt else ""
-        fin_hora = fin_dt.strftime("%H:%M:%S") if fin_dt else ""
-
-        motivo_texto = ""
-        if tipo == 5:
-            motivo_texto = self._current_motivo()
-        elif tipo in catalogos.CONTINGENCIA:
-            motivo_texto = catalogos.CONTINGENCIA[tipo]
-
-        detalle = [
-            {
-                "noItem": idx,
-                "codigoGeneracion": entry.get("codigo_upper") or entry.get("codigo"),
-                "tipoDoc": entry.get("tipo"),
-            }
-            for idx, entry in enumerate(
-                self._filtered_dtes[: self.EVENTO_MAX_DTES],
-                start=1,
-            )
-        ]
-
-        now = datetime.now(TZ_EL_SALVADOR)
-        preview = {
-            "identificacion": {
-                "version": 3,
-                "ambiente": self._ambiente_text,
-                "codigoGeneracion": "POR-DEFINIR",
-                "fTransmision": now.strftime("%Y-%m-%d"),
-                "hTransmision": now.strftime("%H:%M:%S"),
-            },
-            "motivo": {
-                "tipo": tipo,
-                "motivo": motivo_texto,
-                "fInicio": inicio_fecha,
-                "hInicio": inicio_hora,
-                "fFin": fin_fecha,
-                "hFin": fin_hora,
-            },
-            "detalleDTE": detalle,
-        }
-
-        try:
-            texto = json.dumps(preview, indent=2, ensure_ascii=False)
-        except Exception:
+        if self._current_payload:
+            try:
+                texto = stable_stringify(self._current_payload, indent=2)
+            except Exception:
+                try:
+                    texto = json.dumps(
+                        self._current_payload, indent=2, ensure_ascii=False
+                    )
+                except Exception:
+                    texto = ""
+        else:
             texto = ""
         self.preview_edit.setPlainText(texto)
+
+    def _update_save_button(self) -> None:
+        can_save = self.evento_listo and self._current_payload is not None
+        self.save_btn.setEnabled(bool(can_save))
 
     def _update_motivo_counter(self) -> None:
         texto = self.motivo_edit.toPlainText()
@@ -1407,10 +1424,18 @@ class EventoContingenciaDialog(QDialog):
         self._update_preview()
 
     def _clear_draft_message(self) -> None:
-        if self.evento_listo or self.draft_message_label.isVisible():
+        if (
+            self.evento_listo
+            or self.draft_message_label.isVisible()
+            or self._current_payload is not None
+        ):
             self.evento_listo = False
+            self._current_payload = None
+            self._suggested_filename = None
             self.draft_message_label.clear()
             self.draft_message_label.setVisible(False)
+            self._update_preview()
+            self._update_save_button()
 
     def _on_generate_clicked(self) -> None:
         self._validation_active = True
@@ -1418,159 +1443,110 @@ class EventoContingenciaDialog(QDialog):
         if errors:
             self._focus_field(first_key)
             return
+        payload = self._build_event_payload()
+        if payload is None:
+            return
+        self._current_payload = payload
+        try:
+            self._suggested_filename = make_event_filename(payload)
+        except Exception:
+            self._suggested_filename = None
         self.evento_listo = True
-        self.draft_message_label.setText("Borrador generado (solo UI).")
-        self.draft_message_label.setVisible(True)
-
-    def _load_pending_dtes(self) -> None:
-        entries: list[dict] = []
-        seen: set[str] = set()
-
-        for entry in self._load_pending_from_db():
-            code = entry.get("codigo_upper")
-            if not code or entry.get("timestamp") is None:
-                continue
-            if code in seen:
-                continue
-            seen.add(code)
-            entries.append(entry)
-
-        for entry in self._load_pending_from_fs():
-            code = entry.get("codigo_upper")
-            if not code or entry.get("timestamp") is None:
-                continue
-            if code in seen:
-                continue
-            seen.add(code)
-            entries.append(entry)
-
-        entries.sort(key=lambda item: item["timestamp"])
-        self._all_pending_dtes = entries
-
-    def _load_pending_from_db(self) -> list[dict]:
-        manager = getattr(self, "manager", None)
-        db = getattr(manager, "db", None) if manager else None
-        getter = getattr(db, "get_dte_pendientes", None) if db else None
-        if not callable(getter):
-            return []
-        entries: list[dict] = []
-        try:
-            rows = getter() or []
-        except Exception:
-            return []
-        for row in rows:
-            data = row.get("dte_json") if isinstance(row, dict) else None
-            entry = self._create_pending_entry(data)
-            if entry is None:
-                continue
-            if entry["timestamp"] is None:
-                fecha_creacion = row.get("fecha_creacion") if isinstance(row, dict) else None
-                if fecha_creacion:
-                    try:
-                        entry["timestamp"] = datetime.fromisoformat(str(fecha_creacion))
-                    except Exception:
-                        pass
-            if entry["timestamp"] is None:
-                continue
-            entries.append(entry)
-        return entries
-
-    def _load_pending_from_fs(self) -> list[dict]:
-        base = Path(DTES_PENDIENTES_DIR)
-        if not base.exists():
-            return []
-        entries: list[dict] = []
-        try:
-            json_paths = list(base.rglob("documento.json"))
-        except Exception:
-            return []
-        for path in json_paths:
-            try:
-                with open(path, "r", encoding="utf-8") as fh:
-                    data = json.load(fh)
-            except Exception:
-                continue
-            entry = self._create_pending_entry(data)
-            if entry is None or entry["timestamp"] is None:
-                continue
-            entries.append(entry)
-        return entries
-
-    def _create_pending_entry(self, data) -> dict | None:
-        if isinstance(data, str):
-            try:
-                data = json.loads(data)
-            except Exception:
-                return None
-        if not isinstance(data, dict):
-            return None
-        ident = data.get("identificacion") or data.get("identificador") or {}
-        tipo_operacion = ident.get("tipoOperacion")
-        if self._normalize_tipo_operacion(tipo_operacion) != 2:
-            return None
-        codigo = ident.get("codigoGeneracion")
-        if not codigo:
-            return None
-        tipo_doc = self._normalize_tipo_doc(ident.get("tipoDte"))
-        timestamp = self._combine_datetime(
-            ident.get("fecEmi") or ident.get("fechaEmision"),
-            ident.get("horEmi") or ident.get("horaEmision"),
+        self.draft_message_label.setText(
+            "Borrador generado. Revisa la previsualización antes de guardar."
         )
-        if timestamp is None:
-            return None
-        codigo_upper = str(codigo).strip().upper()
-        return {
-            "codigo": str(codigo),
-            "codigo_upper": codigo_upper,
-            "tipo": tipo_doc,
-            "tipo_desc": TIPO_DTE_DESC.get(tipo_doc, tipo_doc),
-            "timestamp": timestamp,
-        }
+        self.draft_message_label.setVisible(True)
+        self._update_preview()
+        self._update_save_button()
 
-    @staticmethod
-    def _normalize_tipo_operacion(value) -> int | None:
-        if value is None:
+    def _build_event_payload(self) -> dict | None:
+        tipo = self._current_tipo()
+        inicio_raw = self._to_py_datetime(self.inicio_edit.dateTime())
+        fin_raw = self._to_py_datetime(self.fin_edit.dateTime())
+        inicio_dt = self._normalize_range_input(inicio_raw)
+        fin_dt = self._normalize_range_input(fin_raw)
+        if tipo is None or inicio_dt is None or fin_dt is None:
             return None
+        motivo = self._current_motivo() if tipo == 5 else None
         try:
-            return int(str(value).strip())
-        except Exception:
-            texto = str(value).strip().lower()
-            if "contingencia" in texto:
-                return 2
-        return None
-
-    @staticmethod
-    def _normalize_tipo_doc(value) -> str:
-        if value is None:
-            return "01"
-        if isinstance(value, int):
-            return f"{value:02d}"
-        texto = str(value).strip()
-        if not texto:
-            return "01"
-        if texto.isdigit():
-            return f"{int(texto):02d}"
-        digitos = "".join(ch for ch in texto if ch.isdigit())
-        if digitos:
-            return f"{int(digitos):02d}"
-        return "01"
-
-    @staticmethod
-    def _combine_datetime(fecha, hora) -> datetime | None:
-        if not fecha:
+            return build_evento_contingencia(
+                tipo_contingencia=tipo,
+                motivo=motivo,
+                f_inicio=inicio_dt,
+                f_fin=fin_dt,
+                dtes=self._filtered_dtes,
+            )
+        except Exception as exc:
+            logger.exception("Error al construir el evento de contingencia")
+            QMessageBox.critical(
+                self,
+                "Error al generar",
+                f"No se pudo generar el borrador del evento:\n{exc}",
+            )
             return None
-        fecha_str = str(fecha).strip()
-        if not fecha_str:
-            return None
-        hora_str = str(hora or "00:00:00").strip()
-        if not hora_str:
-            hora_str = "00:00:00"
-        if len(hora_str) == 5:
-            hora_str = f"{hora_str}:00"
+
+    def _on_save_clicked(self) -> None:
+        if not self._current_payload:
+            return
+
+        suggested = self._suggested_filename
+        if not suggested:
+            try:
+                suggested = make_event_filename(self._current_payload)
+            except Exception:
+                suggested = "evento_contingencia.json"
+
+        base_dir = self._last_save_dir or Path(DTES_PENDIENTES_DIR)
+        base_dir = Path(base_dir)
         try:
-            return datetime.strptime(f"{fecha_str} {hora_str[:8]}", "%Y-%m-%d %H:%M:%S")
+            base_dir.mkdir(parents=True, exist_ok=True)
         except Exception:
-            return None
+            logger.exception("No se pudo preparar el directorio de guardado")
+            QMessageBox.critical(
+                self,
+                "Error al guardar",
+                "No se pudo preparar la carpeta destino para el evento.",
+            )
+            return
+
+        initial_path = base_dir / suggested
+
+        fname, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar evento de contingencia",
+            str(initial_path),
+            "Archivos JSON (*.json)",
+            options=QFileDialog.DontUseNativeDialog,
+        )
+        if not fname:
+            return
+
+        try:
+            saved_path = save_evento_contingencia_json(self._current_payload, fname)
+        except Exception as exc:
+            logger.exception("Error al guardar el evento de contingencia")
+            QMessageBox.critical(
+                self,
+                "Error al guardar",
+                f"No se pudo guardar el evento de contingencia:\n{exc}",
+            )
+            return
+
+        self._last_save_dir = Path(saved_path).parent
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Evento de contingencia")
+        msg.setIcon(QMessageBox.Information)
+        msg.setText("Evento guardado correctamente.")
+        msg.setInformativeText(saved_path)
+        open_btn = msg.addButton("Abrir carpeta", QMessageBox.ActionRole)
+        msg.addButton(QMessageBox.Ok)
+        msg.exec_()
+        if msg.clickedButton() is open_btn:
+            QDesktopServices.openUrl(
+                QUrl.fromLocalFile(str(Path(saved_path).parent))
+            )
+
 
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
@@ -3188,247 +3164,6 @@ class FacturacionTab(QWidget):
                     )
 
     def _enviar_evento_contingencia(self) -> None:
-        entry = self._selected_entry()
-        if not entry:
-            QMessageBox.warning(
-                self, "Evento de contingencia", "Seleccione un documento"
-            )
-            return
-
-        factura = self._selected_factura()
-        if not factura:
-            QMessageBox.warning(
-                self,
-                "Evento de contingencia",
-                "El documento seleccionado no tiene información de DTE",
-            )
-            return
-
-        json_path = factura.get("json")
-        if not json_path or not os.path.exists(json_path):
-            QMessageBox.warning(
-                self,
-                "Evento de contingencia",
-                "No se encontró el archivo JSON del DTE",
-            )
-            return
-
-        try:
-            with open(json_path, "r", encoding="utf-8") as fh:
-                dte_data = json.load(fh)
-        except Exception as exc:
-            QMessageBox.critical(
-                self,
-                "Evento de contingencia",
-                f"Error al leer el archivo JSON: {exc}",
-            )
-            return
-
-        ident = dte_data.get("identificacion") or {}
-
-        def _to_int(raw_value):
-            if raw_value in (None, ""):
-                return None
-            try:
-                return int(str(raw_value).split("-")[0].strip())
-            except Exception:
-                return None
-
-        tipo_operacion = _to_int(ident.get("tipoOperacion"))
-        tipo_modelo = _to_int(ident.get("tipoModelo"))
-        modelo_facturacion = _to_int(ident.get("modeloFacturacion"))
-        tipo_transmision = _to_int(ident.get("tipoTransmision"))
-        es_contingencia = (
-            tipo_operacion == 2
-            or tipo_modelo == 2
-            or (modelo_facturacion == 2 and tipo_transmision == 2)
-        )
-        if not es_contingencia:
-            QMessageBox.warning(
-                self,
-                "Evento de contingencia",
-                "El documento seleccionado no está marcado en modo contingencia",
-            )
-            return
-
-        codigo_generacion = ident.get("codigoGeneracion")
-        tipo_doc = ident.get("tipoDte")
-        if not codigo_generacion or tipo_doc is None:
-            QMessageBox.critical(
-                self,
-                "Evento de contingencia",
-                "El DTE no contiene los datos necesarios para el evento",
-            )
-            return
-
-        def _row_get(row, key):
-            if row is None:
-                return None
-            try:
-                return row[key]
-            except Exception:
-                pass
-            getter = getattr(row, "get", None)
-            if callable(getter):
-                try:
-                    return getter(key)
-                except Exception:
-                    return None
-            try:
-                keys = row.keys()
-            except Exception:
-                return None
-            try:
-                index = list(keys).index(key)
-            except Exception:
-                return None
-            try:
-                return row[index]
-            except Exception:
-                return None
-
-        factura_estado = None
-        factura_id = entry.get("id")
-        factura_estado_id = None
-        try:
-            factura_estado_id = int(factura_id)
-        except (TypeError, ValueError):
-            factura_estado_id = None
-        if factura_estado_id is not None:
-            try:
-                factura_estado = (
-                    self.manager.db.cursor.execute(
-                        """
-                        SELECT modo_transmision, estado_envio, tipo_contingencia, motivo_contin
-                        FROM facturas_estado
-                        WHERE id=?
-                        """,
-                        (factura_estado_id,),
-                    ).fetchone()
-                )
-            except Exception:
-                factura_estado = None
-
-        modo_registrado = _row_get(factura_estado, "modo_transmision")
-        if modo_registrado and str(modo_registrado).strip().lower() != "contingencia":
-            QMessageBox.warning(
-                self,
-                "Evento de contingencia",
-                "La factura seleccionada no está marcada en contingencia",
-            )
-            return
-
-        tipo_contingencia = ident.get("tipoContingencia")
-        motivo_contin = ident.get("motivoContin")
-
-        tipo_contingencia = (
-            tipo_contingencia or _row_get(factura_estado, "tipo_contingencia")
-        )
-        motivo_contin = (
-            motivo_contin or _row_get(factura_estado, "motivo_contin")
-        )
-
-        venta_id = factura.get("venta_id")
-        venta = None
-        if venta_id is not None:
-            try:
-                venta = self.manager.db.get_venta_by_id(venta_id)
-            except Exception:
-                venta = None
-        if venta:
-            tipo_contingencia = (
-                tipo_contingencia or venta.get("tipo_contingencia")
-            )
-            motivo_contin = motivo_contin or venta.get("motivo_contin")
-            raw_extra = venta.get("extra")
-            if raw_extra:
-                try:
-                    extra_data = json.loads(raw_extra)
-                except Exception:
-                    extra_data = {}
-                tipo_contingencia = (
-                    tipo_contingencia
-                    or extra_data.get("tipo_contingencia")
-                    or extra_data.get("tipoContingencia")
-                )
-                motivo_contin = (
-                    motivo_contin
-                    or extra_data.get("motivo_contin")
-                    or extra_data.get("motivoContin")
-                )
-
-        tipo_contingencia_val: int | None = None
-        if tipo_contingencia not in (None, "", "null"):
-            try:
-                tipo_contingencia_val = int(str(tipo_contingencia).strip())
-            except ValueError:
-                try:
-                    tipo_contingencia_val = int(float(str(tipo_contingencia)))
-                except Exception:
-                    tipo_contingencia_val = None
-
-        if tipo_contingencia_val is None:
-            QMessageBox.warning(
-                self,
-                "Evento de contingencia",
-                "Configura el tipo de contingencia antes de enviar el evento",
-            )
-            return
-
-        motivo_text = None
-        if isinstance(motivo_contin, str):
-            motivo_text = motivo_contin.strip() or None
-
-        fecha_emi = ident.get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
-        try:
-            datetime.strptime(fecha_emi, "%Y-%m-%d")
-        except Exception:
-            fecha_emi = datetime.now().strftime("%Y-%m-%d")
-
-        hora_emi = (ident.get("horEmi") or "00:00:00").strip()
-        if len(hora_emi) == 5:
-            hora_emi = f"{hora_emi}:00"
-        try:
-            datetime.strptime(hora_emi, "%H:%M:%S")
-        except Exception:
-            hora_emi = "00:00:00"
-
-        detalle = [
-            {
-                "codigoGeneracion": codigo_generacion,
-                "tipoDoc": str(tipo_doc).zfill(2),
-            }
-        ]
-
-        try:
-            payload = dte.generar_evento_contingencia(
-                detalle,
-                fecha_emi,
-                fecha_emi,
-                hora_emi,
-                hora_emi,
-                tipo_contingencia_val,
-                motivo_contingencia=motivo_text,
-            )
-        except ValueError as exc:
-            QMessageBox.critical(
-                self,
-                "Evento de contingencia",
-                str(exc),
-            )
-            return
-        except Exception as exc:
-            logger.exception(
-                "Error al generar evento de contingencia", exc_info=exc
-            )
-            QMessageBox.critical(
-                self,
-                "Evento de contingencia",
-                "No se pudo generar el evento de contingencia",
-            )
-            return
-
-
         dialog = EventoContingenciaDialog(self.manager, self)
         dialog.exec_()
 

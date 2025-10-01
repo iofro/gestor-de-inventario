@@ -186,6 +186,87 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     assert float(resumen["descuGravada"]) == 0.0
 
 
+def test_generar_nota_remision_config_produccion_impone_ambiente(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+        "dte_api": {"prefijo_control": "DTE-01-S001P001"},
+    }
+
+    monkeypatch.setattr("dte._load_dte_api_config", lambda: {"ambiente": "produccion"})
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+            "numeroControl": "DTE-01-S001P001-000000001",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {
+            "nit": "06141407100012",
+            "nrc": "1234567",
+            "codActividad": "111111",
+            "descActividad": "Giro",
+        },
+        "receptor": {
+            "nombre": "Cliente",
+            "tipoDocumento": "36",
+            "numDocumento": "06141407100012",
+            "nrc": "1234567",
+            "telefono": "22223333",
+            "correo": "cliente@example.com",
+            "codActividad": "6201",
+            "descActividad": "Servicios",
+            "direccion": {
+                "departamento": "05",
+                "municipio": "24",
+                "complemento": "Dir",
+            },
+        },
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 10,
+                "montoDescu": 0,
+                "ventaGravada": 10,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [],
+            }
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "061414071",
+        "nombRecibe": "Ana",
+        "docuRecibe": "061414071",
+        "observaciones": "Entrega",
+    }
+
+    nota = nota_remision.generar_nota_remision(
+        db,
+        factura,
+        ambiente="00",
+        extension=extension,
+        verificar_documento_relacionado=False,
+    )
+
+    assert nota["identificacion"]["ambiente"] == "01"
+
+
 def test_nr_documento_relacionado_con_numero_control(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")

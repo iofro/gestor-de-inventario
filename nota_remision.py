@@ -32,6 +32,7 @@ from dte import (
     generar_cabecera_dte_data,
     sanitize_dte_payload,
     normalize_uuid_v4_upper,
+    resolve_ambiente,
     _map_estado_hacienda,
 )
 from utils import catalogos
@@ -571,6 +572,7 @@ def generar_nota_remision(
     fecha_documento_relacionado: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una Nota de Remisión."""
+    ambiente = resolve_ambiente(ambiente)
     allowed_ext_keys = {
         "nombEntrega",
         "docuEntrega",
@@ -751,6 +753,7 @@ def generar_nota_remision_desde_db(
     Obtiene los datos de la nota y la venta asociada para construir la
     estructura base y delega la construcción final a :func:`generar_nota_remision`.
     """
+    ambiente = resolve_ambiente(ambiente)
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
     if not row:
         raise ValueError("Nota no encontrada")

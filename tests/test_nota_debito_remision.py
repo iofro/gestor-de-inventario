@@ -651,6 +651,80 @@ def test_generar_nde_receptor_incompleto_en_produccion(monkeypatch):
     assert "nrc" in str(exc.value)
 
 
+def test_generar_nde_config_produccion_impone_ambiente(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+        "dte_api": {"prefijo_control": "DTE-01-S001P001"},
+    }
+
+    monkeypatch.setattr("dte._load_dte_api_config", lambda: {"ambiente": "produccion"})
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+
+    ambientes_recibidos: list[str] = []
+
+    def _fake_ensure_receptor(base, ambiente):
+        ambientes_recibidos.append(ambiente)
+        receptor = dict(base)
+        receptor.setdefault("nombre", "Cliente")
+        receptor.setdefault("nit", "06141407100012")
+        receptor.setdefault("nrc", "1234567")
+        receptor.setdefault("tipoDocumento", "36")
+        receptor.setdefault("numDocumento", "06141407100012")
+        receptor.setdefault(
+            "direccion",
+            {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+        )
+        return receptor
+
+    monkeypatch.setattr(
+        "nota_debito_electronica.ensure_receptor_completo", _fake_ensure_receptor
+    )
+
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+            "numeroControl": "DTE-01-S001P001-000000001",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {"nit": "06141407100012", "nrc": "1234567"},
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {
+            "totalNoSuj": 0.0,
+            "totalExenta": 0.0,
+            "totalGravada": 1.0,
+            "subTotal": 1.0,
+            "subTotalVentas": 1.0,
+            "descuNoSuj": 0.0,
+            "descuExenta": 0.0,
+            "descuGravada": 0.0,
+            "totalDescu": 0.0,
+            "ivaPerci1": 0.0,
+            "ivaRete1": 0.0,
+            "reteRenta": 0.0,
+            "condicionOperacion": 1,
+            "tributos": [],
+            "montoTotalOperacion": 1.0,
+            "totalLetras": "UNO",
+        },
+    }
+
+    nde = generar_nde_desde_dte(db, dte_origen, None, 1.0, "Ajuste", ambiente="00")
+
+    assert nde["identificacion"]["ambiente"] == "01"
+    assert ambientes_recibidos == ["01"]
+
+
 def test_generar_nde_ticket_minimo(monkeypatch):
     datos = {
         "nit": "0614-140710-001-2",

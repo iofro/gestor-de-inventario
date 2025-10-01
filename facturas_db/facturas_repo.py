@@ -88,7 +88,11 @@ class FacturasRepo:
         factura.modo_transmision = "contingencia"
         factura.estado_envio = "Pendiente"
         factura.tipo_contingencia = tipo_contingencia
-        factura.motivo_contin = motivo_contin
+        if tipo_contingencia == 5 and motivo_contin:
+            motivo_limpio = motivo_contin.strip()
+            factura.motivo_contin = motivo_limpio[:500]
+        else:
+            factura.motivo_contin = None
         self.add(factura)
         return factura
 

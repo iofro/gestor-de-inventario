@@ -20,6 +20,7 @@ from dte import (
     _post_dte,
     DTEValidationError,
 )
+import anulacion
 import dte
 import auth
 from tests.conftest import make_jws
@@ -96,7 +97,13 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
         return token
 
     monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+    monkeypatch.setattr(anulacion, "sign_json", fake_sign)
+    assert anulacion.sign_json is fake_sign
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
+    import mh_auth
+
+    monkeypatch.setattr(mh_auth, "ensure_valid_bearer", lambda env, current, min_ttl_s=0, force=False: "Bearer JWT")
+    monkeypatch.setattr(mh_auth, "auth_headers", lambda extra=None, ambiente=None: {**(extra or {}), "Authorization": "Bearer JWT"})
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
@@ -155,8 +162,11 @@ def test_enviar_factura_rechazo_y_reenvio(monkeypatch, caplog, tmp_path):
 
     def fake_load():
         data = orig_load()
+        if not isinstance(data, dict):
+            data = {}
         data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
         data["dte_api"]["ambiente"] = "pruebas"
+        data.setdefault("nit", "0614-010101-101-1")
         return data
 
     monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
@@ -1180,8 +1190,11 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
 
     def fake_load():
         data = orig_load()
+        if not isinstance(data, dict):
+            data = {}
         data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
         data["dte_api"]["ambiente"] = "pruebas"
+        data.setdefault("nit", "0614-010101-101-1")
         return data
 
     monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
@@ -1306,8 +1319,11 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
 
     def fake_load():
         cfg = orig_load()
+        if not isinstance(cfg, dict):
+            cfg = {}
         cfg.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
         cfg["dte_api"]["ambiente"] = "pruebas"
+        cfg.setdefault("nit", "0614-010101-101-1")
         return cfg
 
     monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
@@ -1471,13 +1487,15 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     sign_calls = {"count": 0, "token": ""}
 
-    def fake_sign(data):
+    def fake_sign_payload(data):
         sign_calls["count"] += 1
         token = make_jws(data)
         sign_calls["token"] = token
         return token
 
-    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+    import utils.jws as jws_mod
+
+    monkeypatch.setattr(jws_mod, "sign_json", fake_sign_payload)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
@@ -1501,8 +1519,11 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
 
     def fake_load():
         data = orig_load()
+        if not isinstance(data, dict):
+            data = {}
         data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
         data["dte_api"]["ambiente"] = "pruebas"
+        data.setdefault("nit", "0614-010101-101-1")
         return data
 
     monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
@@ -1527,6 +1548,7 @@ def test_enviar_evento_contingencia(monkeypatch, caplog, tmp_path):
     url, headers, body = calls[0]
     assert url == dte.DEFAULT_EVENTO_URL
     assert body["documento"] == sign_calls["token"]
+    assert body["nit"] == "06140101011011"
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"
@@ -1539,13 +1561,35 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     sign_calls = {"count": 0, "token": ""}
 
-    def fake_sign(data):
+    def fake_sign_payload(data):
         sign_calls["count"] += 1
         token = make_jws(data)
         sign_calls["token"] = token
         return token
 
-    monkeypatch.setattr("utils.jws.sign_json", fake_sign)
+    import utils.jws as jws_mod
+
+    monkeypatch.setattr(jws_mod, "sign_json", fake_sign_payload)
+    monkeypatch.setattr(anulacion, "sign_json", fake_sign_payload, raising=False)
+    def fake_post_invalidacion(url, evento_data, **kwargs):
+        token = anulacion.sign_json(evento_data)
+        headers = {
+            "Authorization": "Bearer JWT",
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Vertex-DTE/1.0",
+            "app-version": str(dte.APP_VERSION),
+        }
+        calls.append(
+            (
+                url,
+                headers,
+                {"documento": token, "ambiente": "00", "version": 2, "idEnvio": 7},
+            )
+        )
+        return {"estado": "Transmitido", "sello": "SSS"}
+
+    monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post_invalidacion)
     monkeypatch.setattr(auth, "get_token", lambda: "Bearer JWT")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: "apitest.dtes.mh.gob.sv")
 
@@ -1561,34 +1605,63 @@ def test_enviar_evento_anulacion(monkeypatch, tmp_path):
 
     monkeypatch.setattr("dte.requests.post", fake_post)
 
-    orig_load = dte._load_datos_negocio
+    def fake_cfg():
+        return {
+            "ambiente": "pruebas",
+            "url": dte.DEFAULT_RECEPCION_URL,
+            "evento_url": dte.DEFAULT_EVENTO_URL,
+            "nit": "06140101011011",
+        }
 
-    def fake_load():
-        data = orig_load()
-        data.setdefault("dte_api", {})["url"] = dte.DEFAULT_RECEPCION_URL
-        data["dte_api"]["ambiente"] = "pruebas"
-        return data
+    monkeypatch.setattr(dte, "_load_dte_api_config", fake_cfg)
+    monkeypatch.setattr(anulacion, "_load_dte_api_config", fake_cfg)
 
-    monkeypatch.setattr(dte, "_load_datos_negocio", fake_load)
-
-    data = {
+    evento = {
         "identificacion": {
             "version": 2,
             "ambiente": "00",
-            "tipoDte": "ANU",
-            "codigoGeneracion": "EV2",
+            "codigoGeneracion": "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE",
+            "fecAnula": "2024-01-05",
+            "horAnula": "08:00:00",
+            "idEnvio": 7,
         },
-        "id": venta_id,
+        "documento": {
+            "tipoDte": "01",
+            "codigoGeneracion": "FFFFFFFF-AAAA-BBBB-CCCC-DDDDDDDDDDDD",
+            "selloRecibido": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZABCD",
+            "numeroControl": "DTE-01-ABCDEFGH-000000000000001",
+            "fecEmi": "2024-01-01",
+            "montoIva": "1.23",
+            "codigoGeneracionR": None,
+            "tipoDocumento": "36",
+            "numDocumento": "123456789",
+            "nombre": "Cliente Demo",
+        },
+        "motivo": {
+            "tipoAnulacion": 2,
+            "motivoAnulacion": "Error en factura",
+            "nombreResponsable": "Responsable Uno",
+            "tipDocResponsable": "36",
+            "numDocResponsable": "123456789",
+            "nombreSolicita": "Solicitante Dos",
+            "tipDocSolicita": "13",
+            "numDocSolicita": "987654321",
+        },
     }
-    res = enviar_evento_anulacion(db, venta_id, data)
+
+    res = enviar_evento_anulacion(db, venta_id, evento)
     assert res["estado"] == "Transmitido"
     row = db.cursor.execute("SELECT estado FROM dte_envios WHERE venta_id=?", (venta_id,)).fetchone()
     assert row["estado"] == "Transmitido"
     assert sign_calls["count"] == 1
     assert len(calls) == 1
     url, headers, body = calls[0]
-    assert url == dte.DEFAULT_EVENTO_URL
+    assert url == "https://apitest.dtes.mh.gob.sv/fesv/anulardte"
     assert body["documento"] == sign_calls["token"]
+    assert body["ambiente"] == "00"
+    assert body["version"] == 2
+    assert body["idEnvio"] == 7
+    assert "nit" not in body
     assert headers["Authorization"] == "Bearer JWT"
     assert headers["Content-Type"] == "application/json"
     assert headers["Accept"] == "application/json"

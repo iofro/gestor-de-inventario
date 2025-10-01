@@ -35,7 +35,15 @@ def test_enviar_dte_a_hacienda_returns_errores(monkeypatch):
         return {"estado": "Rechazado", "descripcionMsg": "Mal", "observaciones": {"a": "b"}}
 
     monkeypatch.setattr(dte, "_post_dte", fake_post_dte)
-    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": dte.DEFAULT_RECEPCION_URL})
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {
+            "url": dte.DEFAULT_RECEPCION_URL,
+            "evento_url": dte.DEFAULT_EVENTO_URL,
+            "nit": "06140101011011",
+        },
+    )
     monkeypatch.setattr(auth, "get_token", lambda: "T")
     resp = enviar_dte_a_hacienda(jws_token)
     assert resp["errores"] == "Mal; a: b"
@@ -43,11 +51,19 @@ def test_enviar_dte_a_hacienda_returns_errores(monkeypatch):
 
 def test_enviar_evento_propagates_errores(monkeypatch):
     db = DB(":memory:")
-    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": dte.DEFAULT_RECEPCION_URL})
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {
+            "url": dte.DEFAULT_RECEPCION_URL,
+            "evento_url": dte.DEFAULT_EVENTO_URL,
+            "nit": "06140101011011",
+        },
+    )
     monkeypatch.setattr(dte.jws, "sign_json", lambda data: "TOKEN")
     monkeypatch.setattr(auth, "get_token", lambda: "T")
 
-    def fake_post_evento(url, token, evento, evento_data):
+    def fake_post_evento(url, evento, nit, evento_data=None, **kwargs):
         return {"estado": "Rechazado", "descripcionMsg": "Oops", "observaciones": {"x": "y"}}
 
     monkeypatch.setattr(dte, "_post_evento", fake_post_evento)

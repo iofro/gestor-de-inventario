@@ -1858,6 +1858,30 @@ class FacturacionTab(QWidget):
 
         envio = "Pendiente de envío"
 
+        contingencia_pendiente = False
+        venta_id_lookup = None
+        if venta_id is not None:
+            try:
+                venta_id_lookup = int(venta_id)
+            except (TypeError, ValueError):
+                venta_id_lookup = None
+        if cur is not None and venta_id_lookup is not None:
+            try:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM dte_pendientes
+                    WHERE venta_id=? AND transmitido=0
+                    LIMIT 1
+                    """,
+                    (venta_id_lookup,),
+                )
+                contingencia_pendiente = cur.fetchone() is not None
+            except Exception:
+                contingencia_pendiente = False
+        if contingencia_pendiente:
+            estado = "Contingencia"
+
         def _row_get(row, key):
             if row is None:
                 return None

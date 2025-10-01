@@ -29,6 +29,7 @@ describe('FacturaForm', () => {
   it('oculta controles de contingencia cuando el modo es normal', () => {
     const wrapper = mountForm();
     expect(wrapper.find('.contingencia-panel').exists()).toBe(false);
+    expect(wrapper.find('.actions .evento-trigger').exists()).toBe(false);
     expect(wrapper.find('.guardar').attributes('disabled')).toBeUndefined();
   });
 
@@ -38,6 +39,7 @@ describe('FacturaForm', () => {
     await modoSelect.setValue('2');
     await wrapper.vm.$nextTick();
     expect(wrapper.find('.configurar-contingencia').exists()).toBe(true);
+    expect(wrapper.find('.actions .evento-trigger').exists()).toBe(true);
   });
 
   it('resume los datos existentes al iniciar en modo contingencia', () => {
@@ -54,6 +56,7 @@ describe('FacturaForm', () => {
   it('refleja cambios programáticos del modo', async () => {
     const wrapper = mountForm();
     expect(wrapper.find('.configurar-contingencia').exists()).toBe(false);
+    expect(wrapper.find('.actions .evento-trigger').exists()).toBe(false);
 
     await wrapper.setProps({
       config: {
@@ -63,6 +66,7 @@ describe('FacturaForm', () => {
     });
     await wrapper.vm.$nextTick();
     expect(wrapper.find('.configurar-contingencia').exists()).toBe(true);
+    expect(wrapper.find('.actions .evento-trigger').exists()).toBe(true);
   });
 
   it('exige completar la configuración de contingencia antes de guardar', async () => {
@@ -205,7 +209,7 @@ describe('FacturaForm', () => {
 
   it('deshabilita el botón de evento cuando no hay pendientes', () => {
     const wrapper = mountForm({ modoTransmision: 2 });
-    const eventoButton = wrapper.find('.evento-trigger');
+    const eventoButton = wrapper.find('.actions .evento-trigger');
     expect(eventoButton.exists()).toBe(true);
     expect(eventoButton.attributes('disabled')).toBeDefined();
     expect(eventoButton.attributes('title')).toContain(
@@ -220,7 +224,7 @@ describe('FacturaForm', () => {
       tipoContingencia: 5,
       motivoContingencia: 'Interrupción previa'
     });
-    const trigger = wrapper.find('.evento-trigger');
+    const trigger = wrapper.find('.actions .evento-trigger');
     await trigger.trigger('click');
     await wrapper.vm.$nextTick();
     await wrapper.vm.$nextTick();
@@ -252,7 +256,7 @@ describe('FacturaForm', () => {
       ],
       ambiente: 'PRUEBAS'
     });
-    await wrapper.find('.evento-trigger').trigger('click');
+    await wrapper.find('.actions .evento-trigger').trigger('click');
     await wrapper.vm.$nextTick();
 
     await wrapper.find('#evento-tipo').setValue('3');
@@ -285,7 +289,7 @@ describe('FacturaForm', () => {
       modoTransmision: 2,
       pendientesContingencia: pendientes
     });
-    await wrapper.find('.evento-trigger').trigger('click');
+    await wrapper.find('.actions .evento-trigger').trigger('click');
     await wrapper.vm.$nextTick();
 
     await wrapper.find('#evento-tipo').setValue('1');
@@ -307,7 +311,7 @@ describe('FacturaForm', () => {
       modoTransmision: 2,
       pendientesContingencia: [{ codigoGeneracion: 'xyz', tipoDocumento: '01' }]
     });
-    await wrapper.find('.evento-trigger').trigger('click');
+    await wrapper.find('.actions .evento-trigger').trigger('click');
     await wrapper.vm.$nextTick();
     expect(wrapper.find('.evento-panel').exists()).toBe(true);
 

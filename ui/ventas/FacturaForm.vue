@@ -23,15 +23,6 @@
         >
           Configurar contingencia…
         </button>
-        <button
-          type="button"
-          class="evento-trigger"
-          :disabled="!hasPendingContingencia"
-          :title="eventoTriggerTooltip"
-          @click="openEventoPanel"
-        >
-          Evento de contingencia
-        </button>
       </div>
       <div class="contingencia-resumen" aria-live="polite">
         <span v-if="contingenciaSummary" class="chip">
@@ -224,6 +215,16 @@
     </section>
 
     <div class="actions">
+      <button
+        v-if="isContingencia"
+        type="button"
+        class="evento-trigger"
+        :disabled="!hasPendingContingencia"
+        :title="eventoTriggerTooltip"
+        @click="openEventoPanel"
+      >
+        Evento de contingencia
+      </button>
       <button
         class="guardar"
         :disabled="isSaveDisabled"

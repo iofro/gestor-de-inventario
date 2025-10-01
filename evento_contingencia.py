@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
 from pathlib import Path
+import unicodedata
 from typing import Any, Iterable, Mapping, Sequence
 from uuid import uuid4
 
@@ -222,11 +223,49 @@ def _iter_dtes_from_fs() -> Iterable[Mapping[str, Any]]:
     return matches
 
 
+_PROD_KEYWORDS = {"prod", "produccion", "production"}
+_TEST_KEYWORDS = {"pruebas", "test", "sandbox"}
+
+
+def _normalize_ambiente_value(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, int):
+        return f"{value:02d}"
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    normalized = unicodedata.normalize("NFKD", text.lower())
+    return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+
 def _get_ambiente() -> str:
     datos = dte._load_datos_negocio()
-    ambiente_raw = str((datos.get("dte_api") or {}).get("ambiente") or "").strip().lower()
-    if ambiente_raw.startswith("produc"):
+    ambiente_value = (datos.get("dte_api") or {}).get("ambiente")
+    normalized = _normalize_ambiente_value(ambiente_value)
+
+    if not normalized:
+        return "00"
+
+    digits_only = "".join(ch for ch in normalized if ch.isdigit())
+    if digits_only:
+        try:
+            number = int(digits_only)
+        except ValueError:
+            number = None
+        if number == 1:
+            return "01"
+        if number == 0:
+            return "00"
+
+    collapsed = "".join(ch for ch in normalized if ch.isalnum())
+    if any(keyword in collapsed for keyword in _PROD_KEYWORDS):
         return "01"
+    if any(keyword in collapsed for keyword in _TEST_KEYWORDS):
+        return "00"
+
     return "00"
 
 

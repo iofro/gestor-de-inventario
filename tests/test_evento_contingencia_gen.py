@@ -54,6 +54,74 @@ def test_build_v3_and_ambiente_ok(monkeypatch):
     assert lower_bound <= tx_dt <= upper_bound
 
 
+@pytest.mark.parametrize(
+    "ambiente_value",
+    [
+        "01",
+        1,
+        "produccion",
+        "producción",
+        "prod",
+        "production",
+        "prod-01",
+    ],
+)
+def test_ambiente_produccion_variants(monkeypatch, ambiente_value):
+    monkeypatch.setattr(
+        "evento_contingencia.dte._load_datos_negocio",
+        lambda: {"dte_api": {"ambiente": ambiente_value}},
+    )
+
+    payload = build_evento_contingencia(
+        tipo_contingencia=1,
+        motivo=None,
+        f_inicio=_sample_datetime(8),
+        f_fin=_sample_datetime(9),
+        dtes=[{"codigoGeneracion": "abc", "tipoDoc": "01"}],
+    )
+
+    assert payload["identificacion"]["ambiente"] == "01"
+
+
+@pytest.mark.parametrize(
+    "ambiente_value",
+    ["00", 0, "pruebas", "test", "sandbox"],
+)
+def test_ambiente_pruebas_variants(monkeypatch, ambiente_value):
+    monkeypatch.setattr(
+        "evento_contingencia.dte._load_datos_negocio",
+        lambda: {"dte_api": {"ambiente": ambiente_value}},
+    )
+
+    payload = build_evento_contingencia(
+        tipo_contingencia=1,
+        motivo=None,
+        f_inicio=_sample_datetime(8),
+        f_fin=_sample_datetime(9),
+        dtes=[{"codigoGeneracion": "abc", "tipoDoc": "01"}],
+    )
+
+    assert payload["identificacion"]["ambiente"] == "00"
+
+
+@pytest.mark.parametrize("ambiente_value", [None, "", "staging"])
+def test_ambiente_unknown_defaults_to_pruebas(monkeypatch, ambiente_value):
+    monkeypatch.setattr(
+        "evento_contingencia.dte._load_datos_negocio",
+        lambda: {"dte_api": {"ambiente": ambiente_value}},
+    )
+
+    payload = build_evento_contingencia(
+        tipo_contingencia=1,
+        motivo=None,
+        f_inicio=_sample_datetime(8),
+        f_fin=_sample_datetime(9),
+        dtes=[{"codigoGeneracion": "abc", "tipoDoc": "01"}],
+    )
+
+    assert payload["identificacion"]["ambiente"] == "00"
+
+
 def test_cat005_motivo_rules(monkeypatch):
     uuid_val = "11111111-1111-4111-8111-111111111111"
     monkeypatch.setattr("evento_contingencia.uuid4", lambda: uuid_val)

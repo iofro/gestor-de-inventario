@@ -5533,10 +5533,8 @@ def generar_evento_contingencia(
         "telefono": telefono,
         "correo": correo,
     }
-    if datos.get("codEstableMH"):
-        emisor["codEstableMH"] = datos.get("codEstableMH")
-    if datos.get("codPuntoVenta"):
-        emisor["codPuntoVenta"] = datos.get("codPuntoVenta")
+    emisor["codEstableMH"] = None
+    emisor["codPuntoVenta"] = None
 
     if not detalle_dte:
         raise ValueError("detalleDTE requerido")

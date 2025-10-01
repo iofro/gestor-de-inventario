@@ -3,6 +3,8 @@ import json
 import logging
 import os
 import sqlite3
+from typing import Any
+
 import pytest
 import requests
 
@@ -792,7 +794,9 @@ def test_enviar_nota_credito_canonicalizes_snapshot(tmp_path, monkeypatch):
         },
     }
 
-    monkeypatch.setattr("dte.generar_nota_credito_json", lambda _db, _nid: payload)
+    monkeypatch.setattr(
+        "dte.generar_nota_credito_json", lambda _db, _nid, **_kwargs: payload
+    )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _codigo: {})
 
@@ -903,7 +907,9 @@ def test_enviar_nota_credito_canonicalizes_snapshot_without_metadata(
         "resumen": {"totalLetras": "DIEZ"},
     }
 
-    monkeypatch.setattr("dte.generar_nota_credito_json", lambda _db, _nid: payload)
+    monkeypatch.setattr(
+        "dte.generar_nota_credito_json", lambda _db, _nid, **_kwargs: payload
+    )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _codigo: {})
 
@@ -1020,7 +1026,9 @@ def test_enviar_nota_debito_respects_existing_canonical_snapshot(tmp_path, monke
         },
     }
 
-    monkeypatch.setattr("dte.generar_nota_debito_json", lambda _db, _nid: payload)
+    monkeypatch.setattr(
+        "dte.generar_nota_debito_json", lambda _db, _nid, **_kwargs: payload
+    )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
     monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda _codigo: {})
 
@@ -1108,7 +1116,7 @@ def test_enviar_nota_credito(monkeypatch, tmp_path):
     monkeypatch.setattr("dte.validate_dte_json", lambda data, db=None: None)
     monkeypatch.setattr(
         "dte.generar_nota_credito_json",
-        lambda db_obj, nid: {
+        lambda db_obj, nid, **_kwargs: {
             "receptor": {"nombre": "Cliente"},
             "cuerpoDocumento": [{"cantidad": 1, "precioUni": 10}],
             "documentoRelacionado": [
@@ -1254,7 +1262,7 @@ def test_enviar_nota_credito_reuses_jws(monkeypatch, tmp_path):
 
     monkeypatch.setattr(
         "dte.generar_nota_credito_json",
-        lambda db_obj, nid: data,
+        lambda db_obj, nid, **_kwargs: data,
     )
 
     sign_calls = {"count": 0}
@@ -1366,7 +1374,7 @@ def test_enviar_nota_credito_resigns_after_rechazo(monkeypatch, tmp_path):
 
     call_state = {"count": 0}
 
-    def fake_generate(db_obj, nid):
+    def fake_generate(db_obj, nid, **_kwargs):
         idx = call_state["count"]
         call_state["count"] += 1
         payload = copy.deepcopy(template)
@@ -1639,7 +1647,7 @@ def test_enviar_nota_credito_default_contingencia(monkeypatch, tmp_path):
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
         "dte.generar_nota_credito_json",
-        lambda db_obj, nid: {
+        lambda db_obj, nid, **_kwargs: {
             "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
             "receptor": {"nombre": "C"},
             "resumen": {"totalLetras": "X"},
@@ -1696,7 +1704,7 @@ def test_enviar_nota_debito_default_contingencia(monkeypatch, tmp_path):
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
         "dte.generar_nota_debito_json",
-        lambda db_obj, nid: {
+        lambda db_obj, nid, **_kwargs: {
             "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
             "receptor": {"nombre": "C"},
             "resumen": {"totalLetras": "X"},
@@ -1755,7 +1763,7 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
     monkeypatch.setattr(
         "nota_remision.generar_nota_remision_desde_db",
-        lambda db_obj, nid: {
+        lambda db_obj, nid, **_kwargs: {
             "identificacion": {"numeroControl": "1"},
             "documentoRelacionado": [
                 {
@@ -1795,4 +1803,183 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     assert signed_payloads, "Se esperaba capturar el payload firmado"
     assert signed_payloads[0]["identificacion"]["fecEmi"] == forced_today
     assert signed_payloads[0]["documentoRelacionado"][0]["fechaEmision"] == "2024-01-01"
+
+
+def test_enviar_nota_credito_propagates_production_ambiente(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "credito", "2024-01-02", 10, "motivo")
+
+    monkeypatch.setattr(dte, "_ensure_nota_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(dte, "_ensure_canonical_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(dte, "_resolve_base_document_code", lambda *a, **k: (None, None))
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda *_: None)
+    monkeypatch.setattr(db, "update_venta_extra", lambda *a, **k: None)
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {"ambiente": "produccion", "url": "https://api.example/fesv/recepciondte"},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def fake_generate(db_obj, note_id, *, ambiente="00", **_kwargs):
+        captured["ambiente_param"] = ambiente
+        return {
+            "identificacion": {
+                "numeroControl": "NC-1",
+                "codigoGeneracion": "UUID-1",
+                "fecEmi": "2024-01-02",
+                "ambiente": ambiente,
+            },
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {"totalLetras": "X"},
+        }
+
+    monkeypatch.setattr(dte, "generar_nota_credito_json", fake_generate)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda data: data)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda *_: {})
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+    monkeypatch.setattr("utils.stable_json.save_file", lambda *a, **k: None)
+    monkeypatch.setattr("utils.stable_json.stable_stringify", lambda data, indent=2: json.dumps(data))
+    monkeypatch.setattr(
+        "utils.docs.get_dte_document_paths",
+        lambda *a, **k: (tmp_path, str(tmp_path / "nc.json")),
+    )
+    monkeypatch.setattr(dte.os.path, "exists", lambda path: False)
+
+    sent_payload: dict[str, Any] = {}
+
+    def fake_enviar_documento(_db, _id, payload, _modo, jws_token=None):
+        sent_payload["payload"] = json.loads(json.dumps(payload))
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar_documento)
+
+    enviar_nota_credito(db, nota_id, modo="normal")
+
+    assert captured.get("ambiente_param") == "01"
+    assert sent_payload["payload"]["identificacion"]["ambiente"] == "01"
+
+
+def test_enviar_nota_debito_propagates_production_ambiente(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "debito", "2024-01-02", 10, "motivo")
+
+    monkeypatch.setattr(dte, "_ensure_nota_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(dte, "_ensure_canonical_snapshot", lambda *a, **k: None)
+    monkeypatch.setattr(dte, "_resolve_base_document_code", lambda *a, **k: (None, None))
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda *_: None)
+    monkeypatch.setattr(db, "update_venta_extra", lambda *a, **k: None)
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {"ambiente": "produccion", "url": "https://api.example/fesv/recepciondte"},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def fake_generate(db_obj, note_id, *, ambiente="00", **_kwargs):
+        captured["ambiente_param"] = ambiente
+        return {
+            "identificacion": {
+                "numeroControl": "ND-1",
+                "codigoGeneracion": "UUID-1",
+                "fecEmi": "2024-01-02",
+                "ambiente": ambiente,
+            },
+            "documentoRelacionado": [
+                {
+                    "tipoDocumento": "01",
+                    "numeroDocumento": "BASE",
+                    "fechaEmision": "2024-01-01",
+                }
+            ],
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {"totalLetras": "X"},
+        }
+
+    monkeypatch.setattr(dte, "generar_nota_debito_json", fake_generate)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda data: data)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda *_: {})
+    monkeypatch.setattr("utils.jws.sign_json", lambda data: "TOKEN")
+    monkeypatch.setattr("utils.stable_json.save_file", lambda *a, **k: None)
+    monkeypatch.setattr("utils.stable_json.stable_stringify", lambda data, indent=2: json.dumps(data))
+    monkeypatch.setattr(
+        "utils.docs.get_dte_document_paths",
+        lambda *a, **k: (tmp_path, str(tmp_path / "nd.json")),
+    )
+    monkeypatch.setattr(dte.os.path, "exists", lambda path: False)
+
+    sent_payload: dict[str, Any] = {}
+
+    def fake_enviar_documento(_db, _id, payload, _modo, jws_token=None):
+        sent_payload["payload"] = json.loads(json.dumps(payload))
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar_documento)
+
+    enviar_nota_debito(db, nota_id, modo="normal")
+
+    assert captured.get("ambiente_param") == "01"
+    assert sent_payload["payload"]["identificacion"]["ambiente"] == "01"
+
+
+def test_enviar_nota_remision_propagates_production_ambiente(monkeypatch, tmp_path):
+    db = DB(":memory:")
+    venta_id = create_sale(db)
+    nota_id = db.add_nota(venta_id, "remision", "2024-01-02", 10, "motivo")
+
+    monkeypatch.setattr(db, "update_venta_extra", lambda *a, **k: None)
+    monkeypatch.setattr(
+        dte,
+        "_load_dte_api_config",
+        lambda: {"ambiente": "produccion", "url": "https://api.example/fesv/recepciondte"},
+    )
+
+    captured: dict[str, Any] = {}
+
+    def fake_generate(db_obj, note_id, *, ambiente="00", **_kwargs):
+        captured["ambiente_param"] = ambiente
+        return {
+            "identificacion": {
+                "numeroControl": "NR-1",
+                "codigoGeneracion": "UUID-1",
+                "fecEmi": "2024-01-02",
+                "ambiente": ambiente,
+            },
+            "documentoRelacionado": [
+                {
+                    "tipoDocumento": "01",
+                    "numeroDocumento": "BASE",
+                    "fechaEmision": "2024-01-01",
+                }
+            ],
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {"totalLetras": "X"},
+        }
+
+    monkeypatch.setattr("nota_remision.generar_nota_remision_desde_db", fake_generate)
+    monkeypatch.setattr(dte, "apply_schema_patch", lambda data: data)
+    monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda *_: {})
+    monkeypatch.setattr("utils.stable_json.save_file", lambda *a, **k: None)
+    monkeypatch.setattr("utils.stable_json.stable_stringify", lambda data, indent=2: json.dumps(data))
+    monkeypatch.setattr(
+        "utils.docs.get_dte_document_paths",
+        lambda *a, **k: (tmp_path, str(tmp_path / "nr.json")),
+    )
+
+    sent_payload: dict[str, Any] = {}
+
+    def fake_enviar_documento(_db, _id, payload, _modo):
+        sent_payload["payload"] = json.loads(json.dumps(payload))
+        return {"estado": "Transmitido"}
+
+    monkeypatch.setattr(dte, "_enviar_documento", fake_enviar_documento)
+
+    enviar_nota_remision(db, nota_id, modo="normal")
+
+    assert captured.get("ambiente_param") == "01"
+    assert sent_payload["payload"]["identificacion"]["ambiente"] == "01"
 

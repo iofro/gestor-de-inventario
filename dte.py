@@ -5080,7 +5080,7 @@ def generar_ticket_json(
     return data
 
 
-def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
+def generar_nota_credito_json(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
     """Genera la estructura JSON para una nota de crédito.
 
     La lógica principal se encuentra en :mod:`nota_credito_electronica` y se
@@ -5089,7 +5089,7 @@ def generar_nota_credito_json(db: DB, nota_id: int) -> dict:
 
     from nota_credito_electronica import generar_nce_desde_nota
 
-    return generar_nce_desde_nota(db, nota_id)
+    return generar_nce_desde_nota(db, nota_id, ambiente=ambiente)
 
 
 def generar_nde_desde_dte(
@@ -5325,11 +5325,11 @@ def generar_nde_desde_dte(
     return sanitize_dte_payload(data, schema)
 
 
-def generar_nota_debito_json(db: DB, nota_id: int) -> dict:
+def generar_nota_debito_json(db: DB, nota_id: int, *, ambiente: str = "00") -> dict:
     """Genera la estructura JSON para una nota de débito."""
     from nota_debito_electronica import generar_nde_desde_nota
 
-    return generar_nde_desde_nota(db, nota_id)
+    return generar_nde_desde_nota(db, nota_id, ambiente=ambiente)
 
 
 def generar_nota_remision_json(
@@ -7240,7 +7240,11 @@ def enviar_nota_credito(db: DB, nota_id: int, modo: str | None = None) -> dict:
 
     _ensure_nota_snapshot(db, nota_id, expected_tipo="credito")
 
-    data = generar_nota_credito_json(db, nota_id)
+    config = _load_dte_api_config()
+    ambiente_cfg = str(config.get("ambiente") or "").strip().lower()
+    ambiente = "01" if ambiente_cfg == "produccion" else "00"
+
+    data = generar_nota_credito_json(db, nota_id, ambiente=ambiente)
     venta_id_base = None
     try:
         row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -7445,7 +7449,11 @@ def enviar_nota_debito(db: DB, nota_id: int, modo: str | None = None) -> dict:
 
     _ensure_nota_snapshot(db, nota_id, expected_tipo="debito")
 
-    data = generar_nota_debito_json(db, nota_id)
+    config = _load_dte_api_config()
+    ambiente_cfg = str(config.get("ambiente") or "").strip().lower()
+    ambiente = "01" if ambiente_cfg == "produccion" else "00"
+
+    data = generar_nota_debito_json(db, nota_id, ambiente=ambiente)
     venta_id_base = None
     try:
         row = db.cursor.execute("SELECT venta_id FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -7650,7 +7658,11 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
 
     from nota_remision import generar_nota_remision_desde_db
 
-    data = generar_nota_remision_desde_db(db, nota_id)
+    config = _load_dte_api_config()
+    ambiente_cfg = str(config.get("ambiente") or "").strip().lower()
+    ambiente = "01" if ambiente_cfg == "produccion" else "00"
+
+    data = generar_nota_remision_desde_db(db, nota_id, ambiente=ambiente)
     data = apply_schema_patch(data)
     schema = catalogos.get_dte_schema("04")
     # Validación omitida.

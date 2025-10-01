@@ -280,7 +280,7 @@ def test_resend_credit_note_regenerates_codigo(monkeypatch, qt_app, tmp_path):
     new_code = "11111111-2222-4333-8444-999999999999"
     new_control = "DTE-05-S001P001-000000000000999"
 
-    def fake_generar_nota_credito_json(db_obj, note_id):
+    def fake_generar_nota_credito_json(db_obj, note_id, **kwargs):
         assert note_id == nota_id
         return {
             "identificacion": {

@@ -133,7 +133,15 @@ def test_enviar_nota_credito_guarda_sello(monkeypatch, tmp_path):
         "get_snapshot_by_venta",
         lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
     )
-    monkeypatch.setattr(dte, "generar_nota_credito_json", lambda db_obj, nid: {"identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"}, "receptor": {"nombre": "Cliente"}, "resumen": {"totalLetras": "X"}})
+    monkeypatch.setattr(
+        dte,
+        "generar_nota_credito_json",
+        lambda db_obj, nid, **_kwargs: {
+            "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {"totalLetras": "X"},
+        },
+    )
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(utils.docs, "get_dte_document_paths", lambda *a, **k: (None, tmp_path / "nc.json"))
@@ -163,7 +171,15 @@ def test_enviar_nota_debito_guarda_sello(monkeypatch, tmp_path):
         "get_snapshot_by_venta",
         lambda vid: dummy_snapshot if (vid == venta_id or str(vid) == str(venta_id)) else None,
     )
-    monkeypatch.setattr(dte, "generar_nota_debito_json", lambda db_obj, nid: {"identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"}, "receptor": {"nombre": "Cliente"}, "resumen": {"totalLetras": "X"}})
+    monkeypatch.setattr(
+        dte,
+        "generar_nota_debito_json",
+        lambda db_obj, nid, **_kwargs: {
+            "identificacion": {"fecEmi": "2024-01-02", "numeroControl": "1"},
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {"totalLetras": "X"},
+        },
+    )
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(utils.docs, "get_dte_document_paths", lambda *a, **k: (None, tmp_path / "nd.json"))
@@ -181,7 +197,11 @@ def test_enviar_nota_remision_guarda_sello(monkeypatch):
     db = DB(":memory:")
     venta_id = create_sale(db)
     nota_id = db.add_nota(venta_id, "remision", "2024-01-02", 10, "motivo")
-    monkeypatch.setattr(nota_remision, "generar_nota_remision_desde_db", lambda db_obj, nid: {"resumen": {"totalLetras": "X"}})
+    monkeypatch.setattr(
+        nota_remision,
+        "generar_nota_remision_desde_db",
+        lambda db_obj, nid, **_kwargs: {"resumen": {"totalLetras": "X"}},
+    )
     monkeypatch.setattr(dte, "apply_schema_patch", lambda d: d)
     monkeypatch.setattr(dte.catalogos, "get_dte_schema", lambda t: {})
     monkeypatch.setattr(dte, "_enviar_documento", _stub_enviar_documento)

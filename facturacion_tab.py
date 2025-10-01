@@ -984,6 +984,7 @@ class FacturacionTab(QWidget):
         self.btn_remision.clicked.connect(self.abrir_dialogo_nota_remision)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
+        self.btn_evento_contingencia = QPushButton("Evento contingencia")
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
@@ -993,6 +994,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_nota)
         btns.addWidget(self.btn_remision)
         btns.addWidget(self.btn_enviar)
+        btns.addWidget(self.btn_evento_contingencia)
         btns.addWidget(self.btn_imprimir)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
@@ -1026,6 +1028,7 @@ class FacturacionTab(QWidget):
         self.table.itemDoubleClicked.connect(self.mostrar_detalle_factura)
 
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
+        self.btn_evento_contingencia.clicked.connect(self._enviar_evento_contingencia)
         self.btn_imprimir.clicked.connect(self.print_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_invoice)
@@ -2467,6 +2470,289 @@ class FacturacionTab(QWidget):
                         "Enviar a Hacienda",
                         GENERIC_SEND_ERROR,
                     )
+
+    def _enviar_evento_contingencia(self) -> None:
+        entry = self._selected_entry()
+        if not entry:
+            QMessageBox.warning(
+                self, "Evento de contingencia", "Seleccione un documento"
+            )
+            return
+
+        factura = self._selected_factura()
+        if not factura:
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "El documento seleccionado no tiene información de DTE",
+            )
+            return
+
+        json_path = factura.get("json")
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "No se encontró el archivo JSON del DTE",
+            )
+            return
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                dte_data = json.load(fh)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                f"Error al leer el archivo JSON: {exc}",
+            )
+            return
+
+        ident = dte_data.get("identificacion") or {}
+        tipo_operacion = str(ident.get("tipoOperacion") or "").strip()
+        if tipo_operacion not in {"2", "02"}:
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "El documento seleccionado no está marcado en modo contingencia",
+            )
+            return
+
+        codigo_generacion = ident.get("codigoGeneracion")
+        tipo_doc = ident.get("tipoDte")
+        if not codigo_generacion or tipo_doc is None:
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                "El DTE no contiene los datos necesarios para el evento",
+            )
+            return
+
+        def _row_get(row, key):
+            if row is None:
+                return None
+            try:
+                return row[key]
+            except Exception:
+                pass
+            getter = getattr(row, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key)
+                except Exception:
+                    return None
+            try:
+                keys = row.keys()
+            except Exception:
+                return None
+            try:
+                index = list(keys).index(key)
+            except Exception:
+                return None
+            try:
+                return row[index]
+            except Exception:
+                return None
+
+        factura_estado = None
+        factura_id = entry.get("id")
+        factura_estado_id = None
+        try:
+            factura_estado_id = int(factura_id)
+        except (TypeError, ValueError):
+            factura_estado_id = None
+        if factura_estado_id is not None:
+            try:
+                factura_estado = (
+                    self.manager.db.cursor.execute(
+                        """
+                        SELECT modo_transmision, estado_envio, tipo_contingencia, motivo_contin
+                        FROM facturas_estado
+                        WHERE id=?
+                        """,
+                        (factura_estado_id,),
+                    ).fetchone()
+                )
+            except Exception:
+                factura_estado = None
+
+        modo_registrado = _row_get(factura_estado, "modo_transmision")
+        if modo_registrado and str(modo_registrado).strip().lower() != "contingencia":
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "La factura seleccionada no está marcada en contingencia",
+            )
+            return
+
+        tipo_contingencia = ident.get("tipoContingencia")
+        motivo_contin = ident.get("motivoContin")
+
+        tipo_contingencia = (
+            tipo_contingencia or _row_get(factura_estado, "tipo_contingencia")
+        )
+        motivo_contin = (
+            motivo_contin or _row_get(factura_estado, "motivo_contin")
+        )
+
+        venta_id = factura.get("venta_id")
+        venta = None
+        if venta_id is not None:
+            try:
+                venta = self.manager.db.get_venta_by_id(venta_id)
+            except Exception:
+                venta = None
+        if venta:
+            tipo_contingencia = (
+                tipo_contingencia or venta.get("tipo_contingencia")
+            )
+            motivo_contin = motivo_contin or venta.get("motivo_contin")
+            raw_extra = venta.get("extra")
+            if raw_extra:
+                try:
+                    extra_data = json.loads(raw_extra)
+                except Exception:
+                    extra_data = {}
+                tipo_contingencia = (
+                    tipo_contingencia
+                    or extra_data.get("tipo_contingencia")
+                    or extra_data.get("tipoContingencia")
+                )
+                motivo_contin = (
+                    motivo_contin
+                    or extra_data.get("motivo_contin")
+                    or extra_data.get("motivoContin")
+                )
+
+        tipo_contingencia_val: int | None = None
+        if tipo_contingencia not in (None, "", "null"):
+            try:
+                tipo_contingencia_val = int(str(tipo_contingencia).strip())
+            except ValueError:
+                try:
+                    tipo_contingencia_val = int(float(str(tipo_contingencia)))
+                except Exception:
+                    tipo_contingencia_val = None
+
+        if tipo_contingencia_val is None:
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "Configura el tipo de contingencia antes de enviar el evento",
+            )
+            return
+
+        motivo_text = None
+        if isinstance(motivo_contin, str):
+            motivo_text = motivo_contin.strip() or None
+
+        fecha_emi = ident.get("fecEmi") or datetime.now().strftime("%Y-%m-%d")
+        try:
+            datetime.strptime(fecha_emi, "%Y-%m-%d")
+        except Exception:
+            fecha_emi = datetime.now().strftime("%Y-%m-%d")
+
+        hora_emi = (ident.get("horEmi") or "00:00:00").strip()
+        if len(hora_emi) == 5:
+            hora_emi = f"{hora_emi}:00"
+        try:
+            datetime.strptime(hora_emi, "%H:%M:%S")
+        except Exception:
+            hora_emi = "00:00:00"
+
+        detalle = [
+            {
+                "codigoGeneracion": codigo_generacion,
+                "tipoDoc": str(tipo_doc).zfill(2),
+            }
+        ]
+
+        try:
+            payload = dte.generar_evento_contingencia(
+                detalle,
+                fecha_emi,
+                fecha_emi,
+                hora_emi,
+                hora_emi,
+                tipo_contingencia_val,
+                motivo_contingencia=motivo_text,
+            )
+        except ValueError as exc:
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                str(exc),
+            )
+            return
+        except Exception as exc:
+            logger.exception(
+                "Error al generar evento de contingencia", exc_info=exc
+            )
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                "No se pudo generar el evento de contingencia",
+            )
+            return
+
+        evento_id = venta_id if venta_id is not None else factura_estado_id
+        token_msg = (
+            "El token está desactualizado. Debe generar uno nuevo desde la configuración de facturación."
+        )
+        try:
+            respuesta = dte.enviar_evento_contingencia(
+                self.manager.db, evento_id, payload
+            )
+        except Exception as exc:
+            logger.exception(
+                "Error al enviar evento de contingencia", exc_info=exc
+            )
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                GENERIC_SEND_ERROR,
+            )
+            return
+
+        if respuesta.get("http_status") in {401, 403}:
+            mensaje = self._auth_error_message(respuesta, token_msg)
+            QMessageBox.warning(self, "Evento de contingencia", mensaje)
+            return
+
+        estado = str(respuesta.get("estado") or "").strip()
+        obs_text = self._format_observaciones_message(respuesta)
+
+        if estado.upper() in {"TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO"}:
+            mensaje = "Evento de contingencia enviado correctamente"
+            if obs_text:
+                mensaje = f"{mensaje}\n\n{obs_text}"
+            QMessageBox.information(self, "Evento de contingencia", mensaje)
+            self.refresh_and_reload()
+            return
+
+        if estado.upper() == "RECHAZADO":
+            textos = _gather_rejection_texts(
+                respuesta.get("errores"),
+                respuesta.get("detalle"),
+                respuesta.get("descripcionMsg"),
+            )
+            mensaje = "\n".join(textos) if textos else "Evento rechazado por Hacienda"
+            if obs_text:
+                mensaje = f"{mensaje}\n\n{obs_text}"
+            QMessageBox.critical(self, "Evento de contingencia", mensaje)
+            return
+
+        detalle = (
+            respuesta.get("detalle")
+            or respuesta.get("descripcionMsg")
+            or GENERIC_SEND_ERROR
+        )
+        if obs_text:
+            detalle = f"{detalle}\n\n{obs_text}"
+        if estado.upper() == "ERROR":
+            QMessageBox.critical(self, "Evento de contingencia", detalle)
+        else:
+            QMessageBox.information(self, "Evento de contingencia", detalle)
 
     def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:
         if not entry:

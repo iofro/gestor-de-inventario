@@ -203,110 +203,123 @@ describe('FacturaForm', () => {
     expect(wrapper.find('.configurar-contingencia').exists()).toBe(false);
   });
 
-  it('gestiona el flujo de evento de contingencia y valida los campos requeridos', async () => {
-    const wrapper = mountForm({
-      modoTransmision: 2,
-      pendientesContingencia: [
-        { codigoGeneracion: 'A', tipoDocumento: '01' },
-        { codigoGeneracion: 'B', tipoDocumento: '03' }
-      ]
-    });
-    const eventoButton = wrapper.find('button.evento');
+  it('deshabilita el botón de evento cuando no hay pendientes', () => {
+    const wrapper = mountForm({ modoTransmision: 2 });
+    const eventoButton = wrapper.find('.evento-trigger');
     expect(eventoButton.exists()).toBe(true);
-    await eventoButton.trigger('click');
-    await wrapper.vm.$nextTick();
-
-    const continuar = wrapper.find('.evento-content .primary');
-    await continuar.trigger('click');
-    await wrapper.vm.$nextTick();
-    expect(wrapper.text()).toContain('Completa la fecha y hora de inicio.');
-
-    const [inicioFecha, finFecha] = wrapper.findAll('input[type="date"]');
-    const [inicioHora, finHora] = wrapper.findAll('input[type="time"]');
-    await inicioFecha.setValue('2024-01-01');
-    await inicioHora.setValue('08:00');
-    await finFecha.setValue('2024-01-01');
-    await finHora.setValue('09:00');
-    await wrapper.find('#evento-tipo').setValue('5');
-    await wrapper.find('#evento-motivo').setValue('Fallo prolongado');
-    await continuar.trigger('click');
-    await wrapper.vm.$nextTick();
-
-    expect(wrapper.text()).toContain('Paso 2: DTE pendientes');
-    const preview = wrapper.find('.json-preview').text();
-    expect(preview).toContain('"version": 3');
-    expect(preview).toContain('"noItem": 1');
-    expect(preview).toContain('"codigoGeneracion": "A"');
-    expect(preview).toContain('"tipoDoc": "01"');
-    expect(wrapper.text()).toContain('Mostrando 2 de 2 (máx. 1000)');
-    expect(wrapper.find('.copy-codes').exists()).toBe(true);
+    expect(eventoButton.attributes('disabled')).toBeDefined();
+    expect(eventoButton.attributes('title')).toContain(
+      'No hay DTE pendientes en contingencia'
+    );
   });
 
-  it('advierte cuando hay más de 1000 DTE y limita la previsualización', async () => {
+  it('abre el panel del evento con validaciones iniciales', async () => {
+    const wrapper = mountForm({
+      modoTransmision: 2,
+      pendientesContingencia: [{ codigoGeneracion: 'abc', tipoDocumento: '01' }],
+      tipoContingencia: 5,
+      motivoContingencia: 'Interrupción previa'
+    });
+    const trigger = wrapper.find('.evento-trigger');
+    await trigger.trigger('click');
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+
+    const panel = wrapper.find('.evento-panel');
+    expect(panel.exists()).toBe(true);
+    expect(panel.text()).toContain('Zona horaria: America/El_Salvador (UTC-6)');
+    const tipoSelect = panel.find('#evento-tipo');
+    expect((tipoSelect.element as HTMLSelectElement).value).toBe('5');
+    const motivo = panel.find('#evento-motivo');
+    expect(motivo.exists()).toBe(true);
+    expect((motivo.element as HTMLTextAreaElement).value).toBe(
+      'Interrupción previa'
+    );
+    const inicioError = panel.find('#evento-inicio-error');
+    expect(inicioError.exists()).toBe(true);
+    expect(inicioError.text()).toContain('Completa la fecha y hora de inicio.');
+    const generar = panel.find('.panel-actions .primary');
+    expect(generar.attributes('disabled')).toBeDefined();
+  });
+
+  it('habilita la generación del borrador con datos válidos', async () => {
+    const wrapper = mountForm({
+      modoTransmision: 2,
+      tipoContingencia: 3,
+      pendientesContingencia: [
+        { codigoGeneracion: 'abc123', tipoDocumento: '3' },
+        { codigoGeneracion: 'def456', tipoDocumento: '99' }
+      ],
+      ambiente: 'PRUEBAS'
+    });
+    await wrapper.find('.evento-trigger').trigger('click');
+    await wrapper.vm.$nextTick();
+
+    await wrapper.find('#evento-tipo').setValue('3');
+    await wrapper.find('#evento-inicio-fecha').setValue('2024-05-01');
+    await wrapper.find('#evento-inicio-hora').setValue('08:00');
+    await wrapper.find('#evento-fin-fecha').setValue('2024-05-01');
+    await wrapper.find('#evento-fin-hora').setValue('09:00');
+    await wrapper.vm.$nextTick();
+
+    const generar = wrapper.find('.panel-actions .primary');
+    expect(generar.attributes('disabled')).toBeUndefined();
+    await generar.trigger('click');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.text()).toContain('Borrador generado (solo UI).');
+
+    const preview = wrapper.find('.json-preview').text();
+    expect(preview).toContain('"version": 3');
+    expect(preview).toContain('"ambiente": "PRUEBAS"');
+    expect(preview).toContain('"codigoGeneracion": "ABC123"');
+    expect(preview).toContain('"tipoDoc": "03"');
+    expect(preview).toContain('"tipoDoc": "15"');
+  });
+
+  it('muestra advertencia cuando hay más de 1000 DTE', async () => {
     const pendientes = Array.from({ length: 1002 }, (_, index) => ({
-      codigoGeneracion: `DTE-${index}`,
+      codigoGeneracion: `dte-${index}`,
       tipoDocumento: '01'
     }));
-    const wrapper = mountForm({ modoTransmision: 2, pendientesContingencia: pendientes });
-    await wrapper.find('button.evento').trigger('click');
+    const wrapper = mountForm({
+      modoTransmision: 2,
+      pendientesContingencia: pendientes
+    });
+    await wrapper.find('.evento-trigger').trigger('click');
     await wrapper.vm.$nextTick();
 
-    const [inicioFecha, finFecha] = wrapper.findAll('input[type="date"]');
-    const [inicioHora, finHora] = wrapper.findAll('input[type="time"]');
-    await inicioFecha.setValue('2024-01-01');
-    await inicioHora.setValue('08:00');
-    await finFecha.setValue('2024-01-02');
-    await finHora.setValue('09:00');
     await wrapper.find('#evento-tipo').setValue('1');
-    await wrapper.find('.evento-content .primary').trigger('click');
+    await wrapper.find('#evento-inicio-fecha').setValue('2024-05-01');
+    await wrapper.find('#evento-inicio-hora').setValue('08:00');
+    await wrapper.find('#evento-fin-fecha').setValue('2024-05-02');
+    await wrapper.find('#evento-fin-hora').setValue('09:00');
     await wrapper.vm.$nextTick();
 
-    const json = wrapper.find('.json-preview').text();
-    expect(wrapper.text()).toContain('Divide el envío en varios eventos');
-    expect(json).toContain('"codigoGeneracion": "DTE-0"');
-    expect(json).not.toContain('"codigoGeneracion": "DTE-1001"');
-    expect(wrapper.text()).toContain('Mostrando 1000 de 1002 (máx. 1000)');
+    const panel = wrapper.find('.evento-panel');
+    expect(panel.text()).toContain('Máximo 1000 por evento. Se deberá dividir en varios eventos.');
+    expect(panel.text()).toContain('Máximo 1000 DTE por evento.');
+    expect(panel.text()).toContain('Mostrando 1000 de 1002 (máx. 1000)');
+    expect(wrapper.find('.panel-actions .primary').attributes('disabled')).toBeDefined();
+  });
+
+  it('colapsa el panel al presionar cerrar', async () => {
+    const wrapper = mountForm({
+      modoTransmision: 2,
+      pendientesContingencia: [{ codigoGeneracion: 'xyz', tipoDocumento: '01' }]
+    });
+    await wrapper.find('.evento-trigger').trigger('click');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.evento-panel').exists()).toBe(true);
+
+    const buttons = wrapper.findAll('.panel-actions button');
+    await buttons[1].trigger('click');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.evento-panel').exists()).toBe(false);
   });
 
   it('normaliza valores inválidos del modo de transmisión a normal', () => {
     const wrapper = mountForm({ modoTransmision: 5 as unknown as number });
     const modo = wrapper.find('#modo');
     expect((modo.element as HTMLSelectElement).value).toBe('1');
-  });
-
-  it('permite copiar los códigos de los DTE en la previsualización del evento', async () => {
-    const pendientes = [
-      { codigoGeneracion: 'abc123', tipoDocumento: '01' },
-      { codigoGeneracion: 'def456', tipoDocumento: '03' }
-    ];
-    const wrapper = mountForm({ modoTransmision: 2, pendientesContingencia: pendientes });
-    await wrapper.find('button.evento').trigger('click');
-    await wrapper.vm.$nextTick();
-
-    const [inicioFecha, finFecha] = wrapper.findAll('input[type="date"]');
-    const [inicioHora, finHora] = wrapper.findAll('input[type="time"]');
-    await inicioFecha.setValue('2024-01-01');
-    await inicioHora.setValue('08:00');
-    await finFecha.setValue('2024-01-01');
-    await finHora.setValue('09:30');
-    await wrapper.find('#evento-tipo').setValue('1');
-    await wrapper.find('.evento-content .primary').trigger('click');
-    await wrapper.vm.$nextTick();
-
-    const writeText = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(window.navigator, 'clipboard', {
-      value: { writeText },
-      configurable: true
-    });
-
-    await wrapper.find('.copy-codes').trigger('click');
-    await wrapper.vm.$nextTick();
-
-    expect(writeText).toHaveBeenCalledWith('ABC123\nDEF456');
-    expect(wrapper.text()).toContain('Códigos copiados al portapapeles.');
-
-    // clean up clipboard mock
-    // @ts-expect-error
-    delete window.navigator.clipboard;
   });
 });

@@ -1944,7 +1944,7 @@ class FacturacionTab(QWidget):
                         ORDER BY id DESC LIMIT 1
                         """,
                         (numero_control or "",),
-                    ).fetchone()
+                        ).fetchone()
                 if not env_row:
                     like_val = codigo_generacion or numero_control
                     if like_val:
@@ -1956,6 +1956,15 @@ class FacturacionTab(QWidget):
                             """,
                             (f"%{like_val}%",),
                         ).fetchone()
+            if env_row is None and cur is not None and venta_id_lookup is not None:
+                env_row = cur.execute(
+                    """
+                    SELECT estado_ui, estado_ui_tag, estado FROM dte_envios
+                    WHERE venta_id = ?
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (venta_id_lookup,),
+                ).fetchone()
         except Exception:
             env_row = None
 

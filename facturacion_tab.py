@@ -2509,8 +2509,25 @@ class FacturacionTab(QWidget):
             return
 
         ident = dte_data.get("identificacion") or {}
-        tipo_operacion = str(ident.get("tipoOperacion") or "").strip()
-        if tipo_operacion not in {"2", "02"}:
+
+        def _to_int(raw_value):
+            if raw_value in (None, ""):
+                return None
+            try:
+                return int(str(raw_value).split("-")[0].strip())
+            except Exception:
+                return None
+
+        tipo_operacion = _to_int(ident.get("tipoOperacion"))
+        tipo_modelo = _to_int(ident.get("tipoModelo"))
+        modelo_facturacion = _to_int(ident.get("modeloFacturacion"))
+        tipo_transmision = _to_int(ident.get("tipoTransmision"))
+        es_contingencia = (
+            tipo_operacion == 2
+            or tipo_modelo == 2
+            or (modelo_facturacion == 2 and tipo_transmision == 2)
+        )
+        if not es_contingencia:
             QMessageBox.warning(
                 self,
                 "Evento de contingencia",
@@ -3769,6 +3786,22 @@ class FacturacionTab(QWidget):
         QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")
 
 
+    def _resolve_modo_transmision(self) -> str:
+        getter = getattr(self.manager, "get_modo_transmision_actual", None)
+        modo_value: str | None = None
+        if callable(getter):
+            try:
+                modo_value = getter()
+            except Exception:
+                modo_value = None
+        elif hasattr(self.manager, "modo_transmision"):
+            modo_value = getattr(self.manager, "modo_transmision")
+
+        if modo_value is None or str(modo_value).strip() == "":
+            return dte.get_default_modo_transmision()
+
+        return modo_value
+
     def create_nota(self, tipo, factura=None):
         factura = factura or self._selected_factura()
         if not factura:
@@ -4005,9 +4038,11 @@ class FacturacionTab(QWidget):
         # Firmar y transmitir automáticamente reutilizando el mismo JSON
         _, token = sign_and_save(nota_json, str(json_path), return_token=True)
 
+        modo_eff = self._resolve_modo_transmision()
+
         try:
             resp = dte._enviar_documento(
-                self.manager.db, nota_id, nota_json, jws_token=token
+                self.manager.db, nota_id, nota_json, modo=modo_eff, jws_token=token
             )
             estado = str(resp.get("estado", "") if resp else "").lower()
             if estado == "error":

@@ -1278,6 +1278,131 @@ def get_default_modo_transmision() -> str:
     return "normal"
 
 
+def _contingencia_config_from_settings() -> tuple[int, str | None]:
+    """Return contingency type and reason configured in ``datos_negocio``."""
+
+    datos = _load_datos_negocio()
+    candidates: list[dict[str, Any]] = []
+    dte_api = datos.get("dte_api")
+    if isinstance(dte_api, dict):
+        candidates.append(dte_api)
+    if isinstance(datos, dict):
+        candidates.append(datos)
+
+    tipo_raw: Any = None
+    motivo_raw: Any = None
+    for source in candidates:
+        if tipo_raw in (None, "", "null"):
+            tipo_raw = source.get("tipo_contingencia", tipo_raw)
+        if motivo_raw is None:
+            motivo_raw = source.get("motivo_contin", motivo_raw)
+
+    if tipo_raw in (None, "", "null"):
+        raise ValueError(
+            "tipo_contingencia no configurado para modo contingencia; actualice la configuración de facturación"
+        )
+
+    try:
+        tipo_cont = int(str(tipo_raw).strip())
+    except (TypeError, ValueError):
+        raise ValueError("tipo_contingencia configurado inválido") from None
+
+    if tipo_cont not in catalogos.CONTINGENCIA:
+        raise ValueError("tipo_contingencia debe estar entre 1 y 5")
+
+    motivo_norm: str | None = None
+    if tipo_cont == 5:
+        motivo_text = "" if motivo_raw is None else str(motivo_raw)
+        motivo_text = motivo_text.strip()
+        if not motivo_text:
+            raise ValueError(
+                "motivo_contin requerido cuando tipo_contingencia es 5"
+            )
+        if len(motivo_text) > 500:
+            raise ValueError(
+                "motivo_contin no debe superar 500 caracteres cuando tipo_contingencia es 5"
+            )
+        motivo_norm = motivo_text
+
+    return tipo_cont, motivo_norm
+
+
+def _ensure_contingencia_ident_fields(ident: dict[str, Any], modo: str | None) -> None:
+    """Override identification fields when operating in contingency mode."""
+
+    modo_norm = "" if modo is None else str(modo).strip().lower()
+    if modo_norm not in {"contingencia", "2"} and "contingencia" not in modo_norm:
+        return
+
+    tipo_cont, motivo_cont = _contingencia_config_from_settings()
+
+    ident["tipoModelo"] = 2
+    ident.pop("modeloFacturacion", None)
+    ident["tipoOperacion"] = 2
+    ident.pop("tipoTransmision", None)
+    ident["tipoContingencia"] = tipo_cont
+    ident["motivoContin"] = motivo_cont
+
+
+def _normalize_ident_subset(ident: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the identification fields relevant for JWS reuse comparison."""
+
+    def _normalize_numeric(value: Any) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(str(value).strip())
+        except (TypeError, ValueError):
+            return None
+
+    def _normalize_tipo_dte(value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        if text.isdigit():
+            return text.zfill(2)
+        return text
+
+    def _normalize_text(value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        text = str(value).strip()
+        return text or None
+
+    tipo_modelo = ident.get("tipoModelo", ident.get("modeloFacturacion"))
+    tipo_operacion = ident.get("tipoOperacion", ident.get("tipoTransmision"))
+    tipo_contingencia = ident.get("tipoContingencia")
+    motivo = ident.get("motivoContin", ident.get("motivoContingencia"))
+    fec_emi = _normalize_text(ident.get("fecEmi"))
+    hor_emi = _normalize_text(ident.get("horEmi"))
+    tipo_dte = _normalize_tipo_dte(ident.get("tipoDte", ident.get("tipoDocumento")))
+    codigo_gen = ident.get("codigoGeneracion")
+    if codigo_gen not in (None, ""):
+        codigo_gen = str(codigo_gen).strip().upper()
+    else:
+        codigo_gen = None
+
+    tipo_cont_norm = _normalize_numeric(tipo_contingencia)
+    motivo_norm: str | None
+    if tipo_cont_norm == 5:
+        motivo_norm = _normalize_text(motivo)
+    else:
+        motivo_norm = None
+
+    return {
+        "tipo_modelo": _normalize_numeric(tipo_modelo),
+        "tipo_operacion": _normalize_numeric(tipo_operacion),
+        "tipo_contingencia": tipo_cont_norm,
+        "motivo_contingencia": motivo_norm,
+        "fecEmi": fec_emi,
+        "horEmi": hor_emi,
+        "tipoDte": tipo_dte,
+        "codigoGeneracion": codigo_gen,
+    }
+
+
 DEPARTAMENTO_CODES = {f"{i:02d}" for i in range(0, 15)}
 
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
@@ -6418,12 +6543,22 @@ def _parse_error_response(respuesta: dict) -> str:
 
 
 def _enviar_documento(
-    db: DB, doc_id: int, data: dict, modo: str = "normal", jws_token: str | None = None
+    db: DB, doc_id: int, data: dict, modo: str | None = "normal", jws_token: str | None = None
 ) -> dict:
     """Firma y envía ``data`` registrando el envío.
 
     Si ``jws_token`` se proporciona, se reutiliza en lugar de firmar nuevamente.
     """
+
+    modo_raw = "" if modo is None else str(modo).strip()
+    if not modo_raw:
+        modo_raw = get_default_modo_transmision()
+    modo_norm = modo_raw.lower()
+    if modo_norm.startswith("2") or "contingencia" in modo_norm:
+        modo = "contingencia"
+    else:
+        modo = "normal"
+
     print("DTE: START_enviar_documento", "modo=", modo)
     ident = data.get("identificacion") or data.get("identificador") or {}
     doc_ref = ident.get("numeroControl") or ident.get("codigoGeneracion") or doc_id
@@ -6494,7 +6629,13 @@ def _enviar_documento(
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
 
-    if jws_token and today_str:
+    _ensure_contingencia_ident_fields(ident, modo)
+    if "identificacion" in data:
+        data["identificacion"] = ident
+    elif "identificador" in data:
+        data["identificador"] = ident
+
+    if jws_token:
         try:
             token_payload = _decode_jws_payload(jws_token)
         except Exception:
@@ -6506,20 +6647,21 @@ def _enviar_documento(
                 or token_payload.get("identificador")
                 or {}
             )
-            payload_fec = payload_ident.get("fecEmi")
-            if payload_fec != today_str:
+            current_subset = _normalize_ident_subset(ident)
+            payload_subset = _normalize_ident_subset(payload_ident)
+            if current_subset != payload_subset:
                 logger.info(
-                    "DTE %s: jws_token descartado por fecEmi %s (esperado %s)",
+                    "DTE %s: jws_token descartado por cambios en identificacion (%s ≠ %s)",
                     doc_ref,
-                    payload_fec or "<sin fecha>",
-                    today_str,
+                    payload_subset,
+                    current_subset,
                 )
                 jws_token = None
             else:
                 logger.info(
-                    "DTE %s: reutilizando jws_token con fecEmi %s",
+                    "DTE %s: reutilizando jws_token con identificacion %s",
                     doc_ref,
-                    payload_fec,
+                    payload_subset,
                 )
     print("DTE: BEFORE_SIGN")
     signed = jws_token or jws.sign_json(data)

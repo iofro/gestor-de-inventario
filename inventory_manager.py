@@ -72,6 +72,7 @@ class InventoryManager:
         self._filter_Distribuidor_id = None
         self._filter_search = ""
         self._model = None
+        self._modo_transmision_actual: str | None = None
         self.refresh_data()
 
     def refresh_data(self):
@@ -101,6 +102,36 @@ class InventoryManager:
         else:
             self._model.update_data(page_data)
         self.current_page = page
+
+
+    def set_modo_transmision_actual(self, modo: str | None) -> None:
+        """Actualizar el modo de transmisión activo en la interfaz."""
+
+        if modo is None:
+            self._modo_transmision_actual = None
+            return
+
+        text = str(modo).strip().lower()
+        if not text:
+            self._modo_transmision_actual = None
+        elif text.startswith("2") or "contingencia" in text:
+            self._modo_transmision_actual = "contingencia"
+        else:
+            self._modo_transmision_actual = "normal"
+
+
+    def get_modo_transmision_actual(self) -> str:
+        """Obtener el modo de transmisión activo o el configurado por defecto."""
+
+        if self._modo_transmision_actual:
+            return self._modo_transmision_actual
+
+        try:
+            from dte import get_default_modo_transmision
+
+            return get_default_modo_transmision()
+        except Exception:
+            return "normal"
 
 
     def get_vendedor_names(self):

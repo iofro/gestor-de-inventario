@@ -20,6 +20,7 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from nota_remision import (
+    _build_documento_relacionado_desde_dte as _doc_rel_from_dte,
     _normalizar_documento_relacionado as _normalizar_doc_rel_nr,
     _verificar_documento_relacionado_recepcionado as _verificar_doc_rel_nr,
 )
@@ -249,22 +250,8 @@ def generar_nota_remision_desde_factura(
         )
     if not fecha_emision:
         fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
-    codigo_generacion = ident.get("codigoGeneracion")
-    numero_control = ident.get("numeroControl")
-    if codigo_generacion:
-        numero_documento = str(codigo_generacion).upper()
-        tipo_generacion = 2
-    else:
-        numero_documento = str(numero_control or "").strip()
-        tipo_generacion = 1
-    doc_rel = [
-        {
-            "tipoDocumento": ident.get("tipoDte"),
-            "tipoGeneracion": tipo_generacion,
-            "numeroDocumento": numero_documento,
-            "fechaEmision": fecha_iso(fecha_emision),
-        }
-    ]
+    doc_rel = _doc_rel_from_dte(factura)
+    doc_rel[0]["fechaEmision"] = fecha_iso(fecha_emision)
     ext = extension.copy() if extension else None
     if ext:
         tipo_doc = ext.pop("tipoDocRecibe", None)

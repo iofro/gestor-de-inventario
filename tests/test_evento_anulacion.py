@@ -469,29 +469,34 @@ def test_post_invalidacion_envia_sobre_con_jws(monkeypatch):
     class DummyResp:
         status_code = 200
         text = ""
+        headers = {}
+        content = b""
 
-        @staticmethod
-        def json():
-            return {"estado": "aceptado", "sello": "S" * 40}
+    def fake_auth_headers(extra=None, *, ambiente=None):
+        headers = {"Authorization": "Bearer token123"}
+        if isinstance(extra, dict):
+            headers.update(extra)
+        return headers
 
-    def fake_post(url, headers=None, json=None, timeout=None):
+    monkeypatch.setattr(anulacion, "auth_headers", fake_auth_headers)
+    monkeypatch.setattr(anulacion, "detect_user_agent", lambda *a, **k: "UA")
+
+    def fake_post_json(url, headers, body, *, tag):
         captured["url"] = url
         captured["headers"] = headers
-        captured["body"] = json
-        captured["timeout"] = timeout
-        return DummyResp()
+        captured["body"] = body
+        captured["tag"] = tag
+        return DummyResp(), {"estado": "aceptado", "sello": "S" * 40}, ""
 
-    monkeypatch.setattr(anulacion.requests, "post", fake_post)
+    monkeypatch.setattr(anulacion, "_post_json", fake_post_json)
 
     result = anulacion._post_invalidacion(
         "https://apitest.dtes.mh.gob.sv/fesv/anulardte",
-        "token123",
         evento,
         ambiente_config="00",
     )
 
     assert captured["url"] == "https://apitest.dtes.mh.gob.sv/fesv/anulardte"
-    assert captured["timeout"] == 20
     assert captured["body"]["documento"] == firmado
     assert isinstance(captured["body"]["documento"], str)
     assert captured["body"]["ambiente"] == "00"
@@ -510,21 +515,31 @@ def test_post_invalidacion_reporta_detalle_error(monkeypatch):
     class DummyResp:
         status_code = 400
         text = "Bad Request"
+        headers = {}
+        content = b""
 
-        @staticmethod
-        def json():
-            return {
-                "detalle": {
-                    "descripcionMsg": "Formato inválido",
-                    "observaciones": ["Falta campo"],
-                }
+    def fake_auth_headers(extra=None, *, ambiente=None):
+        headers = {"Authorization": "Bearer token456"}
+        if isinstance(extra, dict):
+            headers.update(extra)
+        return headers
+
+    monkeypatch.setattr(anulacion, "auth_headers", fake_auth_headers)
+    monkeypatch.setattr(anulacion, "detect_user_agent", lambda *a, **k: "UA")
+
+    def fake_post_json(url, headers, body, *, tag):
+        data = {
+            "detalle": {
+                "descripcionMsg": "Formato inválido",
+                "observaciones": ["Falta campo"],
             }
+        }
+        return DummyResp(), data, json.dumps(data)
 
-    monkeypatch.setattr(anulacion.requests, "post", lambda *a, **k: DummyResp())
+    monkeypatch.setattr(anulacion, "_post_json", fake_post_json)
 
     result = anulacion._post_invalidacion(
         "https://apitest.dtes.mh.gob.sv/fesv/anulardte",
-        "token456",
         evento,
     )
 
@@ -623,8 +638,8 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
 
     posted = []
 
-    def fake_post(url, token, payload, *, ambiente_config=None, **kwargs):
-        posted.append((url, token, payload, ambiente_config, kwargs))
+    def fake_post(url, payload, *, ambiente_config=None, **kwargs):
+        posted.append((url, payload, ambiente_config, kwargs))
         return {"estado": "aceptado", "sello": "0" * 40}
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
@@ -659,8 +674,10 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
     assert saved[0][0] == json_path
     assert saved[0][2] is True
     assert posted
-    assert posted[0][2] is data
-    assert posted[0][3] is None
+    assert posted[0][0] == "https://mh.test/fesv/anulardte"
+    assert posted[0][1] is data
+    assert posted[0][2] is None
+    assert posted[0][3] == {}
     assert result["sello"] == "0" * 40
 
 
@@ -687,8 +704,8 @@ def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
 
     posted = []
 
-    def fake_post(url, token, payload, *, ambiente_config=None, **kwargs):
-        posted.append((url, token, payload, ambiente_config, kwargs))
+    def fake_post(url, payload, *, ambiente_config=None, **kwargs):
+        posted.append((url, payload, ambiente_config, kwargs))
         return {"estado": "procesado", "sello": "2" * 40}
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
@@ -712,7 +729,7 @@ def test_enviar_invalidacion_continua_si_falla_guardado(monkeypatch):
 
     result = anulacion.enviar_invalidacion(None, data)
 
-    assert posted and posted[0][2] is data
+    assert posted and posted[0][1] is data
     assert result["estado"] == "procesado"
     assert dummy_logger.calls
 

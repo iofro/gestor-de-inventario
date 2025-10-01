@@ -220,6 +220,147 @@ def test_nr_documento_relacionado_con_numero_control(monkeypatch):
     assert doc_rel["tipoGeneracion"] == 1
 
 
+def test_nr_documento_relacionado_tipo03_sin_nrc(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    receptor = {
+        "tipoDocumento": "13",
+        "numDocumento": "012345678",
+        "nombre": "Consumidor",
+        "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios",
+        "telefono": "70000002",
+        "correo": "consumidor@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "San Salvador",
+        },
+    }
+    factura = {
+        "identificacion": {
+            "tipoDte": 3,
+            "codigoGeneracion": "A1234567-89AB-4CDE-8F01-23456789ABCD",
+            "fecEmi": "2024-01-01T08:15:30",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": receptor,
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion="A1234567-89AB-4CDE-8F01-23456789ABCD",
+    )
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["numeroDocumento"] == "A1234567-89AB-4CDE-8F01-23456789ABCD"
+
+
+def test_nr_documento_relacionado_hint_credito(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    codigo = "B1234567-89AB-4CDE-8F01-23456789ABCD"
+    factura = {
+        "identificacion": {
+            "codigoGeneracion": codigo,
+            "fecEmi": "2024-01-01T08:15:30",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": {
+            "tipoDocumento": "13",
+            "numDocumento": "012345678",
+            "nombre": "Consumidor",
+            "bienTitulo": "01",
+            "codActividad": "6201",
+            "descActividad": "Servicios",
+            "telefono": "70000002",
+            "correo": "consumidor@example.com",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "San Salvador",
+            },
+        },
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    _registrar_envio_relacionado(db, codigo_generacion=codigo)
+    data = nota_remision.generar_nota_remision(
+        db,
+        factura=factura,
+        extension=extension,
+        tipo_documento_relacionado_hint="03",
+    )
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+
+
+def test_nr_documento_relacionado_hint_consumidor(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    codigo = "C1234567-89AB-4CDE-8F01-23456789ABCD"
+    factura = {
+        "identificacion": {
+            "codigoGeneracion": codigo,
+            "fecEmi": "2024-01-01T08:15:30",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": {
+            "tipoDocumento": "13",
+            "numDocumento": "012345678",
+            "nombre": "Consumidor",
+            "bienTitulo": "01",
+            "codActividad": "6201",
+            "descActividad": "Servicios",
+            "telefono": "70000002",
+            "correo": "consumidor@example.com",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "San Salvador",
+            },
+        },
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    _registrar_envio_relacionado(db, codigo_generacion=codigo)
+    data = nota_remision.generar_nota_remision(
+        db,
+        factura=factura,
+        extension=extension,
+        tipo_documento_relacionado_hint="01",
+    )
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "01"
+
+
 def test_nr_documento_relacionado_envio_legacy(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")

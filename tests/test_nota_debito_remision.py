@@ -776,11 +776,87 @@ def test_generar_nota_remision_factura(tmp_path, monkeypatch):
 
     data = generar_nota_remision_desde_db(db, nota_id)
     assert data["identificacion"]["tipoDte"] == "04"
-    assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
+    assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
     assert data["extension"]["nombEntrega"] == "Juan"
     assert data["documentoRelacionado"][0]["fechaEmision"] == fecha_envio_iso
     today_str = fecha_emision_hoy_str()
     assert data["identificacion"]["fecEmi"] == today_str
+
+
+def test_generar_nota_remision_desde_db_consumidor_final(monkeypatch):
+    datos = {
+        "nit": "0614-140710-001-2",
+        "nrc": "1234567",
+        "nombre": "Emisor",
+        "nombreComercial": "Emisor",
+        "codActividad": "111111",
+        "descActividad": "Giro",
+        "telefono": "22223456",
+        "correo": "test@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+    monkeypatch.setattr(
+        "nota_remision._verificar_documento_relacionado_recepcionado",
+        lambda _db, _doc: None,
+    )
+
+    codigo = "CF123456-789A-4BCD-8EF0-1234567890AB"
+    factura_stub = {
+        "identificacion": {
+            "codigoGeneracion": codigo,
+            "fecEmi": "2024-01-01T08:15:30",
+        },
+        "emisor": {"nit": "0614-140710-001-2", "nrc": "1234567"},
+        "receptor": {
+            "tipoDocumento": "13",
+            "numDocumento": "012345678",
+            "nombre": "Consumidor",
+            "bienTitulo": "01",
+            "codActividad": "6201",
+            "descActividad": "Servicios",
+            "telefono": "70000002",
+            "correo": "consumidor@example.com",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "San Salvador",
+            },
+        },
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+
+    monkeypatch.setattr(
+        "dte.generar_dte_json",
+        lambda db_obj, venta_id, tipo_dte, ambiente: factura_stub,
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10, vendedor_id=vid)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    extra = {"extension": extension}
+    nota_id = db.agregar_nota(
+        "remision", venta_id, "2024-01-02", 0, "Envio", detalles=extra
+    )
+
+    data = generar_nota_remision_desde_db(db, nota_id)
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "01"
+    assert doc_rel["numeroDocumento"] == codigo
 
 
 def test_nota_debito_pdf(tmp_path):

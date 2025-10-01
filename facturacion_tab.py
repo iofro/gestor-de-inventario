@@ -1669,6 +1669,7 @@ class FacturacionTab(QWidget):
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_evento_contingencia = QPushButton("Evento de contingencia…")
+
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
@@ -3156,8 +3157,10 @@ class FacturacionTab(QWidget):
                     )
 
     def _enviar_evento_contingencia(self) -> None:
+
         dialog = EventoContingenciaDialog(self.manager, self)
         dialog.exec_()
+
 
     def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:
         if not entry:

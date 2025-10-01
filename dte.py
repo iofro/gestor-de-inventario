@@ -5623,6 +5623,30 @@ def _normalize_recepcion_url(raw: str) -> str:
     return f"{pu.scheme}://{host}{path}"
 
 
+def _normalize_evento_url(raw: str | None) -> str:
+    """Normaliza y valida ``raw`` como URL de envío de evento."""
+
+    text = "" if raw is None else str(raw)
+    text = re.sub(r"\s+", "", text.strip())
+    if not text:
+        return DEFAULT_EVENTO_URL
+    if "://" not in text:
+        text = "https://" + text
+    pu = urlparse(text)
+    scheme = pu.scheme or "https"
+    if scheme.lower() not in {"http", "https"}:
+        scheme = "https"
+    host = pu.netloc.lower()
+    path = pu.path or ""
+    if host in {"apitest.dtes.mh.gob.sv", "api.dtes.mh.gob.sv"} and path in ("", "/"):
+        path = "/fesv/contingencia"
+    path = "/" + path.lstrip("/")
+    path = re.sub("/+", "/", path).rstrip("/")
+    if not path:
+        path = "/fesv/contingencia"
+    return f"{scheme}://{host}{path}"
+
+
 def _load_dte_api_config():
     """Carga configuración consolidada para la recepción de DTE."""
     datos = _load_datos_negocio()
@@ -5642,15 +5666,18 @@ def _load_dte_api_config():
 
     ambiente = _norm(dte_api.get("ambiente") or datos.get("ambiente"))
 
-    cfg_recep = cfg_url = cfg_endpoint = None
+    cfg: dict[str, Any] = {}
+    env: dict[str, Any] = {}
+    cfg_recep = cfg_url = cfg_endpoint = cfg_evento = None
     try:
         with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
             cfg = json.load(fh)
         ambiente = _norm(ambiente or cfg.get("ambiente"))
-        env = cfg.get(ambiente or "pruebas", {})
+        env = cfg.get(ambiente or "pruebas", {}) or {}
         cfg_recep = env.get("recepcion_url")
         cfg_url = env.get("url")
         cfg_endpoint = env.get("endpoint")
+        cfg_evento = env.get("evento_contingencia_url")
     except Exception:
         pass
 
@@ -5666,10 +5693,27 @@ def _load_dte_api_config():
         cfg_endpoint,
     )
     url = _normalize_recepcion_url(raw_datos_url or raw_cfg_url)
+    raw_evento = dte_api.get("evento_contingencia_url") or cfg_evento
+    evento_url = _normalize_evento_url(raw_evento)
+
+    nit_config = ""
+    for candidate in (
+        datos.get("nit"),
+        dte_api.get("nit"),
+        env.get("nit") if isinstance(env, dict) else None,
+        (env.get("firma_electronica") or {}).get("nit") if isinstance(env, dict) else None,
+        cfg.get("nit"),
+        (cfg.get("firma_electronica") or {}).get("nit") if isinstance(cfg, dict) else None,
+    ):
+        digits = solo_digitos(candidate) if candidate else ""
+        if digits:
+            nit_config = digits
+            break
+
     logger.info("Recepción configurada → %s", url)
-    print("CFG: AMB=", ambiente, "URL=", url)
-    print("CFG: HAS_MANUAL_TOKEN=", bool(token_configured))
-    return {"ambiente": ambiente, "url": url}
+    if evento_url != DEFAULT_EVENTO_URL:
+        logger.info("Evento contingencia configurado → %s", evento_url)
+    return {"ambiente": ambiente, "url": url, "evento_url": evento_url, "nit": nit_config}
 
 
 def _assert_no_ejemplo(path: str) -> None:
@@ -6095,6 +6139,7 @@ def _post_dte(
 def _post_evento(
     url: str,
     evento: str,
+    nit: str,
     evento_data: dict | None = None,
     user_agent: str | None = None,
     opts: dict | None = None,
@@ -6104,21 +6149,18 @@ def _post_evento(
     ambiente_config: str | None = None,
 ) -> dict:
     pu = urlparse(url)
-    assert pu.netloc in {
-        "apitest.dtes.mh.gob.sv",
-        "api.dtes.mh.gob.sv",
-    }, f"Host inválido: {url}"
-    assert pu.path.rstrip("/") == "/fesv/contingencia", f"Path inválido: {url}"
+    scheme = pu.scheme.lower()
+    if scheme not in {"https", "http"}:
+        raise ValueError(f"URL de evento inválida: {url}")
+    host = pu.netloc
+    if not host:
+        raise ValueError(f"URL de evento inválida: {url}")
 
-    body = {"documento": evento}
-    if evento_data:
-        ident = evento_data.get("identificacion", {})
-        ambiente = ident.get("ambiente")
-        version = ident.get("version")
-        if ambiente:
-            body["ambiente"] = ambiente
-        if version:
-            body["version"] = version
+    nit_digits = solo_digitos(nit)
+    if not nit_digits:
+        raise ValueError("nit requerido para evento")
+
+    body = {"nit": nit_digits, "documento": evento}
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
@@ -7755,13 +7797,44 @@ def enviar_nota_remision(db: DB, nota_id: int, modo: str | None = None) -> dict:
 def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
     """Firma y envía un evento a Hacienda."""
     config = _load_dte_api_config()
-    pu = urlparse(config["url"])
-    url = f"{pu.scheme}://{pu.netloc}/fesv/contingencia"
+    evento_url = config.get("evento_url") or DEFAULT_EVENTO_URL
     signed = jws.sign_json(data)
     ident = data.get("identificacion") or data.get("identificador") or {}
 
+    evento_nit: str | None = None
+    emisor = data.get("emisor")
+    if isinstance(emisor, Mapping):
+        raw_nit = emisor.get("nit")
+        if raw_nit:
+            evento_nit = str(raw_nit)
+    if not evento_nit:
+        raw_cfg_nit = config.get("nit")
+        if raw_cfg_nit:
+            evento_nit = str(raw_cfg_nit)
+    if not evento_nit:
+        try:
+            datos_negocio = _load_datos_negocio()
+        except Exception:
+            datos_negocio = {}
+        if isinstance(datos_negocio, Mapping):
+            raw_datos_nit = datos_negocio.get("nit")
+            if raw_datos_nit:
+                evento_nit = str(raw_datos_nit)
+            if not evento_nit:
+                firma_cfg = datos_negocio.get("firma_electronica")
+                if isinstance(firma_cfg, Mapping):
+                    raw_firma_nit = firma_cfg.get("nit")
+                    if raw_firma_nit:
+                        evento_nit = str(raw_firma_nit)
+
     try:
-        respuesta = _post_evento(url, signed, data, ambiente_config=config.get("ambiente"))
+        respuesta = _post_evento(
+            evento_url,
+            signed,
+            evento_nit or "",
+            data,
+            ambiente_config=config.get("ambiente"),
+        )
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")
@@ -7807,4 +7880,66 @@ def enviar_evento_contingencia(db: DB, evento_id: int, data: dict) -> dict:
 
 def enviar_evento_anulacion(db: DB, evento_id: int, data: dict) -> dict:
     """Envía un evento de anulación."""
-    return _enviar_evento(db, evento_id, data)
+    from collections.abc import Mapping as _Mapping
+
+    try:
+        from anulacion import enviar_invalidacion as _enviar_invalidacion  # type: ignore
+    except Exception as exc:  # pragma: no cover - defensive fallback
+        raise RuntimeError("No se pudo importar el módulo de anulación") from exc
+
+    ident: dict[str, Any] = {}
+    if isinstance(data, _Mapping):
+        ident_value = data.get("identificacion")
+        if isinstance(ident_value, _Mapping):
+            ident = dict(ident_value)
+
+    codigo_generacion = None
+    numero_control = None
+    if isinstance(ident, _Mapping):
+        codigo_generacion = ident.get("codigoGeneracion")
+        numero_control = ident.get("numeroControl")
+
+    try:
+        respuesta = _enviar_invalidacion(db, data)
+    except Exception:
+        db.registrar_envio_dte(
+            evento_id,
+            "evento",
+            "Rechazado",
+            "",
+            codigo_generacion=codigo_generacion,
+            numero_control=numero_control,
+        )
+        raise
+
+    estado = "Transmitido"
+    sello = ""
+    if isinstance(respuesta, _Mapping):
+        estado_raw = (
+            respuesta.get("estado")
+            or respuesta.get("estadoEvento")
+            or respuesta.get("descripcionEstado")
+        )
+        if isinstance(estado_raw, str) and estado_raw.strip():
+            estado = estado_raw.strip()
+        sello_raw = respuesta.get("sello") or respuesta.get("selloRecepcion")
+        if isinstance(sello_raw, str):
+            sello = sello_raw
+
+    db.registrar_envio_dte(
+        evento_id,
+        "evento",
+        estado,
+        sello,
+        respuesta,
+        codigo_generacion=codigo_generacion,
+        numero_control=numero_control,
+    )
+
+    if not isinstance(respuesta, _Mapping):
+        return {"estado": estado, "sello": sello}
+
+    resultado = dict(respuesta)
+    resultado.setdefault("estado", estado)
+    resultado.setdefault("sello", sello)
+    return resultado

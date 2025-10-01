@@ -24,7 +24,7 @@ from utils.stable_json import save_file, stable_stringify
 import dte
 
 
-_ALLOWED_DOC_TYPES = {"01", "03", "04", "05", "06"}
+_ALLOWED_DOC_TYPES = {"01", "03", "04", "05", "06", "11", "14", "15"}
 
 
 @dataclass(slots=True)

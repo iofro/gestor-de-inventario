@@ -8,6 +8,7 @@ from PyQt5.QtWidgets import (
     QFileDialog,
     QInputDialog,
     QMessageBox,
+    QApplication,
     QLineEdit,
     QDateEdit,
     QDateTimeEdit,
@@ -36,6 +37,7 @@ import logging
 import glob
 import hashlib
 from pathlib import Path
+from typing import Any, Mapping
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -93,7 +95,6 @@ from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
 from utils.fecha import TZ_EL_SALVADOR
 from utils.stable_json import stable_stringify
 from evento_contingencia import (
-    build_evento_contingencia,
     collect_contingencia_dtes,
     make_event_filename,
     save_evento_contingencia_json,
@@ -1126,6 +1127,10 @@ class EventoContingenciaDialog(QDialog):
             "Guardar…", QDialogButtonBox.ActionRole
         )
         self.save_btn.setEnabled(False)
+        self.btn_enviar_evento = self.button_box.addButton(
+            "Enviar a Hacienda", QDialogButtonBox.ActionRole
+        )
+        self.btn_enviar_evento.setEnabled(False)
         self.button_box.rejected.connect(self.reject)
         layout.addWidget(self.button_box)
 
@@ -1142,6 +1147,7 @@ class EventoContingenciaDialog(QDialog):
         self.motivo_edit.textChanged.connect(self._on_motivo_changed)
         self.generate_btn.clicked.connect(self._on_generate_clicked)
         self.save_btn.clicked.connect(self._on_save_clicked)
+        self.btn_enviar_evento.clicked.connect(self._on_enviar_evento_clicked)
 
     @staticmethod
     def _to_qdatetime(value: datetime) -> QDateTime:
@@ -1380,6 +1386,7 @@ class EventoContingenciaDialog(QDialog):
         else:
             self._apply_errors({})
         self._update_save_button()
+        self._update_send_button()
         return errors, first_key
 
     def _update_preview(self) -> None:
@@ -1400,6 +1407,168 @@ class EventoContingenciaDialog(QDialog):
     def _update_save_button(self) -> None:
         can_save = self.evento_listo and self._current_payload is not None
         self.save_btn.setEnabled(bool(can_save))
+
+    def _preview_evento_dict(self) -> dict | None:
+        if self._current_payload is not None:
+            return self._current_payload
+        return self._build_event_payload(show_errors=False)
+
+    def _update_send_button(self) -> None:
+        if not hasattr(self, "btn_enviar_evento"):
+            return
+        try:
+            payload = self._preview_evento_dict()
+        except Exception:
+            payload = None
+        self.btn_enviar_evento.setEnabled(self._is_payload_valid_for_send(payload))
+
+    def _is_payload_valid_for_send(self, payload: Mapping[str, Any] | None) -> bool:
+        if not isinstance(payload, Mapping):
+            return False
+
+        ident = payload.get("identificacion")
+        if not isinstance(ident, Mapping):
+            return False
+        version = str(ident.get("version") or "").strip()
+        if version != "3":
+            return False
+
+        detalle = payload.get("detalleDTE")
+        if not isinstance(detalle, list) or not (1 <= len(detalle) <= self.EVENTO_MAX_DTES):
+            return False
+        for item in detalle:
+            if not isinstance(item, Mapping):
+                return False
+            codigo = str(item.get("codigoGeneracion") or "").strip()
+            tipo = str(item.get("tipoDoc") or "").strip()
+            if not codigo or not tipo:
+                return False
+
+        motivo = payload.get("motivo")
+        if not isinstance(motivo, Mapping):
+            return False
+        raw_tipo = motivo.get("tipoContingencia", motivo.get("tipo"))
+        try:
+            tipo_val = int(str(raw_tipo))
+        except Exception:
+            tipo_val = None
+        if tipo_val not in {1, 2, 3, 4, 5}:
+            return False
+        if tipo_val == 5:
+            motivo_text = motivo.get("motivoContingencia", motivo.get("motivo"))
+            if not isinstance(motivo_text, str) or not motivo_text.strip():
+                return False
+
+        emisor = payload.get("emisor")
+        if not isinstance(emisor, Mapping):
+            return False
+        nit_text = str(emisor.get("nit") or "").strip()
+        nit_digits = solo_digitos(nit_text)
+        if not nit_digits or len(nit_digits) not in {9, 14}:
+            return False
+
+        return True
+
+    def _format_observaciones_text(self, resp: Mapping[str, Any] | None) -> str:
+        if not isinstance(resp, Mapping):
+            return ""
+
+        textos = []
+        textos.extend(_gather_rejection_texts(resp.get("observaciones")))
+
+        detalle = resp.get("detalle")
+        if detalle is not None:
+            textos.extend(_gather_rejection_texts(detalle))
+
+        errores = resp.get("errores")
+        if errores is not None:
+            textos.extend(_gather_rejection_texts(errores))
+
+        cleaned: list[str] = []
+        seen: set[str] = set()
+        for texto in textos:
+            text = str(texto).strip()
+            if text and text not in seen:
+                cleaned.append(text)
+                seen.add(text)
+        if not cleaned:
+            return ""
+        formatted = "\n".join(f"- {line}" for line in cleaned)
+        return f"Observaciones:\n{formatted}"
+
+    def _get_or_create_evento_id(self, payload: Mapping[str, Any]) -> int:
+        db = getattr(getattr(self, "manager", None), "db", None)
+        codigo = ""
+        ident = payload.get("identificacion") if isinstance(payload, Mapping) else None
+        if isinstance(ident, Mapping):
+            codigo = str(ident.get("codigoGeneracion") or "").strip().upper()
+
+        if db is not None and codigo:
+            try:
+                db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+            except Exception:
+                pass
+            try:
+                row = db.cursor.execute(
+                    """
+                    SELECT venta_id
+                    FROM dte_envios
+                    WHERE modo=? AND codigo_generacion=? AND venta_id IS NOT NULL
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    ("evento", codigo),
+                ).fetchone()
+            except Exception:
+                row = None
+            if row:
+                existing = row[0] if isinstance(row, tuple) else row["venta_id"]
+                if isinstance(existing, int) and existing:
+                    return int(existing)
+
+        candidate = self._generate_evento_id_from_payload(payload)
+
+        if db is not None:
+            try:
+                while self._evento_id_exists(db, candidate):
+                    candidate = (candidate + 1) % 2_000_000_000 or 1
+            except Exception:
+                pass
+
+        return candidate
+
+    def _generate_evento_id_from_payload(self, payload: Mapping[str, Any]) -> int:
+        ident = payload.get("identificacion") if isinstance(payload, Mapping) else None
+        if isinstance(ident, Mapping):
+            codigo = str(ident.get("codigoGeneracion") or "").strip()
+            if codigo:
+                try:
+                    value = uuid.UUID(codigo).int % 2_000_000_000
+                    if value:
+                        return value
+                except Exception:
+                    digits = solo_digitos(codigo)
+                    if digits:
+                        try:
+                            return int(digits[-9:])
+                        except Exception:
+                            pass
+
+        timestamp = datetime.now(TZ_EL_SALVADOR).timestamp()
+        candidate = int(timestamp * 1000) % 2_000_000_000
+        return candidate or 1
+
+    @staticmethod
+    def _evento_id_exists(db: Any, candidate: int) -> bool:
+        if db is None:
+            return False
+        try:
+            row = db.cursor.execute(
+                "SELECT 1 FROM dte_envios WHERE venta_id=? LIMIT 1",
+                (candidate,),
+            ).fetchone()
+        except Exception:
+            return False
+        return row is not None
 
     def _update_motivo_counter(self) -> None:
         texto = self.motivo_edit.toPlainText()
@@ -1436,6 +1605,7 @@ class EventoContingenciaDialog(QDialog):
             self.draft_message_label.setVisible(False)
             self._update_preview()
             self._update_save_button()
+            self._update_send_button()
 
     def _on_generate_clicked(self) -> None:
         self._validation_active = True
@@ -1458,8 +1628,9 @@ class EventoContingenciaDialog(QDialog):
         self.draft_message_label.setVisible(True)
         self._update_preview()
         self._update_save_button()
+        self._update_send_button()
 
-    def _build_event_payload(self) -> dict | None:
+    def _build_event_payload(self, *, show_errors: bool = True) -> dict | None:
         tipo = self._current_tipo()
         inicio_raw = self._to_py_datetime(self.inicio_edit.dateTime())
         fin_raw = self._to_py_datetime(self.fin_edit.dateTime())
@@ -1467,23 +1638,60 @@ class EventoContingenciaDialog(QDialog):
         fin_dt = self._normalize_range_input(fin_raw)
         if tipo is None or inicio_dt is None or fin_dt is None:
             return None
+
+        detalle = self._build_detalle_items()
+        if not detalle:
+            return None
+
+        if fin_dt < inicio_dt:
+            inicio_dt, fin_dt = fin_dt, inicio_dt
+
         motivo = self._current_motivo() if tipo == 5 else None
+
         try:
-            return build_evento_contingencia(
+            payload = dte.generar_evento_contingencia(
+                detalle,
+                f_inicio=inicio_dt.strftime("%Y-%m-%d"),
+                f_fin=fin_dt.strftime("%Y-%m-%d"),
+                h_inicio=inicio_dt.strftime("%H:%M:%S"),
+                h_fin=fin_dt.strftime("%H:%M:%S"),
                 tipo_contingencia=tipo,
-                motivo=motivo,
-                f_inicio=inicio_dt,
-                f_fin=fin_dt,
-                dtes=self._filtered_dtes,
+                motivo_contingencia=motivo,
             )
         except Exception as exc:
             logger.exception("Error al construir el evento de contingencia")
-            QMessageBox.critical(
-                self,
-                "Error al generar",
-                f"No se pudo generar el borrador del evento:\n{exc}",
-            )
+            if show_errors:
+                QMessageBox.critical(
+                    self,
+                    "Error al generar",
+                    f"No se pudo generar el borrador del evento:\n{exc}",
+                )
             return None
+
+        return payload
+
+    def _build_detalle_items(self) -> list[dict[str, str]]:
+        detalle: list[dict[str, str]] = []
+        for entry in self._filtered_dtes[: self.EVENTO_MAX_DTES]:
+            codigo = entry.get("codigoGeneracion") or entry.get("codigo")
+            tipo_doc = (
+                entry.get("tipoDoc")
+                or entry.get("tipoDte")
+                or entry.get("tipoDocumento")
+            )
+            if not codigo or not tipo_doc:
+                continue
+            codigo_text = str(codigo).strip().upper()
+            tipo_text = str(tipo_doc).zfill(2)
+            if not codigo_text or not tipo_text:
+                continue
+            detalle.append(
+                {
+                    "codigoGeneracion": codigo_text,
+                    "tipoDoc": tipo_text,
+                }
+            )
+        return detalle
 
     def _on_save_clicked(self) -> None:
         if not self._current_payload:
@@ -1546,6 +1754,134 @@ class EventoContingenciaDialog(QDialog):
             QDesktopServices.openUrl(
                 QUrl.fromLocalFile(str(Path(saved_path).parent))
             )
+
+    def _on_enviar_evento_clicked(self) -> None:
+        self._validation_active = True
+        errors, first_key = self._update_action_state()
+        if errors:
+            if first_key:
+                self._focus_field(first_key)
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "Completa los campos requeridos antes de enviar.",
+            )
+            return
+
+        payload = self._build_event_payload(show_errors=True)
+        if payload is None:
+            self._update_send_button()
+            return
+
+        if not self._is_payload_valid_for_send(payload):
+            QMessageBox.warning(
+                self,
+                "Evento de contingencia",
+                "El evento generado no cumple con los requisitos mínimos.",
+            )
+            self._update_send_button()
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Enviar Evento",
+            "¿Enviar el Evento de Contingencia a Hacienda?",
+        )
+        if confirm != QMessageBox.Yes:
+            self._update_send_button()
+            return
+
+        try:
+            evento_id = self._get_or_create_evento_id(payload)
+        except Exception as exc:
+            logger.exception("No se pudo preparar el ID del evento", exc_info=exc)
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                "No se pudo preparar un identificador válido para el evento.",
+            )
+            self._update_send_button()
+            return
+
+        db = getattr(self.manager, "db", None)
+        if db is None:
+            QMessageBox.critical(
+                self,
+                "Evento de contingencia",
+                "No se encontró la conexión a la base de datos.",
+            )
+            self._update_send_button()
+            return
+
+        self.btn_enviar_evento.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.WaitCursor)
+        try:
+            resp = dte.enviar_evento_contingencia(db, evento_id, payload)
+        except Exception as exc:
+            logger.exception("Error al enviar evento de contingencia", exc_info=exc)
+            QMessageBox.critical(
+                self,
+                "Enviar a Hacienda",
+                str(exc),
+            )
+            resp = None
+        finally:
+            QApplication.restoreOverrideCursor()
+            self._update_send_button()
+
+        if not isinstance(resp, dict):
+            return
+
+        estado = str(resp.get("estado") or "").strip()
+        sello = str(resp.get("sello") or "").strip()
+        obs_text = self._format_observaciones_text(resp)
+
+        estado_ok = estado.lower() in {"recibido", "aceptado", "procesado"}
+
+        if estado_ok and sello:
+            partes = [f"Estado: {estado}"]
+            if sello:
+                partes.append(f"Sello: {sello}")
+            if obs_text:
+                partes.append(obs_text)
+            QMessageBox.information(
+                self,
+                "Evento enviado",
+                "\n\n".join(partes),
+            )
+            return
+
+        detalle = resp.get("detalle")
+        errores = resp.get("errores")
+
+        partes = [f"Estado: {estado or 'Desconocido'}"]
+        if sello:
+            partes.append(f"Sello: {sello}")
+
+        if detalle:
+            textos = _gather_rejection_texts(detalle)
+            if textos:
+                partes.append("\n".join(textos))
+            else:
+                partes.append(str(detalle))
+
+        if errores:
+            textos = _gather_rejection_texts(errores)
+            if textos:
+                partes.append(
+                    "Errores:\n" + "\n".join(f"- {line}" for line in textos if line.strip())
+                )
+            else:
+                partes.append(str(errores))
+
+        if obs_text:
+            partes.append(obs_text)
+
+        QMessageBox.warning(
+            self,
+            "Evento no aceptado",
+            "\n\n".join(partes),
+        )
 
 
 class FacturacionTab(QWidget):

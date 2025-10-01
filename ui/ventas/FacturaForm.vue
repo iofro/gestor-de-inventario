@@ -14,14 +14,25 @@
     </section>
 
     <section v-if="isContingencia" class="contingencia-panel">
-      <button
-        type="button"
-        class="configurar-contingencia"
-        ref="contingenciaButton"
-        @click="openContingenciaDialog"
-      >
-        Configurar contingencia…
-      </button>
+      <div class="contingencia-actions">
+        <button
+          type="button"
+          class="configurar-contingencia"
+          ref="contingenciaButton"
+          @click="openContingenciaDialog"
+        >
+          Configurar contingencia…
+        </button>
+        <button
+          type="button"
+          class="evento-trigger"
+          :disabled="!hasPendingContingencia"
+          :title="eventoTriggerTooltip"
+          @click="openEventoPanel"
+        >
+          Evento de contingencia
+        </button>
+      </div>
       <div class="contingencia-resumen" aria-live="polite">
         <span v-if="contingenciaSummary" class="chip">
           {{ contingenciaSummary }}
@@ -46,6 +57,172 @@
       {{ saveErrorMessage }}
     </section>
 
+    <section
+      v-if="eventoPanelVisible"
+      class="evento-panel"
+      aria-label="Borrador de evento de contingencia"
+    >
+      <header class="evento-header">
+        <h2>Evento de contingencia</h2>
+        <p class="helper">Zona horaria: America/El_Salvador (UTC-6)</p>
+      </header>
+
+      <div class="panel-section">
+        <h3>Datos del evento</h3>
+        <div :class="['field-group', { error: eventoErrors.tipo }]">
+          <label for="evento-tipo">Tipo (CAT-005)</label>
+          <select
+            id="evento-tipo"
+            ref="eventoTipo"
+            v-model.number="eventoForm.tipo"
+            :aria-invalid="eventoErrors.tipo ? 'true' : 'false'"
+            :aria-describedby="eventoErrors.tipo ? 'evento-tipo-error' : undefined"
+          >
+            <option disabled value="">Selecciona una opción</option>
+            <option
+              v-for="option in CONTINGENCIA_OPTIONS"
+              :key="`evento-${option.value}`"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <p v-if="eventoErrors.tipo" id="evento-tipo-error" class="error-message">
+            {{ eventoErrors.tipo }}
+          </p>
+        </div>
+
+        <div
+          v-if="eventoRequiresMotivo"
+          :class="['field-group', { error: eventoErrors.motivo }]"
+        >
+          <label for="evento-motivo">Motivo</label>
+          <textarea
+            id="evento-motivo"
+            ref="eventoMotivo"
+            v-model="eventoForm.motivo"
+            @input="enforceEventoMotivoLimit"
+            rows="3"
+            :maxlength="500"
+            :aria-invalid="eventoErrors.motivo ? 'true' : 'false'"
+            :aria-describedby="eventoErrors.motivo ? 'evento-motivo-error' : undefined"
+          ></textarea>
+          <div class="field-footer">
+            <span class="counter">{{ eventoMotivoLength }}/500</span>
+          </div>
+          <p
+            v-if="eventoErrors.motivo"
+            id="evento-motivo-error"
+            class="error-message"
+          >
+            {{ eventoErrors.motivo }}
+          </p>
+        </div>
+
+        <div :class="['field-group', { error: eventoErrors.inicio }]">
+          <label for="evento-inicio-fecha">Fecha y hora de inicio</label>
+          <div class="inputs">
+            <input
+              id="evento-inicio-fecha"
+              ref="eventoInicioFecha"
+              v-model="eventoForm.inicioFecha"
+              type="date"
+              :aria-invalid="eventoErrors.inicio ? 'true' : 'false'"
+              :aria-describedby="eventoErrors.inicio ? 'evento-inicio-error' : undefined"
+            />
+            <input
+              id="evento-inicio-hora"
+              ref="eventoInicioHora"
+              v-model="eventoForm.inicioHora"
+              type="time"
+              :aria-invalid="eventoErrors.inicio ? 'true' : 'false'"
+              :aria-describedby="eventoErrors.inicio ? 'evento-inicio-error' : undefined"
+            />
+          </div>
+          <p
+            v-if="eventoErrors.inicio"
+            id="evento-inicio-error"
+            class="error-message"
+          >
+            {{ eventoErrors.inicio }}
+          </p>
+        </div>
+
+        <div :class="['field-group', { error: eventoErrors.fin }]">
+          <label for="evento-fin-fecha">Fecha y hora de fin</label>
+          <div class="inputs">
+            <input
+              id="evento-fin-fecha"
+              ref="eventoFinFecha"
+              v-model="eventoForm.finFecha"
+              type="date"
+              :aria-invalid="eventoErrors.fin ? 'true' : 'false'"
+              :aria-describedby="eventoErrors.fin ? 'evento-fin-error' : undefined"
+            />
+            <input
+              id="evento-fin-hora"
+              ref="eventoFinHora"
+              v-model="eventoForm.finHora"
+              type="time"
+              :aria-invalid="eventoErrors.fin ? 'true' : 'false'"
+              :aria-describedby="eventoErrors.fin ? 'evento-fin-error' : undefined"
+            />
+          </div>
+          <p v-if="eventoErrors.fin" id="evento-fin-error" class="error-message">
+            {{ eventoErrors.fin }}
+          </p>
+        </div>
+      </div>
+
+      <div class="panel-section revision">
+        <h3>Revisión</h3>
+        <p class="counter">{{ pendingDtes.length }} DTE pendientes</p>
+        <p v-if="pendingDtes.length > 1000" class="info warning">
+          Máximo 1000 por evento. Se deberá dividir en varios eventos.
+        </p>
+        <p v-if="eventoErrors.dtes" class="error-message">
+          {{ eventoErrors.dtes }}
+        </p>
+        <ul
+          ref="eventoDteList"
+          class="dte-list"
+          tabindex="-1"
+          aria-label="Listado de DTE pendientes"
+        >
+          <li v-for="dte in eventoDetalleLimit" :key="dte.codigoGeneracion">
+            {{ formatCodigoGeneracion(dte.codigoGeneracion) }} —
+            {{ formatTipoDocumento(dte.tipoDocumento) }}
+          </li>
+        </ul>
+        <p class="counter">
+          Mostrando {{ eventoDetalleLimit.length }} de {{ pendingDtes.length }} (máx. 1000)
+        </p>
+        <h4>Previsualización (JSON)</h4>
+        <pre class="json-preview">{{ eventoPreview }}</pre>
+      </div>
+
+      <section
+        v-if="eventoDraftMessage"
+        class="status success"
+        role="status"
+        aria-live="polite"
+      >
+        {{ eventoDraftMessage }}
+      </section>
+
+      <footer class="panel-actions">
+        <button
+          type="button"
+          class="primary"
+          :disabled="!eventoIsValid"
+          @click="generarEventoBorrador"
+        >
+          Generar borrador
+        </button>
+        <button type="button" @click="closeEventoPanel">Cerrar</button>
+      </footer>
+    </section>
+
     <div class="actions">
       <button
         class="guardar"
@@ -53,13 +230,6 @@
         @click="onSave"
       >
         Guardar y Enviar
-      </button>
-      <button
-        v-if="hasPendingContingencia"
-        class="evento"
-        @click="openEventoDialog"
-      >
-        Crear Evento de Contingencia
       </button>
     </div>
 
@@ -94,176 +264,6 @@
       :initial-config="contingenciaDialogInitial"
       @confirm="handleContingenciaConfirm"
     />
-
-    <div v-if="eventoVisible" class="evento-dialog">
-      <div class="evento-content">
-        <header>
-          <h2>Evento de Contingencia</h2>
-          <button class="cerrar" type="button" @click="closeEventoDialog">×</button>
-        </header>
-        <section v-if="eventoStep === 1" class="evento-step">
-          <h3>Paso 1: Datos del evento</h3>
-          <p class="helper">Zona horaria: America/El_Salvador (UTC-6)</p>
-          <div :class="['field-group', { error: eventoErrors.inicio }]">
-            <label>Fecha y hora de inicio</label>
-            <div class="inputs">
-              <input
-                type="date"
-                ref="eventoInicioFecha"
-                v-model="eventoForm.inicioFecha"
-                :aria-invalid="eventoErrors.inicio ? 'true' : 'false'"
-                :aria-describedby="
-                  eventoErrors.inicio ? 'evento-inicio-error' : undefined
-                "
-              />
-              <input
-                type="time"
-                ref="eventoInicioHora"
-                v-model="eventoForm.inicioHora"
-                :aria-invalid="eventoErrors.inicio ? 'true' : 'false'"
-                :aria-describedby="
-                  eventoErrors.inicio ? 'evento-inicio-error' : undefined
-                "
-              />
-            </div>
-            <p
-              v-if="eventoErrors.inicio"
-              id="evento-inicio-error"
-              class="error-message"
-            >
-              {{ eventoErrors.inicio }}
-            </p>
-          </div>
-          <div :class="['field-group', { error: eventoErrors.fin }]">
-            <label>Fecha y hora de fin</label>
-            <div class="inputs">
-              <input
-                type="date"
-                ref="eventoFinFecha"
-                v-model="eventoForm.finFecha"
-                :aria-invalid="eventoErrors.fin ? 'true' : 'false'"
-                :aria-describedby="
-                  eventoErrors.fin ? 'evento-fin-error' : undefined
-                "
-              />
-              <input
-                type="time"
-                ref="eventoFinHora"
-                v-model="eventoForm.finHora"
-                :aria-invalid="eventoErrors.fin ? 'true' : 'false'"
-                :aria-describedby="
-                  eventoErrors.fin ? 'evento-fin-error' : undefined
-                "
-              />
-            </div>
-            <p
-              v-if="eventoErrors.fin"
-              id="evento-fin-error"
-              class="error-message"
-            >
-              {{ eventoErrors.fin }}
-            </p>
-          </div>
-          <div :class="['field-group', { error: eventoErrors.tipo }]">
-            <label for="evento-tipo">Tipo (CAT-005)</label>
-            <select
-              id="evento-tipo"
-              ref="eventoTipo"
-              v-model.number="eventoForm.tipo"
-              :aria-invalid="eventoErrors.tipo ? 'true' : 'false'"
-              :aria-describedby="
-                eventoErrors.tipo ? 'evento-tipo-error' : undefined
-              "
-            >
-              <option disabled value="">Selecciona una opción</option>
-              <option
-                v-for="option in CONTINGENCIA_OPTIONS"
-                :key="`evento-${option.value}`"
-                :value="option.value"
-              >
-                {{ option.label }}
-              </option>
-            </select>
-            <p
-              v-if="eventoErrors.tipo"
-              id="evento-tipo-error"
-              class="error-message"
-            >
-              {{ eventoErrors.tipo }}
-            </p>
-          </div>
-          <div
-            v-if="eventoRequiresMotivo"
-            :class="['field-group', { error: eventoErrors.motivo }]"
-          >
-            <label for="evento-motivo">Motivo</label>
-            <textarea
-              id="evento-motivo"
-              ref="eventoMotivo"
-              v-model="eventoForm.motivo"
-              @input="enforceEventoMotivoLimit"
-              rows="3"
-              :aria-invalid="eventoErrors.motivo ? 'true' : 'false'"
-              :aria-describedby="
-                eventoErrors.motivo ? 'evento-motivo-error' : undefined
-              "
-            ></textarea>
-            <div class="field-footer">
-              <span class="counter">{{ eventoMotivoLength }}/500</span>
-            </div>
-            <p
-              v-if="eventoErrors.motivo"
-              id="evento-motivo-error"
-              class="error-message"
-            >
-              {{ eventoErrors.motivo }}
-            </p>
-          </div>
-          <footer class="dialog-actions">
-            <button type="button" @click="closeEventoDialog">Cancelar</button>
-            <button type="button" class="primary" @click="continuarEvento">
-              Continuar
-            </button>
-          </footer>
-        </section>
-        <section v-else class="evento-step">
-          <h3>Paso 2: DTE pendientes</h3>
-          <p>Total de DTE: {{ pendingDtes.length }}</p>
-          <p v-if="pendingDtes.length > 1000" class="info">
-            Se generarán hasta 1000 DTE por evento. Divide el envío en varios eventos si es necesario.
-          </p>
-          <p class="counter">Mostrando {{ eventoDetalleLimit.length }} de {{ pendingDtes.length }} (máx. 1000)</p>
-          <button
-            type="button"
-            class="copy-codes"
-            @click="copyEventoCodigos"
-          >
-            Copiar códigos
-          </button>
-          <p
-            v-if="eventoCopyMessage"
-            class="copy-status"
-            role="status"
-            aria-live="polite"
-          >
-            {{ eventoCopyMessage }}
-          </p>
-          <ul class="dte-list">
-            <li v-for="dte in eventoDetalleLimit" :key="dte.codigoGeneracion">
-              {{ dte.codigoGeneracion }} — {{ dte.tipoDocumento }}
-            </li>
-          </ul>
-          <h4>Previsualización del evento (JSON)</h4>
-          <pre class="json-preview">{{ eventoPreview }}</pre>
-          <footer class="dialog-actions">
-            <button type="button" @click="volverEvento">Volver</button>
-            <button type="button" class="primary" @click="closeEventoDialog">
-              Cerrar
-            </button>
-          </footer>
-        </section>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -301,6 +301,7 @@ interface FacturaConfig {
   tipoContingencia?: ContingenciaOptionValue | null;
   motivoContingencia?: string | null;
   pendientesContingencia?: PendingDte[];
+  ambiente?: string | null;
 }
 
 interface ContingenciaConfigState {
@@ -408,7 +409,6 @@ function applyConfigFromProps(config: FacturaConfig) {
 }
 
 const isSaveDisabled = computed(() => false);
-const eventoCopyMessage = ref('');
 
 watch(modoTransmision, async (newValue, oldValue) => {
   if (isProgrammaticModoChange.value) {
@@ -526,55 +526,111 @@ function handleContingenciaConfirm({
   contingenciaDialogVisible.value = false;
   saveErrorMessage.value = '';
 }
+const eventoPanelVisible = ref(false);
+const eventoDraftMessage = ref('');
 
-function openEventoDialog() {
-  eventoVisible.value = true;
-  eventoStep.value = 1;
-  resetEvento();
+type EventoTipo = ContingenciaOptionValue | null;
+interface EventoFormState {
+  tipo: EventoTipo;
+  motivo: string;
+  inicioFecha: string;
+  inicioHora: string;
+  finFecha: string;
+  finHora: string;
 }
 
-function closeEventoDialog() {
-  eventoVisible.value = false;
-  eventoCopyMessage.value = '';
-}
+type EventoErrorField = 'tipo' | 'motivo' | 'inicio' | 'fin' | 'dtes';
 
-function volverEvento() {
-  eventoStep.value = 1;
-  eventoCopyMessage.value = '';
-}
-
-const eventoVisible = ref(false);
-const eventoStep = ref<1 | 2>(1);
-const eventoForm = reactive({
+const eventoForm = reactive<EventoFormState>({
+  tipo: contingenciaConfig.tipo ?? null,
+  motivo:
+    contingenciaConfig.tipo === 5
+      ? contingenciaConfig.motivo.trim()
+      : '',
   inicioFecha: '',
   inicioHora: '',
   finFecha: '',
-  finHora: '',
-  tipo: '' as number | '',
-  motivo: ''
-});
-const eventoErrors = reactive({
-  inicio: '',
-  fin: '',
-  tipo: '',
-  motivo: ''
+  finHora: ''
 });
 
+const eventoErrors = reactive<Record<EventoErrorField, string>>({
+  tipo: '',
+  motivo: '',
+  inicio: '',
+  fin: '',
+  dtes: ''
+});
+
+const eventoValidationActive = ref(false);
+
+const eventoTipo = ref<HTMLSelectElement>();
+const eventoMotivo = ref<HTMLTextAreaElement>();
 const eventoInicioFecha = ref<HTMLInputElement>();
 const eventoInicioHora = ref<HTMLInputElement>();
 const eventoFinFecha = ref<HTMLInputElement>();
 const eventoFinHora = ref<HTMLInputElement>();
-const eventoTipo = ref<HTMLSelectElement>();
-const eventoMotivo = ref<HTMLTextAreaElement>();
+const eventoDteList = ref<HTMLUListElement>();
 
 const eventoRequiresMotivo = computed(() => eventoForm.tipo === 5);
 const eventoMotivoLength = computed(() => eventoForm.motivo.length);
+const eventoTriggerTooltip = computed(() => {
+  if (!hasPendingContingencia.value) {
+    return 'No hay DTE pendientes en contingencia.';
+  }
+  return undefined;
+});
+
+const eventoDetalleLimit = computed(() => pendingDtes.value.slice(0, 1000));
+
+const ambienteTexto = computed(
+  () => props.config?.ambiente?.trim() || 'DESCONOCIDO'
+);
+
+const eventoIsValid = computed(() => collectEventoErrors().firstInvalid === null);
+
+const eventoPreview = computed(() => {
+  if (!eventoPanelVisible.value) {
+    return '';
+  }
+  const detalle = eventoDetalleLimit.value.map((dte, index) => ({
+    noItem: index + 1,
+    codigoGeneracion: formatCodigoGeneracion(dte.codigoGeneracion),
+    tipoDoc: sanitizeTipoDoc(dte.tipoDocumento)
+  }));
+  const motivoDescripcion = eventoRequiresMotivo.value
+    ? eventoForm.motivo.trim()
+    : CONTINGENCIA_OPTIONS.find((o) => o.value === eventoForm.tipo)?.label ?? '';
+  const { date: fechaTransmision, time: horaTransmision } =
+    getNowInElSalvador();
+  const payload = {
+    identificacion: {
+      version: 3,
+      ambiente: ambienteTexto.value,
+      codigoGeneracion: 'xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx',
+      fTransmision: fechaTransmision,
+      hTransmision: horaTransmision
+    },
+    motivo: {
+      tipo: eventoForm.tipo ?? null,
+      motivo: motivoDescripcion,
+      fInicio: eventoForm.inicioFecha || '----',
+      hInicio: eventoForm.inicioHora || '--:--',
+      fFin: eventoForm.finFecha || '----',
+      hFin: eventoForm.finHora || '--:--'
+    },
+    detalleDTE: detalle
+  };
+  return JSON.stringify(payload, null, 2);
+});
 
 watch(
   () => eventoForm.tipo,
-  (newValue) => {
-    if (newValue !== 5) {
+  (value) => {
+    if (value !== 5) {
       eventoForm.motivo = '';
+    }
+    if (eventoValidationActive.value) {
+      refreshEventoValidation();
     }
   }
 );
@@ -585,8 +641,69 @@ watch(
     if (value.length > 500) {
       eventoForm.motivo = value.slice(0, 500);
     }
+    if (eventoValidationActive.value) {
+      refreshEventoValidation();
+    }
   }
 );
+
+watch(
+  () => [
+    eventoForm.inicioFecha,
+    eventoForm.inicioHora,
+    eventoForm.finFecha,
+    eventoForm.finHora
+  ],
+  () => {
+    if (eventoValidationActive.value) {
+      refreshEventoValidation();
+    }
+  }
+);
+
+watch(
+  () => pendingDtes.value.length,
+  () => {
+    if (eventoValidationActive.value) {
+      refreshEventoValidation();
+    }
+  }
+);
+
+function openEventoPanel() {
+  if (!hasPendingContingencia.value) {
+    return;
+  }
+  eventoPanelVisible.value = true;
+  eventoDraftMessage.value = '';
+  eventoValidationActive.value = true;
+  eventoForm.tipo = contingenciaConfig.tipo ?? null;
+  eventoForm.motivo =
+    eventoForm.tipo === 5 ? contingenciaConfig.motivo.trim() : '';
+  eventoForm.inicioFecha = '';
+  eventoForm.inicioHora = '';
+  eventoForm.finFecha = '';
+  eventoForm.finHora = '';
+  clearEventoErrors();
+  nextTick(() => {
+    refreshEventoValidation({ focus: true });
+  });
+}
+
+function closeEventoPanel() {
+  eventoPanelVisible.value = false;
+  eventoDraftMessage.value = '';
+  eventoValidationActive.value = false;
+  clearEventoErrors();
+}
+
+function generarEventoBorrador() {
+  const { isValid } = refreshEventoValidation({ focus: true });
+  if (!isValid) {
+    return;
+  }
+  eventoDraftMessage.value = 'Borrador generado (solo UI).';
+}
 
 function enforceEventoMotivoLimit() {
   if (eventoForm.motivo.length > 500) {
@@ -594,134 +711,151 @@ function enforceEventoMotivoLimit() {
   }
 }
 
-function resetEvento() {
-  eventoForm.inicioFecha = '';
-  eventoForm.inicioHora = '';
-  eventoForm.finFecha = '';
-  eventoForm.finHora = '';
-  eventoForm.tipo = '';
-  eventoForm.motivo = '';
-  eventoErrors.inicio = '';
-  eventoErrors.fin = '';
-  eventoErrors.tipo = '';
-  eventoErrors.motivo = '';
-  eventoCopyMessage.value = '';
+function clearEventoErrors() {
+  (Object.keys(eventoErrors) as EventoErrorField[]).forEach((key) => {
+    eventoErrors[key] = '';
+  });
 }
 
-function continuarEvento() {
-  eventoErrors.inicio = '';
-  eventoErrors.fin = '';
-  eventoErrors.tipo = '';
-  eventoErrors.motivo = '';
+function refreshEventoValidation({ focus = false } = {}) {
+  const { errors, firstInvalid, isValid } = collectEventoErrors();
+  (Object.keys(eventoErrors) as EventoErrorField[]).forEach((key) => {
+    eventoErrors[key] = errors[key] ?? '';
+  });
+  if (focus && firstInvalid) {
+    focusEventoField(firstInvalid);
+  }
+  return { isValid };
+}
 
-  const inicioCompleto =
-    eventoForm.inicioFecha && eventoForm.inicioHora
-      ? new Date(`${eventoForm.inicioFecha}T${eventoForm.inicioHora}`)
-      : null;
-  const finCompleto =
-    eventoForm.finFecha && eventoForm.finHora
-      ? new Date(`${eventoForm.finFecha}T${eventoForm.finHora}`)
-      : null;
+function collectEventoErrors(): {
+  errors: Partial<Record<EventoErrorField, string>>;
+  firstInvalid: EventoErrorField | null;
+  isValid: boolean;
+} {
+  const errors: Partial<Record<EventoErrorField, string>> = {};
+  let firstInvalid: EventoErrorField | null = null;
 
-  if (!eventoForm.inicioFecha || !eventoForm.inicioHora) {
-    eventoErrors.inicio = 'Completa la fecha y hora de inicio.';
+  const tipoVal = eventoForm.tipo;
+  if (tipoVal === null || Number.isNaN(tipoVal) || tipoVal < 1 || tipoVal > 5) {
+    errors.tipo = 'Selecciona un tipo de contingencia (CAT-005).';
+    firstInvalid = firstInvalid ?? 'tipo';
   }
-  if (!eventoForm.finFecha || !eventoForm.finHora) {
-    eventoErrors.fin = 'Completa la fecha y hora de fin.';
-  }
-  if (inicioCompleto && finCompleto && finCompleto <= inicioCompleto) {
-    eventoErrors.fin = 'La fecha/hora final debe ser mayor que la inicial.';
-  }
-  if (eventoForm.tipo === '' || eventoForm.tipo === null) {
-    eventoErrors.tipo = 'Selecciona un tipo de contingencia (CAT-005).';
-  }
+
   if (eventoRequiresMotivo.value) {
     const trimmed = eventoForm.motivo.trim();
     if (!trimmed) {
-      eventoErrors.motivo =
-        "Motivo es obligatorio cuando el tipo es ‘Otro’ (máx. 500).";
+      errors.motivo =
+        'Motivo es obligatorio cuando el tipo es “Otro” (máx. 500).';
+      firstInvalid = firstInvalid ?? 'motivo';
     }
+  }
+
+  if (!eventoForm.inicioFecha || !eventoForm.inicioHora) {
+    errors.inicio = 'Completa la fecha y hora de inicio.';
+    firstInvalid = firstInvalid ?? 'inicio';
+  }
+
+  if (!eventoForm.finFecha || !eventoForm.finHora) {
+    errors.fin = 'Completa la fecha y hora de fin.';
+    firstInvalid = firstInvalid ?? 'fin';
   }
 
   if (
-    eventoErrors.inicio ||
-    eventoErrors.fin ||
-    eventoErrors.tipo ||
-    eventoErrors.motivo
+    eventoForm.inicioFecha &&
+    eventoForm.inicioHora &&
+    eventoForm.finFecha &&
+    eventoForm.finHora
   ) {
-    focusEventoFirstInvalid();
-    return;
+    const inicio = new Date(`${eventoForm.inicioFecha}T${eventoForm.inicioHora}`);
+    const fin = new Date(`${eventoForm.finFecha}T${eventoForm.finHora}`);
+    if (!(fin > inicio)) {
+      errors.fin = 'La fecha/hora final debe ser mayor que la inicial.';
+      firstInvalid = firstInvalid ?? 'fin';
+    }
   }
 
-  eventoStep.value = 2;
+  if (pendingDtes.value.length === 0) {
+    errors.dtes = 'Debe existir al menos un DTE pendiente.';
+    firstInvalid = firstInvalid ?? 'dtes';
+  } else if (pendingDtes.value.length > 1000) {
+    errors.dtes = 'Máximo 1000 DTE por evento.';
+    firstInvalid = firstInvalid ?? 'dtes';
+  }
+
+  return { errors, firstInvalid, isValid: firstInvalid === null };
 }
 
-function focusEventoFirstInvalid() {
-  if (eventoErrors.inicio) {
-    if (!eventoForm.inicioFecha && eventoInicioFecha.value) {
+function focusEventoField(field: EventoErrorField) {
+  if (field === 'tipo' && eventoTipo.value) {
+    eventoTipo.value.focus();
+    return;
+  }
+  if (field === 'motivo' && eventoMotivo.value) {
+    eventoMotivo.value.focus();
+    return;
+  }
+  if (field === 'inicio') {
+    if (eventoInicioFecha.value) {
       eventoInicioFecha.value.focus();
       return;
     }
-    if (!eventoForm.inicioHora && eventoInicioHora.value) {
+    if (eventoInicioHora.value) {
       eventoInicioHora.value.focus();
       return;
     }
   }
-  if (eventoErrors.fin) {
-    if (!eventoForm.finFecha && eventoFinFecha.value) {
+  if (field === 'fin') {
+    if (eventoFinFecha.value) {
       eventoFinFecha.value.focus();
       return;
     }
-    if (!eventoForm.finHora && eventoFinHora.value) {
+    if (eventoFinHora.value) {
       eventoFinHora.value.focus();
       return;
     }
   }
-  if (eventoErrors.tipo && eventoTipo.value) {
-    eventoTipo.value.focus();
-    return;
-  }
-  if (eventoErrors.motivo && eventoMotivo.value) {
-    eventoMotivo.value.focus();
+  if (field === 'dtes' && eventoDteList.value) {
+    eventoDteList.value.focus();
   }
 }
 
-const eventoDetalleLimit = computed(() => pendingDtes.value.slice(0, 1000));
-
-const eventoPreview = computed(() => {
-  if (eventoStep.value !== 2) {
-    return '';
-  }
-  const detalle = eventoDetalleLimit.value.map((dte, index) => ({
-    noItem: index + 1,
-    codigoGeneracion: dte.codigoGeneracion.toUpperCase(),
-    tipoDoc: dte.tipoDocumento
-  }));
-  const descripcionMotivo = eventoRequiresMotivo.value
-    ? eventoForm.motivo.trim()
-    : CONTINGENCIA_OPTIONS.find((o) => o.value === eventoForm.tipo)?.label ?? '';
-  const payload = {
-    identificacion: {
-      version: 3,
-      ambiente: '00',
-      tipoEvento: 'CONTINGENCIA',
-      tipoContingencia: eventoForm.tipo || null,
-      codigoGeneracion: '00000000-0000-0000-0000-000000000000',
-      fTransmision: eventoForm.inicioFecha || '----',
-      hTransmision: eventoForm.inicioHora || '--:--'
-    },
-    motivo: {
-      tipoContingencia: eventoForm.tipo || null,
-      descripcion: descripcionMotivo,
-      fInicio: eventoForm.inicioFecha || '----',
-      hInicio: eventoForm.inicioHora || '--:--',
-      fFin: eventoForm.finFecha || '----',
-      hFin: eventoForm.finHora || '--:--'
-    },
-    detalleDTE: detalle
+function getNowInElSalvador() {
+  const now = new Date();
+  const dateFormatter = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/El_Salvador',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  });
+  const timeFormatter = new Intl.DateTimeFormat('en-GB', {
+    timeZone: 'America/El_Salvador',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  });
+  return {
+    date: dateFormatter.format(now),
+    time: timeFormatter.format(now)
   };
-  return JSON.stringify(payload, null, 2);
-});
+}
+
+function sanitizeTipoDoc(tipo: unknown): string {
+  const numeric = Number.parseInt(String(tipo ?? '').replace(/[^0-9]/g, ''), 10);
+  if (Number.isNaN(numeric)) {
+    return '01';
+  }
+  const bounded = Math.min(15, Math.max(1, numeric));
+  return String(bounded).padStart(2, '0');
+}
+
+function formatTipoDocumento(tipo: unknown): string {
+  return sanitizeTipoDoc(tipo);
+}
+
+function formatCodigoGeneracion(codigo: unknown): string {
+  return String(codigo ?? '').toUpperCase();
+}
 
 function enviarAHacienda(): Promise<void> {
   return Promise.reject(new Error('fallo'));
@@ -734,34 +868,6 @@ function focusMainContingenciaTrigger() {
   }
   if (modoSelect.value) {
     modoSelect.value.focus();
-  }
-}
-
-async function copyEventoCodigos() {
-  const codes = eventoDetalleLimit.value
-    .map((dte) => dte.codigoGeneracion.toUpperCase())
-    .join('\n');
-  if (!codes) {
-    eventoCopyMessage.value = 'No hay códigos para copiar.';
-    return;
-  }
-  try {
-    if (navigator.clipboard?.writeText) {
-      await navigator.clipboard.writeText(codes);
-    } else {
-      const textarea = document.createElement('textarea');
-      textarea.value = codes;
-      textarea.setAttribute('readonly', 'true');
-      textarea.style.position = 'absolute';
-      textarea.style.left = '-9999px';
-      document.body.appendChild(textarea);
-      textarea.select();
-      document.execCommand('copy');
-      document.body.removeChild(textarea);
-    }
-    eventoCopyMessage.value = 'Códigos copiados al portapapeles.';
-  } catch (error) {
-    eventoCopyMessage.value = 'No se pudieron copiar los códigos.';
   }
 }
 </script>
@@ -780,6 +886,12 @@ async function copyEventoCodigos() {
   align-items: flex-start;
 }
 
+.contingencia-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
 .configurar-contingencia {
   background-color: #2c3e50;
   color: #fff;
@@ -791,6 +903,21 @@ async function copyEventoCodigos() {
 
 .configurar-contingencia:hover {
   background-color: #1f2e3a;
+}
+
+.evento-trigger {
+  border: 1px solid #3949ab;
+  color: #1a237e;
+  background: #eef2ff;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.evento-trigger:disabled {
+  background: #f3f4f6;
+  border-color: #d0d7de;
+  color: #7a7a7a;
 }
 
 .contingencia-resumen {
@@ -855,6 +982,69 @@ async function copyEventoCodigos() {
   color: #c62828;
 }
 
+.evento-panel {
+  border: 1px solid #d0d7de;
+  border-radius: 8px;
+  padding: 1rem;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.evento-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.evento-panel h2 {
+  margin: 0;
+}
+
+.panel-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.panel-section h3 {
+  margin: 0;
+}
+
+.panel-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.panel-actions button {
+  border: 1px solid #d0d7de;
+  background: #fff;
+  color: #1f2933;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.panel-actions .primary {
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.panel-actions button:disabled {
+  cursor: not-allowed;
+}
+
+.panel-actions .primary:disabled {
+  background: #c9d6ff;
+  color: #5f6caf;
+}
+
 .actions {
   display: flex;
   gap: 1rem;
@@ -865,59 +1055,9 @@ button:disabled {
   cursor: not-allowed;
 }
 
-.evento-dialog {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.4);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.evento-content {
-  background: #fff;
-  padding: 1.5rem;
-  border-radius: 8px;
-  max-width: 600px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.evento-content header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.evento-content .cerrar {
-  background: transparent;
-  border: none;
-  font-size: 1.5rem;
-  cursor: pointer;
-}
-
 .inputs {
   display: flex;
   gap: 0.5rem;
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-}
-
-.dialog-actions .primary {
-  background: #1976d2;
-  color: #fff;
-  border: none;
-  padding: 0.5rem 1rem;
-  cursor: pointer;
 }
 
 .dte-list {
@@ -945,22 +1085,7 @@ button:disabled {
   border-radius: 4px;
 }
 
-.copy-codes {
-  align-self: flex-start;
-  background: #1976d2;
-  color: #fff;
-  border: none;
-  border-radius: 4px;
-  padding: 0.4rem 0.75rem;
-  cursor: pointer;
-}
-
-.copy-codes:hover {
-  background: #125a9c;
-}
-
-.copy-status {
-  font-size: 0.875rem;
-  color: #2e7d32;
+.warning {
+  border: 1px solid #f0ad4e;
 }
 </style>

@@ -5103,6 +5103,7 @@ def generar_nde_desde_dte(
 ) -> dict:
     """Genera la estructura JSON de una Nota de Débito a partir de un DTE."""
 
+    ambiente = resolve_ambiente(ambiente)
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     identificacion = {
@@ -5360,6 +5361,7 @@ def generar_nota_remision_json(
     cantidades = cantidades or {}
     ident_factura = factura.get("identificacion", {})
 
+    ambiente = resolve_ambiente(ambiente)
     cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
     now = datetime.now(TZ_EL_SALVADOR)
     identificacion = {
@@ -5670,6 +5672,55 @@ def _load_dte_api_config():
     print("CFG: AMB=", ambiente, "URL=", url)
     print("CFG: HAS_MANUAL_TOKEN=", bool(token_configured))
     return {"ambiente": ambiente, "url": url}
+
+
+def _normalize_ambiente_value(raw: str | None) -> str | None:
+    """Normaliza representaciones diversas de ambiente a ``"00"`` o ``"01"``."""
+
+    if raw is None:
+        return None
+
+    text = str(raw).strip()
+    if not text:
+        return None
+
+    if text in {"00", "01"}:
+        return text
+
+    digits = "".join(ch for ch in text if ch.isdigit())
+    if digits.startswith("01"):
+        return "01"
+    if digits.startswith("00"):
+        return "00"
+
+    lowered = text.lower()
+    if lowered.startswith("pro"):
+        return "01"
+    if lowered.startswith("pru"):
+        return "00"
+
+    if text == "1":
+        return "01"
+    if text == "0":
+        return "00"
+
+    return None
+
+
+def resolve_ambiente(ambiente: str | None) -> str:
+    """Resuelve el ambiente efectivo tomando en cuenta la configuración local."""
+
+    try:
+        config = _load_dte_api_config() or {}
+    except Exception:
+        config = {}
+
+    config_ambiente = _normalize_ambiente_value(config.get("ambiente"))
+    if config_ambiente == "01":
+        return "01"
+
+    normalized = _normalize_ambiente_value(ambiente)
+    return normalized or "00"
 
 
 def _assert_no_ejemplo(path: str) -> None:

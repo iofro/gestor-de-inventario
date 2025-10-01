@@ -18,7 +18,12 @@ from decimal import Decimal
 from typing import Iterable, Optional
 
 from db import DB
-from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
+from dte import (
+    DTE_VERSIONES,
+    generar_cabecera_dte_data,
+    resolve_ambiente,
+    sanitize_dte_payload,
+)
 from nota_remision import (
     _build_documento_relacionado_desde_dte as _doc_rel_from_dte,
     _normalizar_documento_relacionado as _normalizar_doc_rel_nr,
@@ -140,6 +145,7 @@ def _generar_base(
     ambiente: str = "00",
 ) -> dict:
     """Construye la estructura base común de una NR."""
+    ambiente = resolve_ambiente(ambiente)
     if not documento_relacionado:
         raise ValueError("documento_relacionado es obligatorio")
 

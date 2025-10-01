@@ -21,6 +21,7 @@ from dte import (
     DTE_VERSIONES,
     generar_cabecera_dte_data,
     generar_dte_json,
+    resolve_ambiente,
     sanitize_dte_payload,
     d4,
 )
@@ -89,6 +90,7 @@ def generar_nde_desde_nota(
 ) -> dict:
     """Genera una NDE basada en la nota registrada en ``notas``."""
 
+    ambiente = resolve_ambiente(ambiente)
     strict = STRICT_SNAPSHOT_DEFAULT if strict_snapshot is None else bool(strict_snapshot)
     start = time.perf_counter()
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -204,6 +206,7 @@ def generar_nde_desde_dte(
     fecha_origen: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una NDE."""
+    ambiente = resolve_ambiente(ambiente)
     origen_ident = dte_origen.get("identificacion", {})
 
     cabecera = generar_cabecera_dte_data(1, 1, "06", db, ambiente=ambiente)

@@ -24,6 +24,7 @@ from dte import (
     DTE_VERSIONES,
     generar_cabecera_dte_data,
     generar_dte_json,
+    resolve_ambiente,
     sanitize_dte_payload,
 )
 from utils import catalogos
@@ -111,6 +112,7 @@ def generar_nce_desde_nota(
         Código de ambiente (``00`` pruebas, ``01`` producción).
     """
 
+    ambiente = resolve_ambiente(ambiente)
     strict = STRICT_SNAPSHOT_DEFAULT if strict_snapshot is None else bool(strict_snapshot)
     start = time.perf_counter()
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
@@ -252,6 +254,7 @@ def generar_nce_desde_dte(
     fecha_origen: Optional[str] = None,
 ) -> dict:
     """Genera la estructura JSON de una NCE."""
+    ambiente = resolve_ambiente(ambiente)
     if detalles is None:
         if ratio is None or ratio <= Decimal_0:
             raise ValueError("El porcentaje a acreditar debe ser mayor que cero")

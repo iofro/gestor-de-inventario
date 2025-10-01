@@ -29,7 +29,7 @@ from PyQt5.QtWidgets import (
     QFormLayout,
 )
 from PyQt5.QtCore import QDate, QDateTime, QTime, Qt, QUrl, QTimer, QEvent, QSize
-from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage
+from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage, QColor, QBrush
 import os
 import re
 import logging
@@ -2195,7 +2195,14 @@ class FacturacionTab(QWidget):
                 self.table.setItem(row, 3, QTableWidgetItem(display))
             else:
                 self.table.setItem(row, 3, QTableWidgetItem(""))
-            self.table.setItem(row, 4, QTableWidgetItem(v.get("estado", "")))
+            estado_text = v.get("estado", "")
+            estado_item = QTableWidgetItem(estado_text)
+            if estado_text and estado_text.strip().lower() == "contingencia":
+                estado_font = estado_item.font()
+                estado_font.setBold(True)
+                estado_item.setFont(estado_font)
+                estado_item.setForeground(QBrush(QColor("#D9534F")))
+            self.table.setItem(row, 4, estado_item)
             self.table.setItem(row, 5, QTableWidgetItem(v.get("envio", "")))
             for col in range(6):
                 item = self.table.item(row, col)

@@ -2,60 +2,47 @@
   <div class="factura-form">
     <section class="modo-transmision">
       <label for="modo">Modo de transmisión</label>
-      <select id="modo" v-model.number="modoTransmision">
+      <select
+        id="modo"
+        ref="modoSelect"
+        v-model.number="modoTransmision"
+        aria-label="Selecciona el modo de transmisión"
+      >
         <option :value="1">1 — Normal</option>
         <option :value="2">2 — Contingencia</option>
       </select>
     </section>
 
     <section v-if="isContingencia" class="contingencia-panel">
-      <p class="helper">Si eliges “Otro”, el motivo es obligatorio.</p>
-      <div :class="['field', { error: showTipoError }]">
-        <label for="tipo">Tipo de Contingencia (CAT-005)</label>
-        <select
-          id="tipo"
-          ref="tipoSelect"
-          v-model.number="tipoContingencia"
-        >
-          <option disabled value="">Selecciona una opción</option>
-          <option
-            v-for="option in CONTINGENCIA_OPTIONS"
-            :key="option.value"
-            :value="option.value"
-          >
-            {{ option.label }}
-          </option>
-        </select>
-        <p v-if="showTipoError" class="error-message">
-          {{ tipoErrorMessage }}
-        </p>
-      </div>
-
-      <div
-        v-if="requiresMotivo"
-        :class="['field', { error: showMotivoError }]"
+      <button
+        type="button"
+        class="configurar-contingencia"
+        ref="contingenciaButton"
+        @click="openContingenciaDialog"
       >
-        <label for="motivo">Motivo</label>
-        <textarea
-          id="motivo"
-          ref="motivoInput"
-          v-model="motivoContingencia"
-          @input="enforceMotivoLimit"
-          rows="3"
-        ></textarea>
-        <div class="field-footer">
-          <span class="counter">{{ motivoLength }}/500</span>
-        </div>
-        <p v-if="showMotivoError" class="error-message">
-          {{ motivoErrorMessage }}
-        </p>
+        Configurar contingencia…
+      </button>
+      <div class="contingencia-resumen" aria-live="polite">
+        <span v-if="contingenciaSummary" class="chip">
+          {{ contingenciaSummary }}
+        </span>
       </div>
     </section>
 
-    <section v-if="statusMessage" class="status success">
+    <section
+      v-if="statusMessage"
+      class="status success"
+      role="status"
+      aria-live="polite"
+    >
       {{ statusMessage }}
     </section>
-    <section v-if="saveErrorMessage" class="status error">
+    <section
+      v-if="saveErrorMessage"
+      class="status error"
+      role="alert"
+      aria-live="assertive"
+    >
       {{ saveErrorMessage }}
     </section>
 
@@ -95,11 +82,17 @@
     <ConfirmDialog
       v-model="lossConfirmVisible"
       title="Cambiar a modo normal"
-      message="Perderás los datos de contingencia de esta factura. ¿Continuar?"
+      message="Perderás la configuración de contingencia. ¿Continuar?"
       confirm-text="Continuar"
       cancel-text="Cancelar"
       @confirm="confirmClearContingencia"
       @cancel="cancelClearContingencia"
+    />
+
+    <ContingenciaConfigDialog
+      v-model:visible="contingenciaDialogVisible"
+      :initial-config="contingenciaDialogInitial"
+      @confirm="handleContingenciaConfirm"
     />
 
     <div v-if="eventoVisible" class="evento-dialog">
@@ -118,24 +111,56 @@
                 type="date"
                 ref="eventoInicioFecha"
                 v-model="eventoForm.inicioFecha"
+                :aria-invalid="eventoErrors.inicio ? 'true' : 'false'"
+                :aria-describedby="
+                  eventoErrors.inicio ? 'evento-inicio-error' : undefined
+                "
               />
               <input
                 type="time"
                 ref="eventoInicioHora"
                 v-model="eventoForm.inicioHora"
+                :aria-invalid="eventoErrors.inicio ? 'true' : 'false'"
+                :aria-describedby="
+                  eventoErrors.inicio ? 'evento-inicio-error' : undefined
+                "
               />
             </div>
-            <p v-if="eventoErrors.inicio" class="error-message">
+            <p
+              v-if="eventoErrors.inicio"
+              id="evento-inicio-error"
+              class="error-message"
+            >
               {{ eventoErrors.inicio }}
             </p>
           </div>
           <div :class="['field-group', { error: eventoErrors.fin }]">
             <label>Fecha y hora de fin</label>
             <div class="inputs">
-              <input type="date" ref="eventoFinFecha" v-model="eventoForm.finFecha" />
-              <input type="time" ref="eventoFinHora" v-model="eventoForm.finHora" />
+              <input
+                type="date"
+                ref="eventoFinFecha"
+                v-model="eventoForm.finFecha"
+                :aria-invalid="eventoErrors.fin ? 'true' : 'false'"
+                :aria-describedby="
+                  eventoErrors.fin ? 'evento-fin-error' : undefined
+                "
+              />
+              <input
+                type="time"
+                ref="eventoFinHora"
+                v-model="eventoForm.finHora"
+                :aria-invalid="eventoErrors.fin ? 'true' : 'false'"
+                :aria-describedby="
+                  eventoErrors.fin ? 'evento-fin-error' : undefined
+                "
+              />
             </div>
-            <p v-if="eventoErrors.fin" class="error-message">
+            <p
+              v-if="eventoErrors.fin"
+              id="evento-fin-error"
+              class="error-message"
+            >
               {{ eventoErrors.fin }}
             </p>
           </div>
@@ -145,6 +170,10 @@
               id="evento-tipo"
               ref="eventoTipo"
               v-model.number="eventoForm.tipo"
+              :aria-invalid="eventoErrors.tipo ? 'true' : 'false'"
+              :aria-describedby="
+                eventoErrors.tipo ? 'evento-tipo-error' : undefined
+              "
             >
               <option disabled value="">Selecciona una opción</option>
               <option
@@ -155,7 +184,11 @@
                 {{ option.label }}
               </option>
             </select>
-            <p v-if="eventoErrors.tipo" class="error-message">
+            <p
+              v-if="eventoErrors.tipo"
+              id="evento-tipo-error"
+              class="error-message"
+            >
               {{ eventoErrors.tipo }}
             </p>
           </div>
@@ -170,11 +203,19 @@
               v-model="eventoForm.motivo"
               @input="enforceEventoMotivoLimit"
               rows="3"
+              :aria-invalid="eventoErrors.motivo ? 'true' : 'false'"
+              :aria-describedby="
+                eventoErrors.motivo ? 'evento-motivo-error' : undefined
+              "
             ></textarea>
             <div class="field-footer">
               <span class="counter">{{ eventoMotivoLength }}/500</span>
             </div>
-            <p v-if="eventoErrors.motivo" class="error-message">
+            <p
+              v-if="eventoErrors.motivo"
+              id="evento-motivo-error"
+              class="error-message"
+            >
               {{ eventoErrors.motivo }}
             </p>
           </div>
@@ -190,6 +231,22 @@
           <p>Total de DTE: {{ pendingDtes.length }}</p>
           <p v-if="pendingDtes.length > 1000" class="info">
             Se generarán hasta 1000 DTE por evento. Divide el envío en varios eventos si es necesario.
+          </p>
+          <p class="counter">Mostrando {{ eventoDetalleLimit.length }} de {{ pendingDtes.length }} (máx. 1000)</p>
+          <button
+            type="button"
+            class="copy-codes"
+            @click="copyEventoCodigos"
+          >
+            Copiar códigos
+          </button>
+          <p
+            v-if="eventoCopyMessage"
+            class="copy-status"
+            role="status"
+            aria-live="polite"
+          >
+            {{ eventoCopyMessage }}
           </p>
           <ul class="dte-list">
             <li v-for="dte in eventoDetalleLimit" :key="dte.codigoGeneracion">
@@ -213,6 +270,7 @@
 <script setup lang="ts">
 import { computed, nextTick, reactive, ref, watch } from 'vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import ContingenciaConfigDialog from '../components/ContingenciaConfigDialog.vue';
 import { guardarEnContingencia } from '../services/facturasApi';
 
 const CONTINGENCIA_OPTIONS = [
@@ -224,6 +282,7 @@ const CONTINGENCIA_OPTIONS = [
 ] as const;
 
 type ContingenciaOptionValue = (typeof CONTINGENCIA_OPTIONS)[number]['value'];
+type ModoTransmision = 1 | 2;
 
 type PendingDte = {
   codigoGeneracion: string;
@@ -231,10 +290,15 @@ type PendingDte = {
 };
 
 interface FacturaConfig {
-  modoTransmision: ContingenciaOptionValue | 1 | 2;
+  modoTransmision: ModoTransmision;
   tipoContingencia?: ContingenciaOptionValue | null;
   motivoContingencia?: string | null;
   pendientesContingencia?: PendingDte[];
+}
+
+interface ContingenciaConfigState {
+  tipo: ContingenciaOptionValue | null;
+  motivo: string;
 }
 
 const props = defineProps<{ facturaId: string; config: FacturaConfig }>();
@@ -244,75 +308,56 @@ const errorVisible = ref(false);
 const lossConfirmVisible = ref(false);
 const statusMessage = ref('');
 const saveErrorMessage = ref('');
-const hasAttemptedSubmit = ref(false);
 
-const modoTransmision = ref<number>(props.config?.modoTransmision ?? 1);
-const tipoContingencia = ref<number | ''>(
-  props.config?.modoTransmision === 2
-    ? props.config?.tipoContingencia ?? ''
-    : ''
+const modoSelect = ref<HTMLSelectElement>();
+const contingenciaButton = ref<HTMLButtonElement>();
+
+function sanitizeModo(value: unknown): ModoTransmision {
+  return value === 2 ? 2 : 1;
+}
+
+const modoTransmision = ref<ModoTransmision>(
+  sanitizeModo(props.config?.modoTransmision)
 );
-const motivoContingencia = ref(props.config?.motivoContingencia ?? '');
+const contingenciaConfig = reactive<ContingenciaConfigState>({
+  tipo:
+    props.config?.modoTransmision === 2
+      ? props.config?.tipoContingencia ?? null
+      : null,
+  motivo:
+    props.config?.modoTransmision === 2
+      ? props.config?.motivoContingencia?.trim() ?? ''
+      : ''
+});
+const contingenciaConfigured = ref(
+  props.config?.modoTransmision === 2 &&
+    contingenciaConfig.tipo !== null &&
+    (contingenciaConfig.tipo !== 5 || contingenciaConfig.motivo.trim().length > 0)
+);
 
-const tipoSelect = ref<HTMLSelectElement>();
-const motivoInput = ref<HTMLTextAreaElement>();
+const contingenciaDialogVisible = ref(false);
+const contingenciaDialogInitial = ref<ContingenciaConfigState>({
+  tipo: contingenciaConfig.tipo,
+  motivo: contingenciaConfig.motivo
+});
 
 const pendingDtes = computed(() => props.config?.pendientesContingencia ?? []);
 const hasPendingContingencia = computed(() => pendingDtes.value.length > 0);
 
 const isContingencia = computed(() => modoTransmision.value === 2);
-const requiresMotivo = computed(
-  () => isContingencia.value && tipoContingencia.value === 5
-);
-
-const motivoLength = computed(() => motivoContingencia.value.length);
-
-const tipoErrorMessage = computed(() => {
-  if (!isContingencia.value) {
+const contingenciaSummary = computed(() => {
+  if (!contingenciaConfigured.value || contingenciaConfig.tipo === null) {
     return '';
   }
-  const value = tipoContingencia.value;
-  if (value === '' || value === null) {
-    return 'Selecciona un tipo de contingencia (CAT-005).';
+  const base = `En contingencia: Tipo ${contingenciaConfig.tipo}`;
+  if (contingenciaConfig.tipo === 5 && contingenciaConfig.motivo.trim()) {
+    return `${base} — Motivo capturado`;
   }
-  if (![1, 2, 3, 4, 5].includes(Number(value))) {
-    return 'Selecciona un tipo de contingencia (CAT-005).';
-  }
-  return '';
+  return base;
 });
 
-const showTipoError = computed(
-  () => hasAttemptedSubmit.value && tipoErrorMessage.value !== ''
-);
-
-const motivoErrorMessage = computed(() => {
-  if (!requiresMotivo.value) {
-    return '';
-  }
-  const trimmed = motivoContingencia.value.trim();
-  if (!trimmed) {
-    return "Motivo es obligatorio cuando el tipo es ‘Otro’ (máx. 500).";
-  }
-  if (trimmed.length > 500) {
-    return 'Motivo no puede exceder 500 caracteres.';
-  }
-  return '';
-});
-
-const showMotivoError = computed(
-  () => hasAttemptedSubmit.value && motivoErrorMessage.value !== ''
-);
-
-const isFormValid = computed(() => {
-  if (!isContingencia.value) {
-    return true;
-  }
-  return tipoErrorMessage.value === '' && motivoErrorMessage.value === '';
-});
-
-const isSaveDisabled = computed(
-  () => isContingencia.value && hasAttemptedSubmit.value && !isFormValid.value
-);
+const isSaveDisabled = computed(() => false);
+const eventoCopyMessage = ref('');
 
 watch(modoTransmision, async (newValue, oldValue) => {
   if (oldValue === 2 && newValue === 1 && hasContingenciaData()) {
@@ -322,44 +367,32 @@ watch(modoTransmision, async (newValue, oldValue) => {
     return;
   }
   if (newValue !== 2) {
-    tipoContingencia.value = '';
-    motivoContingencia.value = '';
-    hasAttemptedSubmit.value = false;
-  }
-});
-
-watch(tipoContingencia, (newValue) => {
-  if (newValue !== 5) {
-    motivoContingencia.value = '';
-  }
-});
-
-watch(motivoContingencia, (value) => {
-  if (value.length > 500) {
-    motivoContingencia.value = value.slice(0, 500);
+    contingenciaConfig.tipo = null;
+    contingenciaConfig.motivo = '';
+    contingenciaConfigured.value = false;
+    statusMessage.value = '';
+    saveErrorMessage.value = '';
   }
 });
 
 function hasContingenciaData(): boolean {
-  const tipo = tipoContingencia.value;
-  const motivo = motivoContingencia.value.trim();
-  return tipo !== '' || motivo.length > 0;
-}
-
-function enforceMotivoLimit(): void {
-  if (motivoContingencia.value.length > 500) {
-    motivoContingencia.value = motivoContingencia.value.slice(0, 500);
+  if (contingenciaConfigured.value) {
+    return true;
   }
+  return (
+    contingenciaConfig.tipo !== null || contingenciaConfig.motivo.trim().length > 0
+  );
 }
 
 async function onSave() {
-  hasAttemptedSubmit.value = true;
   statusMessage.value = '';
   saveErrorMessage.value = '';
   if (isContingencia.value) {
-    if (!isFormValid.value) {
+    if (!contingenciaConfigured.value) {
+      saveErrorMessage.value =
+        'Completa la configuración de contingencia antes de guardar.';
       await nextTick();
-      focusFirstInvalid();
+      focusMainContingenciaTrigger();
       return;
     }
     confirmVisible.value = true;
@@ -374,13 +407,17 @@ async function onSave() {
 
 async function saveContingencia() {
   try {
-    const motivo = requiresMotivo.value
-      ? motivoContingencia.value.trim()
-      : undefined;
+    if (contingenciaConfig.tipo === null) {
+      throw new Error('Configuración de contingencia incompleta.');
+    }
+    const motivo =
+      contingenciaConfig.tipo === 5
+        ? contingenciaConfig.motivo.trim()
+        : undefined;
     await guardarEnContingencia(props.facturaId, {
       modeloFacturacion: 2,
       tipoTransmision: 2,
-      tipoContingencia: Number(tipoContingencia.value),
+      tipoContingencia: Number(contingenciaConfig.tipo),
       ...(motivo ? { motivoContingencia: motivo } : {})
     });
     statusMessage.value = 'Contingencia guardada en la factura.';
@@ -390,26 +427,40 @@ async function saveContingencia() {
   }
 }
 
-function focusFirstInvalid() {
-  if (tipoErrorMessage.value && tipoSelect.value) {
-    tipoSelect.value.focus();
-    return;
-  }
-  if (motivoErrorMessage.value && motivoInput.value) {
-    motivoInput.value.focus();
-  }
-}
-
 function confirmClearContingencia() {
   lossConfirmVisible.value = false;
   modoTransmision.value = 1;
-  tipoContingencia.value = '';
-  motivoContingencia.value = '';
-  hasAttemptedSubmit.value = false;
+  contingenciaConfig.tipo = null;
+  contingenciaConfig.motivo = '';
+  contingenciaConfigured.value = false;
+  statusMessage.value = '';
+  saveErrorMessage.value = '';
 }
 
 function cancelClearContingencia() {
   lossConfirmVisible.value = false;
+}
+
+function openContingenciaDialog() {
+  contingenciaDialogInitial.value = {
+    tipo: contingenciaConfig.tipo,
+    motivo: contingenciaConfig.motivo
+  };
+  contingenciaDialogVisible.value = true;
+}
+
+function handleContingenciaConfirm({
+  tipo,
+  motivo
+}: {
+  tipo: ContingenciaOptionValue;
+  motivo?: string;
+}) {
+  contingenciaConfig.tipo = tipo;
+  contingenciaConfig.motivo = motivo?.trim() ?? '';
+  contingenciaConfigured.value = true;
+  contingenciaDialogVisible.value = false;
+  saveErrorMessage.value = '';
 }
 
 function openEventoDialog() {
@@ -420,10 +471,12 @@ function openEventoDialog() {
 
 function closeEventoDialog() {
   eventoVisible.value = false;
+  eventoCopyMessage.value = '';
 }
 
 function volverEvento() {
   eventoStep.value = 1;
+  eventoCopyMessage.value = '';
 }
 
 const eventoVisible = ref(false);
@@ -488,6 +541,7 @@ function resetEvento() {
   eventoErrors.fin = '';
   eventoErrors.tipo = '';
   eventoErrors.motivo = '';
+  eventoCopyMessage.value = '';
 }
 
 function continuarEvento() {
@@ -574,27 +628,32 @@ const eventoPreview = computed(() => {
   if (eventoStep.value !== 2) {
     return '';
   }
-  const detalle = eventoDetalleLimit.value.map((dte) => ({
-    codigoGeneracion: dte.codigoGeneracion,
-    tipoDocumento: dte.tipoDocumento
+  const detalle = eventoDetalleLimit.value.map((dte, index) => ({
+    noItem: index + 1,
+    codigoGeneracion: dte.codigoGeneracion.toUpperCase(),
+    tipoDoc: dte.tipoDocumento
   }));
-  const motivo = eventoRequiresMotivo.value
+  const descripcionMotivo = eventoRequiresMotivo.value
     ? eventoForm.motivo.trim()
     : CONTINGENCIA_OPTIONS.find((o) => o.value === eventoForm.tipo)?.label ?? '';
   const payload = {
     identificacion: {
+      version: 3,
+      ambiente: '00',
       tipoEvento: 'CONTINGENCIA',
-      tipoContingencia: eventoForm.tipo,
-      periodo: {
-        inicio: `${eventoForm.inicioFecha}T${eventoForm.inicioHora}`,
-        fin: `${eventoForm.finFecha}T${eventoForm.finHora}`
-      }
+      tipoContingencia: eventoForm.tipo || null,
+      codigoGeneracion: '00000000-0000-0000-0000-000000000000',
+      fTransmision: eventoForm.inicioFecha || '----',
+      hTransmision: eventoForm.inicioHora || '--:--'
     },
-    emisor: {
-      nit: '000000-0',
-      nombre: 'Ejemplo S.A. de C.V.'
+    motivo: {
+      tipoContingencia: eventoForm.tipo || null,
+      descripcion: descripcionMotivo,
+      fInicio: eventoForm.inicioFecha || '----',
+      hInicio: eventoForm.inicioHora || '--:--',
+      fFin: eventoForm.finFecha || '----',
+      hFin: eventoForm.finHora || '--:--'
     },
-    motivo,
     detalleDTE: detalle
   };
   return JSON.stringify(payload, null, 2);
@@ -603,6 +662,44 @@ const eventoPreview = computed(() => {
 function enviarAHacienda(): Promise<void> {
   return Promise.reject(new Error('fallo'));
 }
+
+function focusMainContingenciaTrigger() {
+  if (contingenciaButton.value) {
+    contingenciaButton.value.focus();
+    return;
+  }
+  if (modoSelect.value) {
+    modoSelect.value.focus();
+  }
+}
+
+async function copyEventoCodigos() {
+  const codes = eventoDetalleLimit.value
+    .map((dte) => dte.codigoGeneracion.toUpperCase())
+    .join('\n');
+  if (!codes) {
+    eventoCopyMessage.value = 'No hay códigos para copiar.';
+    return;
+  }
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(codes);
+    } else {
+      const textarea = document.createElement('textarea');
+      textarea.value = codes;
+      textarea.setAttribute('readonly', 'true');
+      textarea.style.position = 'absolute';
+      textarea.style.left = '-9999px';
+      document.body.appendChild(textarea);
+      textarea.select();
+      document.execCommand('copy');
+      document.body.removeChild(textarea);
+    }
+    eventoCopyMessage.value = 'Códigos copiados al portapapeles.';
+  } catch (error) {
+    eventoCopyMessage.value = 'No se pudieron copiar los códigos.';
+  }
+}
 </script>
 
 <style scoped>
@@ -610,6 +707,41 @@ function enviarAHacienda(): Promise<void> {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.contingencia-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  align-items: flex-start;
+}
+
+.configurar-contingencia {
+  background-color: #2c3e50;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+}
+
+.configurar-contingencia:hover {
+  background-color: #1f2e3a;
+}
+
+.contingencia-resumen {
+  min-height: 1.5rem;
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: #e3f2fd;
+  color: #0d47a1;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  font-size: 0.875rem;
 }
 
 .field,
@@ -747,5 +879,24 @@ button:disabled {
   color: #8c6d1f;
   padding: 0.5rem;
   border-radius: 4px;
+}
+
+.copy-codes {
+  align-self: flex-start;
+  background: #1976d2;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
+.copy-codes:hover {
+  background: #125a9c;
+}
+
+.copy-status {
+  font-size: 0.875rem;
+  color: #2e7d32;
 }
 </style>

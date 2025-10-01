@@ -17,6 +17,7 @@ from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.snapshot import Snapshot
 from utils.fecha import fecha_ddmmaaaa, normalizar_fecha_iso
+from utils.stable_json import stable_stringify
 from paths import DTES_DIR, get_canonical_dte_dir, user_data_path
 
 logging.basicConfig(level=logging.INFO)
@@ -2134,7 +2135,7 @@ class DB:
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.cursor.execute(
             "INSERT INTO dte_pendientes (venta_id, dte_json, modo, fecha_creacion) VALUES (?, ?, ?, ?)",
-            (venta_id, json.dumps(dte_json, ensure_ascii=False), modo, fecha),
+            (venta_id, stable_stringify(dte_json), modo, fecha),
         )
         self.conn.commit()
         return self.cursor.lastrowid
@@ -2145,7 +2146,7 @@ class DB:
         rows = [dict(row) for row in self.cursor.fetchall()]
         for r in rows:
             try:
-                r["dte_json"] = json.loads(r["dte_json"])
+                r["dte_json"] = json.loads(r["dte_json"], parse_float=Decimal)
             except Exception:
                 pass
         return rows

@@ -20,6 +20,7 @@ from typing import Iterable, Optional
 from db import DB
 from dte import DTE_VERSIONES, generar_cabecera_dte_data, sanitize_dte_payload
 from nota_remision import (
+    _build_documento_relacionado_desde_dte as _build_doc_rel_nr,
     _normalizar_documento_relacionado as _normalizar_doc_rel_nr,
     _verificar_documento_relacionado_recepcionado as _verificar_doc_rel_nr,
 )
@@ -143,6 +144,9 @@ def _generar_base(
         raise ValueError("documento_relacionado es obligatorio")
 
     documento_relacionado = _normalizar_doc_rel_nr(documento_relacionado)
+    codigo_generacion_rel: Optional[str] = None
+    if documento_relacionado:
+        codigo_generacion_rel = documento_relacionado[0].get("codigoGeneracion")
     _verificar_doc_rel_nr(db, documento_relacionado)
 
     limpiar_documentos(emisor)
@@ -218,7 +222,13 @@ def _generar_base(
     }
 
     schema = catalogos.get_dte_schema("04")
-    return sanitize_dte_payload(data, schema)
+    data = sanitize_dte_payload(data, schema)
+    if codigo_generacion_rel and data.get("documentoRelacionado"):
+        try:
+            data["documentoRelacionado"][0]["codigoGeneracion"] = codigo_generacion_rel
+        except (KeyError, IndexError, TypeError):
+            pass
+    return data
 
 
 def generar_nota_remision_desde_factura(
@@ -240,31 +250,9 @@ def generar_nota_remision_desde_factura(
     if not isinstance(ident, dict):
         ident = {}
         factura["identificacion"] = ident
-    fecha_emision = None
-    if fecha_origen:
-        fecha_emision = fecha_ddmmaaaa(fecha_origen)
-    if not fecha_emision:
-        fecha_emision = fecha_ddmmaaaa(
-            ident.get("fecEmi") or ident.get("fechaEmision")
-        )
-    if not fecha_emision:
-        fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
-    codigo_generacion = ident.get("codigoGeneracion")
-    numero_control = ident.get("numeroControl")
-    if codigo_generacion:
-        numero_documento = str(codigo_generacion).upper()
-        tipo_generacion = 2
-    else:
-        numero_documento = str(numero_control or "").strip()
-        tipo_generacion = 1
-    doc_rel = [
-        {
-            "tipoDocumento": ident.get("tipoDte"),
-            "tipoGeneracion": tipo_generacion,
-            "numeroDocumento": numero_documento,
-            "fechaEmision": fecha_iso(fecha_emision),
-        }
-    ]
+    doc_rel = _build_doc_rel_nr(
+        factura, fecha_documento_relacionado=fecha_origen
+    )
     ext = extension.copy() if extension else None
     if ext:
         tipo_doc = ext.pop("tipoDocRecibe", None)

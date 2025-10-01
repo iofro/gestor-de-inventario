@@ -20,6 +20,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from decimal import Decimal
+import time
 import json
 import re
 from typing import Iterable, Optional
@@ -42,7 +43,7 @@ from utils.fecha import (
     fecha_iso,
 )
 from utils.monto import monto_a_texto_sv, d2
-from utils.snapshot import normalize_snapshot
+from utils.snapshot import SnapshotNotFoundError, normalize_snapshot
 import warnings
 
 from utils.sanitize import limpiar_documentos, solo_digitos
@@ -74,6 +75,7 @@ def _tipos_dte_validos() -> set[str]:
 
 _TIPOS_DTE_VALIDOS = _tipos_dte_validos()
 _ESTADOS_REL_PERMITIDOS = {"Enviado", "Aceptado"}
+_ESTADOS_REL_ADVERTENCIA = {"Observado"}
 
 
 logger = logging.getLogger(__name__)
@@ -291,6 +293,73 @@ def _build_items(
     return items
 
 
+def _build_documento_relacionado_desde_dte(
+    dte_origen: dict, *, fecha_documento_relacionado: Optional[str] = None
+) -> list[dict]:
+    """Construye ``documentoRelacionado`` a partir de un DTE base.
+
+    Replica la lógica utilizada en las notas de crédito para determinar el
+    ``tipoDocumento`` y los valores de número/código de generación, permitiendo
+    reutilizarse para las notas de remisión.
+    """
+
+    origen_ident = dte_origen.get("identificacion", {})
+    receptor_origen = dte_origen.get("receptor") or {}
+
+    tipo_raw = origen_ident.get("tipoDte")
+    if isinstance(tipo_raw, int):
+        tipo_doc_rel = f"{tipo_raw:02d}"
+    elif isinstance(tipo_raw, str):
+        tipo_str = tipo_raw.strip()
+        if tipo_str.isdigit() and len(tipo_str) <= 2:
+            tipo_doc_rel = f"{int(tipo_str):02d}"
+        else:
+            tipo_doc_rel = tipo_str or None
+    else:
+        tipo_doc_rel = None
+    if not tipo_doc_rel:
+        tipo_doc_rel = "03" if receptor_origen.get("nrc") else "01"
+
+    codigo_generacion = origen_ident.get("codigoGeneracion")
+    numero_control = origen_ident.get("numeroControl")
+    codigo_generacion_norm = None
+    numero_documento = None
+    if codigo_generacion:
+        try:
+            codigo_generacion_norm = normalize_uuid_v4_upper(codigo_generacion)
+        except Exception:
+            codigo_generacion_norm = str(codigo_generacion).strip().upper() or None
+        numero_documento = codigo_generacion_norm
+        tipo_generacion = 2
+    else:
+        tipo_generacion = 1
+        numero_documento = str(numero_control or "").strip().upper() or None
+
+    now = datetime.now(TZ_EL_SALVADOR)
+    fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
+
+    fecha_doc_rel_base = None
+    if fecha_documento_relacionado:
+        fecha_doc_rel_base = fecha_ddmmaaaa(fecha_documento_relacionado)
+    if not fecha_doc_rel_base:
+        fecha_doc_rel_base = fecha_ddmmaaaa(
+            origen_ident.get("fechaEmision") or origen_ident.get("fecEmi")
+        )
+    if not fecha_doc_rel_base:
+        fecha_doc_rel_base = fecha_emision_por_defecto
+
+    doc = {
+        "tipoDocumento": tipo_doc_rel,
+        "tipoGeneracion": tipo_generacion,
+        "numeroDocumento": numero_documento,
+        "fechaEmision": fecha_iso(fecha_doc_rel_base),
+    }
+    if codigo_generacion_norm:
+        doc["codigoGeneracion"] = codigo_generacion_norm
+
+    return [doc]
+
+
 def normalizar_receptor(receptor: dict) -> dict:
     """Sanitize and validate ``receptor`` according to tipoDocumento."""
 
@@ -438,11 +507,19 @@ def _normalizar_documento_relacionado(doc_rel: list[dict]) -> list[dict]:
     return [resultado]
 
 
-def _verificar_documento_relacionado_recepcionado(db: DB, doc_rel: list[dict]) -> None:
-    """Valida que el documento relacionado tenga estado recepcionado localmente."""
+def _verificar_documento_relacionado_recepcionado(
+    db: DB, doc_rel: list[dict]
+) -> Optional[str]:
+    """Obtiene el estado local del documento relacionado y valida rechazos.
+
+    Antes se exigía que el documento estuviera marcado como "Aceptado" en la
+    tabla ``dte_envios``.  Ahora sólo se bloquean los documentos expresamente
+    rechazados, permitiendo continuar en estados intermedios ("Enviado",
+    "Observado", etc.) o cuando aún no existe registro local.
+    """
 
     if not doc_rel:
-        return
+        return None
 
     doc = doc_rel[0]
     tipo_generacion = doc.get("tipoGeneracion")
@@ -468,17 +545,35 @@ def _verificar_documento_relacionado_recepcionado(db: DB, doc_rel: list[dict]) -
     )
 
     if estado_ui is None:
-        raise ValueError(
-            "El documento relacionado aún no ha sido recepcionado por MH (sin registro local)"
+        logger.info(
+            "NR relacionado: documento %s sin registro local (se continúa)",
+            numero_documento or codigo_generacion,
         )
+        return None
 
-    if estado_ui == "Rechazado":
+    estado_ui_str = (estado_ui or "").strip()
+    estado_upper = estado_ui_str.upper()
+
+    if "RECHAZ" in estado_upper:
         raise ValueError("El documento relacionado fue RECHAZADO por MH")
 
-    if estado_ui not in _ESTADOS_REL_PERMITIDOS:
-        raise ValueError(
-            "El documento relacionado aún no ha sido recepcionado por MH"
+    if estado_upper not in {s.upper() for s in _ESTADOS_REL_PERMITIDOS}:
+        if estado_upper in {s.upper() for s in _ESTADOS_REL_ADVERTENCIA}:
+            logger.warning(
+                "NR relacionado: documento en estado %s, se permite continuar",
+                estado_ui_str,
+            )
+        else:
+            logger.info(
+                "NR relacionado: estado intermedio %s, se permite continuar",
+                estado_ui_str,
+            )
+    else:
+        logger.debug(
+            "NR relacionado: estado permitido %s", estado_ui_str
         )
+
+    return estado_ui_str or None
 
 
 def generar_nota_remision(
@@ -506,28 +601,9 @@ def generar_nota_remision(
         receptor = factura.get("receptor") or {}
         detalles = detalles or factura.get("cuerpoDocumento", [])
         if documento_relacionado is None:
-            ident = factura.get("identificacion", {})
-            fecha_emision = fecha_ddmmaaaa(
-                ident.get("fecEmi") or ident.get("fechaEmision")
+            documento_relacionado = _build_documento_relacionado_desde_dte(
+                factura, fecha_documento_relacionado=fecha_documento_relacionado
             )
-            if not fecha_emision:
-                fecha_emision = fecha_ddmmaaaa(datetime.now(TZ_EL_SALVADOR))
-            codigo_generacion = ident.get("codigoGeneracion")
-            numero_control = ident.get("numeroControl")
-            if codigo_generacion:
-                numero_documento = str(codigo_generacion).upper()
-                tipo_generacion = 2
-            else:
-                numero_documento = str(numero_control or "").strip()
-                tipo_generacion = 1
-            documento_relacionado = [
-                {
-                    "tipoDocumento": ident.get("tipoDte"),
-                    "tipoGeneracion": tipo_generacion,
-                    "numeroDocumento": numero_documento,
-                    "fechaEmision": fecha_iso(fecha_emision),
-                }
-            ]
         # Para notas derivadas de factura la extensión puede omitirse
         ext = {
             "nombEntrega": "N/D",
@@ -613,8 +689,11 @@ def generar_nota_remision(
     # - documentoRelacionado[].fechaEmision = fecha histórica del DTE base.
     #   Nunca copiar la histórica hacia fecEmi.
 
+    codigo_generacion_rel: Optional[str] = None
     if documento_relacionado:
         documento_relacionado = _normalizar_documento_relacionado(documento_relacionado)
+        if documento_relacionado:
+            codigo_generacion_rel = documento_relacionado[0].get("codigoGeneracion")
         _verificar_documento_relacionado_recepcionado(db, documento_relacionado)
     numero_doc = (
         documento_relacionado[0].get("numeroDocumento")
@@ -657,27 +736,32 @@ def generar_nota_remision(
 
     schema = catalogos.get_dte_schema("04")
     data = sanitize_dte_payload(data, schema)
+    if codigo_generacion_rel and data.get("documentoRelacionado"):
+        try:
+            data["documentoRelacionado"][0]["codigoGeneracion"] = codigo_generacion_rel
+        except (KeyError, IndexError, TypeError):
+            pass
     if data.get("documentoRelacionado") is None:
         data.pop("documentoRelacionado", None)
     return data
 
 
-def generar_nota_remision_desde_db(
-    db: DB, nota_id: int, *, ambiente: str = "00"
+def generar_nr_desde_nota(
+    db: DB,
+    nota_id: int,
+    *,
+    ambiente: str = "00",
+    strict_snapshot: bool | None = None,
 ) -> dict:
-    """Genera la estructura JSON para una Nota de Remisión desde la BD.
+    """Genera la estructura JSON de una NR a partir de una nota almacenada."""
 
-    Obtiene los datos de la nota y la venta asociada para construir la
-    estructura base y delega la construcción final a :func:`generar_nota_remision`.
-    """
+    start = time.perf_counter()
     row = db.cursor.execute("SELECT * FROM notas WHERE id=?", (nota_id,)).fetchone()
     if not row:
         raise ValueError("Nota no encontrada")
     nota = dict(row)
     if nota.get("tipo") != "remision":
         raise ValueError("La nota indicada no es de remisión")
-
-    import json
 
     detalles_raw = nota.get("detalles") or "{}"
     try:
@@ -686,8 +770,13 @@ def generar_nota_remision_desde_db(
         extra = {}
 
     venta_id = nota.get("venta_id")
+    venta = db.get_venta_by_id(venta_id) if venta_id is not None else None
+    fecha_origen = None
+    fecha_origen_source = None
+    uuid_origen = None
+    source_used = "manual"
+
     if venta_id:
-        venta = db.get_venta_by_id(venta_id)
         tipo_doc = "01"
         if venta and not db.get_venta_credito_fiscal(venta_id) and not venta.get(
             "cliente_id"
@@ -696,26 +785,45 @@ def generar_nota_remision_desde_db(
 
         from dte import generar_dte_json
 
-        fecha_origen = None
-        fecha_origen_source = None
+        strict = bool(strict_snapshot) if strict_snapshot is not None else False
         snapshot = db.get_snapshot_by_venta(venta_id)
+        dte_origen = None
         if snapshot:
             try:
                 dte_origen = normalize_snapshot(snapshot.payload)
             except Exception:
                 dte_origen = None
             else:
+                source_used = "snapshot"
+                if snapshot.uuid:
+                    try:
+                        uuid_origen = normalize_uuid_v4_upper(snapshot.uuid)
+                    except Exception:
+                        uuid_origen = (snapshot.uuid or "").strip().upper() or None
                 if snapshot.fecha_emision:
                     fecha_origen = fecha_ddmmaaaa(snapshot.fecha_emision)
                     if fecha_origen:
                         fecha_origen_source = "snapshot"
-        else:
-            dte_origen = None
 
         if dte_origen is None:
+            if strict:
+                raise SnapshotNotFoundError(venta_id, nota_id)
             dte_origen = generar_dte_json(
-                db, venta_id, tipo_dte=tipo_doc, ambiente=ambiente
+                db,
+                venta_id,
+                tipo_dte=tipo_doc,
+                ambiente=ambiente,
             )
+            source_used = "regen"
+
+        origen_ident = dte_origen.get("identificacion") or {}
+        if uuid_origen is None:
+            uuid_raw = origen_ident.get("codigoGeneracion")
+            if uuid_raw:
+                try:
+                    uuid_origen = normalize_uuid_v4_upper(uuid_raw)
+                except Exception:
+                    uuid_origen = str(uuid_raw).strip().upper() or None
 
         if not fecha_origen and venta_id is not None:
             fecha_envio = db.get_envio_fecha_emision(venta_id)
@@ -736,44 +844,80 @@ def generar_nota_remision_desde_db(
         )
 
         extension = extra.get("extension") or {}
-        return generar_nota_remision(
+        resultado = generar_nota_remision(
             db,
             factura=dte_origen,
             extension=extension,
             ambiente=ambiente,
             fecha_documento_relacionado=fecha_origen,
         )
+    else:
+        factura = extra.get("factura")
+        if factura:
+            extension = extra.get("extension") or {}
+            resultado = generar_nota_remision(
+                db,
+                factura=factura,
+                extension=extension,
+                ambiente=ambiente,
+                fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
+            )
+            source_used = "factura"
+        else:
+            from dte import _load_datos_negocio
 
-    factura = extra.get("factura")
-    if factura:
-        extension = extra.get("extension") or {}
-        return generar_nota_remision(
-            db,
-            factura=factura,
-            extension=extension,
-            ambiente=ambiente,
-            fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
+            detalles = extra.get("items") or []
+            receptor = extra.get("receptor") or {}
+            extension = extra.get("extension") or {}
+            doc_rel = extra.get("documento_relacionado")
+
+            emisor = _load_datos_negocio()
+            resultado = generar_nota_remision(
+                db,
+                emisor=emisor,
+                receptor=receptor,
+                detalles=detalles,
+                documento_relacionado=doc_rel,
+                extension=extension,
+                ambiente=ambiente,
+                fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
+            )
+
+    doc_rel_lista = resultado.get("documentoRelacionado") or []
+    doc_rel = doc_rel_lista[0] if doc_rel_lista else {}
+    fecha_rel = doc_rel.get("fechaEmision")
+    if venta_id and fecha_origen and fecha_rel and fecha_rel != fecha_origen:
+        logger.warning(
+            "documentoRelacionado.fechaEmision: valor no verificable localmente nota_id=%s venta_id=%s uuid=%s",
+            nota_id,
+            venta_id,
+            uuid_origen,
         )
 
-    # Nota independiente (sin venta asociada)
-    from dte import _load_datos_negocio
-
-    detalles = extra.get("items") or []
-    receptor = extra.get("receptor") or {}
-    extension = extra.get("extension") or {}
-    doc_rel = extra.get("documento_relacionado")
-
-    emisor = _load_datos_negocio()
-    return generar_nota_remision(
-        db,
-        emisor=emisor,
-        receptor=receptor,
-        detalles=detalles,
-        documento_relacionado=doc_rel,
-        extension=extension,
-        ambiente=ambiente,
-        fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
+    duration_ms = (time.perf_counter() - start) * 1000
+    uuid_rel = doc_rel.get("codigoGeneracion")
+    if not uuid_rel and doc_rel.get("tipoGeneracion") == 2:
+        uuid_rel = doc_rel.get("numeroDocumento")
+    logger.info(
+        "NR relaciona tipo=%s uuid=%s num=%s fec=%s fuente=%s nota_id=%s venta_id=%s dur_ms=%.3f",
+        doc_rel.get("tipoDocumento"),
+        uuid_rel,
+        doc_rel.get("numeroDocumento"),
+        fecha_rel,
+        source_used,
+        nota_id,
+        venta_id,
+        duration_ms,
     )
+    return resultado
 
 
-__all__ = ["generar_nota_remision", "generar_nota_remision_desde_db"]
+def generar_nota_remision_desde_db(
+    db: DB, nota_id: int, *, ambiente: str = "00"
+) -> dict:
+    """Compatibilidad: delega en :func:`generar_nr_desde_nota`."""
+
+    return generar_nr_desde_nota(db, nota_id, ambiente=ambiente)
+
+
+__all__ = ["generar_nota_remision", "generar_nr_desde_nota", "generar_nota_remision_desde_db"]

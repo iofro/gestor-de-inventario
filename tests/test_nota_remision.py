@@ -164,6 +164,7 @@ def test_nr_desde_factura_documento_relacionado(monkeypatch):
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
     assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
+    assert doc_rel["tipoGeneracion"] == 2
     assert doc_rel["fechaEmision"] == "2024-01-01"
     assert factura["identificacion"]["fecEmi"] == "2024-01-01T08:15:30"
     today_str = fecha_emision_hoy_str()
@@ -220,6 +221,68 @@ def test_nr_documento_relacionado_con_numero_control(monkeypatch):
     assert doc_rel["tipoGeneracion"] == 1
 
 
+def test_nr_documento_relacionado_en_estado_observado(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01T08:15:30",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": _sample_receptor(),
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion="12345678-ABCD-1234-ABCD-1234567890AB",
+        estado_ui="Observado",
+    )
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
+    assert doc_rel["codigoGeneracion"] == "12345678-ABCD-1234-ABCD-1234567890AB"
+
+
+
+def test_nr_documento_relacionado_sin_registro_local(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    factura = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01T08:15:30",
+        },
+        "emisor": _sample_emisor(),
+        "receptor": _sample_receptor(),
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}
+        ],
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["numeroDocumento"] == "12345678-ABCD-1234-ABCD-1234567890AB"
+    assert doc_rel["codigoGeneracion"] == "12345678-ABCD-1234-ABCD-1234567890AB"
+
+
 def test_nr_documento_relacionado_envio_legacy(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
@@ -252,6 +315,7 @@ def test_nr_documento_relacionado_envio_legacy(monkeypatch):
     data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["numeroDocumento"] == codigo_generacion
+    assert doc_rel["codigoGeneracion"] == codigo_generacion
     row = db.cursor.execute(
         "SELECT estado_ui FROM dte_envios ORDER BY id DESC LIMIT 1"
     ).fetchone()
@@ -359,6 +423,7 @@ def test_nr_documento_relacionado_envio_legacy_estado_precedencia(monkeypatch):
     data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["numeroDocumento"] == codigo_generacion
+    assert doc_rel["codigoGeneracion"] == codigo_generacion
     row = db.cursor.execute(
         "SELECT estado_ui FROM dte_envios ORDER BY id DESC LIMIT 1"
     ).fetchone()
@@ -395,6 +460,7 @@ def test_nr_documento_relacionado_envio_legacy_case_insensitive(monkeypatch):
     data = generar_nota_remision_desde_factura(db, factura, extension=extension)
     doc_rel = data["documentoRelacionado"][0]
     assert doc_rel["numeroDocumento"] == codigo_generacion
+    assert doc_rel["codigoGeneracion"] == codigo_generacion
     row = db.cursor.execute(
         "SELECT estado_ui FROM dte_envios ORDER BY id DESC LIMIT 1"
     ).fetchone()
@@ -1023,5 +1089,6 @@ def test_nr_documento_relacionado_inexistente(monkeypatch):
         "docuRecibe": "456",
         "observaciones": "Obs",
     }
-    with pytest.raises(ValueError, match="sin registro local"):
-        generar_nota_remision_desde_factura(db, factura, extension=extension)
+    data = generar_nota_remision_desde_factura(db, factura, extension=extension)
+    doc_rel = data["documentoRelacionado"][0]
+    assert doc_rel["numeroDocumento"] == "DTE-03-S001P001-000000000000999"

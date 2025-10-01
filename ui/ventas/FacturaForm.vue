@@ -283,6 +283,13 @@ const CONTINGENCIA_OPTIONS = [
 
 type ContingenciaOptionValue = (typeof CONTINGENCIA_OPTIONS)[number]['value'];
 type ModoTransmision = 1 | 2;
+type ModoTransmisionInput =
+  | ModoTransmision
+  | `${ModoTransmision}`
+  | number
+  | string
+  | null
+  | undefined;
 
 type PendingDte = {
   codigoGeneracion: string;
@@ -290,7 +297,7 @@ type PendingDte = {
 };
 
 interface FacturaConfig {
-  modoTransmision: ModoTransmision;
+  modoTransmision: ModoTransmisionInput;
   tipoContingencia?: ContingenciaOptionValue | null;
   motivoContingencia?: string | null;
   pendientesContingencia?: PendingDte[];
@@ -312,25 +319,41 @@ const saveErrorMessage = ref('');
 const modoSelect = ref<HTMLSelectElement>();
 const contingenciaButton = ref<HTMLButtonElement>();
 
-function sanitizeModo(value: unknown): ModoTransmision {
-  return value === 2 ? 2 : 1;
+function sanitizeModo(value: ModoTransmisionInput): ModoTransmision {
+  if (value === 2 || value === '2') {
+    return 2;
+  }
+  if (value === 1 || value === '1') {
+    return 1;
+  }
+  if (typeof value === 'string') {
+    const parsed = Number.parseInt(value, 10);
+    if (parsed === 2) {
+      return 2;
+    }
+    if (parsed === 1) {
+      return 1;
+    }
+  }
+  if (typeof value === 'number' && !Number.isNaN(value)) {
+    return value === 2 ? 2 : 1;
+  }
+  return 1;
 }
 
 const modoTransmision = ref<ModoTransmision>(
   sanitizeModo(props.config?.modoTransmision)
 );
+const isProgrammaticModoChange = ref(false);
+const initialIsContingencia = modoTransmision.value === 2;
 const contingenciaConfig = reactive<ContingenciaConfigState>({
-  tipo:
-    props.config?.modoTransmision === 2
-      ? props.config?.tipoContingencia ?? null
-      : null,
-  motivo:
-    props.config?.modoTransmision === 2
-      ? props.config?.motivoContingencia?.trim() ?? ''
-      : ''
+  tipo: initialIsContingencia ? props.config?.tipoContingencia ?? null : null,
+  motivo: initialIsContingencia
+    ? props.config?.motivoContingencia?.trim() ?? ''
+    : ''
 });
 const contingenciaConfigured = ref(
-  props.config?.modoTransmision === 2 &&
+  initialIsContingencia &&
     contingenciaConfig.tipo !== null &&
     (contingenciaConfig.tipo !== 5 || contingenciaConfig.motivo.trim().length > 0)
 );
@@ -356,10 +379,44 @@ const contingenciaSummary = computed(() => {
   return base;
 });
 
+function resetContingenciaState() {
+  contingenciaConfig.tipo = null;
+  contingenciaConfig.motivo = '';
+  contingenciaConfigured.value = false;
+  statusMessage.value = '';
+  saveErrorMessage.value = '';
+}
+
+function applyConfigFromProps(config: FacturaConfig) {
+  const sanitizedModo = sanitizeModo(config?.modoTransmision);
+  if (sanitizedModo !== modoTransmision.value) {
+    isProgrammaticModoChange.value = true;
+    modoTransmision.value = sanitizedModo;
+    nextTick(() => {
+      isProgrammaticModoChange.value = false;
+    });
+  }
+  if (sanitizedModo === 2) {
+    contingenciaConfig.tipo = config?.tipoContingencia ?? null;
+    contingenciaConfig.motivo = config?.motivoContingencia?.trim() ?? '';
+    contingenciaConfigured.value =
+      contingenciaConfig.tipo !== null &&
+      (contingenciaConfig.tipo !== 5 || contingenciaConfig.motivo.trim().length > 0);
+  } else {
+    resetContingenciaState();
+  }
+}
+
 const isSaveDisabled = computed(() => false);
 const eventoCopyMessage = ref('');
 
 watch(modoTransmision, async (newValue, oldValue) => {
+  if (isProgrammaticModoChange.value) {
+    if (newValue !== 2) {
+      resetContingenciaState();
+    }
+    return;
+  }
   if (oldValue === 2 && newValue === 1 && hasContingenciaData()) {
     lossConfirmVisible.value = true;
     await nextTick();
@@ -367,13 +424,20 @@ watch(modoTransmision, async (newValue, oldValue) => {
     return;
   }
   if (newValue !== 2) {
-    contingenciaConfig.tipo = null;
-    contingenciaConfig.motivo = '';
-    contingenciaConfigured.value = false;
-    statusMessage.value = '';
-    saveErrorMessage.value = '';
+    resetContingenciaState();
   }
 });
+
+watch(
+  () => [
+    props.config.modoTransmision,
+    props.config.tipoContingencia,
+    props.config.motivoContingencia
+  ] as const,
+  () => {
+    applyConfigFromProps(props.config);
+  }
+);
 
 function hasContingenciaData(): boolean {
   if (contingenciaConfigured.value) {
@@ -429,12 +493,12 @@ async function saveContingencia() {
 
 function confirmClearContingencia() {
   lossConfirmVisible.value = false;
+  isProgrammaticModoChange.value = true;
   modoTransmision.value = 1;
-  contingenciaConfig.tipo = null;
-  contingenciaConfig.motivo = '';
-  contingenciaConfigured.value = false;
-  statusMessage.value = '';
-  saveErrorMessage.value = '';
+  resetContingenciaState();
+  nextTick(() => {
+    isProgrammaticModoChange.value = false;
+  });
 }
 
 function cancelClearContingencia() {

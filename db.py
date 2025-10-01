@@ -728,7 +728,20 @@ class DB:
                 fecha_creacion TEXT,
                 FOREIGN KEY (venta_id) REFERENCES ventas(id)
             )
-        """
+            """
+        )
+
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS dte_pendientes (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER,
+                dte_json TEXT,
+                modo TEXT,
+                fecha_creacion TEXT,
+                transmitido INTEGER DEFAULT 0
+            )
+            """
         )
 
         self.cursor.execute(

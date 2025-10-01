@@ -10,6 +10,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QLineEdit,
     QDateEdit,
+    QDateTimeEdit,
     QAbstractItemView,
     QHeaderView,
     QLabel,
@@ -27,13 +28,14 @@ from PyQt5.QtWidgets import (
     QAction,
     QFormLayout,
 )
-from PyQt5.QtCore import QDate, Qt, QUrl, QTimer, QEvent, QSize
+from PyQt5.QtCore import QDate, QDateTime, QTime, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage
 import os
 import re
 import logging
 import glob
 import hashlib
+from pathlib import Path
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -88,6 +90,7 @@ from decimal import Decimal
 from utils.monto import iva_item
 from utils.snapshot import SnapshotNotFoundError
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
+from utils.fecha import TZ_EL_SALVADOR
 
 logger = logging.getLogger(__name__)
 
@@ -888,6 +891,687 @@ class NotaRemisionExtDialog(QDialog):
     def get_data(self):
         return self.panel.get_data()
 
+
+class _LimitedPlainTextEdit(QPlainTextEdit):
+    """Plain text edit with a hard character limit."""
+
+    def __init__(self, max_chars: int, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self._max_chars = max_chars
+        self._block_updates = False
+        self.textChanged.connect(self._enforce_limit)
+
+    def insertFromMimeData(self, source) -> None:  # type: ignore[override]
+        if source is None:
+            return
+        text = source.text()
+        if not text:
+            super().insertFromMimeData(source)
+            return
+        remaining = self._max_chars - len(self.toPlainText())
+        if remaining <= 0:
+            return
+        clipped = text[:remaining]
+        if not clipped:
+            return
+        cursor = self.textCursor()
+        cursor.insertText(clipped)
+
+    def _enforce_limit(self) -> None:
+        if self._block_updates:
+            return
+        text = self.toPlainText()
+        if len(text) <= self._max_chars:
+            return
+        cursor = self.textCursor()
+        position = cursor.position()
+        self._block_updates = True
+        self.setPlainText(text[: self._max_chars])
+        cursor.setPosition(min(position, self._max_chars))
+        self.setTextCursor(cursor)
+        self._block_updates = False
+
+
+class EventoContingenciaDialog(QDialog):
+    """Diálogo para preparar un borrador de evento de contingencia."""
+
+    MOTIVO_MAX_CHARS = 500
+    EVENTO_MAX_DTES = 1000
+
+    def __init__(self, manager, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.manager = manager
+        self.setWindowTitle("Crear evento de contingencia")
+        self.resize(820, 720)
+
+        self.evento_listo = False
+        self._validation_active = False
+        self._all_pending_dtes: list[dict] = []
+        self._filtered_dtes: list[dict] = []
+        (
+            self._default_tipo,
+            self._default_motivo,
+            self._ambiente_text,
+        ) = self._load_defaults()
+
+        self._build_ui()
+        self._load_pending_dtes()
+        self._update_end_minimum()
+        self._handle_range_change()
+        self._update_motivo_counter()
+        self._update_motivo_visibility()
+        self._update_preview()
+        self._update_action_state()
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        now = datetime.now(TZ_EL_SALVADOR).replace(tzinfo=None)
+        start_default = now - timedelta(hours=1)
+
+        # 1. Rango de la contingencia
+        rango_title = QLabel("1. Rango de la contingencia", self)
+        rango_title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(rango_title)
+
+        rango_form = QFormLayout()
+        rango_form.setFormAlignment(Qt.AlignTop)
+        rango_form.setLabelAlignment(Qt.AlignLeft)
+        rango_form.setHorizontalSpacing(12)
+        rango_form.setVerticalSpacing(6)
+
+        self.inicio_edit = QDateTimeEdit(self)
+        self.inicio_edit.setCalendarPopup(True)
+        self.inicio_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.inicio_edit.setDateTime(self._to_qdatetime(start_default))
+        inicio_widget, self.inicio_error_label = self._wrap_with_error(self.inicio_edit)
+        rango_form.addRow("Fecha/hora inicio:", inicio_widget)
+
+        self.fin_edit = QDateTimeEdit(self)
+        self.fin_edit.setCalendarPopup(True)
+        self.fin_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
+        self.fin_edit.setDateTime(self._to_qdatetime(now))
+        fin_widget, self.fin_error_label = self._wrap_with_error(self.fin_edit)
+        rango_form.addRow("Fecha/hora fin:", fin_widget)
+
+        layout.addLayout(rango_form)
+
+        # 2. Datos del evento
+        datos_title = QLabel("2. Datos del evento", self)
+        datos_title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(datos_title)
+
+        datos_form = QFormLayout()
+        datos_form.setFormAlignment(Qt.AlignTop)
+        datos_form.setLabelAlignment(Qt.AlignLeft)
+        datos_form.setHorizontalSpacing(12)
+        datos_form.setVerticalSpacing(6)
+
+        self.tipo_combo = QComboBox(self)
+        for key in sorted(catalogos.CONTINGENCIA):
+            label = catalogos.CONTINGENCIA[key]
+            self.tipo_combo.addItem(f"{key} – {label}", key)
+        tipo_index = -1
+        if self._default_tipo is not None:
+            tipo_index = self.tipo_combo.findData(self._default_tipo)
+        if tipo_index != -1:
+            self.tipo_combo.setCurrentIndex(tipo_index)
+        tipo_widget, self.tipo_error_label = self._wrap_with_error(self.tipo_combo)
+        datos_form.addRow("Tipo (CAT-005):", tipo_widget)
+
+        self.motivo_edit = _LimitedPlainTextEdit(self.MOTIVO_MAX_CHARS, self)
+        self.motivo_edit.setTabChangesFocus(True)
+        self.motivo_edit.setPlaceholderText(
+            "Describe el motivo (máx. 500 caracteres)."
+        )
+        self.motivo_edit.setPlainText(self._default_motivo)
+
+        self.motivo_row_widget = QWidget(self)
+        motivo_layout = QVBoxLayout(self.motivo_row_widget)
+        motivo_layout.setContentsMargins(0, 0, 0, 0)
+        motivo_layout.setSpacing(3)
+        motivo_layout.addWidget(self.motivo_edit)
+
+        self.motivo_counter = QLabel("0/500", self.motivo_row_widget)
+        self.motivo_counter.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.motivo_counter.setStyleSheet("color: #57606a; font-size: 11px;")
+        motivo_layout.addWidget(self.motivo_counter)
+
+        self.motivo_error_label = QLabel("", self.motivo_row_widget)
+        self.motivo_error_label.setWordWrap(True)
+        self.motivo_error_label.setStyleSheet("color: #b3261e;")
+        self.motivo_error_label.setVisible(False)
+        motivo_layout.addWidget(self.motivo_error_label)
+
+        datos_form.addRow("Motivo:", self.motivo_row_widget)
+
+        layout.addLayout(datos_form)
+
+        # 3. DTE a incluir
+        dte_title = QLabel("3. DTE a incluir", self)
+        dte_title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(dte_title)
+
+        self.dte_counter_label = QLabel("", self)
+        self.dte_counter_label.setStyleSheet("color: #57606a;")
+        layout.addWidget(self.dte_counter_label)
+
+        self.dte_list = QListWidget(self)
+        self.dte_list.setSelectionMode(QAbstractItemView.NoSelection)
+        self.dte_list.setAlternatingRowColors(True)
+        self.dte_list.setFocusPolicy(Qt.StrongFocus)
+        self.dte_list.setMinimumHeight(200)
+        layout.addWidget(self.dte_list)
+
+        self.dte_empty_label = QLabel(
+            "No hay DTE pendientes en este rango.", self
+        )
+        self.dte_empty_label.setAlignment(Qt.AlignCenter)
+        self.dte_empty_label.setWordWrap(True)
+        self.dte_empty_label.setStyleSheet(
+            "color: #6c757d; border: 1px dashed #d0d0d0; padding: 18px;"
+        )
+        self.dte_empty_label.setVisible(False)
+        layout.addWidget(self.dte_empty_label)
+
+        self.dte_warning_label = QLabel(
+            "Máximo 1000 por evento. Se deberá dividir en varios eventos.",
+            self,
+        )
+        self.dte_warning_label.setStyleSheet("color: #b35f00;")
+        self.dte_warning_label.setWordWrap(True)
+        self.dte_warning_label.setVisible(False)
+        layout.addWidget(self.dte_warning_label)
+
+        self.dtes_error_label = QLabel("", self)
+        self.dtes_error_label.setStyleSheet("color: #b3261e;")
+        self.dtes_error_label.setWordWrap(True)
+        self.dtes_error_label.setVisible(False)
+        layout.addWidget(self.dtes_error_label)
+
+        # 4. Previsualización
+        preview_title = QLabel("4. Previsualización JSON", self)
+        preview_title.setStyleSheet("font-weight: 600;")
+        layout.addWidget(preview_title)
+
+        self.preview_edit = QPlainTextEdit(self)
+        self.preview_edit.setReadOnly(True)
+        self.preview_edit.setLineWrapMode(QPlainTextEdit.NoWrap)
+        self.preview_edit.setMinimumHeight(220)
+        self.preview_edit.setStyleSheet(
+            "font-family: 'Fira Code', 'Cascadia Code', 'Courier New', monospace;"
+        )
+        self.preview_edit.setPlaceholderText(
+            "La previsualización se actualizará automáticamente."
+        )
+        layout.addWidget(self.preview_edit)
+
+        # Acciones
+        self.button_box = QDialogButtonBox(QDialogButtonBox.Close, self)
+        self.generate_btn = self.button_box.addButton(
+            "Generar borrador", QDialogButtonBox.ActionRole
+        )
+        self.generate_btn.setDefault(True)
+        self.generate_btn.setEnabled(False)
+        self.button_box.rejected.connect(self.reject)
+        layout.addWidget(self.button_box)
+
+        self.draft_message_label = QLabel("", self)
+        self.draft_message_label.setStyleSheet("color: #0a7a4f; font-weight: 600;")
+        self.draft_message_label.setWordWrap(True)
+        self.draft_message_label.setVisible(False)
+        layout.addWidget(self.draft_message_label)
+
+        # Señales
+        self.inicio_edit.dateTimeChanged.connect(self._on_start_changed)
+        self.fin_edit.dateTimeChanged.connect(self._on_end_changed)
+        self.tipo_combo.currentIndexChanged.connect(self._on_tipo_changed)
+        self.motivo_edit.textChanged.connect(self._on_motivo_changed)
+        self.generate_btn.clicked.connect(self._on_generate_clicked)
+
+    @staticmethod
+    def _to_qdatetime(value: datetime) -> QDateTime:
+        return QDateTime(
+            QDate(value.year, value.month, value.day),
+            QTime(value.hour, value.minute, value.second),
+        )
+
+    @staticmethod
+    def _wrap_with_error(widget: QWidget) -> tuple[QWidget, QLabel]:
+        container = QWidget(widget.parent())
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(3)
+        layout.addWidget(widget)
+        error_label = QLabel("", container)
+        error_label.setWordWrap(True)
+        error_label.setStyleSheet("color: #b3261e;")
+        error_label.setVisible(False)
+        layout.addWidget(error_label)
+        return container, error_label
+
+    def _load_defaults(self) -> tuple[int | None, str, str]:
+        tipo: int | None = None
+        motivo = ""
+        ambiente = "pruebas"
+        try:
+            datos = dte._load_datos_negocio()
+        except Exception:
+            datos = {}
+        dte_api = datos.get("dte_api") or {}
+
+        tipo_raw = dte_api.get("tipo_contingencia")
+        try:
+            tipo_val = int(str(tipo_raw).strip())
+        except Exception:
+            tipo_val = None
+        if tipo_val in catalogos.CONTINGENCIA:
+            tipo = tipo_val
+
+        motivo = str(dte_api.get("motivo_contin") or "").strip()
+
+        ambiente_raw = str(dte_api.get("ambiente") or "").strip().lower()
+        if ambiente_raw.startswith("produc"):
+            ambiente = "producción"
+
+        return tipo, motivo[: self.MOTIVO_MAX_CHARS], ambiente
+
+    def _on_start_changed(self, _value: QDateTime) -> None:
+        self._update_end_minimum()
+        self._handle_range_change()
+
+    def _on_end_changed(self, _value: QDateTime) -> None:
+        self._handle_range_change()
+
+    def _handle_range_change(self) -> None:
+        self._clear_draft_message()
+        self._refresh_filtered_dtes()
+        self._update_dte_list()
+        self._update_preview()
+        self._update_action_state()
+
+    def _update_end_minimum(self) -> None:
+        start_dt = self.inicio_edit.dateTime()
+        if start_dt.isValid():
+            self.fin_edit.setMinimumDateTime(start_dt.addSecs(1))
+
+    def _refresh_filtered_dtes(self) -> None:
+        start_py = self._to_py_datetime(self.inicio_edit.dateTime())
+        end_py = self._to_py_datetime(self.fin_edit.dateTime())
+        if start_py and end_py:
+            filtered = [
+                entry
+                for entry in self._all_pending_dtes
+                if start_py <= entry["timestamp"] <= end_py
+            ]
+        else:
+            filtered = []
+        filtered.sort(key=lambda item: item["timestamp"])
+        self._filtered_dtes = filtered
+
+    @staticmethod
+    def _to_py_datetime(value: QDateTime) -> datetime | None:
+        if not value or not value.isValid():
+            return None
+        return value.toPyDateTime()
+
+    def _update_dte_list(self) -> None:
+        self.dte_list.setUpdatesEnabled(False)
+        self.dte_list.clear()
+        for entry in self._filtered_dtes[: self.EVENTO_MAX_DTES]:
+            timestamp = entry["timestamp"]
+            fecha = timestamp.strftime("%Y-%m-%d %H:%M")
+            descripcion = entry.get("tipo_desc") or entry.get("tipo")
+            codigo = entry.get("codigo_upper") or entry.get("codigo")
+            item = QListWidgetItem(f"{fecha} · {descripcion} · {codigo}")
+            self.dte_list.addItem(item)
+        self.dte_list.setUpdatesEnabled(True)
+
+        total = len(self._filtered_dtes)
+        if total == 1:
+            counter_text = "1 DTE pendiente en este rango."
+        else:
+            counter_text = f"{total} DTE pendientes en este rango."
+        self.dte_counter_label.setText(counter_text)
+
+        self.dte_empty_label.setVisible(total == 0)
+        self.dte_warning_label.setVisible(total > self.EVENTO_MAX_DTES)
+
+    def _current_tipo(self) -> int | None:
+        data = self.tipo_combo.currentData()
+        if isinstance(data, int):
+            return data
+        if data is None:
+            return None
+        try:
+            return int(data)
+        except Exception:
+            return None
+
+    def _current_motivo(self) -> str:
+        return self.motivo_edit.toPlainText().strip()
+
+    def _collect_validation_errors(self) -> tuple[dict[str, str], str | None]:
+        errors: dict[str, str] = {}
+        first_key: str | None = None
+
+        tipo = self._current_tipo()
+        if tipo is None or tipo not in catalogos.CONTINGENCIA:
+            errors["tipo"] = "Selecciona un tipo de contingencia (CAT-005)."
+            first_key = first_key or "tipo"
+
+        if tipo == 5:
+            motivo = self._current_motivo()
+            if not motivo:
+                errors["motivo"] = (
+                    "Motivo es obligatorio cuando el tipo es “Otro” (máx. 500)."
+                )
+                first_key = first_key or "motivo"
+
+        inicio_dt = self._to_py_datetime(self.inicio_edit.dateTime())
+        fin_dt = self._to_py_datetime(self.fin_edit.dateTime())
+
+        if inicio_dt is None:
+            errors["inicio"] = "Completa la fecha y hora de inicio."
+            first_key = first_key or "inicio"
+        if fin_dt is None:
+            errors["fin"] = "Completa la fecha y hora de fin."
+            first_key = first_key or "fin"
+        if inicio_dt and fin_dt and not (fin_dt > inicio_dt):
+            errors["fin"] = "La fecha/hora final debe ser mayor que la inicial."
+            first_key = first_key or "fin"
+
+        total = len(self._filtered_dtes)
+        if total == 0:
+            errors["dtes"] = "Debe existir al menos un DTE pendiente."
+            first_key = first_key or "dtes"
+        elif total > self.EVENTO_MAX_DTES:
+            errors["dtes"] = "Máximo 1000 DTE por evento."
+            first_key = first_key or "dtes"
+
+        return errors, first_key
+
+    def _apply_errors(self, errors: dict[str, str]) -> None:
+        self.tipo_error_label.setVisible("tipo" in errors)
+        self.tipo_error_label.setText(errors.get("tipo", ""))
+
+        show_motivo_error = "motivo" in errors and self._current_tipo() == 5
+        self.motivo_error_label.setVisible(show_motivo_error)
+        self.motivo_error_label.setText(errors.get("motivo", ""))
+
+        self.inicio_error_label.setVisible("inicio" in errors)
+        self.inicio_error_label.setText(errors.get("inicio", ""))
+
+        self.fin_error_label.setVisible("fin" in errors)
+        self.fin_error_label.setText(errors.get("fin", ""))
+
+        self.dtes_error_label.setVisible("dtes" in errors)
+        self.dtes_error_label.setText(errors.get("dtes", ""))
+
+    def _focus_field(self, key: str | None) -> None:
+        if key == "tipo":
+            self.tipo_combo.setFocus()
+        elif key == "motivo":
+            self.motivo_edit.setFocus()
+        elif key == "inicio":
+            self.inicio_edit.setFocus()
+        elif key == "fin":
+            self.fin_edit.setFocus()
+        elif key == "dtes":
+            self.dte_list.setFocus()
+
+    def _update_action_state(self) -> tuple[dict[str, str], str | None]:
+        errors, first_key = self._collect_validation_errors()
+        self.generate_btn.setEnabled(len(errors) == 0)
+        if self._validation_active:
+            self._apply_errors(errors)
+        else:
+            self._apply_errors({})
+        return errors, first_key
+
+    def _update_preview(self) -> None:
+        tipo = self._current_tipo()
+        inicio_dt = self._to_py_datetime(self.inicio_edit.dateTime())
+        fin_dt = self._to_py_datetime(self.fin_edit.dateTime())
+        inicio_fecha = inicio_dt.strftime("%Y-%m-%d") if inicio_dt else ""
+        inicio_hora = inicio_dt.strftime("%H:%M:%S") if inicio_dt else ""
+        fin_fecha = fin_dt.strftime("%Y-%m-%d") if fin_dt else ""
+        fin_hora = fin_dt.strftime("%H:%M:%S") if fin_dt else ""
+
+        motivo_texto = ""
+        if tipo == 5:
+            motivo_texto = self._current_motivo()
+        elif tipo in catalogos.CONTINGENCIA:
+            motivo_texto = catalogos.CONTINGENCIA[tipo]
+
+        detalle = [
+            {
+                "noItem": idx,
+                "codigoGeneracion": entry.get("codigo_upper") or entry.get("codigo"),
+                "tipoDoc": entry.get("tipo"),
+            }
+            for idx, entry in enumerate(
+                self._filtered_dtes[: self.EVENTO_MAX_DTES],
+                start=1,
+            )
+        ]
+
+        now = datetime.now(TZ_EL_SALVADOR)
+        preview = {
+            "identificacion": {
+                "version": 3,
+                "ambiente": self._ambiente_text,
+                "codigoGeneracion": "POR-DEFINIR",
+                "fTransmision": now.strftime("%Y-%m-%d"),
+                "hTransmision": now.strftime("%H:%M:%S"),
+            },
+            "motivo": {
+                "tipo": tipo,
+                "motivo": motivo_texto,
+                "fInicio": inicio_fecha,
+                "hInicio": inicio_hora,
+                "fFin": fin_fecha,
+                "hFin": fin_hora,
+            },
+            "detalleDTE": detalle,
+        }
+
+        try:
+            texto = json.dumps(preview, indent=2, ensure_ascii=False)
+        except Exception:
+            texto = ""
+        self.preview_edit.setPlainText(texto)
+
+    def _update_motivo_counter(self) -> None:
+        texto = self.motivo_edit.toPlainText()
+        self.motivo_counter.setText(f"{len(texto)}/{self.MOTIVO_MAX_CHARS}")
+
+    def _update_motivo_visibility(self) -> None:
+        visible = self._current_tipo() == 5
+        self.motivo_row_widget.setVisible(visible)
+        if not visible:
+            self.motivo_error_label.setVisible(False)
+
+    def _on_tipo_changed(self, _index: int) -> None:
+        self._clear_draft_message()
+        self._update_motivo_visibility()
+        self._update_action_state()
+        self._update_preview()
+
+    def _on_motivo_changed(self) -> None:
+        self._clear_draft_message()
+        self._update_motivo_counter()
+        self._update_action_state()
+        self._update_preview()
+
+    def _clear_draft_message(self) -> None:
+        if self.evento_listo or self.draft_message_label.isVisible():
+            self.evento_listo = False
+            self.draft_message_label.clear()
+            self.draft_message_label.setVisible(False)
+
+    def _on_generate_clicked(self) -> None:
+        self._validation_active = True
+        errors, first_key = self._update_action_state()
+        if errors:
+            self._focus_field(first_key)
+            return
+        self.evento_listo = True
+        self.draft_message_label.setText("Borrador generado (solo UI).")
+        self.draft_message_label.setVisible(True)
+
+    def _load_pending_dtes(self) -> None:
+        entries: list[dict] = []
+        seen: set[str] = set()
+
+        for entry in self._load_pending_from_db():
+            code = entry.get("codigo_upper")
+            if not code or entry.get("timestamp") is None:
+                continue
+            if code in seen:
+                continue
+            seen.add(code)
+            entries.append(entry)
+
+        for entry in self._load_pending_from_fs():
+            code = entry.get("codigo_upper")
+            if not code or entry.get("timestamp") is None:
+                continue
+            if code in seen:
+                continue
+            seen.add(code)
+            entries.append(entry)
+
+        entries.sort(key=lambda item: item["timestamp"])
+        self._all_pending_dtes = entries
+
+    def _load_pending_from_db(self) -> list[dict]:
+        manager = getattr(self, "manager", None)
+        db = getattr(manager, "db", None) if manager else None
+        getter = getattr(db, "get_dte_pendientes", None) if db else None
+        if not callable(getter):
+            return []
+        entries: list[dict] = []
+        try:
+            rows = getter() or []
+        except Exception:
+            return []
+        for row in rows:
+            data = row.get("dte_json") if isinstance(row, dict) else None
+            entry = self._create_pending_entry(data)
+            if entry is None:
+                continue
+            if entry["timestamp"] is None:
+                fecha_creacion = row.get("fecha_creacion") if isinstance(row, dict) else None
+                if fecha_creacion:
+                    try:
+                        entry["timestamp"] = datetime.fromisoformat(str(fecha_creacion))
+                    except Exception:
+                        pass
+            if entry["timestamp"] is None:
+                continue
+            entries.append(entry)
+        return entries
+
+    def _load_pending_from_fs(self) -> list[dict]:
+        base = Path(DTES_PENDIENTES_DIR)
+        if not base.exists():
+            return []
+        entries: list[dict] = []
+        try:
+            json_paths = list(base.rglob("documento.json"))
+        except Exception:
+            return []
+        for path in json_paths:
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    data = json.load(fh)
+            except Exception:
+                continue
+            entry = self._create_pending_entry(data)
+            if entry is None or entry["timestamp"] is None:
+                continue
+            entries.append(entry)
+        return entries
+
+    def _create_pending_entry(self, data) -> dict | None:
+        if isinstance(data, str):
+            try:
+                data = json.loads(data)
+            except Exception:
+                return None
+        if not isinstance(data, dict):
+            return None
+        ident = data.get("identificacion") or data.get("identificador") or {}
+        tipo_operacion = ident.get("tipoOperacion")
+        if self._normalize_tipo_operacion(tipo_operacion) != 2:
+            return None
+        codigo = ident.get("codigoGeneracion")
+        if not codigo:
+            return None
+        tipo_doc = self._normalize_tipo_doc(ident.get("tipoDte"))
+        timestamp = self._combine_datetime(
+            ident.get("fecEmi") or ident.get("fechaEmision"),
+            ident.get("horEmi") or ident.get("horaEmision"),
+        )
+        if timestamp is None:
+            return None
+        codigo_upper = str(codigo).strip().upper()
+        return {
+            "codigo": str(codigo),
+            "codigo_upper": codigo_upper,
+            "tipo": tipo_doc,
+            "tipo_desc": TIPO_DTE_DESC.get(tipo_doc, tipo_doc),
+            "timestamp": timestamp,
+        }
+
+    @staticmethod
+    def _normalize_tipo_operacion(value) -> int | None:
+        if value is None:
+            return None
+        try:
+            return int(str(value).strip())
+        except Exception:
+            texto = str(value).strip().lower()
+            if "contingencia" in texto:
+                return 2
+        return None
+
+    @staticmethod
+    def _normalize_tipo_doc(value) -> str:
+        if value is None:
+            return "01"
+        if isinstance(value, int):
+            return f"{value:02d}"
+        texto = str(value).strip()
+        if not texto:
+            return "01"
+        if texto.isdigit():
+            return f"{int(texto):02d}"
+        digitos = "".join(ch for ch in texto if ch.isdigit())
+        if digitos:
+            return f"{int(digitos):02d}"
+        return "01"
+
+    @staticmethod
+    def _combine_datetime(fecha, hora) -> datetime | None:
+        if not fecha:
+            return None
+        fecha_str = str(fecha).strip()
+        if not fecha_str:
+            return None
+        hora_str = str(hora or "00:00:00").strip()
+        if not hora_str:
+            hora_str = "00:00:00"
+        if len(hora_str) == 5:
+            hora_str = f"{hora_str}:00"
+        try:
+            return datetime.strptime(f"{fecha_str} {hora_str[:8]}", "%Y-%m-%d %H:%M:%S")
+        except Exception:
+            return None
+
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
 
@@ -984,6 +1668,7 @@ class FacturacionTab(QWidget):
         self.btn_remision.clicked.connect(self.abrir_dialogo_nota_remision)
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
+        self.btn_evento_contingencia = QPushButton("Evento de contingencia…")
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
@@ -993,6 +1678,7 @@ class FacturacionTab(QWidget):
         btns.addWidget(self.btn_nota)
         btns.addWidget(self.btn_remision)
         btns.addWidget(self.btn_enviar)
+        btns.addWidget(self.btn_evento_contingencia)
         btns.addWidget(self.btn_imprimir)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
@@ -1026,6 +1712,7 @@ class FacturacionTab(QWidget):
         self.table.itemDoubleClicked.connect(self.mostrar_detalle_factura)
 
         self.btn_enviar.clicked.connect(self.send_selected_invoice)
+        self.btn_evento_contingencia.clicked.connect(self._enviar_evento_contingencia)
         self.btn_imprimir.clicked.connect(self.print_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_invoice)
@@ -2467,6 +3154,10 @@ class FacturacionTab(QWidget):
                         "Enviar a Hacienda",
                         GENERIC_SEND_ERROR,
                     )
+
+    def _enviar_evento_contingencia(self) -> None:
+        dialog = EventoContingenciaDialog(self.manager, self)
+        dialog.exec_()
 
     def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:
         if not entry:

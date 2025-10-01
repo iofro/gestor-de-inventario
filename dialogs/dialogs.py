@@ -28,6 +28,7 @@ import re
 from db import DB
 
 from utils import jws
+from utils.catalogos import CONTINGENCIA
 from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
 getcontext().prec = 28
@@ -3692,6 +3693,11 @@ class DTEConfigDialog(QDialog):
         self.prefijo_control = QLineEdit("DTE-01-S001P001")
         self.modo_transmision = QComboBox()
         self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
+        self.config_contingencia_btn = QPushButton("Configurar contingencia…")
+        self.config_contingencia_btn.setVisible(False)
+        self.config_contingencia_btn.clicked.connect(self._open_contingencia_config)
+        self._contingencia_tipo: int | None = None
+        self._contingencia_motivo: str = ""
         self.ambiente_hacienda = QComboBox()
         self.ambiente_hacienda.addItems(["00 - Pruebas", "01 - Producción"])
         self.token_hacienda = QLineEdit()
@@ -3719,7 +3725,19 @@ class DTEConfigDialog(QDialog):
         form.addRow(self.dte_activo)
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
         form.addRow("Prefijo número control:", self.prefijo_control)
-        form.addRow("Modo transmisión por defecto:", self.modo_transmision)
+        modo_widget = QWidget()
+        modo_layout = QHBoxLayout(modo_widget)
+        modo_layout.setContentsMargins(0, 0, 0, 0)
+        modo_layout.addWidget(self.modo_transmision)
+        modo_layout.addWidget(self.config_contingencia_btn)
+        form.addRow("Modo transmisión por defecto:", modo_widget)
+        self.contingencia_summary = QLabel(
+            "Configura el tipo de contingencia antes de guardar."
+        )
+        self.contingencia_summary.setWordWrap(True)
+        self.contingencia_summary.setVisible(False)
+        self.contingencia_summary.setStyleSheet("color: #57606a;")
+        form.addRow("", self.contingencia_summary)
         form.addRow("Ambiente:", self.ambiente_hacienda)
         token_widget = QWidget()
         token_layout = QHBoxLayout(token_widget)
@@ -3758,11 +3776,15 @@ class DTEConfigDialog(QDialog):
         self.ambiente_hacienda.currentTextChanged.connect(self._set_default_urls)
         self.endpoint_hacienda.textChanged.connect(self._set_default_urls)
         self.correlativos_btn.clicked.connect(self._open_correlativos)
+        self.modo_transmision.currentIndexChanged.connect(
+            self._update_contingencia_visibility
+        )
         self._ambiente_actual = self._current_env_key()
         if dte_api or fe_config or env_config:
             self.set_data(dte_api or {}, fe_config or {}, env_config or {})
         else:
             self._set_default_urls()
+            self._update_contingencia_visibility()
 
     def _open_correlativos(self):
         dlg = DTECorrelativoConfigDialog(
@@ -3794,7 +3816,15 @@ class DTEConfigDialog(QDialog):
         self.dte_activo.setChecked(fe_config.get("activo", True))
         self.tipo_contribuyente.setCurrentText(dte_api.get("tipo_contribuyente", "Persona Natural"))
         self.prefijo_control.setText(dte_api.get("prefijo_control", "DTE-01-S001P001"))
-        self.modo_transmision.setCurrentText(dte_api.get("modo_transmision", "1 - Normal"))
+        with QSignalBlocker(self.modo_transmision):
+            self.modo_transmision.setCurrentText(
+                dte_api.get("modo_transmision", "1 - Normal")
+            )
+        self._contingencia_tipo = self._parse_tipo_contingencia(
+            dte_api.get("tipo_contingencia")
+        )
+        self._contingencia_motivo = (dte_api.get("motivo_contin") or "").strip()
+        self._update_contingencia_visibility()
         ambiente = str(dte_api.get("ambiente", "00")).lower()
         with QSignalBlocker(self.ambiente_hacienda):
             if ambiente in {"01", "1", "produccion", "producción"}:
@@ -3973,7 +4003,171 @@ class DTEConfigDialog(QDialog):
         recep = self.recepcion_url.text().strip()
         if recep:
             urls["recepcion_url"] = recep
+        if self._contingencia_tipo is not None:
+            dte_api["tipo_contingencia"] = int(self._contingencia_tipo)
+        else:
+            dte_api["tipo_contingencia"] = None
+        dte_api["motivo_contin"] = self._contingencia_motivo
         return dte_api, fe_config, urls
+
+    def _parse_tipo_contingencia(self, value) -> int | None:
+        if value in (None, ""):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _is_contingencia_selected(self) -> bool:
+        text = self.modo_transmision.currentText().lower()
+        return "contingencia" in text or self.modo_transmision.currentIndex() == 1
+
+    def _update_contingencia_visibility(self):
+        is_contingencia = self._is_contingencia_selected()
+        self.config_contingencia_btn.setVisible(is_contingencia)
+        self.contingencia_summary.setVisible(is_contingencia)
+        if is_contingencia:
+            self._update_contingencia_summary()
+
+    def _update_contingencia_summary(self):
+        if self._contingencia_tipo is None:
+            self.contingencia_summary.setText(
+                "Configura el tipo de contingencia antes de guardar."
+            )
+            self.contingencia_summary.setStyleSheet("color: #c0392b;")
+            return
+        descripcion = CONTINGENCIA.get(self._contingencia_tipo)
+        texto = f"Tipo {self._contingencia_tipo}"
+        if descripcion:
+            texto += f" – {descripcion}"
+        motivo = self._contingencia_motivo.strip()
+        if self._contingencia_tipo == 5:
+            if motivo:
+                texto += f" | Motivo: {motivo}"
+                self.contingencia_summary.setStyleSheet("color: #2d3436;")
+            else:
+                texto += " | Motivo requerido para el tipo 5."
+                self.contingencia_summary.setStyleSheet("color: #c0392b;")
+        elif motivo:
+            texto += f" | Motivo: {motivo}"
+            self.contingencia_summary.setStyleSheet("color: #2d3436;")
+        else:
+            self.contingencia_summary.setStyleSheet("color: #2d3436;")
+        self.contingencia_summary.setText(texto)
+
+    def _open_contingencia_config(self):
+        dialog = ContingenciaConfigDialog(
+            tipo=self._contingencia_tipo,
+            motivo=self._contingencia_motivo,
+            parent=self,
+        )
+        if dialog.exec_():
+            data = dialog.get_config()
+            self._contingencia_tipo = data["tipo"]
+            self._contingencia_motivo = data["motivo"]
+            self._update_contingencia_summary()
+
+    def accept(self):
+        if self._is_contingencia_selected():
+            if self._contingencia_tipo is None:
+                QMessageBox.warning(
+                    self,
+                    "Configuración incompleta",
+                    "Selecciona el tipo de contingencia antes de guardar.",
+                )
+                return
+            if self._contingencia_tipo == 5 and not self._contingencia_motivo.strip():
+                QMessageBox.warning(
+                    self,
+                    "Configuración incompleta",
+                    "Ingresa el motivo de contingencia requerido para el tipo 5.",
+                )
+                return
+        super().accept()
+
+
+class ContingenciaConfigDialog(QDialog):
+    def __init__(
+        self,
+        tipo: int | None = None,
+        motivo: str = "",
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Configurar contingencia")
+
+        layout = QVBoxLayout(self)
+        form = QFormLayout()
+
+        self.tipo_combo = QComboBox(self)
+        self.tipo_combo.addItem("Selecciona un tipo…", None)
+        for codigo, descripcion in sorted(CONTINGENCIA.items()):
+            self.tipo_combo.addItem(f"{codigo} - {descripcion}", codigo)
+        if tipo in CONTINGENCIA:
+            idx = self.tipo_combo.findData(tipo)
+            if idx >= 0:
+                self.tipo_combo.setCurrentIndex(idx)
+
+        self.motivo_edit = QTextEdit(self)
+        self.motivo_edit.setPlaceholderText(
+            "Describe el motivo si aplica. Obligatorio para el tipo 5."
+        )
+        self.motivo_edit.setFixedHeight(80)
+        self.motivo_edit.setPlainText(motivo or "")
+
+        form.addRow("Tipo de contingencia (CAT-005):", self.tipo_combo)
+        form.addRow("Motivo de contingencia:", self.motivo_edit)
+
+        self.warning_label = QLabel("", self)
+        self.warning_label.setWordWrap(True)
+        self.warning_label.setStyleSheet("color: #c0392b;")
+        form.addRow("", self.warning_label)
+
+        layout.addLayout(form)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel,
+            parent=self,
+        )
+        buttons.accepted.connect(self._handle_accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+        self.tipo_combo.currentIndexChanged.connect(self._handle_tipo_changed)
+        self._handle_tipo_changed(self.tipo_combo.currentIndex())
+        self._config: dict[str, object] | None = None
+
+    def _handle_tipo_changed(self, index: int) -> None:
+        tipo = self.tipo_combo.itemData(index)
+        if tipo == 5:
+            self.warning_label.setText(
+                "El motivo es obligatorio para el tipo de contingencia 5 (otros)."
+            )
+        else:
+            self.warning_label.clear()
+
+    def _handle_accept(self) -> None:
+        tipo = self.tipo_combo.currentData()
+        if tipo is None:
+            QMessageBox.warning(
+                self,
+                "Datos incompletos",
+                "Selecciona un tipo de contingencia (CAT-005).",
+            )
+            return
+        motivo = self.motivo_edit.toPlainText().strip()
+        if tipo == 5 and not motivo:
+            QMessageBox.warning(
+                self,
+                "Datos incompletos",
+                "El motivo es obligatorio para el tipo de contingencia 5.",
+            )
+            return
+        self._config = {"tipo": int(tipo), "motivo": motivo}
+        self.accept()
+
+    def get_config(self) -> dict[str, object]:
+        return self._config or {"tipo": None, "motivo": ""}
 
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):

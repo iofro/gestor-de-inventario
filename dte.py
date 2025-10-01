@@ -6763,19 +6763,13 @@ def _enviar_documento(
             _save_signed_dte(data, signed, fallido=False)
         except Exception:
             pass
-        db.registrar_envio_dte(
-            doc_id,
-            modo,
-            "Pendiente",
-            "",
-            json.dumps({"jws": signed}, ensure_ascii=False),
-            codigo_generacion=ident.get("codigoGeneracion"),
-            numero_control=ident.get("numeroControl"),
-        )
-        return {"estado": "Pendiente"}
 
     # Verify that metadata matches the signed payload and update it
-    payload = _decode_jws_payload(signed)
+    try:
+        payload = _decode_jws_payload(signed)
+    except ValueError:
+        logger.debug("Payload JWS inválido; usando datos sin decodificar", exc_info=True)
+        payload = data
     pident = payload.get("identificacion") or payload.get("identificador") or {}
     p_amb = pident.get("ambiente")
     p_tipo = pident.get("tipoDte") or pident.get("tipoDocumento")

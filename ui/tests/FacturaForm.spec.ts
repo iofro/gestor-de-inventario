@@ -46,6 +46,25 @@ describe('FacturaForm', () => {
     expect(wrapper.find('.chip').text()).toContain('Tipo 3');
   });
 
+  it('interpreta valores de modo provenientes como texto', () => {
+    const wrapper = mountForm({ modoTransmision: '2 - Contingencia' });
+    expect(wrapper.find('.configurar-contingencia').exists()).toBe(true);
+  });
+
+  it('refleja cambios programáticos del modo', async () => {
+    const wrapper = mountForm();
+    expect(wrapper.find('.configurar-contingencia').exists()).toBe(false);
+
+    await wrapper.setProps({
+      config: {
+        ...wrapper.props().config,
+        modoTransmision: 2
+      }
+    });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('.configurar-contingencia').exists()).toBe(true);
+  });
+
   it('exige completar la configuración de contingencia antes de guardar', async () => {
     const wrapper = mountForm({ modoTransmision: 2 });
     await wrapper.find('.guardar').trigger('click');

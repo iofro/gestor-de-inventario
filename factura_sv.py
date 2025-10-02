@@ -7,7 +7,7 @@ from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
 
-from utils.pdf_utils import draw_wrapped_text
+from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis
 import utils.catalogos as catalogos
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
@@ -326,6 +326,8 @@ def generar_factura_electronica_pdf(
     box_y = encabezado_y - box_h
     emisor_x = x_margin
     receptor_x = emisor_x + box_w + 10
+    emisor_text_width = box_w - 10
+    receptor_col_width = box_w / 2 - 10
 
     c.setLineWidth(0.7)
     c.roundRect(emisor_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
@@ -336,11 +338,29 @@ def generar_factura_electronica_pdf(
     c.drawString(emisor_x + 5, text_y, "EMISOR:")
     c.setFont("Helvetica", 8)
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, f"Nombre: {datos_negocio.get('nombre', '')}")
+    draw_text_with_ellipsis(
+        c,
+        f"Nombre: {datos_negocio.get('nombre', '')}",
+        emisor_x + 5,
+        text_y,
+        emisor_text_width,
+    )
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}")
+    draw_text_with_ellipsis(
+        c,
+        f"NIT: {datos_negocio.get('nit', '')}  NRC: {datos_negocio.get('nrc', '')}",
+        emisor_x + 5,
+        text_y,
+        emisor_text_width,
+    )
     text_y -= 12
-    c.drawString(emisor_x + 5, text_y, f"Giro: {datos_negocio.get('descActividad', '')}")
+    draw_text_with_ellipsis(
+        c,
+        f"Giro: {datos_negocio.get('descActividad', '')}",
+        emisor_x + 5,
+        text_y,
+        emisor_text_width,
+    )
     text_y -= 12
     direccion_emisor = format_direccion(datos_negocio.get("direccion"))
     text_y = draw_wrapped_text(
@@ -348,14 +368,26 @@ def generar_factura_electronica_pdf(
         f"Dirección: {direccion_emisor}",
         emisor_x + 5,
         text_y,
-        box_w - 10,
+        emisor_text_width,
         line_h,
     )
     if telefono:
-        c.drawString(emisor_x + 5, text_y, f"Número Teléfono: {telefono}")
+        draw_text_with_ellipsis(
+            c,
+            f"Número Teléfono: {telefono}",
+            emisor_x + 5,
+            text_y,
+            emisor_text_width,
+        )
         text_y -= 12
     if correo_emisor:
-        c.drawString(emisor_x + 5, text_y, f"Correo Electrónico: {correo_emisor}")
+        draw_text_with_ellipsis(
+            c,
+            f"Correo Electrónico: {correo_emisor}",
+            emisor_x + 5,
+            text_y,
+            emisor_text_width,
+        )
         text_y -= 12
 
     text_y = box_y + box_h - 14
@@ -367,25 +399,73 @@ def generar_factura_electronica_pdf(
     right_x = receptor_x + box_w / 2 + 5
 
     text_y -= line_h
-    c.drawString(left_x, text_y, f"Nombre: {cliente.get('nombre', '')}")
+    draw_text_with_ellipsis(
+        c,
+        f"Nombre: {cliente.get('nombre', '')}",
+        left_x,
+        text_y,
+        receptor_col_width,
+    )
 
     text_y -= line_h
-    c.drawString(left_x, text_y, f"DUI: {cliente.get('dui', '')}")
+    draw_text_with_ellipsis(
+        c,
+        f"DUI: {cliente.get('dui', '')}",
+        left_x,
+        text_y,
+        receptor_col_width,
+    )
     if tipo_documento == "Crédito Fiscal":
-        c.drawString(right_x, text_y, f"NRC: {cliente.get('nrc', '')}")
+        draw_text_with_ellipsis(
+            c,
+            f"NRC: {cliente.get('nrc', '')}",
+            right_x,
+            text_y,
+            receptor_col_width,
+        )
 
     text_y -= line_h
-    c.drawString(left_x, text_y, f"NIT: {cliente.get('nit', '')}")
+    draw_text_with_ellipsis(
+        c,
+        f"NIT: {cliente.get('nit', '')}",
+        left_x,
+        text_y,
+        receptor_col_width,
+    )
     if tipo_documento == "Crédito Fiscal":
-        c.drawString(right_x, text_y, f"No. Remisión: {venta.get('no_remision', '')}")
+        draw_text_with_ellipsis(
+            c,
+            f"No. Remisión: {venta.get('no_remision', '')}",
+            right_x,
+            text_y,
+            receptor_col_width,
+        )
 
     if tipo_documento == "Crédito Fiscal":
         text_y -= line_h
-        c.drawString(left_x, text_y, f"Giro: {cliente.get('giro', '')}")
-        c.drawString(right_x, text_y, f"Orden No.: {venta.get('orden_no', '')}")
+        draw_text_with_ellipsis(
+            c,
+            f"Giro: {cliente.get('giro', '')}",
+            left_x,
+            text_y,
+            receptor_col_width,
+        )
+        draw_text_with_ellipsis(
+            c,
+            f"Orden No.: {venta.get('orden_no', '')}",
+            right_x,
+            text_y,
+            receptor_col_width,
+        )
 
         text_y -= line_h
-        c.drawString(left_x, text_y, f"Condición pago: {venta.get('condicion_pago', '')}")
+        draw_text_with_ellipsis(
+            c,
+            f"Condición pago: {venta.get('condicion_pago', '')}",
+            left_x,
+            text_y,
+            receptor_col_width,
+        )
     else:
         text_y -= line_h
 
@@ -413,9 +493,21 @@ def generar_factura_electronica_pdf(
         spacing = max(line_h - 4, 4)
         text_y -= spacing
         if venta_a_cuenta_text:
-            c.drawString(left_x, text_y, f"Venta a cta de: {venta_a_cuenta_text}")
+            draw_text_with_ellipsis(
+                c,
+                f"Venta a cta de: {venta_a_cuenta_text}",
+                left_x,
+                text_y,
+                receptor_col_width,
+            )
         if documento_venta_a_cuenta_text:
-            c.drawString(right_x, text_y, f"DUI/NIT: {documento_venta_a_cuenta_text}")
+            draw_text_with_ellipsis(
+                c,
+                f"DUI/NIT: {documento_venta_a_cuenta_text}",
+                right_x,
+                text_y,
+                receptor_col_width,
+            )
 
     # Posición inicial para la tabla de productos
     tabla_x = x_margin

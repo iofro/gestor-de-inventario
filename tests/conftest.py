@@ -6,6 +6,9 @@ import copy
 import sqlite3
 import json
 import base64
+import platform
+from datetime import datetime
+from pathlib import Path
 from decimal import Decimal
 
 
@@ -23,6 +26,8 @@ except ImportError:  # pragma: no cover - PyQt5 may be missing in CI
             return None
 
 from db import DB
+
+ARTIFACTS_DIR = Path("./artifacts")
 
 
 def make_jws(payload: dict) -> str:
@@ -270,3 +275,86 @@ def pdf_json_files(tmp_path):
     json_path = pdf.with_suffix(".json")
     json_path.write_text("{}", encoding="utf-8")
     return pdf, json_path
+
+
+def pytest_configure(config):
+    config._cert_diag_records = []
+
+
+@pytest.fixture(scope="session")
+def artifacts_dir():
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    return ARTIFACTS_DIR
+
+
+@pytest.fixture
+def record_cert_diag(request):
+    def _record(data):
+        request.config._cert_diag_records.append(data)
+
+    return _record
+
+
+def _format_list(values):
+    if not values:
+        return "N/D"
+    return ", ".join(sorted({str(value) for value in values if value}))
+
+
+def pytest_sessionfinish(session, exitstatus):
+    records = getattr(session.config, "_cert_diag_records", [])
+    if not records:
+        return
+
+    ARTIFACTS_DIR.mkdir(parents=True, exist_ok=True)
+    report_path = ARTIFACTS_DIR / "cert_diagnosis_report.md"
+
+    cert_dirs = [rec.get("cert_dir_effective") for rec in records]
+    signer_dirs = [rec.get("signer_cert_dir") for rec in records]
+    env_dirs = [rec.get("env_CERT_UPLOAD_DIR") for rec in records]
+
+    timestamp = datetime.now().isoformat()
+    os_info = platform.platform()
+
+    probable = None
+    for rec in records:
+        if rec.get("firmador_803") and rec.get("primary_cause"):
+            probable = rec
+            break
+
+    with report_path.open("w", encoding="utf-8") as fh:
+        fh.write("# Reporte de diagnóstico de certificados\n\n")
+        fh.write(f"- Fecha y hora: {timestamp}\n")
+        fh.write(f"- Sistema operativo: {os_info}\n")
+        fh.write(f"- CERT dirs efectivos: {_format_list(cert_dirs)}\n")
+        fh.write(f"- FIRMADOR_CERT_DIR observados: {_format_list(signer_dirs)}\n")
+        fh.write(f"- CERT_UPLOAD_DIR (env): {_format_list(env_dirs)}\n")
+        fh.write(f"- Artefactos guardados en: {ARTIFACTS_DIR.resolve()}\n\n")
+
+        for rec in records:
+            fh.write(f"## {rec['title']} — {rec['result']}\n\n")
+            fh.write(f"- Escenario: `{rec['scenario']}`\n")
+            fh.write(f"- Firmador 803: {'Sí' if rec['firmador_803'] else 'No'}\n")
+            fh.write(f"- Ruta diagnóstico JSON: {rec['diagnosis_json']}\n")
+            fh.write("- Flags:\n")
+            fh.write(f"  - sha512_match: {rec['sha512_match']}\n")
+            fh.write(f"  - cert_path_ok: {rec['cert_path_ok']}\n")
+            fh.write(f"  - cert_dir_mismatch: {rec['cert_dir_mismatch']}\n")
+            fh.write(f"  - password_encoding_detected: {rec['password_encoding_detected']}\n")
+            fh.write(f"  - multiple_crts: {rec['multiple_crts']}\n")
+            fh.write(f"  - sha256_of_file: {rec['sha256_of_file']}\n")
+            fh.write(f"- NIT enviado: {rec['nit_payload']}\n")
+            fh.write(f"- Archivo utilizado: {rec['nit_filename']}\n")
+            fh.write(f"- NIT dentro del CRT: {rec['nit_from_crt']}\n")
+            fh.write(f"- Errores detectados: {rec['diagnosis_errors']}\n")
+            fh.write(f"- Directorio efectivo: {rec['cert_dir_effective']}\n")
+            fh.write(f"- Directorio del firmador: {rec['signer_cert_dir']}\n")
+            fh.write(f"- Recomendación sugerida: {rec['recommendation']}\n\n")
+
+        fh.write("## Causa más probable en este entorno\n\n")
+        if probable:
+            fh.write(f"- Escenario: {probable['title']} (`{probable['scenario']}`)\n")
+            fh.write(f"- Causa detectada: {probable['primary_cause']}\n")
+            fh.write(f"- Recomendación: {probable['recommendation']}\n")
+        else:
+            fh.write("- No se detectaron respuestas 803 en las simulaciones.\n")

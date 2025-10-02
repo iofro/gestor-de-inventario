@@ -1,0 +1,45 @@
+{
+  "documento": {
+    "codigoGeneracion": "5B5FF2DC-3250-4CBB-AB34-F0FC44A29557",
+    "codigoGeneracionR": null,
+    "correo": "karla_carranza92@hotmail.com",
+    "fecEmi": "2025-10-01",
+    "montoIva": 4.49,
+    "nombre": "Karla Elizabeth Carranza Mendez",
+    "numDocumento": "06161007861023",
+    "numeroControl": "DTE-03-S001P001-000000000000454",
+    "selloRecibido": "20254498066A4AC844F5BFF3A77CF1397CCBB8RG",
+    "telefono": "78418500",
+    "tipoDocumento": "36",
+    "tipoDte": "03"
+  },
+  "emisor": {
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "farmaciasantacatalina7@gmail.com",
+    "nit": "09061712791014",
+    "nomEstablecimiento": "Farmacia Santa Catalina",
+    "nombre": "Karol Yamileth Cruz Escobar",
+    "telefono": "22223456",
+    "tipoEstablecimiento": "01"
+  },
+  "identificacion": {
+    "ambiente": "01",
+    "codigoGeneracion": "358A3E3C-4C43-464A-A503-66F9DD343BF0",
+    "fecAnula": "2025-10-02",
+    "horAnula": "17:05:14",
+    "version": 2
+  },
+  "motivo": {
+    "motivoAnulacion": "correlativo incorrecto",
+    "nombreResponsable": "Karol Yamileth Cruz Escobar",
+    "nombreSolicita": "Karol Yamileth Cruz Escobar",
+    "numDocResponsable": "09061712791014",
+    "numDocSolicita": "09061712791014",
+    "tipDocResponsable": "36",
+    "tipDocSolicita": "36",
+    "tipoAnulacion": 2
+  }
+}

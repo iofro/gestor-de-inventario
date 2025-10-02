@@ -7,7 +7,7 @@ from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
 
-from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis
+from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis, ellipsize_text
 import utils.catalogos as catalogos
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
@@ -516,6 +516,10 @@ def generar_factura_electronica_pdf(
     tipo_norm = (tipo_documento or "").strip().lower()
     is_consumidor_final = tipo_norm.startswith("consumidor final")
 
+    table_padding = 6
+    body_fontname = "Helvetica"
+    body_fontsize = 8
+
     if is_consumidor_final:
         tabla_columnas = [
             "Cantidad",
@@ -525,6 +529,7 @@ def generar_factura_electronica_pdf(
             "Exentas",
             "Gravadas",
         ]
+        col_widths = [44, 170, 90, 60, 60, 90]
     else:
         tabla_columnas = [
             "Cantidad",
@@ -535,6 +540,10 @@ def generar_factura_electronica_pdf(
             "Exentas",
             "Gravadas",
         ]
+        col_widths = [44, 150, 90, 50, 60, 60, 70]
+
+    descripcion_col_idx = tabla_columnas.index("Descripción")
+    descripcion_col_width = max(col_widths[descripcion_col_idx] - 2 * table_padding, 0)
 
     tabla_data = [tabla_columnas]
     for d in detalles:
@@ -545,9 +554,16 @@ def generar_factura_electronica_pdf(
             descuento = (cantidad * precio_unitario * descuento) / Decimal("100")
         gravada_total = cantidad * precio_unitario - descuento
 
+        descripcion = ellipsize_text(
+            d.get("descripcion", ""),
+            body_fontname,
+            body_fontsize,
+            descripcion_col_width,
+        )
+
         fila = [
             str(d.get("cantidad", "")),
-            d.get("descripcion", ""),
+            descripcion,
             f"{float(precio_unitario):.4f}",
         ]
 
@@ -568,10 +584,6 @@ def generar_factura_electronica_pdf(
 
         tabla_data.append(fila)
 
-    col_widths = [44, 150, 90, 50, 60, 60, 70]
-    if is_consumidor_final:
-        col_widths = [44, 170, 90, 60, 60, 90]
-
     tabla = Table(
         tabla_data,
         colWidths=col_widths,
@@ -584,9 +596,11 @@ def generar_factura_electronica_pdf(
         ('ALIGN', (2,0), (-1,-1), 'RIGHT'),  # Números a la derecha
         ('ALIGN', (1,0), (1,-1), 'LEFT'),    # Descripción a la izquierda
         ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('FONTSIZE', (0,0), (-1,-1), 8),
+        ('FONTSIZE', (0,0), (-1,-1), body_fontsize),
         ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTNAME', (0,1), (-1,-1), 'Helvetica'),
+        ('FONTNAME', (0,1), (-1,-1), body_fontname),
+        ('LEFTPADDING', (0,0), (-1,-1), table_padding),
+        ('RIGHTPADDING', (0,0), (-1,-1), table_padding),
     ]))
 
     # Dibuja la tabla

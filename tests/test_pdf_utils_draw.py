@@ -39,3 +39,17 @@ def test_draw_text_with_ellipsis_short_text(tmp_path):
     drawn = pdf_utils.draw_text_with_ellipsis(c, text, 10, 700, 200)
     c.save()
     assert drawn == text
+
+
+def test_ellipsize_text_returns_original_when_fits():
+    text = "Texto breve"
+    result = pdf_utils.ellipsize_text(text, "Helvetica", 10, 200)
+    assert result == text
+
+
+def test_ellipsize_text_truncates_and_fits_width():
+    text = "Descripcion muy larga que necesita truncamiento"
+    max_width = 100
+    result = pdf_utils.ellipsize_text(text, "Helvetica", 10, max_width)
+    assert result.endswith("...")
+    assert pdf_utils.pdfmetrics.stringWidth(result, "Helvetica", 10) <= max_width

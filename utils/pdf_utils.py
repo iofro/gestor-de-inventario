@@ -48,3 +48,47 @@ def draw_wrapped_text(c, text, x, y, max_width, line_height):
         c.drawString(x, y, ln)
         y -= line_height
     return y
+
+
+def draw_text_with_ellipsis(c, text, x, y, max_width):
+    """Draw ``text`` ensuring it fits within ``max_width`` using an ellipsis."""
+
+    text = "" if text is None else str(text)
+
+    if max_width is None:
+        c.drawString(x, y, text)
+        return text
+
+    if max_width <= 0:
+        c.drawString(x, y, "")
+        return ""
+
+    fontname = c._fontname
+    fontsize = c._fontsize
+    text_width = pdfmetrics.stringWidth(text, fontname, fontsize)
+    if text_width <= max_width:
+        c.drawString(x, y, text)
+        return text
+
+    ellipsis = "..."
+    ellipsis_width = pdfmetrics.stringWidth(ellipsis, fontname, fontsize)
+    if ellipsis_width > max_width:
+        c.drawString(x, y, "")
+        return ""
+
+    # Binary search the longest prefix that fits with ellipsis appended
+    low = 0
+    high = len(text)
+    best = ellipsis
+    while low <= high:
+        mid = (low + high) // 2
+        candidate = text[:mid] + ellipsis
+        candidate_width = pdfmetrics.stringWidth(candidate, fontname, fontsize)
+        if candidate_width <= max_width:
+            best = candidate
+            low = mid + 1
+        else:
+            high = mid - 1
+
+    c.drawString(x, y, best)
+    return best

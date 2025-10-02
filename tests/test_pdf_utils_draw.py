@@ -20,3 +20,22 @@ def test_draw_wrapped_text_multiple_lines(tmp_path):
     y = pdf_utils.draw_wrapped_text(c, text, 10, 750, 60, 10)
     c.save()
     assert y < 750
+
+
+def test_draw_text_with_ellipsis_truncates(tmp_path):
+    c = canvas.Canvas(str(tmp_path / "ellipsis.pdf"), pagesize=letter)
+    c.setFont("Helvetica", 10)
+    text = "Nombre: " + "x" * 100
+    drawn = pdf_utils.draw_text_with_ellipsis(c, text, 10, 700, 80)
+    c.save()
+    assert drawn.endswith("...")
+    assert pdf_utils.pdfmetrics.stringWidth(drawn, "Helvetica", 10) <= 80
+
+
+def test_draw_text_with_ellipsis_short_text(tmp_path):
+    c = canvas.Canvas(str(tmp_path / "ellipsis2.pdf"), pagesize=letter)
+    c.setFont("Helvetica", 10)
+    text = "Nombre: corto"
+    drawn = pdf_utils.draw_text_with_ellipsis(c, text, 10, 700, 200)
+    c.save()
+    assert drawn == text

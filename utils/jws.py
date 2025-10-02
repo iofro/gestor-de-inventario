@@ -17,7 +17,12 @@ from paths import (
     CERT_UPLOAD_DIR as _DEFAULT_CERT_DIR,
     ensure_user_dir,
 )
-from utils.certificates import verify_certificate_setup, dump_certificate_diagnosis
+from utils.certificates import (
+    verify_certificate_setup,
+    dump_certificate_diagnosis,
+    run_certificate_doctor,
+    looks_like_base64,
+)
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
 
@@ -126,6 +131,13 @@ def sign_json(
         url is not None,
     )
 
+    if passwordPri:
+        logger.info(
+            "SIGN.PASSWORD: length=%s looks_base64=%s",
+            len(passwordPri),
+            looks_like_base64(passwordPri),
+        )
+
     if isinstance(payload, str):
         payload_str = payload
         try:
@@ -199,7 +211,26 @@ def sign_json(
                 )
                 logger.error("SIGN.ERROR.BODY: %s", body)
                 diag_dir = ensure_user_dir("diagnostics")
-                diag_path = dump_certificate_diagnosis(diag_dir)
+                try:
+                    report = run_certificate_doctor(
+                        nit=nit,
+                        password=passwordPri or "",
+                        signer_url=url,
+                        cert_dir=CERT_UPLOAD_DIR,
+                        output_dir=diag_dir,
+                    )
+                    diag_path = report.json_path
+                    markdown_path = report.markdown_path
+                except Exception as diag_exc:  # pragma: no cover - safeguard
+                    logger.exception("SIGN.DIAG.ERROR: %s", diag_exc)
+                    diag_path = dump_certificate_diagnosis(diag_dir)
+                    markdown_path = None
+                else:
+                    logger.info(
+                        "SIGN.DIAG.OK: json=%s markdown=%s",
+                        diag_path,
+                        markdown_path,
+                    )
                 logger.error("SIGN.DIAG.WRITE: path=%s", diag_path)
                 raise RuntimeError(f"{body} (diagnosis: {diag_path})")
         raise RuntimeError(str(body))

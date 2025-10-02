@@ -29,8 +29,9 @@ def test_missing_file(tmp_path: Path) -> None:
     assert "missing_file" in diagnosis.errors
     diag_path = dump_certificate_diagnosis(tmp_path / "diag")
     payload = _load_diagnosis(diag_path)
-    assert payload["cert_exists"] is False
-    assert "missing_file" in payload["errors"]
+    local = payload["local"]
+    assert local["cert_exists"] is False
+    assert "missing_file" in local["errors"]
 
 
 def test_nit_mismatch(tmp_path: Path) -> None:
@@ -40,8 +41,9 @@ def test_nit_mismatch(tmp_path: Path) -> None:
     assert "nit_mismatch" in diagnosis.errors
     diag_path = dump_certificate_diagnosis(tmp_path / "diag_nit")
     payload = _load_diagnosis(diag_path)
-    assert payload["nit_crt"] == "99999999999999"
-    assert "nit_mismatch" in payload["errors"]
+    local = payload["local"]
+    assert local["nit_crt"] == "99999999999999"
+    assert "nit_mismatch" in local["errors"]
 
 
 def test_sha512_mismatch(tmp_path: Path) -> None:
@@ -51,8 +53,12 @@ def test_sha512_mismatch(tmp_path: Path) -> None:
     assert "sha512_mismatch" in diagnosis.errors
     diag_path = dump_certificate_diagnosis(tmp_path / "diag_sha")
     payload = _load_diagnosis(diag_path)
-    assert payload["cert_password_sha512"] == hashlib.sha512("correct".encode("utf-8")).hexdigest()
-    assert "sha512_mismatch" in payload["errors"]
+    local = payload["local"]
+    assert (
+        local["cert_password_sha512"]
+        == hashlib.sha512("correct".encode("utf-8")).hexdigest()
+    )
+    assert "sha512_mismatch" in local["errors"]
 
 
 def test_multiple_crts(tmp_path: Path) -> None:
@@ -64,9 +70,10 @@ def test_multiple_crts(tmp_path: Path) -> None:
     assert "multiple_crts" in diagnosis.errors
     diag_path = dump_certificate_diagnosis(tmp_path / "diag_multi")
     payload = _load_diagnosis(diag_path)
-    assert len(payload["multiple_crts"]) == 2
-    assert "multiple_crts" in payload["errors"]
-    assert payload["cert_path"].endswith("00012345678901.crt")
+    local = payload["local"]
+    assert len(local["multiple_crts"]) == 2
+    assert "multiple_crts" in local["errors"]
+    assert local["cert_path"].endswith("00012345678901.crt")
 
 
 def test_dir_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -79,5 +86,6 @@ def test_dir_mismatch(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     assert "dir_mismatch" in diagnosis.errors
     diag_path = dump_certificate_diagnosis(tmp_path / "diag_dir")
     payload = _load_diagnosis(diag_path)
-    assert payload["signer_cert_dir"].endswith("other")
-    assert "dir_mismatch" in payload["errors"]
+    local = payload["local"]
+    assert local["signer_cert_dir"].endswith("other")
+    assert "dir_mismatch" in local["errors"]

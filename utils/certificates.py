@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import argparse
+import base64
 import hashlib
 import json
 import logging
 import os
-from dataclasses import dataclass, field, asdict
+import textwrap
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
+from typing import Any, Iterable
+from urllib.parse import urlparse, urlunparse
+
+import requests
 
 from paths import CERT_UPLOAD_DIR as _DEFAULT_CERT_DIR
 
@@ -15,6 +22,7 @@ logger = logging.getLogger(__name__)
 
 _CERT_EXT = ".crt"
 _LAST_DIAGNOSIS: dict | None = None
+_DEFAULT_TIMEOUT = float(os.getenv("SIGNER_DEBUG_TIMEOUT", "5"))
 
 
 @dataclass(slots=True)
@@ -40,6 +48,75 @@ class CertificateDiagnosis:
 
     def to_dict(self) -> dict:
         return asdict(self)
+
+
+@dataclass(slots=True)
+class CertificateFileInfo:
+    """Description of a certificate file visible to the signer service."""
+
+    name: str
+    size: int | None = None
+    sha256: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "name": self.name,
+            "size": self.size,
+            "sha256": self.sha256,
+        }
+
+
+@dataclass(slots=True)
+class SignerDebugInfo:
+    """Information returned by the signer debug endpoints."""
+
+    available: bool
+    error: str | None = None
+    status_code: int | None = None
+    signer_cert_dir: str | None = None
+    env: dict[str, str] | None = None
+    files: list[CertificateFileInfo] = field(default_factory=list)
+    selected: str | None = None
+    nit_from_crt: str | None = None
+    cert_password_sha512: str | None = None
+    cert_sha256: str | None = None
+    password_sha512: str | None = None
+    env_available: bool = True
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "available": self.available,
+            "error": self.error,
+            "status_code": self.status_code,
+            "signer_cert_dir": self.signer_cert_dir,
+            "env": self.env,
+            "files": [entry.to_dict() for entry in self.files],
+            "selected": self.selected,
+            "nit_from_crt": self.nit_from_crt,
+            "cert_password_sha512": self.cert_password_sha512,
+            "cert_sha256": self.cert_sha256,
+            "password_sha512": self.password_sha512,
+            "env_available": self.env_available,
+        }
+
+
+@dataclass(slots=True)
+class DoctorReport:
+    """Aggregated local/remote diagnostics and persisted artifact paths."""
+
+    data: dict[str, Any]
+    json_path: Path
+    markdown_path: Path
+
+    def to_dict(self) -> dict[str, Any]:
+        result = dict(self.data)
+        result.update(
+            {
+                "json_path": str(self.json_path),
+                "markdown_path": str(self.markdown_path),
+            }
+        )
+        return result
 
 
 def _normalise_nit(nit: str | None) -> str | None:
@@ -111,7 +188,9 @@ def _parse_certificate(path: Path) -> tuple[str | None, str | None]:
     return nit_value, password_hash
 
 
-def get_effective_cert_dir(cert_dir: str | os.PathLike[str] | None = None) -> tuple[Path, str]:
+def get_effective_cert_dir(
+    cert_dir: str | os.PathLike[str] | None = None,
+) -> tuple[Path, str]:
     if cert_dir:
         directory = Path(cert_dir)
         source = "parameter"
@@ -214,11 +293,426 @@ def verify_certificate_setup(
     )
 
     global _LAST_DIAGNOSIS
-    _LAST_DIAGNOSIS = diagnosis.to_dict()
+    _LAST_DIAGNOSIS = {"local": diagnosis.to_dict()}
     return diagnosis
 
 
-def dump_certificate_diagnosis(path: Path) -> Path:
+def looks_like_base64(value: str | None) -> bool:
+    """Heuristically determine whether ``value`` is Base64 encoded."""
+
+    if not value:
+        return False
+    stripped = value.strip()
+    if len(stripped) < 8 or len(stripped) % 4 != 0:
+        return False
+    allowed = set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=")
+    if any(ch not in allowed for ch in stripped):
+        return False
+    try:
+        decoded = base64.b64decode(stripped, validate=True)
+    except (base64.binascii.Error, ValueError):  # type: ignore[attr-defined]
+        return False
+    return bool(decoded)
+
+
+def _normalise_path(path: str | os.PathLike[str] | None) -> str | None:
+    if not path:
+        return None
+    try:
+        return str(Path(path).expanduser().resolve())
+    except (OSError, RuntimeError):
+        return str(path)
+
+
+def _build_debug_url(sign_url: str | None, endpoint: str) -> str | None:
+    base = (sign_url or "").strip()
+    if not base:
+        return None
+    parsed = urlparse(base)
+    scheme = parsed.scheme or "http"
+    netloc = parsed.netloc
+    path = parsed.path or "/"
+    if not path.endswith("/"):
+        path = f"{path}/"
+    segments = [segment for segment in path.split("/") if segment]
+    if "firma" in segments:
+        idx = len(segments) - 1 - segments[::-1].index("firma")
+        base_segments = segments[: idx + 1]
+        debug_segments = base_segments + ["debug", endpoint]
+    else:
+        debug_segments = ["firma", "debug", endpoint]
+    debug_path = "/" + "/".join(debug_segments)
+    return urlunparse((scheme, netloc, debug_path, "", "", ""))
+
+
+def _request_json(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json_body: dict[str, Any] | None = None,
+    timeout: float | None = None,
+) -> tuple[dict[str, Any] | None, dict[str, Any]]:
+    metadata: dict[str, Any] = {
+        "url": url,
+        "params": params,
+        "method": method,
+    }
+    try:
+        response = requests.request(
+            method,
+            url,
+            params=params,
+            json=json_body,
+            timeout=timeout or _DEFAULT_TIMEOUT,
+        )
+        metadata["status_code"] = response.status_code
+        response.raise_for_status()
+        try:
+            return response.json(), metadata
+        except ValueError as exc:  # invalid JSON
+            metadata["error"] = f"invalid_json: {exc}"
+            return None, metadata
+    except requests.RequestException as exc:
+        metadata["error"] = str(exc)
+        return None, metadata
+
+
+def _parse_files_payload(files: Iterable[dict[str, Any]]) -> list[CertificateFileInfo]:
+    result: list[CertificateFileInfo] = []
+    for entry in files:
+        name = entry.get("name")
+        if not isinstance(name, str):
+            continue
+        size = entry.get("size")
+        sha256 = entry.get("sha256")
+        result.append(
+            CertificateFileInfo(
+                name=name,
+                size=int(size) if isinstance(size, (int, float)) else None,
+                sha256=str(sha256) if isinstance(sha256, str) else None,
+            )
+        )
+    return result
+
+
+def fetch_signer_debug(
+    sign_url: str | None,
+    nit: str | None,
+    password: str | None,
+    *,
+    timeout: float | None = None,
+) -> SignerDebugInfo:
+    certs_url = _build_debug_url(sign_url, "certs")
+    hash_url = _build_debug_url(sign_url, "hash")
+    env_url = _build_debug_url(sign_url, "env")
+
+    if not certs_url:
+        return SignerDebugInfo(available=False, error="missing_debug_url")
+
+    params = {"n": nit} if nit else None
+    payload, meta = _request_json("GET", certs_url, params=params, timeout=timeout)
+    info = SignerDebugInfo(
+        available=bool(payload),
+        status_code=meta.get("status_code"),
+        error=None if payload else meta.get("error"),
+    )
+
+    if not payload:
+        return info
+
+    info.signer_cert_dir = payload.get("signer_cert_dir")
+    info.env = payload.get("env") or payload.get("environment")
+    files_payload = payload.get("files")
+    if isinstance(files_payload, list):
+        info.files = _parse_files_payload(files_payload)
+    info.selected = payload.get("selected")
+    info.nit_from_crt = payload.get("nit_from_crt")
+    info.cert_password_sha512 = payload.get("cert_password_sha512")
+    info.cert_sha256 = payload.get("cert_sha256") or payload.get("selected_sha256")
+
+    if env_url:
+        env_payload, env_meta = _request_json("GET", env_url, timeout=timeout)
+        if env_payload:
+            env_values = env_payload.get("env")
+            if isinstance(env_values, dict):
+                info.env = {str(k): str(v) for k, v in env_values.items()}
+        else:
+            info.env_available = False
+            if info.error:
+                info.error = f"{info.error}; env: {env_meta.get('error')}"
+            else:
+                info.error = env_meta.get("error")
+
+    if hash_url and password is not None:
+        hash_payload, hash_meta = _request_json(
+            "POST",
+            hash_url,
+            json_body={"passwordPri": password},
+            timeout=timeout,
+        )
+        if hash_payload and isinstance(hash_payload, dict):
+            hashed = hash_payload.get("password_sha512")
+            if isinstance(hashed, str):
+                info.password_sha512 = hashed
+        elif hash_meta.get("error"):
+            info.error = hash_meta["error"]
+
+    return info
+
+
+def _compare_hashes(
+    local_hash: str | None,
+    remote_hash: str | None,
+) -> tuple[bool | None, str | None]:
+    if not local_hash and not remote_hash:
+        return None, None
+    if local_hash is None or remote_hash is None:
+        return False, "missing_hash"
+    return (local_hash == remote_hash), None
+
+
+def _derive_probable_cause(issues: list[str]) -> tuple[str, str]:
+    if not issues:
+        return (
+            "Todos los chequeos coinciden",
+            "No se requiere acción: el firmador y el cliente están alineados.",
+        )
+
+    priority = [
+        (
+            "dir_mismatch",
+            "El firmador usa otra carpeta de certificados",
+            "Ajusta CERT_UPLOAD_DIR/FIRMADOR_CERT_DIR en el servicio y reinicia el firmador.",
+        ),
+        (
+            "sha512_mismatch",
+            "La contraseña no coincide con el hash del certificado",
+            "Verifica la contraseña configurada y vuelve a cargar el certificado correcto.",
+        ),
+        (
+            "password_encoding_base64",
+            "La contraseña parece estar codificada en Base64",
+            "Configura la contraseña en texto plano y evita enviar la versión codificada.",
+        ),
+        (
+            "multiple_crts",
+            "Hay múltiples certificados para el mismo NIT",
+            "Deja solo un archivo .crt para el NIT indicado o ajusta el archivo correcto.",
+        ),
+        (
+            "nit_mismatch",
+            "El NIT dentro del certificado no coincide",
+            "Vuelve a emitir o seleccionar el certificado correcto para el NIT configurado.",
+        ),
+        (
+            "missing_file",
+            "El certificado configurado no existe",
+            "Copia el archivo .crt al directorio configurado y reinicia el proceso.",
+        ),
+    ]
+    for key, cause, remediation in priority:
+        if key in issues:
+            return cause, remediation
+    return (
+        "Se detectaron inconsistencias en el entorno de firma",
+        "Revisa el reporte completo para corregir las discrepancias señaladas.",
+    )
+
+
+def _render_markdown_report(data: dict[str, Any]) -> str:
+    sections: list[str] = []
+    local = data.get("local", {})
+    remote = data.get("remote", {})
+    comparisons = data.get("comparisons", {})
+    issues = data.get("issues", [])
+    cause = data.get("probable_cause", "No determinado")
+    remediation = data.get("remediation", "Revisa la configuración.")
+
+    sections.append("# Diagnóstico de certificados\n")
+    sections.append("## Resumen\n")
+    sections.append(
+        textwrap.dedent(
+            f"""
+            * **OK:** {data.get('ok')}
+            * **Problemas detectados:** {', '.join(issues) if issues else 'ninguno'}
+            * **Causa probable:** {cause}
+            * **Remediación sugerida:** {remediation}
+            """
+        ).strip()
+    )
+
+    sections.append("\n## Entorno local\n")
+    sections.append("```json\n" + json.dumps(local, indent=2, ensure_ascii=False) + "\n```")
+
+    sections.append("\n## Entorno del firmador\n")
+    sections.append("```json\n" + json.dumps(remote, indent=2, ensure_ascii=False) + "\n```")
+
+    sections.append("\n## Comparaciones\n")
+    sections.append(
+        "```json\n" + json.dumps(comparisons, indent=2, ensure_ascii=False) + "\n```"
+    )
+
+    notes = data.get("notes")
+    if notes:
+        sections.append("\n## Notas\n")
+        sections.extend(f"* {note}" for note in notes)
+
+    return "\n\n".join(sections) + "\n"
+
+
+def _save_report(payload: dict[str, Any], directory: Path) -> DoctorReport:
+    directory.mkdir(parents=True, exist_ok=True)
+    json_path = directory / "cert_diagnosis.json"
+    markdown_path = directory / "cert_diagnosis.md"
+    with json_path.open("w", encoding="utf-8") as fh:
+        json.dump(payload, fh, indent=2, ensure_ascii=False)
+    with markdown_path.open("w", encoding="utf-8") as fh:
+        fh.write(_render_markdown_report(payload))
+    logger.info(
+        "CERT.DIAG.WRITE: json=%s markdown=%s", json_path, markdown_path
+    )
+    return DoctorReport(payload, json_path, markdown_path)
+
+
+def run_certificate_doctor(
+    *,
+    nit: str,
+    password: str,
+    signer_url: str,
+    cert_dir: str | os.PathLike[str] | None = None,
+    output_dir: Path | None = None,
+    timeout: float | None = None,
+) -> DoctorReport:
+    """Perform an end-to-end validation of the signing environment."""
+
+    local_diag = verify_certificate_setup(nit, password, cert_dir)
+    remote_info = fetch_signer_debug(signer_url, nit, password, timeout=timeout)
+
+    local = local_diag.to_dict()
+    remote = remote_info.to_dict()
+
+    issues = set(local.get("errors") or [])
+    comparisons: dict[str, Any] = {}
+    notes: list[str] = []
+
+    local_cert_dir = _normalise_path(local.get("cert_dir"))
+    remote_cert_dir = _normalise_path(remote_info.signer_cert_dir)
+    if local_cert_dir and remote_cert_dir and local_cert_dir != remote_cert_dir:
+        issues.add("dir_mismatch")
+
+    # Compare SHA256 of selected certificate
+    local_sha256 = local.get("cert_sha256")
+    remote_sha256 = remote_info.cert_sha256
+    comparisons["cert_sha256"] = {
+        "local": local_sha256,
+        "remote": remote_sha256,
+        "match": bool(local_sha256 and remote_sha256 and local_sha256 == remote_sha256),
+    }
+
+    if remote_sha256 and local_sha256 and local_sha256 != remote_sha256:
+        issues.add("dir_mismatch")
+
+    local_cert_password_hash = local.get("cert_password_sha512")
+    remote_cert_password_hash = remote_info.cert_password_sha512
+    match, reason = _compare_hashes(local_cert_password_hash, remote_cert_password_hash)
+    comparisons["cert_password_sha512"] = {
+        "local": local_cert_password_hash,
+        "remote": remote_cert_password_hash,
+        "match": match,
+    }
+    if match is False:
+        issues.add("sha512_mismatch")
+    elif reason == "missing_hash":
+        notes.append("No se pudo comparar el hash sha512 del certificado en el firmador.")
+
+    local_password_hash = local.get("password_sha512")
+    remote_password_hash = remote_info.password_sha512
+    match, reason = _compare_hashes(local_password_hash, remote_password_hash)
+    comparisons["password_sha512"] = {
+        "local": local_password_hash,
+        "remote": remote_password_hash,
+        "match": match,
+    }
+    if reason == "missing_hash":
+        notes.append(
+            "El firmador no devolvió el hash SHA-512 calculado a partir de la contraseña recibida."
+        )
+
+    nit_crt = local.get("nit_crt") or remote_info.nit_from_crt
+    nit_config = local.get("nit_config")
+    if nit_crt and nit_config and nit_crt != nit_config:
+        issues.add("nit_mismatch")
+
+    if remote_info.files:
+        normalised_nit = _normalise_nit(nit)
+        same_nit = [
+            entry
+            for entry in remote_info.files
+            if entry.name.startswith(f"{normalised_nit}")
+        ]
+        if len(same_nit) > 1:
+            issues.add("multiple_crts")
+
+    if looks_like_base64(password):
+        try:
+            decoded = base64.b64decode(password, validate=True).decode("utf-8")
+        except Exception:
+            decoded = ""
+        if decoded:
+            decoded_hash = hashlib.sha512(decoded.encode("utf-8")).hexdigest()
+            candidate_hashes = {local_cert_password_hash, remote_cert_password_hash}
+            candidate_hashes.discard(None)  # type: ignore[arg-type]
+            if candidate_hashes and decoded_hash in candidate_hashes:
+                issues.add("password_encoding_base64")
+
+    if not remote_info.available:
+        notes.append(
+            "El firmador no expone los endpoints /firma/debug; revisa la versión del servicio."
+        )
+
+    if not remote_info.env_available:
+        notes.append(
+            "No se pudo consultar /firma/debug/env; en Windows asegúrate de definir las "
+            "variables de entorno del servicio y reiniciar el firmador."
+        )
+    else:
+        env = remote_info.env or {}
+        if "FIRMADOR_CERT_DIR" not in env:
+            notes.append(
+                "El firmador no reporta FIRMADOR_CERT_DIR; si corre como servicio Windows, "
+                "define la variable a nivel de Sistema y reinicia el servicio."
+            )
+
+    cause, remediation = _derive_probable_cause(sorted(issues))
+
+    payload: dict[str, Any] = {
+        "ok": not issues,
+        "issues": sorted(issues),
+        "local": local,
+        "remote": remote,
+        "comparisons": comparisons,
+        "probable_cause": cause,
+        "remediation": remediation,
+    }
+    if notes:
+        payload["notes"] = notes
+
+    if output_dir is None:
+        output_dir = Path.cwd() / "diagnostics"
+
+    report = _save_report(payload, Path(output_dir))
+
+    global _LAST_DIAGNOSIS
+    _LAST_DIAGNOSIS = payload | {
+        "json_path": str(report.json_path),
+        "markdown_path": str(report.markdown_path),
+    }
+
+    return report
+
+
+def dump_certificate_diagnosis(path: Path, payload: dict[str, Any] | None = None) -> Path:
     """Persist the most recent certificate diagnosis as JSON."""
 
     target: Path
@@ -229,23 +723,81 @@ def dump_certificate_diagnosis(path: Path) -> Path:
         target = path / "cert_diagnosis.json"
         target.parent.mkdir(parents=True, exist_ok=True)
 
-    payload: dict[str, object]
-    if _LAST_DIAGNOSIS is None:
-        payload = {"error": "no_diagnosis_available"}
-    else:
-        payload = _LAST_DIAGNOSIS
+    snapshot = payload or _LAST_DIAGNOSIS
+    if snapshot is None:
+        snapshot = {"error": "no_diagnosis_available"}
 
     with target.open("w", encoding="utf-8") as fh:
-        json.dump(payload, fh, indent=2, ensure_ascii=False)
+        json.dump(snapshot, fh, indent=2, ensure_ascii=False)
 
     logger.info("CERT.DIAG.WRITE: path=%s", target)
     return target
 
 
+def _doctor_command(args: argparse.Namespace) -> int:
+    report = run_certificate_doctor(
+        nit=args.nit,
+        password=args.password,
+        signer_url=args.signer_url,
+        cert_dir=args.cert_dir,
+        output_dir=Path(args.output_dir) if args.output_dir else None,
+    )
+    print(f"Diagnóstico JSON: {report.json_path}")
+    print(f"Diagnóstico Markdown: {report.markdown_path}")
+    print(json.dumps(report.data, indent=2, ensure_ascii=False))
+    return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Herramientas de diagnóstico de certificados")
+    subparsers = parser.add_subparsers(dest="command")
+
+    doctor_parser = subparsers.add_parser(
+        "doctor", help="Genera un diagnóstico local/remoto del certificado"
+    )
+    doctor_parser.add_argument("--nit", required=True, help="NIT configurado en el firmador")
+    doctor_parser.add_argument(
+        "--password",
+        required=True,
+        help="Contraseña privada asociada al certificado",
+    )
+    doctor_parser.add_argument(
+        "--signer-url",
+        required=True,
+        help="URL base del firmador (por ejemplo http://127.0.0.1:8080/firma/firmardocumento/)",
+    )
+    doctor_parser.add_argument(
+        "--cert-dir",
+        help="Directorio local donde se almacena el certificado (.crt)",
+    )
+    doctor_parser.add_argument(
+        "--output-dir",
+        help="Directorio donde se guardarán los reportes (por defecto ./diagnostics)",
+    )
+    doctor_parser.set_defaults(func=_doctor_command)
+
+    args = parser.parse_args(argv)
+    if not getattr(args, "command", None):
+        parser.print_help()
+        return 1
+    return args.func(args)
+
+
+
+
 __all__ = [
     "CertificateDiagnosis",
+    "CertificateFileInfo",
+    "DoctorReport",
     "dump_certificate_diagnosis",
+    "fetch_signer_debug",
     "get_effective_cert_dir",
+    "looks_like_base64",
     "resolve_signer_cert_dir",
+    "run_certificate_doctor",
     "verify_certificate_setup",
 ]
+
+
+if __name__ == "__main__":  # pragma: no cover - CLI entry point
+    raise SystemExit(main())

@@ -12,7 +12,12 @@ from utils.stable_json import (
 )
 
 logger = logging.getLogger(__name__)
-from paths import CONFIG_NEGOCIO_PATH, CERT_UPLOAD_DIR as _DEFAULT_CERT_DIR
+from paths import (
+    CONFIG_NEGOCIO_PATH,
+    CERT_UPLOAD_DIR as _DEFAULT_CERT_DIR,
+    ensure_user_dir,
+)
+from utils.certificates import verify_certificate_setup, dump_certificate_diagnosis
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
 
@@ -96,6 +101,20 @@ def sign_json(
         nit, passwordPri, activo = _load_config()
     if not nit:
         raise RuntimeError("NIT del certificado no configurado")
+    diagnosis = verify_certificate_setup(nit, passwordPri, CERT_UPLOAD_DIR)
+    logger.info(
+        "SIGN.DIAG: cert_dir=%s source=%s nit_config=%s nit_crt=%s exists=%s size=%s sha256=%s multiple_crts=%s ok=%s errors=%s",
+        diagnosis.cert_dir,
+        diagnosis.cert_dir_source,
+        diagnosis.nit_config,
+        diagnosis.nit_crt,
+        diagnosis.cert_exists,
+        diagnosis.cert_size,
+        diagnosis.cert_sha256,
+        diagnosis.multiple_crts,
+        diagnosis.ok,
+        diagnosis.errors,
+    )
     _ensure_cert_file(nit)
     url = url or _get_sign_url()
     print(
@@ -136,6 +155,14 @@ def sign_json(
     if tipo_dte is not None:
         body["tipoDte"] = tipo_dte
 
+    logger.info(
+        "SIGN.REQUEST: url=%s nit=%s cert_exists=%s verify_ok=%s errors=%s",
+        url,
+        diagnosis.nit_config,
+        diagnosis.cert_exists,
+        diagnosis.ok,
+        diagnosis.errors,
+    )
     try:
         response = requests.post(url, json=body, timeout=SIGN_TIMEOUT)
         status_code = getattr(response, "status_code", "N/A")
@@ -160,7 +187,22 @@ def sign_json(
     if isinstance(data, dict):
         if data.get("status") == "OK":
             return data.get("body")
-        raise RuntimeError(str(data.get("body")))
+        body = data.get("body")
+        if isinstance(body, dict):
+            code = body.get("codigo") or body.get("code")
+            message = body.get("mensaje") or body.get("message")
+            if code == "803":
+                logger.error(
+                    "SIGN.ERROR: firmador_code=%s, firmador_msg=%r",
+                    code,
+                    message,
+                )
+                logger.error("SIGN.ERROR.BODY: %s", body)
+                diag_dir = ensure_user_dir("diagnostics")
+                diag_path = dump_certificate_diagnosis(diag_dir)
+                logger.error("SIGN.DIAG.WRITE: path=%s", diag_path)
+                raise RuntimeError(f"{body} (diagnosis: {diag_path})")
+        raise RuntimeError(str(body))
     return data
 
 

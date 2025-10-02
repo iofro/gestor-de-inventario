@@ -213,6 +213,36 @@ def test_detectar_estado_factura_muestra_tag_rechazado(monkeypatch):
     assert envio == "Rechazado (schema)"
 
 
+def test_detectar_estado_factura_usa_venta_id(monkeypatch):
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    facturacion_tab = pytest.importorskip(
+        "facturacion_tab", reason="PyQt5 no disponible", exc_type=ImportError
+    )
+    FacturacionTab = facturacion_tab.FacturacionTab
+
+    db = DB(":memory:")
+    venta = create_sale(db)
+    db.registrar_envio_dte(
+        venta,
+        "normal",
+        "PROCESADO",
+        "S",
+        {"estado": "Procesado"},
+        codigo_generacion=None,
+        numero_control=None,
+    )
+
+    _, envio = FacturacionTab._detectar_estado_factura(
+        {},
+        cur=db.cursor,
+        venta_id=venta,
+        codigo_generacion=None,
+        numero_control=None,
+    )
+
+    assert envio == "Enviado"
+
+
 def test_detectar_estado_factura_nota_remision(tmp_path):
     os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
     facturacion_tab = pytest.importorskip(

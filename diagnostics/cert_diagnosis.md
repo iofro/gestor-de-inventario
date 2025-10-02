@@ -1,0 +1,92 @@
+# Diagnóstico de certificados
+
+
+## Resumen
+
+
+* **OK:** False
+* **Problemas detectados:** sha512_mismatch
+* **Causa probable:** La contraseña no coincide con el hash del certificado
+* **Remediación sugerida:** Verifica la contraseña configurada y vuelve a cargar el certificado correcto.
+
+
+## Entorno local
+
+
+```json
+{
+  "cert_dir": "C:\\Users\\ariel\\AppData\\Local\\VertexDTE\\VertexDTE\\certificados",
+  "cert_dir_source": "default",
+  "default_cert_dir": "C:\\Users\\ariel\\AppData\\Local\\VertexDTE\\VertexDTE\\certificados",
+  "signer_cert_dir": "C:\\Users\\ariel\\AppData\\Local\\VertexDTE\\VertexDTE\\certificados",
+  "nit_config": "09061712791014",
+  "nit_crt": "09061712791014",
+  "cert_path": "C:\\Users\\ariel\\AppData\\Local\\VertexDTE\\VertexDTE\\certificados\\09061712791014.crt",
+  "cert_exists": true,
+  "cert_size": 6049,
+  "cert_sha256": "9ccaad71e7f9342477aa417513b66adbca96af4c6e0720917bedec4d967871ee",
+  "password_sha512": "92a57f04f0021697776ba9eae21d33111b678fb8cb1dd099cf2add907b1fe38d86a10a3ac74c46779dfcf8ab8841da8a41e9c5bdd4920286ff2a55fea4ef8337",
+  "cert_password_sha512": "92a57f04f0021697776ba9eae21d33111b678fb8cb1dd099cf2add907b1fe38d86a10a3ac74c46779dfcf8ab8841da8a41e9c5bdd4920286ff2a55fea4ef8337",
+  "multiple_crts": [
+    "09061712791014.crt"
+  ],
+  "parse_error": null,
+  "errors": [],
+  "ok": true
+}
+```
+
+
+## Entorno del firmador
+
+
+```json
+{
+  "available": false,
+  "error": "HTTPConnectionPool(host='127.0.0.1', port=8080): Max retries exceeded with url: /firma/debug/certs?n=09061712791014 (Caused by NewConnectionError('<urllib3.connection.HTTPConnection object at 0x0000000006104E50>: Failed to establish a new connection: [WinError 10061] No se puede establecer una conexión ya que el equipo de destino denegó expresamente dicha conexión'))",
+  "status_code": null,
+  "signer_cert_dir": null,
+  "env": null,
+  "files": [],
+  "selected": null,
+  "nit_from_crt": null,
+  "cert_password_sha512": null,
+  "cert_sha256": null,
+  "password_sha512": null,
+  "env_available": true
+}
+```
+
+
+## Comparaciones
+
+
+```json
+{
+  "cert_sha256": {
+    "local": "9ccaad71e7f9342477aa417513b66adbca96af4c6e0720917bedec4d967871ee",
+    "remote": null,
+    "match": false
+  },
+  "cert_password_sha512": {
+    "local": "92a57f04f0021697776ba9eae21d33111b678fb8cb1dd099cf2add907b1fe38d86a10a3ac74c46779dfcf8ab8841da8a41e9c5bdd4920286ff2a55fea4ef8337",
+    "remote": null,
+    "match": false
+  },
+  "password_sha512": {
+    "local": "92a57f04f0021697776ba9eae21d33111b678fb8cb1dd099cf2add907b1fe38d86a10a3ac74c46779dfcf8ab8841da8a41e9c5bdd4920286ff2a55fea4ef8337",
+    "remote": null,
+    "match": false
+  }
+}
+```
+
+
+## Notas
+
+
+* El firmador no devolvió el hash SHA-512 calculado a partir de la contraseña recibida.
+
+* El firmador no expone los endpoints /firma/debug; revisa la versión del servicio.
+
+* El firmador no reporta FIRMADOR_CERT_DIR; si corre como servicio Windows, define la variable a nivel de Sistema y reinicia el servicio.

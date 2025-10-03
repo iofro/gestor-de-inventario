@@ -3856,11 +3856,14 @@ class DTEConfigDialog(QDialog):
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
         nit = fe_config.get("nit", "")
+        self.cert_path.clear()
+        self.cert_path.setToolTip("")
         if nit:
             cert_dir = resolve_signer_cert_dir()
             cert = cert_dir / f"{nit}.crt"
             if cert.is_file():
-                self.cert_path.setText(str(cert))
+                self.cert_path.setText(cert.name)
+                self.cert_path.setToolTip(str(cert))
 
     def _restore_defaults(self):
         """Restaurar valores por defecto de URLs y token."""
@@ -3966,8 +3969,16 @@ class DTEConfigDialog(QDialog):
                 )
                 return
             jws.set_cert_upload_dir(str(dest.parent))
-            self.cert_path.setText(str(dest))
-            QMessageBox.information(self, "Éxito", "Certificado copiado correctamente.")
+            display_name = source_path.name or dest.name
+            self.cert_path.clear()
+            self.cert_path.setText(display_name)
+            self.cert_path.setToolTip(str(dest))
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"Certificado '{display_name}' copiado correctamente.",
+            )
+
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo copiar el certificado: {exc}")
 

@@ -3345,16 +3345,6 @@ def generar_dte_json(
             receptor["ordenNo"] = fiscal.get("orden_no")
 
     if receptor and not extra.get("es_ticket"):
-        if not receptor.get("codActividad"):
-            receptor["codActividad"] = (
-                emisor.get("codActividad") or datos.get("cod_giro") or "00000"
-            )
-        if not receptor.get("descActividad"):
-            receptor["descActividad"] = (
-                emisor.get("descActividad")
-                or datos.get("descActividad")
-                or "SIN GIRO"
-            )
         if not receptor.get("correo"):
             receptor["correo"] = "no-reply@example.com"
 

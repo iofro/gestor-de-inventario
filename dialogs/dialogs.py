@@ -616,7 +616,7 @@ class ProductDialogBase:
         if selector.exec_():
             cli = selector.get_selected_cliente()
             if cli:
-                nombre = get_field(cli, "codigo", "") or get_field(cli, "nombre", "")
+                nombre = get_field(cli, "nombre", "") or get_field(cli, "codigo", "")
                 nit = get_field(cli, "nit", "")
                 self.selected_cliente = cli
                 self.cliente_label.setText(f"{nombre} | NIT: {nit}")

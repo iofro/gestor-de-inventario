@@ -406,9 +406,16 @@ def normalizar_receptor(receptor: dict) -> dict:
     else:
         raise ValueError("tipoDocumento inválido en receptor")
     # Campos adicionales requeridos para receptores
-    for campo in ("codActividad", "descActividad", "telefono", "correo"):
+    for campo in ("telefono", "correo"):
         if not receptor.get(campo):
             raise ValueError(f"receptor requiere {campo}")
+
+    for campo in ("codActividad", "descActividad"):
+        value = receptor.get(campo)
+        if value is None:
+            receptor[campo] = None
+        else:
+            receptor[campo] = str(value).strip() or None
 
     direccion = receptor.get("direccion") or {}
     if not direccion.get("complemento"):
@@ -602,9 +609,6 @@ def generar_nota_remision(
                 receptor["telefono"] = "00000000"
             if not receptor.get("correo"):
                 receptor["correo"] = "no-reply@example.com"
-            if emisor and isinstance(emisor, dict):
-                receptor.setdefault("codActividad", emisor.get("codActividad"))
-                receptor.setdefault("descActividad", emisor.get("descActividad"))
         detalles = detalles or factura.get("cuerpoDocumento", [])
         if documento_relacionado is None:
             documento_relacionado = _build_documento_relacionado_desde_dte(

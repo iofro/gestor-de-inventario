@@ -363,14 +363,14 @@ def generar_factura_electronica_pdf(
     )
     text_y -= 12
     direccion_emisor = format_direccion(datos_negocio.get("direccion"))
-    draw_text_with_ellipsis(
+    text_y = draw_wrapped_text(
         c,
         f"Dirección: {direccion_emisor}",
         emisor_x + 5,
         text_y,
         emisor_text_width,
+        line_h,
     )
-    text_y -= line_h
     if telefono:
         draw_text_with_ellipsis(
             c,
@@ -480,14 +480,14 @@ def generar_factura_electronica_pdf(
             "complemento": direccion_cliente,
         }
     direccion = format_direccion(cliente_dir)
-    draw_text_with_ellipsis(
+    text_y = draw_wrapped_text(
         c,
         f"Dirección: {direccion}",
         left_x,
         text_y,
         box_w - 10,
+        line_h,
     )
-    text_y -= line_h
 
     if venta_a_cuenta_text or documento_venta_a_cuenta_text:
         spacing = max(line_h - 4, 4)

@@ -8,12 +8,12 @@ _PLACEHOLDERS_RECEPTOR = {
     "nit": "00000000000000",
     "nrc": "0",
     "nombre": "CLIENTE DESCONOCIDO",
-    "codActividad": "00000",
-    "descActividad": "PENDIENTE",
     "nombreComercial": None,
     "telefono": "00000000",
     "correo": "demo@example.com",
 }
+
+_RECEPTOR_NULLABLE_FIELDS = {"codActividad", "descActividad"}
 
 _PLACEHOLDERS_DIRECCION = {
     "departamento": "01",
@@ -54,10 +54,18 @@ def ensure_receptor_completo(receptor: Dict[str, Any] | None, ambiente: str) -> 
                     missing.append(field)
                 else:
                     rec[field] = placeholder
-        elif field in {"nit", "nrc", "telefono", "codActividad"}:
+        elif field in {"nit", "nrc", "telefono"}:
             value = rec.get(field)
             if value is not None:
                 rec[field] = str(value)
+
+    for field in _RECEPTOR_NULLABLE_FIELDS:
+        value = rec.get(field)
+        if value is None:
+            rec[field] = None
+        else:
+            value_str = str(value).strip()
+            rec[field] = value_str or None
 
     for field, placeholder in _PLACEHOLDERS_DIRECCION.items():
         if _needs_placeholder(direccion, field):
@@ -78,6 +86,8 @@ def ensure_receptor_completo(receptor: Dict[str, Any] | None, ambiente: str) -> 
     # Asegura que las claves existan aunque sean None.
     for field in _PLACEHOLDERS_RECEPTOR:
         rec.setdefault(field, _PLACEHOLDERS_RECEPTOR[field])
+    for field in _RECEPTOR_NULLABLE_FIELDS:
+        rec.setdefault(field, None)
     for field in _PLACEHOLDERS_DIRECCION:
         rec["direccion"].setdefault(field, _PLACEHOLDERS_DIRECCION[field])
 

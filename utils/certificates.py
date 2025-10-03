@@ -222,7 +222,12 @@ def _path_is_relative_to(path: Path, other: Path) -> bool:
 
 
 def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
-    """Copy ``source`` into the signer directory using the provided ``nit`` name."""
+    """Copy ``source`` into the signer directory preserving its original name.
+
+    For backwards compatibility with the signing service, a canonical copy
+    named ``<nit>.crt`` is also created (or updated) alongside the original
+    filename.
+    """
 
     if not nit:
         raise ValueError("NIT vacío para copiar certificado")
@@ -232,7 +237,9 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         raise FileNotFoundError(f"Certificado origen no encontrado: {source_path}")
     dest_dir = resolve_signer_cert_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / f"{nit}.crt"
+
+    dest_path = dest_dir / source_path.name
+    canonical_path = dest_dir / f"{nit}.crt"
 
     temp_path: Path | None = None
     copy_source = source_path
@@ -242,8 +249,12 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         copy_source = temp_path
 
     skip_resolved = {source_path, source_path.resolve()}
+    desired_names = {dest_path.name, canonical_path.name}
+
     for existing in dest_dir.iterdir():
         if existing.suffix.lower() != ".crt":
+            continue
+        if existing.name in desired_names:
             continue
         try:
             existing_resolved = existing.resolve()
@@ -257,16 +268,20 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
             logger.warning("CERT.ERROR: no se pudo eliminar %s: %s", existing, exc)
 
     shutil.copy2(copy_source, dest_path)
+    if canonical_path != dest_path:
+        shutil.copy2(dest_path, canonical_path)
+
     if temp_path is not None:
         try:
             temp_path.unlink()
         except OSError:
             pass
 
-    try:
-        dest_path.chmod(0o644)
-    except OSError:
-        pass
+    for target in {dest_path, canonical_path}:
+        try:
+            target.chmod(0o644)
+        except OSError:
+            pass
 
     if not dest_path.is_file():
         raise FileNotFoundError(f"No se pudo copiar certificado a {dest_path}")

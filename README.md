@@ -56,6 +56,19 @@ Pasos sugeridos:
    El ejecutable quedará en `dist/InventarioFarmacia` (en Windows se generará
    `InventarioFarmacia.exe`).
 
+   Para distribuir una **actualización limpia** sin el firmador ni archivos
+   con datos reales recopilados durante el desarrollo, utiliza el modo
+   `update`:
+
+   ```bash
+   python setup.py --mode update
+   ```
+
+   Esta variante conserva la lógica del ejecutable pero excluye directorios y
+   archivos sensibles como `svfe-api-firmador/`, bases de datos SQLite, DTE
+   firmados, respaldos y configuraciones reales (`datos_negocio.json`,
+   `config_negocio.json`, `ultimo_inventario.json`, etc.).
+
 3. Prueba el resultado en un entorno sin el código fuente. En Linux puedes
    validar que los recursos estén presentes ejecutando:
 

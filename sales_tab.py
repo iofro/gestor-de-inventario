@@ -118,6 +118,11 @@ class SalesTab(QWidget):
         self.btn_estado.clicked.connect(self.show_sale_details)
         left_layout.addWidget(self.btn_estado)
 
+        self.btn_delete_sale = QPushButton("Eliminar venta")
+        self.btn_delete_sale.setStyleSheet("background-color: #b71c1c; color: #fff;")
+        self.btn_delete_sale.clicked.connect(self.delete_sale)
+        left_layout.addWidget(self.btn_delete_sale)
+
         left_widget = QWidget()
         left_widget.setLayout(left_layout)
 
@@ -339,6 +344,36 @@ class SalesTab(QWidget):
         from dialogs import VentaDetalleDialog
         dialog = VentaDetalleDialog(venta, detalles, self)
         dialog.exec_()
+
+    def delete_sale(self):
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Eliminar venta", "Seleccione una venta")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar venta",
+            "¿Desea eliminar la venta seleccionada y restaurar el inventario?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        if not self.manager.db.delete_venta(venta_id):
+            QMessageBox.critical(
+                self,
+                "Eliminar venta",
+                "No se pudo eliminar la venta seleccionada.",
+            )
+            return
+        self.manager.refresh_data()
+        self.load_sales()
+        QMessageBox.information(
+            self,
+            "Eliminar venta",
+            "La venta se eliminó y el inventario fue restaurado.",
+        )
 
     def _clear_preview_files(self):
         """Remove temporary preview image without deleting stored PDFs."""

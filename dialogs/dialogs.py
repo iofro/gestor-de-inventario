@@ -1299,7 +1299,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "tipo_fiscal": tipo_fiscal,
             "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
-            "fecha_vencimiento": lote.get("fecha_vencimiento", "")
+            "fecha_vencimiento": lote.get("fecha_vencimiento", ""),
+            "extra": {
+                "lote_id": lote.get("lote_id"),
+                "producto_id": lote.get("producto_id"),
+                "cantidad": float(cantidad),
+            },
         })
         self._actualizar_tabla()
         self._recalcular_totales()
@@ -2531,7 +2536,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "tipo_fiscal": tipo_fiscal,
             "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
-            "fecha_vencimiento": lote.get("fecha_vencimiento", "")
+            "fecha_vencimiento": lote.get("fecha_vencimiento", ""),
+            "extra": {
+                "lote_id": lote.get("lote_id"),
+                "producto_id": lote.get("producto_id"),
+                "cantidad": float(cantidad),
+            },
         })
 
         self._actualizar_tabla()

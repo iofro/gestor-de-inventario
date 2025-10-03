@@ -844,6 +844,11 @@ class MainWindow(QMainWindow):
                         continue
                     if prod["stock"] < item["cantidad"]:
                         raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
+                    extra_data = item.get("extra") or (
+                        {"lote_id": item.get("lote_id"), "producto_id": item.get("producto_id"), "cantidad": item.get("cantidad")}
+                        if item.get("lote_id") is not None
+                        else None
+                    )
                     self.manager.db.add_detalle_venta(
                         venta_id,
                         prod["id"],
@@ -855,7 +860,7 @@ class MainWindow(QMainWindow):
                         item.get("comision_monto", 0),
                         item.get("iva_tipo", ""),
                         item.get("tipo_fiscal", "Gravada"),
-                        None,
+                        extra_data,
                         item.get("precio_con_iva", 0),
                         item.get("vendedor_id", vendedor_id)
                     )
@@ -1008,6 +1013,11 @@ class MainWindow(QMainWindow):
                         continue
                     if prod["stock"] < item["cantidad"]:
                         raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
+                    extra_data = item.get("extra") or (
+                        {"lote_id": item.get("lote_id"), "producto_id": item.get("producto_id"), "cantidad": item.get("cantidad")}
+                        if item.get("lote_id") is not None
+                        else None
+                    )
                     self.manager.db.add_detalle_venta(
                         venta_id,
                         prod["id"],
@@ -1019,7 +1029,7 @@ class MainWindow(QMainWindow):
                         item.get("comision_monto", 0),
                         item.get("iva_tipo", ""),
                         item.get("tipo_fiscal", "Gravada"),
-                        item.get("extra", None),
+                        extra_data,
                         item.get("precio_con_iva", 0),
                         item.get("vendedor_id", vendedor_id)
                     )

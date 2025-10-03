@@ -1,6 +1,7 @@
 import json
 import os
 import uuid
+import inspect
 import base64
 import copy
 import platform
@@ -71,6 +72,7 @@ from paths import (
     CONFIG_NEGOCIO_PATH,
     DTES_DIR,
     DTE_FALLIDOS_DIR,
+    DTE_FIRMADO_DIR,
     DTES_PENDIENTES_DIR,
     FACTURAS_CONSUMIDOR_FINAL_DIR,
     FACTURAS_CREDITO_FISCAL_DIR,
@@ -5803,6 +5805,98 @@ def _dte_base_dir(
     return str(target)
 
 
+def _safe_filename_component(value: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", value).strip("._-")
+    return cleaned or "dato"
+
+
+def _save_hacienda_payload(sobre: Mapping[str, Any], serialized: str | bytes | None = None) -> None:
+    """Persist the JSON payload transmitted to Hacienda."""
+
+    if not isinstance(sobre, AbcMapping):
+        return
+
+    try:
+        target_dir = Path(DTE_FIRMADO_DIR)
+        target_dir.mkdir(parents=True, exist_ok=True)
+    except Exception:
+        logger.debug("No se pudo crear la carpeta de DTE firmados", exc_info=True)
+        return
+
+    timestamp = datetime.now(TZ_EL_SALVADOR).strftime("%Y%m%d-%H%M%S")
+    tipo = str(sobre.get("tipoDte") or "").strip()
+    codigo = str(sobre.get("codigoGeneracion") or "").strip()
+
+    name_parts = [timestamp]
+    if tipo:
+        name_parts.append(_safe_filename_component(tipo))
+    if codigo:
+        name_parts.append(_safe_filename_component(codigo))
+    else:
+        name_parts.append("SIN-CODIGO")
+
+    base_name = "_".join(part for part in name_parts if part)
+    filename = f"{base_name}.json"
+    dest_path = target_dir / filename
+
+    suffix = 1
+    while dest_path.exists():
+        dest_path = target_dir / f"{base_name}_{suffix:02d}.json"
+        suffix += 1
+
+    try:
+        if isinstance(serialized, bytes):
+            payload_text = serialized.decode("utf-8")
+        elif isinstance(serialized, str):
+            payload_text = serialized
+        else:
+            payload_text = json.dumps(sobre, ensure_ascii=False)
+        dest_path.write_text(payload_text, encoding="utf-8")
+    except Exception:
+        logger.debug("No se pudo guardar el JSON enviado a Hacienda", exc_info=True)
+
+
+def _post_dte_with_config(
+    url: str, documento: str, dte_data: dict | None, config: Mapping[str, Any] | None
+) -> dict:
+    """Wrapper de :func:`_post_dte` que omite ``ambiente_config`` cuando no existe."""
+
+    func = _post_dte
+    try:
+        signature = inspect.signature(func)
+        required_positional = [
+            param
+            for param in signature.parameters.values()
+            if param.kind
+            in (
+                inspect.Parameter.POSITIONAL_ONLY,
+                inspect.Parameter.POSITIONAL_OR_KEYWORD,
+            )
+            and param.default is inspect._empty
+        ]
+    except (TypeError, ValueError):
+        required_positional = []
+
+    ambiente_cfg = None
+    if config is not None:
+        getter = getattr(config, "get", None)
+        if callable(getter):
+            try:
+                ambiente_cfg = getter("ambiente")
+            except Exception:
+                ambiente_cfg = None
+        elif isinstance(config, AbcMapping):
+            ambiente_cfg = config.get("ambiente")
+
+    kwargs = {}
+    if ambiente_cfg is not None:
+        kwargs["ambiente_config"] = ambiente_cfg
+
+    if len(required_positional) >= 4:
+        return func(url, documento, documento, dte_data, **kwargs)
+    return func(url, documento, dte_data, **kwargs)
+
+
 def _save_signed_dte(dte_data: dict, jws_token: str, fallido: bool = False) -> None:
     """Guarda el JSON y JWS usando estructura versionada por hash."""
     expected_hash = hash_json(dte_data)
@@ -6092,6 +6186,22 @@ def _post_dte(
     sobre = construir_sobre_recepcion(documento, dte_data)
     if sobre.get("estado") == "Error":
         return sobre
+
+    serialized_payload: str | bytes | None = None
+    try:
+        prepared = requests.Request("POST", url, json=sobre).prepare()
+        body = getattr(prepared, "body", None)
+        if isinstance(body, (bytes, bytearray)):
+            serialized_payload = bytes(body)
+        elif isinstance(body, str):
+            serialized_payload = body
+    except Exception:
+        serialized_payload = None
+
+    try:
+        _save_hacienda_payload(sobre, serialized_payload)
+    except Exception:
+        logger.debug("No se pudo conservar el JSON transmitido a Hacienda", exc_info=True)
 
     client_id = client_id or format_cliente_id_from_dui(dui)
     ua = detect_user_agent(user_agent, opts, app_version or APP_VERSION, client_id)
@@ -6407,7 +6517,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             recep_host,
         )
     try:
-        respuesta = _post_dte(url, jws_token, meta, ambiente_config=config.get("ambiente"))
+        respuesta = _post_dte_with_config(url, jws_token, meta, config)
         sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
         estado = (
             respuesta.get("estado")
@@ -6470,7 +6580,7 @@ def enviar_dte_a_hacienda(jws_token: str) -> dict:
         "tipoDte": ident.get("tipoDte") or ident.get("tipoDocumento"),
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
-    respuesta = _post_dte(url, jws_token, meta, ambiente_config=config.get("ambiente"))
+    respuesta = _post_dte_with_config(url, jws_token, meta, config)
     estado = (
         respuesta.get("estado")
         or respuesta.get("estadoDte")
@@ -6776,7 +6886,7 @@ def _enviar_documento(
 
     try:
         print("DTE: BEFORE_POST")
-        respuesta = _post_dte(url, signed, meta, ambiente_config=config.get("ambiente"))
+        respuesta = _post_dte_with_config(url, signed, meta, config)
         sello = (
             respuesta.get("sello")
             or respuesta.get("selloRecepcion")

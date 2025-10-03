@@ -1533,35 +1533,196 @@ class DB:
         return [dict(row) for row in self.cursor.fetchall()]
 
     def delete_venta(self, id):
+        """Elimina una venta y restaura el inventario asociado."""
+
+        def _to_python(value):
+            if value in (None, ""):
+                return None
+            if isinstance(value, (bytes, bytearray)):
+                try:
+                    value = value.decode("utf-8")
+                except Exception:
+                    return None
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    return None
+                try:
+                    return json.loads(text)
+                except Exception:
+                    return None
+            return value
+
+        def _gather_lote_entries(data):
+            entries = []
+            if isinstance(data, dict):
+                lote_value = None
+                for key in ("lote_id", "loteId", "lote"):
+                    candidate = data.get(key)
+                    if candidate not in (None, ""):
+                        lote_value = candidate
+                        break
+                if lote_value not in (None, ""):
+                    entries.append(
+                        {
+                            "lote_id": lote_value,
+                            "cantidad": data.get("cantidad"),
+                            "producto_id": data.get("producto_id"),
+                        }
+                    )
+                for value in data.values():
+                    entries.extend(_gather_lote_entries(value))
+            elif isinstance(data, list):
+                for item in data:
+                    entries.extend(_gather_lote_entries(item))
+            return entries
+
+        def _to_decimal(value):
+            try:
+                return Decimal(str(value))
+            except Exception:
+                return None
+
         try:
-            self.cursor.execute(
-                "DELETE FROM detalles_venta WHERE venta_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "DELETE FROM notas WHERE venta_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "DELETE FROM ventas_credito_fiscal WHERE venta_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "DELETE FROM facturas_pdf WHERE venta_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "DELETE FROM tickets_pdf WHERE venta_id=?",
-                (id,),
-            )
-            self.cursor.execute(
-                "DELETE FROM dte_envios WHERE venta_id=?",
-                (id,),
-            )
-            self.cursor.execute("DELETE FROM ventas WHERE id=?", (id,))
-            self.conn.commit()
+            with self.lock:
+                self.cursor.execute(
+                    "SELECT producto_id, cantidad, extra FROM detalles_venta WHERE venta_id=?",
+                    (id,),
+                )
+                detalles = [dict(row) for row in self.cursor.fetchall()]
+
+                lotes_a_restaurar: dict[int, dict[str, Decimal | int | None]] = {}
+                productos_directos: dict[int, Decimal] = {}
+                productos_recalc = set()
+                productos_direct = set()
+
+                for detalle in detalles:
+                    producto_id = detalle.get("producto_id")
+                    if not producto_id:
+                        continue
+                    cantidad_dec = _to_decimal(detalle.get("cantidad"))
+                    if cantidad_dec is None or cantidad_dec <= 0:
+                        continue
+
+                    parsed_extra = _to_python(detalle.get("extra"))
+                    lote_entries = _gather_lote_entries(parsed_extra) if parsed_extra else []
+
+                    valid_lotes = []
+                    for entry in lote_entries:
+                        lote_id_raw = entry.get("lote_id") if isinstance(entry, dict) else None
+                        try:
+                            lote_id = int(lote_id_raw)
+                        except (TypeError, ValueError):
+                            continue
+                        cantidad_entry = _to_decimal(entry.get("cantidad")) if isinstance(entry, dict) else None
+                        producto_entry = entry.get("producto_id") if isinstance(entry, dict) else None
+                        valid_lotes.append(
+                            {
+                                "lote_id": lote_id,
+                                "cantidad": cantidad_entry,
+                                "producto_id": producto_entry or producto_id,
+                            }
+                        )
+
+                    if valid_lotes and any(item["cantidad"] is None for item in valid_lotes):
+                        # Si hay un único lote podemos asumir que toda la cantidad proviene de él.
+                        if len(valid_lotes) == 1:
+                            valid_lotes[0]["cantidad"] = cantidad_dec
+                        else:
+                            valid_lotes = [item for item in valid_lotes if item["cantidad"] is not None]
+
+                    if valid_lotes:
+                        for lote in valid_lotes:
+                            cantidad_lote = lote.get("cantidad")
+                            if cantidad_lote is None:
+                                cantidad_lote = cantidad_dec
+                            if cantidad_lote is None or cantidad_lote <= 0:
+                                continue
+                            info = lotes_a_restaurar.setdefault(
+                                lote["lote_id"],
+                                {"cantidad": Decimal("0"), "producto_id": lote.get("producto_id")},
+                            )
+                            info["cantidad"] = info["cantidad"] + cantidad_lote
+                            if not info.get("producto_id"):
+                                info["producto_id"] = lote.get("producto_id")
+                    else:
+                        productos_directos[producto_id] = productos_directos.get(producto_id, Decimal("0")) + cantidad_dec
+
+                for lote_id, data in lotes_a_restaurar.items():
+                    cantidad = data.get("cantidad")
+                    if cantidad is None or cantidad <= 0:
+                        continue
+                    producto_id = data.get("producto_id")
+                    self.cursor.execute(
+                        "UPDATE detalles_compra SET cantidad = COALESCE(cantidad, 0) + ? WHERE id=?",
+                        (float(cantidad), lote_id),
+                    )
+                    if self.cursor.rowcount:
+                        if producto_id:
+                            productos_recalc.add(producto_id)
+                    else:
+                        if producto_id:
+                            productos_directos[producto_id] = productos_directos.get(producto_id, Decimal("0")) + cantidad
+
+                for producto_id, cantidad in productos_directos.items():
+                    if not producto_id or cantidad is None or cantidad <= 0:
+                        continue
+                    self.cursor.execute(
+                        "UPDATE productos SET stock = COALESCE(stock, 0) + ? WHERE id=?",
+                        (float(cantidad), producto_id),
+                    )
+                    productos_direct.add(producto_id)
+
+                productos_recalc.difference_update(productos_direct)
+                for producto_id in productos_recalc:
+                    if not producto_id:
+                        continue
+                    self.cursor.execute(
+                        "SELECT SUM(cantidad) FROM detalles_compra WHERE producto_id=?",
+                        (producto_id,),
+                    )
+                    total = self.cursor.fetchone()[0]
+                    if total is None:
+                        continue
+                    self.cursor.execute(
+                        "UPDATE productos SET stock=? WHERE id=?",
+                        (float(total), producto_id),
+                    )
+
+                self.cursor.execute(
+                    "DELETE FROM detalles_venta WHERE venta_id=?",
+                    (id,),
+                )
+                self.cursor.execute(
+                    "DELETE FROM notas WHERE venta_id=?",
+                    (id,),
+                )
+                self.cursor.execute(
+                    "DELETE FROM ventas_credito_fiscal WHERE venta_id=?",
+                    (id,),
+                )
+                self.cursor.execute(
+                    "DELETE FROM facturas_pdf WHERE venta_id=?",
+                    (id,),
+                )
+                self.cursor.execute(
+                    "DELETE FROM tickets_pdf WHERE venta_id=?",
+                    (id,),
+                )
+                self.cursor.execute(
+                    "DELETE FROM dte_envios WHERE venta_id=?",
+                    (id,),
+                )
+                self.cursor.execute("DELETE FROM ventas WHERE id=?", (id,))
+                self.conn.commit()
+            return True
         except Exception as e:
             logger.exception("Error al eliminar venta: %s", e)
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+            return False
 
     def backfill_ventas_extra(self) -> int:
         """Populate ``ventas.extra`` for rows that are missing fiscal totals."""
@@ -2425,11 +2586,16 @@ class DB:
                 iva_rate,
             )
             precio_unitario = d8(calcs["base"] / cantidad) if cantidad else Decimal("0")
+            raw_precio_unitario = d.get("precio_unitario")
+            if raw_precio_unitario is not None:
+                precio_unitario_guardar = d8(Decimal(str(raw_precio_unitario)))
+            else:
+                precio_unitario_guardar = precio_unitario
             prepared.append(
                 {
                     "producto_id": d.get("producto_id"),
                     "cantidad": float(d8(cantidad)),
-                    "precio_unitario": float(precio_unitario),
+                    "precio_unitario": float(precio_unitario_guardar),
                     "descuento": float(d8(descuento)),
                     "descuento_tipo": descuento_tipo,
                     "iva": float(calcs["iva"]),

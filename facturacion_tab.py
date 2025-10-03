@@ -5317,7 +5317,10 @@ class FacturacionTab(QWidget):
         archive_label = f"{archive_label}_rechazo_{timestamp}"
         archive_label = re.sub(r"[^A-Za-z0-9_.-]", "_", archive_label)
 
-        self.manager.db.delete_venta(venta_id)
+        if not self.manager.db.delete_venta(venta_id):
+            QMessageBox.critical(self, "Eliminar", "No se pudo eliminar la venta seleccionada.")
+            return
+        self.manager.refresh_data()
 
         self._cleanup_invoice_artifacts(
             venta_id,
@@ -5385,7 +5388,10 @@ class FacturacionTab(QWidget):
             venta_id, factura=factura, entry=data
         )
 
-        self.manager.db.delete_venta(venta_id)
+        if not self.manager.db.delete_venta(venta_id):
+            QMessageBox.critical(self, "Eliminar", "No se pudo eliminar la venta seleccionada.")
+            return
+        self.manager.refresh_data()
 
         self._cleanup_invoice_artifacts(
             venta_id,

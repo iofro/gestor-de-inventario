@@ -5810,7 +5810,7 @@ def _safe_filename_component(value: str) -> str:
     return cleaned or "dato"
 
 
-def _save_hacienda_payload(sobre: Mapping[str, Any]) -> None:
+def _save_hacienda_payload(sobre: Mapping[str, Any], serialized: str | bytes | None = None) -> None:
     """Persist the JSON payload transmitted to Hacienda."""
 
     if not isinstance(sobre, AbcMapping):
@@ -5845,8 +5845,13 @@ def _save_hacienda_payload(sobre: Mapping[str, Any]) -> None:
         suffix += 1
 
     try:
-        with dest_path.open("w", encoding="utf-8") as fh:
-            json.dump(sobre, fh, ensure_ascii=False, indent=2)
+        if isinstance(serialized, bytes):
+            payload_text = serialized.decode("utf-8")
+        elif isinstance(serialized, str):
+            payload_text = serialized
+        else:
+            payload_text = json.dumps(sobre, ensure_ascii=False)
+        dest_path.write_text(payload_text, encoding="utf-8")
     except Exception:
         logger.debug("No se pudo guardar el JSON enviado a Hacienda", exc_info=True)
 
@@ -6182,8 +6187,19 @@ def _post_dte(
     if sobre.get("estado") == "Error":
         return sobre
 
+    serialized_payload: str | bytes | None = None
     try:
-        _save_hacienda_payload(sobre)
+        prepared = requests.Request("POST", url, json=sobre).prepare()
+        body = getattr(prepared, "body", None)
+        if isinstance(body, (bytes, bytearray)):
+            serialized_payload = bytes(body)
+        elif isinstance(body, str):
+            serialized_payload = body
+    except Exception:
+        serialized_payload = None
+
+    try:
+        _save_hacienda_payload(sobre, serialized_payload)
     except Exception:
         logger.debug("No se pudo conservar el JSON transmitido a Hacienda", exc_info=True)
 

@@ -1,5 +1,6 @@
 import json
 import os
+import re
 import uuid
 import logging
 from datetime import datetime
@@ -600,6 +601,18 @@ def generate_invoice_pdf(manager, venta_id):
         logger.exception("Error al generar el DTE real")
         raise
     resumen = json_data.get("resumen", {}) or {}
+
+    sello_norm = str(sello_recepcion or "").strip()
+    if sello_norm and re.fullmatch(r"[0-9A-Fa-f]{40}", sello_norm):
+        sello_upper = sello_norm.upper()
+        if json_data.get("selloRecibido") != sello_upper:
+            json_data["selloRecibido"] = sello_upper
+        respuesta = json_data.get("respuesta")
+        if isinstance(respuesta, dict):
+            if respuesta.get("selloRecibido") != sello_upper:
+                respuesta["selloRecibido"] = sello_upper
+                json_data["respuesta"] = respuesta
+
 
     def _resumen_value(*keys):
         for key in keys:

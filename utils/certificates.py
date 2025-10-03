@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import shutil
 import textwrap
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -210,6 +211,67 @@ def resolve_signer_cert_dir() -> Path:
     if env_value:
         return Path(env_value.strip()).expanduser().resolve()
     return Path(os.getenv("CERT_UPLOAD_DIR", _DEFAULT_CERT_DIR).strip()).expanduser().resolve()
+
+
+def _path_is_relative_to(path: Path, other: Path) -> bool:
+    try:
+        path.relative_to(other)
+        return True
+    except ValueError:
+        return False
+
+
+def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
+    """Copy ``source`` into the signer directory using the provided ``nit`` name."""
+
+    if not nit:
+        raise ValueError("NIT vacío para copiar certificado")
+
+    source_path = Path(source).expanduser().resolve()
+    if not source_path.is_file():
+        raise FileNotFoundError(f"Certificado origen no encontrado: {source_path}")
+    dest_dir = resolve_signer_cert_dir()
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    dest_path = dest_dir / f"{nit}.crt"
+
+    temp_path: Path | None = None
+    copy_source = source_path
+    if _path_is_relative_to(source_path, dest_dir):
+        temp_path = dest_dir / f".tmp_{nit}"
+        shutil.copy2(source_path, temp_path)
+        copy_source = temp_path
+
+    skip_resolved = {source_path, source_path.resolve()}
+    for existing in dest_dir.iterdir():
+        if existing.suffix.lower() != ".crt":
+            continue
+        try:
+            existing_resolved = existing.resolve()
+        except OSError:
+            existing_resolved = existing
+        if existing_resolved in skip_resolved:
+            continue
+        try:
+            existing.unlink()
+        except OSError as exc:
+            logger.warning("CERT.ERROR: no se pudo eliminar %s: %s", existing, exc)
+
+    shutil.copy2(copy_source, dest_path)
+    if temp_path is not None:
+        try:
+            temp_path.unlink()
+        except OSError:
+            pass
+
+    try:
+        dest_path.chmod(0o644)
+    except OSError:
+        pass
+
+    if not dest_path.is_file():
+        raise FileNotFoundError(f"No se pudo copiar certificado a {dest_path}")
+
+    return dest_path
 
 
 def verify_certificate_setup(
@@ -789,6 +851,7 @@ __all__ = [
     "CertificateDiagnosis",
     "CertificateFileInfo",
     "DoctorReport",
+    "copy_certificate_to_signer_dir",
     "dump_certificate_diagnosis",
     "fetch_signer_debug",
     "get_effective_cert_dir",

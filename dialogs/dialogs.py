@@ -1,4 +1,5 @@
 from decimal import Decimal, getcontext, ROUND_HALF_UP
+from pathlib import Path
 import json
 import logging
 import base64
@@ -22,13 +23,12 @@ from PyQt5.QtGui import (
 )
 
 import os
-import shutil
 import re
 
 from db import DB
 
 from utils import jws
-from utils.certificates import resolve_signer_cert_dir
+from utils.certificates import copy_certificate_to_signer_dir, resolve_signer_cert_dir
 from utils.catalogos import CONTINGENCIA
 from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
@@ -3856,11 +3856,14 @@ class DTEConfigDialog(QDialog):
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
         nit = fe_config.get("nit", "")
+        self.cert_path.clear()
+        self.cert_path.setToolTip("")
         if nit:
             cert_dir = resolve_signer_cert_dir()
             cert = cert_dir / f"{nit}.crt"
             if cert.is_file():
-                self.cert_path.setText(str(cert))
+                self.cert_path.setText(cert.name)
+                self.cert_path.setToolTip(str(cert))
 
     def _restore_defaults(self):
         """Restaurar valores por defecto de URLs y token."""
@@ -3955,26 +3958,26 @@ class DTEConfigDialog(QDialog):
         )
         if not file_path:
             return
+        source_path = Path(file_path).expanduser().resolve()
         try:
-            dest_dir = resolve_signer_cert_dir()
-            dest_dir.mkdir(parents=True, exist_ok=True)
-            # Remove existing certificates so only the new file remains
-            for existing in dest_dir.iterdir():
-                if existing.suffix.lower() != ".crt":
-                    continue
-                try:
-                    existing.unlink()
-                except Exception as cleanup_exc:
-                    logger.warning("No se pudo eliminar %s: %s", existing, cleanup_exc)
-            dest = dest_dir / f"{nit}.crt"
-            shutil.copy(file_path, str(dest))
-            try:
-                dest.chmod(0o644)
-            except Exception:
-                pass
-            jws.set_cert_upload_dir(str(dest_dir))
-            self.cert_path.setText(str(dest))
-            QMessageBox.information(self, "Éxito", "Certificado copiado correctamente.")
+            dest = copy_certificate_to_signer_dir(source_path, nit)
+            if not dest.exists():
+                QMessageBox.critical(
+                    self,
+                    "Error",
+                    "No se pudo copiar el certificado al directorio configurado.",
+                )
+                return
+            jws.set_cert_upload_dir(str(dest.parent))
+            display_name = source_path.name or dest.name
+            self.cert_path.clear()
+            self.cert_path.setText(display_name)
+            self.cert_path.setToolTip(str(dest))
+            QMessageBox.information(
+                self,
+                "Éxito",
+                f"Certificado '{display_name}' copiado correctamente.",
+            )
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo copiar el certificado: {exc}")
 

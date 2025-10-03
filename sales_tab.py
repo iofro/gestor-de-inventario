@@ -368,6 +368,12 @@ class SalesTab(QWidget):
             )
             return
         self.manager.refresh_data()
+        main_window = self.window()
+        if main_window and hasattr(main_window, "_actualizar_inventario_actual"):
+            try:
+                main_window._actualizar_inventario_actual()
+            except Exception:
+                logger.exception("Error al actualizar inventario actual tras eliminar venta")
         self.load_sales()
         QMessageBox.information(
             self,

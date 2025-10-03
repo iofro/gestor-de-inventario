@@ -224,8 +224,10 @@ def _path_is_relative_to(path: Path, other: Path) -> bool:
 def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     """Copy ``source`` into the signer directory preserving its original name.
 
+
     Any other certificate present in the directory is removed so that only the
     newly uploaded file remains.
+
     """
 
     if not nit:
@@ -272,10 +274,11 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         except OSError:
             pass
 
-    try:
-        dest_path.chmod(0o644)
-    except OSError:
-        pass
+    for target in {dest_path, canonical_path}:
+        try:
+            target.chmod(0o644)
+        except OSError:
+            pass
 
     if not dest_path.is_file():
         raise FileNotFoundError(f"No se pudo copiar certificado a {dest_path}")

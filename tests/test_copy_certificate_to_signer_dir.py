@@ -18,8 +18,10 @@ def test_copy_certificate_from_signer_dir(monkeypatch, tmp_path):
     dest = copy_certificate_to_signer_dir(selected, "0614")
 
     signer_dir = resolve_signer_cert_dir()
-    assert dest == signer_dir / "0614.crt"
+    canonical = signer_dir / "0614.crt"
+    assert dest == signer_dir / "seleccionado.crt"
     assert dest.read_bytes() == b"nuevo"
+    assert canonical.read_bytes() == b"nuevo"
     assert selected.exists(), "El archivo seleccionado no debe eliminarse durante la copia"
     assert not extra.exists(), "Otros certificados deben limpiarse"
 

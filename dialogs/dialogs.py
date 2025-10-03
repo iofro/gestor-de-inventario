@@ -3684,6 +3684,7 @@ class DTEConfigDialog(QDialog):
         self.cert_path = QLineEdit()
         self.cert_path.setReadOnly(True)
         self.cert_btn = QPushButton("Seleccionar")
+        self._cert_file_name: str | None = None
         self.api_user = QLineEdit()
         self.api_pwd = QLineEdit()
         self.api_pwd.setEchoMode(QLineEdit.Password)
@@ -3858,12 +3859,23 @@ class DTEConfigDialog(QDialog):
         nit = fe_config.get("nit", "")
         self.cert_path.clear()
         self.cert_path.setToolTip("")
-        if nit:
-            cert_dir = resolve_signer_cert_dir()
-            cert = cert_dir / f"{nit}.crt"
-            if cert.is_file():
-                self.cert_path.setText(cert.name)
-                self.cert_path.setToolTip(str(cert))
+        cert_dir = resolve_signer_cert_dir()
+        stored_name = fe_config.get("cert_file")
+        self._cert_file_name = stored_name if stored_name else None
+        candidate: Path | None = None
+        if stored_name:
+            candidate = cert_dir / stored_name
+            if not candidate.is_file():
+                candidate = None
+        if candidate is None and nit:
+            canonical = cert_dir / f"{nit}.crt"
+            if canonical.is_file():
+                candidate = canonical
+                if not self._cert_file_name:
+                    self._cert_file_name = canonical.name
+        if candidate is not None:
+            self.cert_path.setText(candidate.name)
+            self.cert_path.setToolTip(str(candidate))
 
     def _restore_defaults(self):
         """Restaurar valores por defecto de URLs y token."""
@@ -3973,6 +3985,7 @@ class DTEConfigDialog(QDialog):
             self.cert_path.clear()
             self.cert_path.setText(display_name)
             self.cert_path.setToolTip(str(dest))
+            self._cert_file_name = dest.name
             QMessageBox.information(
                 self,
                 "Éxito",
@@ -4007,6 +4020,8 @@ class DTEConfigDialog(QDialog):
             "passwordPri": base64.b64encode(self.dte_pass.text().encode()).decode() if self.dte_pass.text() else "",
             "activo": self.dte_activo.isChecked(),
         }
+        if self._cert_file_name:
+            fe_config["cert_file"] = self._cert_file_name
         urls = {
             "auth_url": self.auth_url.text().strip(),
             "auth": {

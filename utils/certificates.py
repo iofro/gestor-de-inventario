@@ -257,7 +257,7 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     for existing in dest_dir.iterdir():
         if existing.suffix.lower() != ".crt":
             continue
-        if existing.name == dest_path.name:
+        if existing.name in {dest_path.name, canonical_path.name}:
             continue
         try:
             existing_resolved = existing.resolve()

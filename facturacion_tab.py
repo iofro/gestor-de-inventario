@@ -5233,16 +5233,47 @@ class FacturacionTab(QWidget):
         if archive_subdir:
             archive_dir = self._ensure_archive_directory(archive_subdir)
 
-        numero_control = None
-        if dte_json_path and os.path.exists(dte_json_path):
+        extra_data = {}
+        if venta_id:
+            venta = None
             try:
-                with open(dte_json_path, "r", encoding="utf-8") as fh:
+                venta = self.manager.db.get_venta_by_id(venta_id)
+            except Exception:
+                venta = None
+            if venta:
+                raw_extra = venta.get("extra")
+                if isinstance(raw_extra, str) and raw_extra.strip():
+                    try:
+                        extra_data = json.loads(raw_extra)
+                    except Exception:
+                        extra_data = {}
+
+        numero_control = None
+        candidate_paths = []
+        if dte_json_path:
+            candidate_paths.append(dte_json_path)
+        for key in ("dteJsonPath", "jsonPath"):
+            candidate = extra_data.get(key) if isinstance(extra_data, dict) else None
+            if candidate and candidate not in candidate_paths:
+                candidate_paths.append(candidate)
+
+        resolved_json_path = None
+        for candidate in candidate_paths:
+            if not candidate or not os.path.exists(candidate):
+                continue
+            try:
+                with open(candidate, "r", encoding="utf-8") as fh:
                     jdata = json.load(fh)
                 ident = jdata.get("identificacion") or jdata.get("identificador") or {}
                 numero_control = ident.get("numeroControl")
             except Exception:
                 numero_control = None
+            else:
+                resolved_json_path = candidate
+                break
 
+        if resolved_json_path:
+            dte_json_path = resolved_json_path
             abs_json = os.path.normpath(dte_json_path)
             for root_dir in map(
                 os.path.normpath, (DTES_DIR, DTE_FALLIDOS_DIR, DTES_PENDIENTES_DIR)
@@ -5256,6 +5287,9 @@ class FacturacionTab(QWidget):
                         except OSError:
                             pass
                     break
+
+        if not numero_control and isinstance(extra_data, dict):
+            numero_control = extra_data.get("numeroControl")
 
         if numero_control:
             m = re.match(r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$", numero_control)

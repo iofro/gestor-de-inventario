@@ -2696,13 +2696,21 @@ class FacturacionTab(QWidget):
         if not data:
             return None
         rtype = data.get("row_type")
-        if rtype == "venta":
+        if rtype in {"venta", "ticket"}:
             venta_id = data.get("venta_id")
-            pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            if not pdf_path:
-                return None
-            json_path = os.path.splitext(pdf_path)[0] + ".json"
-            if not os.path.exists(json_path):
+            pdf_path = None
+            json_path = None
+            if rtype == "venta":
+                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                if not pdf_path:
+                    return None
+                json_path = os.path.splitext(pdf_path)[0] + ".json"
+            else:
+                _, ticket_path, json_path = self._get_invoice_paths(
+                    venta_id, entry=data
+                )
+                pdf_path = ticket_path or self.manager.db.get_factura_pdf(venta_id)
+            if not json_path or not os.path.exists(json_path):
                 return None
             control = None
             try:
@@ -5220,6 +5228,93 @@ class FacturacionTab(QWidget):
         except OSError:
             pass
 
+    def _normalize_series_component(self, value: Any) -> str | None:
+        if value is None:
+            return None
+        text = str(value).strip()
+        if not text:
+            return None
+        # Prefer numeric values when present but keep alphanumeric fallbacks
+        filtered = re.sub(r"[^0-9A-Za-z]", "", text)
+        if filtered:
+            text = filtered
+        if len(text) > 3:
+            text = text[-3:]
+        try:
+            return text.zfill(3)
+        except Exception:
+            return None
+
+    def _infer_dte_series(self, extra_data: Mapping[str, Any] | None) -> dict | None:
+        if not isinstance(extra_data, Mapping):
+            return None
+
+        correlativo_raw = None
+        for key in ("correlativo", "correlativoActual", "correlativo_actual"):
+            if key in extra_data:
+                correlativo_raw = extra_data.get(key)
+                break
+        if correlativo_raw in (None, ""):
+            return None
+        try:
+            correlativo = int(str(correlativo_raw).strip())
+        except (TypeError, ValueError):
+            return None
+
+        tipo_val = extra_data.get("tipoDte") or extra_data.get("tipo_dte") or extra_data.get("tipo")
+        try:
+            tipo = str(tipo_val).zfill(2) if tipo_val is not None else "01"
+        except Exception:
+            tipo = "01"
+
+        sucursal = (
+            extra_data.get("sucursal")
+            or extra_data.get("codEstable")
+            or extra_data.get("codEstableMH")
+            or extra_data.get("sucursal_id")
+        )
+        punto = (
+            extra_data.get("punto")
+            or extra_data.get("codPuntoVenta")
+            or extra_data.get("codPuntoVentaMH")
+            or extra_data.get("punto_venta")
+        )
+
+        try:
+            datos_negocio = dte._load_datos_negocio() or {}
+        except Exception:
+            datos_negocio = {}
+
+        prefijo = None
+        if not sucursal or not punto:
+            prefijo = (datos_negocio.get("dte_api") or {}).get("prefijo_control")
+            if not prefijo:
+                prefijo = datos_negocio.get("prefijo_control")
+        if prefijo and (not sucursal or not punto):
+            m_pref = re.search(r"S([A-Za-z0-9]{3})P([A-Za-z0-9]{3})", str(prefijo))
+            if m_pref:
+                if not sucursal:
+                    sucursal = m_pref.group(1)
+                if not punto:
+                    punto = m_pref.group(2)
+
+        if not sucursal:
+            sucursal = datos_negocio.get("codEstable") or datos_negocio.get("codEstableMH")
+        if not punto:
+            punto = datos_negocio.get("codPuntoVenta") or datos_negocio.get("codPuntoVentaMH")
+
+        sucursal_norm = self._normalize_series_component(sucursal)
+        punto_norm = self._normalize_series_component(punto)
+        if not sucursal_norm or not punto_norm:
+            return None
+
+        return {
+            "tipo": tipo,
+            "sucursal": sucursal_norm,
+            "punto": punto_norm,
+            "correlativo": correlativo,
+        }
+
     def _cleanup_invoice_artifacts(
         self,
         venta_id,
@@ -5228,27 +5323,30 @@ class FacturacionTab(QWidget):
         ticket_path=None,
         dte_json_path=None,
         archive_subdir=None,
+        extra_data=None,
     ):
         archive_dir = None
         if archive_subdir:
             archive_dir = self._ensure_archive_directory(archive_subdir)
 
-        extra_data = {}
-        if venta_id:
-            venta = None
-            try:
-                venta = self.manager.db.get_venta_by_id(venta_id)
-            except Exception:
+        if not isinstance(extra_data, dict):
+            extra_data = {}
+            if venta_id:
                 venta = None
-            if venta:
-                raw_extra = venta.get("extra")
-                if isinstance(raw_extra, str) and raw_extra.strip():
-                    try:
-                        extra_data = json.loads(raw_extra)
-                    except Exception:
-                        extra_data = {}
+                try:
+                    venta = self.manager.db.get_venta_by_id(venta_id)
+                except Exception:
+                    venta = None
+                if venta:
+                    raw_extra = venta.get("extra")
+                    if isinstance(raw_extra, str) and raw_extra.strip():
+                        try:
+                            extra_data = json.loads(raw_extra)
+                        except Exception:
+                            extra_data = {}
 
         numero_control = None
+        serie_info: dict | None = None
         candidate_paths = []
         if dte_json_path:
             candidate_paths.append(dte_json_path)
@@ -5266,6 +5364,8 @@ class FacturacionTab(QWidget):
                     jdata = json.load(fh)
                 ident = jdata.get("identificacion") or jdata.get("identificador") or {}
                 numero_control = ident.get("numeroControl")
+                if not serie_info:
+                    serie_info = self._parse_numero_control(numero_control)
             except Exception:
                 numero_control = None
             else:
@@ -5290,17 +5390,62 @@ class FacturacionTab(QWidget):
 
         if not numero_control and isinstance(extra_data, dict):
             numero_control = extra_data.get("numeroControl")
+        if not serie_info and numero_control:
+            serie_info = self._parse_numero_control(numero_control)
+        if not serie_info:
+            serie_info = self._infer_dte_series(extra_data if isinstance(extra_data, Mapping) else None)
+            if serie_info and not numero_control:
+                numero_control = "DTE-{tipo}-S{sucursal}P{punto}-{correlativo:015d}".format(
+                    tipo=serie_info["tipo"],
+                    sucursal=serie_info["sucursal"],
+                    punto=serie_info["punto"],
+                    correlativo=serie_info["correlativo"],
+                )
 
-        if numero_control:
-            m = re.match(r"^DTE-(\d{2})-S(\d{3})P(\d{3})-(\d{15})$", numero_control)
-            if m:
-                tipo, suc, punto, corr = m.groups()
-                try:
-                    self.manager.db.revert_dte_correlativo(
-                        tipo, suc, punto, int(corr)
+        if serie_info:
+            tipo = serie_info["tipo"]
+            sucursal = serie_info["sucursal"]
+            punto = serie_info["punto"]
+            correlativo_val = int(serie_info["correlativo"])
+            try:
+                reverted, motivo = self.manager.db.revert_dte_correlativo(
+                    tipo,
+                    sucursal,
+                    punto,
+                    correlativo_val,
+                )
+            except Exception:
+                logger.exception(
+                    "Error al revertir correlativo tipo=%s sucursal=%s punto=%s correlativo=%s",
+                    tipo,
+                    sucursal,
+                    punto,
+                    correlativo_val,
+                )
+            else:
+                if reverted:
+                    if numero_control:
+                        logger.info(
+                            "Se revirtió el correlativo asociado al número de control %s",
+                            numero_control,
+                        )
+                    else:
+                        logger.info(
+                            "Se revirtió el correlativo tipo=%s sucursal=%s punto=%s correlativo=%s",
+                            tipo,
+                            sucursal,
+                            punto,
+                            correlativo_val,
+                        )
+                elif motivo:
+                    logger.warning(
+                        "No se pudo revertir el correlativo tipo=%s sucursal=%s punto=%s correlativo=%s: %s",
+                        tipo,
+                        sucursal,
+                        punto,
+                        correlativo_val,
+                        motivo,
                     )
-                except Exception:
-                    pass
 
         targets = [path for path in [pdf_path, ticket_path] if path]
         for base in targets:
@@ -5334,6 +5479,20 @@ class FacturacionTab(QWidget):
             venta_id, factura=factura, entry=entry
         )
 
+        venta = None
+        extra_data = {}
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if venta:
+            raw_extra = venta.get("extra")
+            if isinstance(raw_extra, str) and raw_extra.strip():
+                try:
+                    extra_data = json.loads(raw_extra)
+                except Exception:
+                    extra_data = {}
+
         numero_control = None
         if dte_json_path and os.path.exists(dte_json_path):
             try:
@@ -5343,6 +5502,9 @@ class FacturacionTab(QWidget):
                 numero_control = ident.get("numeroControl")
             except Exception:
                 numero_control = None
+
+        if not numero_control and isinstance(extra_data, dict):
+            numero_control = extra_data.get("numeroControl")
 
         archive_label = numero_control or entry.get("name") or entry.get("control")
         if not archive_label:
@@ -5370,6 +5532,7 @@ class FacturacionTab(QWidget):
             ticket_path=ticket_path,
             dte_json_path=dte_json_path,
             archive_subdir=archive_label,
+            extra_data=extra_data,
         )
 
         self.load_invoices()
@@ -5424,11 +5587,25 @@ class FacturacionTab(QWidget):
             return
 
         factura = None
-        if rtype == "venta":
+        if rtype in {"venta", "ticket"}:
             factura = self._selected_factura()
         pdf_path, ticket_path, dte_json_path = self._get_invoice_paths(
             venta_id, factura=factura, entry=data
         )
+
+        venta = None
+        extra_data = {}
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if venta:
+            raw_extra = venta.get("extra")
+            if isinstance(raw_extra, str) and raw_extra.strip():
+                try:
+                    extra_data = json.loads(raw_extra)
+                except Exception:
+                    extra_data = {}
 
         if not self.manager.db.delete_venta(venta_id):
             QMessageBox.critical(self, "Eliminar", "No se pudo eliminar la venta seleccionada.")
@@ -5440,6 +5617,7 @@ class FacturacionTab(QWidget):
             pdf_path=pdf_path,
             ticket_path=ticket_path,
             dte_json_path=dte_json_path,
+            extra_data=extra_data,
         )
 
         QMessageBox.information(self, "Eliminar", "Factura eliminada")

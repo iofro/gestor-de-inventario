@@ -3,6 +3,7 @@ import json
 import base64
 import requests
 import logging
+from pathlib import Path
 
 from utils.stable_json import (
     stable_stringify,
@@ -85,10 +86,17 @@ def _load_config(path: str = CONFIG_NEGOCIO_PATH):
 def _ensure_cert_file(nit: str) -> None:
     """Verify that the certificate file for ``nit`` exists and is readable."""
     nit = nit.strip()
-    cert_dir = os.path.abspath(CERT_UPLOAD_DIR.strip())
-    cert_path = os.path.join(cert_dir, f"{nit}.crt")
-    if not (os.path.isfile(cert_path) and os.access(cert_path, os.R_OK)):
-        raise RuntimeError(f"Certificado no accesible: {cert_path}")
+    cert_dir = Path(CERT_UPLOAD_DIR.strip()).expanduser().resolve()
+    canonical = cert_dir / f"{nit}.crt"
+
+    if canonical.is_file() and os.access(canonical, os.R_OK):
+        return
+
+    candidates = sorted(cert_dir.glob("*.crt"))
+    if len(candidates) == 1 and os.access(candidates[0], os.R_OK):
+        return
+
+    raise RuntimeError(f"Certificado no accesible: {canonical}")
 
 
 def sign_json(

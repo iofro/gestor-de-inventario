@@ -240,6 +240,7 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest_path = dest_dir / source_path.name
+    canonical_path = dest_dir / f"{nit}{_CERT_EXT}"
 
     temp_path: Path | None = None
     copy_source = source_path
@@ -248,7 +249,10 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         shutil.copy2(source_path, temp_path)
         copy_source = temp_path
 
-    skip_resolved = {source_path, source_path.resolve()}
+    if temp_path is not None:
+        skip_resolved = {temp_path, temp_path.resolve()}
+    else:
+        skip_resolved = {source_path, source_path.resolve()}
 
     for existing in dest_dir.iterdir():
         if existing.suffix.lower() != ".crt":
@@ -268,17 +272,22 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
 
     shutil.copy2(copy_source, dest_path)
 
+    if canonical_path != dest_path and canonical_path.exists():
+        try:
+            canonical_path.unlink()
+        except OSError:
+            pass
+
     if temp_path is not None:
         try:
             temp_path.unlink()
         except OSError:
             pass
 
-    for target in {dest_path, canonical_path}:
-        try:
-            target.chmod(0o644)
-        except OSError:
-            pass
+    try:
+        dest_path.chmod(0o644)
+    except OSError:
+        pass
 
     if not dest_path.is_file():
         raise FileNotFoundError(f"No se pudo copiar certificado a {dest_path}")
@@ -296,17 +305,27 @@ def verify_certificate_setup(
     default_dir = Path(_DEFAULT_CERT_DIR).expanduser().resolve()
     signer_dir = resolve_signer_cert_dir()
     multiple_crts = _list_certificates(effective_dir)
-    cert_path = effective_dir / f"{normalised_nit}{_CERT_EXT}" if normalised_nit else None
-    cert_exists = cert_path.is_file() if cert_path else False
-    cert_size = cert_path.stat().st_size if cert_exists else None
-    cert_sha256 = _compute_sha256(cert_path) if cert_exists else None
+    configured_cert_path = (
+        effective_dir / f"{normalised_nit}{_CERT_EXT}" if normalised_nit else None
+    )
+    actual_cert_path: Path | None = None
+    if configured_cert_path and configured_cert_path.is_file():
+        actual_cert_path = configured_cert_path
+    else:
+        candidates = sorted(p for p in effective_dir.glob(f"*{_CERT_EXT}") if p.is_file())
+        if len(candidates) == 1:
+            actual_cert_path = candidates[0]
+
+    cert_exists = actual_cert_path is not None
+    cert_size = actual_cert_path.stat().st_size if actual_cert_path else None
+    cert_sha256 = _compute_sha256(actual_cert_path) if actual_cert_path else None
 
     nit_crt = None
     cert_password_hash = None
     parse_error = None
-    if cert_exists:
+    if actual_cert_path is not None:
         try:
-            nit_crt, cert_password_hash = _parse_certificate(cert_path)
+            nit_crt, cert_password_hash = _parse_certificate(actual_cert_path)
         except RuntimeError as exc:
             parse_error = str(exc)
     password_sha512 = None
@@ -340,7 +359,7 @@ def verify_certificate_setup(
         signer_cert_dir=str(signer_dir),
         nit_config=normalised_nit,
         nit_crt=nit_crt,
-        cert_path=str(cert_path) if cert_path else None,
+        cert_path=str(actual_cert_path) if actual_cert_path else None,
         cert_exists=cert_exists,
         cert_size=cert_size,
         cert_sha256=cert_sha256,

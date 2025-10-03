@@ -106,7 +106,32 @@ DATOS_NEGOCIO_PATH = str(user_data_path("datos_negocio.json"))
 CONFIG_NEGOCIO_PATH = str(user_data_path("config_negocio.json"))
 LAST_INVENTORY_PATH = str(user_data_path("ultimo_inventario.json"))
 
-CERT_UPLOAD_DIR = str(ensure_user_dir("certificados"))
+
+def _default_cert_upload_dir() -> Path:
+    """Return the preferred certificate directory for the signer service.
+
+    When the bundled ``svfe-api-firmador`` directory is available and
+    writeable we store certificates inside its ``uploads`` folder so the
+    Java signer can pick them up immediately. If that location is not
+    accessible (for example in frozen builds without a writeable bundle
+    directory) we fall back to the per-user data directory.
+    """
+
+    firmador_uploads = resource_path("svfe-api-firmador", "uploads")
+    try:
+        firmador_uploads.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    else:
+        try:
+            if firmador_uploads.is_dir() and os.access(str(firmador_uploads), os.W_OK):
+                return firmador_uploads.resolve()
+        except OSError:
+            pass
+    return ensure_user_dir("certificados").resolve()
+
+
+CERT_UPLOAD_DIR = str(_default_cert_upload_dir())
 LOG_DIR = str(ensure_user_dir("logs"))
 
 FACTURAS_CONSUMIDOR_FINAL_DIR = str(get_canonical_dte_dir("ConsumidorFinal"))

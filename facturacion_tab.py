@@ -2286,24 +2286,46 @@ class FacturacionTab(QWidget):
         """
 
         cur = self.manager.db.cursor
-        cur.execute(
-            "SELECT id, venta_id, tipo, ruta, fecha_creacion FROM facturas_pdf"
-        )
-        records = cur.fetchall()
+        factura_records: list[dict[str, Any]] = []
+        ticket_records: list[dict[str, Any]] = []
+
+        try:
+            cur.execute(
+                "SELECT id, venta_id, tipo, ruta, fecha_creacion FROM facturas_pdf"
+            )
+            for row in cur.fetchall():
+                rec = dict(row)
+                rec["_source"] = "factura"
+                factura_records.append(rec)
+        except Exception:
+            factura_records = []
+
+        try:
+            cur.execute(
+                "SELECT id, venta_id, ruta, fecha_creacion FROM tickets_pdf"
+            )
+            for row in cur.fetchall():
+                rec = dict(row)
+                rec["_source"] = "ticket"
+                rec.setdefault("tipo", "Ticket")
+                ticket_records.append(rec)
+        except Exception:
+            ticket_records = []
+
+        records = factura_records + ticket_records
         rows = []
         for rec in records:
-            try:
-                doc_tipo = rec["tipo"]
-            except (KeyError, IndexError):
-                doc_tipo = None
+            source = rec.pop("_source", "factura")
+            doc_tipo = rec.get("tipo")
             tipo_lower = str(doc_tipo or "").strip().lower()
             venta = None
-            if rec["venta_id"] is not None and not tipo_lower.startswith("nota"):
-                venta = self.manager.db.get_venta_by_id(rec["venta_id"])
-            ruta = rec["ruta"]
+            venta_id = rec.get("venta_id")
+            if venta_id is not None and not tipo_lower.startswith("nota"):
+                venta = self.manager.db.get_venta_by_id(venta_id)
+            ruta = rec.get("ruta")
             json_path = os.path.splitext(ruta)[0] + ".json" if ruta else None
 
-            fecha_creacion = rec["fecha_creacion"] or ""
+            fecha_creacion = rec.get("fecha_creacion") or ""
             fdate = None
             if fecha_creacion:
                 try:
@@ -2342,9 +2364,12 @@ class FacturacionTab(QWidget):
                 cliente_id = venta.get("cliente_id")
                 vendedor_id = venta.get("vendedor_id")
                 total = venta.get("total")
-                row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
+                if source == "ticket":
+                    row_type = "ticket"
+                else:
+                    row_type = "ticket" if self._is_ticket_sale(venta) else "venta"
             else:
-                row_type = "orphan"
+                row_type = "ticket" if source == "ticket" else "orphan"
                 if ident_data:
                     numero_control = ident_data.get("numeroControl")
                     codigo_generacion = ident_data.get("codigoGeneracion")
@@ -2389,8 +2414,8 @@ class FacturacionTab(QWidget):
                 base_name = numero_control or ""
             row = {
                 "row_type": row_type,
-                "id": rec["id"],
-                "venta_id": rec["venta_id"],
+                "id": rec.get("id"),
+                "venta_id": venta_id,
                 "name": base_name,
                 "fecha": fecha_str,
                 "_parsed_fecha": fdate,

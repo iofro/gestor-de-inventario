@@ -2,6 +2,9 @@ import os
 import json
 import pytest
 from types import SimpleNamespace
+
+os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtCore import QDate
 
@@ -55,6 +58,50 @@ def test_filters_documents(qt_app, tmp_path, monkeypatch):
     tab.search_bar.setText("")
     tab.load_invoices()
     assert tab.table.rowCount() == 1
+
+
+def test_ticket_rows_loaded_from_db(qt_app, tmp_path, monkeypatch):
+    ticket_dir = tmp_path / "tickets"
+    ticket_dir.mkdir()
+    pdf_path = ticket_dir / "20240103_Test_1_Ticket.pdf"
+    pdf_path.write_text("pdf")
+    json_data = {
+        "identificacion": {
+            "numeroControl": "DTE-01-S001P001-000000000000123",
+            "tipoDte": "01",
+        }
+    }
+    (ticket_dir / "20240103_Test_1_Ticket.json").write_text(json.dumps(json_data))
+
+    db = DB(":memory:")
+    venta_id = db.add_venta("2024-01-03", 5)
+    db.add_ticket_pdf(venta_id, str(pdf_path))
+
+    manager = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(tmp_path / "cf"))
+    monkeypatch.setattr(facturacion_tab, "CREDITO_DIR", str(tmp_path / "cfiscal"))
+    monkeypatch.setattr(facturacion_tab, "TICKETS_DIR", str(ticket_dir))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_DEBITO_DIR", str(tmp_path / "nd"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_CREDITO_DIR", str(tmp_path / "nc"))
+    monkeypatch.setattr(facturacion_tab, "NOTAS_REMISION_DIR", str(tmp_path / "nr"))
+    monkeypatch.setattr(facturacion_tab, "ADDITIONAL_DIRS", [])
+
+    tab = facturacion_tab.FacturacionTab(manager)
+    rows = tab._get_invoices_from_db()
+    ticket_rows = [r for r in rows if r.get("venta_id") == venta_id]
+    assert ticket_rows, "expected ticket entry from database"
+    ticket_entry = ticket_rows[0]
+    assert ticket_entry["row_type"] == "ticket"
+    assert ticket_entry["tipo"] == "Ticket"
+
+    docs = tab._scan_documents()
+    names = [r.get("name") for r in docs if r.get("venta_id") == venta_id]
+    assert ticket_entry["name"] in names
+    assert not any(
+        r.get("row_type") == "orphan" and r.get("name") == ticket_entry["name"]
+        for r in docs
+    )
 
 
 def test_orders_by_datetime(qt_app, tmp_path, monkeypatch):

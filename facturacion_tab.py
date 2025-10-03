@@ -3289,14 +3289,13 @@ class FacturacionTab(QWidget):
         if dialog.exec_() != QDialog.Accepted:
             return
 
-        if dialog.email_cb.isChecked():
-            if rtype == "venta" and factura:
-                self._send_invoice_email(factura.get("venta_id"))
-            elif rtype == "ticket":
-                self._send_ticket_email(entry.get("venta_id"))
-            elif rtype == "orphan" and factura:
-                self._send_orphan_email(entry)
-        if dialog.hacienda_cb.isChecked():
+        send_email = dialog.email_cb.isChecked()
+        send_hacienda = dialog.hacienda_cb.isChecked()
+
+        mh_success = False
+        mh_response: dict | None = None
+
+        if send_hacienda:
             if self._document_already_sent(entry, factura):
                 answer = QMessageBox.question(
                     self,
@@ -3323,6 +3322,17 @@ class FacturacionTab(QWidget):
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
                         return
                     estado = resp.get("estado")
+                    estado_norm = str(estado or "").strip().lower()
+                    sello_val = (
+                        resp.get("sello")
+                        or resp.get("selloRecibido")
+                        or resp.get("selloRecepcion")
+                        or ""
+                    )
+                    sello_norm = str(sello_val).strip()
+                    if estado_norm == "aceptado" and sello_norm:
+                        mh_success = True
+                        mh_response = resp
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
                         QMessageBox.critical(
                             self,
@@ -3416,6 +3426,27 @@ class FacturacionTab(QWidget):
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
                         return
                     estado = resp.get("estado")
+                    estado_norm = str(estado or "").strip().lower()
+                    sello_val = (
+                        resp.get("sello")
+                        or resp.get("selloRecibido")
+                        or resp.get("selloRecepcion")
+                        or ""
+                    )
+                    sello_norm = str(sello_val).strip()
+                    if estado_norm == "aceptado" and sello_norm:
+                        mh_success = True
+                        mh_response = resp
+                        if rtype == "venta":
+                            venta_id = entry.get("venta_id")
+                            if venta_id:
+                                try:
+                                    self._update_invoice_assets_after_mh(venta_id, resp)
+                                except Exception:
+                                    logger.exception(
+                                        "No se pudo actualizar el PDF posterior al envío",
+                                        exc_info=True,
+                                    )
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
                         QMessageBox.critical(
                             self,
@@ -3498,6 +3529,71 @@ class FacturacionTab(QWidget):
                         "Enviar a Hacienda",
                         GENERIC_SEND_ERROR,
                     )
+
+        if not send_email:
+            return
+
+        if rtype == "venta" and factura:
+            venta_id = factura.get("venta_id")
+            if send_hacienda and not mh_success:
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    (
+                        "No se enviará el correo porque Hacienda no aceptó el documento."
+                        " Reintente cuando el envío sea exitoso."
+                    ),
+                )
+                return
+            codigo_generacion = None
+            sello_resp = None
+            if mh_response:
+                ident = (
+                    mh_response.get("identificacion")
+                    or mh_response.get("identificador")
+                    or {}
+                )
+                codigo_generacion = (
+                    (ident.get("codigoGeneracion") or "").strip().upper()
+                    or None
+                )
+                sello_resp = (
+                    mh_response.get("sello")
+                    or mh_response.get("selloRecibido")
+                    or mh_response.get("selloRecepcion")
+                )
+                if sello_resp:
+                    sello_resp = str(sello_resp).strip()
+            self._send_invoice_email(
+                venta_id,
+                force_regenerate=bool(send_hacienda and mh_success),
+                expected_codigo=codigo_generacion,
+                expected_sello=sello_resp,
+            )
+        elif rtype == "ticket":
+            if send_hacienda and not mh_success:
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    (
+                        "No se enviará el correo porque Hacienda no aceptó el documento."
+                        " Reintente cuando el envío sea exitoso."
+                    ),
+                )
+                return
+            self._send_ticket_email(entry.get("venta_id"))
+        elif rtype == "orphan" and factura:
+            if send_hacienda and not mh_success:
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    (
+                        "No se enviará el correo porque Hacienda no aceptó el documento."
+                        " Reintente cuando el envío sea exitoso."
+                    ),
+                )
+                return
+            self._send_orphan_email(entry)
 
     def _enviar_evento_contingencia(self) -> None:
         dialog = EventoContingenciaDialog(self.manager, self)
@@ -4196,7 +4292,62 @@ class FacturacionTab(QWidget):
 
             QMessageBox.warning(self, "Anular DTE", detalle_text)
 
-    def _send_invoice_email(self, venta_id):
+    def _update_invoice_assets_after_mh(self, venta_id: int, response: dict | None) -> None:
+        if not venta_id:
+            return
+        response = response or {}
+        ident = response.get("identificacion") or response.get("identificador") or {}
+        codigo = (ident.get("codigoGeneracion") or "").strip().upper()
+        numero_control = (ident.get("numeroControl") or "").strip()
+        ambiente = (ident.get("ambiente") or "").strip()
+        sello = (
+            response.get("sello")
+            or response.get("selloRecibido")
+            or response.get("selloRecepcion")
+            or ""
+        )
+        sello = str(sello).strip()
+
+        try:
+            self.manager.db.update_venta_extra(
+                venta_id,
+                {
+                    "codigoGeneracion": codigo or None,
+                    "numeroControl": numero_control or None,
+                    "ambiente": ambiente or None,
+                    "selloRecibido": sello or None,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo actualizar datos MH para la venta %s", venta_id
+            )
+
+        pdf_path = None
+        try:
+            pdf_path = self._generate_invoice_pdf(venta_id)
+        except Exception:
+            logger.exception("No se pudo regenerar la factura después del envío")
+        if not pdf_path or not os.path.exists(pdf_path):
+            return
+        json_path = os.path.splitext(pdf_path)[0] + ".json"
+        if not os.path.exists(json_path):
+            return
+
+        self._ensure_invoice_json_metadata(
+            json_path,
+            codigo=codigo or None,
+            sello=sello or None,
+        )
+
+    def _send_invoice_email(
+        self,
+        venta_id,
+        *,
+        force_regenerate: bool = False,
+        expected_codigo: str | None = None,
+        expected_sello: str | None = None,
+    ):
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
             QMessageBox.warning(self, "Enviar por correo", "No se encontró la venta seleccionada.")
@@ -4211,7 +4362,11 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Enviar por correo", "El cliente no tiene correo registrado.")
             return
 
-        pdf_path = self.manager.db.get_factura_pdf(venta_id)
+        pdf_path = None
+        if force_regenerate:
+            pdf_path = self._generate_invoice_pdf(venta_id)
+        if not pdf_path:
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
             pdf_path = self._generate_invoice_pdf(venta_id)
         if not pdf_path or not os.path.exists(pdf_path):
@@ -4224,6 +4379,145 @@ class FacturacionTab(QWidget):
             if not os.path.exists(json_path):
                 QMessageBox.warning(self, "Enviar por correo", "No se encontró el JSON firmado.")
                 return
+
+        codigo_meta = (expected_codigo or "").strip().upper()
+        sello_meta = (expected_sello or "").strip()
+        extra_raw = venta.get("extra")
+        extra = {}
+        if isinstance(extra_raw, str) and extra_raw:
+            try:
+                extra = json.loads(extra_raw)
+            except Exception:
+                extra = {}
+        elif isinstance(extra_raw, dict):
+            extra = extra_raw
+        if not codigo_meta:
+            codigo_meta = str(extra.get("codigoGeneracion") or "").strip().upper()
+        if not sello_meta:
+            sello_meta = str(
+                extra.get("selloRecibido")
+                or extra.get("sello")
+                or extra.get("selloRecepcion")
+                or ""
+            ).strip()
+
+        if codigo_meta or sello_meta:
+            self._ensure_invoice_json_metadata(
+                json_path,
+                codigo=codigo_meta or None,
+                sello=sello_meta or None,
+            )
+
+        expected_codigo_norm = codigo_meta or ""
+        expected_sello_norm = sello_meta or ""
+        attempts = 0
+        while True:
+            try:
+                with open(json_path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except Exception:
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    "No se pudo leer el JSON firmado para validar los datos.",
+                )
+                return
+
+            ident = payload.get("identificacion") or payload.get("identificador") or {}
+            codigo_json = (ident.get("codigoGeneracion") or "").strip().upper()
+            sello_json = (
+                payload.get("selloRecibido")
+                or payload.get("sello")
+                or payload.get("selloRecepcion")
+                or ""
+            )
+            sello_json = str(sello_json).strip()
+
+            if expected_codigo_norm and codigo_json != expected_codigo_norm:
+                if attempts == 0:
+                    pdf_path = self._generate_invoice_pdf(venta_id)
+                    if not pdf_path or not os.path.exists(pdf_path):
+                        QMessageBox.warning(
+                            self,
+                            "Enviar por correo",
+                            "No se pudo regenerar la factura con los datos actualizados.",
+                        )
+                        return
+                    json_path = os.path.splitext(pdf_path)[0] + ".json"
+                    if not os.path.exists(json_path):
+                        QMessageBox.warning(
+                            self,
+                            "Enviar por correo",
+                            "No se encontró el JSON firmado después de regenerar la factura.",
+                        )
+                        return
+                    if expected_codigo_norm or expected_sello_norm:
+                        self._ensure_invoice_json_metadata(
+                            json_path,
+                            codigo=expected_codigo_norm or None,
+                            sello=expected_sello_norm or None,
+                        )
+                    attempts += 1
+                    continue
+
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    "El JSON firmado no coincide con el código de generación aceptado por Hacienda.",
+                )
+                return
+
+            if not codigo_json:
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    "El documento JSON no contiene un código de generación válido.",
+                )
+                return
+
+            if expected_sello_norm and sello_json.upper() != expected_sello_norm.upper():
+                if attempts == 0:
+                    pdf_path = self._generate_invoice_pdf(venta_id)
+                    if not pdf_path or not os.path.exists(pdf_path):
+                        QMessageBox.warning(
+                            self,
+                            "Enviar por correo",
+                            "No se pudo regenerar la factura con el sello aceptado.",
+                        )
+                        return
+                    json_path = os.path.splitext(pdf_path)[0] + ".json"
+                    if not os.path.exists(json_path):
+                        QMessageBox.warning(
+                            self,
+                            "Enviar por correo",
+                            "No se encontró el JSON firmado después de regenerar la factura.",
+                        )
+                        return
+                    if expected_codigo_norm or expected_sello_norm:
+                        self._ensure_invoice_json_metadata(
+                            json_path,
+                            codigo=expected_codigo_norm or None,
+                            sello=expected_sello_norm or None,
+                        )
+                    attempts += 1
+                    continue
+
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    "El sello del documento no coincide con el recibido de Hacienda.",
+                )
+                return
+
+            if not sello_json:
+                QMessageBox.warning(
+                    self,
+                    "Enviar por correo",
+                    "El documento no contiene sello de recepción de Hacienda.",
+                )
+                return
+
+            break
 
         creds = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -4258,6 +4552,62 @@ class FacturacionTab(QWidget):
         )
         self.email_thread.finished.connect(self._on_email_sent)
         self.email_thread.start()
+
+    def _ensure_invoice_json_metadata(
+        self,
+        json_path: str,
+        *,
+        codigo: str | None = None,
+        sello: str | None = None,
+    ) -> None:
+        if not json_path or not os.path.exists(json_path):
+            return
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except Exception:
+            return
+
+        if not isinstance(payload, dict):
+            return
+
+        changed = False
+        ident = payload.get("identificacion") or payload.get("identificador") or {}
+        codigo_val = (codigo or "").strip()
+        if codigo_val:
+            codigo_norm = codigo_val.upper()
+            current = (ident.get("codigoGeneracion") or "").strip().upper()
+            if codigo_norm and codigo_norm != current:
+                ident["codigoGeneracion"] = codigo_val
+                if "identificacion" in payload:
+                    payload["identificacion"] = ident
+                elif "identificador" in payload:
+                    payload["identificador"] = ident
+                changed = True
+
+        sello_val = (sello or "").strip()
+        if sello_val:
+            if payload.get("selloRecibido") != sello_val:
+                payload["selloRecibido"] = sello_val
+                changed = True
+            respuesta = payload.get("respuesta")
+            if isinstance(respuesta, dict):
+                if respuesta.get("selloRecibido") != sello_val:
+                    respuesta["selloRecibido"] = sello_val
+                    payload["respuesta"] = respuesta
+                    changed = True
+            elif respuesta is None:
+                payload["respuesta"] = {"selloRecibido": sello_val}
+                changed = True
+
+        if changed:
+            try:
+                with open(json_path, "w", encoding="utf-8") as fh:
+                    json.dump(payload, fh, ensure_ascii=False, indent=2)
+            except Exception:
+                logger.exception(
+                    "No se pudo actualizar metadatos de JSON en %s", json_path
+                )
 
     def _send_orphan_email(self, entry):
         json_path = entry.get("json") if isinstance(entry, dict) else None

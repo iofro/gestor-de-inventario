@@ -222,7 +222,11 @@ def _path_is_relative_to(path: Path, other: Path) -> bool:
 
 
 def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
-    """Copy ``source`` into the signer directory using the provided ``nit`` name."""
+    """Copy ``source`` into the signer directory preserving its original name.
+
+    Any other certificate present in the directory is removed so that only the
+    newly uploaded file remains.
+    """
 
     if not nit:
         raise ValueError("NIT vacío para copiar certificado")
@@ -232,7 +236,8 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         raise FileNotFoundError(f"Certificado origen no encontrado: {source_path}")
     dest_dir = resolve_signer_cert_dir()
     dest_dir.mkdir(parents=True, exist_ok=True)
-    dest_path = dest_dir / f"{nit}.crt"
+
+    dest_path = dest_dir / source_path.name
 
     temp_path: Path | None = None
     copy_source = source_path
@@ -242,8 +247,11 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
         copy_source = temp_path
 
     skip_resolved = {source_path, source_path.resolve()}
+
     for existing in dest_dir.iterdir():
         if existing.suffix.lower() != ".crt":
+            continue
+        if existing.name == dest_path.name:
             continue
         try:
             existing_resolved = existing.resolve()
@@ -257,6 +265,7 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
             logger.warning("CERT.ERROR: no se pudo eliminar %s: %s", existing, exc)
 
     shutil.copy2(copy_source, dest_path)
+
     if temp_path is not None:
         try:
             temp_path.unlink()

@@ -5403,15 +5403,49 @@ class FacturacionTab(QWidget):
                 )
 
         if serie_info:
+            tipo = serie_info["tipo"]
+            sucursal = serie_info["sucursal"]
+            punto = serie_info["punto"]
+            correlativo_val = int(serie_info["correlativo"])
             try:
-                self.manager.db.revert_dte_correlativo(
-                    serie_info["tipo"],
-                    serie_info["sucursal"],
-                    serie_info["punto"],
-                    int(serie_info["correlativo"]),
+                reverted, motivo = self.manager.db.revert_dte_correlativo(
+                    tipo,
+                    sucursal,
+                    punto,
+                    correlativo_val,
                 )
             except Exception:
-                pass
+                logger.exception(
+                    "Error al revertir correlativo tipo=%s sucursal=%s punto=%s correlativo=%s",
+                    tipo,
+                    sucursal,
+                    punto,
+                    correlativo_val,
+                )
+            else:
+                if reverted:
+                    if numero_control:
+                        logger.info(
+                            "Se revirtió el correlativo asociado al número de control %s",
+                            numero_control,
+                        )
+                    else:
+                        logger.info(
+                            "Se revirtió el correlativo tipo=%s sucursal=%s punto=%s correlativo=%s",
+                            tipo,
+                            sucursal,
+                            punto,
+                            correlativo_val,
+                        )
+                elif motivo:
+                    logger.warning(
+                        "No se pudo revertir el correlativo tipo=%s sucursal=%s punto=%s correlativo=%s: %s",
+                        tipo,
+                        sucursal,
+                        punto,
+                        correlativo_val,
+                        motivo,
+                    )
 
         targets = [path for path in [pdf_path, ticket_path] if path]
         for base in targets:

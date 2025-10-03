@@ -959,4 +959,5 @@ def test_nota_credito_direccion(tmp_path, monkeypatch):
         lines = ''.join(p.get_text() for p in doc).splitlines()
     idx = next(i for i, ln in enumerate(lines) if ln.startswith('Dirección:'))
     assert 'La Libertad Centro' in lines[idx]
-    assert 'realmente muy larga para pruebas' in lines[idx + 1]
+    assert 'Colonia El Centro con una avenida' in lines[idx]
+    assert lines[idx].endswith('...')

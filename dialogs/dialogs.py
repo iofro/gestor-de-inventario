@@ -3978,6 +3978,7 @@ class DTEConfigDialog(QDialog):
                 "Éxito",
                 f"Certificado '{display_name}' copiado correctamente.",
             )
+
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo copiar el certificado: {exc}")
 

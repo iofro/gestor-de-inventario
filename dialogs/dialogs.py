@@ -28,6 +28,7 @@ import re
 from db import DB
 
 from utils import jws
+from utils.certificates import resolve_signer_cert_dir
 from utils.catalogos import CONTINGENCIA
 from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
@@ -3855,9 +3856,11 @@ class DTEConfigDialog(QDialog):
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
         nit = fe_config.get("nit", "")
-        cert = os.path.join(jws.CERT_UPLOAD_DIR, f"{nit}.crt") if nit else ""
-        if cert and os.path.isfile(cert):
-            self.cert_path.setText(cert)
+        if nit:
+            cert_dir = resolve_signer_cert_dir()
+            cert = cert_dir / f"{nit}.crt"
+            if cert.is_file():
+                self.cert_path.setText(str(cert))
 
     def _restore_defaults(self):
         """Restaurar valores por defecto de URLs y token."""
@@ -3953,23 +3956,24 @@ class DTEConfigDialog(QDialog):
         if not file_path:
             return
         try:
-            dest_dir = os.path.abspath(jws.CERT_UPLOAD_DIR)
-            os.makedirs(dest_dir, exist_ok=True)
-            # Remove any existing files so only the new certificate remains
-            for name in os.listdir(dest_dir):
-                existing = os.path.join(dest_dir, name)
+            dest_dir = resolve_signer_cert_dir()
+            dest_dir.mkdir(parents=True, exist_ok=True)
+            # Remove existing certificates so only the new file remains
+            for existing in dest_dir.iterdir():
+                if existing.suffix.lower() != ".crt":
+                    continue
                 try:
-                    if os.path.isfile(existing) or os.path.islink(existing):
-                        os.remove(existing)
-                    elif os.path.isdir(existing):
-                        shutil.rmtree(existing)
+                    existing.unlink()
                 except Exception as cleanup_exc:
                     logger.warning("No se pudo eliminar %s: %s", existing, cleanup_exc)
-            dest = os.path.join(dest_dir, f"{nit}.crt")
-            shutil.copy(file_path, dest)
-            os.chmod(dest, 0o644)
-            jws.set_cert_upload_dir(dest_dir)
-            self.cert_path.setText(dest)
+            dest = dest_dir / f"{nit}.crt"
+            shutil.copy(file_path, str(dest))
+            try:
+                dest.chmod(0o644)
+            except Exception:
+                pass
+            jws.set_cert_upload_dir(str(dest_dir))
+            self.cert_path.setText(str(dest))
             QMessageBox.information(self, "Éxito", "Certificado copiado correctamente.")
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo copiar el certificado: {exc}")

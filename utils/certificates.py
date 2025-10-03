@@ -240,6 +240,7 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     dest_path = dest_dir / source_path.name
+    canonical_path = dest_dir / f"{nit}{_CERT_EXT}"
 
     temp_path: Path | None = None
     copy_source = source_path
@@ -253,7 +254,7 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
     for existing in dest_dir.iterdir():
         if existing.suffix.lower() != ".crt":
             continue
-        if existing.name == dest_path.name:
+        if existing.name in {dest_path.name, canonical_path.name}:
             continue
         try:
             existing_resolved = existing.resolve()
@@ -267,6 +268,9 @@ def copy_certificate_to_signer_dir(source: Path | str, nit: str) -> Path:
             logger.warning("CERT.ERROR: no se pudo eliminar %s: %s", existing, exc)
 
     shutil.copy2(copy_source, dest_path)
+
+    if canonical_path != dest_path:
+        shutil.copy2(dest_path, canonical_path)
 
     if temp_path is not None:
         try:

@@ -2696,13 +2696,21 @@ class FacturacionTab(QWidget):
         if not data:
             return None
         rtype = data.get("row_type")
-        if rtype == "venta":
+        if rtype in {"venta", "ticket"}:
             venta_id = data.get("venta_id")
-            pdf_path = self.manager.db.get_factura_pdf(venta_id)
-            if not pdf_path:
-                return None
-            json_path = os.path.splitext(pdf_path)[0] + ".json"
-            if not os.path.exists(json_path):
+            pdf_path = None
+            json_path = None
+            if rtype == "venta":
+                pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                if not pdf_path:
+                    return None
+                json_path = os.path.splitext(pdf_path)[0] + ".json"
+            else:
+                _, ticket_path, json_path = self._get_invoice_paths(
+                    venta_id, entry=data
+                )
+                pdf_path = ticket_path or self.manager.db.get_factura_pdf(venta_id)
+            if not json_path or not os.path.exists(json_path):
                 return None
             control = None
             try:
@@ -5228,25 +5236,27 @@ class FacturacionTab(QWidget):
         ticket_path=None,
         dte_json_path=None,
         archive_subdir=None,
+        extra_data=None,
     ):
         archive_dir = None
         if archive_subdir:
             archive_dir = self._ensure_archive_directory(archive_subdir)
 
-        extra_data = {}
-        if venta_id:
-            venta = None
-            try:
-                venta = self.manager.db.get_venta_by_id(venta_id)
-            except Exception:
+        if not isinstance(extra_data, dict):
+            extra_data = {}
+            if venta_id:
                 venta = None
-            if venta:
-                raw_extra = venta.get("extra")
-                if isinstance(raw_extra, str) and raw_extra.strip():
-                    try:
-                        extra_data = json.loads(raw_extra)
-                    except Exception:
-                        extra_data = {}
+                try:
+                    venta = self.manager.db.get_venta_by_id(venta_id)
+                except Exception:
+                    venta = None
+                if venta:
+                    raw_extra = venta.get("extra")
+                    if isinstance(raw_extra, str) and raw_extra.strip():
+                        try:
+                            extra_data = json.loads(raw_extra)
+                        except Exception:
+                            extra_data = {}
 
         numero_control = None
         candidate_paths = []
@@ -5334,6 +5344,20 @@ class FacturacionTab(QWidget):
             venta_id, factura=factura, entry=entry
         )
 
+        venta = None
+        extra_data = {}
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if venta:
+            raw_extra = venta.get("extra")
+            if isinstance(raw_extra, str) and raw_extra.strip():
+                try:
+                    extra_data = json.loads(raw_extra)
+                except Exception:
+                    extra_data = {}
+
         numero_control = None
         if dte_json_path and os.path.exists(dte_json_path):
             try:
@@ -5343,6 +5367,9 @@ class FacturacionTab(QWidget):
                 numero_control = ident.get("numeroControl")
             except Exception:
                 numero_control = None
+
+        if not numero_control and isinstance(extra_data, dict):
+            numero_control = extra_data.get("numeroControl")
 
         archive_label = numero_control or entry.get("name") or entry.get("control")
         if not archive_label:
@@ -5370,6 +5397,7 @@ class FacturacionTab(QWidget):
             ticket_path=ticket_path,
             dte_json_path=dte_json_path,
             archive_subdir=archive_label,
+            extra_data=extra_data,
         )
 
         self.load_invoices()
@@ -5424,11 +5452,25 @@ class FacturacionTab(QWidget):
             return
 
         factura = None
-        if rtype == "venta":
+        if rtype in {"venta", "ticket"}:
             factura = self._selected_factura()
         pdf_path, ticket_path, dte_json_path = self._get_invoice_paths(
             venta_id, factura=factura, entry=data
         )
+
+        venta = None
+        extra_data = {}
+        try:
+            venta = self.manager.db.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if venta:
+            raw_extra = venta.get("extra")
+            if isinstance(raw_extra, str) and raw_extra.strip():
+                try:
+                    extra_data = json.loads(raw_extra)
+                except Exception:
+                    extra_data = {}
 
         if not self.manager.db.delete_venta(venta_id):
             QMessageBox.critical(self, "Eliminar", "No se pudo eliminar la venta seleccionada.")
@@ -5440,6 +5482,7 @@ class FacturacionTab(QWidget):
             pdf_path=pdf_path,
             ticket_path=ticket_path,
             dte_json_path=dte_json_path,
+            extra_data=extra_data,
         )
 
         QMessageBox.information(self, "Eliminar", "Factura eliminada")

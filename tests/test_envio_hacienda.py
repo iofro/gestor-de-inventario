@@ -5,6 +5,7 @@ import pytest
 import requests
 import auth
 import dte
+from svfe.prevalidate import prevalidate_envelope
 
 from db import DB
 from dte import transmitir_dte
@@ -20,6 +21,29 @@ def create_sale(db):
     venta_id = db.add_venta("2024-01-01", 10)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     return venta_id
+
+
+def _make_envelope(ambiente: str):
+    codigo = "00000000-0000-4000-8000-000000000999"
+    sobre = {"tipoDte": "01", "codigoGeneracion": codigo}
+    payload = {
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": codigo,
+            "ambiente": ambiente,
+        }
+    }
+    return sobre, make_jws(payload)
+
+
+def test_prevalidate_envelope_accepts_pruebas():
+    sobre, jws = _make_envelope("00")
+    prevalidate_envelope(sobre, jws)
+
+
+def test_prevalidate_envelope_accepts_produccion():
+    sobre, jws = _make_envelope("01")
+    prevalidate_envelope(sobre, jws, allowed_ambientes=("00", "01"))
 
 
 def test_transmision_exitosa(monkeypatch, tmp_path):

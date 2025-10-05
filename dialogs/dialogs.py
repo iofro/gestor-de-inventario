@@ -1462,15 +1462,31 @@ class ProductDialog(QDialog):
         }
 
 class RegisterPurchaseDialog(QDialog):
-    
-    def __init__(self, productos, Distribuidores, Vendedores, parent=None):
+
+    def __init__(
+        self,
+        productos,
+        Distribuidores,
+        Vendedores,
+        parent=None,
+        compra=None,
+        detalles=None,
+    ):
         super().__init__(parent)
-        self.setWindowTitle("Registrar Compra")
         self.productos = productos
         self.Distribuidores = Distribuidores
         self.Vendedores = Vendedores
         self._vendedores_map = {v["id"]: v for v in self.Vendedores}
         self.compra_items = []
+        self._productos_por_nombre = {p.get("nombre"): p for p in self.productos}
+        self._productos_por_id = {p.get("id"): p for p in self.productos}
+        self._editing_row = None
+        self._compra_data = compra if isinstance(compra, dict) else {}
+        self._existing_fecha = self._compra_data.get("fecha") if self._compra_data else None
+        self._compra_id = self._compra_data.get("id") if self._compra_data else None
+        self.edit_mode = self._compra_id is not None
+        self.setWindowTitle("Editar Compra" if self.edit_mode else "Registrar Compra")
+        detalles = detalles or []
 
         layout = QVBoxLayout()
 
@@ -1624,15 +1640,26 @@ class RegisterPurchaseDialog(QDialog):
         layout.addWidget(self.btn_agregar)
 
         # En el __init__ de RegisterPurchaseDialog, donde creas la tabla:
-        self.table = QTableWidget(0, 9)
+        self.table = QTableWidget(0, 10)
         self.table.setHorizontalHeaderLabels([
-            "Producto", "Cantidad", "Precio U.", "Subtotal", "IVA", "Comisión", "Total", "Vencimiento", "Eliminar"
+            "Producto",
+            "Cantidad",
+            "Precio U.",
+            "Subtotal",
+            "IVA",
+            "Comisión",
+            "Total",
+            "Vencimiento",
+            "Editar",
+            "Eliminar",
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.table)
+        self._edit_column = 8
+        self._delete_column = 9
 
         # Total general de la compra
         total_general_layout = QHBoxLayout()
@@ -1641,7 +1668,9 @@ class RegisterPurchaseDialog(QDialog):
         layout.addLayout(total_general_layout)
 
         # Botón registrar compra
-        self.btn_registrar = QPushButton("Registrar Compra")
+        self.btn_registrar = QPushButton(
+            "Guardar cambios" if self.edit_mode else "Registrar Compra"
+        )
         self.btn_cancelar = QPushButton("Cancelar")
         botones_layout = QHBoxLayout()
         botones_layout.addStretch(1)
@@ -1667,6 +1696,10 @@ class RegisterPurchaseDialog(QDialog):
             self.product_list.setCurrentRow(0)
             self._actualizar_vendedor_y_Distribuidor()
         self._actualizar_total_general()
+        self._reset_edit_mode()
+
+        if self.edit_mode:
+            self._cargar_compra_existente(detalles)
         
         # Conexiones para cálculo en tiempo real
         self.cantidad_spin.valueChanged.connect(self._calcular_preview_item)
@@ -1728,7 +1761,7 @@ class RegisterPurchaseDialog(QDialog):
         if descuento_tipo == "%":
             descuento_monto = subtotal * (descuento_valor / 100)
         else:
-            descuento_monto = descuento_valor
+            descuento_monto = min(descuento_valor, subtotal)
         subtotal_con_descuento = max(subtotal - descuento_monto, 0)
 
         # Comisión (se calcula antes del IVA para determinar la base)
@@ -1794,6 +1827,67 @@ class RegisterPurchaseDialog(QDialog):
         self.total_label.setText(f"TOTAL: {self._format_currency(total_general)}")
         self.total_general_label.setText(f"Total compra: {self._format_currency(total_general)}")
 
+    def _cargar_compra_existente(self, detalles):
+        vendedor_id = self._compra_data.get("vendedor_id") if self._compra_data else None
+        if vendedor_id is not None:
+            idx = self.vendedor_combo.findData(vendedor_id)
+            if idx >= 0:
+                self.vendedor_combo.setCurrentIndex(idx)
+        self._actualizar_Distribuidor()
+        distribuidor_id = self._compra_data.get("Distribuidor_id") if self._compra_data else None
+        if distribuidor_id is not None:
+            idx = self.Distribuidor_combo.findData(distribuidor_id)
+            if idx >= 0:
+                self.Distribuidor_combo.setCurrentIndex(idx)
+
+        self.compra_items = []
+        for detalle in detalles:
+            producto_id = detalle.get("producto_id")
+            producto_info = self._productos_por_id.get(producto_id, {})
+            nombre_producto = producto_info.get("nombre") or f"Producto {producto_id}" if producto_id is not None else ""
+            cantidad = detalle.get("cantidad", 0) or 0
+            precio = detalle.get("precio_unitario", 0) or 0
+            subtotal = cantidad * precio
+            descuento_monto = detalle.get("descuento", 0) or 0
+            descuento_tipo = detalle.get("descuento_tipo", "%") or "%"
+            if descuento_tipo == "%":
+                descuento_valor = (descuento_monto / subtotal * 100) if subtotal else 0
+            else:
+                descuento_valor = descuento_monto
+            subtotal_con_descuento = max(subtotal - descuento_monto, 0)
+            iva = detalle.get("iva", 0) or 0
+            iva_tipo = detalle.get("iva_tipo") or "ninguno"
+            comision_pct = detalle.get("comision_pct", 0) or 0
+            comision_monto = detalle.get("comision_monto", 0) or 0
+            comision_tipo = detalle.get("comision_tipo") or "Añadida al total"
+            total_base = subtotal_con_descuento
+            if iva_tipo == "añadido":
+                total_base = subtotal_con_descuento + iva
+            total = total_base + comision_monto if comision_tipo == "Añadida al total" else total_base
+            self.compra_items.append(
+                {
+                    "producto": nombre_producto,
+                    "producto_id": producto_id,
+                    "cantidad": cantidad,
+                    "precio": precio,
+                    "subtotal": subtotal,
+                    "descuento_valor": descuento_valor,
+                    "descuento_pct": (descuento_monto / subtotal * 100) if subtotal else 0,
+                    "descuento_monto": descuento_monto,
+                    "descuento_tipo": descuento_tipo,
+                    "iva": iva,
+                    "iva_tipo": iva_tipo,
+                    "comision_pct": comision_pct,
+                    "comision_monto": comision_monto,
+                    "comision_tipo": comision_tipo,
+                    "total": total,
+                    "fecha_vencimiento": detalle.get("fecha_vencimiento", "") or "",
+                }
+            )
+
+        self._actualizar_tabla()
+        self._actualizar_total_general()
+
     def _actualizar_vendedor_y_Distribuidor(self):
         idx = self.product_list.currentRow()
         if idx < 0:
@@ -1846,13 +1940,27 @@ class RegisterPurchaseDialog(QDialog):
             QMessageBox.warning(self, "Validación", "Seleccione producto, cantidad y precio válidos.")
             return
 
-        # --- CÁLCULO DE SUBTOTAL Y DESCUENTO ---
-        subtotal = cantidad * precio
-        descuento_pct = self.descuento_spin.value()
-        descuento_monto = subtotal * (descuento_pct / 100)
-        subtotal_con_descuento = subtotal - descuento_monto
+        producto_info = self._productos_por_nombre.get(producto)
+        if not producto_info:
+            QMessageBox.warning(
+                self,
+                "Producto no válido",
+                f"El producto '{producto}' no existe. Registro cancelado."
+            )
+            return
 
-        # --- CÁLCULO DE COMISIÓN SEGÚN TIPO (antes del IVA) ---
+        producto_id = producto_info.get("id")
+        subtotal = cantidad * precio
+        descuento_valor = self.descuento_spin.value()
+        descuento_tipo = self.descuento_tipo_combo.currentText()
+        if descuento_tipo == "%":
+            descuento_monto = subtotal * (descuento_valor / 100)
+            descuento_pct = descuento_valor
+        else:
+            descuento_monto = min(descuento_valor, subtotal)
+            descuento_pct = (descuento_monto / subtotal * 100) if subtotal else 0
+        subtotal_con_descuento = max(subtotal - descuento_monto, 0)
+
         comision_pct = self.comision_pct_spin.value()
         comision_tipo = self.comision_tipo_combo.currentText()
         if comision_tipo == "Añadida al total":
@@ -1866,52 +1974,59 @@ class RegisterPurchaseDialog(QDialog):
         if comision_tipo == "Desglosada (incluida en el precio)":
             base_iva = subtotal_con_descuento - comision_monto
 
-        # --- CÁLCULO DE IVA ---
         iva = 0
         iva_tipo = "ninguno"
+        total = subtotal_con_descuento
         if self.iva_checkbox.isChecked():
             if self.iva_desglosado_radio.isChecked():
                 iva = base_iva * 13 / 113
                 iva_tipo = "desglosado"
-                total = subtotal_con_descuento
             elif self.iva_añadido_radio.isChecked():
                 iva = base_iva * 0.13
                 iva_tipo = "añadido"
                 total = subtotal_con_descuento + iva
             else:
-                total = subtotal_con_descuento
                 iva = 0
                 iva_tipo = "ninguno"
         else:
-            total = subtotal_con_descuento
             iva = 0
             iva_tipo = "ninguno"
 
-        # --- TOTAL FINAL CON COMISIÓN ---
+        if not self.iva_checkbox.isChecked() or self.iva_desglosado_radio.isChecked():
+            total = subtotal_con_descuento
+
         if comision_tipo == "Añadida al total":
             total_con_comision = total + comision_monto
         else:
-            total_con_comision = total  # El total ya incluye la comisión o no hay
+            total_con_comision = total
 
         fecha_vencimiento = self.fecha_vencimiento_edit.date().toString("yyyy-MM-dd")
 
-        self.compra_items.append({
+        item_data = {
             "producto": producto,
+            "producto_id": producto_id,
             "cantidad": cantidad,
             "precio": precio,
             "subtotal": subtotal,
+            "descuento_valor": descuento_valor,
             "descuento_pct": descuento_pct,
             "descuento_monto": descuento_monto,
-            "descuento": descuento_monto,  # para compatibilidad con lo que ya tienes
-            "descuento_tipo": "%",  # <--- agrega este campo (ajusta si tienes lógica de descuento)
+            "descuento_tipo": descuento_tipo,
             "iva": iva,
             "iva_tipo": iva_tipo,
             "comision_pct": comision_pct,
             "comision_monto": comision_monto,
-            "comision_tipo": "",
+            "comision_tipo": comision_tipo,
             "total": total_con_comision,
-            "fecha_vencimiento": fecha_vencimiento
-        })
+            "fecha_vencimiento": fecha_vencimiento,
+        }
+
+        if self._editing_row is not None and 0 <= self._editing_row < len(self.compra_items):
+            self.compra_items[self._editing_row] = item_data
+        else:
+            self.compra_items.append(item_data)
+
+        self._reset_edit_mode()
         self._actualizar_tabla()
         self._actualizar_total_general()
 
@@ -1921,27 +2036,93 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setItem(i, 0, QTableWidgetItem(item["producto"]))
             self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
             self.table.setItem(i, 2, QTableWidgetItem(self._format_currency(item["precio"])))
-            self.table.setItem(i, 3, QTableWidgetItem(self._format_currency(item["subtotal"])))
-            self.table.setItem(i, 4, QTableWidgetItem(self._format_currency(item["iva"])))
+            self.table.setItem(i, 3, QTableWidgetItem(self._format_currency(item.get("subtotal", 0))))
+            self.table.setItem(i, 4, QTableWidgetItem(self._format_currency(item.get("iva", 0))))
             # Comisión (monto y porcentaje)
-            comision_text = f"{self._format_currency(item.get('comision_monto', 0))} ({item.get('comision_pct', 0)}%)"
+            comision_text = f"{self._format_currency(item.get('comision_monto', 0))} ({item.get('comision_pct', 0):.2f}%)"
             self.table.setItem(i, 5, QTableWidgetItem(comision_text))
-            self.table.setItem(i, 6, QTableWidgetItem(self._format_currency(item["total"])))
+            self.table.setItem(i, 6, QTableWidgetItem(self._format_currency(item.get("total", 0))))
             self.table.setItem(i, 7, QTableWidgetItem(item.get("fecha_vencimiento", "")))
-            btn = QPushButton("Eliminar")
-            btn.setStyleSheet(
+
+            edit_btn = QPushButton("Editar")
+            edit_btn.clicked.connect(lambda _, row=i: self._start_edit_item(row))
+            self.table.setCellWidget(i, self._edit_column, edit_btn)
+
+            delete_btn = QPushButton("Eliminar")
+            delete_btn.setStyleSheet(
                 "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
                 "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
             )
-            btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
-            self.table.setCellWidget(i, 8, btn)
+            delete_btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
+            self.table.setCellWidget(i, self._delete_column, delete_btn)
+
+    def _reset_edit_mode(self):
+        self._editing_row = None
+        self.btn_agregar.setText("Agregar a compra")
+        self.table.clearSelection()
+
+    def _start_edit_item(self, row):
+        if not (0 <= row < len(self.compra_items)):
+            return
+        item = self.compra_items[row]
+        self._editing_row = row
+        self.btn_agregar.setText("Actualizar producto")
+
+        matching_items = self.product_list.findItems(item.get("producto", ""), Qt.MatchExactly)
+        if matching_items:
+            self.product_list.setCurrentItem(matching_items[0])
+        self.cantidad_spin.setValue(int(item.get("cantidad", 0)))
+        self.precio_unitario_spin.setValue(float(item.get("precio", 0)))
+        self.precio_total_spin.setValue(float(item.get("cantidad", 0)) * float(item.get("precio", 0)))
+
+        descuento_tipo = item.get("descuento_tipo", "%")
+        idx = self.descuento_tipo_combo.findText(descuento_tipo)
+        if idx >= 0:
+            self.descuento_tipo_combo.setCurrentIndex(idx)
+        descuento_valor = item.get("descuento_valor")
+        if descuento_valor is None and descuento_tipo == "%":
+            descuento_valor = item.get("descuento_pct", 0)
+        if descuento_valor is None:
+            descuento_valor = 0
+        self.descuento_spin.setValue(float(descuento_valor))
+
+        iva_tipo = item.get("iva_tipo", "ninguno")
+        if iva_tipo in ("desglosado", "añadido"):
+            self.iva_checkbox.setChecked(True)
+            if iva_tipo == "desglosado":
+                self.iva_desglosado_radio.setChecked(True)
+            else:
+                self.iva_añadido_radio.setChecked(True)
+        else:
+            self.iva_checkbox.setChecked(False)
+
+        self.comision_pct_spin.setValue(float(item.get("comision_pct", 0)))
+        tipo_idx = self.comision_tipo_combo.findText(item.get("comision_tipo", "Añadida al total"))
+        if tipo_idx >= 0:
+            self.comision_tipo_combo.setCurrentIndex(tipo_idx)
+
+        fecha_texto = item.get("fecha_vencimiento")
+        if fecha_texto:
+            fecha_qt = QDate.fromString(fecha_texto, "yyyy-MM-dd")
+            if fecha_qt.isValid():
+                self.fecha_vencimiento_edit.setDate(fecha_qt)
+
+        self._calcular_preview_item()
+
 
     def _eliminar_fila(self, row, col):
-        if col == 8:
+        if col == self._delete_column:
             self._eliminar_item(row)
+        elif col == self._edit_column:
+            self._start_edit_item(row)
 
     def _eliminar_item(self, row):
         if 0 <= row < len(self.compra_items):
+            if self._editing_row is not None:
+                if row == self._editing_row:
+                    self._reset_edit_mode()
+                elif row < self._editing_row:
+                    self._editing_row -= 1
             del self.compra_items[row]
             self._actualizar_tabla()
             self._actualizar_total_general()
@@ -1951,22 +2132,24 @@ class RegisterPurchaseDialog(QDialog):
             QMessageBox.warning(self, "Validación", "Debe agregar al menos un producto a la compra.")
             return
 
-        # Validar que cada producto exista antes de registrar la compra
-        productos_dict = {p["nombre"]: p["id"] for p in self.productos}
+        productos_dict = {p.get("nombre"): p.get("id") for p in self.productos}
         for item in self.compra_items:
-            producto_id = productos_dict.get(item["producto"])
+            producto_id = item.get("producto_id")
+            if producto_id is None:
+                producto_id = productos_dict.get(item.get("producto"))
             if producto_id is None:
                 QMessageBox.warning(
                     self,
                     "Producto no válido",
-                    f"El producto '{item['producto']}' no existe. Registro cancelado."
+                    f"El producto '{item.get('producto', '')}' no existe. Registro cancelado."
                 )
                 return
             item["producto_id"] = producto_id
 
-        # Obtén los datos DIRECTAMENTE de los combos y la lista de items
         fecha = QDate.currentDate().toString("yyyy-MM-dd")
-        total_general = sum(item["total"] for item in self.compra_items)
+        if self.edit_mode and self._existing_fecha:
+            fecha = self._existing_fecha
+        total_general = sum(float(item.get("total", 0)) for item in self.compra_items)
         vendedor_id = self.vendedor_combo.currentData()
         Distribuidor_id = (
             self.Distribuidor_combo.currentData()
@@ -1977,7 +2160,7 @@ class RegisterPurchaseDialog(QDialog):
         if vendedor_id is None or Distribuidor_id is None:
             respuesta = QMessageBox.question(
                 self,
-                "Confirmaci\u00f3n",
+                "Confirmación",
                 "esta a punto de agregar una compra sin vendedor, esto puede causar errores en el sistema, esta seguro de continuar?",
                 QMessageBox.Yes | QMessageBox.No,
                 QMessageBox.No,
@@ -1986,6 +2169,26 @@ class RegisterPurchaseDialog(QDialog):
                 return
 
         comision_total = sum(item.get("comision_monto", 0) for item in self.compra_items)
+
+        if self.edit_mode and self._compra_id is not None:
+            self.parent().manager.db.update_compra_detallada(
+                self._compra_id,
+                {
+                    "fecha": fecha,
+                    "producto_id": None,
+                    "cantidad": 0,
+                    "precio_unitario": 0,
+                    "total": total_general,
+                    "Distribuidor_id": Distribuidor_id,
+                    "comision_pct": 0,
+                    "comision_monto": comision_total,
+                    "vendedor_id": vendedor_id,
+                },
+                self.compra_items,
+            )
+            self.accept()
+            return
+
         compra_id = self.parent().manager.db.add_compra_detallada({
             "fecha": fecha,
             "producto_id": None,
@@ -1994,29 +2197,27 @@ class RegisterPurchaseDialog(QDialog):
             "total": total_general,
             "Distribuidor_id": Distribuidor_id,
             "comision_pct": 0,
-            "comision_monto": comision_total,  # <-- Aquí la suma real
-            "vendedor_id": vendedor_id
+            "comision_monto": comision_total,
+            "vendedor_id": vendedor_id,
         })
 
-        # Guarda cada detalle de compra con todos los campos
         for item in self.compra_items:
             producto_id = item["producto_id"]
             self.parent().manager.db.add_detalle_compra(
                 compra_id,
                 producto_id,
-                item["cantidad"],
-                item["precio"],
+                item.get("cantidad", 0),
+                item.get("precio", 0),
                 item.get("fecha_vencimiento", ""),
-                item.get("descuento_monto", 0),      # <--- monto de descuento
-                item.get("descuento_tipo", "%"),      # <--- tipo de descuento
+                item.get("descuento_monto", 0),
+                item.get("descuento_tipo", "%"),
                 item.get("iva", 0),
                 item.get("iva_tipo", ""),
                 item.get("comision_pct", 0),
                 item.get("comision_monto", 0),
-                item.get("comision_tipo", "")
+                item.get("comision_tipo", ""),
             )
-            # Aumenta el stock del producto
-            self.parent().manager.aumentar_stock(producto_id, item["cantidad"])
+            self.parent().manager.aumentar_stock(producto_id, item.get("cantidad", 0))
 
         self.accept()
 

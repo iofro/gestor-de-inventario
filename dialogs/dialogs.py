@@ -1393,7 +1393,8 @@ class ProductDialog(QDialog):
         self.nombre_edit = QLineEdit()
         self.precio_compra_spin = QDoubleSpinBox()
         self.precio_compra_spin.setMaximum(1000000)
-        self.precio_compra_spin.setDecimals(2)
+        self.precio_compra_spin.setDecimals(8)
+        self.precio_compra_spin.setSingleStep(0.00000001)
         self.precio_venta_minorista_spin = QDoubleSpinBox()
         self.precio_venta_minorista_spin.setMaximum(1000000)
         self.precio_venta_minorista_spin.setDecimals(2)
@@ -1536,13 +1537,15 @@ class RegisterPurchaseDialog(QDialog):
         self.precio_unitario_spin = QDoubleSpinBox()
         self.precio_unitario_spin.setMinimum(0)
         self.precio_unitario_spin.setMaximum(1000000)
-        self.precio_unitario_spin.setDecimals(2)
+        self.precio_unitario_spin.setDecimals(8)
+        self.precio_unitario_spin.setSingleStep(0.00000001)
         cantidad_layout.addWidget(self.precio_unitario_spin)
         cantidad_layout.addWidget(QLabel("Precio total:"))
         self.precio_total_spin = QDoubleSpinBox()
         self.precio_total_spin.setMinimum(0)
         self.precio_total_spin.setMaximum(100000000)
-        self.precio_total_spin.setDecimals(2)
+        self.precio_total_spin.setDecimals(8)
+        self.precio_total_spin.setSingleStep(0.00000001)
         cantidad_layout.addWidget(self.precio_total_spin)
         cantidad_layout.addWidget(QLabel("Fecha vencimiento:"))
         self.fecha_vencimiento_edit = QDateEdit(QDate.currentDate())
@@ -1586,10 +1589,10 @@ class RegisterPurchaseDialog(QDialog):
         self.iva_group.addButton(self.iva_añadido_radio)
 
         # Resumen
-        self.subtotal_label = QLabel("Subtotal: $0.00")
-        self.iva_label = QLabel("IVA: $0.00")
-        self.comision_label_resumen = QLabel("Comisión: $0.00")
-        self.total_label = QLabel("TOTAL: $0.00")
+        self.subtotal_label = QLabel(f"Subtotal: {self._format_currency(0)}")
+        self.iva_label = QLabel(f"IVA: {self._format_currency(0)}")
+        self.comision_label_resumen = QLabel(f"Comisión: {self._format_currency(0)}")
+        self.total_label = QLabel(f"TOTAL: {self._format_currency(0)}")
         layout.addWidget(self.subtotal_label)
         layout.addWidget(self.iva_label)
         layout.addWidget(self.comision_label_resumen)
@@ -1632,7 +1635,7 @@ class RegisterPurchaseDialog(QDialog):
 
         # Total general de la compra
         total_general_layout = QHBoxLayout()
-        self.total_general_label = QLabel("Total compra: $0.00")
+        self.total_general_label = QLabel(f"Total compra: {self._format_currency(0)}")
         total_general_layout.addWidget(self.total_general_label)
         layout.addLayout(total_general_layout)
 
@@ -1675,6 +1678,16 @@ class RegisterPurchaseDialog(QDialog):
         self.product_list.currentRowChanged.connect(self._calcular_preview_item)
         self._calcular_preview_item()
 
+    def _format_currency(self, value):
+        dec_value = Decimal(str(value))
+        quantized = dec_value.quantize(Decimal("0.00000001"), rounding=ROUND_HALF_UP)
+        formatted = format(quantized.normalize(), "f")
+        if "." in formatted:
+            formatted = formatted.rstrip("0").rstrip(".")
+        if formatted in ("-0", "-0.0"):
+            formatted = "0"
+        return f"${formatted}"
+
     # --- NUEVO MÉTODO ---
     def _actualizar_precio_unitario_por_producto(self):
         idx = self.product_list.currentRow()
@@ -1696,7 +1709,7 @@ class RegisterPurchaseDialog(QDialog):
 
         # Si el total es editable y el usuario lo modificó, ajusta el precio unitario
         if self.precio_total_spin.isEnabled() and self.precio_total_spin.hasFocus():
-            precio_unit = round(precio_total / cantidad, 6) if cantidad > 0 else 0
+            precio_unit = round(precio_total / cantidad, 8) if cantidad > 0 else 0
             self.precio_unitario_spin.blockSignals(True)
             self.precio_unitario_spin.setValue(precio_unit)
             self.precio_unitario_spin.blockSignals(False)
@@ -1750,10 +1763,10 @@ class RegisterPurchaseDialog(QDialog):
         else:
             total_final = total  # Comisión ya incluida o inexistente
 
-        self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
-        self.iva_label.setText(f"IVA: ${iva:.2f}")
-        self.comision_label_resumen.setText(f"Comisión: ${comision_monto:.2f}")
-        self.total_label.setText(f"TOTAL: ${total_final:.2f}")
+        self.subtotal_label.setText(f"Subtotal: {self._format_currency(subtotal)}")
+        self.iva_label.setText(f"IVA: {self._format_currency(iva)}")
+        self.comision_label_resumen.setText(f"Comisión: {self._format_currency(comision_monto)}")
+        self.total_label.setText(f"TOTAL: {self._format_currency(total_final)}")
         
     def _toggle_iva_radios(self, state):
         checked = self.iva_checkbox.isChecked()
@@ -1774,11 +1787,11 @@ class RegisterPurchaseDialog(QDialog):
         comision_general = sum(item.get("comision_monto", 0) for item in self.compra_items)
         total_general = sum(item.get("total", 0) for item in self.compra_items)
 
-        self.subtotal_label.setText(f"Subtotal: ${subtotal_general:.2f}")
-        self.iva_label.setText(f"IVA: ${iva_general:.2f}")
-        self.comision_label_resumen.setText(f"Comisión: ${comision_general:.2f}")
-        self.total_label.setText(f"TOTAL: ${total_general:.2f}")
-        self.total_general_label.setText(f"Total compra: ${total_general:.2f}")
+        self.subtotal_label.setText(f"Subtotal: {self._format_currency(subtotal_general)}")
+        self.iva_label.setText(f"IVA: {self._format_currency(iva_general)}")
+        self.comision_label_resumen.setText(f"Comisión: {self._format_currency(comision_general)}")
+        self.total_label.setText(f"TOTAL: {self._format_currency(total_general)}")
+        self.total_general_label.setText(f"Total compra: {self._format_currency(total_general)}")
 
     def _actualizar_vendedor_y_Distribuidor(self):
         idx = self.product_list.currentRow()
@@ -1906,13 +1919,13 @@ class RegisterPurchaseDialog(QDialog):
         for i, item in enumerate(self.compra_items):
             self.table.setItem(i, 0, QTableWidgetItem(item["producto"]))
             self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
-            self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio']:.2f}"))
-            self.table.setItem(i, 3, QTableWidgetItem(f"${item['subtotal']:.2f}"))
-            self.table.setItem(i, 4, QTableWidgetItem(f"${item['iva']:.2f}"))
+            self.table.setItem(i, 2, QTableWidgetItem(self._format_currency(item["precio"])))
+            self.table.setItem(i, 3, QTableWidgetItem(self._format_currency(item["subtotal"])))
+            self.table.setItem(i, 4, QTableWidgetItem(self._format_currency(item["iva"])))
             # Comisión (monto y porcentaje)
-            comision_text = f"${item.get('comision_monto', 0):.2f} ({item.get('comision_pct', 0)}%)"
+            comision_text = f"{self._format_currency(item.get('comision_monto', 0))} ({item.get('comision_pct', 0)}%)"
             self.table.setItem(i, 5, QTableWidgetItem(comision_text))
-            self.table.setItem(i, 6, QTableWidgetItem(f"${item['total']:.2f}"))
+            self.table.setItem(i, 6, QTableWidgetItem(self._format_currency(item["total"])))
             self.table.setItem(i, 7, QTableWidgetItem(item.get("fecha_vencimiento", "")))
             btn = QPushButton("Eliminar")
             btn.setStyleSheet(

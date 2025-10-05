@@ -2523,6 +2523,69 @@ class DB:
             self.conn.commit()
         return self.cursor.lastrowid  # <-- RETORNA EL ID
 
+    def update_compra_detallada(self, compra_id, data, detalles):
+        with self.lock:
+            self.cursor.execute(
+                "SELECT producto_id, cantidad FROM detalles_compra WHERE compra_id=?",
+                (compra_id,),
+            )
+            prev_detalles = [dict(row) for row in self.cursor.fetchall()]
+            for detalle in prev_detalles:
+                producto_id = detalle.get("producto_id")
+                cantidad = detalle.get("cantidad", 0) or 0
+                if producto_id:
+                    self.cursor.execute(
+                        "UPDATE productos SET stock = stock - ? WHERE id = ?",
+                        (cantidad, producto_id),
+                    )
+
+            self.cursor.execute("DELETE FROM detalles_compra WHERE compra_id=?", (compra_id,))
+
+            self.cursor.execute(
+                """
+                UPDATE compras
+                SET fecha=?, producto_id=?, cantidad=?, precio_unitario=?, total=?, Distribuidor_id=?, comision_pct=?, comision_monto=?, vendedor_id=?
+                WHERE id=?
+                """,
+                (
+                    data.get("fecha", ""),
+                    data.get("producto_id"),
+                    data.get("cantidad", 0),
+                    data.get("precio_unitario", 0),
+                    data.get("total", 0),
+                    data.get("Distribuidor_id"),
+                    data.get("comision_pct", 0),
+                    data.get("comision_monto", 0),
+                    data.get("vendedor_id"),
+                    compra_id,
+                ),
+            )
+
+            for detalle in detalles:
+                producto_id = detalle.get("producto_id")
+                self.add_detalle_compra(
+                    compra_id,
+                    producto_id,
+                    detalle.get("cantidad", 0),
+                    detalle.get("precio", 0),
+                    detalle.get("fecha_vencimiento", ""),
+                    detalle.get("descuento_monto", 0),
+                    detalle.get("descuento_tipo", "%"),
+                    detalle.get("iva", 0),
+                    detalle.get("iva_tipo", ""),
+                    detalle.get("comision_pct", 0),
+                    detalle.get("comision_monto", 0),
+                    detalle.get("comision_tipo", ""),
+                    commit=False,
+                )
+                if producto_id:
+                    self.cursor.execute(
+                        "UPDATE productos SET stock = stock + ? WHERE id = ?",
+                        (detalle.get("cantidad", 0) or 0, producto_id),
+                    )
+
+            self.conn.commit()
+
     def add_detalle_compra(
         self,
         compra_id,

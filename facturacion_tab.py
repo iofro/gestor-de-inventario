@@ -5394,6 +5394,7 @@ class FacturacionTab(QWidget):
         archive_subdir=None,
         extra_data=None,
     ):
+        reverted_correlativo = False
         archive_dir = None
         if archive_subdir:
             archive_dir = self._ensure_archive_directory(archive_subdir)
@@ -5493,6 +5494,7 @@ class FacturacionTab(QWidget):
                 )
             else:
                 if reverted:
+                    reverted_correlativo = True
                     if numero_control:
                         logger.info(
                             "Se revirtió el correlativo asociado al número de control %s",
@@ -5535,6 +5537,8 @@ class FacturacionTab(QWidget):
                         os.remove(candidate)
                     except OSError:
                         pass
+
+        return reverted_correlativo
 
     def _archive_rejected_invoice(self, entry, factura):
         if not entry:
@@ -5681,7 +5685,7 @@ class FacturacionTab(QWidget):
             return
         self.manager.refresh_data()
 
-        self._cleanup_invoice_artifacts(
+        correlativo_revertido = self._cleanup_invoice_artifacts(
             venta_id,
             pdf_path=pdf_path,
             ticket_path=ticket_path,
@@ -5689,7 +5693,10 @@ class FacturacionTab(QWidget):
             extra_data=extra_data,
         )
 
-        QMessageBox.information(self, "Eliminar", "Factura eliminada")
+        mensaje = "Factura eliminada"
+        if correlativo_revertido:
+            mensaje += "\nEl correlativo regresó al valor anterior."
+        QMessageBox.information(self, "Eliminar", mensaje)
         self.load_invoices()
 
     # ------------------------------------------------------------------

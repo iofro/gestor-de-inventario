@@ -2608,6 +2608,11 @@ class FacturacionTab(QWidget):
             pdf = paths.get(".pdf")
             js = paths.get(".json")
             tipo = paths.get("tipo")
+            if tipo == "Ticket":
+                # Los PDFs generados en formato ticket corresponden a la misma
+                # factura y no deben mostrarse como documentos independientes
+                # en la lista de facturación.
+                continue
             estado, envio = self._detectar_estado_factura(
                 None,
                 pdf,

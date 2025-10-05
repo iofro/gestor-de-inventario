@@ -173,3 +173,12 @@ def test_generate_invoice_pdf_correlativo_increment(tmp_path, monkeypatch):
 
     assert corr1 == 1
     assert corr2 == 2
+
+
+def test_peek_next_dte_correlativo_preview(tmp_path):
+    _setup_datos_negocio(tmp_path)
+    db, _ = _setup_db()
+
+    assert db.peek_next_dte_correlativo("03", "123", "456") == 1
+    assert db.next_dte_correlativo("03", "123", "456") == 1
+    assert db.peek_next_dte_correlativo("03", "123", "456") == 2

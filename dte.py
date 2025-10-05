@@ -3376,12 +3376,6 @@ def generar_dte_json(
         raise ValueError("Correo de receptor inválido")
     if receptor and receptor.get("telefono") and not PHONE_RE.fullmatch(receptor["telefono"]):
         raise ValueError("Teléfono de receptor inválido")
-    if fiscal and receptor:
-        if fiscal.get("no_remision"):
-            receptor["noRemision"] = fiscal.get("no_remision")
-        if fiscal.get("orden_no"):
-            receptor["ordenNo"] = fiscal.get("orden_no")
-
     if receptor and not extra.get("es_ticket"):
         if not receptor.get("correo"):
             receptor["correo"] = "no-reply@example.com"
@@ -3414,9 +3408,7 @@ def generar_dte_json(
                     "correo",
                     "direccion",
                 ]
-                fields_to_remove = ["numDocumento", "tipoDocumento"]
-                if tipo_dte != "03":
-                    fields_to_remove.extend(["noRemision", "ordenNo"])
+                fields_to_remove = ["numDocumento", "tipoDocumento", "noRemision", "ordenNo"]
                 for f in fields_to_remove:
                     receptor.pop(f, None)
 
@@ -4585,19 +4577,9 @@ def validate_dte_json(
                 "correo",
                 "direccion",
             ]
-            if tipo_dte == "03":
-                base_remision = correlativo if correlativo is not None else numero_control
-                derived_remision = _derive_remision_from_correlativo(base_remision)
-                if derived_remision:
-                    if not receptor.get("noRemision"):
-                        receptor["noRemision"] = derived_remision
-                    if not receptor.get("ordenNo"):
-                        receptor["ordenNo"] = derived_remision
             for f in required_rec_fields:
                 receptor.setdefault(f, None)
-            fields_to_remove = ["numDocumento", "tipoDocumento"]
-            if tipo_dte != "03":
-                fields_to_remove.extend(["noRemision", "ordenNo"])
+            fields_to_remove = ["numDocumento", "tipoDocumento", "noRemision", "ordenNo"]
             for f in fields_to_remove:
                 receptor.pop(f, None)
         payload["receptor"] = receptor

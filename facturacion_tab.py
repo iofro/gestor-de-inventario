@@ -3806,6 +3806,19 @@ class FacturacionTab(QWidget):
         if not entry:
             return None
 
+        derived_path = None
+        if base_pdf_path:
+            derived_path = self._derive_ticket_path(base_pdf_path)
+            if derived_path and os.path.exists(derived_path):
+                return derived_path
+
+        if not derived_path and entry:
+            entry_pdf = entry.get("pdf")
+            if entry_pdf:
+                fallback_path = self._derive_ticket_path(entry_pdf)
+                if fallback_path and os.path.exists(fallback_path):
+                    return fallback_path
+
         venta_id = entry.get("venta_id")
         if venta_id:
             try:
@@ -3984,6 +3997,29 @@ class FacturacionTab(QWidget):
         tipo_desc = str(entry.get("tipo") or "").strip().lower()
         return tipo_desc in {"consumidor final", "crédito fiscal", "credito fiscal"}
 
+    def _derive_ticket_path(self, base_pdf_path: str | None) -> str | None:
+        if not base_pdf_path:
+            return None
+
+        try:
+            output_dir = os.path.dirname(base_pdf_path)
+            base_name = os.path.splitext(os.path.basename(base_pdf_path))[0]
+        except Exception:
+            return None
+
+        if not base_name:
+            return None
+
+        lower_name = base_name.lower()
+        for suffix in ("_consumidorfinal", "_creditofiscal", "_ticket"):
+            if lower_name.endswith(suffix):
+                base_name = base_name[: -len(suffix)] + "_Ticket"
+                break
+        else:
+            base_name = f"{base_name}_Ticket"
+
+        return os.path.join(output_dir, f"{base_name}.pdf")
+
     def _build_ticket_format_pdf(
         self,
         entry: dict,
@@ -4108,11 +4144,23 @@ class FacturacionTab(QWidget):
         payload["dte_data"] = dte_data
 
         venta_id = entry.get("venta_id")
+        output_path = None
         output_dir = None
         ticket_base = None
         if base_pdf_path:
-            output_dir = os.path.dirname(base_pdf_path)
-            ticket_base = os.path.splitext(os.path.basename(base_pdf_path))[0]
+            output_path = self._derive_ticket_path(base_pdf_path)
+            if output_path:
+                output_dir = os.path.dirname(output_path)
+                ticket_base = os.path.splitext(os.path.basename(output_path))[0]
+
+        if not output_path and entry:
+            entry_pdf = entry.get("pdf")
+            if entry_pdf:
+                candidate = self._derive_ticket_path(entry_pdf)
+                if candidate:
+                    output_path = candidate
+                    output_dir = os.path.dirname(candidate)
+                    ticket_base = os.path.splitext(os.path.basename(candidate))[0]
         if not output_dir:
             tipo_entry = str(entry.get("tipo") or "").strip().lower()
             if tipo_entry == "consumidor final":
@@ -4127,18 +4175,35 @@ class FacturacionTab(QWidget):
         except OSError:
             pass
 
-        if ticket_base:
-            lower_name = ticket_base.lower()
-            for suffix in ("_consumidorfinal", "_creditofiscal", "_ticket"):
-                if lower_name.endswith(suffix):
-                    ticket_base = ticket_base[: -len(suffix)] + "_Ticket"
-                    break
-            else:
-                ticket_base = f"{ticket_base}_Ticket"
-        else:
-            ticket_base = f"ticket_print_{uuid.uuid4().hex}"
+        if not output_path:
+            ident = {}
+            if isinstance(dte_payload, dict):
+                ident = dte_payload.get("identificacion") or {}
 
-        output_path = os.path.join(output_dir, f"{ticket_base}.pdf")
+            def _sanitize_ticket_name(value: str | None) -> str | None:
+                if not value:
+                    return None
+                cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_")
+                if not cleaned:
+                    return None
+                if cleaned.lower().endswith("_ticket"):
+                    cleaned = cleaned[: -7] + "_Ticket"
+                else:
+                    cleaned = f"{cleaned}_Ticket"
+                return cleaned
+
+            ticket_base = None
+            numero_control = ident.get("numeroControl")
+            if isinstance(numero_control, str) and numero_control.strip():
+                ticket_base = _sanitize_ticket_name(numero_control.strip())
+            if not ticket_base:
+                codigo_generacion = ident.get("codigoGeneracion")
+                if isinstance(codigo_generacion, str) and codigo_generacion.strip():
+                    ticket_base = _sanitize_ticket_name(codigo_generacion.strip())
+            if not ticket_base:
+                ticket_base = f"ticket_print_{uuid.uuid4().hex}"
+
+            output_path = os.path.join(output_dir, f"{ticket_base}.pdf")
 
         def _render_ticket(tmp_path):
             try:
@@ -4168,12 +4233,6 @@ class FacturacionTab(QWidget):
                 f"No se pudo escribir el ticket: {exc}",
             )
             return None
-
-        if venta_id and output_dir != TICKETS_DIR:
-            try:
-                self.manager.db.add_ticket_pdf(venta_id, output_path)
-            except Exception:
-                pass
 
         return output_path
 

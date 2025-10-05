@@ -7,7 +7,7 @@ from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
 from datetime import datetime, date, timedelta
 
-from dialogs import CompraDetalleDialog
+from dialogs import CompraDetalleDialog, RegisterPurchaseDialog
 import logging
 
 
@@ -121,7 +121,9 @@ class PurchasesTab(QWidget):
 
         side_layout = QVBoxLayout()
         self.btn_ver = QPushButton("Ver")
+        self.btn_editar = QPushButton("Editar")
         side_layout.addWidget(self.btn_ver)
+        side_layout.addWidget(self.btn_editar)
         side_layout.addStretch(1)
         content_layout.addLayout(side_layout)
 
@@ -136,6 +138,7 @@ class PurchasesTab(QWidget):
         self.vendedor_combo.currentIndexChanged.connect(self.load_purchases)
         self.search_bar.textChanged.connect(self.load_purchases)
         self.btn_ver.clicked.connect(self.show_selected_detail)
+        self.btn_editar.clicked.connect(self.edit_selected_purchase)
 
     def _selected_compra_id(self):
         if self.table.currentRow() < 0:
@@ -152,6 +155,11 @@ class PurchasesTab(QWidget):
         compra_id = self._selected_compra_id()
         if compra_id is not None:
             self.show_detail(compra_id)
+
+    def edit_selected_purchase(self):
+        compra_id = self._selected_compra_id()
+        if compra_id is not None:
+            self.edit_purchase(compra_id)
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)
@@ -324,4 +332,28 @@ class PurchasesTab(QWidget):
         detalles = self.manager.db.get_detalles_compra(compra_id)
         dlg = CompraDetalleDialog(compra, detalles, self)
         dlg.exec_()
+
+    def edit_purchase(self, compra_id):
+        compras = self.manager.db.get_compras()
+        compra = next((c for c in compras if c["id"] == compra_id), None)
+        if not compra:
+            return
+        detalles = self.manager.db.get_detalles_compra(compra_id)
+
+        productos = [dict(p) for p in self.manager.db.get_productos()]
+        Distribuidores = [dict(d) for d in self.manager.db.get_Distribuidores()]
+        proveedores = [dict(v) for v in self.manager.db.get_vendedores_distribuidores()]
+
+        dlg = RegisterPurchaseDialog(
+            productos,
+            Distribuidores,
+            proveedores,
+            self,
+            compra=compra,
+            detalles=detalles,
+        )
+        if dlg.exec_() == dlg.Accepted:
+            self.manager.refresh_data()
+            self.refresh_filters()
+            self.load_purchases()
 

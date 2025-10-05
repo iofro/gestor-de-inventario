@@ -1,3 +1,5 @@
+import logging
+
 import pytest
 
 import json
@@ -31,6 +33,7 @@ from utils import catalogos
     "nit, expected",
     [
         ("", True),
+        ("123456789", True),
         ("12341234561234", True),
         ("1234-123456-123-1", False),
         ("123456789012345", False),
@@ -103,29 +106,35 @@ def db_fixture(tmp_path, monkeypatch):
     yield db
 
 
-def test_receptor_documentos(monkeypatch, db_fixture):
+def test_receptor_documentos(monkeypatch, db_fixture, caplog):
+    original_get_schema = catalogos.get_dte_schema
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
     data = _load_fc()
     data["receptor"]["tipoDocumento"] = 36
     data["receptor"]["numDocumento"] = "06141990011019"
+    data["receptor"]["nrc"] = "123456"
     validate_dte_json(data, db=db_fixture)
 
     data["receptor"]["numDocumento"] = "123"
     with pytest.raises(ValueError):
         validate_dte_json(data, db=db_fixture)
 
-    data = _load_fc()
-    data["receptor"]["tipoDocumento"] = 13
-    data["receptor"]["numDocumento"] = "123456789"
-    validate_dte_json(data, db=db_fixture)
-    data["receptor"]["numDocumento"] = "12345678"
-    with pytest.raises(ValueError):
+    monkeypatch.setattr(catalogos, "get_dte_schema", original_get_schema)
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        data = _load_fc()
+        data["receptor"]["tipoDocumento"] = 13
+        data["receptor"]["numDocumento"] = "123456789"
         validate_dte_json(data, db=db_fixture)
+        data["receptor"]["numDocumento"] = "12345678"
+        validate_dte_json(data, db=db_fixture)
+    assert any("DUI no normalizable" in record.message for record in caplog.records)
 
 
 def test_receptor_direccion(monkeypatch, db_fixture):
     monkeypatch.setattr(catalogos, "get_dte_schema", lambda *_: None)
     data = _load_fc()
+    data["receptor"]["nrc"] = "123456"
     data["receptor"]["direccion"] = {
         "departamento": "05",
         "municipio": "23",
@@ -133,7 +142,7 @@ def test_receptor_direccion(monkeypatch, db_fixture):
     }
     validate_dte_json(data, db=db_fixture)
 
-    data["receptor"]["direccion"]["municipio"] = "99"
+    data["receptor"]["direccion"]["municipio"] = "Municipio Inexistente"
     with pytest.raises(ValidationError):
         validate_dte_json(data, db=db_fixture)
 

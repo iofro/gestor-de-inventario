@@ -4,6 +4,7 @@ import base64
 import requests
 import logging
 from pathlib import Path
+from urllib.parse import urljoin
 
 from utils.stable_json import (
     stable_stringify,
@@ -26,6 +27,7 @@ from utils.certificates import (
 )
 DEFAULT_SIGN_URL = "http://127.0.0.1:8080/firma/firmardocumento/"
 SIGN_TIMEOUT = float(os.getenv("SIGN_TIMEOUT", "10"))
+SIGN_HEALTH_TIMEOUT = float(os.getenv("SIGN_HEALTH_TIMEOUT", "3"))
 
 SEND_DTEJSON_AS_OBJECT = os.getenv("SEND_DTEJSON_AS_OBJECT", "1") == "1"
 
@@ -56,6 +58,60 @@ def _get_sign_url(path: str = CONFIG_NEGOCIO_PATH) -> str:
         except Exception:
             pass
     return url or DEFAULT_SIGN_URL
+
+
+def _build_signer_status_url(sign_url: str | None) -> str | None:
+    """Return health-check URL for ``sign_url`` if possible."""
+
+    if not sign_url:
+        return None
+    if not sign_url.endswith("/"):
+        sign_url = f"{sign_url}/"
+    return urljoin(sign_url, "status")
+
+
+def _check_signer_available(sign_url: str | None) -> None:
+    """Perform a lightweight health check before signing."""
+
+    status_url = _build_signer_status_url(sign_url)
+    if not status_url:
+        return
+
+    try:
+        logger.debug("SIGN.HEALTH.CHECK: url=%s", status_url)
+        response = requests.get(status_url, timeout=SIGN_HEALTH_TIMEOUT)
+    except requests.RequestException as exc:  # pragma: no cover - network errors
+        print("SIGN: HEALTH_ERROR", type(exc).__name__, str(exc)[:200])
+        raise RuntimeError(f"Error al firmar: {exc}") from exc
+
+    if response.status_code in {404, 405}:
+        # Older firmador builds do not expose a status endpoint; assume ready.
+        logger.debug(
+            "SIGN.HEALTH.SKIP: endpoint unavailable status=%s", response.status_code
+        )
+        return
+
+    if response.status_code >= 500:
+        print(
+            "SIGN: HEALTH_ERROR",
+            f"HTTP {response.status_code}",
+            str(getattr(response, "text", ""))[:200],
+        )
+        raise RuntimeError(
+            f"Error al firmar: verificación del firmador devolvió HTTP {response.status_code}"
+        )
+
+    try:
+        response.raise_for_status()
+    except requests.HTTPError as exc:
+        print("SIGN: HEALTH_ERROR", type(exc).__name__, str(exc)[:200])
+        raise RuntimeError(f"Error al firmar: {exc}") from exc
+
+    logger.debug(
+        "SIGN.HEALTH.OK: status=%s body=%s",
+        response.status_code,
+        (response.text or "").strip(),
+    )
 
 
 def _load_config(path: str = CONFIG_NEGOCIO_PATH):
@@ -138,6 +194,8 @@ def sign_json(
         "REMOTE_SIGNER?",
         url is not None,
     )
+
+    _check_signer_available(url)
 
     if passwordPri:
         logger.info(

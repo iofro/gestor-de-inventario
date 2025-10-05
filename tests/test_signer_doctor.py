@@ -86,6 +86,9 @@ class _SignerHandler(BaseHTTPRequestHandler):
         if parsed.path == "/firma/debug/env":
             self._json_response({"env": self.server.env})
             return
+        if parsed.path == "/firma/firmardocumento/status":
+            self._json_response({"status": "OK"})
+            return
         self.send_error(404)
 
     def do_POST(self) -> None:  # noqa: N802

@@ -4,7 +4,7 @@ import json
 import logging
 import base64
 import requests
-from datetime import date, timedelta
+from datetime import date, timedelta, datetime
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
@@ -1480,6 +1480,7 @@ class RegisterPurchaseDialog(QDialog):
         self.compra_items = []
         self._productos_por_nombre = {p.get("nombre"): p for p in self.productos}
         self._productos_por_id = {p.get("id"): p for p in self.productos}
+        self._distribuidores_map = {d.get("id"): d for d in self.Distribuidores}
         self._editing_row = None
         self._compra_data = compra if isinstance(compra, dict) else {}
         self._existing_fecha = self._compra_data.get("fecha") if self._compra_data else None
@@ -1489,6 +1490,10 @@ class RegisterPurchaseDialog(QDialog):
         detalles = detalles or []
 
         layout = QVBoxLayout()
+
+        self._summary_group = None
+        if self.edit_mode:
+            self._init_summary_section(layout)
 
         # Mapeo producto -> vendedor y vendedor -> Distribuidor
         self._producto_vendedor_map = {}
@@ -1687,6 +1692,8 @@ class RegisterPurchaseDialog(QDialog):
         self.table.cellClicked.connect(self._eliminar_fila)
         self.product_list.currentRowChanged.connect(self._actualizar_vendedor_y_Distribuidor)
         self.vendedor_combo.currentIndexChanged.connect(self._actualizar_Distribuidor)
+        self.vendedor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
+        self.Distribuidor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
         self.comision_pct_spin.valueChanged.connect(self._actualizar_total_general)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_unitario_por_producto)
         self._actualizar_precio_unitario_por_producto()
@@ -1700,7 +1707,7 @@ class RegisterPurchaseDialog(QDialog):
 
         if self.edit_mode:
             self._cargar_compra_existente(detalles)
-        
+
         # Conexiones para cálculo en tiempo real
         self.cantidad_spin.valueChanged.connect(self._calcular_preview_item)
         self.precio_unitario_spin.valueChanged.connect(self._calcular_preview_item)
@@ -1721,6 +1728,97 @@ class RegisterPurchaseDialog(QDialog):
         if formatted in ("-0", "-0.0"):
             formatted = "0"
         return f"${formatted}"
+
+    def _init_summary_section(self, parent_layout):
+        self._summary_group = QGroupBox("Información de la compra")
+        form_layout = QFormLayout()
+
+        self._summary_id_label = QLabel("-")
+        self._summary_fecha_label = QLabel("-")
+        self._summary_vendedor_label = QLabel("-")
+        self._summary_distribuidor_label = QLabel("-")
+        self._summary_items_label = QLabel("0")
+        self._summary_total_label = QLabel(self._format_currency(0))
+
+        for lbl in (
+            self._summary_id_label,
+            self._summary_fecha_label,
+            self._summary_vendedor_label,
+            self._summary_distribuidor_label,
+            self._summary_items_label,
+            self._summary_total_label,
+        ):
+            lbl.setTextInteractionFlags(Qt.TextSelectableByMouse | Qt.TextSelectableByKeyboard)
+
+        form_layout.addRow("ID de compra:", self._summary_id_label)
+        form_layout.addRow("Fecha registrada:", self._summary_fecha_label)
+        form_layout.addRow("Vendedor:", self._summary_vendedor_label)
+        form_layout.addRow("Distribuidor:", self._summary_distribuidor_label)
+        form_layout.addRow("Productos cargados:", self._summary_items_label)
+        form_layout.addRow("Total registrado:", self._summary_total_label)
+
+        self._summary_group.setLayout(form_layout)
+        parent_layout.addWidget(self._summary_group)
+
+    def _format_fecha(self, value):
+        if not value:
+            return "-"
+        if isinstance(value, datetime):
+            return value.strftime("%d/%m/%Y %H:%M:%S")
+        if isinstance(value, date):
+            return value.strftime("%d/%m/%Y")
+        if isinstance(value, str):
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
+                try:
+                    parsed = datetime.strptime(value, fmt)
+                    if "%H" in fmt:
+                        return parsed.strftime("%d/%m/%Y %H:%M:%S")
+                    return parsed.strftime("%d/%m/%Y")
+                except ValueError:
+                    continue
+            return value
+        return str(value)
+
+    def _populate_compra_summary(self):
+        if not self.edit_mode or not hasattr(self, "_summary_id_label"):
+            return
+        self._summary_id_label.setText(str(self._compra_id) if self._compra_id is not None else "-")
+        fecha_val = self._compra_data.get("fecha") if self._compra_data else None
+        self._summary_fecha_label.setText(self._format_fecha(fecha_val))
+        self._summary_items_label.setText(str(len(self.compra_items)))
+
+        total_registrado = self._compra_data.get("total") if self._compra_data else None
+        if total_registrado is None:
+            total_registrado = sum(item.get("total", 0) for item in self.compra_items)
+        self._summary_total_label.setText(self._format_currency(total_registrado))
+
+        self._update_summary_vendor_info()
+
+    def _update_summary_vendor_info(self):
+        if not self.edit_mode or not hasattr(self, "_summary_vendedor_label"):
+            return
+
+        vendedor_texto = "Sin vendedor"
+        vendedor_id = self.vendedor_combo.currentData() if hasattr(self, "vendedor_combo") else None
+        if vendedor_id is not None:
+            vendedor = self._vendedores_map.get(vendedor_id)
+            if vendedor:
+                vendedor_texto = vendedor.get("nombre") or vendedor.get("codigo") or vendedor_texto
+            else:
+                texto_combo = self.vendedor_combo.currentText().strip()
+                if texto_combo:
+                    vendedor_texto = texto_combo
+
+        distribuidor_texto = "-"
+        if self.Distribuidor_combo.count() > 0:
+            distribuidor_texto = self.Distribuidor_combo.currentText().strip() or "-"
+        elif self.edit_mode and self._compra_data.get("Distribuidor_id"):
+            distribuidor = self._distribuidores_map.get(self._compra_data.get("Distribuidor_id"))
+            if distribuidor:
+                distribuidor_texto = distribuidor.get("nombre", distribuidor_texto)
+
+        self._summary_vendedor_label.setText(vendedor_texto or "Sin vendedor")
+        self._summary_distribuidor_label.setText(distribuidor_texto or "-")
 
     # --- NUEVO MÉTODO ---
     def _actualizar_precio_unitario_por_producto(self):
@@ -1826,6 +1924,9 @@ class RegisterPurchaseDialog(QDialog):
         self.comision_label_resumen.setText(f"Comisión: {self._format_currency(comision_general)}")
         self.total_label.setText(f"TOTAL: {self._format_currency(total_general)}")
         self.total_general_label.setText(f"Total compra: {self._format_currency(total_general)}")
+        if self.edit_mode and hasattr(self, "_summary_items_label"):
+            self._summary_items_label.setText(str(len(self.compra_items)))
+            self._summary_total_label.setText(self._format_currency(total_general))
 
     def _cargar_compra_existente(self, detalles):
         vendedor_id = self._compra_data.get("vendedor_id") if self._compra_data else None
@@ -1839,6 +1940,15 @@ class RegisterPurchaseDialog(QDialog):
             idx = self.Distribuidor_combo.findData(distribuidor_id)
             if idx >= 0:
                 self.Distribuidor_combo.setCurrentIndex(idx)
+
+        if detalles is None:
+            detalles = []
+            if self.parent() and hasattr(self.parent(), "manager") and getattr(self.parent().manager, "db", None) and self._compra_id is not None:
+                try:
+                    detalles = self.parent().manager.db.get_detalles_compra(self._compra_id)
+                except Exception:
+                    logger.exception("No fue posible cargar los detalles de la compra %s", self._compra_id)
+                    detalles = []
 
         self.compra_items = []
         for detalle in detalles:
@@ -1885,6 +1995,7 @@ class RegisterPurchaseDialog(QDialog):
                 }
             )
 
+        self._populate_compra_summary()
         self._actualizar_tabla()
         self._actualizar_total_general()
 
@@ -1910,11 +2021,18 @@ class RegisterPurchaseDialog(QDialog):
         if vendedor_id is None:
             self.comision_label_resumen.setText("Comisión vendedor: 0%")
             self.comision_pct_spin.setValue(0)
+            if self.edit_mode and self._compra_data.get("Distribuidor_id"):
+                distribuidor_id = self._compra_data.get("Distribuidor_id")
+                distribuidor = self._distribuidores_map.get(distribuidor_id)
+                if distribuidor:
+                    self.Distribuidor_combo.addItem(distribuidor.get("nombre", ""), distribuidor_id)
+            self._update_summary_vendor_info()
             return
         vendedor = self._vendedores_map.get(vendedor_id)
         if not vendedor:
             self.comision_label_resumen.setText("Comisión vendedor: 0%")
             self.comision_pct_spin.setValue(0)
+            self._update_summary_vendor_info()
             return
         Distribuidor_id = self._vendedor_Distribuidor_map.get(vendedor_id)
         if Distribuidor_id is None:
@@ -1931,6 +2049,7 @@ class RegisterPurchaseDialog(QDialog):
             comision_val = 0.0
         self.comision_label_resumen.setText(f"Comisión vendedor: {comision_val}%")
         self.comision_pct_spin.setValue(comision_val)
+        self._update_summary_vendor_info()
 
     def _agregar_a_compra(self):
         producto = self.product_list.currentItem().text() if self.product_list.currentItem() else ""

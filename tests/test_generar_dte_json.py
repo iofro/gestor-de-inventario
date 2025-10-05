@@ -2603,7 +2603,7 @@ def test_generar_dte_json_sets_venta_tercero_credito_fiscal(monkeypatch):
     }
 
 
-def test_generar_dte_json_credito_fiscal_autofills_remision(monkeypatch):
+def test_generar_dte_json_credito_fiscal_no_injects_remision(monkeypatch):
     import dte as dte_module
     import svfe.config as svfe_config
 
@@ -2671,13 +2671,10 @@ def test_generar_dte_json_credito_fiscal_autofills_remision(monkeypatch):
     )
 
     data = dte_module.generar_dte_json(db, venta_id, tipo_dte="03")
-    numero_control = data["identificacion"]["numeroControl"]
-    correlativo_segment = numero_control.rsplit("-", 1)[-1]
-    expected = correlativo_segment[-4:]
 
     receptor = data["receptor"]
-    assert receptor["noRemision"] == expected
-    assert receptor["ordenNo"] == expected
+    assert "noRemision" not in receptor
+    assert "ordenNo" not in receptor
 
 
 def test_generar_dte_json_ignores_invalid_venta_tercero_doc(monkeypatch):

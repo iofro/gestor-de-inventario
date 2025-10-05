@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import base64
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Iterable
 
 
 # Keys that may be present in a document returned by MH after processing but
@@ -52,14 +52,18 @@ def _decode_jws(jws: str) -> Dict[str, Any]:
 
 
 def prevalidate_envelope(
-    sobre: Dict[str, Any], jws: str, schema_path: str | None = None
+    sobre: Dict[str, Any],
+    jws: str,
+    schema_path: str | None = None,
+    allowed_ambientes: Iterable[str] | None = None,
 ) -> None:
     """Pre-validate an envelope ``sobre`` and its signed payload ``jws``.
 
     The function verifies basic envelope consistency (``tipoDte``,
     ``codigoGeneracion`` and ``ambiente``) but no longer validates the payload
     against a JSON schema.  ``schema_path`` is accepted for backwards
-    compatibility and ignored.
+    compatibility and ignored.  ``allowed_ambientes`` can be used to specify the
+    accepted values for ``identificacion.ambiente`` (``"00"`` por defecto).
     """
 
     payload = _decode_jws(jws)
@@ -76,7 +80,12 @@ def prevalidate_envelope(
     assert (
         sobre["codigoGeneracion"] == ident.get("codigoGeneracion")
     ), "codigoGeneracion no coincide"
-    assert ident.get("ambiente") == "00", "ambiente debe ser '00' en pruebas"
+
+    ambientes = tuple(allowed_ambientes or ("00",))
+    ambiente = ident.get("ambiente")
+    assert ambiente in ambientes, (
+        f"ambiente debe ser uno de {', '.join(sorted(ambientes))}"
+    )
 
 
 # Backwards compatibility -----------------------------------------------------

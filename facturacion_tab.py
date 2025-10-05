@@ -107,6 +107,11 @@ SNAPSHOT_MISSING_MESSAGE = (
     "Seleccione el documento original o regenere el snapshot antes de enviar."
 )
 GENERIC_SEND_ERROR = "No se pudo enviar el documento. Revise los registros y reintente."
+SIGNER_DOWN_WARNING = (
+    "El firmador no está corriendo, si desea proceder enviando el DTE hay altas "
+    "probabilidades de ser rechazado, se recomienda iniciar el firmador en "
+    "configuración y luego enviar el DTE"
+)
 
 # Directory where debit notes will be stored
 # Paths are provided by ``paths`` to keep user data outside the installation
@@ -3121,6 +3126,37 @@ class FacturacionTab(QWidget):
         )
         return any(keyword in text for keyword in keywords)
 
+    @staticmethod
+    def _is_signer_connection_error(exc: Exception) -> bool:
+        text = str(exc or "").strip().lower()
+        if not text or "error al firmar" not in text:
+            return False
+        connection_keywords = (
+            "failed to establish a new connection",
+            "connection refused",
+            "no se puede establecer una conexión",
+            "max retries exceeded",
+        )
+        if any(keyword in text for keyword in connection_keywords):
+            return True
+        cause = getattr(exc, "__cause__", None)
+        while cause is not None:
+            if isinstance(cause, ConnectionRefusedError):
+                return True
+            cause = getattr(cause, "__cause__", None)
+        return False
+
+    def _confirm_send_without_signer(self) -> bool:
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Enviar a Hacienda")
+        msg.setText(SIGNER_DOWN_WARNING)
+        send_button = msg.addButton("Enviar sin el firmador", QMessageBox.AcceptRole)
+        cancel_button = msg.addButton("Cancelar", QMessageBox.RejectRole)
+        msg.setDefaultButton(cancel_button)
+        msg.exec_()
+        return msg.clickedButton() == send_button
+
     def _report_snapshot_missing(self, exc: SnapshotNotFoundError) -> None:
         venta_id = getattr(exc, "venta_id", None)
         nota_id = getattr(exc, "nota_id", None)
@@ -3431,12 +3467,20 @@ class FacturacionTab(QWidget):
                     if self._is_auth_runtime_error(exc):
                         QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                     else:
-                        logger.exception("Error al enviar documento", exc_info=exc)
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
-                            GENERIC_SEND_ERROR,
-                        )
+                        if self._is_signer_connection_error(exc):
+                            logger.warning(
+                                "Firmador no disponible al enviar documento",
+                                exc_info=exc,
+                            )
+                            if not self._confirm_send_without_signer():
+                                return
+                        else:
+                            logger.exception("Error al enviar documento", exc_info=exc)
+                            QMessageBox.critical(
+                                self,
+                                "Enviar a Hacienda",
+                                GENERIC_SEND_ERROR,
+                            )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     logger.exception("Error inesperado al enviar documento", exc_info=exc)

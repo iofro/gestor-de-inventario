@@ -20,6 +20,7 @@ class PurchasesTab(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
         self.manager = manager
+        self._compras_cache: dict[int, dict] = {}
         self._setup_ui()
         self.load_purchases()
 
@@ -213,6 +214,11 @@ class PurchasesTab(QWidget):
         self.load_purchases()
     def load_purchases(self):
         compras = self.manager.db.get_compras()
+        self._compras_cache = {
+            c.get("id"): c
+            for c in compras
+            if isinstance(c, dict) and c.get("id") is not None
+        }
         detalles_cache = {}
         productos = {p["id"]: p for p in self.manager.db.get_productos()}
         Distribuidores = {d["id"]: d["nombre"] for d in self.manager.db.get_Distribuidores()}
@@ -342,6 +348,8 @@ class PurchasesTab(QWidget):
 
     def edit_purchase(self, compra_id):
         compra = self.manager.db.get_compra(compra_id)
+        if not compra:
+            compra = self._compras_cache.get(compra_id)
         if not compra:
             QMessageBox.warning(
                 self,

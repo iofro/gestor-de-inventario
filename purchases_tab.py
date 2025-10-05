@@ -1,7 +1,7 @@
 from PyQt5.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLineEdit, QTableWidget, QTableWidgetItem,
     QPushButton, QLabel, QDateEdit, QComboBox, QAbstractItemView, QHeaderView, QSizePolicy,
-    QCheckBox,
+    QCheckBox, QMessageBox,
 )
 from PyQt5.QtCore import Qt, QDate
 from PyQt5.QtGui import QColor
@@ -141,9 +141,16 @@ class PurchasesTab(QWidget):
         self.btn_editar.clicked.connect(self.edit_selected_purchase)
 
     def _selected_compra_id(self):
-        if self.table.currentRow() < 0:
-            return None
-        item = self.table.item(self.table.currentRow(), 1)
+        row = self.table.currentRow()
+        if row < 0:
+            selection = self.table.selectionModel()
+            if not selection:
+                return None
+            selected_rows = selection.selectedRows()
+            if not selected_rows:
+                return None
+            row = selected_rows[0].row()
+        item = self.table.item(row, 1)
         if not item:
             return None
         try:
@@ -334,9 +341,13 @@ class PurchasesTab(QWidget):
         dlg.exec_()
 
     def edit_purchase(self, compra_id):
-        compras = self.manager.db.get_compras()
-        compra = next((c for c in compras if c["id"] == compra_id), None)
+        compra = self.manager.db.get_compra(compra_id)
         if not compra:
+            QMessageBox.warning(
+                self,
+                "Compra no encontrada",
+                "No fue posible cargar la compra seleccionada. Intente nuevamente.",
+            )
             return
         detalles = self.manager.db.get_detalles_compra(compra_id)
 

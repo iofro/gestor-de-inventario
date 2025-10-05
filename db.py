@@ -1407,6 +1407,13 @@ class DB:
         self.cursor.execute("SELECT * FROM compras")
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_compra(self, compra_id):
+        """Return a single purchase by its identifier or ``None`` if missing."""
+
+        self.cursor.execute("SELECT * FROM compras WHERE id=?", (compra_id,))
+        row = self.cursor.fetchone()
+        return dict(row) if row else None
+
     def get_detalles_compra(self, compra_id):
         self.cursor.execute("SELECT * FROM detalles_compra WHERE compra_id=?", (compra_id,))
         return [dict(row) for row in self.cursor.fetchall()]

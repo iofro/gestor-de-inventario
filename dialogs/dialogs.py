@@ -56,7 +56,7 @@ def get_field(obj, key, default=0):
     return default
 
 def validar_nit(nit):
-    """Valida que el NIT contenga exactamente 14 dígitos.
+    """Valida que el NIT contenga 9 o 14 dígitos numéricos.
 
     Una cadena vacía se considera válida para permitir que el campo sea opcional.
     """
@@ -65,7 +65,7 @@ def validar_nit(nit):
         return True
     if not nit:
         return False
-    nit_pattern = r"^\d{14}$"
+    nit_pattern = r"^(?:\d{9}|\d{14})$"
     return bool(re.match(nit_pattern, nit))
 
 def validar_dui(dui):
@@ -2894,7 +2894,11 @@ class DistribuidorDialog(QDialog):
             QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
             return
         if nit and not validar_nit(nit):
-            QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
+            QMessageBox.warning(
+                self,
+                "Datos inválidos",
+                "Debe ingresar un NIT válido (9 o 14 dígitos).",
+            )
             return
         self.accept()
 
@@ -3083,7 +3087,11 @@ class ClienteDialog(QDialog):
             return
         nit = self.nit_edit.text().strip()
         if nit and not validar_nit(nit):
-            QMessageBox.warning(self, "Validación", "Ingrese un NIT válido.")
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "Ingrese un NIT válido (9 o 14 dígitos).",
+            )
             return
         dui = self.dui_edit.text().strip()
         if dui and not validar_dui(dui):
@@ -3189,7 +3197,11 @@ class VendedorDialog(QDialog):
         if hasattr(self, 'nit_edit'):
             nit = self.nit_edit.text().strip()
             if not nit or not validar_nit(nit):
-                QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un NIT válido.")
+                QMessageBox.warning(
+                    self,
+                    "Datos inválidos",
+                    "Debe ingresar un NIT válido (9 o 14 dígitos).",
+                )
                 return
         if hasattr(self, 'email_edit'):
             email = self.email_edit.text().strip()
@@ -4296,7 +4308,11 @@ class TrabajadorDialog(QDialog):
         email = self.email.text().strip()
 
         if nit and not validar_nit(nit):
-            QMessageBox.warning(self, "Validación", "El NIT ingresado no es válido.")
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "El NIT ingresado no es válido; debe tener 9 o 14 dígitos.",
+            )
             return
         if email and not validar_email(email):
             QMessageBox.warning(self, "Validación", "El correo electrónico ingresado no es válido.")

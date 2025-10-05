@@ -32,6 +32,7 @@ from utils.certificates import copy_certificate_to_signer_dir, resolve_signer_ce
 from utils.catalogos import CONTINGENCIA
 from utils.sanitize import solo_digitos
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
+from dte import peek_next_correlativo
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_UP
 IVA_RATE = Decimal("0.13")
@@ -2338,6 +2339,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._on_descuento_tipo_changed()
         self._update_condicion_pago_fields()
         self.load_payment_data(venta_extra)
+        self._autofill_remision_fields(venta_extra)
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -2759,6 +2761,37 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             if referencia:
                 self.referencia_edit.setText(str(referencia))
         self._update_condicion_pago_fields()
+
+    def _autofill_remision_fields(self, venta_extra):
+        data = {}
+        if isinstance(venta_extra, str):
+            try:
+                data = json.loads(venta_extra)
+            except (TypeError, ValueError):
+                data = {}
+        elif isinstance(venta_extra, dict):
+            data = dict(venta_extra)
+
+        existing_remision = str(
+            (data.get("no_remision") or data.get("noRemision") or "")
+        ).strip()
+        existing_orden = str((data.get("orden_no") or data.get("ordenNo") or "")).strip()
+
+        if existing_remision:
+            self.no_remision_edit.setText(existing_remision)
+        if existing_orden:
+            self.orden_no_edit.setText(existing_orden)
+
+        if self.no_remision_edit.text().strip() and self.orden_no_edit.text().strip():
+            return
+
+        _, remision = peek_next_correlativo(self.db, "03")
+        if not remision:
+            return
+        if not self.no_remision_edit.text().strip():
+            self.no_remision_edit.setText(remision)
+        if not self.orden_no_edit.text().strip():
+            self.orden_no_edit.setText(remision)
 
 class DistribuidorDialog(QDialog):
     def __init__(self, parent=None, Distribuidor=None):

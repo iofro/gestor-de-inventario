@@ -178,3 +178,41 @@ def test_get_data_credito_fiscal_discount_total(qt_app):
     assert data["total"] == pytest.approx(13.5)
     assert f"{data['total']:.2f}" == "13.50"
     assert data["descuentos"] == pytest.approx(1.32743363)
+
+
+def test_dialog_autofills_remision_from_correlativo(monkeypatch, qt_app):
+    import dte as dte_module
+
+    monkeypatch.setattr(
+        dte_module,
+        "_load_datos_negocio",
+        lambda: {"dte_api": {"prefijo_control": "DTE-03-S987P654"}},
+    )
+
+    class DummyDB:
+        def __init__(self):
+            self.calls = []
+
+        def peek_next_dte_correlativo(self, tipo, sucursal, punto):
+            self.calls.append((tipo, sucursal, punto))
+            return 12
+
+    productos = [
+        {
+            "lote_id": 1,
+            "producto_id": 1,
+            "nombre": "Producto X",
+            "precio_venta_minorista": 1,
+            "precio_venta_mayorista": 1,
+            "Distribuidor_id": 1,
+        }
+    ]
+    Distribuidores = [{"nombre": "Dist"}]
+
+    dialog = RegisterCreditoFiscalDialog(productos, Distribuidores, [], db=DummyDB())
+
+    assert dialog.no_remision_edit.text() == "0012"
+    assert dialog.orden_no_edit.text() == "0012"
+    assert dialog.db.calls == [("03", "987", "654")]
+
+    dialog.close()

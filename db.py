@@ -2304,6 +2304,23 @@ class DB:
         logger.debug("Correlativo asignado %s", correlativo)
         return correlativo
 
+    def peek_next_dte_correlativo(self, tipo: str, sucursal: str, punto: str) -> int:
+        """Devuelve el siguiente correlativo sin persistir cambios."""
+
+        with self.lock:
+            self.cursor.execute(
+                "SELECT correlativo FROM dte_correlativos WHERE tipo=? AND sucursal=? AND punto=?",
+                (tipo, sucursal, punto),
+            )
+            row = self.cursor.fetchone()
+        if row is None:
+            return 1
+        try:
+            current = int(row["correlativo"])
+        except (TypeError, ValueError, KeyError):
+            current = int(row[0])
+        return current + 1
+
     def add_dte_pendiente(self, venta_id, dte_json, modo):
         """Registra un DTE pendiente de transmisión a Hacienda."""
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")

@@ -2898,6 +2898,42 @@ def _format_numero_control(tipo: str, sucursal: str, punto: str, correlativo: in
     return f"DTE-{tipo}-S{sucursal}P{punto}-{secuencia}"
 
 
+def _derive_remision_from_correlativo(value: int | str | None) -> str | None:
+    """Deriva el número de remisión a partir de un correlativo numérico."""
+
+    if value is None:
+        return None
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    if not digits:
+        return None
+    return digits[-4:].zfill(4)
+
+
+def peek_next_correlativo(db: DB | None, tipo_dte: str) -> tuple[int | None, str | None]:
+    """Obtiene el correlativo siguiente y su remisión derivada sin consumirlo."""
+
+    if db is None:
+        return None, None
+    preview_getter = getattr(db, "peek_next_dte_correlativo", None)
+    if not callable(preview_getter):
+        return None, None
+    datos = _load_datos_negocio()
+    prefijo = str(datos.get("dte_api", {}).get("prefijo_control", ""))
+    sucursal = "001"
+    punto = "001"
+    match = re.search(r"S(\d{3})P(\d{3})", prefijo)
+    if match:
+        sucursal, punto = match.groups()
+    sucursal = _norm3(sucursal)
+    punto = _norm3(punto)
+    try:
+        correlativo = preview_getter(tipo_dte, sucursal, punto)
+    except Exception:  # pragma: no cover - defensive guard
+        logger.exception("Fallo al previsualizar correlativo para tipo %s", tipo_dte)
+        return None, None
+    return correlativo, _derive_remision_from_correlativo(correlativo)
+
+
 def generar_numero_control(
     db: DB, tipo: str, sucursal: str, punto: str
 ) -> tuple[str, int]:
@@ -3378,7 +3414,9 @@ def generar_dte_json(
                     "correo",
                     "direccion",
                 ]
-                fields_to_remove = ["noRemision", "ordenNo", "numDocumento", "tipoDocumento"]
+                fields_to_remove = ["numDocumento", "tipoDocumento"]
+                if tipo_dte != "03":
+                    fields_to_remove.extend(["noRemision", "ordenNo"])
                 for f in fields_to_remove:
                     receptor.pop(f, None)
 
@@ -4547,9 +4585,19 @@ def validate_dte_json(
                 "correo",
                 "direccion",
             ]
+            if tipo_dte == "03":
+                base_remision = correlativo if correlativo is not None else numero_control
+                derived_remision = _derive_remision_from_correlativo(base_remision)
+                if derived_remision:
+                    if not receptor.get("noRemision"):
+                        receptor["noRemision"] = derived_remision
+                    if not receptor.get("ordenNo"):
+                        receptor["ordenNo"] = derived_remision
             for f in required_rec_fields:
                 receptor.setdefault(f, None)
-            fields_to_remove = ["noRemision", "ordenNo", "numDocumento", "tipoDocumento"]
+            fields_to_remove = ["numDocumento", "tipoDocumento"]
+            if tipo_dte != "03":
+                fields_to_remove.extend(["noRemision", "ordenNo"])
             for f in fields_to_remove:
                 receptor.pop(f, None)
         payload["receptor"] = receptor

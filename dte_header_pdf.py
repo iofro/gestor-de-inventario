@@ -38,7 +38,10 @@ def generar_cabecera_dte(
     c.setFont("Helvetica-Bold", 12)
     c.drawCentredString(width / 2, top, tipo_documento.upper())
 
-    row_y = top - 40
+    # Reduce the vertical gap between the title block and the header boxes so
+    # the left-side information sits a little higher on the page without
+    # colliding with the titles.
+    row_y = top - 25
     c.setFont("Helvetica", 10)
 
     col_margin = 15

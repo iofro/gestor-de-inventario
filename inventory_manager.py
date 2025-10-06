@@ -276,6 +276,12 @@ class InventoryManager:
         self.db.aumentar_stock(producto_id, cantidad)
         self.refresh_data()
 
+    def update_detalle_compra_cantidad(self, detalle_id: int, nueva_cantidad: int) -> None:
+        """Actualiza la cantidad de un lote específico y refresca los datos."""
+
+        self.db.update_detalle_compra_cantidad(detalle_id, nueva_cantidad)
+        self.refresh_data()
+
     def exportar_inventario_json(self, filename, tab_order=None):
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):

@@ -2622,6 +2622,56 @@ class DB:
             self.conn.commit()
 
 
+    def update_detalle_compra_cantidad(self, detalle_id: int, nueva_cantidad: int) -> None:
+        """Actualiza la cantidad de un detalle de compra y sincroniza el stock.
+
+        Args:
+            detalle_id: Identificador del registro en ``detalles_compra``.
+            nueva_cantidad: Cantidad que tendrá el lote después de la edición.
+
+        Raises:
+            ValueError: Si el lote no existe o la cantidad es negativa.
+        """
+
+        if detalle_id is None:
+            raise ValueError("El lote seleccionado no existe.")
+
+        if nueva_cantidad is None:
+            raise ValueError("La cantidad no es válida.")
+
+        if nueva_cantidad < 0:
+            raise ValueError("La cantidad no puede ser negativa.")
+
+        with self.lock:
+            row = self.cursor.execute(
+                "SELECT producto_id FROM detalles_compra WHERE id=?",
+                (detalle_id,),
+            ).fetchone()
+
+            if row is None:
+                raise ValueError("El lote seleccionado no existe.")
+
+            producto_id = row["producto_id"]
+
+            self.cursor.execute(
+                "UPDATE detalles_compra SET cantidad=? WHERE id=?",
+                (nueva_cantidad, detalle_id),
+            )
+
+            if producto_id:
+                total_row = self.cursor.execute(
+                    "SELECT COALESCE(SUM(cantidad), 0) AS total FROM detalles_compra WHERE producto_id=?",
+                    (producto_id,),
+                ).fetchone()
+                total = total_row["total"] if total_row else 0
+                self.cursor.execute(
+                    "UPDATE productos SET stock=? WHERE id=?",
+                    (total, producto_id),
+                )
+
+            self.conn.commit()
+
+
     def add_movimiento(
         self,
         fecha,

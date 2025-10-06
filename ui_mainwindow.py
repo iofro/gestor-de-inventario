@@ -1808,6 +1808,20 @@ class MainWindow(QMainWindow):
             self.inventario_actual_table.setItem(row, 5, item_venc)
             self.inventario_actual_table.setItem(row, 6, QTableWidgetItem(d["Distribuidor"]))
 
+    def _confirm_inventory_conflict(self, target: str) -> bool:
+        message = (
+            f"Editar o eliminar {target} puede causar conflictos en el inventario, "
+            "proceda solo si está seguro de que no causará conflictos con sus cambios."
+        )
+        result = QMessageBox.warning(
+            self,
+            "Advertencia",
+            message,
+            QMessageBox.Ok | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        return result == QMessageBox.Ok
+
     def _editar_lote_inventario_actual(self):
         row = self.inventario_actual_table.currentRow()
         if row < 0:
@@ -1829,6 +1843,9 @@ class MainWindow(QMainWindow):
         cantidad_actual = int(data.get("cantidad", 0) or 0)
         producto = data.get("producto", "")
         codigo = data.get("codigo", "")
+
+        if not self._confirm_inventory_conflict("este lote"):
+            return
 
         nueva_cantidad, ok = QInputDialog.getInt(
             self,
@@ -1896,6 +1913,9 @@ class MainWindow(QMainWindow):
         producto = data.get("producto", "")
         codigo = data.get("codigo", "")
         cantidad = data.get("cantidad", 0)
+
+        if not self._confirm_inventory_conflict("este lote"):
+            return
 
         confirm = QMessageBox.question(
             self,

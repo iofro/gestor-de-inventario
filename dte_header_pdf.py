@@ -51,13 +51,14 @@ def generar_cabecera_dte(
     box_h = 30
 
     box_y = row_y - box_h
+    left_box_y = box_y + 6
 
     # --- Caja izquierda ---
     c.setLineWidth(0.7)
     c.setStrokeColor(colors.white)
-    c.roundRect(40, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.roundRect(40, left_box_y, box_w, box_h, 6, stroke=1, fill=0)
     c.setStrokeColor(colors.black)
-    text_y = box_y + box_h - 10
+    text_y = left_box_y + box_h - 10
     max_w = box_w - 10
     text_y = draw_wrapped_text(
         c,

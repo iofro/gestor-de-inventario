@@ -125,7 +125,9 @@ def generar_factura_electronica_pdf(
     c.drawCentredString(width / 2, top, titulo)
 
 
-    row_y = top - 40
+    # Elevar ligeramente la cabecera para aprovechar mejor el espacio sin
+    # acercarla demasiado al título principal.
+    row_y = top - 25
     c.setFont("Helvetica", 10)
 
     # --- Configuración de columnas para las cajas y el QR ---
@@ -138,13 +140,14 @@ def generar_factura_electronica_pdf(
 
     # Posición inferior de las cajas de cabecera
     box_y = row_y - box_h
+    left_box_y = box_y + 6
 
     # --- Caja izquierda con datos de generación ---
     c.setLineWidth(0.7)
     c.setStrokeColor(colors.white)
-    c.roundRect(x_margin, box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.roundRect(x_margin, left_box_y, box_w, box_h, 6, stroke=1, fill=0)
     c.setStrokeColor(colors.black)
-    text_y = box_y + box_h - 12
+    text_y = left_box_y + box_h - 12
     max_w = box_w - 10
     text_y = draw_wrapped_text(
         c,

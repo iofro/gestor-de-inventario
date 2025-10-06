@@ -62,6 +62,7 @@ from utils.jws import sign_and_save
 from utils.sanitize import limpiar_doc, solo_digitos
 from utils.printing import open_pdf as open_pdf_file
 from utils import catalogos
+from utils.loading import create_loading_dialog, loading_dialog
 from paths import (
     DATOS_NEGOCIO_PATH,
     FACTURAS_CONSUMIDOR_FINAL_DIR,
@@ -1896,6 +1897,7 @@ class FacturacionTab(QWidget):
         super().__init__(parent)
         self.manager = manager
         self.email_thread = None
+        self._email_loading_dialog = None
         self._setup_ui()
         # Clean up any stale invoice references before loading
         # documents into the table. This prevents entries tied to
@@ -3405,13 +3407,16 @@ class FacturacionTab(QWidget):
                 json_path = factura.get("json")
                 try:
                     print("UI: CALL_ENVIAR_DOCUMENTO")
-                    note_kind = self._resolve_orphan_note_kind(entry)
-                    if note_kind == "credito":
-                        resp = self._reenviar_nota_credito(entry, factura)
-                    elif note_kind == "debito":
-                        resp = self._reenviar_nota_debito(entry, factura)
-                    else:
-                        resp = dte.transmitir_dte_orphan(self.manager.db, json_path)
+                    with loading_dialog(self, "Enviando a Hacienda…"):
+                        note_kind = self._resolve_orphan_note_kind(entry)
+                        if note_kind == "credito":
+                            resp = self._reenviar_nota_credito(entry, factura)
+                        elif note_kind == "debito":
+                            resp = self._reenviar_nota_debito(entry, factura)
+                        else:
+                            resp = dte.transmitir_dte_orphan(
+                                self.manager.db, json_path
+                            )
                     if resp.get("http_status") in {401, 403}:
                         message = self._auth_error_message(resp, token_msg)
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
@@ -3519,11 +3524,12 @@ class FacturacionTab(QWidget):
                 tipo_dte = self._determine_tipo_dte(entry)
                 try:
                     print("UI: CALL_ENVIAR_DOCUMENTO")
-                    resp = transmitir_dte(
-                        self.manager.db,
-                        entry.get("venta_id"),
-                        tipo_dte=tipo_dte,
-                    )  # tickets también se transmiten con tipo "01"
+                    with loading_dialog(self, "Enviando a Hacienda…"):
+                        resp = transmitir_dte(
+                            self.manager.db,
+                            entry.get("venta_id"),
+                            tipo_dte=tipo_dte,
+                        )  # tickets también se transmiten con tipo "01"
                     if resp.get("http_status") in {401, 403}:
                         message = self._auth_error_message(resp, token_msg)
                         QMessageBox.warning(self, "Enviar a Hacienda", message)
@@ -4537,6 +4543,16 @@ class FacturacionTab(QWidget):
             sello=sello or None,
         )
 
+    def _show_email_loading(self, message: str = "Enviando correo…") -> None:
+        if self._email_loading_dialog:
+            self._email_loading_dialog.finish()
+        self._email_loading_dialog = create_loading_dialog(self, message)
+
+    def _hide_email_loading(self) -> None:
+        if self._email_loading_dialog:
+            self._email_loading_dialog.finish()
+            self._email_loading_dialog = None
+
     def _send_invoice_email(
         self,
         venta_id,
@@ -4748,6 +4764,7 @@ class FacturacionTab(QWidget):
             [pdf_path, json_path],
         )
         self.email_thread.finished.connect(self._on_email_sent)
+        self._show_email_loading()
         self.email_thread.start()
 
     def _ensure_invoice_json_metadata(
@@ -4888,10 +4905,12 @@ class FacturacionTab(QWidget):
             attachments,
         )
         self.email_thread.finished.connect(self._on_email_sent)
+        self._show_email_loading()
         self.email_thread.start()
 
     def _on_email_sent(self, success, message):
         self.btn_enviar.setEnabled(True)
+        self._hide_email_loading()
         if success:
             QMessageBox.information(self, "Enviar por correo", message)
         else:
@@ -5307,7 +5326,25 @@ class FacturacionTab(QWidget):
                 fecha_generacion=fec_emision,
             )
 
-        pdf_path = write_pdf_atomically(pdf_path, _render_note_pdf)
+        resp = None
+        try:
+            with loading_dialog(self, "Creando DTE…"):
+                pdf_path = write_pdf_atomically(pdf_path, _render_note_pdf)
+                _, token = sign_and_save(
+                    nota_json, str(json_path), return_token=True
+                )
+                modo_eff = self._resolve_modo_transmision()
+                resp = dte._enviar_documento(
+                    self.manager.db, nota_id, nota_json, modo=modo_eff, jws_token=token
+                )
+        except dte.DTEValidationError as exc:
+            self._show_validation_errors(exc.errors, exc.json_path)
+            self.load_invoices()
+            return
+        except Exception as exc:
+            QMessageBox.critical(self, "Nota", str(exc))
+            self.load_invoices()
+            return
 
         # Mostrar previsualización del PDF generado
         try:
@@ -5315,26 +5352,13 @@ class FacturacionTab(QWidget):
         except Exception:
             pass
 
-        # Firmar y transmitir automáticamente reutilizando el mismo JSON
-        _, token = sign_and_save(nota_json, str(json_path), return_token=True)
-
-        modo_eff = self._resolve_modo_transmision()
-
-        try:
-            resp = dte._enviar_documento(
-                self.manager.db, nota_id, nota_json, modo=modo_eff, jws_token=token
-            )
-            estado = str(resp.get("estado", "") if resp else "").lower()
-            if estado == "error":
+        estado = str(resp.get("estado", "") if resp else "").lower()
+        if estado == "error":
+            self._mostrar_respuesta_hacienda(resp, title="Nota")
+        else:
+            QMessageBox.information(self, "Nota", "Nota registrada y transmitida")
+            if resp:
                 self._mostrar_respuesta_hacienda(resp, title="Nota")
-            else:
-                QMessageBox.information(self, "Nota", "Nota registrada y transmitida")
-                if resp:
-                    self._mostrar_respuesta_hacienda(resp, title="Nota")
-        except dte.DTEValidationError as exc:
-            self._show_validation_errors(exc.errors, exc.json_path)
-        except Exception as exc:
-            QMessageBox.critical(self, "Nota", str(exc))
         self.load_invoices()
 
     def _get_invoice_paths(self, venta_id, factura=None, entry=None):
@@ -6036,5 +6060,6 @@ class FacturacionTab(QWidget):
             [pdf_path, json_path],
         )
         self.email_thread.finished.connect(self._on_email_sent)
+        self._show_email_loading()
         self.email_thread.start()
 

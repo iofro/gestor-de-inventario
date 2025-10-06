@@ -124,8 +124,10 @@ class PurchasesTab(QWidget):
         side_layout = QVBoxLayout()
         self.btn_ver = QPushButton("Ver")
         self.btn_editar = QPushButton("Editar")
+        self.btn_eliminar = QPushButton("Eliminar")
         side_layout.addWidget(self.btn_ver)
         side_layout.addWidget(self.btn_editar)
+        side_layout.addWidget(self.btn_eliminar)
         side_layout.addStretch(1)
         content_layout.addLayout(side_layout)
 
@@ -141,6 +143,7 @@ class PurchasesTab(QWidget):
         self.search_bar.textChanged.connect(self.load_purchases)
         self.btn_ver.clicked.connect(self.show_selected_detail)
         self.btn_editar.clicked.connect(self.edit_selected_purchase)
+        self.btn_eliminar.clicked.connect(self.delete_selected_purchase)
 
     def _selected_compra_id(self):
         row = self.table.currentRow()
@@ -169,6 +172,72 @@ class PurchasesTab(QWidget):
         compra_id = self._selected_compra_id()
         if compra_id is not None:
             self.edit_purchase(compra_id)
+
+    def delete_selected_purchase(self):
+        compra_id = self._selected_compra_id()
+        if compra_id is None:
+            QMessageBox.warning(
+                self,
+                "Eliminar compra",
+                "Seleccione una compra para eliminar.",
+            )
+            return
+        self.delete_purchase(compra_id)
+
+    def delete_purchase(self, compra_id: int):
+        compra = self._compras_cache.get(compra_id)
+        if not compra:
+            compra = self.manager.db.get_compra(compra_id)
+        if not compra:
+            QMessageBox.warning(
+                self,
+                "Compra no encontrada",
+                "No fue posible cargar la compra seleccionada. Intente nuevamente.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar compra",
+            f"¿Está seguro de eliminar la compra #{compra_id}? Esta acción deshará el ingreso de sus lotes al inventario.",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            self.manager.delete_compra(compra_id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Eliminar compra", str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - defensive UI handling
+            logger.exception("Error al eliminar la compra %s", compra_id)
+            QMessageBox.critical(
+                self,
+                "Eliminar compra",
+                "Ocurrió un error al eliminar la compra seleccionada.",
+            )
+            return
+
+        self._compras_cache.pop(compra_id, None)
+        self._detalles_cache.pop(compra_id, None)
+        self.load_purchases()
+
+        parent = self.parent()
+        if parent and hasattr(parent, "_actualizar_inventario_actual"):
+            try:
+                parent._actualizar_inventario_actual()
+            except Exception:  # pragma: no cover - keep UI responsive
+                logger.exception("No se pudo refrescar el inventario actual tras eliminar la compra")
+        if parent and hasattr(parent, "data_changed"):
+            parent.data_changed.emit()
+
+        QMessageBox.information(
+            self,
+            "Eliminar compra",
+            "La compra seleccionada se eliminó correctamente.",
+        )
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)

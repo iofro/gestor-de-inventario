@@ -21,8 +21,8 @@ AppMutex=VertexDTE_Running
 DisableProgramGroupPage=yes
 
 [Files]
-Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion replacesameversion
-Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion replacesameversion; Excludes: "uploads\*"
+Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs replacesameversion
+Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs replacesameversion; Excludes: "uploads\*"
 
 [Dirs]
 Name: "{app}\svfe-api-firmador\uploads"; Flags: uninsneveruninstall

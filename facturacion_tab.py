@@ -3425,7 +3425,7 @@ class FacturacionTab(QWidget):
                         or ""
                     )
                     sello_norm = str(sello_val).strip()
-                    if estado_norm == "aceptado" and sello_norm:
+                    if estado_norm in {"aceptado", "procesado"} and sello_norm:
                         mh_success = True
                         mh_response = resp
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
@@ -3537,7 +3537,7 @@ class FacturacionTab(QWidget):
                         or ""
                     )
                     sello_norm = str(sello_val).strip()
-                    if estado_norm == "aceptado" and sello_norm:
+                    if estado_norm in {"aceptado", "procesado"} and sello_norm:
                         mh_success = True
                         mh_response = resp
                         if rtype == "venta":

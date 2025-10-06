@@ -810,14 +810,18 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     captured_post = {}
     def fake_post(url, token, jws, data):
         captured_post["args"] = (url, token, jws)
-        return {"estado": "Transmitido"}
+        return {"estado": "PROCESADO", "sello": "SELLO"}
     monkeypatch.setattr("dte._post_dte", fake_post)
     captured_transmit = {}
 
     def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
         fake_post("http://example.com", "TOKEN", "SIGNED", {})
         captured_transmit["args"] = (db_, vid, modo, tipo_dte)
-        return {"estado": "Transmitido"}
+        return {
+            "estado": "PROCESADO",
+            "selloRecibido": "SELLO-DOC",
+            "identificacion": {"codigoGeneracion": "ABC123"},
+        }
     monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
 
     monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
@@ -829,6 +833,84 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     assert json_path in map(Path, captured_email["args"][7])
     assert captured_post["args"] == ("http://example.com", "TOKEN", "SIGNED")
     assert captured_transmit["args"][3] == "01"
+
+
+def test_send_selected_invoice_allows_email_when_procesado(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    pdf_path = tmp_path / "doc.pdf"
+    pdf_path.write_text("pdf")
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text("{}")
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(pdf_path))
+
+    tab = _make_tab(db, cid)
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "id": 1, "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(json_path), "control": "X"},
+    )
+
+    class DummyCheck:
+        def __init__(self):
+            self._checked = False
+
+        def setChecked(self, value):
+            self._checked = value
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDlg:
+        def __init__(self, parent=None):
+            self.email_cb = DummyCheck()
+            self.hacienda_cb = DummyCheck()
+
+        def exec_(self):
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDlg)
+
+    warnings = []
+
+    def fake_warning(*args, **kwargs):
+        warnings.append(args)
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", fake_warning)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    called = {}
+
+    def fake_send_invoice_email(self, venta, **kwargs):
+        called["args"] = (venta, kwargs)
+
+    monkeypatch.setattr(
+        facturacion_tab.FacturacionTab,
+        "_send_invoice_email",
+        fake_send_invoice_email,
+    )
+
+    def fake_transmitir(db_, vid, modo="normal", tipo_dte="01"):
+        return {
+            "estado": "PROCESADO",
+            "selloRecibido": "SELLO-DOC",
+            "identificacion": {"codigoGeneracion": "ABC123"},
+        }
+
+    monkeypatch.setattr(facturacion_tab, "transmitir_dte", fake_transmitir)
+
+    tab.send_selected_invoice()
+
+    assert called["args"][0] == venta_id
+    assert called["args"][1]["expected_codigo"] == "ABC123"
+    assert called["args"][1]["expected_sello"] == "SELLO-DOC"
+    assert warnings == []
 
 
 def test_send_selected_invoice_credito_fiscal(monkeypatch, qt_app, tmp_path):

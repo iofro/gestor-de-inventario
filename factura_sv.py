@@ -1,3 +1,5 @@
+from pathlib import Path
+
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.platypus import Table, TableStyle
@@ -15,6 +17,7 @@ import json
 import os
 from datetime import datetime
 from paths import DATOS_NEGOCIO_PATH
+from utils import resource_path
 
 
 def build_qr_url(dte: dict) -> str:
@@ -55,6 +58,35 @@ def format_direccion(direccion):
     nombre_municipio = catalogos.get_value("CAT-013", codigo_municipio) or ""
     parts = [p for p in (nombre_municipio, complemento) if p]
     return ", ".join(parts)
+
+
+def _resolve_logo_path(datos_negocio: dict) -> str | None:
+    """Return the preferred logo path if available."""
+
+    candidates = []
+    for key in ("logo_path", "logoPath", "logo"):
+        value = datos_negocio.get(key)
+        if isinstance(value, str) and value.strip():
+            candidates.append(value.strip())
+
+    default_logo = resource_path("logoinventario.jpg")
+    if default_logo.exists():
+        candidates.append(str(default_logo))
+
+    user_dir = Path(DATOS_NEGOCIO_PATH).resolve().parent
+
+    for raw in candidates:
+        expanded = os.path.expanduser(raw)
+        paths_to_try = [expanded]
+        if not os.path.isabs(expanded):
+            paths_to_try.append(str(user_dir / expanded))
+            res_candidate = resource_path(expanded)
+            if res_candidate.exists():
+                paths_to_try.append(str(res_candidate))
+        for candidate in paths_to_try:
+            if candidate and os.path.exists(candidate):
+                return candidate
+    return None
 
 
 def generar_factura_electronica_pdf(
@@ -111,12 +143,12 @@ def generar_factura_electronica_pdf(
     y_margin = 30
 
 
-    top = height - 50
-    c.setFont("Helvetica-Bold", 16)
+    top = height - 45
+    c.setFont("Helvetica-Bold", 14)
     c.drawCentredString(width / 2, top, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
 
-    top -= 20
-    c.setFont("Helvetica-Bold", 12)
+    top -= 16
+    c.setFont("Helvetica-Bold", 11)
     titulo = tipo_documento.upper()
     if tipo_dte and tipo_documento.lower().startswith("nota de cr"):
         titulo = f"NOTA DE CRÉDITO ({tipo_dte})"
@@ -124,59 +156,38 @@ def generar_factura_electronica_pdf(
         titulo = f"NOTA DE DÉBITO ({tipo_dte})"
     c.drawCentredString(width / 2, top, titulo)
 
+    c.setFont("Helvetica", 9)
 
-    # Elevar ligeramente la cabecera para aprovechar mejor el espacio sin
-    # acercarla demasiado al título principal.
-    row_y = top - 25
-    c.setFont("Helvetica", 10)
+    header_gap = 22
+    header_h = 90
+    header_y = top - header_gap - header_h
+    header_w = width - 2 * x_margin
 
-    # --- Configuración de columnas para las cajas y el QR ---
-    spacing = 10
-    col_margin = 15
-    qr_size = 30 * mm
-    available_w = width - 2 * x_margin - qr_size - 2 * col_margin
-    box_w = available_w / 2
-    box_h = 40
-
-    # Posición inferior de las cajas de cabecera
-    box_y = row_y - box_h
-    left_box_y = box_y + 6
-
-    # --- Caja izquierda con datos de generación ---
     c.setLineWidth(0.7)
     c.setStrokeColor(colors.white)
-    c.roundRect(x_margin, left_box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.roundRect(x_margin, header_y, header_w, header_h, 8, stroke=1, fill=0)
     c.setStrokeColor(colors.black)
-    text_y = left_box_y + box_h - 12
-    max_w = box_w - 10
-    text_y = draw_wrapped_text(
-        c,
-        f"Código Generación: {codigo_generacion}",
-        x_margin + 5,
-        text_y,
-        max_w,
-        12,
-    )
-    text_y = draw_wrapped_text(
-        c,
-        f"Número Control: {numero_control}",
-        x_margin + 5,
-        text_y,
-        max_w,
-        12,
-    )
-    text_y = draw_wrapped_text(
-        c,
-        f"Sello Recepción: {sello_recepcion}",
-        x_margin + 5,
-        text_y,
-        max_w,
-        12,
-    )
 
-    # --- Código QR ---
-    qr_x = x_margin + box_w + col_margin + 5
-    qr_y = box_y + (box_h - qr_size) / 2
+    logo_slot_w = 90
+    inner_padding = 10
+    logo_height = header_h - 2 * inner_padding
+    logo_path = _resolve_logo_path(datos_negocio)
+    if logo_path:
+        logo_x = x_margin + inner_padding
+        logo_y = header_y + header_h - logo_height - inner_padding
+        c.drawImage(
+            logo_path,
+            logo_x,
+            logo_y,
+            width=logo_slot_w,
+            height=logo_height,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+
+    qr_size = 26 * mm
+    qr_x = x_margin + header_w - qr_size - inner_padding
+    qr_y = header_y + (header_h - qr_size) / 2
     qr_url = build_qr_url(
         {"identificacion": {
             "ambiente": ambiente,
@@ -193,55 +204,80 @@ def generar_factura_electronica_pdf(
     renderPDF.draw(d, c, qr_x, qr_y)
     c.linkURL(qr_url, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 
-    # --- Caja derecha con datos de operación ---
-    right_x = x_margin + box_w + col_margin + qr_size + col_margin
-    c.setStrokeColor(colors.white)
-    c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
-    c.setStrokeColor(colors.black)
-    text_y = box_y + box_h - 12
-    max_w = box_w - 10
+    text_x = x_margin + logo_slot_w + 2 * inner_padding
+    text_right_limit = qr_x - inner_padding
+    text_width = max(10, text_right_limit - text_x)
+    text_y = header_y + header_h - inner_padding - 2
+    line_height = 12
+
+    text_y = draw_wrapped_text(
+        c,
+        f"Código Generación: {codigo_generacion}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Número Control: {numero_control}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Sello Recepción: {sello_recepcion}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Fecha Generación: {fecha_generacion}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+
+    text_y -= 4
     text_y = draw_wrapped_text(
         c,
         f"Tipo Modelo: {tipo_modelo}",
-        right_x + 5,
+        text_x,
         text_y,
-        max_w,
-        12,
+        text_width,
+        line_height,
     )
     text_y = draw_wrapped_text(
         c,
         f"Tipo Operación: {tipo_operacion}",
-        right_x + 5,
+        text_x,
         text_y,
-        max_w,
-        12,
+        text_width,
+        line_height,
     )
     if tipo_contingencia is not None:
-        text_y = draw_wrapped_text(
+        draw_wrapped_text(
             c,
             f"Contingencia: {tipo_contingencia}",
-            right_x + 5,
+            text_x,
             text_y,
-            max_w,
-            12,
+            text_width,
+            line_height,
         )
-    text_y = draw_wrapped_text(
-        c,
-        f"Fecha Generación: {fecha_generacion}",
-        right_x + 5,
-        text_y,
-        max_w,
-        12,
-    )
 
     if tipo_operacion == 2:
         c.setFont("Helvetica-Bold", 12)
         c.setFillColor(colors.red)
-        c.drawCentredString(width / 2, box_y - 15, "TRANSMISIÓN DIFERIDA")
+        c.drawCentredString(width / 2, header_y - 18, "TRANSMISIÓN DIFERIDA")
         c.setFillColor(colors.black)
 
     # Información del documento relacionado y motivo
-    doc_y = box_y - 12
+    doc_y = header_y - 12
     if doc_relacionado or motivo:
         c.setFont("Helvetica-Bold", 9)
         c.drawString(x_margin, doc_y, "DOCUMENTO RELACIONADO:")

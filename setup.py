@@ -162,18 +162,29 @@ def collect_add_data(root: Path, *, config: BuildConfig) -> Iterable[str]:
     return entries
 
 
-def build(config: BuildConfig, additional_args: Optional[Sequence[str]] = None) -> None:
+def build(
+    config: BuildConfig,
+    *,
+    bundle_mode: str = "onefile",
+    additional_args: Optional[Sequence[str]] = None,
+) -> None:
     add_data = list(collect_add_data(ROOT, config=config))
     hidden_imports = list(collect_hidden_imports())
 
     args = [
         'main.py',
         '--name=InventarioFarmacia',
-        '--onefile',
         '--windowed',
         *[arg for item in add_data for arg in ('--add-data', item)],
         *[arg for module in hidden_imports for arg in ('--hidden-import', module)],
     ]
+
+    if bundle_mode == 'onefile':
+        args.append('--onefile')
+    elif bundle_mode == 'onedir':
+        args.append('--onedir')
+    else:
+        raise ValueError(f'Unsupported bundle mode: {bundle_mode}')
 
     if additional_args:
         args.extend(additional_args)
@@ -206,6 +217,12 @@ def parse_args() -> argparse.Namespace:
             'distribuir actualizaciones a clientes.'
         ),
     )
+    parser.add_argument(
+        '--bundle',
+        choices=('onefile', 'onedir'),
+        default='onefile',
+        help='Selecciona el modo de empaquetado de PyInstaller.',
+    )
     return parser.parse_args()
 
 
@@ -216,7 +233,7 @@ def main() -> None:
     else:
         config = BuildConfig.full()
 
-    build(config)
+    build(config, bundle_mode=args.bundle)
 
 
 if __name__ == '__main__':

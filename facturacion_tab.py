@@ -3399,7 +3399,7 @@ class FacturacionTab(QWidget):
                         or ""
                     )
                     sello_norm = str(sello_val).strip()
-                    if estado_norm == "aceptado" and sello_norm:
+                    if estado_norm in {"aceptado", "procesado"} and sello_norm:
                         mh_success = True
                         mh_response = resp
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
@@ -3511,7 +3511,7 @@ class FacturacionTab(QWidget):
                         or ""
                     )
                     sello_norm = str(sello_val).strip()
-                    if estado_norm == "aceptado" and sello_norm:
+                    if estado_norm in {"aceptado", "procesado"} and sello_norm:
                         mh_success = True
                         mh_response = resp
                         if rtype == "venta":
@@ -3806,6 +3806,19 @@ class FacturacionTab(QWidget):
         if not entry:
             return None
 
+        derived_path = None
+        if base_pdf_path:
+            derived_path = self._derive_ticket_path(base_pdf_path)
+            if derived_path and os.path.exists(derived_path):
+                return derived_path
+
+        if not derived_path and entry:
+            entry_pdf = entry.get("pdf")
+            if entry_pdf:
+                fallback_path = self._derive_ticket_path(entry_pdf)
+                if fallback_path and os.path.exists(fallback_path):
+                    return fallback_path
+
         venta_id = entry.get("venta_id")
         if venta_id:
             try:
@@ -3984,6 +3997,29 @@ class FacturacionTab(QWidget):
         tipo_desc = str(entry.get("tipo") or "").strip().lower()
         return tipo_desc in {"consumidor final", "crédito fiscal", "credito fiscal"}
 
+    def _derive_ticket_path(self, base_pdf_path: str | None) -> str | None:
+        if not base_pdf_path:
+            return None
+
+        try:
+            output_dir = os.path.dirname(base_pdf_path)
+            base_name = os.path.splitext(os.path.basename(base_pdf_path))[0]
+        except Exception:
+            return None
+
+        if not base_name:
+            return None
+
+        lower_name = base_name.lower()
+        for suffix in ("_consumidorfinal", "_creditofiscal", "_ticket"):
+            if lower_name.endswith(suffix):
+                base_name = base_name[: -len(suffix)] + "_Ticket"
+                break
+        else:
+            base_name = f"{base_name}_Ticket"
+
+        return os.path.join(output_dir, f"{base_name}.pdf")
+
     def _build_ticket_format_pdf(
         self,
         entry: dict,
@@ -4094,25 +4130,72 @@ class FacturacionTab(QWidget):
         except Exception:
             datos_negocio = {}
 
-        payload = dte_to_legacy_ticket_payload(
+        payload_raw = dte_to_legacy_ticket_payload(
             dte_payload,
             venta or {},
             detalles_venta,
             datos_negocio,
         )
-        dte_data = payload.get("dte_data") or {}
+        if isinstance(payload_raw, Mapping):
+            payload: dict[str, Any] = dict(payload_raw)
+        else:
+            payload = {}
+
+        dte_payload_data = payload.get("dte_data") if payload else None
+        if isinstance(dte_payload_data, Mapping):
+            dte_data = dict(dte_payload_data)
+        else:
+            dte_data = {}
+
         if sello:
             dte_data.setdefault("selloRecibido", sello)
         if firma:
             dte_data.setdefault("firmaElectronica", firma)
-        payload["dte_data"] = dte_data
+
+        if payload is not None:
+            payload["dte_data"] = dte_data
+
+        venta_payload = payload.get("venta") if payload else None
+        if not venta_payload:
+            venta_payload = venta or {}
+        elif isinstance(venta_payload, Mapping) and not isinstance(venta_payload, dict):
+            venta_payload = dict(venta_payload)
+
+        detalles_payload = payload.get("detalles") if payload else None
+        if not detalles_payload:
+            detalles_payload = detalles_venta or []
+
+        datos_negocio_payload = payload.get("datos_negocio") if payload else None
+        if not isinstance(datos_negocio_payload, Mapping):
+            datos_negocio_payload = datos_negocio or {}
+        else:
+            datos_negocio_payload = dict(datos_negocio_payload)
+
+        if isinstance(detalles_payload, list):
+            detalles_for_render = detalles_payload
+        elif isinstance(detalles_payload, tuple):
+            detalles_for_render = list(detalles_payload)
+        else:
+            detalles_for_render = detalles_payload or []
 
         venta_id = entry.get("venta_id")
+        output_path = None
         output_dir = None
         ticket_base = None
         if base_pdf_path:
-            output_dir = os.path.dirname(base_pdf_path)
-            ticket_base = os.path.splitext(os.path.basename(base_pdf_path))[0]
+            output_path = self._derive_ticket_path(base_pdf_path)
+            if output_path:
+                output_dir = os.path.dirname(output_path)
+                ticket_base = os.path.splitext(os.path.basename(output_path))[0]
+
+        if not output_path and entry:
+            entry_pdf = entry.get("pdf")
+            if entry_pdf:
+                candidate = self._derive_ticket_path(entry_pdf)
+                if candidate:
+                    output_path = candidate
+                    output_dir = os.path.dirname(candidate)
+                    ticket_base = os.path.splitext(os.path.basename(candidate))[0]
         if not output_dir:
             tipo_entry = str(entry.get("tipo") or "").strip().lower()
             if tipo_entry == "consumidor final":
@@ -4127,27 +4210,44 @@ class FacturacionTab(QWidget):
         except OSError:
             pass
 
-        if ticket_base:
-            lower_name = ticket_base.lower()
-            for suffix in ("_consumidorfinal", "_creditofiscal", "_ticket"):
-                if lower_name.endswith(suffix):
-                    ticket_base = ticket_base[: -len(suffix)] + "_Ticket"
-                    break
-            else:
-                ticket_base = f"{ticket_base}_Ticket"
-        else:
-            ticket_base = f"ticket_print_{uuid.uuid4().hex}"
+        if not output_path:
+            ident = {}
+            if isinstance(dte_payload, dict):
+                ident = dte_payload.get("identificacion") or {}
 
-        output_path = os.path.join(output_dir, f"{ticket_base}.pdf")
+            def _sanitize_ticket_name(value: str | None) -> str | None:
+                if not value:
+                    return None
+                cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value).strip("_")
+                if not cleaned:
+                    return None
+                if cleaned.lower().endswith("_ticket"):
+                    cleaned = cleaned[: -7] + "_Ticket"
+                else:
+                    cleaned = f"{cleaned}_Ticket"
+                return cleaned
+
+            ticket_base = None
+            numero_control = ident.get("numeroControl")
+            if isinstance(numero_control, str) and numero_control.strip():
+                ticket_base = _sanitize_ticket_name(numero_control.strip())
+            if not ticket_base:
+                codigo_generacion = ident.get("codigoGeneracion")
+                if isinstance(codigo_generacion, str) and codigo_generacion.strip():
+                    ticket_base = _sanitize_ticket_name(codigo_generacion.strip())
+            if not ticket_base:
+                ticket_base = f"ticket_print_{uuid.uuid4().hex}"
+
+            output_path = os.path.join(output_dir, f"{ticket_base}.pdf")
 
         def _render_ticket(tmp_path):
             try:
                 generar_ticket_personalizado(
-                    payload.get("venta", {}),
-                    payload.get("detalles", []),
+                    venta_payload,
+                    detalles_for_render,
                     archivo=str(tmp_path),
-                    datos_negocio=payload.get("datos_negocio"),
-                    dte_data=payload.get("dte_data"),
+                    datos_negocio=datos_negocio_payload,
+                    dte_data=dte_data,
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 raise RuntimeError(str(exc)) from exc
@@ -4168,12 +4268,6 @@ class FacturacionTab(QWidget):
                 f"No se pudo escribir el ticket: {exc}",
             )
             return None
-
-        if venta_id and output_dir != TICKETS_DIR:
-            try:
-                self.manager.db.add_ticket_pdf(venta_id, output_path)
-            except Exception:
-                pass
 
         return output_path
 

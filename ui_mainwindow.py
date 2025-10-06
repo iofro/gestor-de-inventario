@@ -500,7 +500,9 @@ class MainWindow(QMainWindow):
         inventario_actual_buttons = QHBoxLayout()
         inventario_actual_buttons.addStretch()
         self.btn_edit_lote = QPushButton("Editar lote")
+        self.btn_delete_lote = QPushButton("Eliminar lote")
         inventario_actual_buttons.addWidget(self.btn_edit_lote)
+        inventario_actual_buttons.addWidget(self.btn_delete_lote)
         inventario_actual_layout.addLayout(inventario_actual_buttons)
 
         inventario_actual_tab.setLayout(inventario_actual_layout)
@@ -656,6 +658,7 @@ class MainWindow(QMainWindow):
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
         self.btn_edit_lote.clicked.connect(self._editar_lote_inventario_actual)
+        self.btn_delete_lote.clicked.connect(self._eliminar_lote_inventario_actual)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
         self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
 
@@ -1862,6 +1865,74 @@ class MainWindow(QMainWindow):
         )
 
         self._actualizar_inventario_actual()
+        self.filter_products()
+        self.data_changed.emit()
+
+    def _eliminar_lote_inventario_actual(self):
+        row = self.inventario_actual_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Eliminar lote", "Seleccione un lote para eliminar.")
+            return
+
+        item_producto = self.inventario_actual_table.item(row, 0)
+        if not item_producto:
+            QMessageBox.warning(
+                self,
+                "Eliminar lote",
+                "No se pudo obtener la información del lote seleccionado.",
+            )
+            return
+
+        data = item_producto.data(Qt.UserRole) or {}
+        detalle_id = data.get("detalle_id")
+        if not detalle_id:
+            QMessageBox.warning(
+                self,
+                "Eliminar lote",
+                "No se encontró el identificador del lote seleccionado.",
+            )
+            return
+
+        producto = data.get("producto", "")
+        codigo = data.get("codigo", "")
+        cantidad = data.get("cantidad", 0)
+
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar lote",
+            f"¿Eliminar el lote de {producto} (código {codigo}) con {cantidad} unidades?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            self.manager.delete_detalle_compra(detalle_id)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Eliminar lote", str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.exception("Error al eliminar el lote %s", detalle_id)
+            QMessageBox.critical(
+                self,
+                "Eliminar lote",
+                "Ocurrió un error al eliminar el lote seleccionado.",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Eliminar lote",
+            "El lote se eliminó correctamente del inventario.",
+        )
+
+        self._actualizar_inventario_actual()
+        if hasattr(self, "compras_tab") and hasattr(self.compras_tab, "load_purchases"):
+            try:
+                self.compras_tab.load_purchases()
+            except Exception:  # pragma: no cover - keep UI responsive
+                logger.exception("No se pudo refrescar la pestaña de compras tras eliminar el lote")
         self.filter_products()
         self.data_changed.emit()
 

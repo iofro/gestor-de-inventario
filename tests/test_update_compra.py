@@ -160,3 +160,108 @@ def test_update_detalle_compra_cantidad_validates_input():
     with pytest.raises(ValueError):
         db.update_detalle_compra_cantidad(None, 1)
 
+
+def test_delete_detalle_compra_updates_totals_and_stock():
+    db = create_db()
+    db.add_Distribuidor("D1")
+    dist_id = db.cursor.lastrowid
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, dist_id, 0, 0, 0, 0)
+    prod_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada(
+        {
+            "fecha": "2024-01-01",
+            "producto_id": None,
+            "cantidad": 0,
+            "precio_unitario": 0,
+            "total": 72,
+            "Distribuidor_id": dist_id,
+            "comision_pct": 0,
+            "comision_monto": 2,
+            "vendedor_id": vend_id,
+        }
+    )
+
+    db.add_detalle_compra(
+        compra_id,
+        prod_id,
+        10,
+        5,
+        "",
+        0,
+        "%",
+        0,
+        "ninguno",
+        0,
+        2,
+        "Añadida al total",
+    )
+    detalle_eliminar = db.cursor.lastrowid
+    db.aumentar_stock(prod_id, 10)
+
+    db.add_detalle_compra(
+        compra_id,
+        prod_id,
+        5,
+        4,
+        "",
+        0,
+        "%",
+        0,
+        "ninguno",
+        0,
+        0,
+        "Añadida al total",
+    )
+    db.aumentar_stock(prod_id, 5)
+
+    db.delete_detalle_compra(detalle_eliminar)
+
+    compra = db.get_compra(compra_id)
+    assert compra["total"] == 20
+    assert compra["comision_monto"] == 0
+
+    detalles_restantes = db.get_detalles_compra(compra_id)
+    assert len(detalles_restantes) == 1
+    assert detalles_restantes[0]["cantidad"] == 5
+
+    stock = db.cursor.execute("SELECT stock FROM productos WHERE id=?", (prod_id,)).fetchone()["stock"]
+    assert stock == 5
+
+
+def test_delete_compra_removes_records_and_stock():
+    db = create_db()
+    db.add_Distribuidor("D1")
+    dist_id = db.cursor.lastrowid
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, dist_id, 0, 0, 0, 0)
+    prod_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada(
+        {
+            "fecha": "2024-01-01",
+            "producto_id": None,
+            "cantidad": 0,
+            "precio_unitario": 0,
+            "total": 50,
+            "Distribuidor_id": dist_id,
+            "comision_pct": 0,
+            "comision_monto": 0,
+            "vendedor_id": vend_id,
+        }
+    )
+
+    db.add_detalle_compra(compra_id, prod_id, 10, 5)
+    db.aumentar_stock(prod_id, 10)
+
+    db.delete_compra(compra_id)
+
+    assert not db.get_detalles_compra(compra_id)
+    assert db.get_compra(compra_id) is None
+
+    stock = db.cursor.execute("SELECT stock FROM productos WHERE id=?", (prod_id,)).fetchone()["stock"]
+    assert stock == 0
+

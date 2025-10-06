@@ -2672,6 +2672,139 @@ class DB:
             self.conn.commit()
 
 
+    def delete_detalle_compra(self, detalle_id: int) -> None:
+        """Elimina un lote de compra y ajusta el stock y totales asociados."""
+
+        if detalle_id is None:
+            raise ValueError("El lote seleccionado no existe.")
+
+        with self.lock:
+            detalle = self.cursor.execute(
+                """
+                SELECT compra_id, producto_id, cantidad, precio_unitario, descuento,
+                       iva, iva_tipo, comision_monto, comision_tipo
+                FROM detalles_compra
+                WHERE id=?
+                """,
+                (detalle_id,),
+            ).fetchone()
+
+            if detalle is None:
+                raise ValueError("El lote seleccionado no existe.")
+
+            compra_id = detalle["compra_id"]
+            producto_id = detalle["producto_id"]
+            cantidad = detalle["cantidad"] or 0
+
+            try:
+                if producto_id:
+                    self.cursor.execute(
+                        "UPDATE productos SET stock = stock - ? WHERE id = ?",
+                        (cantidad, producto_id),
+                    )
+
+                self.cursor.execute(
+                    "DELETE FROM detalles_compra WHERE id=?",
+                    (detalle_id,),
+                )
+
+                if compra_id:
+                    self._recalculate_compra_totals(compra_id)
+
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
+    def delete_compra(self, compra_id: int) -> None:
+        """Elimina una compra y revierte sus movimientos de inventario."""
+
+        if compra_id is None:
+            raise ValueError("La compra seleccionada no existe.")
+
+        with self.lock:
+            existe = self.cursor.execute(
+                "SELECT 1 FROM compras WHERE id=?",
+                (compra_id,),
+            ).fetchone()
+            if existe is None:
+                raise ValueError("La compra seleccionada no existe.")
+
+            detalles = [
+                dict(row)
+                for row in self.cursor.execute(
+                    "SELECT producto_id, cantidad FROM detalles_compra WHERE compra_id=?",
+                    (compra_id,),
+                ).fetchall()
+            ]
+
+            try:
+                for detalle in detalles:
+                    producto_id = detalle.get("producto_id")
+                    cantidad = detalle.get("cantidad", 0) or 0
+                    if producto_id:
+                        self.cursor.execute(
+                            "UPDATE productos SET stock = stock - ? WHERE id = ?",
+                            (cantidad, producto_id),
+                        )
+
+                self.cursor.execute(
+                    "DELETE FROM detalles_compra WHERE compra_id=?",
+                    (compra_id,),
+                )
+                self.cursor.execute(
+                    "DELETE FROM compras WHERE id=?",
+                    (compra_id,),
+                )
+
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
+    def _recalculate_compra_totals(self, compra_id: int) -> None:
+        """Recalcula el total y la comisión de una compra a partir de sus lotes."""
+
+        detalles = self.cursor.execute(
+            """
+            SELECT cantidad, precio_unitario, descuento, iva, iva_tipo,
+                   comision_monto, comision_tipo
+            FROM detalles_compra
+            WHERE compra_id=?
+            """,
+            (compra_id,),
+        ).fetchall()
+
+        total = 0.0
+        comision_total = 0.0
+
+        for detalle in detalles:
+            cantidad = detalle["cantidad"] or 0
+            precio = detalle["precio_unitario"] or 0
+            descuento = detalle["descuento"] or 0
+            iva = detalle["iva"] or 0
+            iva_tipo = (detalle["iva_tipo"] or "").strip().lower()
+            comision_monto = detalle["comision_monto"] or 0
+            comision_tipo = (detalle["comision_tipo"] or "").strip().lower()
+
+            subtotal = max((cantidad * precio) - descuento, 0)
+            linea_total = subtotal
+
+            if iva_tipo == "añadido":
+                linea_total += iva or 0
+
+            if comision_tipo == "añadida al total":
+                linea_total += comision_monto or 0
+
+            total += float(linea_total)
+            comision_total += float(comision_monto or 0)
+
+        self.cursor.execute(
+            "UPDATE compras SET total=?, comision_monto=? WHERE id=?",
+            (total, comision_total, compra_id),
+        )
+
+
     def add_movimiento(
         self,
         fecha,

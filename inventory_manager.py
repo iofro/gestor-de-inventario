@@ -276,6 +276,18 @@ class InventoryManager:
         self.db.aumentar_stock(producto_id, cantidad)
         self.refresh_data()
 
+    def delete_compra(self, compra_id: int) -> None:
+        """Elimina una compra y actualiza las vistas relacionadas."""
+
+        self.db.delete_compra(compra_id)
+        self.refresh_data()
+
+    def delete_detalle_compra(self, detalle_id: int) -> None:
+        """Elimina un lote específico y sincroniza el inventario."""
+
+        self.db.delete_detalle_compra(detalle_id)
+        self.refresh_data()
+
     def update_detalle_compra_cantidad(self, detalle_id: int, nueva_cantidad: int) -> None:
         """Actualiza la cantidad de un lote específico y refresca los datos."""
 

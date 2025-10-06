@@ -517,6 +517,9 @@ class InventoryManager:
         vendedor_id_map = {}
         Distribuidor_id_map = {}
         producto_id_map = {}
+        productos_por_id = {
+            p.get("id"): p for p in data.get("productos", []) if isinstance(p, dict)
+        }
         cliente_id_map = {}
         venta_id_map = {}
         compra_id_map = {}
@@ -862,7 +865,56 @@ class InventoryManager:
             # Detalles de compra
             for d in data.get("detalles_compra", []):
                 compra_id = compra_id_map.get(d.get("compra_id"))
-                producto_id = producto_id_map.get(d.get("producto_id"))
+                if not compra_id:
+                    continue
+                old_producto_id = d.get("producto_id")
+                producto_id = producto_id_map.get(old_producto_id)
+                if producto_id is None and old_producto_id is not None:
+                    producto_info = productos_por_id.get(old_producto_id)
+                    if producto_info:
+                        vend = vendedor_id_map.get(producto_info.get("vendedor_id"))
+                        dist = Distribuidor_id_map.get(producto_info.get("Distribuidor_id"))
+                        stock = producto_info.get("stock", 0)
+                        try:
+                            stock = float(stock) if stock is not None else 0
+                        except (TypeError, ValueError):
+                            stock = 0
+                        self.db.add_producto(
+                            producto_info.get("nombre", f"Producto {old_producto_id}"),
+                            producto_info.get("codigo", ""),
+                            producto_info.get("sku"),
+                            vend,
+                            dist,
+                            producto_info.get("precio_compra", 0),
+                            producto_info.get("precio_venta_minorista", 0),
+                            producto_info.get("precio_venta_mayorista", 0),
+                            stock,
+                            commit=False,
+                        )
+                        producto_id = self.db.cursor.lastrowid
+                        producto_id_map[old_producto_id] = producto_id
+                    else:
+                        try:
+                            self.db.add_producto(
+                                f"Producto {old_producto_id}",
+                                "",
+                                None,
+                                None,
+                                None,
+                                d.get("precio_unitario", 0),
+                                d.get("precio_unitario", 0),
+                                d.get("precio_unitario", 0),
+                                d.get("cantidad", 0),
+                                commit=False,
+                            )
+                            producto_id = self.db.cursor.lastrowid
+                            producto_id_map[old_producto_id] = producto_id
+                        except Exception:
+                            logger.exception(
+                                "No fue posible recrear el producto %s para el detalle de compra",
+                                old_producto_id,
+                            )
+                            producto_id = None
                 if compra_id and producto_id:
                     self.db.add_detalle_compra(
                         compra_id,

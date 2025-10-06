@@ -538,6 +538,9 @@ class InventoryManager:
         productos_por_id = {
             p.get("id"): p for p in data.get("productos", []) if isinstance(p, dict)
         }
+        compras_por_id = {
+            c.get("id"): c for c in data.get("compras", []) if isinstance(c, dict)
+        }
         cliente_id_map = {}
         venta_id_map = {}
         compra_id_map = {}
@@ -846,6 +849,88 @@ class InventoryManager:
                 )
                 new_id = self.db.cursor.lastrowid
                 compra_id_map[c["id"]] = new_id
+
+            detalles_por_compra: dict[object, list[dict]] = {}
+            for detalle in data.get("detalles_compra", []):
+                if not isinstance(detalle, dict):
+                    continue
+                compra_key = detalle.get("compra_id")
+                if compra_key is None:
+                    continue
+                detalles_por_compra.setdefault(compra_key, []).append(detalle)
+
+            def _to_decimal(value) -> D:
+                try:
+                    if value is None or value == "":
+                        return D("0")
+                    return D(str(value))
+                except (ArithmeticError, ValueError, TypeError):
+                    return D("0")
+
+            def _maybe_create_missing_purchase(compra_key, detalles_list):
+                if compra_key in compra_id_map:
+                    return
+
+                compra_info = compras_por_id.get(compra_key, {}) if compras_por_id else {}
+                base_total = D("0")
+                total_comision = D("0")
+                for det in detalles_list:
+                    cantidad = _to_decimal(det.get("cantidad"))
+                    precio = _to_decimal(det.get("precio_unitario"))
+                    subtotal = cantidad * precio
+                    descuento = _to_decimal(det.get("descuento"))
+                    subtotal_con_descuento = subtotal - descuento
+                    if subtotal_con_descuento < 0:
+                        subtotal_con_descuento = D("0")
+                    iva = _to_decimal(det.get("iva"))
+                    iva_tipo = str(det.get("iva_tipo") or "").strip().lower()
+                    comision_monto = _to_decimal(det.get("comision_monto"))
+                    comision_tipo = str(det.get("comision_tipo") or "").strip().lower()
+                    total_linea = subtotal_con_descuento
+                    if iva_tipo == "añadido" or iva_tipo == "anadido":
+                        total_linea += iva
+                    if comision_tipo in {"añadida al total", "anadida al total"}:
+                        total_linea += comision_monto
+                    base_total += total_linea
+                    total_comision += comision_monto
+
+                if base_total == 0 and not compra_info:
+                    # Nothing meaningful to persist
+                    return
+
+                mapped_dist = None
+                mapped_vendor = None
+                if compra_info:
+                    dist_id = compra_info.get("Distribuidor_id")
+                    if dist_id is not None:
+                        mapped_dist = Distribuidor_id_map.get(dist_id)
+                    vend_id = compra_info.get("vendedor_id")
+                    if vend_id is not None:
+                        mapped_vendor = vendedor_id_map.get(vend_id)
+
+                comision_pct = compra_info.get("comision_pct", 0) if compra_info else 0
+                comision_monto = compra_info.get("comision_monto")
+                if comision_monto is None:
+                    comision_monto = float(total_comision)
+
+                self.db.cursor.execute(
+                    "INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        (compra_info.get("fecha") if compra_info else "") or "",
+                        None,
+                        0,
+                        0,
+                        float(base_total) if base_total else compra_info.get("total", 0),
+                        mapped_dist,
+                        comision_pct,
+                        comision_monto,
+                        mapped_vendor,
+                    ),
+                )
+                compra_id_map[compra_key] = self.db.cursor.lastrowid
+
+            for compra_key, detalles_list in detalles_por_compra.items():
+                _maybe_create_missing_purchase(compra_key, detalles_list)
 
             # Detalles de venta
             for d in data.get("detalles_venta", []):

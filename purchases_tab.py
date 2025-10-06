@@ -21,6 +21,7 @@ class PurchasesTab(QWidget):
         super().__init__(parent)
         self.manager = manager
         self._compras_cache: dict[int, dict] = {}
+        self._detalles_cache: dict[int, list[dict]] = {}
         self._setup_ui()
         self.load_purchases()
 
@@ -219,7 +220,7 @@ class PurchasesTab(QWidget):
             for c in compras
             if isinstance(c, dict) and c.get("id") is not None
         }
-        detalles_cache = {}
+        detalles_cache: dict[int, list[dict]] = {}
         productos = {p["id"]: p for p in self.manager.db.get_productos()}
         Distribuidores = {d["id"]: d["nombre"] for d in self.manager.db.get_Distribuidores()}
         Vendedores = {
@@ -275,6 +276,12 @@ class PurchasesTab(QWidget):
                 except (TypeError, ValueError):
                     continue
             rows.append((c, dist, vend, comision_total, detalles_cache[c["id"]]))
+
+        # Mantener los detalles en caché para reutilizarlos al mostrar el
+        # diálogo de detalle.  Esto evita consultas redundantes y nos
+        # garantiza que el botón "Ver" siempre recupere la misma información
+        # que se usó para renderizar la tabla.
+        self._detalles_cache = detalles_cache
 
         self.table.setRowCount(len(rows))
         total_mes = 0
@@ -338,11 +345,23 @@ class PurchasesTab(QWidget):
         self.dist_frec_label.setText(f"Distribuidor frecuente: {mas_dist}")
 
     def show_detail(self, compra_id):
-        compras = self.manager.db.get_compras()
-        compra = next((c for c in compras if c["id"] == compra_id), None)
+        compra = self._compras_cache.get(compra_id)
         if not compra:
+            compra = self.manager.db.get_compra(compra_id)
+            if compra:
+                self._compras_cache[compra_id] = compra
+        if not compra:
+            QMessageBox.warning(
+                self,
+                "Compra no encontrada",
+                "No fue posible cargar la compra seleccionada. Intente nuevamente.",
+            )
             return
-        detalles = self.manager.db.get_detalles_compra(compra_id)
+
+        detalles = self._detalles_cache.get(compra_id)
+        if detalles is None:
+            detalles = self.manager.db.get_detalles_compra(compra_id)
+            self._detalles_cache[compra_id] = detalles
         dlg = CompraDetalleDialog(compra, detalles, self)
         dlg.exec_()
 

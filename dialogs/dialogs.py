@@ -1474,6 +1474,7 @@ class RegisterPurchaseDialog(QDialog):
     ):
         super().__init__(parent)
         self.productos = productos
+        self._filtered_productos = list(self.productos)
         self.Distribuidores = Distribuidores
         self.Vendedores = Vendedores
         self._vendedores_map = {v["id"]: v for v in self.Vendedores}
@@ -1543,10 +1544,15 @@ class RegisterPurchaseDialog(QDialog):
         # Producto
         producto_layout = QHBoxLayout()
         producto_layout.addWidget(QLabel("Producto:"))
+        product_list_container = QVBoxLayout()
+        self.product_search_edit = QLineEdit()
+        self.product_search_edit.setPlaceholderText("Buscar producto por nombre, código o SKU...")
+        product_list_container.addWidget(self.product_search_edit)
         self.product_list = QListWidget()
-        self.product_list.addItems([p["nombre"] for p in productos])
-        producto_layout.addWidget(self.product_list)
+        product_list_container.addWidget(self.product_list)
+        producto_layout.addLayout(product_list_container)
         layout.addLayout(producto_layout)
+        self._refrescar_lista_productos()
 
         # Cantidad, precio unitario y precio total
         cantidad_layout = QHBoxLayout()
@@ -1690,6 +1696,7 @@ class RegisterPurchaseDialog(QDialog):
         self.btn_registrar.clicked.connect(self._registrar_compra)
         self.btn_agregar.clicked.connect(self._agregar_a_compra)
         self.table.cellClicked.connect(self._eliminar_fila)
+        self.product_search_edit.textChanged.connect(self._filtrar_lista_productos)
         self.product_list.currentRowChanged.connect(self._actualizar_vendedor_y_Distribuidor)
         self.vendedor_combo.currentIndexChanged.connect(self._actualizar_Distribuidor)
         self.vendedor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
@@ -1820,13 +1827,66 @@ class RegisterPurchaseDialog(QDialog):
         self._summary_vendedor_label.setText(vendedor_texto or "Sin vendedor")
         self._summary_distribuidor_label.setText(distribuidor_texto or "-")
 
+    def _get_producto_por_indice(self, idx):
+        if 0 <= idx < len(self._filtered_productos):
+            return self._filtered_productos[idx]
+        return None
+
+    def _get_current_producto(self):
+        return self._get_producto_por_indice(self.product_list.currentRow())
+
+    def _refrescar_lista_productos(self, selected_id=None):
+        if selected_id is None:
+            current_producto = self._get_current_producto()
+            if current_producto:
+                selected_id = current_producto.get("id")
+
+        with QSignalBlocker(self.product_list):
+            self.product_list.clear()
+            for producto in self._filtered_productos:
+                self.product_list.addItem(producto.get("nombre", ""))
+
+        if not self._filtered_productos:
+            self.product_list.setCurrentRow(-1)
+            return
+
+        row_to_select = 0
+        if selected_id is not None:
+            for idx, producto in enumerate(self._filtered_productos):
+                if producto.get("id") == selected_id:
+                    row_to_select = idx
+                    break
+            else:
+                row_to_select = 0
+
+        self.product_list.setCurrentRow(row_to_select)
+
+    def _filtrar_lista_productos(self, texto):
+        texto_normalizado = (texto or "").strip().lower()
+        current_producto = self._get_current_producto()
+        selected_id = current_producto.get("id") if current_producto else None
+
+        if not texto_normalizado:
+            filtrados = list(self.productos)
+        else:
+            filtrados = [
+                producto
+                for producto in self.productos
+                if texto_normalizado in str(producto.get("nombre", "")).lower()
+                or texto_normalizado in str(producto.get("codigo", "")).lower()
+                or texto_normalizado in str(producto.get("sku", "")).lower()
+            ]
+
+        self._filtered_productos = filtrados
+        self._refrescar_lista_productos(selected_id)
+
     # --- NUEVO MÉTODO ---
     def _actualizar_precio_unitario_por_producto(self):
         idx = self.product_list.currentRow()
-        if idx < 0 or idx >= len(self.productos):
+        prod = self._get_producto_por_indice(idx)
+        if not prod:
             self.precio_unitario_spin.setValue(0)
             return
-        prod = self.productos[idx]
         precio = prod.get("precio_compra", 0)
         self.precio_unitario_spin.blockSignals(True)
         self.precio_unitario_spin.setValue(float(precio))
@@ -2001,9 +2061,9 @@ class RegisterPurchaseDialog(QDialog):
 
     def _actualizar_vendedor_y_Distribuidor(self):
         idx = self.product_list.currentRow()
-        if idx < 0:
+        producto = self._get_producto_por_indice(idx)
+        if not producto:
             return
-        producto = self.productos[idx]
         vendedor_id = producto.get("vendedor_id")
         # Selecciona el vendedor correspondiente
         combo_idx = self.vendedor_combo.findData(vendedor_id)
@@ -2052,20 +2112,12 @@ class RegisterPurchaseDialog(QDialog):
         self._update_summary_vendor_info()
 
     def _agregar_a_compra(self):
-        producto = self.product_list.currentItem().text() if self.product_list.currentItem() else ""
+        producto_info = self._get_current_producto()
+        producto = producto_info.get("nombre", "") if producto_info else ""
         cantidad = self.cantidad_spin.value()
         precio = self.precio_unitario_spin.value()
-        if not producto or cantidad <= 0 or precio <= 0:
+        if not producto_info or not producto or cantidad <= 0 or precio <= 0:
             QMessageBox.warning(self, "Validación", "Seleccione producto, cantidad y precio válidos.")
-            return
-
-        producto_info = self._productos_por_nombre.get(producto)
-        if not producto_info:
-            QMessageBox.warning(
-                self,
-                "Producto no válido",
-                f"El producto '{producto}' no existe. Registro cancelado."
-            )
             return
 
         producto_id = producto_info.get("id")
@@ -2186,6 +2238,11 @@ class RegisterPurchaseDialog(QDialog):
         item = self.compra_items[row]
         self._editing_row = row
         self.btn_agregar.setText("Actualizar producto")
+
+        if hasattr(self, "product_search_edit"):
+            with QSignalBlocker(self.product_search_edit):
+                self.product_search_edit.clear()
+            self._filtrar_lista_productos("")
 
         matching_items = self.product_list.findItems(item.get("producto", ""), Qt.MatchExactly)
         if matching_items:

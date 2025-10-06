@@ -52,6 +52,20 @@ Al finalizar se generan los mismos artefactos que en el modo interactivo y se
 valida automáticamente que `dist/VertexDTE/extras/firmador/` contenga la copia
 completa del firmador proporcionado.
 
+### Comando directo para el instalador
+
+Si ya generaste el paquete *onedir* con PyInstaller (por ejemplo mediante
+`py setup.py --mode full --bundle onedir`), puedes invocar directamente el
+compilador de Inno Setup para crear el instalador ejecutable:
+
+```powershell
+& "C:\Program Files\Inno Setup 6\ISCC.exe" \
+  ".\installer\vertexdte.iss" /DAppVersion=1.0.0
+```
+
+Sustituye `1.0.0` por la versión deseada. El resultado se almacena en
+`build\installer\VertexDTE-Setup.exe`.
+
 ## Dónde quedan los datos de la aplicación
 
 Vertex DTE guarda su configuración, registros y documentos generados en

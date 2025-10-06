@@ -5,7 +5,7 @@ import uuid
 import logging
 from datetime import datetime
 from decimal import InvalidOperation
-from typing import Callable
+from typing import Any, Callable, Mapping
 
 import dte
 from pathlib import Path
@@ -291,8 +291,18 @@ def generate_invoice_pdf(manager, venta_id):
     detalles = manager.db.get_detalles_venta(venta_id)
 
     venta_data = dict(venta)
+    credit_extra: dict[str, Any] = {}
     if credito_info:
-        venta_data.update(credito_info)
+        credito_payload = dict(credito_info)
+        raw_credit_extra = credito_payload.pop("extra", None)
+        if isinstance(raw_credit_extra, str):
+            try:
+                credit_extra = json.loads(raw_credit_extra)
+            except Exception:
+                credit_extra = {}
+        elif isinstance(raw_credit_extra, dict):
+            credit_extra = dict(raw_credit_extra)
+        venta_data.update(credito_payload)
 
     # Parse extra information early to know if prices include IVA
     extra = venta_data.get("extra") or {}
@@ -301,6 +311,16 @@ def generate_invoice_pdf(manager, venta_id):
             extra = json.loads(extra)
         except Exception:
             extra = {}
+    elif isinstance(extra, Mapping):
+        extra = dict(extra)
+    else:
+        extra = {}
+
+    if credit_extra:
+        merged_extra = dict(credit_extra)
+        merged_extra.update(extra)
+        extra = merged_extra
+
     venta_data["extra"] = extra
     precios_incluyen_iva = bool(extra.get("precios_incluyen_iva"))
 

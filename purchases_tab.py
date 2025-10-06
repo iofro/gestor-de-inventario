@@ -124,8 +124,10 @@ class PurchasesTab(QWidget):
         side_layout = QVBoxLayout()
         self.btn_ver = QPushButton("Ver")
         self.btn_editar = QPushButton("Editar")
+        self.btn_eliminar = QPushButton("Eliminar")
         side_layout.addWidget(self.btn_ver)
         side_layout.addWidget(self.btn_editar)
+        side_layout.addWidget(self.btn_eliminar)
         side_layout.addStretch(1)
         content_layout.addLayout(side_layout)
 
@@ -141,6 +143,7 @@ class PurchasesTab(QWidget):
         self.search_bar.textChanged.connect(self.load_purchases)
         self.btn_ver.clicked.connect(self.show_selected_detail)
         self.btn_editar.clicked.connect(self.edit_selected_purchase)
+        self.btn_eliminar.clicked.connect(self.delete_selected_purchase)
 
     def _selected_compra_id(self):
         row = self.table.currentRow()
@@ -169,6 +172,64 @@ class PurchasesTab(QWidget):
         compra_id = self._selected_compra_id()
         if compra_id is not None:
             self.edit_purchase(compra_id)
+
+    def delete_selected_purchase(self):
+        compra_id = self._selected_compra_id()
+        if compra_id is None:
+            QMessageBox.warning(
+                self,
+                "Eliminar compra",
+                "Seleccione una compra para eliminar.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar compra",
+            f"¿Está seguro de eliminar la compra #{compra_id}?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            deleted = self.manager.db.delete_compra(compra_id)
+        except Exception as exc:
+            logger.exception("No fue posible eliminar la compra %s", compra_id)
+            QMessageBox.critical(
+                self,
+                "Eliminar compra",
+                f"Ocurrió un error al eliminar la compra: {exc}",
+            )
+            return
+
+        if not deleted:
+            QMessageBox.warning(
+                self,
+                "Eliminar compra",
+                "La compra seleccionada no existe o ya fue eliminada.",
+            )
+            return
+
+        self.manager.refresh_data()
+        self.refresh_filters()
+        self.load_purchases()
+
+        parent = self.parent()
+        if parent is not None:
+            if hasattr(parent, "filter_products"):
+                parent.filter_products()
+            if hasattr(parent, "_actualizar_inventario_actual"):
+                parent._actualizar_inventario_actual()
+            if hasattr(parent, "data_changed"):
+                parent.data_changed.emit()
+
+        QMessageBox.information(
+            self,
+            "Eliminar compra",
+            "La compra fue eliminada correctamente.",
+        )
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)

@@ -160,3 +160,102 @@ def test_delete_sale_without_lote_info_restores_product_stock():
 
     db.cursor.execute('SELECT stock FROM productos WHERE id=?', (product_id,))
     assert db.cursor.fetchone()['stock'] == 8
+
+
+def test_delete_compra_removes_stock_and_records():
+    db = DB(':memory:')
+    db.add_producto(
+        nombre='Prod',
+        codigo='P1',
+        sku=None,
+        vendedor_id=None,
+        Distribuidor_id=None,
+        precio_compra=1.0,
+        precio_venta_minorista=2.0,
+        precio_venta_mayorista=3.0,
+        stock=0,
+    )
+    product_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada({
+        'fecha': '2024-01-01',
+        'producto_id': None,
+        'cantidad': 0,
+        'precio_unitario': 0,
+        'total': 10,
+        'Distribuidor_id': None,
+        'comision_pct': 0,
+        'comision_monto': 0,
+        'vendedor_id': None,
+    })
+    db.add_detalle_compra(compra_id, product_id, 10, 1.0)
+    db.aumentar_stock(product_id, 10)
+
+    assert db.delete_compra(compra_id)
+
+    assert db.get_compra(compra_id) is None
+    assert db.get_detalles_compra(compra_id) == []
+    db.cursor.execute('SELECT stock FROM productos WHERE id=?', (product_id,))
+    assert db.cursor.fetchone()['stock'] == 0
+
+
+def test_delete_lote_updates_totals_and_stock():
+    db = DB(':memory:')
+    db.add_producto(
+        nombre='Prod',
+        codigo='P1',
+        sku=None,
+        vendedor_id=None,
+        Distribuidor_id=None,
+        precio_compra=1.0,
+        precio_venta_minorista=2.0,
+        precio_venta_mayorista=3.0,
+        stock=0,
+    )
+    product_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada({
+        'fecha': '2024-01-01',
+        'producto_id': None,
+        'cantidad': 0,
+        'precio_unitario': 0,
+        'total': 22,
+        'Distribuidor_id': None,
+        'comision_pct': 0,
+        'comision_monto': 2,
+        'vendedor_id': None,
+    })
+
+    db.add_detalle_compra(
+        compra_id,
+        product_id,
+        5,
+        2.0,
+        comision_monto=1,
+        comision_tipo='Añadida al total',
+    )
+    db.aumentar_stock(product_id, 5)
+    db.add_detalle_compra(
+        compra_id,
+        product_id,
+        5,
+        2.0,
+        comision_monto=1,
+        comision_tipo='Añadida al total',
+    )
+    db.aumentar_stock(product_id, 5)
+
+    detalles = db.get_detalles_compra(compra_id)
+    assert len(detalles) == 2
+    lote_id = detalles[0]['id']
+
+    assert db.delete_lote(lote_id)
+
+    compra = db.get_compra(compra_id)
+    assert pytest.approx(compra['total'], rel=1e-6) == 11
+    assert pytest.approx(compra['comision_monto'], rel=1e-6) == 1
+
+    remaining = db.get_detalles_compra(compra_id)
+    assert len(remaining) == 1
+    db.cursor.execute('SELECT stock FROM productos WHERE id=?', (product_id,))
+    assert db.cursor.fetchone()['stock'] == 5

@@ -1418,6 +1418,134 @@ class DB:
         self.cursor.execute("SELECT * FROM detalles_compra WHERE compra_id=?", (compra_id,))
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def _calculate_compra_totals(self, compra_id):
+        self.cursor.execute(
+            """
+            SELECT cantidad, precio_unitario, descuento, iva, iva_tipo,
+                   comision_monto, comision_tipo
+            FROM detalles_compra WHERE compra_id=?
+            """,
+            (compra_id,),
+        )
+        detalles = [dict(row) for row in self.cursor.fetchall()]
+        total = Decimal("0")
+        comision_total = Decimal("0")
+
+        def _to_decimal(value):
+            try:
+                return Decimal(str(value))
+            except Exception:
+                return Decimal("0")
+
+        for detalle in detalles:
+            cantidad = _to_decimal(detalle.get("cantidad"))
+            precio_unitario = _to_decimal(detalle.get("precio_unitario"))
+            subtotal = cantidad * precio_unitario
+            descuento = _to_decimal(detalle.get("descuento"))
+            subtotal_con_descuento = subtotal - descuento
+            if subtotal_con_descuento < 0:
+                subtotal_con_descuento = Decimal("0")
+            iva = _to_decimal(detalle.get("iva"))
+            iva_tipo = (detalle.get("iva_tipo") or "").strip().lower()
+            comision_monto = _to_decimal(detalle.get("comision_monto"))
+            comision_tipo = (detalle.get("comision_tipo") or "").strip().lower()
+
+            linea_total = subtotal_con_descuento
+            if iva_tipo in {"añadido", "anadido"}:
+                linea_total += iva
+            # Cuando el IVA es desglosado o ninguno, el total permanece igual.
+            if comision_tipo == "añadida al total":
+                linea_total += comision_monto
+
+            total += linea_total
+            comision_total += comision_monto
+
+        return total, comision_total
+
+    def delete_lote(self, detalle_id):
+        with self.lock:
+            self.cursor.execute(
+                """
+                SELECT id, compra_id, producto_id, cantidad
+                FROM detalles_compra WHERE id=?
+                """,
+                (detalle_id,),
+            )
+            row = self.cursor.fetchone()
+            if row is None:
+                return False
+            detalle = dict(row)
+            compra_id = detalle.get("compra_id")
+            producto_id = detalle.get("producto_id")
+            cantidad = detalle.get("cantidad") or 0
+
+            try:
+                cantidad_val = Decimal(str(cantidad))
+            except Exception:
+                cantidad_val = Decimal("0")
+            cantidad_int = int(cantidad_val)
+
+            self.cursor.execute(
+                "DELETE FROM detalles_compra WHERE id=?",
+                (detalle_id,),
+            )
+
+            if producto_id is not None:
+                self.cursor.execute(
+                    "UPDATE productos SET stock = stock - ? WHERE id=?",
+                    (cantidad_int, producto_id),
+                )
+
+            if compra_id is not None:
+                total, comision_total = self._calculate_compra_totals(compra_id)
+                self.cursor.execute(
+                    "UPDATE compras SET total=?, comision_monto=? WHERE id=?",
+                    (float(total), float(comision_total), compra_id),
+                )
+
+            self.conn.commit()
+            return True
+
+    def delete_compra(self, compra_id):
+        with self.lock:
+            self.cursor.execute(
+                "SELECT id FROM compras WHERE id=?",
+                (compra_id,),
+            )
+            if self.cursor.fetchone() is None:
+                return False
+
+            self.cursor.execute(
+                "SELECT producto_id, cantidad FROM detalles_compra WHERE compra_id=?",
+                (compra_id,),
+            )
+            detalles = [dict(row) for row in self.cursor.fetchall()]
+
+            for detalle in detalles:
+                producto_id = detalle.get("producto_id")
+                cantidad = detalle.get("cantidad") or 0
+                try:
+                    cantidad_val = Decimal(str(cantidad))
+                except Exception:
+                    cantidad_val = Decimal("0")
+                cantidad_int = int(cantidad_val)
+                if producto_id is not None:
+                    self.cursor.execute(
+                        "UPDATE productos SET stock = stock - ? WHERE id=?",
+                        (cantidad_int, producto_id),
+                    )
+
+            self.cursor.execute(
+                "DELETE FROM detalles_compra WHERE compra_id=?",
+                (compra_id,),
+            )
+            self.cursor.execute(
+                "DELETE FROM compras WHERE id=?",
+                (compra_id,),
+            )
+            self.conn.commit()
+            return True
+
 
     def get_estado_cuenta(self, persona_id, tipo="cliente", fecha_inicio=None, fecha_fin=None):
         """Obtiene las facturas de un cliente o vendedor en un rango de fechas.

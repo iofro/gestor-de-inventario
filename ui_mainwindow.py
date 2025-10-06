@@ -497,6 +497,12 @@ class MainWindow(QMainWindow):
         self.inventario_actual_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         inventario_actual_layout.addWidget(self.inventario_actual_table)
 
+        inventario_actual_buttons = QHBoxLayout()
+        inventario_actual_buttons.addStretch(1)
+        self.btn_delete_lote = QPushButton("Eliminar lote")
+        inventario_actual_buttons.addWidget(self.btn_delete_lote)
+        inventario_actual_layout.addLayout(inventario_actual_buttons)
+
         inventario_actual_tab.setLayout(inventario_actual_layout)
 
         # --- AGREGA LAS CUATRO PESTAÑAS AL QTabWidget ---
@@ -649,6 +655,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_cliente.clicked.connect(self._eliminar_cliente)
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
+        self.btn_delete_lote.clicked.connect(self._eliminar_lote_inventario)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
         self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
 
@@ -1730,13 +1737,15 @@ class MainWindow(QMainWindow):
                 # Busca la fecha de vencimiento en el detalle si la tienes (ajusta si la guardas en la tabla)
                 fecha_vencimiento = d.get("fecha_vencimiento", "")
                 detalles.append({
+                    "detalle_id": d.get("id"),
                     "producto": prod.get("nombre", ""),
                     "codigo": prod.get("codigo", ""),
                     "cantidad": d.get("cantidad", 0),
                     "precio_compra": d.get("precio_unitario", 0),
                     "fecha_compra": compra.get("fecha", ""),
                     "fecha_vencimiento": fecha_vencimiento,
-                    "Distribuidor": Distribuidores_dict.get(compra.get("Distribuidor_id"), "")
+                    "Distribuidor": Distribuidores_dict.get(compra.get("Distribuidor_id"), ""),
+                    "producto_id": d.get("producto_id"),
                 })
 
         # Filtra solo los lotes con stock > 0
@@ -1752,7 +1761,10 @@ class MainWindow(QMainWindow):
 
         self.inventario_actual_table.setRowCount(len(detalles))
         for row, d in enumerate(detalles):
-            self.inventario_actual_table.setItem(row, 0, QTableWidgetItem(d["producto"]))
+            item_producto = QTableWidgetItem(d["producto"])
+            item_producto.setData(Qt.UserRole, d.get("detalle_id"))
+            item_producto.setData(Qt.UserRole + 1, d.get("producto_id"))
+            self.inventario_actual_table.setItem(row, 0, item_producto)
             self.inventario_actual_table.setItem(row, 1, QTableWidgetItem(d["codigo"]))
             item_cantidad = QTableWidgetItem(str(d["cantidad"]))
             stock = d.get("cantidad", 0)
@@ -1792,6 +1804,69 @@ class MainWindow(QMainWindow):
                     pass
             self.inventario_actual_table.setItem(row, 5, item_venc)
             self.inventario_actual_table.setItem(row, 6, QTableWidgetItem(d["Distribuidor"]))
+
+    def _get_selected_lote(self):
+        row = self.inventario_actual_table.currentRow()
+        if row < 0:
+            return None, None, None
+        item = self.inventario_actual_table.item(row, 0)
+        if not item:
+            return None, None, None
+        detalle_id = item.data(Qt.UserRole)
+        producto_id = item.data(Qt.UserRole + 1)
+        nombre = item.text()
+        return detalle_id, producto_id, nombre
+
+    def _eliminar_lote_inventario(self):
+        detalle_id, _, nombre = self._get_selected_lote()
+        if not detalle_id:
+            QMessageBox.warning(
+                self,
+                "Eliminar lote",
+                "Seleccione un lote para eliminar.",
+            )
+            return
+
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar lote",
+            f"¿Desea eliminar el lote de '{nombre}' del inventario?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+
+        try:
+            eliminado = self.manager.db.delete_lote(detalle_id)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Eliminar lote",
+                f"No fue posible eliminar el lote: {exc}",
+            )
+            return
+
+        if not eliminado:
+            QMessageBox.warning(
+                self,
+                "Eliminar lote",
+                "El lote seleccionado no existe o ya fue eliminado.",
+            )
+            return
+
+        self.manager.refresh_data()
+        self.filter_products()
+        self.compras_tab.refresh_filters()
+        self.compras_tab.load_purchases()
+        self._actualizar_inventario_actual()
+        self.data_changed.emit()
+
+        QMessageBox.information(
+            self,
+            "Eliminar lote",
+            "El lote fue eliminado correctamente.",
+        )
 
     def _on_table_clicked(self, index):
         self.selected_row = index.row()

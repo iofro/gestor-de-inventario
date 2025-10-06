@@ -520,10 +520,24 @@ class InventoryManager:
         productos_por_id = {
             p.get("id"): p for p in data.get("productos", []) if isinstance(p, dict)
         }
+        compras_por_id = {
+            c.get("id"): c for c in data.get("compras", []) if isinstance(c, dict)
+        }
         cliente_id_map = {}
         venta_id_map = {}
-        compra_id_map = {}
+        compra_id_map: dict[object, int] = {}
         trabajador_id_map = {}
+        detalle_compra_id_map: dict[object, int] = {}
+
+        def _coerce_int(value):
+            if value in (None, ""):
+                return None
+            if isinstance(value, int):
+                return value
+            try:
+                return int(str(value))
+            except (TypeError, ValueError):
+                return None
 
         self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
         self.db.conn.execute("BEGIN")
@@ -812,55 +826,147 @@ class InventoryManager:
                 )
                 comision_pct = c.get("comision_pct", 0)
                 comision_monto = c.get("comision_monto", 0)
+                old_id_raw = c.get("id")
+                specified_id = _coerce_int(old_id_raw)
+                columns = [
+                    "fecha",
+                    "producto_id",
+                    "cantidad",
+                    "precio_unitario",
+                    "total",
+                    "Distribuidor_id",
+                    "comision_pct",
+                    "comision_monto",
+                    "vendedor_id",
+                ]
+                values = [
+                    c.get("fecha", ""),
+                    None,
+                    0,
+                    0,
+                    c.get("total", 0),
+                    Distribuidor_id,
+                    comision_pct,
+                    comision_monto,
+                    vendedor_id,
+                ]
+                if specified_id is not None:
+                    columns.insert(0, "id")
+                    values.insert(0, specified_id)
+                placeholders = ", ".join(["?"] * len(values))
                 self.db.cursor.execute(
-                    "INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                    (
-                        c.get("fecha", ""),
-                        None,
-                        0,
-                        0,
-                        c.get("total", 0),
-                        Distribuidor_id,
-                        comision_pct,
-                        comision_monto,
-                        vendedor_id,
-                    ),
+                    f"INSERT INTO compras ({', '.join(columns)}) VALUES ({placeholders})",
+                    tuple(values),
                 )
-                new_id = self.db.cursor.lastrowid
-                compra_id_map[c["id"]] = new_id
+                new_id = specified_id if specified_id is not None else self.db.cursor.lastrowid
+                if old_id_raw is not None:
+                    compra_id_map[old_id_raw] = new_id
+                    compra_id_map[str(old_id_raw)] = new_id
+                if specified_id is not None:
+                    compra_id_map[specified_id] = new_id
 
-            # Detalles de venta
-            for d in data.get("detalles_venta", []):
-                venta_id = venta_id_map.get(d.get("venta_id"))
-                producto_id = producto_id_map.get(d.get("producto_id"))
-                vendedor_id = None
-                old_vend_id = d.get("vendedor_id")
-                if old_vend_id is not None:
-                    vendedor_id = trabajador_id_map.get(old_vend_id)
-                    if vendedor_id is None:
-                        logger.warning(
-                            "detalle_venta vendedor_id %s not found in mapping, defaulting to None",
-                            old_vend_id,
-                        )
-                if venta_id and producto_id:
-                    self.db.cursor.execute(
-                        "INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            venta_id,
-                            producto_id,
-                            d.get("cantidad", 0),
-                            d.get("precio_unitario", 0),
-                            d.get("descuento", 0),
-                            d.get("descuento_tipo", ""),
-                            d.get("iva", 0),
-                            d.get("comision", 0),
-                            d.get("iva_tipo", ""),
-                            d.get("tipo_fiscal", "Gravada"),
-                            d.get("extra", None),
-                            d.get("precio_con_iva", 0),
-                            vendedor_id,
-                        ),
-                    )
+            detalles_por_compra: dict[object, list[dict]] = {}
+            for detalle in data.get("detalles_compra", []):
+                if not isinstance(detalle, dict):
+                    continue
+                compra_key = detalle.get("compra_id")
+                if compra_key is None:
+                    continue
+                detalles_por_compra.setdefault(compra_key, []).append(detalle)
+
+            def _to_decimal(value) -> D:
+                try:
+                    if value is None or value == "":
+                        return D("0")
+                    return D(str(value))
+                except (ArithmeticError, ValueError, TypeError):
+                    return D("0")
+
+            def _maybe_create_missing_purchase(compra_key, detalles_list):
+                if compra_key in compra_id_map:
+                    return
+
+                compra_info = compras_por_id.get(compra_key, {}) if compras_por_id else {}
+                base_total = D("0")
+                total_comision = D("0")
+                for det in detalles_list:
+                    cantidad = _to_decimal(det.get("cantidad"))
+                    precio = _to_decimal(det.get("precio_unitario"))
+                    subtotal = cantidad * precio
+                    descuento = _to_decimal(det.get("descuento"))
+                    subtotal_con_descuento = subtotal - descuento
+                    if subtotal_con_descuento < 0:
+                        subtotal_con_descuento = D("0")
+                    iva = _to_decimal(det.get("iva"))
+                    iva_tipo = str(det.get("iva_tipo") or "").strip().lower()
+                    comision_monto = _to_decimal(det.get("comision_monto"))
+                    comision_tipo = str(det.get("comision_tipo") or "").strip().lower()
+                    total_linea = subtotal_con_descuento
+                    if iva_tipo == "añadido" or iva_tipo == "anadido":
+                        total_linea += iva
+                    if comision_tipo in {"añadida al total", "anadida al total"}:
+                        total_linea += comision_monto
+                    base_total += total_linea
+                    total_comision += comision_monto
+
+                if base_total == 0 and not compra_info:
+                    # Nothing meaningful to persist
+                    return
+
+                mapped_dist = None
+                mapped_vendor = None
+                if compra_info:
+                    dist_id = compra_info.get("Distribuidor_id")
+                    if dist_id is not None:
+                        mapped_dist = Distribuidor_id_map.get(dist_id)
+                    vend_id = compra_info.get("vendedor_id")
+                    if vend_id is not None:
+                        mapped_vendor = vendedor_id_map.get(vend_id)
+
+                comision_pct = compra_info.get("comision_pct", 0) if compra_info else 0
+                comision_monto = compra_info.get("comision_monto")
+                if comision_monto is None:
+                    comision_monto = float(total_comision)
+
+                old_id = _coerce_int(compra_key)
+                columns = [
+                    "fecha",
+                    "producto_id",
+                    "cantidad",
+                    "precio_unitario",
+                    "total",
+                    "Distribuidor_id",
+                    "comision_pct",
+                    "comision_monto",
+                    "vendedor_id",
+                ]
+                values = [
+                    (compra_info.get("fecha") if compra_info else "") or "",
+                    None,
+                    0,
+                    0,
+                    float(base_total) if base_total else compra_info.get("total", 0),
+                    mapped_dist,
+                    comision_pct,
+                    comision_monto,
+                    mapped_vendor,
+                ]
+                if old_id is not None:
+                    columns.insert(0, "id")
+                    values.insert(0, old_id)
+                placeholders = ", ".join(["?"] * len(values))
+                self.db.cursor.execute(
+                    f"INSERT INTO compras ({', '.join(columns)}) VALUES ({placeholders})",
+                    tuple(values),
+                )
+                new_id = old_id if old_id is not None else self.db.cursor.lastrowid
+                compra_id_map[compra_key] = new_id
+                compra_id_map[str(compra_key)] = new_id
+                if old_id is not None:
+                    compra_id_map[old_id] = new_id
+
+            for compra_key, detalles_list in detalles_por_compra.items():
+                _maybe_create_missing_purchase(compra_key, detalles_list)
 
             # Detalles de compra
             for d in data.get("detalles_compra", []):
@@ -916,7 +1022,23 @@ class InventoryManager:
                             )
                             producto_id = None
                 if compra_id and producto_id:
-                    self.db.add_detalle_compra(
+                    old_detalle_id = d.get("id")
+                    specified_detalle_id = _coerce_int(old_detalle_id)
+                    columns = [
+                        "compra_id",
+                        "producto_id",
+                        "cantidad",
+                        "precio_unitario",
+                        "fecha_vencimiento",
+                        "descuento",
+                        "descuento_tipo",
+                        "iva",
+                        "iva_tipo",
+                        "comision_pct",
+                        "comision_monto",
+                        "comision_tipo",
+                    ]
+                    values = [
                         compra_id,
                         producto_id,
                         d.get("cantidad", 0),
@@ -929,7 +1051,115 @@ class InventoryManager:
                         d.get("comision_pct", 0),
                         d.get("comision_monto", 0),
                         d.get("comision_tipo", ""),
-                        commit=False,
+                    ]
+                    if specified_detalle_id is not None:
+                        columns.insert(0, "id")
+                        values.insert(0, specified_detalle_id)
+                    placeholders = ", ".join(["?"] * len(values))
+                    self.db.cursor.execute(
+                        f"INSERT INTO detalles_compra ({', '.join(columns)}) VALUES ({placeholders})",
+                        tuple(values),
+                    )
+                    new_detalle_id = (
+                        specified_detalle_id
+                        if specified_detalle_id is not None
+                        else self.db.cursor.lastrowid
+                    )
+                    if old_detalle_id is not None:
+                        detalle_compra_id_map[old_detalle_id] = new_detalle_id
+                        detalle_compra_id_map[str(old_detalle_id)] = new_detalle_id
+                    if specified_detalle_id is not None:
+                        detalle_compra_id_map[specified_detalle_id] = new_detalle_id
+
+            # Ajustar secuencias de AUTOINCREMENT para compras y detalles de compra
+            max_compra_id = (
+                self.db.cursor.execute("SELECT MAX(id) FROM compras").fetchone()[0] or 0
+            )
+            self.db.cursor.execute(
+                "UPDATE sqlite_sequence SET seq=? WHERE name='compras'",
+                (max_compra_id,),
+            )
+            max_detalle_compra_id = (
+                self.db.cursor.execute("SELECT MAX(id) FROM detalles_compra").fetchone()[0]
+                or 0
+            )
+            self.db.cursor.execute(
+                "UPDATE sqlite_sequence SET seq=? WHERE name='detalles_compra'",
+                (max_detalle_compra_id,),
+            )
+
+            def _remap_lote_references(value):
+                if isinstance(value, dict):
+                    updated = {}
+                    for key, item in value.items():
+                        if key in {"lote_id", "loteId", "lote"}:
+                            replacement = detalle_compra_id_map.get(item, item)
+                            if replacement is item:
+                                replacement = detalle_compra_id_map.get(str(item), item)
+                            updated[key] = replacement
+                        else:
+                            updated[key] = _remap_lote_references(item)
+                    return updated
+                if isinstance(value, list):
+                    return [_remap_lote_references(item) for item in value]
+                return detalle_compra_id_map.get(value, value)
+
+            # Detalles de venta
+            for d in data.get("detalles_venta", []):
+                venta_id = venta_id_map.get(d.get("venta_id"))
+                producto_id = producto_id_map.get(d.get("producto_id"))
+                vendedor_id = None
+                old_vend_id = d.get("vendedor_id")
+                if old_vend_id is not None:
+                    vendedor_id = trabajador_id_map.get(old_vend_id)
+                    if vendedor_id is None:
+                        logger.warning(
+                            "detalle_venta vendedor_id %s not found in mapping, defaulting to None",
+                            old_vend_id,
+                        )
+                if venta_id and producto_id:
+                    extra = d.get("extra", None)
+                    extra_was_string = isinstance(extra, str)
+                    if extra_was_string:
+                        text = extra.strip()
+                        if text:
+                            try:
+                                extra = json.loads(text)
+                            except Exception:
+                                extra = text
+                    remapped_extra = _remap_lote_references(extra)
+                    if remapped_extra is None:
+                        extra_value = None
+                    elif isinstance(remapped_extra, (dict, list)):
+                        try:
+                            extra_value = json.dumps(remapped_extra)
+                        except Exception:
+                            extra_value = json.dumps(remapped_extra, default=str)
+                    elif isinstance(remapped_extra, str):
+                        extra_value = remapped_extra
+                    else:
+                        if extra_was_string:
+                            extra_value = json.dumps(remapped_extra)
+                        else:
+                            extra_value = remapped_extra
+
+                    self.db.cursor.execute(
+                        "INSERT INTO detalles_venta (venta_id, producto_id, cantidad, precio_unitario, descuento, descuento_tipo, iva, comision, iva_tipo, tipo_fiscal, extra, precio_con_iva, vendedor_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            venta_id,
+                            producto_id,
+                            d.get("cantidad", 0),
+                            d.get("precio_unitario", 0),
+                            d.get("descuento", 0),
+                            d.get("descuento_tipo", ""),
+                            d.get("iva", 0),
+                            d.get("comision", 0),
+                            d.get("iva_tipo", ""),
+                            d.get("tipo_fiscal", "Gravada"),
+                            extra_value,
+                            d.get("precio_con_iva", 0),
+                            vendedor_id,
+                        ),
                     )
 
             # Movimientos (opcional, si tienes movimientos)

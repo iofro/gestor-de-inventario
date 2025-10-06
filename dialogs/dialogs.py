@@ -14,12 +14,13 @@ from PyQt5.QtWidgets import (
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter
 )
-from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker, QEvent
+from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker, QEvent, QSize
 from PyQt5.QtGui import (
     QColor,
     QDesktopServices,
     QIntValidator,
     QRegularExpressionValidator,
+    QPixmap,
 )
 
 import os
@@ -3743,6 +3744,97 @@ class CompraDetalleDialog(QDialog):
         layout.addWidget(table)
         self.setLayout(layout)
 
+class LogoPreviewDialog(QDialog):
+    """Permite seleccionar y previsualizar el logo del negocio."""
+
+    def __init__(self, logo_path: str | None = None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Logo de la empresa")
+        self.selected_path: str | None = None
+
+        layout = QVBoxLayout()
+
+        self.preview = QLabel()
+        self.preview.setAlignment(Qt.AlignCenter)
+        self.preview.setMinimumSize(240, 160)
+        self.preview.setFrameShape(QFrame.StyledPanel)
+        layout.addWidget(self.preview)
+
+        self.path_label = QLabel()
+        self.path_label.setAlignment(Qt.AlignCenter)
+        self.path_label.setWordWrap(True)
+        layout.addWidget(self.path_label)
+
+        select_btn = QPushButton("Seleccionar logo")
+        select_btn.clicked.connect(self._select_logo)
+        layout.addWidget(select_btn)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Close)
+        button_box.rejected.connect(self.reject)
+        layout.addWidget(button_box)
+
+        self.setLayout(layout)
+        self._update_preview(logo_path)
+
+    def _update_preview(self, path: str | None):
+        if path and os.path.exists(path):
+            pixmap = QPixmap(path)
+            if not pixmap.isNull():
+                target_size = self.preview.size()
+                if not target_size.width() or not target_size.height():
+                    target_size = self.preview.minimumSize()
+                if not target_size.width() or not target_size.height():
+                    target_size = QSize(320, 200)
+                scaled = pixmap.scaled(
+                    target_size,
+                    Qt.KeepAspectRatio,
+                    Qt.SmoothTransformation,
+                )
+                self.preview.setPixmap(scaled)
+                self.path_label.setText(path)
+                self.selected_path = path
+                return
+        self.preview.setPixmap(QPixmap())
+        self.preview.setText("Sin logo seleccionado")
+        self.path_label.setText("")
+        self.selected_path = None
+
+    def _select_logo(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar logo",
+            "",
+            "Imágenes (*.png *.jpg *.jpeg)",
+        )
+        if not file_path:
+            return
+        if not os.path.exists(file_path):
+            QMessageBox.warning(self, "Logo", "No se pudo abrir el archivo seleccionado.")
+            return
+        pixmap = QPixmap(file_path)
+        if pixmap.isNull():
+            QMessageBox.warning(
+                self,
+                "Logo",
+                "El archivo seleccionado no es una imagen válida.",
+            )
+            return
+        target_size = self.preview.size()
+        if not target_size.width() or not target_size.height():
+            target_size = self.preview.minimumSize()
+        if not target_size.width() or not target_size.height():
+            target_size = QSize(320, 200)
+        scaled = pixmap.scaled(
+            target_size,
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
+        self.preview.setPixmap(scaled)
+        self.preview.setText("")
+        self.path_label.setText(file_path)
+        self.selected_path = file_path
+
+
 class DatosNegocioDialog(QDialog):
     """Diálogo para editar los datos necesarios para la facturación."""
 
@@ -3750,6 +3842,7 @@ class DatosNegocioDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Datos del negocio")
         form = QFormLayout()
+        self.logo_path: str | None = None
         self.nit = QLineEdit()
         self.nrc = QLineEdit()
         self.dui = QLineEdit()
@@ -3793,6 +3886,9 @@ class DatosNegocioDialog(QDialog):
         form.addRow("Departamento:", self.departamento)
         form.addRow("Municipio:", self.municipio)
         form.addRow("Dirección:", self.complemento)
+        self.btn_logo = QPushButton("Logo de la empresa")
+        self.btn_logo.clicked.connect(self._open_logo_dialog)
+        form.addRow("", self.btn_logo)
         btns = QHBoxLayout()
         self.btn_guardar = QPushButton("Guardar")
         self.btn_cancelar = QPushButton("Cancelar")
@@ -3806,6 +3902,8 @@ class DatosNegocioDialog(QDialog):
         self.btn_cancelar.clicked.connect(self.reject)
         if datos:
             self.set_data(datos)
+        else:
+            self._update_logo_button()
 
     def _on_save(self):
         try:
@@ -3842,6 +3940,7 @@ class DatosNegocioDialog(QDialog):
                 "municipio": municipio,
                 "complemento": complemento,
             },
+            "logo_path": self.logo_path,
         }
 
     def set_data(self, datos):
@@ -3870,6 +3969,28 @@ class DatosNegocioDialog(QDialog):
         )
         self.municipio.setEnabled(bool(self.departamento.currentData()))
         self.complemento.setText(dir_info.get("complemento", ""))
+        self.logo_path = None
+        for key in ("logo_path", "logoPath", "logo"):
+            path = datos.get(key)
+            if path:
+                self.logo_path = path
+                break
+        self._update_logo_button()
+
+    def _open_logo_dialog(self):
+        dlg = LogoPreviewDialog(self.logo_path, self)
+        dlg.exec_()
+        if dlg.selected_path:
+            self.logo_path = dlg.selected_path
+        self._update_logo_button()
+
+    def _update_logo_button(self):
+        if self.logo_path:
+            self.btn_logo.setText("Logo de la empresa (seleccionado)")
+            self.btn_logo.setToolTip(self.logo_path)
+        else:
+            self.btn_logo.setText("Logo de la empresa")
+            self.btn_logo.setToolTip("Selecciona una imagen para usar como logo en las facturas")
 
 
 class EmailConfigDialog(QDialog):

@@ -25,6 +25,20 @@ class PurchasesTab(QWidget):
         self._setup_ui()
         self.load_purchases()
 
+    def _confirm_inventory_conflict(self, target: str) -> bool:
+        message = (
+            f"Editar o eliminar {target} puede causar conflictos en el inventario, "
+            "proceda solo si está seguro de que no causará conflictos con sus cambios."
+        )
+        result = QMessageBox.warning(
+            self,
+            "Advertencia",
+            message,
+            QMessageBox.Ok | QMessageBox.Cancel,
+            QMessageBox.Cancel,
+        )
+        return result == QMessageBox.Ok
+
     def refresh_filters(self):
         """Refresh distributor and vendor filter combos with current data."""
         self.distribuidor_combo.blockSignals(True)
@@ -194,6 +208,9 @@ class PurchasesTab(QWidget):
                 "Compra no encontrada",
                 "No fue posible cargar la compra seleccionada. Intente nuevamente.",
             )
+            return
+
+        if not self._confirm_inventory_conflict("esta compra"):
             return
 
         confirm = QMessageBox.question(
@@ -450,6 +467,9 @@ class PurchasesTab(QWidget):
         productos = [dict(p) for p in self.manager.db.get_productos()]
         Distribuidores = [dict(d) for d in self.manager.db.get_Distribuidores()]
         proveedores = [dict(v) for v in self.manager.db.get_vendedores_distribuidores()]
+
+        if not self._confirm_inventory_conflict("esta compra"):
+            return
 
         dlg = RegisterPurchaseDialog(
             productos,

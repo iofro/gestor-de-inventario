@@ -1,3 +1,5 @@
+import os
+
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 from reportlab.graphics import renderPDF
@@ -9,6 +11,7 @@ from reportlab.lib import colors
 from utils.pdf_utils import draw_wrapped_text
 from factura_sv import build_qr_url
 from datetime import datetime
+from utils import resource_path
 
 
 def generar_cabecera_dte(
@@ -30,64 +33,47 @@ def generar_cabecera_dte(
     c = canvas.Canvas(archivo, pagesize=letter)
     width, height = letter
 
-    top = height - 50
-    c.setFont("Helvetica-Bold", 16)
+    top = height - 45
+    c.setFont("Helvetica-Bold", 14)
     c.drawCentredString(width / 2, top, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
 
-    top -= 20
-    c.setFont("Helvetica-Bold", 12)
+    top -= 16
+    c.setFont("Helvetica-Bold", 11)
     c.drawCentredString(width / 2, top, tipo_documento.upper())
 
-    # Reduce the vertical gap between the title block and the header boxes so
-    # the left-side information sits a little higher on the page without
-    # colliding with the titles.
-    row_y = top - 25
-    c.setFont("Helvetica", 10)
+    c.setFont("Helvetica", 9)
 
-    col_margin = 15
-    qr_size = 15 * mm
-    available_w = width - 2 * 40 - qr_size - 2 * col_margin
-    box_w = available_w / 2
-    box_h = 30
+    header_margin = 40
+    header_height = 88
+    header_gap = 20
+    header_y = top - header_gap - header_height
+    header_w = width - 2 * header_margin
 
-    box_y = row_y - box_h
-    left_box_y = box_y + 6
-
-    # --- Caja izquierda ---
     c.setLineWidth(0.7)
     c.setStrokeColor(colors.white)
-    c.roundRect(40, left_box_y, box_w, box_h, 6, stroke=1, fill=0)
+    c.roundRect(header_margin, header_y, header_w, header_height, 8, stroke=1, fill=0)
     c.setStrokeColor(colors.black)
-    text_y = left_box_y + box_h - 10
-    max_w = box_w - 10
-    text_y = draw_wrapped_text(
-        c,
-        f"Código Generación: {codigo_generacion}",
-        45,
-        text_y,
-        max_w,
-        10,
-    )
-    text_y = draw_wrapped_text(
-        c,
-        f"Número Control: {numero_control}",
-        45,
-        text_y,
-        max_w,
-        10,
-    )
-    text_y = draw_wrapped_text(
-        c,
-        f"Sello Recepción: {sello_recepcion}",
-        45,
-        text_y,
-        max_w,
-        10,
-    )
 
-    # QR en el centro
-    qr_x = 40 + box_w + col_margin + 3
-    qr_y = box_y + (box_h - qr_size) / 2
+    logo_slot_w = 90
+    inner_padding = 10
+    logo_height = header_height - 2 * inner_padding
+    logo_path = resource_path("logoinventario.jpg")
+    if logo_path and os.path.exists(logo_path):
+        logo_x = header_margin + inner_padding
+        logo_y = header_y + header_height - logo_height - inner_padding
+        c.drawImage(
+            str(logo_path),
+            logo_x,
+            logo_y,
+            width=logo_slot_w,
+            height=logo_height,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+
+    qr_size = 26 * mm
+    qr_x = header_margin + header_w - qr_size - inner_padding
+    qr_y = header_y + (header_height - qr_size) / 2
     if not fecha_emision and fecha_generacion:
         try:
             fecha_emision = datetime.strptime(
@@ -112,46 +98,71 @@ def generar_cabecera_dte(
     renderPDF.draw(d, c, qr_x, qr_y)
     c.linkURL(qr_value, (qr_x, qr_y, qr_x + qr_size, qr_y + qr_size), relative=0)
 
-    # --- Caja derecha ---
-    right_x = 40 + box_w + col_margin + qr_size + col_margin
-    c.setStrokeColor(colors.white)
-    c.roundRect(right_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
-    c.setStrokeColor(colors.black)
-    text_y = box_y + box_h - 10
-    max_w = box_w - 10
+    text_x = header_margin + logo_slot_w + 2 * inner_padding
+    text_right_limit = qr_x - inner_padding
+    text_width = max(10, text_right_limit - text_x)
+    text_y = header_y + header_height - inner_padding - 2
+    line_height = 11
+
+    text_y = draw_wrapped_text(
+        c,
+        f"Código Generación: {codigo_generacion}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Número Control: {numero_control}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Sello Recepción: {sello_recepcion}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+    text_y = draw_wrapped_text(
+        c,
+        f"Fecha Generación: {fecha_generacion}",
+        text_x,
+        text_y,
+        text_width,
+        line_height,
+    )
+
+    text_y -= 4
     text_y = draw_wrapped_text(
         c,
         f"Tipo Modelo: {tipo_modelo}",
-        right_x + 5,
+        text_x,
         text_y,
-        max_w,
-        10,
+        text_width,
+        line_height,
     )
     text_y = draw_wrapped_text(
         c,
         f"Tipo Operación: {tipo_operacion}",
-        right_x + 5,
+        text_x,
         text_y,
-        max_w,
-        10,
+        text_width,
+        line_height,
     )
     if tipo_contingencia is not None:
-        text_y = draw_wrapped_text(
+        draw_wrapped_text(
             c,
             f"Contingencia: {tipo_contingencia}",
-            right_x + 5,
+            text_x,
             text_y,
-            max_w,
-            10,
+            text_width,
+            line_height,
         )
-    text_y = draw_wrapped_text(
-        c,
-        f"Fecha Generación: {fecha_generacion}",
-        right_x + 5,
-        text_y,
-        max_w,
-        10,
-    )
 
     c.save()
 

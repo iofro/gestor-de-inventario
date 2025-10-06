@@ -588,6 +588,89 @@ def test_build_ticket_format_pdf_without_base_uses_control(monkeypatch, qt_app, 
     assert ticket_files == [expected]
 
 
+def test_ticket_generation_preserves_qr_payload(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    cf_dir = tmp_path / "cf"
+    cf_dir.mkdir()
+    pdf_path = cf_dir / "20240101_Test.pdf"
+    pdf_path.write_text("pdf")
+    dte_payload = {
+        "identificacion": {
+            "tipoDte": "01",
+            "numeroControl": "DTE-01-0001",
+            "codigoGeneracion": "12345678-1234-1234-1234-123456789012",
+        },
+        "cuerpoDocumento": [{"cantidad": 1, "descripcion": "Item", "precioUni": 10, "montoTotal": 10}],
+        "resumen": {"totalGravada": 10, "montoTotalOperacion": 10},
+        "qrCode": "QR-DATA",
+        "selloRecibido": "SELLO-DOC",
+        "firmaElectronica": "FIRMA-DOC",
+    }
+    json_path = pdf_path.with_suffix(".json")
+    json_path.write_text(json.dumps(dte_payload))
+
+    entry = {
+        "row_type": "venta",
+        "venta_id": venta_id,
+        "tipo": "Consumidor Final",
+        "json": str(json_path),
+        "pdf": str(pdf_path),
+    }
+
+    tab = _make_tab(db, cid)
+
+    monkeypatch.setattr(facturacion_tab, "CF_DIR", str(cf_dir))
+    monkeypatch.setattr(facturacion_tab.dte, "_load_datos_negocio", lambda: {})
+
+    payload_template = {
+        "venta": {"id": venta_id},
+        "detalles": ("detalle",),
+        "datos_negocio": {"nombre": "Negocio"},
+        "dte_data": {
+            "qrCode": "QR-DATA",
+            "selloRecibido": "SELLO-DOC",
+            "firmaElectronica": "FIRMA-DOC",
+        },
+    }
+
+    monkeypatch.setattr(
+        facturacion_tab,
+        "dte_to_legacy_ticket_payload",
+        lambda *a, **k: payload_template,
+    )
+
+    captured = {}
+
+    def fake_write(dest, render):
+        dest_path = Path(dest)
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        render(dest_path)
+        return dest_path
+
+    monkeypatch.setattr(facturacion_tab, "write_pdf_atomically", fake_write)
+
+    def fake_ticket(venta, detalles, archivo, datos_negocio=None, dte_data=None):
+        captured["venta"] = venta
+        captured["detalles"] = detalles
+        captured["datos_negocio"] = datos_negocio
+        captured["dte_data"] = dte_data
+        Path(archivo).write_text("ticket")
+
+    monkeypatch.setattr(facturacion_tab, "generar_ticket_personalizado", fake_ticket)
+
+    output = tab._build_ticket_format_pdf(entry, str(pdf_path))
+    assert output is not None
+    assert Path(output).exists()
+    assert captured["dte_data"] == payload_template["dte_data"]
+    assert captured["dte_data"] is not payload_template["dte_data"]
+    assert captured["dte_data"]["qrCode"] == "QR-DATA"
+    assert payload_template["dte_data"]["qrCode"] == "QR-DATA"
+    assert isinstance(captured["detalles"], list)
+    assert captured["detalles"] == ["detalle"]
+    assert captured["datos_negocio"] == {"nombre": "Negocio"}
+
+
 def test_print_invoice_notes_skip_format_selection(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

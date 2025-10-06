@@ -4156,18 +4156,53 @@ class FacturacionTab(QWidget):
         except Exception:
             datos_negocio = {}
 
-        payload = dte_to_legacy_ticket_payload(
+        payload_raw = dte_to_legacy_ticket_payload(
             dte_payload,
             venta or {},
             detalles_venta,
             datos_negocio,
         )
-        dte_data = payload.get("dte_data") or {}
+        if isinstance(payload_raw, Mapping):
+            payload: dict[str, Any] = dict(payload_raw)
+        else:
+            payload = {}
+
+        dte_payload_data = payload.get("dte_data") if payload else None
+        if isinstance(dte_payload_data, Mapping):
+            dte_data = dict(dte_payload_data)
+        else:
+            dte_data = {}
+
         if sello:
             dte_data.setdefault("selloRecibido", sello)
         if firma:
             dte_data.setdefault("firmaElectronica", firma)
-        payload["dte_data"] = dte_data
+
+        if payload is not None:
+            payload["dte_data"] = dte_data
+
+        venta_payload = payload.get("venta") if payload else None
+        if not venta_payload:
+            venta_payload = venta or {}
+        elif isinstance(venta_payload, Mapping) and not isinstance(venta_payload, dict):
+            venta_payload = dict(venta_payload)
+
+        detalles_payload = payload.get("detalles") if payload else None
+        if not detalles_payload:
+            detalles_payload = detalles_venta or []
+
+        datos_negocio_payload = payload.get("datos_negocio") if payload else None
+        if not isinstance(datos_negocio_payload, Mapping):
+            datos_negocio_payload = datos_negocio or {}
+        else:
+            datos_negocio_payload = dict(datos_negocio_payload)
+
+        if isinstance(detalles_payload, list):
+            detalles_for_render = detalles_payload
+        elif isinstance(detalles_payload, tuple):
+            detalles_for_render = list(detalles_payload)
+        else:
+            detalles_for_render = detalles_payload or []
 
         venta_id = entry.get("venta_id")
         output_path = None
@@ -4234,11 +4269,11 @@ class FacturacionTab(QWidget):
         def _render_ticket(tmp_path):
             try:
                 generar_ticket_personalizado(
-                    payload.get("venta", {}),
-                    payload.get("detalles", []),
+                    venta_payload,
+                    detalles_for_render,
                     archivo=str(tmp_path),
-                    datos_negocio=payload.get("datos_negocio"),
-                    dte_data=payload.get("dte_data"),
+                    datos_negocio=datos_negocio_payload,
+                    dte_data=dte_data,
                 )
             except Exception as exc:  # pragma: no cover - defensive
                 raise RuntimeError(str(exc)) from exc

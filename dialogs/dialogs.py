@@ -2406,6 +2406,11 @@ class RegisterPurchaseDialog(QDialog):
             else None
         )
 
+        if vendedor_id is None and self.edit_mode:
+            vendedor_id = self._compra_data.get("vendedor_id")
+        if Distribuidor_id is None and self.edit_mode:
+            Distribuidor_id = self._compra_data.get("Distribuidor_id")
+
         if vendedor_id is None or Distribuidor_id is None:
             respuesta = QMessageBox.question(
                 self,
@@ -3838,8 +3843,48 @@ class CompraDetalleDialog(QDialog):
         Distribuidores_dict = {d["id"]: d["nombre"] for d in Distribuidores}
         productos_dict = {p["id"]: p["nombre"] for p in productos}
 
-        vendedor_nombre = vendedores_dict.get(compra.get("vendedor_id"), "Desconocido")
-        Distribuidor_nombre = Distribuidores_dict.get(compra.get("Distribuidor_id"), "Desconocido")
+        db = None
+        if parent and hasattr(parent, "manager"):
+            db = getattr(parent.manager, "db", None)
+
+        vendedor_id = compra.get("vendedor_id")
+        Distribuidor_id = compra.get("Distribuidor_id")
+
+        vendedor_nombre = vendedores_dict.get(vendedor_id)
+        Distribuidor_nombre = Distribuidores_dict.get(Distribuidor_id)
+
+        if vendedor_nombre is None and db and vendedor_id is not None:
+            try:
+                db.cursor.execute("SELECT nombre FROM vendedores WHERE id=?", (vendedor_id,))
+                row = db.cursor.fetchone()
+            except Exception:
+                row = None
+                logger.exception(
+                    "No fue posible obtener el nombre del vendedor %s", vendedor_id
+                )
+            if row:
+                vendedor_nombre = row[0]
+                vendedores_dict[vendedor_id] = vendedor_nombre
+
+        if Distribuidor_nombre is None and db and Distribuidor_id is not None:
+            try:
+                db.cursor.execute(
+                    "SELECT nombre FROM Distribuidores WHERE id=?",
+                    (Distribuidor_id,),
+                )
+                row = db.cursor.fetchone()
+            except Exception:
+                row = None
+                logger.exception(
+                    "No fue posible obtener el nombre del Distribuidor %s",
+                    Distribuidor_id,
+                )
+            if row:
+                Distribuidor_nombre = row[0]
+                Distribuidores_dict[Distribuidor_id] = Distribuidor_nombre
+
+        vendedor_nombre = vendedor_nombre or "Desconocido"
+        Distribuidor_nombre = Distribuidor_nombre or "Desconocido"
 
         layout.addWidget(QLabel(f"Fecha: {compra.get('fecha', '')}"))
         layout.addWidget(QLabel(f"Vendedor: {vendedor_nombre}"))

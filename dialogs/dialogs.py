@@ -1489,7 +1489,6 @@ class RegisterPurchaseDialog(QDialog):
         self._compra_id = self._compra_data.get("id") if self._compra_data else None
         self.edit_mode = self._compra_id is not None
         self.setWindowTitle("Editar Compra" if self.edit_mode else "Registrar Compra")
-        detalles = detalles or []
 
         layout = QVBoxLayout()
 
@@ -1989,15 +1988,79 @@ class RegisterPurchaseDialog(QDialog):
             self._summary_items_label.setText(str(len(self.compra_items)))
             self._summary_total_label.setText(self._format_currency(total_general))
 
+    def _fetch_db_record(self, table, record_id):
+        parent = self.parent()
+        if not record_id or not parent or not hasattr(parent, "manager"):
+            return None
+        db = getattr(parent.manager, "db", None)
+        if db is None or not hasattr(db, "cursor"):
+            return None
+        try:
+            db.cursor.execute(f"SELECT * FROM {table} WHERE id=?", (record_id,))
+            row = db.cursor.fetchone()
+            return dict(row) if row else None
+        except Exception:
+            logger.exception("No fue posible cargar el registro %s de %s", record_id, table)
+            return None
+
+    def _ensure_vendor_available(self, vendedor_id):
+        if vendedor_id is None:
+            return None
+        vendedor = self._vendedores_map.get(vendedor_id)
+        if vendedor is None:
+            vendedor = self._fetch_db_record("vendedores", vendedor_id)
+            if vendedor is None:
+                vendedor = {
+                    "id": vendedor_id,
+                    "nombre": f"Proveedor {vendedor_id}",
+                    "codigo": "",
+                    "Distribuidor_id": self._compra_data.get("Distribuidor_id"),
+                }
+            self._vendedores_map[vendedor_id] = vendedor
+
+        distribuidor_id = vendedor.get("Distribuidor_id")
+        if distribuidor_id is None and self._compra_data.get("Distribuidor_id") is not None:
+            distribuidor_id = self._compra_data.get("Distribuidor_id")
+            vendedor = dict(vendedor)
+            vendedor["Distribuidor_id"] = distribuidor_id
+            self._vendedores_map[vendedor_id] = vendedor
+        self._vendedor_Distribuidor_map[vendedor_id] = distribuidor_id
+
+        if self.vendedor_combo.findData(vendedor_id) < 0:
+            codigo = vendedor.get("codigo") or ""
+            nombre = vendedor.get("nombre") or f"Proveedor {vendedor_id}"
+            display_text = f"{nombre} — {codigo}" if codigo else nombre
+            with QSignalBlocker(self.vendedor_combo):
+                self.vendedor_combo.addItem(display_text, vendedor_id)
+        return vendedor
+
+    def _ensure_distribuidor_available(self, distribuidor_id):
+        if distribuidor_id is None:
+            return None
+        distribuidor = self._distribuidores_map.get(distribuidor_id)
+        if distribuidor is None:
+            distribuidor = self._fetch_db_record("Distribuidores", distribuidor_id)
+            if distribuidor is None:
+                distribuidor = {
+                    "id": distribuidor_id,
+                    "nombre": f"Distribuidor {distribuidor_id}",
+                }
+            self._distribuidores_map[distribuidor_id] = distribuidor
+            if not any(d.get("id") == distribuidor_id for d in self.Distribuidores):
+                self.Distribuidores.append(distribuidor)
+        return distribuidor
+
     def _cargar_compra_existente(self, detalles):
         vendedor_id = self._compra_data.get("vendedor_id") if self._compra_data else None
         if vendedor_id is not None:
+            self._ensure_vendor_available(vendedor_id)
             idx = self.vendedor_combo.findData(vendedor_id)
             if idx >= 0:
                 self.vendedor_combo.setCurrentIndex(idx)
         self._actualizar_Distribuidor()
         distribuidor_id = self._compra_data.get("Distribuidor_id") if self._compra_data else None
         if distribuidor_id is not None:
+            self._ensure_distribuidor_available(distribuidor_id)
             idx = self.Distribuidor_combo.findData(distribuidor_id)
             if idx >= 0:
                 self.Distribuidor_combo.setCurrentIndex(idx)
@@ -2018,7 +2081,9 @@ class RegisterPurchaseDialog(QDialog):
             nombre_producto = producto_info.get("nombre") or f"Producto {producto_id}" if producto_id is not None else ""
             cantidad = detalle.get("cantidad", 0) or 0
             precio = detalle.get("precio_unitario", 0) or 0
-            subtotal = cantidad * precio
+            subtotal = detalle.get("subtotal")
+            if subtotal is None:
+                subtotal = cantidad * precio
             descuento_monto = detalle.get("descuento", 0) or 0
             descuento_tipo = detalle.get("descuento_tipo", "%") or "%"
             if descuento_tipo == "%":
@@ -2031,10 +2096,12 @@ class RegisterPurchaseDialog(QDialog):
             comision_pct = detalle.get("comision_pct", 0) or 0
             comision_monto = detalle.get("comision_monto", 0) or 0
             comision_tipo = detalle.get("comision_tipo") or "Añadida al total"
-            total_base = subtotal_con_descuento
-            if iva_tipo == "añadido":
-                total_base = subtotal_con_descuento + iva
-            total = total_base + comision_monto if comision_tipo == "Añadida al total" else total_base
+            total = detalle.get("total")
+            if total is None:
+                total_base = subtotal_con_descuento
+                if iva_tipo == "añadido":
+                    total_base = subtotal_con_descuento + iva
+                total = total_base + comision_monto if comision_tipo == "Añadida al total" else total_base
             self.compra_items.append(
                 {
                     "producto": nombre_producto,
@@ -2084,12 +2151,12 @@ class RegisterPurchaseDialog(QDialog):
             self.comision_pct_spin.setValue(0)
             if self.edit_mode and self._compra_data.get("Distribuidor_id"):
                 distribuidor_id = self._compra_data.get("Distribuidor_id")
-                distribuidor = self._distribuidores_map.get(distribuidor_id)
+                distribuidor = self._ensure_distribuidor_available(distribuidor_id)
                 if distribuidor:
                     self.Distribuidor_combo.addItem(distribuidor.get("nombre", ""), distribuidor_id)
             self._update_summary_vendor_info()
             return
-        vendedor = self._vendedores_map.get(vendedor_id)
+        vendedor = self._ensure_vendor_available(vendedor_id)
         if not vendedor:
             self.comision_label_resumen.setText("Comisión vendedor: 0%")
             self.comision_pct_spin.setValue(0)
@@ -2097,11 +2164,10 @@ class RegisterPurchaseDialog(QDialog):
             return
         Distribuidor_id = self._vendedor_Distribuidor_map.get(vendedor_id)
         if Distribuidor_id is None:
-            Distribuidor_id = vendedor.get("Distribuidor_id")
-        for d in self.Distribuidores:
-            if d["id"] == Distribuidor_id:
-                self.Distribuidor_combo.addItem(d["nombre"], d["id"])
-                break
+            Distribuidor_id = vendedor.get("Distribuidor_id") or self._compra_data.get("Distribuidor_id")
+        distribuidor = self._ensure_distribuidor_available(Distribuidor_id)
+        if distribuidor:
+            self.Distribuidor_combo.addItem(distribuidor.get("nombre", ""), Distribuidor_id)
         # Actualiza comisión base del vendedor
         comision = vendedor.get("comision_base", 0)
         try:

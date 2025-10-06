@@ -1489,7 +1489,6 @@ class RegisterPurchaseDialog(QDialog):
         self._compra_id = self._compra_data.get("id") if self._compra_data else None
         self.edit_mode = self._compra_id is not None
         self.setWindowTitle("Editar Compra" if self.edit_mode else "Registrar Compra")
-        detalles = detalles or []
 
         layout = QVBoxLayout()
 

@@ -2282,14 +2282,20 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setItem(i, 6, QTableWidgetItem(self._format_currency(item.get("total", 0))))
             self.table.setItem(i, 7, QTableWidgetItem(item.get("fecha_vencimiento", "")))
 
+            size_style = (
+                "font-size:9px; min-width:70px; max-width:100px; "
+                "min-height:10px; max-height:15px;"
+            )
+
             edit_btn = QPushButton("Editar")
+            edit_btn.setStyleSheet(size_style)
             edit_btn.clicked.connect(lambda _, row=i: self._start_edit_item(row))
             self.table.setCellWidget(i, self._edit_column, edit_btn)
 
             delete_btn = QPushButton("Eliminar")
             delete_btn.setStyleSheet(
-                "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
-                "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
+                "background-color: #b71c1c; color: #fff; border-radius: 6px; "
+                f"{size_style}"
             )
             delete_btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
             self.table.setCellWidget(i, self._delete_column, delete_btn)

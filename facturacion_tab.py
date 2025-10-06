@@ -2596,18 +2596,44 @@ class FacturacionTab(QWidget):
                     base, ext = os.path.splitext(fname)
                     if ext.lower() not in (".pdf", ".json"):
                         continue
-                    if not DOC_PATTERN.match(base):
+                    match = DOC_PATTERN.match(base)
+                    if not match:
                         continue
+                    doc_suffix = match.group(1).lower()
+                    if doc_suffix == "ticket" and ext.lower() == ".pdf":
+                        # Los archivos PDF en formato ticket corresponden a la misma
+                        # factura y no deben mostrarse como registros separados,
+                        # sin importar en qué carpeta estén almacenados. Se permite
+                        # procesar archivos complementarios (por ejemplo JSON) para
+                        # conservar su información asociada.
+                        continue
+                    if not tipo:
+                        tipo = {
+                            "consumidorfinal": "Consumidor final",
+                            "creditofiscal": "Crédito fiscal",
+                            "notadebito": "Nota de débito",
+                            "notacredito": "Nota de crédito",
+                            "notaremision": "Nota de remisión",
+                        }.get(doc_suffix, tipo)
                     if base in seen:
                         continue
-                    entry = files.setdefault(base, {"tipo": tipo})
+                    entry_tipo = "Ticket" if doc_suffix == "ticket" else tipo
+                    entry = files.setdefault(base, {"tipo": entry_tipo})
                     entry.setdefault(ext.lower(), os.path.join(root, fname))
-                    entry.setdefault("tipo", tipo or entry.get("tipo"))
+                    if entry_tipo:
+                        entry["tipo"] = entry_tipo
+                    else:
+                        entry.setdefault("tipo", entry.get("tipo"))
 
         for base, paths in files.items():
             pdf = paths.get(".pdf")
             js = paths.get(".json")
             tipo = paths.get("tipo")
+            if tipo == "Ticket":
+                # Los PDFs generados en formato ticket corresponden a la misma
+                # factura y no deben mostrarse como documentos independientes
+                # en la lista de facturación.
+                continue
             estado, envio = self._detectar_estado_factura(
                 None,
                 pdf,

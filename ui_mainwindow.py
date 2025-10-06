@@ -497,6 +497,12 @@ class MainWindow(QMainWindow):
         self.inventario_actual_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         inventario_actual_layout.addWidget(self.inventario_actual_table)
 
+        inventario_actual_buttons = QHBoxLayout()
+        inventario_actual_buttons.addStretch()
+        self.btn_edit_lote = QPushButton("Editar lote")
+        inventario_actual_buttons.addWidget(self.btn_edit_lote)
+        inventario_actual_layout.addLayout(inventario_actual_buttons)
+
         inventario_actual_tab.setLayout(inventario_actual_layout)
 
         # --- AGREGA LAS CUATRO PESTAÑAS AL QTabWidget ---
@@ -649,6 +655,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_cliente.clicked.connect(self._eliminar_cliente)
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
+        self.btn_edit_lote.clicked.connect(self._editar_lote_inventario_actual)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
         self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
 
@@ -1736,7 +1743,10 @@ class MainWindow(QMainWindow):
                     "precio_compra": d.get("precio_unitario", 0),
                     "fecha_compra": compra.get("fecha", ""),
                     "fecha_vencimiento": fecha_vencimiento,
-                    "Distribuidor": Distribuidores_dict.get(compra.get("Distribuidor_id"), "")
+                    "Distribuidor": Distribuidores_dict.get(compra.get("Distribuidor_id"), ""),
+                    "detalle_id": d.get("id"),
+                    "producto_id": d.get("producto_id"),
+                    "compra_id": compra_id,
                 })
 
         # Filtra solo los lotes con stock > 0
@@ -1752,7 +1762,9 @@ class MainWindow(QMainWindow):
 
         self.inventario_actual_table.setRowCount(len(detalles))
         for row, d in enumerate(detalles):
-            self.inventario_actual_table.setItem(row, 0, QTableWidgetItem(d["producto"]))
+            item_producto = QTableWidgetItem(d["producto"])
+            item_producto.setData(Qt.UserRole, d)
+            self.inventario_actual_table.setItem(row, 0, item_producto)
             self.inventario_actual_table.setItem(row, 1, QTableWidgetItem(d["codigo"]))
             item_cantidad = QTableWidgetItem(str(d["cantidad"]))
             stock = d.get("cantidad", 0)
@@ -1792,6 +1804,66 @@ class MainWindow(QMainWindow):
                     pass
             self.inventario_actual_table.setItem(row, 5, item_venc)
             self.inventario_actual_table.setItem(row, 6, QTableWidgetItem(d["Distribuidor"]))
+
+    def _editar_lote_inventario_actual(self):
+        row = self.inventario_actual_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(self, "Editar lote", "Seleccione un lote para editar.")
+            return
+
+        item_producto = self.inventario_actual_table.item(row, 0)
+        if not item_producto:
+            QMessageBox.warning(self, "Editar lote", "No se pudo obtener la información del lote seleccionado.")
+            return
+
+        data = item_producto.data(Qt.UserRole) or {}
+        detalle_id = data.get("detalle_id")
+
+        if not detalle_id:
+            QMessageBox.warning(self, "Editar lote", "No se encontró el identificador del lote seleccionado.")
+            return
+
+        cantidad_actual = int(data.get("cantidad", 0) or 0)
+        producto = data.get("producto", "")
+        codigo = data.get("codigo", "")
+
+        nueva_cantidad, ok = QInputDialog.getInt(
+            self,
+            "Editar lote",
+            f"Ingrese la nueva cantidad para el lote de {producto} (código {codigo}):",
+            value=cantidad_actual,
+            min=0,
+        )
+
+        if not ok:
+            return
+
+        if nueva_cantidad == cantidad_actual:
+            return
+
+        try:
+            self.manager.update_detalle_compra_cantidad(detalle_id, nueva_cantidad)
+        except ValueError as exc:
+            QMessageBox.warning(self, "Editar lote", str(exc))
+            return
+        except Exception as exc:  # pragma: no cover - logging unexpected errors
+            logger.exception("Error al actualizar el lote: %s", exc)
+            QMessageBox.critical(
+                self,
+                "Editar lote",
+                "Ocurrió un error al actualizar la cantidad del lote.",
+            )
+            return
+
+        QMessageBox.information(
+            self,
+            "Editar lote",
+            "La cantidad del lote se actualizó correctamente.",
+        )
+
+        self._actualizar_inventario_actual()
+        self.filter_products()
+        self.data_changed.emit()
 
     def _on_table_clicked(self, index):
         self.selected_row = index.row()

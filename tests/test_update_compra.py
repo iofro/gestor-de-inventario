@@ -1,3 +1,5 @@
+import pytest
+
 from db import DB
 
 
@@ -88,3 +90,73 @@ def test_update_compra_detallada_updates_totals_and_stock():
     db.cursor.execute("SELECT stock FROM productos WHERE id=?", (prod_id,))
     stock = db.cursor.fetchone()["stock"]
     assert stock == 5
+
+
+def test_update_detalle_compra_cantidad_updates_stock():
+    db = create_db()
+    db.add_Distribuidor("D1")
+    dist_id = db.cursor.lastrowid
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, dist_id, 0, 0, 0, 0)
+    prod_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada(
+        {
+            "fecha": "2024-01-01",
+            "producto_id": None,
+            "cantidad": 0,
+            "precio_unitario": 0,
+            "total": 0,
+            "Distribuidor_id": dist_id,
+            "comision_pct": 0,
+            "comision_monto": 0,
+            "vendedor_id": vend_id,
+        }
+    )
+
+    db.add_detalle_compra(compra_id, prod_id, 10, 5)
+    detalle_id = db.cursor.lastrowid
+
+    db.update_detalle_compra_cantidad(detalle_id, 6)
+
+    detalle = db.get_detalles_compra(compra_id)[0]
+    assert detalle["cantidad"] == 6
+
+    db.cursor.execute("SELECT stock FROM productos WHERE id=?", (prod_id,))
+    stock = db.cursor.fetchone()["stock"]
+    assert stock == 6
+
+
+def test_update_detalle_compra_cantidad_validates_input():
+    db = create_db()
+    db.add_Distribuidor("D1")
+    dist_id = db.cursor.lastrowid
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, dist_id, 0, 0, 0, 0)
+    prod_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada(
+        {
+            "fecha": "2024-01-01",
+            "producto_id": None,
+            "cantidad": 0,
+            "precio_unitario": 0,
+            "total": 0,
+            "Distribuidor_id": dist_id,
+            "comision_pct": 0,
+            "comision_monto": 0,
+            "vendedor_id": vend_id,
+        }
+    )
+
+    db.add_detalle_compra(compra_id, prod_id, 10, 5)
+    detalle_id = db.cursor.lastrowid
+
+    with pytest.raises(ValueError):
+        db.update_detalle_compra_cantidad(detalle_id, -1)
+
+    with pytest.raises(ValueError):
+        db.update_detalle_compra_cantidad(None, 1)
+

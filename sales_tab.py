@@ -29,6 +29,7 @@ from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
 from utils.printing import open_pdf as open_pdf_file
+from utils.loading import create_loading_dialog, loading_dialog
 import tempfile
 import subprocess
 import shutil
@@ -63,6 +64,7 @@ class SalesTab(QWidget):
         self.email_subject = ""
         self.email_body = ""
         self.email_thread = None
+        self._email_loading_dialog = None
         self._setup_ui()
         self._load_email_config()
         if check_smtp:
@@ -617,7 +619,8 @@ class SalesTab(QWidget):
     def _safe_generate(self, generator, venta_id, title, failure_message):
         """Run a document generator and handle unexpected errors gracefully."""
         try:
-            result = generator(venta_id)
+            with loading_dialog(self, "Creando DTE…"):
+                result = generator(venta_id)
         except ValueError as exc:
             QMessageBox.warning(self, title, str(exc))
             return None
@@ -633,6 +636,16 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, title, failure_message)
             return None
         return result
+
+    def _show_email_loading(self, message: str = "Enviando correo…") -> None:
+        if self._email_loading_dialog:
+            self._email_loading_dialog.finish()
+        self._email_loading_dialog = create_loading_dialog(self, message)
+
+    def _hide_email_loading(self) -> None:
+        if self._email_loading_dialog:
+            self._email_loading_dialog.finish()
+            self._email_loading_dialog = None
 
     def save_invoice(self):
         """Generate and store the document for the selected sale."""
@@ -887,9 +900,11 @@ class SalesTab(QWidget):
             email_data["attachments"],
         )
         self.email_thread.finished.connect(self._on_email_sent)
+        self._show_email_loading()
         self.email_thread.start()
 
     def _on_email_sent(self, success, message):
+        self._hide_email_loading()
         if success:
             self.status_label.setText("Estado actual: Enviado")
             self.sent_label.setText("Último envío: " + datetime.now().strftime("%Y-%m-%d %H:%M"))

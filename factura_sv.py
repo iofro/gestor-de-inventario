@@ -374,6 +374,7 @@ def generar_factura_electronica_pdf(
     receptor_x = emisor_x + box_w + 10
     emisor_text_width = box_w - 10
     receptor_col_width = box_w / 2 - 10
+    receptor_nombre_width = box_w - 10
 
     c.setLineWidth(0.7)
     c.roundRect(emisor_x, box_y, box_w, box_h, 6, stroke=1, fill=0)
@@ -450,7 +451,7 @@ def generar_factura_electronica_pdf(
         f"Nombre: {cliente.get('nombre', '')}",
         left_x,
         text_y,
-        receptor_col_width,
+        receptor_nombre_width,
     )
 
     text_y -= line_h

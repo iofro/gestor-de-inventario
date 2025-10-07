@@ -8770,8 +8770,8 @@
   ],
   "detalles_venta": [
     {
-      "id": null,
-      "venta_id": null,
+      "id": 1,
+      "venta_id": 1649,
       "producto_id": 4586,
       "cantidad": 100.0,
       "precio_unitario": 0.884956,
@@ -8786,8 +8786,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 2,
+      "venta_id": 1649,
       "producto_id": 4939,
       "cantidad": 100.0,
       "precio_unitario": 1.327434,
@@ -8802,8 +8802,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 3,
+      "venta_id": 1649,
       "producto_id": 4942,
       "cantidad": 100.0,
       "precio_unitario": 5.221239,
@@ -8818,8 +8818,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 4,
+      "venta_id": 1659,
       "producto_id": 4990,
       "cantidad": 100.0,
       "precio_unitario": 8.40708,
@@ -8834,8 +8834,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 5,
+      "venta_id": 1659,
       "producto_id": 4939,
       "cantidad": 50.0,
       "precio_unitario": 1.327434,
@@ -8850,8 +8850,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 6,
+      "venta_id": 1978,
       "producto_id": 4939,
       "cantidad": 50.0,
       "precio_unitario": 1.327434,
@@ -8866,8 +8866,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 7,
+      "venta_id": 1978,
       "producto_id": 4506,
       "cantidad": 50.0,
       "precio_unitario": 0.530973,
@@ -8882,8 +8882,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 8,
+      "venta_id": 2188,
       "producto_id": 4506,
       "cantidad": 50.0,
       "precio_unitario": 0.530973,
@@ -8898,8 +8898,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 9,
+      "venta_id": 2188,
       "producto_id": 4870,
       "cantidad": 50.0,
       "precio_unitario": 0.442478,
@@ -8914,8 +8914,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 10,
+      "venta_id": 2188,
       "producto_id": 4786,
       "cantidad": 50.0,
       "precio_unitario": 1.99115,
@@ -8930,8 +8930,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 11,
+      "venta_id": 2188,
       "producto_id": 4968,
       "cantidad": 50.0,
       "precio_unitario": 7.079646,
@@ -8946,8 +8946,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 12,
+      "venta_id": 2188,
       "producto_id": 4445,
       "cantidad": 50.0,
       "precio_unitario": 1.053097,
@@ -8962,8 +8962,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 13,
+      "venta_id": 2188,
       "producto_id": 5003,
       "cantidad": 45.0,
       "precio_unitario": 0.371681,
@@ -8978,8 +8978,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 14,
+      "venta_id": 2209,
       "producto_id": 4947,
       "cantidad": 34.0,
       "precio_unitario": 2.212389,
@@ -8994,8 +8994,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 15,
+      "venta_id": 2209,
       "producto_id": 4947,
       "cantidad": 34.0,
       "precio_unitario": 2.212389,
@@ -9010,8 +9010,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 16,
+      "venta_id": 2209,
       "producto_id": 4943,
       "cantidad": 30.0,
       "precio_unitario": 2.522124,
@@ -9026,8 +9026,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 17,
+      "venta_id": 2208,
       "producto_id": 4586,
       "cantidad": 30.0,
       "precio_unitario": 0.884956,
@@ -9042,8 +9042,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 18,
+      "venta_id": 2208,
       "producto_id": 4625,
       "cantidad": 28.0,
       "precio_unitario": 0.309735,
@@ -9058,8 +9058,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 19,
+      "venta_id": 2208,
       "producto_id": 4842,
       "cantidad": 25.0,
       "precio_unitario": 0.663717,
@@ -9074,8 +9074,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 20,
+      "venta_id": 2208,
       "producto_id": 4586,
       "cantidad": 20.0,
       "precio_unitario": 0.884956,
@@ -9090,8 +9090,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 21,
+      "venta_id": 2208,
       "producto_id": 4870,
       "cantidad": 20.0,
       "precio_unitario": 0.442478,
@@ -9106,8 +9106,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 22,
+      "venta_id": 2208,
       "producto_id": 4577,
       "cantidad": 20.0,
       "precio_unitario": 8.79646,
@@ -9122,8 +9122,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 23,
+      "venta_id": 2208,
       "producto_id": 4771,
       "cantidad": 20.0,
       "precio_unitario": 1.0,
@@ -9138,8 +9138,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 24,
+      "venta_id": 2208,
       "producto_id": 4842,
       "cantidad": 17.0,
       "precio_unitario": 0.663717,
@@ -9154,8 +9154,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 25,
+      "venta_id": 2208,
       "producto_id": 4959,
       "cantidad": 16.0,
       "precio_unitario": 42.035398,
@@ -9170,8 +9170,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 26,
+      "venta_id": 2208,
       "producto_id": 4480,
       "cantidad": 15.0,
       "precio_unitario": 7.964602,
@@ -9186,8 +9186,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 27,
+      "venta_id": 2224,
       "producto_id": 4647,
       "cantidad": 15.0,
       "precio_unitario": 2.654867,
@@ -9202,8 +9202,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 28,
+      "venta_id": 2224,
       "producto_id": 4939,
       "cantidad": 14.0,
       "precio_unitario": 1.327434,
@@ -9218,8 +9218,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 29,
+      "venta_id": 2224,
       "producto_id": 4647,
       "cantidad": 14.0,
       "precio_unitario": 2.654867,
@@ -9234,8 +9234,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 30,
+      "venta_id": 2218,
       "producto_id": 4695,
       "cantidad": 12.0,
       "precio_unitario": 0.353982,
@@ -9250,8 +9250,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 31,
+      "venta_id": 2218,
       "producto_id": 4695,
       "cantidad": 12.0,
       "precio_unitario": 0.353982,
@@ -9266,8 +9266,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 32,
+      "venta_id": 2218,
       "producto_id": 4904,
       "cantidad": 12.0,
       "precio_unitario": 1.681416,
@@ -9282,8 +9282,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 33,
+      "venta_id": 2225,
       "producto_id": 4904,
       "cantidad": 12.0,
       "precio_unitario": 1.681416,
@@ -9298,8 +9298,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 34,
+      "venta_id": 2225,
       "producto_id": 5063,
       "cantidad": 12.0,
       "precio_unitario": 0.309735,
@@ -9314,8 +9314,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 35,
+      "venta_id": 2225,
       "producto_id": 4964,
       "cantidad": 10.0,
       "precio_unitario": 2.522124,
@@ -9330,8 +9330,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 36,
+      "venta_id": 2219,
       "producto_id": 4482,
       "cantidad": 10.0,
       "precio_unitario": 4.867257,
@@ -9346,8 +9346,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 37,
+      "venta_id": 2219,
       "producto_id": 4943,
       "cantidad": 10.0,
       "precio_unitario": 2.522124,
@@ -9362,8 +9362,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 38,
+      "venta_id": 2219,
       "producto_id": 4943,
       "cantidad": 10.0,
       "precio_unitario": 2.522124,
@@ -9378,8 +9378,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 39,
+      "venta_id": 2232,
       "producto_id": 4943,
       "cantidad": 10.0,
       "precio_unitario": 2.522124,
@@ -9394,8 +9394,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 40,
+      "venta_id": 2232,
       "producto_id": 4586,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9410,8 +9410,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 41,
+      "venta_id": 2233,
       "producto_id": 4586,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9426,8 +9426,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 42,
+      "venta_id": 2233,
       "producto_id": 4586,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9442,8 +9442,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 43,
+      "venta_id": 2266,
       "producto_id": 4586,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9458,8 +9458,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 44,
+      "venta_id": 2266,
       "producto_id": 4605,
       "cantidad": 10.0,
       "precio_unitario": 0.663717,
@@ -9474,8 +9474,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 45,
+      "venta_id": 2266,
       "producto_id": 4647,
       "cantidad": 10.0,
       "precio_unitario": 2.654867,
@@ -9490,8 +9490,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 46,
+      "venta_id": 2255,
       "producto_id": 4647,
       "cantidad": 10.0,
       "precio_unitario": 2.654867,
@@ -9506,8 +9506,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 47,
+      "venta_id": 2255,
       "producto_id": 4647,
       "cantidad": 10.0,
       "precio_unitario": 2.654867,
@@ -9522,8 +9522,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 48,
+      "venta_id": 2255,
       "producto_id": 4826,
       "cantidad": 10.0,
       "precio_unitario": 3.40708,
@@ -9538,8 +9538,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 49,
+      "venta_id": 2255,
       "producto_id": 4506,
       "cantidad": 10.0,
       "precio_unitario": 0.530973,
@@ -9554,8 +9554,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 50,
+      "venta_id": 2255,
       "producto_id": 4506,
       "cantidad": 10.0,
       "precio_unitario": 0.530973,
@@ -9570,8 +9570,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 51,
+      "venta_id": 2255,
       "producto_id": 4506,
       "cantidad": 10.0,
       "precio_unitario": 0.530973,
@@ -9586,8 +9586,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 52,
+      "venta_id": 2255,
       "producto_id": 4870,
       "cantidad": 10.0,
       "precio_unitario": 0.442478,
@@ -9602,8 +9602,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 53,
+      "venta_id": 2255,
       "producto_id": 4786,
       "cantidad": 10.0,
       "precio_unitario": 1.99115,
@@ -9618,8 +9618,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 54,
+      "venta_id": 2255,
       "producto_id": 4565,
       "cantidad": 10.0,
       "precio_unitario": 2.433628,
@@ -9634,8 +9634,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 55,
+      "venta_id": 2255,
       "producto_id": 4739,
       "cantidad": 10.0,
       "precio_unitario": 1.327434,
@@ -9650,8 +9650,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 56,
+      "venta_id": 2255,
       "producto_id": 4497,
       "cantidad": 10.0,
       "precio_unitario": 1.327434,
@@ -9666,8 +9666,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 57,
+      "venta_id": 2255,
       "producto_id": 4953,
       "cantidad": 10.0,
       "precio_unitario": 4.336283,
@@ -9682,8 +9682,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 58,
+      "venta_id": 2255,
       "producto_id": 4864,
       "cantidad": 10.0,
       "precio_unitario": 2.610619,
@@ -9698,8 +9698,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 59,
+      "venta_id": 2255,
       "producto_id": 4968,
       "cantidad": 10.0,
       "precio_unitario": 7.079646,
@@ -9714,8 +9714,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 60,
+      "venta_id": 2255,
       "producto_id": 4968,
       "cantidad": 10.0,
       "precio_unitario": 7.079646,
@@ -9730,8 +9730,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 61,
+      "venta_id": 2255,
       "producto_id": 4968,
       "cantidad": 10.0,
       "precio_unitario": 7.079646,
@@ -9746,8 +9746,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 62,
+      "venta_id": 2255,
       "producto_id": 4968,
       "cantidad": 10.0,
       "precio_unitario": 7.079646,
@@ -9762,8 +9762,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 63,
+      "venta_id": 2255,
       "producto_id": 4837,
       "cantidad": 10.0,
       "precio_unitario": 4.584071,
@@ -9778,8 +9778,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 64,
+      "venta_id": 2255,
       "producto_id": 4498,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9794,8 +9794,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 65,
+      "venta_id": 2255,
       "producto_id": 5043,
       "cantidad": 10.0,
       "precio_unitario": 1.840708,
@@ -9810,8 +9810,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 66,
+      "venta_id": 2260,
       "producto_id": 4827,
       "cantidad": 10.0,
       "precio_unitario": 5.79646,
@@ -9826,8 +9826,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 67,
+      "venta_id": 2260,
       "producto_id": 5147,
       "cantidad": 10.0,
       "precio_unitario": 2.743363,
@@ -9842,8 +9842,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 68,
+      "venta_id": 2260,
       "producto_id": 5147,
       "cantidad": 10.0,
       "precio_unitario": 2.743363,
@@ -9858,8 +9858,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 69,
+      "venta_id": 2260,
       "producto_id": 4771,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9874,8 +9874,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 70,
+      "venta_id": 2260,
       "producto_id": 4771,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9890,8 +9890,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 71,
+      "venta_id": 2260,
       "producto_id": 4771,
       "cantidad": 10.0,
       "precio_unitario": 0.884956,
@@ -9906,8 +9906,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 72,
+      "venta_id": 2260,
       "producto_id": 4771,
       "cantidad": 10.0,
       "precio_unitario": 1.0,
@@ -9922,8 +9922,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 73,
+      "venta_id": 2260,
       "producto_id": 5141,
       "cantidad": 10.0,
       "precio_unitario": 1.460177,
@@ -9938,8 +9938,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 74,
+      "venta_id": 2260,
       "producto_id": 4559,
       "cantidad": 10.0,
       "precio_unitario": 1.460177,
@@ -9954,8 +9954,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 75,
+      "venta_id": 2260,
       "producto_id": 5142,
       "cantidad": 10.0,
       "precio_unitario": 1.460177,
@@ -9970,8 +9970,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 76,
+      "venta_id": 2260,
       "producto_id": 4682,
       "cantidad": 10.0,
       "precio_unitario": 0.663717,
@@ -9986,8 +9986,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 77,
+      "venta_id": 2260,
       "producto_id": 4682,
       "cantidad": 10.0,
       "precio_unitario": 0.663717,
@@ -10002,8 +10002,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 78,
+      "venta_id": 2260,
       "producto_id": 5019,
       "cantidad": 10.0,
       "precio_unitario": 3.185841,
@@ -10018,8 +10018,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 79,
+      "venta_id": 2260,
       "producto_id": 5148,
       "cantidad": 10.0,
       "precio_unitario": 4.424779,
@@ -10034,8 +10034,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 80,
+      "venta_id": 2256,
       "producto_id": 5063,
       "cantidad": 10.0,
       "precio_unitario": 0.309735,
@@ -10050,8 +10050,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 81,
+      "venta_id": 2256,
       "producto_id": 4891,
       "cantidad": 10.0,
       "precio_unitario": 3.00885,
@@ -10066,8 +10066,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 82,
+      "venta_id": 2256,
       "producto_id": 4433,
       "cantidad": 9.0,
       "precio_unitario": 3.097345,
@@ -10082,8 +10082,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 83,
+      "venta_id": 2256,
       "producto_id": 4966,
       "cantidad": 9.0,
       "precio_unitario": 6.19469,
@@ -10098,8 +10098,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 84,
+      "venta_id": 2256,
       "producto_id": 4771,
       "cantidad": 9.0,
       "precio_unitario": 0.884956,
@@ -10114,8 +10114,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 85,
+      "venta_id": 2256,
       "producto_id": 4774,
       "cantidad": 8.0,
       "precio_unitario": 6.637168,
@@ -10130,8 +10130,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 86,
+      "venta_id": 2256,
       "producto_id": 5084,
       "cantidad": 8.0,
       "precio_unitario": 1.327434,
@@ -10146,8 +10146,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 87,
+      "venta_id": 2256,
       "producto_id": 4643,
       "cantidad": 7.0,
       "precio_unitario": 22.123894,
@@ -10162,8 +10162,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 88,
+      "venta_id": 2267,
       "producto_id": 4827,
       "cantidad": 7.0,
       "precio_unitario": 5.79646,
@@ -10178,8 +10178,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 89,
+      "venta_id": 2267,
       "producto_id": 4964,
       "cantidad": 6.0,
       "precio_unitario": 2.522124,
@@ -10194,8 +10194,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 90,
+      "venta_id": 2268,
       "producto_id": 4964,
       "cantidad": 6.0,
       "precio_unitario": 2.522124,
@@ -10210,8 +10210,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 91,
+      "venta_id": 2268,
       "producto_id": 4482,
       "cantidad": 6.0,
       "precio_unitario": 4.867257,
@@ -10226,8 +10226,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 92,
+      "venta_id": 2268,
       "producto_id": 4773,
       "cantidad": 6.0,
       "precio_unitario": 6.637168,
@@ -10242,8 +10242,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 93,
+      "venta_id": 2268,
       "producto_id": 4513,
       "cantidad": 6.0,
       "precio_unitario": 3.539823,
@@ -10258,8 +10258,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 94,
+      "venta_id": 2268,
       "producto_id": 4939,
       "cantidad": 6.0,
       "precio_unitario": 1.327434,
@@ -10274,8 +10274,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 95,
+      "venta_id": 2268,
       "producto_id": 4820,
       "cantidad": 6.0,
       "precio_unitario": 2.477876,
@@ -10290,8 +10290,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 96,
+      "venta_id": 2288,
       "producto_id": 4826,
       "cantidad": 6.0,
       "precio_unitario": 3.40708,
@@ -10306,8 +10306,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 97,
+      "venta_id": 2288,
       "producto_id": 5071,
       "cantidad": 6.0,
       "precio_unitario": 4.761062,
@@ -10322,8 +10322,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 98,
+      "venta_id": 2288,
       "producto_id": 4584,
       "cantidad": 6.0,
       "precio_unitario": 3.185841,
@@ -10338,8 +10338,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 99,
+      "venta_id": 2288,
       "producto_id": 4577,
       "cantidad": 6.0,
       "precio_unitario": 8.79646,
@@ -10354,8 +10354,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 100,
+      "venta_id": 2285,
       "producto_id": 4577,
       "cantidad": 6.0,
       "precio_unitario": 8.79646,
@@ -10370,8 +10370,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 101,
+      "venta_id": 2285,
       "producto_id": 4827,
       "cantidad": 6.0,
       "precio_unitario": 5.79646,
@@ -10386,8 +10386,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 102,
+      "venta_id": 2285,
       "producto_id": 4462,
       "cantidad": 6.0,
       "precio_unitario": 2.876106,
@@ -10402,8 +10402,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 103,
+      "venta_id": 2285,
       "producto_id": 4496,
       "cantidad": 5.0,
       "precio_unitario": 3.982301,
@@ -10418,8 +10418,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 104,
+      "venta_id": 2286,
       "producto_id": 4865,
       "cantidad": 5.0,
       "precio_unitario": 2.433628,
@@ -10434,8 +10434,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 105,
+      "venta_id": 2286,
       "producto_id": 4845,
       "cantidad": 5.0,
       "precio_unitario": 2.566372,
@@ -10450,8 +10450,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 106,
+      "venta_id": 2286,
       "producto_id": 4964,
       "cantidad": 5.0,
       "precio_unitario": 2.522124,
@@ -10466,8 +10466,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 107,
+      "venta_id": 2287,
       "producto_id": 4964,
       "cantidad": 5.0,
       "precio_unitario": 2.522124,
@@ -10482,8 +10482,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 108,
+      "venta_id": 2287,
       "producto_id": 4482,
       "cantidad": 5.0,
       "precio_unitario": 4.867257,
@@ -10498,8 +10498,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 109,
+      "venta_id": 2287,
       "producto_id": 4943,
       "cantidad": 5.0,
       "precio_unitario": 2.522124,
@@ -10514,8 +10514,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 110,
+      "venta_id": 2287,
       "producto_id": 4980,
       "cantidad": 5.0,
       "precio_unitario": 6.061947,
@@ -10530,8 +10530,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 111,
+      "venta_id": 2287,
       "producto_id": 4980,
       "cantidad": 5.0,
       "precio_unitario": 6.061947,
@@ -10546,8 +10546,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 112,
+      "venta_id": 2287,
       "producto_id": 4605,
       "cantidad": 5.0,
       "precio_unitario": 0.663717,
@@ -10562,8 +10562,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 113,
+      "venta_id": 2287,
       "producto_id": 5083,
       "cantidad": 5.0,
       "precio_unitario": 6.415929,
@@ -10578,8 +10578,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 114,
+      "venta_id": 2287,
       "producto_id": 4656,
       "cantidad": 5.0,
       "precio_unitario": 6.548673,
@@ -10594,8 +10594,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 115,
+      "venta_id": 2287,
       "producto_id": 4989,
       "cantidad": 5.0,
       "precio_unitario": 5.380531,
@@ -10610,8 +10610,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 116,
+      "venta_id": 2304,
       "producto_id": 5084,
       "cantidad": 5.0,
       "precio_unitario": 1.327434,
@@ -10626,8 +10626,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 117,
+      "venta_id": 2304,
       "producto_id": 4501,
       "cantidad": 5.0,
       "precio_unitario": 0.884956,
@@ -10642,8 +10642,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 118,
+      "venta_id": 2304,
       "producto_id": 4501,
       "cantidad": 5.0,
       "precio_unitario": 0.884956,
@@ -10658,8 +10658,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 119,
+      "venta_id": 2304,
       "producto_id": 4826,
       "cantidad": 5.0,
       "precio_unitario": 3.40708,
@@ -10674,8 +10674,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 120,
+      "venta_id": 2304,
       "producto_id": 4780,
       "cantidad": 5.0,
       "precio_unitario": 5.274336,
@@ -10690,8 +10690,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 121,
+      "venta_id": 2304,
       "producto_id": 4786,
       "cantidad": 5.0,
       "precio_unitario": 1.99115,
@@ -10706,8 +10706,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 122,
+      "venta_id": 2305,
       "producto_id": 4786,
       "cantidad": 5.0,
       "precio_unitario": 1.99115,
@@ -10722,8 +10722,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 123,
+      "venta_id": 2305,
       "producto_id": 5058,
       "cantidad": 5.0,
       "precio_unitario": 22.123894,
@@ -10738,8 +10738,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 124,
+      "venta_id": 2313,
       "producto_id": 4497,
       "cantidad": 5.0,
       "precio_unitario": 1.327434,
@@ -10754,8 +10754,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 125,
+      "venta_id": 2313,
       "producto_id": 4951,
       "cantidad": 5.0,
       "precio_unitario": 2.584071,
@@ -10770,8 +10770,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 126,
+      "venta_id": 2313,
       "producto_id": 4953,
       "cantidad": 5.0,
       "precio_unitario": 4.336283,
@@ -10786,8 +10786,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 127,
+      "venta_id": 2313,
       "producto_id": 4864,
       "cantidad": 5.0,
       "precio_unitario": 2.610619,
@@ -10802,8 +10802,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 128,
+      "venta_id": 2319,
       "producto_id": 4420,
       "cantidad": 5.0,
       "precio_unitario": 4.867257,
@@ -10818,8 +10818,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 129,
+      "venta_id": 2320,
       "producto_id": 4837,
       "cantidad": 5.0,
       "precio_unitario": 3.40708,
@@ -10834,8 +10834,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 130,
+      "venta_id": 2320,
       "producto_id": 4553,
       "cantidad": 5.0,
       "precio_unitario": 3.539823,
@@ -10850,8 +10850,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 131,
+      "venta_id": 2320,
       "producto_id": 4553,
       "cantidad": 5.0,
       "precio_unitario": 3.539823,
@@ -10866,8 +10866,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 132,
+      "venta_id": 2320,
       "producto_id": 4418,
       "cantidad": 5.0,
       "precio_unitario": 5.752212,
@@ -10882,8 +10882,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 133,
+      "venta_id": 2331,
       "producto_id": 5168,
       "cantidad": 5.0,
       "precio_unitario": 3.548673,
@@ -10898,8 +10898,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 134,
+      "venta_id": 2331,
       "producto_id": 4997,
       "cantidad": 5.0,
       "precio_unitario": 6.19469,
@@ -10914,8 +10914,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 135,
+      "venta_id": 2331,
       "producto_id": 4626,
       "cantidad": 5.0,
       "precio_unitario": 4.424779,
@@ -10930,8 +10930,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 136,
+      "venta_id": 2331,
       "producto_id": 4626,
       "cantidad": 5.0,
       "precio_unitario": 4.424779,
@@ -10946,8 +10946,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 137,
+      "venta_id": 2331,
       "producto_id": 4626,
       "cantidad": 5.0,
       "precio_unitario": 4.424779,
@@ -10962,8 +10962,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 138,
+      "venta_id": 2331,
       "producto_id": 4639,
       "cantidad": 5.0,
       "precio_unitario": 19.469027,
@@ -10978,8 +10978,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 139,
+      "venta_id": 2331,
       "producto_id": 4771,
       "cantidad": 5.0,
       "precio_unitario": 1.0,
@@ -10994,8 +10994,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 140,
+      "venta_id": 2331,
       "producto_id": 4534,
       "cantidad": 5.0,
       "precio_unitario": 3.097345,
@@ -11010,8 +11010,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 141,
+      "venta_id": 2331,
       "producto_id": 4947,
       "cantidad": 5.0,
       "precio_unitario": 2.212389,
@@ -11026,8 +11026,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 142,
+      "venta_id": 2332,
       "producto_id": 4947,
       "cantidad": 5.0,
       "precio_unitario": 2.212389,
@@ -11042,8 +11042,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 143,
+      "venta_id": 2332,
       "producto_id": 4681,
       "cantidad": 5.0,
       "precio_unitario": 12.168142,
@@ -11058,8 +11058,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 144,
+      "venta_id": 2332,
       "producto_id": 5019,
       "cantidad": 5.0,
       "precio_unitario": 3.185841,
@@ -11074,8 +11074,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 145,
+      "venta_id": 2332,
       "producto_id": 4455,
       "cantidad": 5.0,
       "precio_unitario": 8.849558,
@@ -11090,8 +11090,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 146,
+      "venta_id": 2332,
       "producto_id": 4486,
       "cantidad": 4.0,
       "precio_unitario": 3.362832,
@@ -11106,8 +11106,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 147,
+      "venta_id": 2332,
       "producto_id": 4482,
       "cantidad": 4.0,
       "precio_unitario": 4.867257,
@@ -11122,8 +11122,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 148,
+      "venta_id": 2332,
       "producto_id": 4480,
       "cantidad": 4.0,
       "precio_unitario": 7.964602,
@@ -11138,8 +11138,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 149,
+      "venta_id": 2332,
       "producto_id": 4419,
       "cantidad": 4.0,
       "precio_unitario": 3.982301,
@@ -11154,8 +11154,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 150,
+      "venta_id": 2333,
       "producto_id": 4419,
       "cantidad": 4.0,
       "precio_unitario": 3.982301,
@@ -11170,8 +11170,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 151,
+      "venta_id": 2333,
       "producto_id": 4980,
       "cantidad": 4.0,
       "precio_unitario": 6.061947,
@@ -11186,8 +11186,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 152,
+      "venta_id": 2347,
       "producto_id": 4851,
       "cantidad": 4.0,
       "precio_unitario": 2.743363,
@@ -11202,8 +11202,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 153,
+      "venta_id": 2347,
       "producto_id": 4528,
       "cantidad": 4.0,
       "precio_unitario": 4.867257,
@@ -11218,8 +11218,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 154,
+      "venta_id": 2350,
       "producto_id": 5020,
       "cantidad": 4.0,
       "precio_unitario": 6.637168,
@@ -11234,8 +11234,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 155,
+      "venta_id": 2350,
       "producto_id": 5083,
       "cantidad": 4.0,
       "precio_unitario": 6.415929,
@@ -11250,8 +11250,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 156,
+      "venta_id": 2358,
       "producto_id": 4939,
       "cantidad": 4.0,
       "precio_unitario": 3.539823,
@@ -11266,8 +11266,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 157,
+      "venta_id": 2358,
       "producto_id": 4989,
       "cantidad": 4.0,
       "precio_unitario": 5.380531,
@@ -11282,8 +11282,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 158,
+      "venta_id": 2358,
       "producto_id": 4958,
       "cantidad": 4.0,
       "precio_unitario": 5.530973,
@@ -11298,8 +11298,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 159,
+      "venta_id": 2368,
       "producto_id": 4603,
       "cantidad": 4.0,
       "precio_unitario": 5.088496,
@@ -11314,8 +11314,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 160,
+      "venta_id": 2368,
       "producto_id": 4775,
       "cantidad": 4.0,
       "precio_unitario": 1.106195,
@@ -11330,8 +11330,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 161,
+      "venta_id": 2368,
       "producto_id": 5023,
       "cantidad": 4.0,
       "precio_unitario": 29.955752,
@@ -11346,8 +11346,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 162,
+      "venta_id": 2368,
       "producto_id": 5005,
       "cantidad": 4.0,
       "precio_unitario": 3.451327,
@@ -11362,8 +11362,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 163,
+      "venta_id": 2368,
       "producto_id": 4981,
       "cantidad": 4.0,
       "precio_unitario": 7.079646,
@@ -11378,8 +11378,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 164,
+      "venta_id": 2378,
       "producto_id": 4833,
       "cantidad": 4.0,
       "precio_unitario": 6.017699,
@@ -11394,8 +11394,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 165,
+      "venta_id": 2377,
       "producto_id": 4778,
       "cantidad": 4.0,
       "precio_unitario": 5.946903,
@@ -11410,8 +11410,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 166,
+      "venta_id": 2377,
       "producto_id": 4421,
       "cantidad": 4.0,
       "precio_unitario": 3.982301,
@@ -11426,8 +11426,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 167,
+      "venta_id": 2377,
       "producto_id": 4904,
       "cantidad": 4.0,
       "precio_unitario": 1.681416,
@@ -11442,8 +11442,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 168,
+      "venta_id": 2377,
       "producto_id": 4904,
       "cantidad": 4.0,
       "precio_unitario": 2.566372,
@@ -11458,8 +11458,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 169,
+      "venta_id": 2377,
       "producto_id": 4577,
       "cantidad": 4.0,
       "precio_unitario": 8.79646,
@@ -11474,8 +11474,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 170,
+      "venta_id": 2377,
       "producto_id": 4967,
       "cantidad": 4.0,
       "precio_unitario": 3.451327,
@@ -11490,8 +11490,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 171,
+      "venta_id": 2377,
       "producto_id": 5147,
       "cantidad": 4.0,
       "precio_unitario": 2.743363,
@@ -11506,8 +11506,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 172,
+      "venta_id": 2377,
       "producto_id": 4536,
       "cantidad": 4.0,
       "precio_unitario": 2.079646,
@@ -11522,8 +11522,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 173,
+      "venta_id": 2377,
       "producto_id": 5141,
       "cantidad": 4.0,
       "precio_unitario": 1.460177,
@@ -11538,8 +11538,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 174,
+      "venta_id": 2377,
       "producto_id": 4559,
       "cantidad": 4.0,
       "precio_unitario": 1.460177,
@@ -11554,8 +11554,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 175,
+      "venta_id": 2379,
       "producto_id": 5142,
       "cantidad": 4.0,
       "precio_unitario": 1.460177,
@@ -11570,8 +11570,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 176,
+      "venta_id": 2381,
       "producto_id": 4942,
       "cantidad": 4.0,
       "precio_unitario": 5.221239,
@@ -11586,8 +11586,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 177,
+      "venta_id": 2381,
       "producto_id": 4947,
       "cantidad": 4.0,
       "precio_unitario": 2.212389,
@@ -11602,8 +11602,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 178,
+      "venta_id": 2381,
       "producto_id": 4682,
       "cantidad": 4.0,
       "precio_unitario": 0.663717,
@@ -11618,8 +11618,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 179,
+      "venta_id": 2381,
       "producto_id": 4993,
       "cantidad": 4.0,
       "precio_unitario": 3.274336,
@@ -11634,8 +11634,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 180,
+      "venta_id": 2381,
       "producto_id": 5062,
       "cantidad": 3.0,
       "precio_unitario": 1.106195,
@@ -11650,8 +11650,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 181,
+      "venta_id": 2381,
       "producto_id": 4845,
       "cantidad": 3.0,
       "precio_unitario": 2.566372,
@@ -11666,8 +11666,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 182,
+      "venta_id": 2381,
       "producto_id": 4964,
       "cantidad": 3.0,
       "precio_unitario": 2.522124,
@@ -11682,8 +11682,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 183,
+      "venta_id": 2381,
       "producto_id": 4487,
       "cantidad": 3.0,
       "precio_unitario": 3.362832,
@@ -11698,8 +11698,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 184,
+      "venta_id": 2381,
       "producto_id": 5040,
       "cantidad": 3.0,
       "precio_unitario": 4.424779,
@@ -11714,8 +11714,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 185,
+      "venta_id": 2433,
       "producto_id": 5040,
       "cantidad": 3.0,
       "precio_unitario": 4.424779,
@@ -11730,8 +11730,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 186,
+      "venta_id": 2434,
       "producto_id": 4463,
       "cantidad": 3.0,
       "precio_unitario": 6.637168,
@@ -11746,8 +11746,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 187,
+      "venta_id": 2437,
       "producto_id": 4511,
       "cantidad": 3.0,
       "precio_unitario": 7.522124,
@@ -11762,8 +11762,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 188,
+      "venta_id": 2437,
       "producto_id": 4511,
       "cantidad": 3.0,
       "precio_unitario": 7.522124,
@@ -11778,8 +11778,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 189,
+      "venta_id": 2437,
       "producto_id": 5048,
       "cantidad": 3.0,
       "precio_unitario": 7.522124,
@@ -11794,8 +11794,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 190,
+      "venta_id": 2437,
       "producto_id": 5048,
       "cantidad": 3.0,
       "precio_unitario": 7.522124,
@@ -11810,8 +11810,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 191,
+      "venta_id": 2437,
       "producto_id": 4419,
       "cantidad": 3.0,
       "precio_unitario": 3.982301,
@@ -11826,8 +11826,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 192,
+      "venta_id": 2437,
       "producto_id": 4419,
       "cantidad": 3.0,
       "precio_unitario": 3.982301,
@@ -11842,8 +11842,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 193,
+      "venta_id": 2449,
       "producto_id": 4980,
       "cantidad": 3.0,
       "precio_unitario": 6.061947,
@@ -11858,8 +11858,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 194,
+      "venta_id": 2449,
       "producto_id": 4774,
       "cantidad": 3.0,
       "precio_unitario": 6.637168,
@@ -11874,8 +11874,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 195,
+      "venta_id": 2449,
       "producto_id": 4765,
       "cantidad": 3.0,
       "precio_unitario": 11.504425,
@@ -11890,8 +11890,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 196,
+      "venta_id": 2449,
       "producto_id": 4514,
       "cantidad": 3.0,
       "precio_unitario": 26.504425,
@@ -11906,8 +11906,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 197,
+      "venta_id": 2449,
       "producto_id": 5083,
       "cantidad": 3.0,
       "precio_unitario": 6.415929,
@@ -11922,8 +11922,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 198,
+      "venta_id": 2456,
       "producto_id": 5082,
       "cantidad": 3.0,
       "precio_unitario": 8.849558,
@@ -11938,8 +11938,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 199,
+      "venta_id": 2456,
       "producto_id": 4647,
       "cantidad": 3.0,
       "precio_unitario": 2.654867,
@@ -11954,8 +11954,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 200,
+      "venta_id": 2456,
       "producto_id": 4647,
       "cantidad": 3.0,
       "precio_unitario": 2.654867,
@@ -11970,8 +11970,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 201,
+      "venta_id": 2456,
       "producto_id": 4772,
       "cantidad": 3.0,
       "precio_unitario": 7.079646,
@@ -11986,8 +11986,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 202,
+      "venta_id": 2456,
       "producto_id": 4820,
       "cantidad": 3.0,
       "precio_unitario": 2.477876,
@@ -12002,8 +12002,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 203,
+      "venta_id": 2456,
       "producto_id": 5084,
       "cantidad": 3.0,
       "precio_unitario": 1.327434,
@@ -12018,8 +12018,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 204,
+      "venta_id": 2456,
       "producto_id": 5084,
       "cantidad": 3.0,
       "precio_unitario": 1.327434,
@@ -12034,8 +12034,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 205,
+      "venta_id": 2456,
       "producto_id": 4501,
       "cantidad": 3.0,
       "precio_unitario": 0.884956,
@@ -12050,8 +12050,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 206,
+      "venta_id": 2456,
       "producto_id": 4501,
       "cantidad": 3.0,
       "precio_unitario": 0.884956,
@@ -12066,8 +12066,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 207,
+      "venta_id": 2456,
       "producto_id": 4501,
       "cantidad": 3.0,
       "precio_unitario": 0.884956,
@@ -12082,8 +12082,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 208,
+      "venta_id": 2456,
       "producto_id": 5081,
       "cantidad": 3.0,
       "precio_unitario": 3.973451,
@@ -12098,8 +12098,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 209,
+      "venta_id": 2456,
       "producto_id": 4776,
       "cantidad": 3.0,
       "precio_unitario": 4.336283,
@@ -12114,8 +12114,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 210,
+      "venta_id": 2461,
       "producto_id": 4427,
       "cantidad": 3.0,
       "precio_unitario": 6.150442,
@@ -12130,8 +12130,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 211,
+      "venta_id": 2461,
       "producto_id": 4971,
       "cantidad": 3.0,
       "precio_unitario": 2.654867,
@@ -12146,8 +12146,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 212,
+      "venta_id": 2461,
       "producto_id": 4826,
       "cantidad": 3.0,
       "precio_unitario": 3.40708,
@@ -12162,8 +12162,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 213,
+      "venta_id": 2461,
       "producto_id": 4826,
       "cantidad": 3.0,
       "precio_unitario": 3.40708,
@@ -12178,8 +12178,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 214,
+      "venta_id": 2461,
       "producto_id": 4826,
       "cantidad": 3.0,
       "precio_unitario": 3.40708,
@@ -12194,8 +12194,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 215,
+      "venta_id": 2461,
       "producto_id": 5071,
       "cantidad": 3.0,
       "precio_unitario": 5.955752,
@@ -12210,8 +12210,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 216,
+      "venta_id": 2461,
       "producto_id": 5143,
       "cantidad": 3.0,
       "precio_unitario": 12.743363,
@@ -12226,8 +12226,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 217,
+      "venta_id": 2461,
       "producto_id": 5023,
       "cantidad": 3.0,
       "precio_unitario": 19.469027,
@@ -12242,8 +12242,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 218,
+      "venta_id": 2461,
       "producto_id": 5023,
       "cantidad": 3.0,
       "precio_unitario": 19.469027,
@@ -12258,8 +12258,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 219,
+      "venta_id": 2461,
       "producto_id": 4565,
       "cantidad": 3.0,
       "precio_unitario": 2.433628,
@@ -12274,8 +12274,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 220,
+      "venta_id": 2461,
       "producto_id": 4953,
       "cantidad": 3.0,
       "precio_unitario": 4.336283,
@@ -12290,8 +12290,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 221,
+      "venta_id": 2461,
       "producto_id": 4936,
       "cantidad": 3.0,
       "precio_unitario": 1.769912,
@@ -12306,8 +12306,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 222,
+      "venta_id": 2461,
       "producto_id": 4937,
       "cantidad": 3.0,
       "precio_unitario": 1.769912,
@@ -12322,8 +12322,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 223,
+      "venta_id": 2461,
       "producto_id": 4981,
       "cantidad": 3.0,
       "precio_unitario": 7.079646,
@@ -12338,8 +12338,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 224,
+      "venta_id": 2461,
       "producto_id": 5085,
       "cantidad": 3.0,
       "precio_unitario": 7.300885,
@@ -12354,8 +12354,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 225,
+      "venta_id": 2474,
       "producto_id": 4976,
       "cantidad": 3.0,
       "precio_unitario": 15.486726,
@@ -12370,8 +12370,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 226,
+      "venta_id": 2474,
       "producto_id": 5061,
       "cantidad": 3.0,
       "precio_unitario": 1.106195,
@@ -12386,8 +12386,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 227,
+      "venta_id": 2474,
       "producto_id": 5002,
       "cantidad": 3.0,
       "precio_unitario": 8.849558,
@@ -12402,8 +12402,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 228,
+      "venta_id": 2462,
       "producto_id": 4999,
       "cantidad": 3.0,
       "precio_unitario": 35.39823,
@@ -12418,8 +12418,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 229,
+      "venta_id": 2462,
       "producto_id": 4864,
       "cantidad": 3.0,
       "precio_unitario": 2.610619,
@@ -12434,8 +12434,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 230,
+      "venta_id": 2462,
       "producto_id": 5047,
       "cantidad": 3.0,
       "precio_unitario": 3.362832,
@@ -12450,8 +12450,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 231,
+      "venta_id": 2462,
       "producto_id": 5041,
       "cantidad": 3.0,
       "precio_unitario": 6.442478,
@@ -12466,8 +12466,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 232,
+      "venta_id": 2462,
       "producto_id": 4420,
       "cantidad": 3.0,
       "precio_unitario": 4.867257,
@@ -12482,8 +12482,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 233,
+      "venta_id": 2462,
       "producto_id": 4837,
       "cantidad": 3.0,
       "precio_unitario": 3.40708,
@@ -12498,8 +12498,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 234,
+      "venta_id": 2462,
       "producto_id": 4837,
       "cantidad": 3.0,
       "precio_unitario": 3.40708,
@@ -12514,8 +12514,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 235,
+      "venta_id": 2462,
       "producto_id": 4466,
       "cantidad": 3.0,
       "precio_unitario": 4.955752,
@@ -12530,8 +12530,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 236,
+      "venta_id": 2462,
       "producto_id": 4418,
       "cantidad": 3.0,
       "precio_unitario": 5.752212,
@@ -12546,8 +12546,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 237,
+      "venta_id": 2462,
       "producto_id": 4418,
       "cantidad": 3.0,
       "precio_unitario": 5.752212,
@@ -12562,8 +12562,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 238,
+      "venta_id": 2462,
       "producto_id": 4426,
       "cantidad": 3.0,
       "precio_unitario": 4.867257,
@@ -12578,8 +12578,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 239,
+      "venta_id": 2462,
       "producto_id": 4670,
       "cantidad": 3.0,
       "precio_unitario": 4.867257,
@@ -12594,8 +12594,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 240,
+      "venta_id": 2463,
       "producto_id": 4670,
       "cantidad": 3.0,
       "precio_unitario": 4.867257,
@@ -12610,8 +12610,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 241,
+      "venta_id": 2473,
       "producto_id": 4500,
       "cantidad": 3.0,
       "precio_unitario": 7.079646,
@@ -12626,8 +12626,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 242,
+      "venta_id": 2472,
       "producto_id": 4500,
       "cantidad": 3.0,
       "precio_unitario": 7.079646,
@@ -12642,8 +12642,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 243,
+      "venta_id": 2472,
       "producto_id": 4577,
       "cantidad": 3.0,
       "precio_unitario": 8.79646,
@@ -12658,8 +12658,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 244,
+      "venta_id": 2472,
       "producto_id": 4577,
       "cantidad": 3.0,
       "precio_unitario": 8.79646,
@@ -12674,8 +12674,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 245,
+      "venta_id": 2472,
       "producto_id": 4827,
       "cantidad": 3.0,
       "precio_unitario": 5.79646,
@@ -12690,8 +12690,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 246,
+      "venta_id": 2472,
       "producto_id": 5147,
       "cantidad": 3.0,
       "precio_unitario": 2.743363,
@@ -12706,8 +12706,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 247,
+      "venta_id": 2472,
       "producto_id": 4997,
       "cantidad": 3.0,
       "precio_unitario": 6.19469,
@@ -12722,8 +12722,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 248,
+      "venta_id": 2472,
       "producto_id": 4435,
       "cantidad": 3.0,
       "precio_unitario": 5.752212,
@@ -12738,8 +12738,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 249,
+      "venta_id": 2482,
       "producto_id": 4440,
       "cantidad": 3.0,
       "precio_unitario": 4.247788,
@@ -12754,8 +12754,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 250,
+      "venta_id": 2483,
       "producto_id": 4439,
       "cantidad": 3.0,
       "precio_unitario": 3.495575,
@@ -12770,8 +12770,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 251,
+      "venta_id": 2484,
       "producto_id": 4534,
       "cantidad": 3.0,
       "precio_unitario": 3.097345,
@@ -12786,8 +12786,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 252,
+      "venta_id": 2484,
       "producto_id": 4494,
       "cantidad": 3.0,
       "precio_unitario": 8.40708,
@@ -12802,8 +12802,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 253,
+      "venta_id": 2484,
       "producto_id": 4494,
       "cantidad": 3.0,
       "precio_unitario": 8.40708,
@@ -12818,8 +12818,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 254,
+      "venta_id": 2485,
       "producto_id": 4947,
       "cantidad": 3.0,
       "precio_unitario": 2.212389,
@@ -12834,8 +12834,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 255,
+      "venta_id": 2485,
       "producto_id": 4682,
       "cantidad": 3.0,
       "precio_unitario": 0.663717,
@@ -12850,8 +12850,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 256,
+      "venta_id": 2485,
       "producto_id": 4751,
       "cantidad": 3.0,
       "precio_unitario": 2.654867,
@@ -12866,8 +12866,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 257,
+      "venta_id": 2499,
       "producto_id": 4492,
       "cantidad": 3.0,
       "precio_unitario": 6.19469,
@@ -12882,8 +12882,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 258,
+      "venta_id": 2499,
       "producto_id": 4492,
       "cantidad": 3.0,
       "precio_unitario": 6.19469,
@@ -12898,8 +12898,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 259,
+      "venta_id": 2500,
       "producto_id": 4724,
       "cantidad": 3.0,
       "precio_unitario": 2.477876,
@@ -12914,8 +12914,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 260,
+      "venta_id": 2500,
       "producto_id": 5019,
       "cantidad": 3.0,
       "precio_unitario": 3.185841,
@@ -12930,8 +12930,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 261,
+      "venta_id": 2497,
       "producto_id": 4722,
       "cantidad": 3.0,
       "precio_unitario": 2.300885,
@@ -12946,8 +12946,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 262,
+      "venta_id": 2497,
       "producto_id": 4455,
       "cantidad": 3.0,
       "precio_unitario": 8.849558,
@@ -12962,8 +12962,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 263,
+      "venta_id": 2497,
       "producto_id": 4993,
       "cantidad": 3.0,
       "precio_unitario": 3.274336,
@@ -12978,8 +12978,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 264,
+      "venta_id": 2497,
       "producto_id": 4890,
       "cantidad": 3.0,
       "precio_unitario": 2.920354,
@@ -12994,8 +12994,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 265,
+      "venta_id": 2497,
       "producto_id": 4890,
       "cantidad": 3.0,
       "precio_unitario": 2.920354,
@@ -13010,8 +13010,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 266,
+      "venta_id": 2497,
       "producto_id": 4890,
       "cantidad": 3.0,
       "precio_unitario": 2.920354,
@@ -13026,8 +13026,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 267,
+      "venta_id": 2497,
       "producto_id": 4496,
       "cantidad": 2.0,
       "precio_unitario": 3.982301,
@@ -13042,8 +13042,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 268,
+      "venta_id": 2497,
       "producto_id": 4978,
       "cantidad": 2.0,
       "precio_unitario": 3.097345,
@@ -13058,8 +13058,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 269,
+      "venta_id": 2497,
       "producto_id": 4461,
       "cantidad": 2.0,
       "precio_unitario": 7.964602,
@@ -13074,8 +13074,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 270,
+      "venta_id": 2497,
       "producto_id": 4486,
       "cantidad": 2.0,
       "precio_unitario": 3.362832,
@@ -13090,8 +13090,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 271,
+      "venta_id": 2515,
       "producto_id": 4865,
       "cantidad": 2.0,
       "precio_unitario": 2.433628,
@@ -13106,8 +13106,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 272,
+      "venta_id": 2514,
       "producto_id": 4865,
       "cantidad": 2.0,
       "precio_unitario": 2.433628,
@@ -13122,8 +13122,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 273,
+      "venta_id": 2521,
       "producto_id": 4964,
       "cantidad": 2.0,
       "precio_unitario": 2.522124,
@@ -13138,8 +13138,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 274,
+      "venta_id": 2521,
       "producto_id": 4964,
       "cantidad": 2.0,
       "precio_unitario": 2.522124,
@@ -13154,8 +13154,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 275,
+      "venta_id": 2521,
       "producto_id": 5040,
       "cantidad": 2.0,
       "precio_unitario": 4.424779,
@@ -13170,8 +13170,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 276,
+      "venta_id": 2521,
       "producto_id": 4482,
       "cantidad": 2.0,
       "precio_unitario": 4.867257,
@@ -13186,8 +13186,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 277,
+      "venta_id": 2544,
       "producto_id": 4943,
       "cantidad": 2.0,
       "precio_unitario": 2.522124,
@@ -13202,8 +13202,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 278,
+      "venta_id": 2547,
       "producto_id": 4943,
       "cantidad": 2.0,
       "precio_unitario": 2.522124,
@@ -13218,8 +13218,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 279,
+      "venta_id": 2552,
       "producto_id": 4511,
       "cantidad": 2.0,
       "precio_unitario": 7.522124,
@@ -13234,8 +13234,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 280,
+      "venta_id": 2553,
       "producto_id": 4510,
       "cantidad": 2.0,
       "precio_unitario": 9.20354,
@@ -13250,8 +13250,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 281,
+      "venta_id": 2553,
       "producto_id": 4610,
       "cantidad": 2.0,
       "precio_unitario": 18.79646,
@@ -13266,8 +13266,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 282,
+      "venta_id": 2553,
       "producto_id": 4828,
       "cantidad": 2.0,
       "precio_unitario": 42.920354,
@@ -13282,8 +13282,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 283,
+      "venta_id": 2579,
       "producto_id": 4828,
       "cantidad": 2.0,
       "precio_unitario": 42.920354,
@@ -13298,8 +13298,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 284,
+      "venta_id": 2579,
       "producto_id": 4996,
       "cantidad": 2.0,
       "precio_unitario": 14.159292,
@@ -13314,8 +13314,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 285,
+      "venta_id": 2579,
       "producto_id": 4419,
       "cantidad": 2.0,
       "precio_unitario": 3.982301,
@@ -13330,8 +13330,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 286,
+      "venta_id": 2579,
       "producto_id": 4980,
       "cantidad": 2.0,
       "precio_unitario": 6.061947,
@@ -13346,8 +13346,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 287,
+      "venta_id": 2579,
       "producto_id": 4980,
       "cantidad": 2.0,
       "precio_unitario": 6.061947,
@@ -13362,8 +13362,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 288,
+      "venta_id": 2558,
       "producto_id": 4773,
       "cantidad": 2.0,
       "precio_unitario": 6.637168,
@@ -13378,8 +13378,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 289,
+      "venta_id": 2568,
       "producto_id": 4773,
       "cantidad": 2.0,
       "precio_unitario": 6.637168,
@@ -13394,8 +13394,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 290,
+      "venta_id": 2568,
       "producto_id": 4774,
       "cantidad": 2.0,
       "precio_unitario": 6.637168,
@@ -13410,8 +13410,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 291,
+      "venta_id": 2568,
       "producto_id": 4575,
       "cantidad": 2.0,
       "precio_unitario": 7.522124,
@@ -13426,8 +13426,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 292,
+      "venta_id": 2568,
       "producto_id": 4576,
       "cantidad": 2.0,
       "precio_unitario": 5.752212,
@@ -13442,8 +13442,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 293,
+      "venta_id": 2568,
       "producto_id": 4576,
       "cantidad": 2.0,
       "precio_unitario": 5.752212,
@@ -13458,8 +13458,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 294,
+      "venta_id": 2568,
       "producto_id": 4576,
       "cantidad": 2.0,
       "precio_unitario": 5.752212,
@@ -13474,8 +13474,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 295,
+      "venta_id": 2568,
       "producto_id": 4513,
       "cantidad": 2.0,
       "precio_unitario": 3.539823,
@@ -13490,8 +13490,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 296,
+      "venta_id": 2568,
       "producto_id": 4513,
       "cantidad": 2.0,
       "precio_unitario": 3.539823,
@@ -13506,8 +13506,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 297,
+      "venta_id": 2568,
       "producto_id": 5082,
       "cantidad": 2.0,
       "precio_unitario": 8.849558,
@@ -13522,8 +13522,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 298,
+      "venta_id": 2568,
       "producto_id": 5082,
       "cantidad": 2.0,
       "precio_unitario": 8.849558,
@@ -13538,8 +13538,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 299,
+      "venta_id": 2568,
       "producto_id": 4483,
       "cantidad": 2.0,
       "precio_unitario": 11.504425,
@@ -13554,8 +13554,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 300,
+      "venta_id": 2568,
       "producto_id": 4656,
       "cantidad": 2.0,
       "precio_unitario": 12.283186,
@@ -13570,8 +13570,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 301,
+      "venta_id": 2568,
       "producto_id": 4830,
       "cantidad": 2.0,
       "precio_unitario": 11.061947,
@@ -13586,8 +13586,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 302,
+      "venta_id": 2568,
       "producto_id": 4958,
       "cantidad": 2.0,
       "precio_unitario": 5.530973,
@@ -13602,8 +13602,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 303,
+      "venta_id": 2569,
       "producto_id": 4820,
       "cantidad": 2.0,
       "precio_unitario": 2.477876,
@@ -13618,8 +13618,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 304,
+      "venta_id": 2569,
       "producto_id": 4507,
       "cantidad": 2.0,
       "precio_unitario": 3.097345,
@@ -13634,8 +13634,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 305,
+      "venta_id": 2569,
       "producto_id": 5084,
       "cantidad": 2.0,
       "precio_unitario": 1.327434,
@@ -13650,8 +13650,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 306,
+      "venta_id": 2570,
       "producto_id": 5084,
       "cantidad": 2.0,
       "precio_unitario": 1.327434,
@@ -13666,8 +13666,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 307,
+      "venta_id": 2570,
       "producto_id": 5084,
       "cantidad": 2.0,
       "precio_unitario": 1.327434,
@@ -13682,8 +13682,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 308,
+      "venta_id": 2570,
       "producto_id": 4860,
       "cantidad": 2.0,
       "precio_unitario": 14.247788,
@@ -13698,8 +13698,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 309,
+      "venta_id": 2570,
       "producto_id": 4860,
       "cantidad": 2.0,
       "precio_unitario": 14.247788,
@@ -13714,8 +13714,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 310,
+      "venta_id": 2570,
       "producto_id": 4860,
       "cantidad": 2.0,
       "precio_unitario": 14.247788,
@@ -13730,8 +13730,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 311,
+      "venta_id": 2570,
       "producto_id": 4860,
       "cantidad": 2.0,
       "precio_unitario": 14.247788,
@@ -13746,8 +13746,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 312,
+      "venta_id": 2570,
       "producto_id": 4860,
       "cantidad": 2.0,
       "precio_unitario": 14.247788,
@@ -13762,8 +13762,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 313,
+      "venta_id": 2570,
       "producto_id": 4603,
       "cantidad": 2.0,
       "precio_unitario": 5.088496,
@@ -13778,8 +13778,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 314,
+      "venta_id": 2570,
       "producto_id": 4776,
       "cantidad": 2.0,
       "precio_unitario": 4.336283,
@@ -13794,8 +13794,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 315,
+      "venta_id": 2570,
       "producto_id": 4826,
       "cantidad": 2.0,
       "precio_unitario": 3.40708,
@@ -13810,8 +13810,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 316,
+      "venta_id": 2567,
       "producto_id": 5039,
       "cantidad": 2.0,
       "precio_unitario": 1.106195,
@@ -13826,8 +13826,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 317,
+      "venta_id": 2567,
       "producto_id": 4975,
       "cantidad": 2.0,
       "precio_unitario": 2.876106,
@@ -13842,8 +13842,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 318,
+      "venta_id": 2567,
       "producto_id": 5071,
       "cantidad": 2.0,
       "precio_unitario": 4.761062,
@@ -13858,8 +13858,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 319,
+      "venta_id": 2567,
       "producto_id": 5071,
       "cantidad": 2.0,
       "precio_unitario": 4.761062,
@@ -13874,8 +13874,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 320,
+      "venta_id": 2567,
       "producto_id": 4554,
       "cantidad": 2.0,
       "precio_unitario": 22.123894,
@@ -13890,8 +13890,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 321,
+      "venta_id": 2567,
       "producto_id": 5058,
       "cantidad": 2.0,
       "precio_unitario": 22.123894,
@@ -13906,8 +13906,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 322,
+      "venta_id": 2567,
       "producto_id": 4495,
       "cantidad": 2.0,
       "precio_unitario": 5.221239,
@@ -13922,8 +13922,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 323,
+      "venta_id": 2567,
       "producto_id": 4515,
       "cantidad": 2.0,
       "precio_unitario": 3.982301,
@@ -13938,8 +13938,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 324,
+      "venta_id": 2567,
       "producto_id": 4954,
       "cantidad": 2.0,
       "precio_unitario": 5.973451,
@@ -13954,8 +13954,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 325,
+      "venta_id": 2567,
       "producto_id": 5127,
       "cantidad": 2.0,
       "precio_unitario": 11.504425,
@@ -13970,8 +13970,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 326,
+      "venta_id": 2567,
       "producto_id": 4565,
       "cantidad": 2.0,
       "precio_unitario": 2.433628,
@@ -13986,8 +13986,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 327,
+      "venta_id": 2567,
       "producto_id": 4953,
       "cantidad": 2.0,
       "precio_unitario": 4.336283,
@@ -14002,8 +14002,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 328,
+      "venta_id": 2578,
       "producto_id": 4936,
       "cantidad": 2.0,
       "precio_unitario": 1.769912,
@@ -14018,8 +14018,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 329,
+      "venta_id": 2578,
       "producto_id": 4936,
       "cantidad": 2.0,
       "precio_unitario": 1.769912,
@@ -14034,8 +14034,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 330,
+      "venta_id": 2578,
       "producto_id": 4936,
       "cantidad": 2.0,
       "precio_unitario": 1.769912,
@@ -14050,8 +14050,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 331,
+      "venta_id": 2578,
       "producto_id": 4937,
       "cantidad": 2.0,
       "precio_unitario": 1.769912,
@@ -14066,8 +14066,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 332,
+      "venta_id": 2578,
       "producto_id": 4937,
       "cantidad": 2.0,
       "precio_unitario": 1.769912,
@@ -14082,8 +14082,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 333,
+      "venta_id": 2578,
       "producto_id": 4937,
       "cantidad": 2.0,
       "precio_unitario": 1.769912,
@@ -14098,8 +14098,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 334,
+      "venta_id": 2557,
       "producto_id": 5085,
       "cantidad": 2.0,
       "precio_unitario": 7.300885,
@@ -14114,8 +14114,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 335,
+      "venta_id": 2557,
       "producto_id": 5085,
       "cantidad": 2.0,
       "precio_unitario": 7.300885,
@@ -14130,8 +14130,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 336,
+      "venta_id": 2557,
       "producto_id": 4976,
       "cantidad": 2.0,
       "precio_unitario": 15.486726,
@@ -14146,8 +14146,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 337,
+      "venta_id": 2557,
       "producto_id": 4976,
       "cantidad": 2.0,
       "precio_unitario": 15.486726,
@@ -14162,8 +14162,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 338,
+      "venta_id": 2557,
       "producto_id": 5047,
       "cantidad": 2.0,
       "precio_unitario": 3.362832,
@@ -14178,8 +14178,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 339,
+      "venta_id": 2557,
       "producto_id": 4567,
       "cantidad": 2.0,
       "precio_unitario": 7.610619,
@@ -14194,8 +14194,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 340,
+      "venta_id": 2557,
       "producto_id": 4420,
       "cantidad": 2.0,
       "precio_unitario": 4.867257,
@@ -14210,8 +14210,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 341,
+      "venta_id": 2557,
       "producto_id": 4553,
       "cantidad": 2.0,
       "precio_unitario": 3.539823,
@@ -14226,8 +14226,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 342,
+      "venta_id": 2584,
       "producto_id": 4466,
       "cantidad": 2.0,
       "precio_unitario": 4.955752,
@@ -14242,8 +14242,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 343,
+      "venta_id": 2584,
       "producto_id": 4904,
       "cantidad": 2.0,
       "precio_unitario": 1.681416,
@@ -14258,8 +14258,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 344,
+      "venta_id": 2585,
       "producto_id": 4904,
       "cantidad": 2.0,
       "precio_unitario": 1.681416,
@@ -14274,8 +14274,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 345,
+      "venta_id": 2585,
       "producto_id": 4904,
       "cantidad": 2.0,
       "precio_unitario": 1.681416,
@@ -14290,8 +14290,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 346,
+      "venta_id": 2585,
       "producto_id": 4895,
       "cantidad": 2.0,
       "precio_unitario": 3.539823,
@@ -14306,8 +14306,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 347,
+      "venta_id": 2585,
       "producto_id": 4508,
       "cantidad": 2.0,
       "precio_unitario": 4.424779,
@@ -14322,8 +14322,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 348,
+      "venta_id": 2586,
       "producto_id": 4508,
       "cantidad": 2.0,
       "precio_unitario": 4.424779,
@@ -14338,8 +14338,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 349,
+      "venta_id": 2586,
       "producto_id": 4670,
       "cantidad": 2.0,
       "precio_unitario": 4.867257,
@@ -14354,8 +14354,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 350,
+      "venta_id": 2586,
       "producto_id": 5043,
       "cantidad": 2.0,
       "precio_unitario": 2.300885,
@@ -14370,8 +14370,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 351,
+      "venta_id": 2586,
       "producto_id": 4577,
       "cantidad": 2.0,
       "precio_unitario": 8.79646,
@@ -14386,8 +14386,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 352,
+      "venta_id": 2586,
       "producto_id": 4577,
       "cantidad": 2.0,
       "precio_unitario": 8.79646,
@@ -14402,8 +14402,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 353,
+      "venta_id": 2586,
       "producto_id": 4967,
       "cantidad": 2.0,
       "precio_unitario": 3.451327,
@@ -14418,8 +14418,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 354,
+      "venta_id": 2586,
       "producto_id": 5168,
       "cantidad": 2.0,
       "precio_unitario": 4.433628,
@@ -14434,8 +14434,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 355,
+      "venta_id": 2597,
       "producto_id": 4798,
       "cantidad": 2.0,
       "precio_unitario": 5.530973,
@@ -14450,8 +14450,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 356,
+      "venta_id": 2600,
       "producto_id": 4798,
       "cantidad": 2.0,
       "precio_unitario": 5.530973,
@@ -14466,8 +14466,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 357,
+      "venta_id": 2600,
       "producto_id": 4798,
       "cantidad": 2.0,
       "precio_unitario": 5.530973,
@@ -14482,8 +14482,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 358,
+      "venta_id": 2592,
       "producto_id": 4536,
       "cantidad": 2.0,
       "precio_unitario": 2.079646,
@@ -14498,8 +14498,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 359,
+      "venta_id": 2593,
       "producto_id": 5146,
       "cantidad": 2.0,
       "precio_unitario": 3.318584,
@@ -14514,8 +14514,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 360,
+      "venta_id": 2593,
       "producto_id": 5141,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14530,8 +14530,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 361,
+      "venta_id": 2593,
       "producto_id": 5141,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14546,8 +14546,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 362,
+      "venta_id": 2593,
       "producto_id": 5141,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14562,8 +14562,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 363,
+      "venta_id": 2593,
       "producto_id": 4559,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14578,8 +14578,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 364,
+      "venta_id": 2596,
       "producto_id": 4559,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14594,8 +14594,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 365,
+      "venta_id": 2598,
       "producto_id": 4559,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14610,8 +14610,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 366,
+      "venta_id": 2606,
       "producto_id": 5142,
       "cantidad": 2.0,
       "precio_unitario": 1.460177,
@@ -14626,8 +14626,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 367,
+      "venta_id": 2606,
       "producto_id": 4942,
       "cantidad": 2.0,
       "precio_unitario": 5.221239,
@@ -14642,8 +14642,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 368,
+      "venta_id": 2606,
       "producto_id": 4534,
       "cantidad": 2.0,
       "precio_unitario": 3.097345,
@@ -14658,8 +14658,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 369,
+      "venta_id": 2606,
       "producto_id": 4494,
       "cantidad": 2.0,
       "precio_unitario": 8.40708,
@@ -14674,8 +14674,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 370,
+      "venta_id": 2606,
       "producto_id": 4494,
       "cantidad": 2.0,
       "precio_unitario": 8.40708,
@@ -14690,8 +14690,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 371,
+      "venta_id": 2606,
       "producto_id": 4947,
       "cantidad": 2.0,
       "precio_unitario": 2.212389,
@@ -14706,8 +14706,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 372,
+      "venta_id": 2606,
       "producto_id": 4681,
       "cantidad": 2.0,
       "precio_unitario": 12.168142,
@@ -14722,8 +14722,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 373,
+      "venta_id": 2606,
       "producto_id": 4492,
       "cantidad": 2.0,
       "precio_unitario": 6.19469,
@@ -14738,8 +14738,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 374,
+      "venta_id": 2604,
       "producto_id": 4492,
       "cantidad": 2.0,
       "precio_unitario": 6.19469,
@@ -14754,8 +14754,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 375,
+      "venta_id": 2604,
       "producto_id": 5128,
       "cantidad": 2.0,
       "precio_unitario": 19.469027,
@@ -14770,8 +14770,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 376,
+      "venta_id": 2604,
       "producto_id": 5019,
       "cantidad": 2.0,
       "precio_unitario": 3.185841,
@@ -14786,8 +14786,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 377,
+      "venta_id": 2604,
       "producto_id": 5148,
       "cantidad": 2.0,
       "precio_unitario": 4.424779,
@@ -14802,8 +14802,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 378,
+      "venta_id": 2604,
       "producto_id": 5148,
       "cantidad": 2.0,
       "precio_unitario": 4.424779,
@@ -14818,8 +14818,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 379,
+      "venta_id": 2604,
       "producto_id": 5148,
       "cantidad": 2.0,
       "precio_unitario": 4.424779,
@@ -14834,8 +14834,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 380,
+      "venta_id": 2604,
       "producto_id": 4993,
       "cantidad": 2.0,
       "precio_unitario": 3.274336,
@@ -14850,8 +14850,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 381,
+      "venta_id": 2604,
       "producto_id": 5204,
       "cantidad": 2.0,
       "precio_unitario": 22.123894,
@@ -14866,8 +14866,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 382,
+      "venta_id": 2607,
       "producto_id": 4891,
       "cantidad": 2.0,
       "precio_unitario": 3.00885,
@@ -14882,8 +14882,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 383,
+      "venta_id": 2607,
       "producto_id": 4891,
       "cantidad": 2.0,
       "precio_unitario": 3.00885,
@@ -14898,8 +14898,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 384,
+      "venta_id": 2607,
       "producto_id": 4890,
       "cantidad": 2.0,
       "precio_unitario": 2.920354,
@@ -14914,8 +14914,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 385,
+      "venta_id": 2607,
       "producto_id": 4990,
       "cantidad": 2.0,
       "precio_unitario": 8.40708,
@@ -14930,8 +14930,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 386,
+      "venta_id": 2607,
       "producto_id": 4998,
       "cantidad": 1.0,
       "precio_unitario": 5.973451,
@@ -14946,8 +14946,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 387,
+      "venta_id": 2607,
       "producto_id": 4963,
       "cantidad": 1.0,
       "precio_unitario": 2.522124,
@@ -14962,8 +14962,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 388,
+      "venta_id": 2607,
       "producto_id": 4487,
       "cantidad": 1.0,
       "precio_unitario": 3.362832,
@@ -14978,8 +14978,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 389,
+      "venta_id": 2607,
       "producto_id": 4482,
       "cantidad": 1.0,
       "precio_unitario": 30.088496,
@@ -14994,8 +14994,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 390,
+      "venta_id": 2607,
       "producto_id": 4482,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -15010,8 +15010,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 391,
+      "venta_id": 2607,
       "producto_id": 4482,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -15026,8 +15026,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 392,
+      "venta_id": 2607,
       "producto_id": 4482,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -15042,8 +15042,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 393,
+      "venta_id": 2607,
       "producto_id": 4511,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15058,8 +15058,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 394,
+      "venta_id": 2607,
       "producto_id": 4511,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15074,8 +15074,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 395,
+      "venta_id": 2627,
       "producto_id": 4511,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15090,8 +15090,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 396,
+      "venta_id": 2627,
       "producto_id": 4511,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15106,8 +15106,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 397,
+      "venta_id": 2627,
       "producto_id": 5048,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15122,8 +15122,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 398,
+      "venta_id": 2627,
       "producto_id": 5048,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15138,8 +15138,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 399,
+      "venta_id": 2627,
       "producto_id": 5048,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15154,8 +15154,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 400,
+      "venta_id": 2633,
       "producto_id": 4828,
       "cantidad": 1.0,
       "precio_unitario": 42.920354,
@@ -15170,8 +15170,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 401,
+      "venta_id": 2633,
       "producto_id": 4828,
       "cantidad": 1.0,
       "precio_unitario": 42.920354,
@@ -15186,8 +15186,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 402,
+      "venta_id": 2633,
       "producto_id": 4525,
       "cantidad": 1.0,
       "precio_unitario": 24.778761,
@@ -15202,8 +15202,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 403,
+      "venta_id": 2633,
       "producto_id": 4996,
       "cantidad": 1.0,
       "precio_unitario": 14.159292,
@@ -15218,8 +15218,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 404,
+      "venta_id": 2633,
       "producto_id": 4996,
       "cantidad": 1.0,
       "precio_unitario": 14.159292,
@@ -15234,8 +15234,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 405,
+      "venta_id": 2633,
       "producto_id": 4996,
       "cantidad": 1.0,
       "precio_unitario": 14.159292,
@@ -15250,8 +15250,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 406,
+      "venta_id": 2633,
       "producto_id": 4996,
       "cantidad": 1.0,
       "precio_unitario": 14.159292,
@@ -15266,8 +15266,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 407,
+      "venta_id": 2633,
       "producto_id": 4493,
       "cantidad": 1.0,
       "precio_unitario": 14.159292,
@@ -15282,8 +15282,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 408,
+      "venta_id": 2636,
       "producto_id": 4419,
       "cantidad": 1.0,
       "precio_unitario": 3.982301,
@@ -15298,8 +15298,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 409,
+      "venta_id": 2636,
       "producto_id": 4774,
       "cantidad": 1.0,
       "precio_unitario": 6.637168,
@@ -15314,8 +15314,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 410,
+      "venta_id": 2636,
       "producto_id": 4574,
       "cantidad": 1.0,
       "precio_unitario": 7.522124,
@@ -15330,8 +15330,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 411,
+      "venta_id": 2628,
       "producto_id": 4848,
       "cantidad": 1.0,
       "precio_unitario": 24.734513,
@@ -15346,8 +15346,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 412,
+      "venta_id": 2628,
       "producto_id": 4853,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -15362,8 +15362,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 413,
+      "venta_id": 2628,
       "producto_id": 4503,
       "cantidad": 1.0,
       "precio_unitario": 7.964602,
@@ -15378,8 +15378,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 414,
+      "venta_id": 2628,
       "producto_id": 4503,
       "cantidad": 1.0,
       "precio_unitario": 7.964602,
@@ -15394,8 +15394,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 415,
+      "venta_id": 2628,
       "producto_id": 4504,
       "cantidad": 1.0,
       "precio_unitario": 10.619469,
@@ -15410,8 +15410,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 416,
+      "venta_id": 2628,
       "producto_id": 4939,
       "cantidad": 1.0,
       "precio_unitario": 3.539823,
@@ -15426,8 +15426,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 417,
+      "venta_id": 2628,
       "producto_id": 4989,
       "cantidad": 1.0,
       "precio_unitario": 6.725664,
@@ -15442,8 +15442,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 418,
+      "venta_id": 2628,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15458,8 +15458,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 419,
+      "venta_id": 2664,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15474,8 +15474,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 420,
+      "venta_id": 2664,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15490,8 +15490,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 421,
+      "venta_id": 2664,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15506,8 +15506,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 422,
+      "venta_id": 2664,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15522,8 +15522,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 423,
+      "venta_id": 2672,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15538,8 +15538,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 424,
+      "venta_id": 2672,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15554,8 +15554,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 425,
+      "venta_id": 2672,
       "producto_id": 4830,
       "cantidad": 1.0,
       "precio_unitario": 11.061947,
@@ -15570,8 +15570,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 426,
+      "venta_id": 2660,
       "producto_id": 4958,
       "cantidad": 1.0,
       "precio_unitario": 5.530973,
@@ -15586,8 +15586,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 427,
+      "venta_id": 2660,
       "producto_id": 4940,
       "cantidad": 1.0,
       "precio_unitario": 6.238938,
@@ -15602,8 +15602,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 428,
+      "venta_id": 2660,
       "producto_id": 4459,
       "cantidad": 1.0,
       "precio_unitario": 3.097345,
@@ -15618,8 +15618,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 429,
+      "venta_id": 2660,
       "producto_id": 4507,
       "cantidad": 1.0,
       "precio_unitario": 3.097345,
@@ -15634,8 +15634,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 430,
+      "venta_id": 2660,
       "producto_id": 4507,
       "cantidad": 1.0,
       "precio_unitario": 3.097345,
@@ -15650,8 +15650,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 431,
+      "venta_id": 2660,
       "producto_id": 4507,
       "cantidad": 1.0,
       "precio_unitario": 3.097345,
@@ -15666,8 +15666,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 432,
+      "venta_id": 2673,
       "producto_id": 5087,
       "cantidad": 1.0,
       "precio_unitario": 3.097345,
@@ -15682,8 +15682,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 433,
+      "venta_id": 2677,
       "producto_id": 5087,
       "cantidad": 1.0,
       "precio_unitario": 3.097345,
@@ -15698,8 +15698,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 434,
+      "venta_id": 2677,
       "producto_id": 4860,
       "cantidad": 1.0,
       "precio_unitario": 14.247788,
@@ -15714,8 +15714,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 435,
+      "venta_id": 2677,
       "producto_id": 4860,
       "cantidad": 1.0,
       "precio_unitario": 14.247788,
@@ -15730,8 +15730,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 436,
+      "venta_id": 2687,
       "producto_id": 4860,
       "cantidad": 1.0,
       "precio_unitario": 14.247788,
@@ -15746,8 +15746,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 437,
+      "venta_id": 2687,
       "producto_id": 4860,
       "cantidad": 1.0,
       "precio_unitario": 14.247788,
@@ -15762,8 +15762,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 438,
+      "venta_id": 2687,
       "producto_id": 4776,
       "cantidad": 1.0,
       "precio_unitario": 4.336283,
@@ -15778,8 +15778,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 439,
+      "venta_id": 2687,
       "producto_id": 4861,
       "cantidad": 1.0,
       "precio_unitario": 2.654867,
@@ -15794,8 +15794,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 440,
+      "venta_id": 2687,
       "producto_id": 4780,
       "cantidad": 1.0,
       "precio_unitario": 6.59292,
@@ -15810,8 +15810,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 441,
+      "venta_id": 2687,
       "producto_id": 4506,
       "cantidad": 1.0,
       "precio_unitario": 0.530973,
@@ -15826,8 +15826,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 442,
+      "venta_id": 2687,
       "producto_id": 5071,
       "cantidad": 1.0,
       "precio_unitario": 5.955752,
@@ -15842,8 +15842,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 443,
+      "venta_id": 2687,
       "producto_id": 5071,
       "cantidad": 1.0,
       "precio_unitario": 5.955752,
@@ -15858,8 +15858,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 444,
+      "venta_id": 2687,
       "producto_id": 5058,
       "cantidad": 1.0,
       "precio_unitario": 22.123894,
@@ -15874,8 +15874,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 445,
+      "venta_id": 2687,
       "producto_id": 5058,
       "cantidad": 1.0,
       "precio_unitario": 22.123894,
@@ -15890,8 +15890,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 446,
+      "venta_id": 2687,
       "producto_id": 5143,
       "cantidad": 1.0,
       "precio_unitario": 15.929204,
@@ -15906,8 +15906,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 447,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -15922,8 +15922,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 448,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -15938,8 +15938,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 449,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -15954,296 +15954,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 1.77,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 450,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16258,8 +15970,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 451,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16274,8 +15986,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 452,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16290,8 +16002,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 453,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16306,8 +16018,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 454,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16322,8 +16034,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 455,
+      "venta_id": 2709,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16338,8 +16050,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 456,
+      "venta_id": 2724,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16354,8 +16066,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 457,
+      "venta_id": 2724,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16370,8 +16082,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 458,
+      "venta_id": 2724,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16386,8 +16098,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 459,
+      "venta_id": 2735,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16402,8 +16114,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 460,
+      "venta_id": 2735,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16418,8 +16130,120 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 461,
+      "venta_id": 2748,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 462,
+      "venta_id": 2744,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 463,
+      "venta_id": 2746,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 464,
+      "venta_id": 2751,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 465,
+      "venta_id": 2751,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 466,
+      "venta_id": 2751,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 467,
+      "venta_id": 2751,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 468,
+      "venta_id": 2751,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16434,8 +16258,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 469,
+      "venta_id": 2751,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16450,8 +16274,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 470,
+      "venta_id": 2751,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16466,8 +16290,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 471,
+      "venta_id": 2753,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16482,8 +16306,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 472,
+      "venta_id": 2753,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16498,8 +16322,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 473,
+      "venta_id": 2753,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16514,8 +16338,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 474,
+      "venta_id": 2753,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16530,8 +16354,72 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 475,
+      "venta_id": 2753,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 476,
+      "venta_id": 2753,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 477,
+      "venta_id": 2753,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 478,
+      "venta_id": 2753,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 479,
+      "venta_id": 2753,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16546,8 +16434,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 480,
+      "venta_id": 2753,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16562,8 +16450,88 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 481,
+      "venta_id": 2753,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 482,
+      "venta_id": 2753,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 483,
+      "venta_id": 2754,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 484,
+      "venta_id": 2754,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 485,
+      "venta_id": 2754,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 486,
+      "venta_id": 2754,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16578,8 +16546,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 487,
+      "venta_id": 2754,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16594,56 +16562,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 488,
+      "venta_id": 2754,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16658,8 +16578,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 489,
+      "venta_id": 2754,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16674,8 +16594,56 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 490,
+      "venta_id": 2754,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 491,
+      "venta_id": 2750,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 492,
+      "venta_id": 2750,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 493,
+      "venta_id": 2782,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16690,8 +16658,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 494,
+      "venta_id": 2782,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16706,8 +16674,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 495,
+      "venta_id": 2782,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16722,8 +16690,24 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 496,
+      "venta_id": 2782,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 497,
+      "venta_id": 2783,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16738,40 +16722,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 498,
+      "venta_id": 2820,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16786,8 +16738,40 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 499,
+      "venta_id": 2820,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 500,
+      "venta_id": 2820,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 501,
+      "venta_id": 2820,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16802,136 +16786,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 502,
+      "venta_id": 2820,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16946,8 +16802,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 503,
+      "venta_id": 2820,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16962,8 +16818,120 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 504,
+      "venta_id": 2827,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 505,
+      "venta_id": 2839,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 506,
+      "venta_id": 2839,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 507,
+      "venta_id": 2834,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 508,
+      "venta_id": 2838,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 509,
+      "venta_id": 2838,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 510,
+      "venta_id": 2833,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 511,
+      "venta_id": 2833,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16978,8 +16946,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 512,
+      "venta_id": 2833,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -16994,24 +16962,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 513,
+      "venta_id": 2835,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17026,8 +16978,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 514,
+      "venta_id": 2835,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17042,8 +16994,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 515,
+      "venta_id": 2835,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17058,40 +17010,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 516,
+      "venta_id": 2835,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17106,8 +17026,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 517,
+      "venta_id": 2835,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17122,8 +17042,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 518,
+      "venta_id": 2835,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17138,8 +17058,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 519,
+      "venta_id": 2886,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17154,8 +17074,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 520,
+      "venta_id": 2897,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17170,56 +17090,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 2.0,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 521,
+      "venta_id": 2898,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17234,40 +17106,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 1.77,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
-      "producto_id": 4869,
-      "cantidad": 1.0,
-      "precio_unitario": 1.769912,
-      "descuento": 0,
-      "descuento_tipo": "",
-      "iva": 0,
-      "comision": 0.0,
-      "iva_tipo": "",
-      "tipo_fiscal": "",
-      "extra": null,
-      "precio_con_iva": 1.77,
-      "vendedor_id": null
-    },
-    {
-      "id": null,
-      "venta_id": null,
+      "id": 522,
+      "venta_id": 2898,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17282,8 +17122,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 523,
+      "venta_id": 2898,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17298,8 +17138,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 524,
+      "venta_id": 2919,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17314,8 +17154,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 525,
+      "venta_id": 2919,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17330,8 +17170,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 526,
+      "venta_id": 2919,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17346,8 +17186,40 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 527,
+      "venta_id": 2919,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 528,
+      "venta_id": 2919,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 529,
+      "venta_id": 2919,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17362,8 +17234,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 530,
+      "venta_id": 2921,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17378,8 +17250,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 531,
+      "venta_id": 2921,
       "producto_id": 4869,
       "cantidad": 1.0,
       "precio_unitario": 1.769912,
@@ -17394,8 +17266,136 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 532,
+      "venta_id": 2921,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 533,
+      "venta_id": 2921,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 534,
+      "venta_id": 2924,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 535,
+      "venta_id": 2924,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 536,
+      "venta_id": 2924,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 2.0,
+      "vendedor_id": null
+    },
+    {
+      "id": 537,
+      "venta_id": 2929,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 1.77,
+      "vendedor_id": null
+    },
+    {
+      "id": 538,
+      "venta_id": 2929,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 1.77,
+      "vendedor_id": null
+    },
+    {
+      "id": 539,
+      "venta_id": 2929,
+      "producto_id": 4869,
+      "cantidad": 1.0,
+      "precio_unitario": 1.769912,
+      "descuento": 0,
+      "descuento_tipo": "",
+      "iva": 0,
+      "comision": 0.0,
+      "iva_tipo": "",
+      "tipo_fiscal": "",
+      "extra": null,
+      "precio_con_iva": 1.77,
+      "vendedor_id": null
+    },
+    {
+      "id": 540,
+      "venta_id": 2929,
       "producto_id": 4596,
       "cantidad": 1.0,
       "precio_unitario": 38.362832,
@@ -17410,8 +17410,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 541,
+      "venta_id": 2930,
       "producto_id": 4596,
       "cantidad": 1.0,
       "precio_unitario": 38.362832,
@@ -17426,8 +17426,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 542,
+      "venta_id": 2949,
       "producto_id": 4596,
       "cantidad": 1.0,
       "precio_unitario": 38.362832,
@@ -17442,8 +17442,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 543,
+      "venta_id": 2950,
       "producto_id": 5145,
       "cantidad": 1.0,
       "precio_unitario": 4.424779,
@@ -17458,8 +17458,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 544,
+      "venta_id": 2955,
       "producto_id": 5145,
       "cantidad": 1.0,
       "precio_unitario": 4.424779,
@@ -17474,8 +17474,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 545,
+      "venta_id": 2955,
       "producto_id": 5145,
       "cantidad": 1.0,
       "precio_unitario": 4.424779,
@@ -17490,8 +17490,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 546,
+      "venta_id": 2955,
       "producto_id": 4565,
       "cantidad": 1.0,
       "precio_unitario": 2.433628,
@@ -17506,8 +17506,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 547,
+      "venta_id": 2953,
       "producto_id": 4566,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -17522,8 +17522,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 548,
+      "venta_id": 2953,
       "producto_id": 4951,
       "cantidad": 1.0,
       "precio_unitario": 3.309735,
@@ -17538,8 +17538,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 549,
+      "venta_id": 2953,
       "producto_id": 4452,
       "cantidad": 1.0,
       "precio_unitario": 2.433628,
@@ -17554,8 +17554,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 550,
+      "venta_id": 2965,
       "producto_id": 4452,
       "cantidad": 1.0,
       "precio_unitario": 2.433628,
@@ -17570,8 +17570,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 551,
+      "venta_id": 2965,
       "producto_id": 4836,
       "cantidad": 1.0,
       "precio_unitario": 15.486726,
@@ -17586,8 +17586,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 552,
+      "venta_id": 2965,
       "producto_id": 4976,
       "cantidad": 1.0,
       "precio_unitario": 15.486726,
@@ -17602,8 +17602,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 553,
+      "venta_id": 2965,
       "producto_id": 5002,
       "cantidad": 1.0,
       "precio_unitario": 8.849558,
@@ -17618,8 +17618,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 554,
+      "venta_id": 2960,
       "producto_id": 4829,
       "cantidad": 1.0,
       "precio_unitario": 8.761062,
@@ -17634,8 +17634,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 555,
+      "venta_id": 2960,
       "producto_id": 4829,
       "cantidad": 1.0,
       "precio_unitario": 8.761062,
@@ -17650,8 +17650,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 556,
+      "venta_id": 2960,
       "producto_id": 4829,
       "cantidad": 1.0,
       "precio_unitario": 8.761062,
@@ -17666,8 +17666,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 557,
+      "venta_id": 2960,
       "producto_id": 4636,
       "cantidad": 1.0,
       "precio_unitario": 8.80531,
@@ -17682,8 +17682,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 558,
+      "venta_id": 2960,
       "producto_id": 4636,
       "cantidad": 1.0,
       "precio_unitario": 8.80531,
@@ -17698,8 +17698,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 559,
+      "venta_id": 2960,
       "producto_id": 4999,
       "cantidad": 1.0,
       "precio_unitario": 35.39823,
@@ -17714,8 +17714,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 560,
+      "venta_id": 2960,
       "producto_id": 5075,
       "cantidad": 1.0,
       "precio_unitario": 35.39823,
@@ -17730,8 +17730,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 561,
+      "venta_id": 2988,
       "producto_id": 4864,
       "cantidad": 1.0,
       "precio_unitario": 2.610619,
@@ -17746,8 +17746,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 562,
+      "venta_id": 2995,
       "producto_id": 5047,
       "cantidad": 1.0,
       "precio_unitario": 3.362832,
@@ -17762,8 +17762,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 563,
+      "venta_id": 2995,
       "producto_id": 5041,
       "cantidad": 1.0,
       "precio_unitario": 6.442478,
@@ -17778,8 +17778,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 564,
+      "venta_id": 2995,
       "producto_id": 5041,
       "cantidad": 1.0,
       "precio_unitario": 6.442478,
@@ -17794,8 +17794,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 565,
+      "venta_id": 2995,
       "producto_id": 4423,
       "cantidad": 1.0,
       "precio_unitario": 11.946903,
@@ -17810,8 +17810,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 566,
+      "venta_id": 2995,
       "producto_id": 4646,
       "cantidad": 1.0,
       "precio_unitario": 8.672566,
@@ -17826,8 +17826,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 567,
+      "venta_id": 2995,
       "producto_id": 4646,
       "cantidad": 1.0,
       "precio_unitario": 8.672566,
@@ -17842,8 +17842,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 568,
+      "venta_id": 2995,
       "producto_id": 4862,
       "cantidad": 1.0,
       "precio_unitario": 8.672566,
@@ -17858,8 +17858,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 569,
+      "venta_id": 2995,
       "producto_id": 4832,
       "cantidad": 1.0,
       "precio_unitario": 10.530973,
@@ -17874,8 +17874,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 570,
+      "venta_id": 2995,
       "producto_id": 4832,
       "cantidad": 1.0,
       "precio_unitario": 10.530973,
@@ -17890,8 +17890,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 571,
+      "venta_id": 3004,
       "producto_id": 4420,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -17906,8 +17906,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 572,
+      "venta_id": 3005,
       "producto_id": 4968,
       "cantidad": 1.0,
       "precio_unitario": 7.079646,
@@ -17922,8 +17922,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 573,
+      "venta_id": 3016,
       "producto_id": 4499,
       "cantidad": 1.0,
       "precio_unitario": 17.256637,
@@ -17938,8 +17938,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 574,
+      "venta_id": 3016,
       "producto_id": 4449,
       "cantidad": 1.0,
       "precio_unitario": 4.823009,
@@ -17954,8 +17954,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 575,
+      "venta_id": 3016,
       "producto_id": 4426,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -17970,8 +17970,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 576,
+      "venta_id": 3016,
       "producto_id": 4426,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -17986,8 +17986,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 577,
+      "venta_id": 3016,
       "producto_id": 4426,
       "cantidad": 1.0,
       "precio_unitario": 4.867257,
@@ -18002,8 +18002,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 578,
+      "venta_id": 3016,
       "producto_id": 4500,
       "cantidad": 1.0,
       "precio_unitario": 7.079646,
@@ -18018,8 +18018,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 579,
+      "venta_id": 3016,
       "producto_id": 4500,
       "cantidad": 1.0,
       "precio_unitario": 7.079646,
@@ -18034,8 +18034,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 580,
+      "venta_id": 3016,
       "producto_id": 4859,
       "cantidad": 1.0,
       "precio_unitario": 4.292035,
@@ -18050,8 +18050,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 581,
+      "venta_id": 3009,
       "producto_id": 4549,
       "cantidad": 1.0,
       "precio_unitario": 6.185841,
@@ -18066,8 +18066,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 582,
+      "venta_id": 3009,
       "producto_id": 4502,
       "cantidad": 1.0,
       "precio_unitario": 13.274336,
@@ -18082,8 +18082,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 583,
+      "venta_id": 3009,
       "producto_id": 4502,
       "cantidad": 1.0,
       "precio_unitario": 13.274336,
@@ -18098,8 +18098,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 584,
+      "venta_id": 3009,
       "producto_id": 4502,
       "cantidad": 1.0,
       "precio_unitario": 13.274336,
@@ -18114,8 +18114,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 585,
+      "venta_id": 3009,
       "producto_id": 4502,
       "cantidad": 1.0,
       "precio_unitario": 13.274336,
@@ -18130,8 +18130,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 586,
+      "venta_id": 3009,
       "producto_id": 4997,
       "cantidad": 1.0,
       "precio_unitario": 6.19469,
@@ -18146,8 +18146,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 587,
+      "venta_id": 3009,
       "producto_id": 4997,
       "cantidad": 1.0,
       "precio_unitario": 66.814159,
@@ -18162,8 +18162,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 588,
+      "venta_id": 3009,
       "producto_id": 4626,
       "cantidad": 1.0,
       "precio_unitario": 4.424779,
@@ -18178,8 +18178,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 589,
+      "venta_id": 3009,
       "producto_id": 4626,
       "cantidad": 1.0,
       "precio_unitario": 61.946903,
@@ -18194,8 +18194,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 590,
+      "venta_id": 3009,
       "producto_id": 4626,
       "cantidad": 1.0,
       "precio_unitario": 61.946903,
@@ -18210,8 +18210,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 591,
+      "venta_id": 3017,
       "producto_id": 4620,
       "cantidad": 1.0,
       "precio_unitario": 4.115044,
@@ -18226,8 +18226,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 592,
+      "venta_id": 3006,
       "producto_id": 4436,
       "cantidad": 1.0,
       "precio_unitario": 14.867257,
@@ -18242,8 +18242,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 593,
+      "venta_id": 3006,
       "producto_id": 4639,
       "cantidad": 1.0,
       "precio_unitario": 19.469027,
@@ -18258,8 +18258,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 594,
+      "venta_id": 3006,
       "producto_id": 4639,
       "cantidad": 1.0,
       "precio_unitario": 19.469027,
@@ -18274,8 +18274,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 595,
+      "venta_id": 3020,
       "producto_id": 4639,
       "cantidad": 1.0,
       "precio_unitario": 19.469027,
@@ -18290,8 +18290,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 596,
+      "venta_id": 3023,
       "producto_id": 5146,
       "cantidad": 1.0,
       "precio_unitario": 3.318584,
@@ -18306,8 +18306,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 597,
+      "venta_id": 3023,
       "producto_id": 5142,
       "cantidad": 1.0,
       "precio_unitario": 1.460177,
@@ -18322,8 +18322,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 598,
+      "venta_id": 3023,
       "producto_id": 4435,
       "cantidad": 1.0,
       "precio_unitario": 5.752212,
@@ -18338,8 +18338,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 599,
+      "venta_id": 3023,
       "producto_id": 4494,
       "cantidad": 1.0,
       "precio_unitario": 8.40708,
@@ -18354,8 +18354,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 600,
+      "venta_id": 3036,
       "producto_id": 4494,
       "cantidad": 1.0,
       "precio_unitario": 8.40708,
@@ -18370,8 +18370,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 601,
+      "venta_id": 3036,
       "producto_id": 4494,
       "cantidad": 1.0,
       "precio_unitario": 8.40708,
@@ -18386,8 +18386,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 602,
+      "venta_id": 3036,
       "producto_id": 4494,
       "cantidad": 1.0,
       "precio_unitario": 8.40708,
@@ -18402,8 +18402,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 603,
+      "venta_id": 3036,
       "producto_id": 4750,
       "cantidad": 1.0,
       "precio_unitario": 34.513274,
@@ -18418,8 +18418,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 604,
+      "venta_id": 3036,
       "producto_id": 4750,
       "cantidad": 1.0,
       "precio_unitario": 34.513274,
@@ -18434,8 +18434,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 605,
+      "venta_id": 3036,
       "producto_id": 4492,
       "cantidad": 1.0,
       "precio_unitario": 6.19469,
@@ -18450,8 +18450,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 606,
+      "venta_id": 3036,
       "producto_id": 4492,
       "cantidad": 1.0,
       "precio_unitario": 6.19469,
@@ -18466,8 +18466,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 607,
+      "venta_id": 3036,
       "producto_id": 4492,
       "cantidad": 1.0,
       "precio_unitario": 6.19469,
@@ -18482,8 +18482,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 608,
+      "venta_id": 3036,
       "producto_id": 4492,
       "cantidad": 1.0,
       "precio_unitario": 6.19469,
@@ -18498,8 +18498,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 609,
+      "venta_id": 3036,
       "producto_id": 5128,
       "cantidad": 1.0,
       "precio_unitario": 19.469027,
@@ -18514,8 +18514,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 610,
+      "venta_id": 3036,
       "producto_id": 5148,
       "cantidad": 1.0,
       "precio_unitario": 4.424779,
@@ -18530,8 +18530,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 611,
+      "venta_id": 3036,
       "producto_id": 5148,
       "cantidad": 1.0,
       "precio_unitario": 4.424779,
@@ -18546,8 +18546,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 612,
+      "venta_id": 3036,
       "producto_id": 4455,
       "cantidad": 1.0,
       "precio_unitario": 8.849558,
@@ -18562,8 +18562,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 613,
+      "venta_id": 3036,
       "producto_id": 4437,
       "cantidad": 1.0,
       "precio_unitario": 2.654867,
@@ -18578,8 +18578,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 614,
+      "venta_id": 3036,
       "producto_id": 4890,
       "cantidad": 1.0,
       "precio_unitario": 2.920354,
@@ -18594,8 +18594,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 615,
+      "venta_id": 3036,
       "producto_id": 5052,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18610,8 +18610,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 616,
+      "venta_id": 3036,
       "producto_id": 5052,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18626,8 +18626,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 617,
+      "venta_id": 3036,
       "producto_id": 5051,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18642,8 +18642,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 618,
+      "venta_id": 3036,
       "producto_id": 5051,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18658,8 +18658,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 619,
+      "venta_id": 3036,
       "producto_id": 5054,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18674,8 +18674,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 620,
+      "venta_id": 3036,
       "producto_id": 5074,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18690,8 +18690,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 621,
+      "venta_id": 3036,
       "producto_id": 5074,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18706,8 +18706,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 622,
+      "venta_id": 3036,
       "producto_id": 5053,
       "cantidad": 1.0,
       "precio_unitario": 12.831858,
@@ -18722,8 +18722,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 623,
+      "venta_id": 3036,
       "producto_id": 4455,
       "cantidad": 0.7,
       "precio_unitario": 8.849558,
@@ -18738,8 +18738,8 @@
       "vendedor_id": null
     },
     {
-      "id": null,
-      "venta_id": null,
+      "id": 624,
+      "venta_id": 3036,
       "producto_id": 4568,
       "cantidad": 0.33,
       "precio_unitario": 8.097345,

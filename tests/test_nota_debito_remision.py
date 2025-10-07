@@ -942,6 +942,7 @@ def test_nota_debito_pdf(tmp_path):
         "codigo_generacion": "abc",
         "fecha": "2024-01-01",
     }
+    sello = "A" * 40
     generar_nota_debito_pdf(
         venta,
         detalles,
@@ -954,6 +955,7 @@ def test_nota_debito_pdf(tmp_path):
         codigo_generacion="ND-TEST-1234567890",
         numero_control="DTE-06-S001P001-000000000000001",
         fecha_generacion="03/02/2024, 08:15:00",
+        sello_recepcion=sello,
     )
     assert out.exists()
     with fitz.open(out) as doc:
@@ -964,6 +966,7 @@ def test_nota_debito_pdf(tmp_path):
     assert "DOCUMENTO RELACIONADO" in text
     assert "Código Generación: abc" in text
     assert "Motivo: Intereses" in text
+    assert f"Sello Recepción: {sello}" in text
 
 
 def test_nota_remision_pdf(tmp_path):

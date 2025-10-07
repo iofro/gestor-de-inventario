@@ -906,6 +906,7 @@ def test_nota_credito_pdf(tmp_path):
     }
     codigo_generacion = "NC-TEST-1234567890"
     numero_control = "DTE-05-S001P001-000000000000001"
+    sello = "S" * 40
     generar_nota_credito_pdf(
         venta,
         detalles,
@@ -918,6 +919,7 @@ def test_nota_credito_pdf(tmp_path):
         codigo_generacion=codigo_generacion,
         numero_control=numero_control,
         fecha_generacion="01/02/2024, 12:00:00",
+        sello_recepcion=sello,
     )
     assert out.exists()
     with fitz.open(out) as doc:
@@ -929,6 +931,7 @@ def test_nota_credito_pdf(tmp_path):
     assert "Tipo: 03" in text
     assert "Código Generación: 123" in text
     assert "Motivo: Devolución" in text
+    assert f"Sello Recepción: {sello}" in text
 
 
 def test_nota_credito_direccion(tmp_path, monkeypatch):

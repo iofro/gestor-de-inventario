@@ -1,7 +1,14 @@
 import json
-from dbfread import DBF
 from datetime import date
 from pathlib import Path
+from typing import Any, Dict
+
+from dbfread import DBF
+
+try:
+    from pgdumplib import load as load_pg_dump
+except Exception:  # pragma: no cover - optional dependency
+    load_pg_dump = None
 
 # Use a path relative to this script so it can be executed from
 # any working directory.
@@ -12,14 +19,130 @@ BASE = (
     / "temporal"
 )
 
-# Helpers
-def load_dbf(name):
-    return DBF(str(BASE / name), load=True, encoding='latin-1')
+BACKUP_PATH = BASE.parent.parent / "stacatalina.backup"
 
-def date_to_str(d):
+
+# Helpers
+def load_dbf(name: str) -> DBF:
+    return DBF(str(BASE / name), load=True, encoding="latin-1")
+
+
+def date_to_str(d: Any) -> str:
     if isinstance(d, date):
         return d.isoformat()
-    return ''
+    return ""
+
+
+def _clean_str(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bytes):
+        value = value.decode("latin-1", "ignore")
+    if isinstance(value, str):
+        value = value.replace("\r\n", " ").replace("\n", " ").replace("\t", " ")
+        return value.strip()
+    return str(value)
+
+
+def load_client_metadata() -> Dict[str, Dict[str, Any]]:
+    """Return extra client metadata sourced from the PostgreSQL backup."""
+
+    if not BACKUP_PATH.exists() or load_pg_dump is None:
+        return {}
+
+    try:
+        dump = load_pg_dump(str(BACKUP_PATH))
+    except Exception:
+        return {}
+
+    deptos = {}
+    municipios = {}
+    try:
+        deptos = {
+            int(row[0]): _clean_str(row[1])
+            for row in dump.table_data("public", "deptos")
+        }
+        municipios = {
+            int(row[1]): {
+                "nombre": _clean_str(row[2]),
+                "departamento_id": int(row[0]),
+            }
+            for row in dump.table_data("public", "municipios")
+        }
+    except Exception:
+        deptos = {}
+        municipios = {}
+
+    emails = {}
+    try:
+        for row in dump.table_data("public", "emails"):
+            email = _clean_str(row[2])
+            ficha_id = _clean_str(row[1])
+            if ficha_id and email:
+                emails.setdefault(ficha_id, []).append(email)
+    except Exception:
+        emails = {}
+
+    columns = [
+        "cod_ficha",
+        "direccion",
+        "dui",
+        "excluido",
+        "giro",
+        "id_ficha",
+        "id_munici",
+        "nacionali",
+        "nit",
+        "nom_ficha",
+        "nrc",
+        "otros",
+        "ret_iva",
+        "telefono",
+        "proveedor",
+        "cliente",
+    ]
+
+    metadata: Dict[str, Dict[str, Any]] = {}
+
+    try:
+        for row in dump.table_data("public", "fichas"):
+            data = {columns[idx]: row[idx] for idx in range(len(columns))}
+            codigo = _clean_str(data.get("cod_ficha"))
+            if not codigo:
+                continue
+
+            municipio_id_raw = _clean_str(data.get("id_munici"))
+            try:
+                municipio_id = int(municipio_id_raw) if municipio_id_raw else None
+            except ValueError:
+                municipio_id = None
+
+            municipio_info = municipios.get(municipio_id or -1)
+            departamento_id = municipio_info.get("departamento_id") if municipio_info else None
+
+            ficha_id = _clean_str(data.get("id_ficha"))
+            correo = emails.get(ficha_id, [])
+
+            if codigo in {"N/A", "*NULO*"}:
+                continue
+
+            metadata[codigo] = {
+                "nombre": _clean_str(data.get("nom_ficha")),
+                "direccion": _clean_str(data.get("direccion")),
+                "dui": _clean_str(data.get("dui")),
+                "giro": _clean_str(data.get("giro")),
+                "nit": _clean_str(data.get("nit")),
+                "nrc": _clean_str(data.get("nrc")),
+                "telefono": _clean_str(data.get("telefono")),
+                "otros": _clean_str(data.get("otros")),
+                "departamento": f"{departamento_id:02d}" if isinstance(departamento_id, int) and departamento_id > 0 else "",
+                "municipio": str(municipio_id) if isinstance(municipio_id, int) and municipio_id > 0 else "",
+                "email": correo[0] if correo else "",
+            }
+    except Exception:
+        return {}
+
+    return metadata
 
 # Productos
 productos = []
@@ -64,15 +187,44 @@ except Exception:
 # Clientes
 clientes = []
 cliente_code_to_id = {}
+cliente_metadata = load_client_metadata()
 try:
     for row in load_dbf('clientestemp.DBF'):
         cid = row.get('ID_FICHA')
-        cod = row.get('COD_FICHA', '')
-        clientes.append({
+        cod = (row.get('COD_FICHA') or '').strip()
+        nombre = row.get('NOM_FICHA', '')
+        data = {
             'id': cid,
             'codigo': cod,
-            'nombre': row.get('NOM_FICHA', '')
-        })
+            'nombre': nombre,
+        }
+
+        meta = cliente_metadata.get(cod)
+        if meta:
+            if meta.get('nombre'):
+                data['nombre'] = meta['nombre']
+            if meta.get('nit'):
+                data['nit'] = meta['nit']
+            if meta.get('dui'):
+                data['dui'] = meta['dui']
+            if meta.get('direccion'):
+                data['direccion'] = meta['direccion']
+            if meta.get('telefono'):
+                data['telefono'] = meta['telefono']
+            if meta.get('giro'):
+                data['giro'] = meta['giro']
+            if meta.get('nrc'):
+                data['nrc'] = meta['nrc']
+            if meta.get('departamento'):
+                data['departamento'] = meta['departamento']
+            if meta.get('municipio'):
+                data['municipio'] = meta['municipio']
+            if meta.get('email'):
+                data['email'] = meta['email']
+            if meta.get('otros'):
+                data['otros'] = meta['otros']
+
+        clientes.append(data)
         cliente_code_to_id[cod] = cid
 except Exception:
     pass

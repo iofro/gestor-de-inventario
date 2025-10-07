@@ -3643,10 +3643,27 @@ class VendedorDialog(QDialog):
         self.dui_edit.setMaxLength(9)
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
+        self.Distribuidor_combo.setEditable(True)
+        self.Distribuidor_combo.setInsertPolicy(QComboBox.NoInsert)
+        line_edit = self.Distribuidor_combo.lineEdit()
+        if line_edit is not None:
+            line_edit.setPlaceholderText("Buscar distribuidor...")
         self.Distribuidores = Distribuidores
         self.Distribuidor_combo.addItem("Sin Distribuidor", None)
         for d in self.Distribuidores:
             self.Distribuidor_combo.addItem(d["nombre"], d["id"])
+        completer = QCompleter(self.Distribuidor_combo.model(), self.Distribuidor_combo)
+        completer.setCaseSensitivity(Qt.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchContains)
+        if line_edit is not None:
+            line_edit.setCompleter(completer)
+
+            def _on_completer_activated(text):
+                idx = self.Distribuidor_combo.findText(text, Qt.MatchExactly)
+                if idx != -1:
+                    self.Distribuidor_combo.setCurrentIndex(idx)
+
+            completer.activated[str].connect(_on_completer_activated)
         self._vendedor_id = vendedor.get("id") if vendedor else None
 
         layout.addWidget(QLabel("Código:"))

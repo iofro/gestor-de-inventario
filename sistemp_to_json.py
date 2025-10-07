@@ -28,13 +28,20 @@ try:
     for row in load_dbf('utilTemp.DBF'):
         pid = row.get('ID_ITEM')
         codigo = row.get('COD_ITEM') or ''
+        precio_venta = row.get('T_VENTA', 0) or 0
+        # Algunos artículos tienen valores flotantes con muchos decimales,
+        # por lo que redondeamos a 4 cifras para mantener un formato estable
+        # en el archivo exportado.
+        if isinstance(precio_venta, float):
+            precio_venta = round(precio_venta, 4)
+
         productos.append({
             'id': pid,
             'nombre': row.get('ITEM', ''),
             'codigo': codigo,
             'precio_compra': row.get('P_COSTO', 0) or 0,
-            'precio_venta_minorista': 0,
-            'precio_venta_mayorista': 0,
+            'precio_venta_minorista': precio_venta,
+            'precio_venta_mayorista': precio_venta,
             'stock': row.get('CANT_FACT', 0) or 0,
         })
         codigo_to_id[codigo] = pid
@@ -131,7 +138,7 @@ except Exception:
 inventario = {
     'productos': productos,
     'vendedores': vendedores,
-    'Distribuidores': [],
+    'distribuidores': [],
     'clientes': clientes,
     'ventas': ventas,
     'compras': [],

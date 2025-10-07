@@ -1771,9 +1771,38 @@
       "codigo": "0022",
       "nombre": "EDWIN ALVAREZ",
       "descripcion": ""
+    },
+    {
+      "id": 63,
+      "codigo": "PROV",
+      "nombre": "PROVISIONAL",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 1
     }
   ],
-  "distribuidores": [],
+  "distribuidores": [
+    {
+      "id": 1,
+      "codigo": "PROV",
+      "nombre": "PROVISIONAL",
+      "telefono": "",
+      "email": "",
+      "cargo": "",
+      "sucursal": "",
+      "fecha_inicio": "",
+      "direccion": "",
+      "departamento": "",
+      "municipio": "",
+      "tipo_contrato": "",
+      "comisiones_especificas": "",
+      "metodo_pago": "",
+      "nit": "",
+      "nrc": "",
+      "cuenta_bancaria": "",
+      "notas": ""
+    }
+  ],
   "clientes": [
     {
       "id": 3,
@@ -14595,10 +14624,10 @@
       "cantidad": 11.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 2,
@@ -14607,10 +14636,10 @@
       "cantidad": 17.0,
       "precio_unitario": 2.024043,
       "total": 34.408730999999996,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 3,
@@ -14619,10 +14648,10 @@
       "cantidad": 11.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 4,
@@ -14631,10 +14660,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 5,
@@ -14643,10 +14672,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 6,
@@ -14655,10 +14684,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 7,
@@ -14667,10 +14696,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 8,
@@ -14679,10 +14708,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 9,
@@ -14691,10 +14720,10 @@
       "cantidad": 4.0,
       "precio_unitario": 3.5398,
       "total": 14.1592,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 10,
@@ -14703,10 +14732,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 11,
@@ -14715,10 +14744,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 12,
@@ -14727,10 +14756,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 13,
@@ -14739,10 +14768,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 14,
@@ -14751,10 +14780,10 @@
       "cantidad": 50.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 15,
@@ -14763,10 +14792,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 16,
@@ -14775,10 +14804,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 17,
@@ -14787,10 +14816,10 @@
       "cantidad": 9.7,
       "precio_unitario": 5.752,
       "total": 55.794399999999996,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 18,
@@ -14799,10 +14828,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 19,
@@ -14811,10 +14840,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 20,
@@ -14823,10 +14852,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 21,
@@ -14835,10 +14864,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 22,
@@ -14847,10 +14876,10 @@
       "cantidad": 5.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 23,
@@ -14859,10 +14888,10 @@
       "cantidad": 19.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 24,
@@ -14871,10 +14900,10 @@
       "cantidad": 31.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 25,
@@ -14883,10 +14912,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 26,
@@ -14895,10 +14924,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 27,
@@ -14907,10 +14936,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 28,
@@ -14919,10 +14948,10 @@
       "cantidad": 14.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 29,
@@ -14931,10 +14960,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 30,
@@ -14943,10 +14972,10 @@
       "cantidad": 14.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 31,
@@ -14955,10 +14984,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 32,
@@ -14967,10 +14996,10 @@
       "cantidad": 7.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 33,
@@ -14979,10 +15008,10 @@
       "cantidad": 15.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 34,
@@ -14991,10 +15020,10 @@
       "cantidad": 10.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 35,
@@ -15003,10 +15032,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 36,
@@ -15015,10 +15044,10 @@
       "cantidad": 8.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 37,
@@ -15027,10 +15056,10 @@
       "cantidad": 19.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 38,
@@ -15039,10 +15068,10 @@
       "cantidad": 4.0,
       "precio_unitario": 4.702128,
       "total": 18.808512,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 39,
@@ -15051,10 +15080,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 40,
@@ -15063,10 +15092,10 @@
       "cantidad": 1.0,
       "precio_unitario": 4.42,
       "total": 4.42,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 41,
@@ -15075,10 +15104,10 @@
       "cantidad": 131.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 42,
@@ -15087,10 +15116,10 @@
       "cantidad": 5.0,
       "precio_unitario": 2.034884,
       "total": 10.17442,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 43,
@@ -15099,10 +15128,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 44,
@@ -15111,10 +15140,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 45,
@@ -15123,10 +15152,10 @@
       "cantidad": 12.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 46,
@@ -15135,10 +15164,10 @@
       "cantidad": 10.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 47,
@@ -15147,10 +15176,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 48,
@@ -15159,10 +15188,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 49,
@@ -15171,10 +15200,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 50,
@@ -15183,10 +15212,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 51,
@@ -15195,10 +15224,10 @@
       "cantidad": 10.0,
       "precio_unitario": 1.627907,
       "total": 16.27907,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 52,
@@ -15207,10 +15236,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 53,
@@ -15219,10 +15248,10 @@
       "cantidad": 1.0,
       "precio_unitario": 3.95589,
       "total": 3.95589,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 54,
@@ -15231,10 +15260,10 @@
       "cantidad": 12.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 55,
@@ -15243,10 +15272,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 56,
@@ -15255,10 +15284,10 @@
       "cantidad": 20.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 57,
@@ -15267,10 +15296,10 @@
       "cantidad": 16.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 58,
@@ -15279,10 +15308,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 59,
@@ -15291,10 +15320,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 60,
@@ -15303,10 +15332,10 @@
       "cantidad": 0.33,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 61,
@@ -15315,10 +15344,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 62,
@@ -15327,10 +15356,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 63,
@@ -15339,10 +15368,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 64,
@@ -15351,10 +15380,10 @@
       "cantidad": 46.0,
       "precio_unitario": 1.35449,
       "total": 62.30654,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 65,
@@ -15363,10 +15392,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 66,
@@ -15375,10 +15404,10 @@
       "cantidad": 190.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 67,
@@ -15387,10 +15416,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 68,
@@ -15399,10 +15428,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 69,
@@ -15411,10 +15440,10 @@
       "cantidad": 15.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 70,
@@ -15423,10 +15452,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 71,
@@ -15435,10 +15464,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 72,
@@ -15447,10 +15476,10 @@
       "cantidad": 28.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 73,
@@ -15459,10 +15488,10 @@
       "cantidad": 18.0,
       "precio_unitario": 3.126304,
       "total": 56.273472000000005,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 74,
@@ -15471,10 +15500,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 75,
@@ -15483,10 +15512,10 @@
       "cantidad": 8.0,
       "precio_unitario": 2.724245,
       "total": 21.79396,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 76,
@@ -15495,10 +15524,10 @@
       "cantidad": 7.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 77,
@@ -15507,10 +15536,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 78,
@@ -15519,10 +15548,10 @@
       "cantidad": 65.0,
       "precio_unitario": 2.106984,
       "total": 136.95396000000002,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 79,
@@ -15531,10 +15560,10 @@
       "cantidad": 7.0,
       "precio_unitario": 11.418605,
       "total": 79.930235,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 80,
@@ -15543,10 +15572,10 @@
       "cantidad": 8.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 81,
@@ -15555,10 +15584,10 @@
       "cantidad": 7.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 82,
@@ -15567,10 +15596,10 @@
       "cantidad": 27.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 83,
@@ -15579,10 +15608,10 @@
       "cantidad": 24.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 84,
@@ -15591,10 +15620,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 85,
@@ -15603,10 +15632,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 86,
@@ -15615,10 +15644,10 @@
       "cantidad": 10.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 87,
@@ -15627,10 +15656,10 @@
       "cantidad": 2.0,
       "precio_unitario": 14.15,
       "total": 28.3,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 88,
@@ -15639,10 +15668,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 89,
@@ -15651,10 +15680,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 90,
@@ -15663,10 +15692,10 @@
       "cantidad": 74.0,
       "precio_unitario": 0.937059,
       "total": 69.342366,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 91,
@@ -15675,10 +15704,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 92,
@@ -15687,10 +15716,10 @@
       "cantidad": 10.0,
       "precio_unitario": 4.867727,
       "total": 48.67727000000001,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 93,
@@ -15699,10 +15728,10 @@
       "cantidad": 14.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 94,
@@ -15711,10 +15740,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 95,
@@ -15723,10 +15752,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 96,
@@ -15735,10 +15764,10 @@
       "cantidad": 4.0,
       "precio_unitario": 4.596429,
       "total": 18.385716,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 97,
@@ -15747,10 +15776,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 98,
@@ -15759,10 +15788,10 @@
       "cantidad": 70.0,
       "precio_unitario": 0.884958,
       "total": 61.94706,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 99,
@@ -15771,10 +15800,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 100,
@@ -15783,10 +15812,10 @@
       "cantidad": 11.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 101,
@@ -15795,10 +15824,10 @@
       "cantidad": 32.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 102,
@@ -15807,10 +15836,10 @@
       "cantidad": 26.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 103,
@@ -15819,10 +15848,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 104,
@@ -15831,10 +15860,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 105,
@@ -15843,10 +15872,10 @@
       "cantidad": 10.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 106,
@@ -15855,10 +15884,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 107,
@@ -15867,10 +15896,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 108,
@@ -15879,10 +15908,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 109,
@@ -15891,10 +15920,10 @@
       "cantidad": 21.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 110,
@@ -15903,10 +15932,10 @@
       "cantidad": 42.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 111,
@@ -15915,10 +15944,10 @@
       "cantidad": 8.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 112,
@@ -15927,10 +15956,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 113,
@@ -15939,10 +15968,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 114,
@@ -15951,10 +15980,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 115,
@@ -15963,10 +15992,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 116,
@@ -15975,10 +16004,10 @@
       "cantidad": 14.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 117,
@@ -15987,10 +16016,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 118,
@@ -15999,10 +16028,10 @@
       "cantidad": 1.0,
       "precio_unitario": 6.32242,
       "total": 6.32242,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 119,
@@ -16011,10 +16040,10 @@
       "cantidad": 19.0,
       "precio_unitario": 1.740345,
       "total": 33.066555,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 120,
@@ -16023,10 +16052,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 121,
@@ -16035,10 +16064,10 @@
       "cantidad": 93.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 122,
@@ -16047,10 +16076,10 @@
       "cantidad": 80.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 123,
@@ -16059,10 +16088,10 @@
       "cantidad": 12.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 124,
@@ -16071,10 +16100,10 @@
       "cantidad": 14.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 125,
@@ -16083,10 +16112,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 126,
@@ -16095,10 +16124,10 @@
       "cantidad": 38.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 127,
@@ -16107,10 +16136,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 128,
@@ -16119,10 +16148,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 129,
@@ -16131,10 +16160,10 @@
       "cantidad": 225.0,
       "precio_unitario": 6.126923,
       "total": 1378.557675,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 130,
@@ -16143,10 +16172,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 131,
@@ -16155,10 +16184,10 @@
       "cantidad": 106.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 132,
@@ -16167,10 +16196,10 @@
       "cantidad": 69.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 133,
@@ -16179,10 +16208,10 @@
       "cantidad": 87.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 134,
@@ -16191,10 +16220,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 135,
@@ -16203,10 +16232,10 @@
       "cantidad": 20.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 136,
@@ -16215,10 +16244,10 @@
       "cantidad": 2.0,
       "precio_unitario": 6.238636,
       "total": 12.477272,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 137,
@@ -16227,10 +16256,10 @@
       "cantidad": 7.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 138,
@@ -16239,10 +16268,10 @@
       "cantidad": 16.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 139,
@@ -16251,10 +16280,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 140,
@@ -16263,10 +16292,10 @@
       "cantidad": 39.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 141,
@@ -16275,10 +16304,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 142,
@@ -16287,10 +16316,10 @@
       "cantidad": 6.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 143,
@@ -16299,10 +16328,10 @@
       "cantidad": 91.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 144,
@@ -16311,10 +16340,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 145,
@@ -16323,10 +16352,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 146,
@@ -16335,10 +16364,10 @@
       "cantidad": 8.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 147,
@@ -16347,10 +16376,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 148,
@@ -16359,10 +16388,10 @@
       "cantidad": 21.0,
       "precio_unitario": 3.4956,
       "total": 73.4076,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 149,
@@ -16371,10 +16400,10 @@
       "cantidad": 7.0,
       "precio_unitario": 3.5398,
       "total": 24.7786,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 150,
@@ -16383,10 +16412,10 @@
       "cantidad": 10.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 151,
@@ -16395,10 +16424,10 @@
       "cantidad": 102.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 152,
@@ -16407,10 +16436,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 153,
@@ -16419,10 +16448,10 @@
       "cantidad": 6.0,
       "precio_unitario": 6.8,
       "total": 40.8,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 154,
@@ -16431,10 +16460,10 @@
       "cantidad": 10.0,
       "precio_unitario": 3.7,
       "total": 37.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 155,
@@ -16443,10 +16472,10 @@
       "cantidad": 1.0,
       "precio_unitario": 4.2,
       "total": 4.2,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 156,
@@ -16455,10 +16484,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 157,
@@ -16467,10 +16496,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 158,
@@ -16479,10 +16508,10 @@
       "cantidad": 45.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 159,
@@ -16491,10 +16520,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 160,
@@ -16503,10 +16532,10 @@
       "cantidad": 20.0,
       "precio_unitario": 2.15,
       "total": 43.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 161,
@@ -16515,10 +16544,10 @@
       "cantidad": 4.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 162,
@@ -16527,10 +16556,10 @@
       "cantidad": 10.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 163,
@@ -16539,10 +16568,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.53,
       "total": 1.06,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 164,
@@ -16551,10 +16580,10 @@
       "cantidad": 8.0,
       "precio_unitario": 2.21,
       "total": 17.68,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 165,
@@ -16563,10 +16592,10 @@
       "cantidad": 5.0,
       "precio_unitario": 5.903333,
       "total": 29.516665,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 166,
@@ -16575,10 +16604,10 @@
       "cantidad": 12.0,
       "precio_unitario": 1.686667,
       "total": 20.240004,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 167,
@@ -16587,10 +16616,10 @@
       "cantidad": 6.0,
       "precio_unitario": 1.77,
       "total": 10.620000000000001,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 168,
@@ -16599,10 +16628,10 @@
       "cantidad": 9.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 169,
@@ -16611,10 +16640,10 @@
       "cantidad": 2.0,
       "precio_unitario": 18.363333,
       "total": 36.726666,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 170,
@@ -16623,10 +16652,10 @@
       "cantidad": 2.0,
       "precio_unitario": 7.87,
       "total": 15.74,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 171,
@@ -16635,10 +16664,10 @@
       "cantidad": 1.0,
       "precio_unitario": 8.994286,
       "total": 8.994286,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 172,
@@ -16647,10 +16676,10 @@
       "cantidad": 1.0,
       "precio_unitario": 20.986667,
       "total": 20.986667,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 173,
@@ -16659,10 +16688,10 @@
       "cantidad": 9.0,
       "precio_unitario": 5.972727,
       "total": 53.754543,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 174,
@@ -16671,10 +16700,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 175,
@@ -16683,10 +16712,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 176,
@@ -16695,10 +16724,10 @@
       "cantidad": 22.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 177,
@@ -16707,10 +16736,10 @@
       "cantidad": 15.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 178,
@@ -16719,10 +16748,10 @@
       "cantidad": 2.0,
       "precio_unitario": 7.87,
       "total": 15.74,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 179,
@@ -16731,10 +16760,10 @@
       "cantidad": 1.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 180,
@@ -16743,10 +16772,10 @@
       "cantidad": 3.0,
       "precio_unitario": 2.646,
       "total": 7.938,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 181,
@@ -16755,10 +16784,10 @@
       "cantidad": 7.0,
       "precio_unitario": 4.8675,
       "total": 34.0725,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 182,
@@ -16767,10 +16796,10 @@
       "cantidad": 12.0,
       "precio_unitario": 3.761,
       "total": 45.132000000000005,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 183,
@@ -16779,10 +16808,10 @@
       "cantidad": 25.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 184,
@@ -16791,10 +16820,10 @@
       "cantidad": 7.0,
       "precio_unitario": 4.8675,
       "total": 34.0725,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 185,
@@ -16803,10 +16832,10 @@
       "cantidad": 2.0,
       "precio_unitario": 1.881,
       "total": 3.762,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 186,
@@ -16815,10 +16844,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 187,
@@ -16827,10 +16856,10 @@
       "cantidad": 3.0,
       "precio_unitario": 11.688889,
       "total": 35.066666999999995,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 188,
@@ -16839,10 +16868,10 @@
       "cantidad": 20.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 189,
@@ -16851,10 +16880,10 @@
       "cantidad": 17.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 190,
@@ -16863,10 +16892,10 @@
       "cantidad": 4.0,
       "precio_unitario": 12.743333,
       "total": 50.973332,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 191,
@@ -16875,10 +16904,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.119792,
       "total": 0.359376,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 192,
@@ -16887,10 +16916,10 @@
       "cantidad": 3.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 193,
@@ -16899,10 +16928,10 @@
       "cantidad": 27.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 194,
@@ -16911,10 +16940,10 @@
       "cantidad": 18.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 195,
@@ -16923,10 +16952,10 @@
       "cantidad": 7.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     },
     {
       "id": 196,
@@ -16935,10 +16964,10 @@
       "cantidad": 2.0,
       "precio_unitario": 0.0,
       "total": 0.0,
-      "Distribuidor_id": null,
+      "Distribuidor_id": 1,
       "comision_pct": 0.0,
       "comision_monto": 0.0,
-      "vendedor_id": null
+      "vendedor_id": 63
     }
   ],
   "detalles_compra": [

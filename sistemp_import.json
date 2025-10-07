@@ -5,8 +5,8 @@
       "nombre": "MEDIFLU JARABE FRASCO POR 120 ML",
       "codigo": "711604203147",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 63.2743,
+      "precio_venta_mayorista": 63.2743,
       "stock": 11.0
     },
     {
@@ -14,8 +14,8 @@
       "nombre": "AZTHOMAC 15 ML AZITROMICINA 200 MG/5ML",
       "codigo": "711604101726",
       "precio_compra": 2.024043,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 67.6991,
+      "precio_venta_mayorista": 67.6991,
       "stock": 17.0
     },
     {
@@ -23,8 +23,8 @@
       "nombre": "KAOPEXIN CON NEOMICINA SUSPENSION ORAL DE 120 ML",
       "codigo": "711604100538",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 53.5398,
+      "precio_venta_mayorista": 53.5398,
       "stock": 11.0
     },
     {
@@ -32,8 +32,8 @@
       "nombre": "KAOPEXIN SUSPENSION ORAL DE 120 ML",
       "codigo": "711604100514",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.9292,
+      "precio_venta_mayorista": 15.9292,
       "stock": 4.0
     },
     {
@@ -41,8 +41,8 @@
       "nombre": "IREN FORTE ASPARTATO DE ARGININA FRASCO POR 120 ML",
       "codigo": "711604102785",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 11.9469,
+      "precio_venta_mayorista": 11.9469,
       "stock": 1.0
     },
     {
@@ -50,8 +50,8 @@
       "nombre": "METOCARBAMOL GAMMA 500 MG CAJA POR 100 TABLETAS",
       "codigo": "711604101450",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 29.2035,
+      "precio_venta_mayorista": 29.2035,
       "stock": 6.0
     },
     {
@@ -59,8 +59,8 @@
       "nombre": "DER-AL MOMETASONA FUROATO 0.1% CREMA DE 20 G",
       "codigo": "711604102518",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 18.4513,
+      "precio_venta_mayorista": 18.4513,
       "stock": 3.0
     },
     {
@@ -68,8 +68,8 @@
       "nombre": "COMPLEJO B GAMMA CAJA X 100 TABLETAS",
       "codigo": "711604301904",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 27.8761,
+      "precio_venta_mayorista": 27.8761,
       "stock": 9.0
     },
     {
@@ -77,8 +77,8 @@
       "nombre": "RINOTAPP JARABE POR 120 ML BROMFENIRAMINA-FENILEFRINA",
       "codigo": "711604102792",
       "precio_compra": 3.5398,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 23.0088,
+      "precio_venta_mayorista": 23.0088,
       "stock": 4.0
     },
     {
@@ -86,8 +86,8 @@
       "nombre": "PREDSOLAN PREDNISOLONA 20 MG",
       "codigo": "711604203253",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 14.8673,
+      "precio_venta_mayorista": 14.8673,
       "stock": 1.0
     },
     {
@@ -95,8 +95,8 @@
       "nombre": "TRAUM GEL DE USO TOPICO 35 G . DICLOFENAC SODICO 10 MG/G (1%)",
       "codigo": "711604102396",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 2.6549,
+      "precio_venta_mayorista": 2.6549,
       "stock": 1.0
     },
     {
@@ -104,8 +104,8 @@
       "nombre": "S.S.N. SPRAY NASAL F X 50 ML CLORURO DE SODIO  0.9 MG/0.1",
       "codigo": "711604102556",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 10.4867,
+      "precio_venta_mayorista": 10.4867,
       "stock": 3.0
     },
     {
@@ -113,8 +113,8 @@
       "nombre": "S.S.N. SPRAY NASAL  F X 100 ML CLORURO DE SODIO 0.9MG/0.1 ML",
       "codigo": "711604301362",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 12.7434,
+      "precio_venta_mayorista": 12.7434,
       "stock": 3.0
     },
     {
@@ -122,8 +122,8 @@
       "nombre": "SINTEMP JARABE F X 120 ML ACETAMINOFEN 120MG/ 5ML",
       "codigo": "SINTEMPGAMMAX120ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 52.6549,
+      "precio_venta_mayorista": 52.6549,
       "stock": 50.0
     },
     {
@@ -131,8 +131,8 @@
       "nombre": "LORALER/LORATADINA 10 MG CX100 TAB",
       "codigo": "711604202522",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.823,
+      "precio_venta_mayorista": 4.823,
       "stock": 1.0
     },
     {
@@ -140,8 +140,8 @@
       "nombre": "FOLHEM C X 30 TAB. ACIDO FOLICO 5MG",
       "codigo": "711604101870",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.8673,
+      "precio_venta_mayorista": 4.8673,
       "stock": 2.0
     },
     {
@@ -149,8 +149,8 @@
       "nombre": "TOXAZOL FORTE BOLSA X100 TAB TRIMET 160MG/SULFA 800MG",
       "codigo": "GAMMATOXAZOLFT005",
       "precio_compra": 5.752,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 85.8407,
+      "precio_venta_mayorista": 85.8407,
       "stock": 9.7
     },
     {
@@ -158,8 +158,8 @@
       "nombre": "CLORFENIRAMINA 8MG BOLSA X100TAB",
       "codigo": "GAMMACLORFETAB006",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 3.0973,
+      "precio_venta_mayorista": 3.0973,
       "stock": 1.0
     },
     {
@@ -167,8 +167,8 @@
       "nombre": "ACICLOVIR 400 MG CAJA X 100 TAB",
       "codigo": "18901790700011",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.9292,
+      "precio_venta_mayorista": 15.9292,
       "stock": 2.0
     },
     {
@@ -176,8 +176,8 @@
       "nombre": "PARACITEL-500 NITOZOXANIDA 500MG C X  6 TAB.",
       "codigo": "18901790714759",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 17.2566,
+      "precio_venta_mayorista": 17.2566,
       "stock": 6.0
     },
     {
@@ -185,8 +185,8 @@
       "nombre": "AMOXICILINA 500MG C X 100 CAPS. SAIMED.",
       "codigo": "18901790684069",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 19.9115,
+      "precio_venta_mayorista": 19.9115,
       "stock": 3.0
     },
     {
@@ -194,8 +194,8 @@
       "nombre": "LORATADINA 10 MG C X 100 TAB. SAIMED.",
       "codigo": "18901790697717",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 24.7788,
+      "precio_venta_mayorista": 24.7788,
       "stock": 5.0
     },
     {
@@ -203,8 +203,8 @@
       "nombre": "ARGIPOTEN-C C X 10 SACHETS ASPARTATO DE ARGININA 5G.",
       "codigo": "18901790706198",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 151.3274,
+      "precio_venta_mayorista": 151.3274,
       "stock": 19.0
     },
     {
@@ -212,8 +212,8 @@
       "nombre": "AMOXICILINA 500 MG C X 100 CAPSULAS  BALAXI.",
       "codigo": "6975714180055",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 176.1062,
+      "precio_venta_mayorista": 176.1062,
       "stock": 31.0
     },
     {
@@ -221,8 +221,8 @@
       "nombre": "CEVITRAN VITAMINA C CAJA X 100 TAB. MASTICABLES",
       "codigo": "18901790684205",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 23.0088,
+      "precio_venta_mayorista": 23.0088,
       "stock": 2.0
     },
     {
@@ -230,8 +230,8 @@
       "nombre": "ACIDO ACETILSALICILICO 100 MG C X 100 TAB. RECUBIERTAS",
       "codigo": "6937874104210",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 20.177,
+      "precio_venta_mayorista": 20.177,
       "stock": 6.0
     },
     {
@@ -239,8 +239,8 @@
       "nombre": "AMLODIPINA 5 MG C X 100 TABLETAS RECUBIERTAS BALAXI",
       "codigo": "6937874106252",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 13.4513,
+      "precio_venta_mayorista": 13.4513,
       "stock": 4.0
     },
     {
@@ -248,8 +248,8 @@
       "nombre": "SIMVASTATINA 20 MG C X 100 TABLETAS",
       "codigo": "7401189600549",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 86.7257,
+      "precio_venta_mayorista": 86.7257,
       "stock": 14.0
     },
     {
@@ -257,8 +257,8 @@
       "nombre": "AZITROMICINA 500 MG C X 30 TABLETAS RECUBIERTAS",
       "codigo": "7401189600709",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 14.1593,
+      "precio_venta_mayorista": 14.1593,
       "stock": 1.0
     },
     {
@@ -266,8 +266,8 @@
       "nombre": "SECNIDAZOL 500 MG C X 40 TABLETAS RECUBIERTAS BALAXI",
       "codigo": "7401189600556",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 117.6991,
+      "precio_venta_mayorista": 117.6991,
       "stock": 14.0
     },
     {
@@ -275,8 +275,8 @@
       "nombre": "ENALAPRIL MALEATO 20 MG C X 100 TABLETAS BALAXI",
       "codigo": "7401189600648",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 10.4425,
+      "precio_venta_mayorista": 10.4425,
       "stock": 2.0
     },
     {
@@ -284,8 +284,8 @@
       "nombre": "ACECLOFENACO 100MG C X 100 TABLETAS RECUBIERTAS",
       "codigo": "8906101706051",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 27.8761,
+      "precio_venta_mayorista": 27.8761,
       "stock": 7.0
     },
     {
@@ -293,8 +293,8 @@
       "nombre": "FLUCONAZOL BALAXI 200 MG C X 2 CAPSULAS X 2 TAB.",
       "codigo": "8906101706068",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 19.9115,
+      "precio_venta_mayorista": 19.9115,
       "stock": 15.0
     },
     {
@@ -302,8 +302,8 @@
       "nombre": "MICONAZOL AL 2% CREMA TOPICA T. 30 G",
       "codigo": "8906101702510",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 8.8496,
+      "precio_venta_mayorista": 8.8496,
       "stock": 10.0
     },
     {
@@ -311,8 +311,8 @@
       "nombre": "LEVOFLOXACINA 750 MG C X 100 TAB. RECUBIERTOS",
       "codigo": "8906101702060",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 17.2566,
+      "precio_venta_mayorista": 17.2566,
       "stock": 1.0
     },
     {
@@ -320,8 +320,8 @@
       "nombre": "METRONIDAZOL 500 MG C X 100 TABLETAS",
       "codigo": "8906101702923",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 56.6372,
+      "precio_venta_mayorista": 56.6372,
       "stock": 8.0
     },
     {
@@ -329,8 +329,8 @@
       "nombre": "CLOTRIMAZOL 1% CREMA TUBO 30G.",
       "codigo": "8906101701032",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 16.8142,
+      "precio_venta_mayorista": 16.8142,
       "stock": 19.0
     },
     {
@@ -338,8 +338,8 @@
       "nombre": "NORFLOXACINA 400 MG C X 100 TAB. RECUBIERTAS",
       "codigo": "8906101703289",
       "precio_compra": 4.702128,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 53.0973,
+      "precio_venta_mayorista": 53.0973,
       "stock": 4.0
     },
     {
@@ -347,8 +347,8 @@
       "nombre": "CARBAMAZEPINA 200 MG C X 100 TAB. RECUBIERTAS",
       "codigo": "8906101703951",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.9292,
+      "precio_venta_mayorista": 15.9292,
       "stock": 2.0
     },
     {
@@ -356,8 +356,8 @@
       "nombre": "CEFIXIMA 400 MG C X 10 TAB. RECUBIERTAS",
       "codigo": "8906101703876",
       "precio_compra": 4.42,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 10.6195,
+      "precio_venta_mayorista": 10.6195,
       "stock": 1.0
     },
     {
@@ -365,8 +365,8 @@
       "nombre": "DEXAMETASONA 8MG C X 100 AMPOLLAS BALAXI",
       "codigo": "6975714180444",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 69.5575,
+      "precio_venta_mayorista": 69.5575,
       "stock": 131.0
     },
     {
@@ -374,8 +374,8 @@
       "nombre": "CLORFENIRAMINA MALEATO 4 MG C X 100 TAB.",
       "codigo": "7401189600679",
       "precio_compra": 2.034884,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.4867,
+      "precio_venta_mayorista": 15.4867,
       "stock": 5.0
     },
     {
@@ -383,8 +383,8 @@
       "nombre": "METFORMINA 850 MG C X 100 TAB. RECUBIERTAS",
       "codigo": "6937874105804",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 17.6991,
+      "precio_venta_mayorista": 17.6991,
       "stock": 4.0
     },
     {
@@ -392,8 +392,8 @@
       "nombre": "AMOXY PLUS F X 100 ML AMOXIC+ACIDO CLAV. 625MG",
       "codigo": "7401189600716",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 18.4071,
+      "precio_venta_mayorista": 18.4071,
       "stock": 2.0
     },
     {
@@ -401,8 +401,8 @@
       "nombre": "AMOXY PLUS C X 14 TAB AMOXC+ACIDO CLAV. 625 TAB.",
       "codigo": "8906101701001",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 90.2655,
+      "precio_venta_mayorista": 90.2655,
       "stock": 12.0
     },
     {
@@ -410,8 +410,8 @@
       "nombre": "CEFADROXIL CEFADROXILO 250 MG/ 5 ML F X 60 ML",
       "codigo": "6975714182554",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 35.3982,
+      "precio_venta_mayorista": 35.3982,
       "stock": 10.0
     },
     {
@@ -419,8 +419,8 @@
       "nombre": "CEFALEXINA 500 MG C X 100 CAPSULAS.",
       "codigo": "8901872005068",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 79.5133,
+      "precio_venta_mayorista": 79.5133,
       "stock": 3.0
     },
     {
@@ -428,8 +428,8 @@
       "nombre": "ERITROMICINA 250MG/5ML F X 100 ML.",
       "codigo": "8901872006669",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 7.9646,
+      "precio_venta_mayorista": 7.9646,
       "stock": 2.0
     },
     {
@@ -437,8 +437,8 @@
       "nombre": "ATORVASTATINA 40 MG C X 100 TABLETAS",
       "codigo": "7410107246813",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 24.7788,
+      "precio_venta_mayorista": 24.7788,
       "stock": 1.0
     },
     {
@@ -446,8 +446,8 @@
       "nombre": "CEFADROXILO 250MG/5ML F X 60 ML",
       "codigo": "7401104300523",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 19.469,
+      "precio_venta_mayorista": 19.469,
       "stock": 4.0
     },
     {
@@ -455,8 +455,8 @@
       "nombre": "SACRUSYT SALBUTAMOL AEROSOL INHALADOR X 200 DOSIS.",
       "codigo": "7410031540810",
       "precio_compra": 1.627907,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 30.9734,
+      "precio_venta_mayorista": 30.9734,
       "stock": 10.0
     },
     {
@@ -464,8 +464,8 @@
       "nombre": "RABANO YOYADO SYM SABOR CANELA F X 240 ML SIN AZUCAR.",
       "codigo": "7415100300630",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 12.4779,
+      "precio_venta_mayorista": 12.4779,
       "stock": 6.0
     },
     {
@@ -473,8 +473,8 @@
       "nombre": "MIGASA COMPRESA DE GASA DISPENSADOR X 100 UNIDADES.",
       "codigo": "7415800229811",
       "precio_compra": 3.95589,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 6.1858,
+      "precio_venta_mayorista": 6.1858,
       "stock": 1.0
     },
     {
@@ -482,8 +482,8 @@
       "nombre": "LAFCOXOL-T F X 120 ML MUC/BRONDILATAD.",
       "codigo": "7401077801027",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 42.4779,
+      "precio_venta_mayorista": 42.4779,
       "stock": 12.0
     },
     {
@@ -491,8 +491,8 @@
       "nombre": "DOXICICLINA FL  100 MG C X 100 CAPSULAS PHARM-INTER",
       "codigo": "DOXICICLINA100MGX100CPAS",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 44.2478,
+      "precio_venta_mayorista": 44.2478,
       "stock": 2.0
     },
     {
@@ -500,8 +500,8 @@
       "nombre": "RECOVER SUERO ORAL B X 500 ML COCO",
       "codigo": "7401077801126",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 29.2035,
+      "precio_venta_mayorista": 29.2035,
       "stock": 20.0
     },
     {
@@ -509,8 +509,8 @@
       "nombre": "FLAMYDOL F X 120 ML DICLOFENAC0 SODICO 9MG/5ML.",
       "codigo": "90000253",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 38.938,
+      "precio_venta_mayorista": 38.938,
       "stock": 16.0
     },
     {
@@ -518,8 +518,8 @@
       "nombre": "FLAMYDOL GOTAS F X 20 ML DICLOFENACO SODICO 15 MG/1 ML",
       "codigo": "764600111176",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.8673,
+      "precio_venta_mayorista": 4.8673,
       "stock": 1.0
     },
     {
@@ -527,8 +527,8 @@
       "nombre": "INTRAFER TF PEDIATRICO8.55 MG/ML GOTAS PED.SUSP. ORAL.",
       "codigo": "764600244904",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.2212,
+      "precio_venta_mayorista": 15.2212,
       "stock": 2.0
     },
     {
@@ -536,8 +536,8 @@
       "nombre": "ESPASMO DOLOFOR C X 3 DOSIS DE SOL. INYECT. 2ML C/AMP.",
       "codigo": "764600115235",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 2.6721,
+      "precio_venta_mayorista": 2.6721,
       "stock": 0.33
     },
     {
@@ -545,8 +545,8 @@
       "nombre": "BETASALIC LOCION F X 30 ML BECLOMETASONA+ACID.SALICILICO.",
       "codigo": "7410091660268",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 7.5221,
+      "precio_venta_mayorista": 7.5221,
       "stock": 1.0
     },
     {
@@ -554,8 +554,8 @@
       "nombre": "BETASALIC UNGUENTO TUBO X 20 G. TOPICO BETAM+ACID.SALICILICO.",
       "codigo": "7410091665805",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.0442,
+      "precio_venta_mayorista": 15.0442,
       "stock": 2.0
     },
     {
@@ -563,8 +563,8 @@
       "nombre": "BETAVAL 1.0MG CREMA TUBO 25G. BETAMETASONA AL 0.1%.",
       "codigo": "7410091665768",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 34.5133,
+      "precio_venta_mayorista": 34.5133,
       "stock": 6.0
     },
     {
@@ -572,8 +572,8 @@
       "nombre": "NESTINOR 2 C X 2 TAB. LEVONORGESTREL0.75MG.",
       "codigo": "PHARMNESTINOR2X2TAB.",
       "precio_compra": 1.35449,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 404.6372,
+      "precio_venta_mayorista": 404.6372,
       "stock": 46.0
     },
     {
@@ -581,8 +581,8 @@
       "nombre": "GENTAMICINA 160 MG / 2 ML VIAL 2 ML. IM. IV.",
       "codigo": "1126,230201A",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 19.115,
+      "precio_venta_mayorista": 19.115,
       "stock": 6.0
     },
     {
@@ -590,8 +590,8 @@
       "nombre": "BUTILBROMURO DE HIOCINA 20MG AMPOLLA DE 1 ML.",
       "codigo": "HIOSCINA20MGX1MLAMP.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 168.1416,
+      "precio_venta_mayorista": 168.1416,
       "stock": 190.0
     },
     {
@@ -599,8 +599,8 @@
       "nombre": "ESPASMO DOLOFOR DISP X 200 TAB. LISINA 10MG/PROPINOX 10MG.",
       "codigo": "90000232",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 115.0885,
+      "precio_venta_mayorista": 115.0885,
       "stock": 3.0
     },
     {
@@ -608,8 +608,8 @@
       "nombre": "CREMA FRIA PHARMATOR TUBO X 250G.",
       "codigo": "7410091665096",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 30.531,
+      "precio_venta_mayorista": 30.531,
       "stock": 6.0
     },
     {
@@ -617,8 +617,8 @@
       "nombre": "CATETER NIPRO #22 1\" 0,90X25MM 40ML/MIN.",
       "codigo": "7898909174327",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 9.9558,
+      "precio_venta_mayorista": 9.9558,
       "stock": 15.0
     },
     {
@@ -626,8 +626,8 @@
       "nombre": "ANDIZOL COMBI CX10 OVULOS METRO500MG/MICONAZ100MG/ KETANSER36MG",
       "codigo": "7420001055688",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 37.5929,
+      "precio_venta_mayorista": 37.5929,
       "stock": 2.0
     },
     {
@@ -635,8 +635,8 @@
       "nombre": "OTOLIT GOTAS OTICAS F X 15 ML ANTIPIRINA/BENZICAINA.",
       "codigo": "7420001120294",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.115,
+      "precio_venta_mayorista": 4.115,
       "stock": 1.0
     },
     {
@@ -644,8 +644,8 @@
       "nombre": "ALCODOC ALCOHOL ETILICO 90* F X 120 ML",
       "codigo": "7410007700125",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 8.6726,
+      "precio_venta_mayorista": 8.6726,
       "stock": 28.0
     },
     {
@@ -653,8 +653,8 @@
       "nombre": "OMEPRAZOL 20 MG C X 100 CAPSULAS INDUF.",
       "codigo": "INDUFAROMEPRA20MGX100",
       "precio_compra": 3.126304,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 194.6903,
+      "precio_venta_mayorista": 194.6903,
       "stock": 18.0
     },
     {
@@ -662,8 +662,8 @@
       "nombre": "GUANTES DE LATEX TALLA M C X 100 NIPRO.",
       "codigo": "4968420500349",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 17.6106,
+      "precio_venta_mayorista": 17.6106,
       "stock": 2.0
     },
     {
@@ -671,8 +671,8 @@
       "nombre": "PRUEBAS DE EMBARAZO RIGHTSIGN C X 25 CASETTES",
       "codigo": "BIOTESTRIGHTSINGX25",
       "precio_compra": 2.724245,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 155.7522,
+      "precio_venta_mayorista": 155.7522,
       "stock": 8.0
     },
     {
@@ -680,8 +680,8 @@
       "nombre": "LEVOFLOXACINA 500MG INFUSION I.V. F X 100 ML",
       "codigo": "8907730015835",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 154.8673,
+      "precio_venta_mayorista": 154.8673,
       "stock": 7.0
     },
     {
@@ -689,8 +689,8 @@
       "nombre": "JERINGA DE 3 ML NIPRO.",
       "codigo": "4968420726374",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 17.3451,
+      "precio_venta_mayorista": 17.3451,
       "stock": 2.0
     },
     {
@@ -698,8 +698,8 @@
       "nombre": "CEFTRIAXONA PHARM-INTER 1G CON LIDOCAINA IM.",
       "codigo": "CEFTRIAXONAIM1GCLIDO.",
       "precio_compra": 2.106984,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 172.5664,
+      "precio_venta_mayorista": 172.5664,
       "stock": 65.0
     },
     {
@@ -707,8 +707,8 @@
       "nombre": "CICLETEX JARABE F X 120 ML CARB,DEXT,CLORF.",
       "codigo": "741009166587",
       "precio_compra": 11.418605,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 57.3097,
+      "precio_venta_mayorista": 57.3097,
       "stock": 7.0
     },
     {
@@ -716,8 +716,8 @@
       "nombre": "METROFAR  METRO. 0.75G. TUBO DE 40G. GEL VAGINAL.",
       "codigo": "7410091660572",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 38.9381,
+      "precio_venta_mayorista": 38.9381,
       "stock": 8.0
     },
     {
@@ -725,8 +725,8 @@
       "nombre": "SET DE INFUSION MARANATHA  BOLSA DE 25 UNIDADES.",
       "codigo": "MARANATHASETDEINFUSION",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 85.177,
+      "precio_venta_mayorista": 85.177,
       "stock": 7.0
     },
     {
@@ -734,8 +734,8 @@
       "nombre": "SET DE INFUSION NIPRO.",
       "codigo": "WBS383790170AVF1",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 17.9204,
+      "precio_venta_mayorista": 17.9204,
       "stock": 27.0
     },
     {
@@ -743,8 +743,8 @@
       "nombre": "ALUMBRE SOBRE DE 5G.",
       "codigo": "ALUMBRESOBRE5G",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 8.4956,
+      "precio_venta_mayorista": 8.4956,
       "stock": 24.0
     },
     {
@@ -752,8 +752,8 @@
       "nombre": "SSN CLORURO DE SODIO 0.9% 500ML DELMED",
       "codigo": "S-S-NCLORDESODIO0.9%500ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 6.9027,
+      "precio_venta_mayorista": 6.9027,
       "stock": 3.0
     },
     {
@@ -761,8 +761,8 @@
       "nombre": "SOLUCION DE HARTMANN (LACTATO DE RINGER) DE 500 ML.",
       "codigo": "SOLDEHARTMANNDE500ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 7.4336,
+      "precio_venta_mayorista": 7.4336,
       "stock": 3.0
     },
     {
@@ -770,8 +770,8 @@
       "nombre": "FLUCONAZOL 200MG C X 2 TAB.",
       "codigo": "SAIMEDFLUCONAZOL200MGX2TAB.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 13.2743,
+      "precio_venta_mayorista": 13.2743,
       "stock": 10.0
     },
     {
@@ -779,8 +779,8 @@
       "nombre": "SILDENAFIL 100 MG CAJA X 10 CAJAS X 2 BLISTER X 4 TAB.",
       "codigo": "8906101701889",
       "precio_compra": 14.15,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 69.0265,
+      "precio_venta_mayorista": 69.0265,
       "stock": 2.0
     },
     {
@@ -788,8 +788,8 @@
       "nombre": "SHAMPOO PIOJIN CARTON X 12 UINIDADES.",
       "codigo": "SHAMPOOPIOJINAINSA",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 7.9646,
+      "precio_venta_mayorista": 7.9646,
       "stock": 3.0
     },
     {
@@ -797,8 +797,8 @@
       "nombre": "BIOKROL DESESTRESANTE C X 60 CAPSULAS.",
       "codigo": "7410032310092",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 34.5133,
+      "precio_venta_mayorista": 34.5133,
       "stock": 3.0
     },
     {
@@ -806,8 +806,8 @@
       "nombre": "RANITIDINA 50MG AMPOLLA DE 2 ML.",
       "codigo": "RANITIDINA500MGAMPDE2ML",
       "precio_compra": 0.937059,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 69.5133,
+      "precio_venta_mayorista": 69.5133,
       "stock": 74.0
     },
     {
@@ -815,8 +815,8 @@
       "nombre": "CIPROFLOXACINA 200MG F X 100 ML IV.",
       "codigo": "CIPROFLOXACINA200MG100MLIV",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 21.2389,
+      "precio_venta_mayorista": 21.2389,
       "stock": 3.0
     },
     {
@@ -824,8 +824,8 @@
       "nombre": "BECLOMETASONA 250 MCG X 200 DOSIS.",
       "codigo": "BECLOMETASONA250MCG200DOSIS",
       "precio_compra": 4.867727,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 66.3717,
+      "precio_venta_mayorista": 66.3717,
       "stock": 10.0
     },
     {
@@ -833,8 +833,8 @@
       "nombre": "BECLOMETASONA 50MCG F X 200 DOSIS.",
       "codigo": "BECLOMETASONA50MCG200DOSIS",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 92.9204,
+      "precio_venta_mayorista": 92.9204,
       "stock": 14.0
     },
     {
@@ -842,8 +842,8 @@
       "nombre": "DOLOPRESS (DICLOFENACO 75MG-3ML) AMPOLLA IM.",
       "codigo": "DOLOPRESS7MGX3MLAMPOLLA.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.4248,
+      "precio_venta_mayorista": 4.4248,
       "stock": 4.0
     },
     {
@@ -851,8 +851,8 @@
       "nombre": "DAVIDA CLORURO DE MAGNESIO 3.33G. BX100ML.",
       "codigo": "7415700006284",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 26.0177,
+      "precio_venta_mayorista": 26.0177,
       "stock": 6.0
     },
     {
@@ -860,8 +860,8 @@
       "nombre": "GYTROGEN DEPOT ACETATO DE MEDROXIPROG 150MG/ML VIAL DE 1ML.",
       "codigo": "7410000100175",
       "precio_compra": 4.596429,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 23.7876,
+      "precio_venta_mayorista": 23.7876,
       "stock": 4.0
     },
     {
@@ -869,8 +869,8 @@
       "nombre": "DEXA BIOPLEXIN C X 2 AMPOLLAS DE 2 ML.",
       "codigo": "7410000101448",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 32.9646,
+      "precio_venta_mayorista": 32.9646,
       "stock": 6.0
     },
     {
@@ -878,8 +878,8 @@
       "nombre": "DOLTIUM DEXKETOPROFENO 25/ML SOL. IMY.2MLIM.IV",
       "codigo": "18901790701599",
       "precio_compra": 0.884958,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 139.3805,
+      "precio_venta_mayorista": 139.3805,
       "stock": 70.0
     },
     {
@@ -887,8 +887,8 @@
       "nombre": "OTOFER GOTAS F X 15 ML",
       "codigo": "7410061200388",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 33.1858,
+      "precio_venta_mayorista": 33.1858,
       "stock": 6.0
     },
     {
@@ -896,8 +896,8 @@
       "nombre": "CLORANFENICOL 0.5% COLIRIO GAMMA F X 15 ML.",
       "codigo": "711604100149",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 27.2566,
+      "precio_venta_mayorista": 27.2566,
       "stock": 11.0
     },
     {
@@ -905,8 +905,8 @@
       "nombre": "DESESSTRESS 25,000 C X 1 AMPOLLA DE 2 ML",
       "codigo": "7410003500514",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 109.0266,
+      "precio_venta_mayorista": 109.0266,
       "stock": 32.0
     },
     {
@@ -914,8 +914,8 @@
       "nombre": "NEURALIN COMPLEJO B, LIDOCAINA/DEXAMETASONA 2 AMPOLLAS.",
       "codigo": "7501088505126",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 150.708,
+      "precio_venta_mayorista": 150.708,
       "stock": 26.0
     },
     {
@@ -923,8 +923,8 @@
       "nombre": "ANTIFLU-DES DISPENSADOR X 25 SOBRES DE 4 TAB.",
       "codigo": "7501088500145",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 257.5221,
+      "precio_venta_mayorista": 257.5221,
       "stock": 6.0
     },
     {
@@ -932,8 +932,8 @@
       "nombre": "GUANTES DE LATEX OPRUCARE TALLA M X 100 PCS",
       "codigo": "GUANTESOPRUCARETALLAM",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 26.2832,
+      "precio_venta_mayorista": 26.2832,
       "stock": 3.0
     },
     {
@@ -941,8 +941,8 @@
       "nombre": "CIPROFLOXACINA 500 MG C X 100 TAB. FUNIVER.",
       "codigo": "8901872003828",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 110.6195,
+      "precio_venta_mayorista": 110.6195,
       "stock": 10.0
     },
     {
@@ -950,8 +950,8 @@
       "nombre": "JERINGAS DE 5 ML 22GX1-1/2 0,70X38MM. NIPRO",
       "codigo": "0124968420726712172804301023E0",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 21.0619,
+      "precio_venta_mayorista": 21.0619,
       "stock": 2.0
     },
     {
@@ -959,8 +959,8 @@
       "nombre": "GLOTOLIN CEREBRAL CAJA X 20 VIALES BEBIBLES",
       "codigo": "7410003500569",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 24.0708,
+      "precio_venta_mayorista": 24.0708,
       "stock": 4.0
     },
     {
@@ -968,8 +968,8 @@
       "nombre": "GERIATRICO H3 CON GINSENG F.Q. C X 20 B. DE 5 GELCAPS.",
       "codigo": "GERIATRICOH3CONGINSENGX10BLIST",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.4867,
+      "precio_venta_mayorista": 15.4867,
       "stock": 1.0
     },
     {
@@ -977,8 +977,8 @@
       "nombre": "KORPLEX 25,000 C X 1 AMPOLLA 2ML  + JERINGA IM.",
       "codigo": "7410003500170",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 83.3186,
+      "precio_venta_mayorista": 83.3186,
       "stock": 21.0
     },
     {
@@ -986,8 +986,8 @@
       "nombre": "ALCODOC ALCOHOL ETILICO 90* F X 240 ML.",
       "codigo": "7410007700248",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 27.8761,
+      "precio_venta_mayorista": 27.8761,
       "stock": 42.0
     },
     {
@@ -995,8 +995,8 @@
       "nombre": "ALCODOC ALCOHOL ETILICO 90* F X 1 LITRO.",
       "codigo": "7410007700149",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 20.531,
+      "precio_venta_mayorista": 20.531,
       "stock": 8.0
     },
     {
@@ -1004,8 +1004,8 @@
       "nombre": "BRU-COBAL MECOBALAMINA 500 MCG C X 100 TAB.",
       "codigo": "7401117100189",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 24.7345,
+      "precio_venta_mayorista": 24.7345,
       "stock": 1.0
     },
     {
@@ -1013,8 +1013,8 @@
       "nombre": "BRUCOLIC GOTAS F X 20 ML.",
       "codigo": "BRUCOLICGOTASFX20ML.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 10.9735,
+      "precio_venta_mayorista": 10.9735,
       "stock": 4.0
     },
     {
@@ -1022,8 +1022,8 @@
       "nombre": "BRU-COXANIDA POLVO PARA SUSP. F X 30 ML.",
       "codigo": "7401117100370",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.8673,
+      "precio_venta_mayorista": 4.8673,
       "stock": 1.0
     },
     {
@@ -1031,8 +1031,8 @@
       "nombre": "MIGASA 100% ALGODON 1 LIBRA",
       "codigo": "7415800230404",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 4.292,
+      "precio_venta_mayorista": 4.292,
       "stock": 1.0
     },
     {
@@ -1040,8 +1040,8 @@
       "nombre": "CONDONES VIVE AMOR DISPENSADOR X 16 SOBRES.",
       "codigo": "7404001753829",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 199.469,
+      "precio_venta_mayorista": 199.469,
       "stock": 14.0
     },
     {
@@ -1049,8 +1049,8 @@
       "nombre": "DESESSTRESS PLUS CAJA X 3O TAB. RECUBIERTAS.",
       "codigo": "7410003500682",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 2.6549,
+      "precio_venta_mayorista": 2.6549,
       "stock": 1.0
     },
     {
@@ -1058,8 +1058,8 @@
       "nombre": "JERINGAS 3 ML NIPRO.",
       "codigo": "26958694912056",
       "precio_compra": 6.32242,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 8.6726,
+      "precio_venta_mayorista": 8.6726,
       "stock": 1.0
     },
     {
@@ -1067,8 +1067,8 @@
       "nombre": "IBUPROFENO F.Q. 100 MG F X 120 ML.",
       "codigo": "IBUPROFENOFQSUSPENSIONFX120ML",
       "precio_compra": 1.740345,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 49.6018,
+      "precio_venta_mayorista": 49.6018,
       "stock": 19.0
     },
     {
@@ -1076,8 +1076,8 @@
       "nombre": "ACIDO FOLICO 5 MG. C X 100 TAB. FUNIVER.",
       "codigo": "ACIDOFOLICOFUNIVERX100TAB.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 21.9027,
+      "precio_venta_mayorista": 21.9027,
       "stock": 9.0
     },
     {
@@ -1085,8 +1085,8 @@
       "nombre": "ENVIO C807 EXPRESS",
       "codigo": "ENVIOC807EXPRESS.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 164.6018,
+      "precio_venta_mayorista": 164.6018,
       "stock": 93.0
     },
     {
@@ -1094,8 +1094,8 @@
       "nombre": "DICLOFENACO 75 MG 1 DE 50 AMPOLLAS PHAR-INTER.",
       "codigo": "DICLOFENACO75MGHOSP.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 35.3982,
+      "precio_venta_mayorista": 35.3982,
       "stock": 80.0
     },
     {
@@ -1103,8 +1103,8 @@
       "nombre": "VITADEK-C NIÑO X 2 AMP. BEBIBLES.",
       "codigo": "7401077800754",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 35.0442,
+      "precio_venta_mayorista": 35.0442,
       "stock": 12.0
     },
     {
@@ -1112,8 +1112,8 @@
       "nombre": "VITADEK-C ADULTO X 2 AMPOLLAS BEBIBLES.",
       "codigo": "7401077800556",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 42.1239,
+      "precio_venta_mayorista": 42.1239,
       "stock": 14.0
     },
     {
@@ -1121,8 +1121,8 @@
       "nombre": "MEBENDAZOL 100 MG X 96 TABLETAS.",
       "codigo": "MEBENDAZOLTAB100MGFUNIVERX96",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 7.0796,
+      "precio_venta_mayorista": 7.0796,
       "stock": 2.0
     },
     {
@@ -1130,8 +1130,8 @@
       "nombre": "LUBRICANTE INTIMO VIVE LUB. TUBO X30 ML.",
       "codigo": "7404001754024",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 67.4336,
+      "precio_venta_mayorista": 67.4336,
       "stock": 38.0
     },
     {
@@ -1139,8 +1139,8 @@
       "nombre": "FULMIHONGUS CREMA T X 20G",
       "codigo": "FULMIHONGUSCREMATX20G",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.9292,
+      "precio_venta_mayorista": 15.9292,
       "stock": 9.0
     },
     {
@@ -1148,8 +1148,8 @@
       "nombre": "FULMIHONGUS SOLUCION TOPICA X 20ML",
       "codigo": "FULMIHONGUSSOLUCIONX20ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 15.9292,
+      "precio_venta_mayorista": 15.9292,
       "stock": 9.0
     },
     {
@@ -1157,8 +1157,8 @@
       "nombre": "CEFTRIAXONA DE 1 G. X 50 VIALES I.M.I.V. DE 5ML",
       "codigo": "PHARINTERCEFTRIAXONA1GHO.",
       "precio_compra": 6.126923,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 309.7346,
+      "precio_venta_mayorista": 309.7346,
       "stock": 225.0
     },
     {
@@ -1166,8 +1166,8 @@
       "nombre": "CLO-PRIM METOCLOPRAMIDA 10MG X 40 TAB.",
       "codigo": "7410000101356",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 6.2389,
+      "precio_venta_mayorista": 6.2389,
       "stock": 1.0
     },
     {
@@ -1175,8 +1175,8 @@
       "nombre": "ROSA MOSQUETA +VITAMINA E F.Q. X30 GEL. CAPS.",
       "codigo": "ROSAMOSQUETA+VITAMINAEX30",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 553.4513,
+      "precio_venta_mayorista": 553.4513,
       "stock": 106.0
     },
     {
@@ -1184,8 +1184,8 @@
       "nombre": "AMOXIFARM X 100ML POLVO SUSP. 250MG/5ML",
       "codigo": "AMOXIFARMX100ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 174.0266,
+      "precio_venta_mayorista": 174.0266,
       "stock": 69.0
     },
     {
@@ -1193,8 +1193,8 @@
       "nombre": "SEGURA PLUS ANTICONCEPTIVO ORAL",
       "codigo": "7404001754185",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 192.4778,
+      "precio_venta_mayorista": 192.4778,
       "stock": 87.0
     },
     {
@@ -1202,8 +1202,8 @@
       "nombre": "FLUVIRIN 2  TRATAMIENTO ANTIGRIPAL X 1 AMP. I.M. 5ML.",
       "codigo": "7410000101547",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 16.2301,
+      "precio_venta_mayorista": 16.2301,
       "stock": 6.0
     },
     {
@@ -1211,8 +1211,8 @@
       "nombre": "FLUYTOSS JARABE 120ML",
       "codigo": "7412492246812",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 86.7257,
+      "precio_venta_mayorista": 86.7257,
       "stock": 20.0
     },
     {
@@ -1220,8 +1220,8 @@
       "nombre": "ESCABISAN SOLUCION OLEOSA  ESCABICIDA X 60ML",
       "codigo": "7410000101141",
       "precio_compra": 6.238636,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 11.9469,
+      "precio_venta_mayorista": 11.9469,
       "stock": 2.0
     },
     {
@@ -1229,8 +1229,8 @@
       "nombre": "CIPROP FORTE 120ML",
       "codigo": "711604100125",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 38.7168,
+      "precio_venta_mayorista": 38.7168,
       "stock": 7.0
     },
     {
@@ -1238,8 +1238,8 @@
       "nombre": "CATETER #24G X 3/4\" 1 DE 50 UDS.",
       "codigo": "7898909175539",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 672.5664,
+      "precio_venta_mayorista": 672.5664,
       "stock": 16.0
     },
     {
@@ -1247,8 +1247,8 @@
       "nombre": "ALICOL JARABE 120ML",
       "codigo": "4908",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 2.5221,
+      "precio_venta_mayorista": 2.5221,
       "stock": 1.0
     },
     {
@@ -1256,8 +1256,8 @@
       "nombre": "ALICOL D JARABE 120ML",
       "codigo": "13880",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 98.3628,
+      "precio_venta_mayorista": 98.3628,
       "stock": 39.0
     },
     {
@@ -1265,8 +1265,8 @@
       "nombre": "OMEPRAZOL I.V. 40MG SAIMED",
       "codigo": "18901790717477",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 55.7522,
+      "precio_venta_mayorista": 55.7522,
       "stock": 9.0
     },
     {
@@ -1274,8 +1274,8 @@
       "nombre": "NEURO FERRICAL B12 FRASCO X 480ML",
       "codigo": "7410003501061",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 20.708,
+      "precio_venta_mayorista": 20.708,
       "stock": 6.0
     },
     {
@@ -1283,8 +1283,8 @@
       "nombre": "KETOROLACO TROMETAMINA 30MG/ML 10 AMP X 1ML  IM / IV",
       "codigo": "KETOROLACO30MG/MLSAIMED",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 644.2478,
+      "precio_venta_mayorista": 644.2478,
       "stock": 91.0
     },
     {
@@ -1292,8 +1292,8 @@
       "nombre": "DESESSKROL VIT CEREBRO Y NERVIOS X 30 GEL CAPS.",
       "codigo": "DESESSKROLX30TAB.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 7.9646,
+      "precio_venta_mayorista": 7.9646,
       "stock": 3.0
     },
     {
@@ -1301,8 +1301,8 @@
       "nombre": "DICLOFENACO 50MG TAB. CAJA X100 FUNIVER",
       "codigo": "8901872003897",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 5.7522,
+      "precio_venta_mayorista": 5.7522,
       "stock": 2.0
     },
     {
@@ -1310,8 +1310,8 @@
       "nombre": "GERIATRICO H3 FRASCO X100 GELCAPS F.Q.",
       "codigo": "GERIATRICOH3X100",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 123.8938,
+      "precio_venta_mayorista": 123.8938,
       "stock": 8.0
     },
     {
@@ -1319,8 +1319,8 @@
       "nombre": "ACEITE DE AJO 200MG F.Q. X100",
       "codigo": "ACEITEDEAJOX100",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 6.1947,
+      "precio_venta_mayorista": 6.1947,
       "stock": 2.0
     },
     {
@@ -1328,8 +1328,8 @@
       "nombre": "AZTHOMAC AZITROMICINA 200 MG / 5 ML F X 30 ML.",
       "codigo": "711604102471",
       "precio_compra": 3.4956,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 127.3009,
+      "precio_venta_mayorista": 127.3009,
       "stock": 21.0
     },
     {
@@ -1337,8 +1337,8 @@
       "nombre": "GAMMACORT BETAM. 0.25MG/5ML DEXCLORFE.2.0MG/5ML F X 120 ML.",
       "codigo": "711604203482",
       "precio_compra": 3.5398,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 49.5575,
+      "precio_venta_mayorista": 49.5575,
       "stock": 7.0
     },
     {
@@ -1346,8 +1346,8 @@
       "nombre": "CILFRIN-D EUCTOL120MG + GUAYAC. 50MG X 1 AMP. IM.",
       "codigo": "7406269000714",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 55.1504,
+      "precio_venta_mayorista": 55.1504,
       "stock": 10.0
     },
     {
@@ -1355,8 +1355,8 @@
       "nombre": "VITAMINA E FRASCO X 100 GELCAPS F.Q.",
       "codigo": "VITAMINAEFX100F.Q.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 857.5222,
+      "precio_venta_mayorista": 857.5222,
       "stock": 102.0
     },
     {
@@ -1364,8 +1364,8 @@
       "nombre": "TUSOLEX AMBROXOL 15 MG / 5ML (120ML)",
       "codigo": "7410003500125",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 29.469,
+      "precio_venta_mayorista": 29.469,
       "stock": 9.0
     },
     {
@@ -1373,8 +1373,8 @@
       "nombre": "AZITROMICINA 500 MG 10 CAJAS X 1 BLISTER X 3 TAB. REC. BALAXI",
       "codigo": "8906101701193",
       "precio_compra": 6.8,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 84.9558,
+      "precio_venta_mayorista": 84.9558,
       "stock": 6.0
     },
     {
@@ -1382,8 +1382,8 @@
       "nombre": "OMEPRAZOL 20 MG  CAPSULAS X 100 BALAXI",
       "codigo": "8906101701698",
       "precio_compra": 3.7,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 122.5664,
+      "precio_venta_mayorista": 122.5664,
       "stock": 10.0
     },
     {
@@ -1391,8 +1391,8 @@
       "nombre": "ALBENDAZOL 400 MG C X 20 BLIS. X 2 TAB MAST. BALAXI.",
       "codigo": "8906101701667",
       "precio_compra": 4.2,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 5.9735,
+      "precio_venta_mayorista": 5.9735,
       "stock": 1.0
     },
     {
@@ -1400,8 +1400,8 @@
       "nombre": "HIERRO SUCROSA FLAGFER SOL. INY. USP 20MG/ML X 5 AMP.",
       "codigo": "8904209440112",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 141.5929,
+      "precio_venta_mayorista": 141.5929,
       "stock": 4.0
     },
     {
@@ -1409,8 +1409,8 @@
       "nombre": "GLUCOSAMINA 250MG + CONDROITINA F.Q. 200 MG",
       "codigo": "GLUCOSAMINA+CONDROITINAF.Q.",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 35.3982,
+      "precio_venta_mayorista": 35.3982,
       "stock": 4.0
     },
     {
@@ -1418,8 +1418,8 @@
       "nombre": "POLDER POLVOS SOBRE X 2.2 G.",
       "codigo": "7410091660312",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 16.7256,
+      "precio_venta_mayorista": 16.7256,
       "stock": 45.0
     },
     {
@@ -1427,8 +1427,8 @@
       "nombre": "FORTACHON JARABE F.Q.",
       "codigo": "7410003500507",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 13.8053,
+      "precio_venta_mayorista": 13.8053,
       "stock": 4.0
     },
     {
@@ -1436,8 +1436,8 @@
       "nombre": "SSN AL 5% 1000ML BONIN",
       "codigo": "7401068500274",
       "precio_compra": 2.15,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 63.7168,
+      "precio_venta_mayorista": 63.7168,
       "stock": 20.0
     },
     {
@@ -1445,8 +1445,8 @@
       "nombre": "CEFALEXINA FLAMINGO 250MG / 5ML SUSPENSION ORAL 100ML",
       "codigo": "8901872006553",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 26.5487,
+      "precio_venta_mayorista": 26.5487,
       "stock": 4.0
     },
     {
@@ -1454,8 +1454,8 @@
       "nombre": "ERITROPOYETINA 4.000 U.I. / I.U.",
       "codigo": "7795355998562",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 236.6372,
+      "precio_venta_mayorista": 236.6372,
       "stock": 10.0
     },
     {
@@ -1463,8 +1463,8 @@
       "nombre": "DICLOFENAC 1% GEL TUBO X 25 G.",
       "codigo": "8906101703647",
       "precio_compra": 0.53,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 2.2124,
+      "precio_venta_mayorista": 2.2124,
       "stock": 2.0
     },
     {
@@ -1472,8 +1472,8 @@
       "nombre": "AMOXICILINA & ACIDO CLAVULANICO  312.5MG / 5ML.",
       "codigo": "8906101701056",
       "precio_compra": 2.21,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 35.3982,
+      "precio_venta_mayorista": 35.3982,
       "stock": 8.0
     },
     {
@@ -1481,8 +1481,8 @@
       "nombre": "INFADERM ZN CREMA TOPICA TUBO X 60 GR ARSAL",
       "codigo": "7410000102179",
       "precio_compra": 5.903333,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 32.2124,
+      "precio_venta_mayorista": 32.2124,
       "stock": 5.0
     },
     {
@@ -1490,8 +1490,8 @@
       "nombre": "MIOLAXIN 500 MG 5ML AMP. CAJA X 1 AMP. ARSAL",
       "codigo": "7410000100274",
       "precio_compra": 1.686667,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 23.0088,
+      "precio_venta_mayorista": 23.0088,
       "stock": 12.0
     },
     {
@@ -1499,8 +1499,8 @@
       "nombre": "INDOMETACINA CAPSULAS BP 25MG X 100 CAPS FUNIVER",
       "codigo": "INDOMETACINAFUNIVER",
       "precio_compra": 1.77,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 20.177,
+      "precio_venta_mayorista": 20.177,
       "stock": 6.0
     },
     {
@@ -1508,8 +1508,8 @@
       "nombre": "AMPICILINA CAPSULAS BP 500MG X 100 CAPS FUNIVER",
       "codigo": "8901872005099",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 67.6991,
+      "precio_venta_mayorista": 67.6991,
       "stock": 9.0
     },
     {
@@ -1517,8 +1517,8 @@
       "nombre": "VIVE COLOR FRESA",
       "codigo": "7404001753881",
       "precio_compra": 18.363333,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 25.6637,
+      "precio_venta_mayorista": 25.6637,
       "stock": 2.0
     },
     {
@@ -1526,8 +1526,8 @@
       "nombre": "VIVE COLOR CHICLE",
       "codigo": "7404001753911",
       "precio_compra": 7.87,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 25.6637,
+      "precio_venta_mayorista": 25.6637,
       "stock": 2.0
     },
     {
@@ -1535,8 +1535,8 @@
       "nombre": "VIVE RETARDANTE",
       "codigo": "7404001753942",
       "precio_compra": 8.994286,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 12.8319,
+      "precio_venta_mayorista": 12.8319,
       "stock": 1.0
     },
     {
@@ -1544,8 +1544,8 @@
       "nombre": "VIVE COLOR UVA",
       "codigo": "7404001753904",
       "precio_compra": 20.986667,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 12.8319,
+      "precio_venta_mayorista": 12.8319,
       "stock": 1.0
     },
     {
@@ -1553,8 +1553,8 @@
       "nombre": "DOXICICLINA FL 100MG X 100 CAPS PHARM-INTER",
       "codigo": "DOXICICLINA100MGX100CAPS",
       "precio_compra": 5.972727,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 199.115,
+      "precio_venta_mayorista": 199.115,
       "stock": 9.0
     },
     {
@@ -1562,8 +1562,8 @@
       "nombre": "GLICERINA FENICADA GOTAS 15 ML VRISQUI.",
       "codigo": "GLICERINAFENICADA15ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 3.3186,
+      "precio_venta_mayorista": 3.3186,
       "stock": 3.0
     },
     {
@@ -1571,8 +1571,8 @@
       "nombre": "ACEITE GOMENOLADO F X 15 ML VRISQUI",
       "codigo": "ACEITEGOMENOLADO15ML",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 3.3186,
+      "precio_venta_mayorista": 3.3186,
       "stock": 3.0
     },
     {
@@ -1580,8 +1580,8 @@
       "nombre": "SULFATIAZOL POMADA 28G / 5G",
       "codigo": "SULFATIAZOLPOMADA28G",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 6.8142,
+      "precio_venta_mayorista": 6.8142,
       "stock": 22.0
     },
     {
@@ -1589,8 +1589,8 @@
       "nombre": "DOLO-NERVOFER SOL. INY X 2 AMP.IM.",
       "codigo": "7410061200135",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 77.3894,
+      "precio_venta_mayorista": 77.3894,
       "stock": 15.0
     },
     {
@@ -1598,8 +1598,8 @@
       "nombre": "VIVE COLORS CHOCOLATE C X 8 PACK DE  3 CONDONES.",
       "codigo": "7404001753874",
       "precio_compra": 7.87,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 25.6637,
+      "precio_venta_mayorista": 25.6637,
       "stock": 2.0
     },
     {
@@ -1607,8 +1607,8 @@
       "nombre": "HIRREO SUCROSA CAJA X 5 VIALES DE 5 ML.",
       "codigo": "8907730018409",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 35.3982,
+      "precio_venta_mayorista": 35.3982,
       "stock": 1.0
     },
     {
@@ -1616,8 +1616,8 @@
       "nombre": "CONJUNTIVAL 0.3% TOBRAMICINA 3.0MG/ML.",
       "codigo": "711604301942",
       "precio_compra": 2.646,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 11.9204,
+      "precio_venta_mayorista": 11.9204,
       "stock": 3.0
     },
     {
@@ -1625,8 +1625,8 @@
       "nombre": "CEFIGAM CEFIXIMA 400 MG X 10 TAB.",
       "codigo": "711604203857",
       "precio_compra": 4.8675,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 61.9469,
+      "precio_venta_mayorista": 61.9469,
       "stock": 7.0
     },
     {
@@ -1634,8 +1634,8 @@
       "nombre": "CEFIGAM CEFIXIMA 100 MG/5ML F X 50 ML.",
       "codigo": "711604203871",
       "precio_compra": 3.761,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 76.9911,
+      "precio_venta_mayorista": 76.9911,
       "stock": 12.0
     },
     {
@@ -1643,8 +1643,8 @@
       "nombre": "CLORFENIRAMINA MALEATO JBE 2MG/5ML X 12OML GAMMA",
       "codigo": "CLORFENIRAMINAJARABEGAMMA",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 33.1859,
+      "precio_venta_mayorista": 33.1859,
       "stock": 25.0
     },
     {
@@ -1652,8 +1652,8 @@
       "nombre": "GAMMATOS ANTITUSIVO  F X 120 ML.",
       "codigo": "711604100453",
       "precio_compra": 4.8675,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 51.1062,
+      "precio_venta_mayorista": 51.1062,
       "stock": 7.0
     },
     {
@@ -1661,8 +1661,8 @@
       "nombre": "CLORFENIRAMINA MALEATO 8MG 100TAB. GAMMA",
       "codigo": "CLORFENIRAMINA8MGGAMMA",
       "precio_compra": 1.881,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 6.1947,
+      "precio_venta_mayorista": 6.1947,
       "stock": 2.0
     },
     {
@@ -1670,8 +1670,8 @@
       "nombre": "FEVENY ESTROGENOS CONJUGADOS",
       "codigo": "7707274721299",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 23.0088,
+      "precio_venta_mayorista": 23.0088,
       "stock": 2.0
     },
     {
@@ -1679,8 +1679,8 @@
       "nombre": "SPASMODEX 10MG X 100 TAB. (BUTILBROMURO DE HIOSCINA)",
       "codigo": "SPASMODEX10MGX100TAB.",
       "precio_compra": 11.688889,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 58.4071,
+      "precio_venta_mayorista": 58.4071,
       "stock": 3.0
     },
     {
@@ -1688,8 +1688,8 @@
       "nombre": "RECOVER SUERO ORAL B X 500 ML CEREZA",
       "codigo": "7401077800631",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 29.2035,
+      "precio_venta_mayorista": 29.2035,
       "stock": 20.0
     },
     {
@@ -1697,8 +1697,8 @@
       "nombre": "RECOVER SUERO ORAL B X 500 ML TUTTI FRUTTI",
       "codigo": "7401077800648",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 24.823,
+      "precio_venta_mayorista": 24.823,
       "stock": 17.0
     },
     {
@@ -1706,8 +1706,8 @@
       "nombre": "EBERNET 1% EBERCONAZOL CREMA TUBO 15G.",
       "codigo": "8435214409318",
       "precio_compra": 12.743333,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 54.1593,
+      "precio_venta_mayorista": 54.1593,
       "stock": 4.0
     },
     {
@@ -1715,8 +1715,8 @@
       "nombre": "FINADOL ULTRA X50 CAJA PHARMEDIC",
       "codigo": "7410003401101",
       "precio_compra": 0.119792,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 13.2743,
+      "precio_venta_mayorista": 13.2743,
       "stock": 3.0
     },
     {
@@ -1724,8 +1724,8 @@
       "nombre": "RADOL EXTRA FUERTE 25 SOBRES CAJA PHARMEDIC",
       "codigo": "7410003401255",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 9.9558,
+      "precio_venta_mayorista": 9.9558,
       "stock": 3.0
     },
     {
@@ -1733,8 +1733,8 @@
       "nombre": "NITAPAX 500 X 6 TAB CAJA PHARMEDIC",
       "codigo": "7410003425060",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 74.0708,
+      "precio_venta_mayorista": 74.0708,
       "stock": 27.0
     },
     {
@@ -1742,8 +1742,8 @@
       "nombre": "SUCRAMEJOR POLVO 30 SOBRES CAJA PHARMEDIC",
       "codigo": "7410003425701",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 79.646,
+      "precio_venta_mayorista": 79.646,
       "stock": 18.0
     },
     {
@@ -1751,8 +1751,8 @@
       "nombre": "NOGESTAL-1 AMP X 1ML SSN ARSAL",
       "codigo": "7410000100885",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 26.6106,
+      "precio_venta_mayorista": 26.6106,
       "stock": 7.0
     },
     {
@@ -1760,8 +1760,8 @@
       "nombre": "VIRILIS GASTREU R 41",
       "codigo": "4250632503226",
       "precio_compra": 0,
-      "precio_venta_minorista": 0,
-      "precio_venta_mayorista": 0,
+      "precio_venta_minorista": 44.2478,
+      "precio_venta_mayorista": 44.2478,
       "stock": 2.0
     }
   ],
@@ -1773,7 +1773,7 @@
       "descripcion": ""
     }
   ],
-  "Distribuidores": [],
+  "distribuidores": [],
   "clientes": [
     {
       "id": 3,

@@ -22,6 +22,7 @@ DisableProgramGroupPage=yes
 
 [Files]
 Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs replacesameversion
+ Excludes: "tools\verificador\*"
 Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs replacesameversion; Excludes: "uploads\*"
 
 [Dirs]

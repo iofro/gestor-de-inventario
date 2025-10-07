@@ -2395,8 +2395,9 @@ class RegisterPurchaseDialog(QDialog):
                 return
             item["producto_id"] = producto_id
 
-        fecha = QDate.currentDate().toString("yyyy-MM-dd")
-        if self.edit_mode and self._existing_fecha:
+        if not self.edit_mode or not self._existing_fecha:
+            fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        else:
             fecha = self._existing_fecha
         total_general = sum(float(item.get("total", 0)) for item in self.compra_items)
         vendedor_id = self.vendedor_combo.currentData()

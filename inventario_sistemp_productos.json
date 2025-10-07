@@ -1770,7 +1770,9 @@
       "id": 62,
       "codigo": "0022",
       "nombre": "EDWIN ALVAREZ",
-      "descripcion": ""
+      "descripcion": "",
+      "Distribuidor_id": 2,
+      "dui": ""
     },
     {
       "id": 63,
@@ -1779,6 +1781,622 @@
       "dui": "",
       "descripcion": "",
       "Distribuidor_id": 1
+    },
+    {
+      "id": 64,
+      "codigo": "DIST-001",
+      "nombre": "ACE PHARMACEUTICAL CO,LTD.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 3
+    },
+    {
+      "id": 65,
+      "codigo": "DIST-002",
+      "nombre": "ACINO LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 4
+    },
+    {
+      "id": 66,
+      "codigo": "DIST-003",
+      "nombre": "AINSA LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 5
+    },
+    {
+      "id": 67,
+      "codigo": "DIST-004",
+      "nombre": "AJE",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 6
+    },
+    {
+      "id": 68,
+      "codigo": "DIST-005",
+      "nombre": "ANCALMO LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 7
+    },
+    {
+      "id": 69,
+      "codigo": "DIST-006",
+      "nombre": "ANDIFAR LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 8
+    },
+    {
+      "id": 70,
+      "codigo": "DIST-007",
+      "nombre": "ARSAL LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 9
+    },
+    {
+      "id": 71,
+      "codigo": "DIST-008",
+      "nombre": "AURA LIFECARE ANH",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 10
+    },
+    {
+      "id": 72,
+      "codigo": "DIST-009",
+      "nombre": "BALAXI",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 11
+    },
+    {
+      "id": 73,
+      "codigo": "DIST-010",
+      "nombre": "BAYER/MK LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 12
+    },
+    {
+      "id": 74,
+      "codigo": "DIST-011",
+      "nombre": "BIOGALENIC LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 13
+    },
+    {
+      "id": 75,
+      "codigo": "DIST-012",
+      "nombre": "BIOSIDUS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 14
+    },
+    {
+      "id": 76,
+      "codigo": "DIST-013",
+      "nombre": "BRULAB",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 15
+    },
+    {
+      "id": 77,
+      "codigo": "DIST-014",
+      "nombre": "BUTTER PHARMA  LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 16
+    },
+    {
+      "id": 78,
+      "codigo": "DIST-015",
+      "nombre": "C807 EXPRESS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 17
+    },
+    {
+      "id": 79,
+      "codigo": "DIST-016",
+      "nombre": "CAPLIN POINT LABORATORIOS.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 18
+    },
+    {
+      "id": 80,
+      "codigo": "DIST-017",
+      "nombre": "CHINOIN LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 19
+    },
+    {
+      "id": 81,
+      "codigo": "DIST-018",
+      "nombre": "COFASA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 20
+    },
+    {
+      "id": 82,
+      "codigo": "DIST-019",
+      "nombre": "DELMED/BIOGALENIC LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 21
+    },
+    {
+      "id": 83,
+      "codigo": "DIST-020",
+      "nombre": "DISZASA DISTRIBUIDORA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 22
+    },
+    {
+      "id": 84,
+      "codigo": "DIST-021",
+      "nombre": "ECONORED EL SALVADOR",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 23
+    },
+    {
+      "id": 85,
+      "codigo": "DIST-022",
+      "nombre": "EUPHA DROGUERIA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 24
+    },
+    {
+      "id": 86,
+      "codigo": "DIST-023",
+      "nombre": "EUROFARMA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 25
+    },
+    {
+      "id": 87,
+      "codigo": "DIST-024",
+      "nombre": "FARMACIA SANTA CATALINA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 26
+    },
+    {
+      "id": 88,
+      "codigo": "DIST-025",
+      "nombre": "FARMEX LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 27
+    },
+    {
+      "id": 89,
+      "codigo": "DIST-026",
+      "nombre": "FARNET, SA DE CV.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 28
+    },
+    {
+      "id": 90,
+      "codigo": "DIST-027",
+      "nombre": "FARQUISAL",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 29
+    },
+    {
+      "id": 91,
+      "codigo": "DIST-028",
+      "nombre": "FERSON LABORATORIOS.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 30
+    },
+    {
+      "id": 92,
+      "codigo": "DIST-029",
+      "nombre": "FLAGSHIP BIOTECH INTERNATIONAL",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 31
+    },
+    {
+      "id": 93,
+      "codigo": "DIST-030",
+      "nombre": "FLAMINGO",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 32
+    },
+    {
+      "id": 94,
+      "codigo": "DIST-031",
+      "nombre": "FUNIVER",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 33
+    },
+    {
+      "id": 95,
+      "codigo": "DIST-032",
+      "nombre": "GAMMA LABORATORIES",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 34
+    },
+    {
+      "id": 96,
+      "codigo": "DIST-033",
+      "nombre": "GENERBC LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 35
+    },
+    {
+      "id": 97,
+      "codigo": "DIST-034",
+      "nombre": "GRUPO BRYOMED SA DE CV.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 36
+    },
+    {
+      "id": 98,
+      "codigo": "DIST-035",
+      "nombre": "GSK LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 37
+    },
+    {
+      "id": 99,
+      "codigo": "DIST-036",
+      "nombre": "HIGSA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 38
+    },
+    {
+      "id": 100,
+      "codigo": "DIST-037",
+      "nombre": "HOSPITAL PRO-FAMILIA.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 39
+    },
+    {
+      "id": 101,
+      "codigo": "DIST-038",
+      "nombre": "JAYOR DE EL SALVADOR.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 40
+    },
+    {
+      "id": 102,
+      "codigo": "DIST-039",
+      "nombre": "KREWEL MEUSELBACH / DROG. MEDIKAL PLUS.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 41
+    },
+    {
+      "id": 103,
+      "codigo": "DIST-040",
+      "nombre": "LAFCO LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 42
+    },
+    {
+      "id": 104,
+      "codigo": "DIST-041",
+      "nombre": "LASCA LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 43
+    },
+    {
+      "id": 105,
+      "codigo": "DIST-042",
+      "nombre": "LIOMONT",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 44
+    },
+    {
+      "id": 106,
+      "codigo": "DIST-043",
+      "nombre": "MC COMPAÑIA FARMACEUTICA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 45
+    },
+    {
+      "id": 107,
+      "codigo": "DIST-044",
+      "nombre": "MEDICARE",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 46
+    },
+    {
+      "id": 108,
+      "codigo": "DIST-045",
+      "nombre": "MEDIKEM LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 47
+    },
+    {
+      "id": 109,
+      "codigo": "DIST-046",
+      "nombre": "MEDITECH LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 48
+    },
+    {
+      "id": 110,
+      "codigo": "DIST-047",
+      "nombre": "NATUMUNDO",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 49
+    },
+    {
+      "id": 111,
+      "codigo": "DIST-048",
+      "nombre": "NATURANDINA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 50
+    },
+    {
+      "id": 112,
+      "codigo": "DIST-049",
+      "nombre": "NIPRO",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 51
+    },
+    {
+      "id": 113,
+      "codigo": "DIST-050",
+      "nombre": "NORDIC VIJOSA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 52
+    },
+    {
+      "id": 114,
+      "codigo": "DIST-051",
+      "nombre": "NUTRICENTER S.A. DE C. V.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 53
+    },
+    {
+      "id": 115,
+      "codigo": "DIST-052",
+      "nombre": "PAILL LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 54
+    },
+    {
+      "id": 116,
+      "codigo": "DIST-053",
+      "nombre": "PASMO DE EL SALVADOR.",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 55
+    },
+    {
+      "id": 117,
+      "codigo": "DIST-054",
+      "nombre": "PHARM-INTER LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 56
+    },
+    {
+      "id": 118,
+      "codigo": "DIST-055",
+      "nombre": "PHARMATOR LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 57
+    },
+    {
+      "id": 119,
+      "codigo": "DIST-056",
+      "nombre": "PHARMAZEUTISCHE",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 58
+    },
+    {
+      "id": 120,
+      "codigo": "DIST-057",
+      "nombre": "PHARMEDIC LABORATORIOS ECOMED",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 59
+    },
+    {
+      "id": 121,
+      "codigo": "DIST-058",
+      "nombre": "PROCAPS LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 60
+    },
+    {
+      "id": 122,
+      "codigo": "DIST-059",
+      "nombre": "PROQUIFAR LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 61
+    },
+    {
+      "id": 123,
+      "codigo": "DIST-060",
+      "nombre": "QUIMFA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 62
+    },
+    {
+      "id": 124,
+      "codigo": "DIST-061",
+      "nombre": "RHYDBURG",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 63
+    },
+    {
+      "id": 125,
+      "codigo": "DIST-062",
+      "nombre": "ROWALT LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 64
+    },
+    {
+      "id": 126,
+      "codigo": "DIST-063",
+      "nombre": "SAIMED DROGUERIA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 65
+    },
+    {
+      "id": 127,
+      "codigo": "DIST-064",
+      "nombre": "SALVAT LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 66
+    },
+    {
+      "id": 128,
+      "codigo": "DIST-065",
+      "nombre": "SANTA LUCIA DROGUERIA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 67
+    },
+    {
+      "id": 129,
+      "codigo": "DIST-066",
+      "nombre": "SELECTPHARMA LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 68
+    },
+    {
+      "id": 130,
+      "codigo": "DIST-067",
+      "nombre": "SEVEN PHARMA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 69
+    },
+    {
+      "id": 131,
+      "codigo": "DIST-068",
+      "nombre": "SUIZOS LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 70
+    },
+    {
+      "id": 132,
+      "codigo": "DIST-069",
+      "nombre": "SYM LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 71
+    },
+    {
+      "id": 133,
+      "codigo": "DIST-070",
+      "nombre": "TERAMED LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 72
+    },
+    {
+      "id": 134,
+      "codigo": "DIST-071",
+      "nombre": "UNIPHARM LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 73
+    },
+    {
+      "id": 135,
+      "codigo": "DIST-072",
+      "nombre": "UNIQUE PHARMACEUTICAL",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 74
+    },
+    {
+      "id": 136,
+      "codigo": "DIST-073",
+      "nombre": "UNIVERSAL DROGUERIA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 75
+    },
+    {
+      "id": 137,
+      "codigo": "DIST-074",
+      "nombre": "VESA LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 76
+    },
+    {
+      "id": 138,
+      "codigo": "DIST-075",
+      "nombre": "VIDES LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 77
+    },
+    {
+      "id": 139,
+      "codigo": "DIST-076",
+      "nombre": "VIJOSA LABORATORIOS",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 78
+    },
+    {
+      "id": 140,
+      "codigo": "DIST-077",
+      "nombre": "VITAL MEDICAL DROGUERIA",
+      "dui": "",
+      "descripcion": "",
+      "Distribuidor_id": 79
     }
   ],
   "distribuidores": [

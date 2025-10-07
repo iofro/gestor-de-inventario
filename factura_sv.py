@@ -349,9 +349,16 @@ def generar_factura_electronica_pdf(
 
     emisor_line_count = 1 + len(emisor_lines)  # incluye encabezado
 
+    notas_tipo = ("nota de crédito", "nota de débito", "nota de remisión")
+    tipo_documento_normalizado = tipo_documento.lower().strip()
+    mostrar_datos_receptor_completos = (
+        tipo_documento == "Crédito Fiscal"
+        or tipo_documento_normalizado in notas_tipo
+    )
+
     receptor_line_count = 4  # encabezado + nombre + DUI + NIT
     receptor_extra = 1  # línea "Giro/Orden" o espaciado
-    if tipo_documento == "Crédito Fiscal":
+    if mostrar_datos_receptor_completos:
         receptor_extra += 1  # línea "Condición pago"
     receptor_line_count += receptor_extra
     receptor_line_count += 1  # Dirección
@@ -454,7 +461,7 @@ def generar_factura_electronica_pdf(
         text_y,
         receptor_col_width,
     )
-    if tipo_documento == "Crédito Fiscal":
+    if mostrar_datos_receptor_completos:
         draw_text_with_ellipsis(
             c,
             f"NRC: {cliente.get('nrc', '')}",
@@ -471,7 +478,7 @@ def generar_factura_electronica_pdf(
         text_y,
         receptor_col_width,
     )
-    if tipo_documento == "Crédito Fiscal":
+    if mostrar_datos_receptor_completos:
         draw_text_with_ellipsis(
             c,
             f"No. Remisión: {venta.get('no_remision', '')}",
@@ -480,7 +487,7 @@ def generar_factura_electronica_pdf(
             receptor_col_width,
         )
 
-    if tipo_documento == "Crédito Fiscal":
+    if mostrar_datos_receptor_completos:
         text_y -= line_h
         draw_text_with_ellipsis(
             c,

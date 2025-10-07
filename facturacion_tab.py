@@ -5314,22 +5314,55 @@ class FacturacionTab(QWidget):
         codigo_gen = identificacion.get("codigoGeneracion")
         num_ctrl = identificacion.get("numeroControl")
         fec_emision = identificacion.get("fecEmi") or identificacion.get("fechaEmi")
-        def _render_note_pdf(output_path):
-            pdf_func(
-                venta_data,
-                detalles_pdf,
-                cliente or {},
-                distribuidor or {},
-                archivo=str(output_path),
-                codigo_generacion=codigo_gen,
-                numero_control=num_ctrl,
-                fecha_generacion=fec_emision,
+        def _normalize_sello(value):
+            if not value:
+                return ""
+            text = str(value).strip()
+            return text.upper() if text else ""
+
+        respuesta_info = nota_json.get("respuesta")
+        if not isinstance(respuesta_info, dict):
+            respuesta_info = {}
+        sello_recepcion = _normalize_sello(
+            nota_json.get("selloRecibido")
+            or respuesta_info.get("selloRecibido")
+            or respuesta_info.get("selloRecepcion")
+            or respuesta_info.get("sello")
+        )
+
+        if not sello_recepcion and nota_id:
+            try:
+                envio_info = self.manager.db.consultar_envio_dte(nota_id) or {}
+            except Exception:
+                envio_info = {}
+            sello_recepcion = _normalize_sello(
+                envio_info.get("selloRecibido")
+                or envio_info.get("selloRecepcion")
+                or envio_info.get("sello")
             )
+
+        def _make_note_renderer(sello_val: str):
+            def _render(output_path):
+                pdf_func(
+                    venta_data,
+                    detalles_pdf,
+                    cliente or {},
+                    distribuidor or {},
+                    archivo=str(output_path),
+                    codigo_generacion=codigo_gen,
+                    numero_control=num_ctrl,
+                    fecha_generacion=fec_emision,
+                    sello_recepcion=sello_val,
+                )
+
+            return _render
+
+        render_note_pdf = _make_note_renderer(sello_recepcion)
 
         resp = None
         try:
             with loading_dialog(self, "Creando DTE…"):
-                pdf_path = write_pdf_atomically(pdf_path, _render_note_pdf)
+                pdf_path = write_pdf_atomically(pdf_path, render_note_pdf)
                 _, token = sign_and_save(
                     nota_json, str(json_path), return_token=True
                 )
@@ -5345,6 +5378,29 @@ class FacturacionTab(QWidget):
             QMessageBox.critical(self, "Nota", str(exc))
             self.load_invoices()
             return
+
+        sello_resp = _normalize_sello(
+            (resp or {}).get("sello")
+            or (resp or {}).get("selloRecibido")
+            or (resp or {}).get("selloRecepcion")
+        )
+        if not sello_resp and nota_id:
+            try:
+                envio_info = self.manager.db.consultar_envio_dte(nota_id) or {}
+            except Exception:
+                envio_info = {}
+            sello_resp = _normalize_sello(
+                envio_info.get("selloRecibido")
+                or envio_info.get("selloRecepcion")
+                or envio_info.get("sello")
+            )
+        if sello_resp and sello_resp != sello_recepcion:
+            try:
+                render_note_pdf = _make_note_renderer(sello_resp)
+                pdf_path = write_pdf_atomically(pdf_path, render_note_pdf)
+                sello_recepcion = sello_resp
+            except Exception:
+                logger.exception("No se pudo regenerar la nota con el sello recibido.")
 
         # Mostrar previsualización del PDF generado
         try:

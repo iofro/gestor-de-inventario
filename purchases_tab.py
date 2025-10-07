@@ -323,6 +323,19 @@ class PurchasesTab(QWidget):
         vend_filter = self.vendedor_combo.currentData()
         search = self.search_bar.text().lower()
 
+        def _parse_fecha(value):
+            if isinstance(value, datetime):
+                return value
+            if isinstance(value, date):
+                return datetime.combine(value, datetime.min.time())
+            if isinstance(value, str):
+                for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                    try:
+                        return datetime.strptime(value, fmt)
+                    except ValueError:
+                        continue
+            return datetime.min
+
         rows = []
         for c in compras:
             fecha = c.get("fecha")
@@ -362,6 +375,8 @@ class PurchasesTab(QWidget):
                 except (TypeError, ValueError):
                     continue
             rows.append((c, dist, vend, comision_total, detalles_cache[c["id"]]))
+
+        rows.sort(key=lambda entry: _parse_fecha(entry[0].get("fecha")), reverse=True)
 
         # Mantener los detalles en caché para reutilizarlos al mostrar el
         # diálogo de detalle.  Esto evita consultas redundantes y nos

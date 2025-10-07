@@ -4767,6 +4767,140 @@ class FacturacionTab(QWidget):
         self._show_email_loading()
         self.email_thread.start()
 
+    def _send_note_email(
+        self,
+        *,
+        nota_tipo: str,
+        venta_id: int | None,
+        cliente_info: Mapping[str, Any] | None,
+        pdf_path: str,
+        json_path: str,
+        codigo: str | None = None,
+        sello: str | None = None,
+    ) -> None:
+        if not pdf_path or not os.path.exists(pdf_path):
+            QMessageBox.warning(
+                self,
+                "Enviar por correo",
+                "No se encontró el PDF generado para la nota.",
+            )
+            return
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Enviar por correo",
+                "No se encontró el JSON firmado de la nota.",
+            )
+            return
+
+        if codigo or sello:
+            self._ensure_invoice_json_metadata(json_path, codigo=codigo, sello=sello)
+
+        cliente_email = ""
+        if isinstance(cliente_info, Mapping):
+            for key in ("correo", "email"):
+                value = cliente_info.get(key)
+                if value:
+                    cliente_email = str(value).strip()
+                    if cliente_email:
+                        break
+
+        venta_data = None
+        if venta_id:
+            try:
+                ventas_getter = getattr(self.manager.db, "get_ventas", None)
+                if callable(ventas_getter):
+                    venta_data = next(
+                        (v for v in ventas_getter() if v.get("id") == venta_id),
+                        None,
+                    )
+            except Exception:
+                venta_data = None
+            if not venta_data:
+                venta_getter = getattr(self.manager.db, "get_venta_by_id", None)
+                if callable(venta_getter):
+                    try:
+                        venta_data = venta_getter(venta_id)
+                    except Exception:
+                        venta_data = None
+
+        cliente_id = None
+        if isinstance(venta_data, Mapping):
+            cliente_id = venta_data.get("cliente_id")
+
+        if (not cliente_email) and cliente_id:
+            clientes_cache = getattr(self.manager, "_clientes", [])
+            cliente_cache = next(
+                (c for c in clientes_cache if c.get("id") == cliente_id),
+                None,
+            )
+            if isinstance(cliente_cache, Mapping):
+                for key in ("email", "correo"):
+                    value = cliente_cache.get(key)
+                    if value:
+                        cliente_email = str(value).strip()
+                        if cliente_email:
+                            break
+
+        if (not cliente_email) and cliente_id:
+            get_cliente = getattr(self.manager.db, "get_cliente", None)
+            if callable(get_cliente):
+                try:
+                    cliente_row = get_cliente(cliente_id)
+                except Exception:
+                    cliente_row = None
+                if isinstance(cliente_row, Mapping):
+                    for key in ("email", "correo"):
+                        value = cliente_row.get(key)
+                        if value:
+                            cliente_email = str(value).strip()
+                            if cliente_email:
+                                break
+
+        if not cliente_email:
+            QMessageBox.warning(
+                self,
+                "Enviar por correo",
+                "El cliente no tiene correo registrado.",
+            )
+            return
+
+        creds = {}
+        if os.path.exists(DATOS_NEGOCIO_PATH):
+            try:
+                with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as f:
+                    creds = json.load(f)
+            except Exception:
+                creds = {}
+        server = creds.get("smtp_server")
+        port = creds.get("smtp_port")
+        user = creds.get("email_usuario")
+        password = os.getenv("INVENTARIO_EMAIL_PASSWORD") or creds.get("email_contrasena")
+        if not all([server, port, user, password]):
+            QMessageBox.warning(self, "Enviar por correo", "Credenciales SMTP incompletas.")
+            return
+
+        subject_map = {"credito": "Nota de crédito", "debito": "Nota de débito"}
+        subject = subject_map.get(nota_tipo, "Documento electrónico")
+        body = (
+            "Adjunto se envía la representación gráfica en PDF y el documento firmado en formato JSON"
+        )
+
+        self.btn_enviar.setEnabled(False)
+        self.email_thread = EmailSender(
+            server,
+            port,
+            user,
+            password,
+            cliente_email,
+            subject,
+            body,
+            [pdf_path, json_path],
+        )
+        self.email_thread.finished.connect(self._on_email_sent)
+        self._show_email_loading()
+        self.email_thread.start()
+
     def _ensure_invoice_json_metadata(
         self,
         json_path: str,
@@ -5401,6 +5535,40 @@ class FacturacionTab(QWidget):
                 sello_recepcion = sello_resp
             except Exception:
                 logger.exception("No se pudo regenerar la nota con el sello recibido.")
+
+        sello_final = sello_resp or sello_recepcion
+        codigo_generacion_meta = None
+        try:
+            if codigo_gen:
+                codigo_generacion_meta = str(codigo_gen).strip().upper()
+        except Exception:
+            codigo_generacion_meta = None
+
+        if tipo in {"credito", "debito"} and sello_final and os.path.exists(json_path):
+            self._ensure_invoice_json_metadata(
+                json_path,
+                codigo=codigo_generacion_meta or codigo_gen,
+                sello=sello_final,
+            )
+
+            if os.path.exists(pdf_path):
+                answer = QMessageBox.question(
+                    self,
+                    "Enviar por correo",
+                    "¿Desea enviar por correo?",
+                    QMessageBox.Yes | QMessageBox.No,
+                    QMessageBox.Yes,
+                )
+                if answer == QMessageBox.Yes:
+                    self._send_note_email(
+                        nota_tipo=tipo,
+                        venta_id=venta_id,
+                        cliente_info=cliente,
+                        pdf_path=pdf_path,
+                        json_path=json_path,
+                        codigo=codigo_generacion_meta or codigo_gen,
+                        sello=sello_final,
+                    )
 
         # Mostrar previsualización del PDF generado
         try:

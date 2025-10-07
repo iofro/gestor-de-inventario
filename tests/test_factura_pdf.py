@@ -3,7 +3,13 @@ import pytest
 import fitz
 from urllib.parse import urlparse, parse_qs
 import factura_sv
-from factura_sv import generar_factura_electronica_pdf, build_qr_url
+from factura_sv import (
+    generar_factura_electronica_pdf,
+    build_qr_url,
+    generar_nota_credito_pdf,
+    generar_nota_debito_pdf,
+    generar_nota_remision_pdf,
+)
 import utils.catalogos as catalogos
 
 
@@ -364,4 +370,55 @@ def test_direccion_as_text(tmp_path):
         sello_recepcion="0" * 40,
     )
     assert out.exists()
+
+
+@pytest.mark.parametrize(
+    "generator",
+    [
+        generar_nota_credito_pdf,
+        generar_nota_debito_pdf,
+        generar_nota_remision_pdf,
+    ],
+)
+def test_notas_pdf_includes_full_receptor_info(tmp_path, generator):
+    venta, detalles = _sample_data('Crédito Fiscal')
+    venta.update(
+        {
+            'no_remision': '12345',
+            'orden_no': 'A-1',
+            'condicion_pago': 'Contado',
+        }
+    )
+    cliente = {
+        'nombre': 'Cliente Nota',
+        'dui': '01234567-8',
+        'nrc': '123456-7',
+        'nit': '0614-290190-102-2',
+        'giro': 'Comercio',
+        'direccion': {
+            'departamento': '05',
+            'municipio': '24',
+            'complemento': 'Colonia Centro',
+        },
+    }
+    out = tmp_path / 'nota.pdf'
+    generator(
+        venta,
+        detalles,
+        cliente,
+        {},
+        archivo=str(out),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=uuid.uuid4().hex[:8].upper(),
+        fecha_generacion="01/01/2024",
+        sello_recepcion="0" * 40,
+    )
+    with fitz.open(out) as doc:
+        text = ''.join(p.get_text() for p in doc)
+
+    assert f"NRC: {cliente['nrc']}" in text
+    assert f"No. Remisión: {venta['no_remision']}" in text
+    assert f"Giro: {cliente['giro']}" in text
+    assert f"Condición pago: {venta['condicion_pago']}" in text
 

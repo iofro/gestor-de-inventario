@@ -25,6 +25,7 @@ DEFAULT_EXCLUDED_DIR_NAMES = {
     'dist',
     'node_modules',
     'tests',
+    'verificador',
 }
 
 DEFAULT_EXCLUDED_FILE_NAMES = {

@@ -1,0 +1,984 @@
+{
+  "productos": [
+    {
+      "id": 4418,
+      "nombre": "MEDIFLU JARABE FRASCO POR 120 ML",
+      "codigo": "711604203147"
+    },
+    {
+      "id": 4419,
+      "nombre": "AZTHOMAC 15 ML AZITROMICINA 200 MG/5ML",
+      "codigo": "711604101726"
+    },
+    {
+      "id": 4420,
+      "nombre": "KAOPEXIN CON NEOMICINA SUSPENSION ORAL DE 120 ML",
+      "codigo": "711604100538"
+    },
+    {
+      "id": 4421,
+      "nombre": "KAOPEXIN SUSPENSION ORAL DE 120 ML",
+      "codigo": "711604100514"
+    },
+    {
+      "id": 4423,
+      "nombre": "IREN FORTE ASPARTATO DE ARGININA FRASCO POR 120 ML",
+      "codigo": "711604102785"
+    },
+    {
+      "id": 4426,
+      "nombre": "METOCARBAMOL GAMMA 500 MG CAJA POR 100 TABLETAS",
+      "codigo": "711604101450"
+    },
+    {
+      "id": 4427,
+      "nombre": "DER-AL MOMETASONA FUROATO 0.1% CREMA DE 20 G",
+      "codigo": "711604102518"
+    },
+    {
+      "id": 4433,
+      "nombre": "COMPLEJO B GAMMA CAJA X 100 TABLETAS",
+      "codigo": "711604301904"
+    },
+    {
+      "id": 4435,
+      "nombre": "RINOTAPP JARABE POR 120 ML BROMFENIRAMINA-FENILEFRINA",
+      "codigo": "711604102792"
+    },
+    {
+      "id": 4436,
+      "nombre": "PREDSOLAN PREDNISOLONA 20 MG",
+      "codigo": "711604203253"
+    },
+    {
+      "id": 4437,
+      "nombre": "TRAUM GEL DE USO TOPICO 35 G . DICLOFENAC SODICO 10 MG/G (1%)",
+      "codigo": "711604102396"
+    },
+    {
+      "id": 4439,
+      "nombre": "S.S.N. SPRAY NASAL F X 50 ML CLORURO DE SODIO  0.9 MG/0.1",
+      "codigo": "711604102556"
+    },
+    {
+      "id": 4440,
+      "nombre": "S.S.N. SPRAY NASAL  F X 100 ML CLORURO DE SODIO 0.9MG/0.1 ML",
+      "codigo": "711604301362"
+    },
+    {
+      "id": 4445,
+      "nombre": "SINTEMP JARABE F X 120 ML ACETAMINOFEN 120MG/ 5ML",
+      "codigo": "SINTEMPGAMMAX120ML"
+    },
+    {
+      "id": 4449,
+      "nombre": "LORALER/LORATADINA 10 MG CX100 TAB",
+      "codigo": "711604202522"
+    },
+    {
+      "id": 4452,
+      "nombre": "FOLHEM C X 30 TAB. ACIDO FOLICO 5MG",
+      "codigo": "711604101870"
+    },
+    {
+      "id": 4455,
+      "nombre": "TOXAZOL FORTE BOLSA X100 TAB TRIMET 160MG/SULFA 800MG",
+      "codigo": "GAMMATOXAZOLFT005"
+    },
+    {
+      "id": 4459,
+      "nombre": "CLORFENIRAMINA 8MG BOLSA X100TAB",
+      "codigo": "GAMMACLORFETAB006"
+    },
+    {
+      "id": 4461,
+      "nombre": "ACICLOVIR 400 MG CAJA X 100 TAB",
+      "codigo": "18901790700011"
+    },
+    {
+      "id": 4462,
+      "nombre": "PARACITEL-500 NITOZOXANIDA 500MG C X  6 TAB.",
+      "codigo": "18901790714759"
+    },
+    {
+      "id": 4463,
+      "nombre": "AMOXICILINA 500MG C X 100 CAPS. SAIMED.",
+      "codigo": "18901790684069"
+    },
+    {
+      "id": 4466,
+      "nombre": "LORATADINA 10 MG C X 100 TAB. SAIMED.",
+      "codigo": "18901790697717"
+    },
+    {
+      "id": 4480,
+      "nombre": "ARGIPOTEN-C C X 10 SACHETS ASPARTATO DE ARGININA 5G.",
+      "codigo": "18901790706198"
+    },
+    {
+      "id": 4482,
+      "nombre": "AMOXICILINA 500 MG C X 100 CAPSULAS  BALAXI.",
+      "codigo": "6975714180055"
+    },
+    {
+      "id": 4483,
+      "nombre": "CEVITRAN VITAMINA C CAJA X 100 TAB. MASTICABLES",
+      "codigo": "18901790684205"
+    },
+    {
+      "id": 4486,
+      "nombre": "ACIDO ACETILSALICILICO 100 MG C X 100 TAB. RECUBIERTAS",
+      "codigo": "6937874104210"
+    },
+    {
+      "id": 4487,
+      "nombre": "AMLODIPINA 5 MG C X 100 TABLETAS RECUBIERTAS BALAXI",
+      "codigo": "6937874106252"
+    },
+    {
+      "id": 4492,
+      "nombre": "SIMVASTATINA 20 MG C X 100 TABLETAS",
+      "codigo": "7401189600549"
+    },
+    {
+      "id": 4493,
+      "nombre": "AZITROMICINA 500 MG C X 30 TABLETAS RECUBIERTAS",
+      "codigo": "7401189600709"
+    },
+    {
+      "id": 4494,
+      "nombre": "SECNIDAZOL 500 MG C X 40 TABLETAS RECUBIERTAS BALAXI",
+      "codigo": "7401189600556"
+    },
+    {
+      "id": 4495,
+      "nombre": "ENALAPRIL MALEATO 20 MG C X 100 TABLETAS BALAXI",
+      "codigo": "7401189600648"
+    },
+    {
+      "id": 4496,
+      "nombre": "ACECLOFENACO 100MG C X 100 TABLETAS RECUBIERTAS",
+      "codigo": "8906101706051"
+    },
+    {
+      "id": 4497,
+      "nombre": "FLUCONAZOL BALAXI 200 MG C X 2 CAPSULAS X 2 TAB.",
+      "codigo": "8906101706068"
+    },
+    {
+      "id": 4498,
+      "nombre": "MICONAZOL AL 2% CREMA TOPICA T. 30 G",
+      "codigo": "8906101702510"
+    },
+    {
+      "id": 4499,
+      "nombre": "LEVOFLOXACINA 750 MG C X 100 TAB. RECUBIERTOS",
+      "codigo": "8906101702060"
+    },
+    {
+      "id": 4500,
+      "nombre": "METRONIDAZOL 500 MG C X 100 TABLETAS",
+      "codigo": "8906101702923"
+    },
+    {
+      "id": 4501,
+      "nombre": "CLOTRIMAZOL 1% CREMA TUBO 30G.",
+      "codigo": "8906101701032"
+    },
+    {
+      "id": 4502,
+      "nombre": "NORFLOXACINA 400 MG C X 100 TAB. RECUBIERTAS",
+      "codigo": "8906101703289"
+    },
+    {
+      "id": 4503,
+      "nombre": "CARBAMAZEPINA 200 MG C X 100 TAB. RECUBIERTAS",
+      "codigo": "8906101703951"
+    },
+    {
+      "id": 4504,
+      "nombre": "CEFIXIMA 400 MG C X 10 TAB. RECUBIERTAS",
+      "codigo": "8906101703876"
+    },
+    {
+      "id": 4506,
+      "nombre": "DEXAMETASONA 8MG C X 100 AMPOLLAS BALAXI",
+      "codigo": "6975714180444"
+    },
+    {
+      "id": 4507,
+      "nombre": "CLORFENIRAMINA MALEATO 4 MG C X 100 TAB.",
+      "codigo": "7401189600679"
+    },
+    {
+      "id": 4508,
+      "nombre": "METFORMINA 850 MG C X 100 TAB. RECUBIERTAS",
+      "codigo": "6937874105804"
+    },
+    {
+      "id": 4510,
+      "nombre": "AMOXY PLUS F X 100 ML AMOXIC+ACIDO CLAV. 625MG",
+      "codigo": "7401189600716"
+    },
+    {
+      "id": 4511,
+      "nombre": "AMOXY PLUS C X 14 TAB AMOXC+ACIDO CLAV. 625 TAB.",
+      "codigo": "8906101701001"
+    },
+    {
+      "id": 4513,
+      "nombre": "CEFADROXIL CEFADROXILO 250 MG/ 5 ML F X 60 ML",
+      "codigo": "6975714182554"
+    },
+    {
+      "id": 4514,
+      "nombre": "CEFALEXINA 500 MG C X 100 CAPSULAS.",
+      "codigo": "8901872005068"
+    },
+    {
+      "id": 4515,
+      "nombre": "ERITROMICINA 250MG/5ML F X 100 ML.",
+      "codigo": "8901872006669"
+    },
+    {
+      "id": 4525,
+      "nombre": "ATORVASTATINA 40 MG C X 100 TABLETAS",
+      "codigo": "7410107246813"
+    },
+    {
+      "id": 4528,
+      "nombre": "CEFADROXILO 250MG/5ML F X 60 ML",
+      "codigo": "7401104300523"
+    },
+    {
+      "id": 4534,
+      "nombre": "SACRUSYT SALBUTAMOL AEROSOL INHALADOR X 200 DOSIS.",
+      "codigo": "7410031540810"
+    },
+    {
+      "id": 4536,
+      "nombre": "RABANO YOYADO SYM SABOR CANELA F X 240 ML SIN AZUCAR.",
+      "codigo": "7415100300630"
+    },
+    {
+      "id": 4549,
+      "nombre": "MIGASA COMPRESA DE GASA DISPENSADOR X 100 UNIDADES.",
+      "codigo": "7415800229811"
+    },
+    {
+      "id": 4553,
+      "nombre": "LAFCOXOL-T F X 120 ML MUC/BRONDILATAD.",
+      "codigo": "7401077801027"
+    },
+    {
+      "id": 4554,
+      "nombre": "DOXICICLINA FL  100 MG C X 100 CAPSULAS PHARM-INTER",
+      "codigo": "DOXICICLINA100MGX100CPAS"
+    },
+    {
+      "id": 4559,
+      "nombre": "RECOVER SUERO ORAL B X 500 ML COCO",
+      "codigo": "7401077801126"
+    },
+    {
+      "id": 4565,
+      "nombre": "FLAMYDOL F X 120 ML DICLOFENAC0 SODICO 9MG/5ML.",
+      "codigo": "90000253"
+    },
+    {
+      "id": 4566,
+      "nombre": "FLAMYDOL GOTAS F X 20 ML DICLOFENACO SODICO 15 MG/1 ML",
+      "codigo": "764600111176"
+    },
+    {
+      "id": 4567,
+      "nombre": "INTRAFER TF PEDIATRICO8.55 MG/ML GOTAS PED.SUSP. ORAL.",
+      "codigo": "764600244904"
+    },
+    {
+      "id": 4568,
+      "nombre": "ESPASMO DOLOFOR C X 3 DOSIS DE SOL. INYECT. 2ML C/AMP.",
+      "codigo": "764600115235"
+    },
+    {
+      "id": 4574,
+      "nombre": "BETASALIC LOCION F X 30 ML BECLOMETASONA+ACID.SALICILICO.",
+      "codigo": "7410091660268"
+    },
+    {
+      "id": 4575,
+      "nombre": "BETASALIC UNGUENTO TUBO X 20 G. TOPICO BETAM+ACID.SALICILICO.",
+      "codigo": "7410091665805"
+    },
+    {
+      "id": 4576,
+      "nombre": "BETAVAL 1.0MG CREMA TUBO 25G. BETAMETASONA AL 0.1%.",
+      "codigo": "7410091665768"
+    },
+    {
+      "id": 4577,
+      "nombre": "NESTINOR 2 C X 2 TAB. LEVONORGESTREL0.75MG.",
+      "codigo": "PHARMNESTINOR2X2TAB."
+    },
+    {
+      "id": 4584,
+      "nombre": "GENTAMICINA 160 MG / 2 ML VIAL 2 ML. IM. IV.",
+      "codigo": "1126,230201A"
+    },
+    {
+      "id": 4586,
+      "nombre": "BUTILBROMURO DE HIOCINA 20MG AMPOLLA DE 1 ML.",
+      "codigo": "HIOSCINA20MGX1MLAMP."
+    },
+    {
+      "id": 4596,
+      "nombre": "ESPASMO DOLOFOR DISP X 200 TAB. LISINA 10MG/PROPINOX 10MG.",
+      "codigo": "90000232"
+    },
+    {
+      "id": 4603,
+      "nombre": "CREMA FRIA PHARMATOR TUBO X 250G.",
+      "codigo": "7410091665096"
+    },
+    {
+      "id": 4605,
+      "nombre": "CATETER NIPRO #22 1\" 0,90X25MM 40ML/MIN.",
+      "codigo": "7898909174327"
+    },
+    {
+      "id": 4610,
+      "nombre": "ANDIZOL COMBI CX10 OVULOS METRO500MG/MICONAZ100MG/ KETANSER36MG",
+      "codigo": "7420001055688"
+    },
+    {
+      "id": 4620,
+      "nombre": "OTOLIT GOTAS OTICAS F X 15 ML ANTIPIRINA/BENZICAINA.",
+      "codigo": "7420001120294"
+    },
+    {
+      "id": 4625,
+      "nombre": "ALCODOC ALCOHOL ETILICO 90* F X 120 ML",
+      "codigo": "7410007700125"
+    },
+    {
+      "id": 4626,
+      "nombre": "OMEPRAZOL 20 MG C X 100 CAPSULAS INDUF.",
+      "codigo": "INDUFAROMEPRA20MGX100"
+    },
+    {
+      "id": 4636,
+      "nombre": "GUANTES DE LATEX TALLA M C X 100 NIPRO.",
+      "codigo": "4968420500349"
+    },
+    {
+      "id": 4639,
+      "nombre": "PRUEBAS DE EMBARAZO RIGHTSIGN C X 25 CASETTES",
+      "codigo": "BIOTESTRIGHTSINGX25"
+    },
+    {
+      "id": 4643,
+      "nombre": "LEVOFLOXACINA 500MG INFUSION I.V. F X 100 ML",
+      "codigo": "8907730015835"
+    },
+    {
+      "id": 4646,
+      "nombre": "JERINGA DE 3 ML NIPRO.",
+      "codigo": "4968420726374"
+    },
+    {
+      "id": 4647,
+      "nombre": "CEFTRIAXONA PHARM-INTER 1G CON LIDOCAINA IM.",
+      "codigo": "CEFTRIAXONAIM1GCLIDO."
+    },
+    {
+      "id": 4656,
+      "nombre": "CICLETEX JARABE F X 120 ML CARB,DEXT,CLORF.",
+      "codigo": "741009166587"
+    },
+    {
+      "id": 4670,
+      "nombre": "METROFAR  METRO. 0.75G. TUBO DE 40G. GEL VAGINAL.",
+      "codigo": "7410091660572"
+    },
+    {
+      "id": 4681,
+      "nombre": "SET DE INFUSION MARANATHA  BOLSA DE 25 UNIDADES.",
+      "codigo": "MARANATHASETDEINFUSION"
+    },
+    {
+      "id": 4682,
+      "nombre": "SET DE INFUSION NIPRO.",
+      "codigo": "WBS383790170AVF1"
+    },
+    {
+      "id": 4695,
+      "nombre": "ALUMBRE SOBRE DE 5G.",
+      "codigo": "ALUMBRESOBRE5G"
+    },
+    {
+      "id": 4722,
+      "nombre": "SSN CLORURO DE SODIO 0.9% 500ML DELMED",
+      "codigo": "S-S-NCLORDESODIO0.9%500ML"
+    },
+    {
+      "id": 4724,
+      "nombre": "SOLUCION DE HARTMANN (LACTATO DE RINGER) DE 500 ML.",
+      "codigo": "SOLDEHARTMANNDE500ML"
+    },
+    {
+      "id": 4739,
+      "nombre": "FLUCONAZOL 200MG C X 2 TAB.",
+      "codigo": "SAIMEDFLUCONAZOL200MGX2TAB."
+    },
+    {
+      "id": 4750,
+      "nombre": "SILDENAFIL 100 MG CAJA X 10 CAJAS X 2 BLISTER X 4 TAB.",
+      "codigo": "8906101701889"
+    },
+    {
+      "id": 4751,
+      "nombre": "SHAMPOO PIOJIN CARTON X 12 UINIDADES.",
+      "codigo": "SHAMPOOPIOJINAINSA"
+    },
+    {
+      "id": 4765,
+      "nombre": "BIOKROL DESESTRESANTE C X 60 CAPSULAS.",
+      "codigo": "7410032310092"
+    },
+    {
+      "id": 4771,
+      "nombre": "RANITIDINA 50MG AMPOLLA DE 2 ML.",
+      "codigo": "RANITIDINA500MGAMPDE2ML"
+    },
+    {
+      "id": 4772,
+      "nombre": "CIPROFLOXACINA 200MG F X 100 ML IV.",
+      "codigo": "CIPROFLOXACINA200MG100MLIV"
+    },
+    {
+      "id": 4773,
+      "nombre": "BECLOMETASONA 250 MCG X 200 DOSIS.",
+      "codigo": "BECLOMETASONA250MCG200DOSIS"
+    },
+    {
+      "id": 4774,
+      "nombre": "BECLOMETASONA 50MCG F X 200 DOSIS.",
+      "codigo": "BECLOMETASONA50MCG200DOSIS"
+    },
+    {
+      "id": 4775,
+      "nombre": "DOLOPRESS (DICLOFENACO 75MG-3ML) AMPOLLA IM.",
+      "codigo": "DOLOPRESS7MGX3MLAMPOLLA."
+    },
+    {
+      "id": 4776,
+      "nombre": "DAVIDA CLORURO DE MAGNESIO 3.33G. BX100ML.",
+      "codigo": "7415700006284"
+    },
+    {
+      "id": 4778,
+      "nombre": "GYTROGEN DEPOT ACETATO DE MEDROXIPROG 150MG/ML VIAL DE 1ML.",
+      "codigo": "7410000100175"
+    },
+    {
+      "id": 4780,
+      "nombre": "DEXA BIOPLEXIN C X 2 AMPOLLAS DE 2 ML.",
+      "codigo": "7410000101448"
+    },
+    {
+      "id": 4786,
+      "nombre": "DOLTIUM DEXKETOPROFENO 25/ML SOL. IMY.2MLIM.IV",
+      "codigo": "18901790701599"
+    },
+    {
+      "id": 4798,
+      "nombre": "OTOFER GOTAS F X 15 ML",
+      "codigo": "7410061200388"
+    },
+    {
+      "id": 4820,
+      "nombre": "CLORANFENICOL 0.5% COLIRIO GAMMA F X 15 ML.",
+      "codigo": "711604100149"
+    },
+    {
+      "id": 4826,
+      "nombre": "DESESSTRESS 25,000 C X 1 AMPOLLA DE 2 ML",
+      "codigo": "7410003500514"
+    },
+    {
+      "id": 4827,
+      "nombre": "NEURALIN COMPLEJO B, LIDOCAINA/DEXAMETASONA 2 AMPOLLAS.",
+      "codigo": "7501088505126"
+    },
+    {
+      "id": 4828,
+      "nombre": "ANTIFLU-DES DISPENSADOR X 25 SOBRES DE 4 TAB.",
+      "codigo": "7501088500145"
+    },
+    {
+      "id": 4829,
+      "nombre": "GUANTES DE LATEX OPRUCARE TALLA M X 100 PCS",
+      "codigo": "GUANTESOPRUCARETALLAM"
+    },
+    {
+      "id": 4830,
+      "nombre": "CIPROFLOXACINA 500 MG C X 100 TAB. FUNIVER.",
+      "codigo": "8901872003828"
+    },
+    {
+      "id": 4832,
+      "nombre": "JERINGAS DE 5 ML 22GX1-1/2 0,70X38MM. NIPRO",
+      "codigo": "0124968420726712172804301023E0"
+    },
+    {
+      "id": 4833,
+      "nombre": "GLOTOLIN CEREBRAL CAJA X 20 VIALES BEBIBLES",
+      "codigo": "7410003500569"
+    },
+    {
+      "id": 4836,
+      "nombre": "GERIATRICO H3 CON GINSENG F.Q. C X 20 B. DE 5 GELCAPS.",
+      "codigo": "GERIATRICOH3CONGINSENGX10BLIST"
+    },
+    {
+      "id": 4837,
+      "nombre": "KORPLEX 25,000 C X 1 AMPOLLA 2ML  + JERINGA IM.",
+      "codigo": "7410003500170"
+    },
+    {
+      "id": 4842,
+      "nombre": "ALCODOC ALCOHOL ETILICO 90* F X 240 ML.",
+      "codigo": "7410007700248"
+    },
+    {
+      "id": 4845,
+      "nombre": "ALCODOC ALCOHOL ETILICO 90* F X 1 LITRO.",
+      "codigo": "7410007700149"
+    },
+    {
+      "id": 4848,
+      "nombre": "BRU-COBAL MECOBALAMINA 500 MCG C X 100 TAB.",
+      "codigo": "7401117100189"
+    },
+    {
+      "id": 4851,
+      "nombre": "BRUCOLIC GOTAS F X 20 ML.",
+      "codigo": "BRUCOLICGOTASFX20ML."
+    },
+    {
+      "id": 4853,
+      "nombre": "BRU-COXANIDA POLVO PARA SUSP. F X 30 ML.",
+      "codigo": "7401117100370"
+    },
+    {
+      "id": 4859,
+      "nombre": "MIGASA 100% ALGODON 1 LIBRA",
+      "codigo": "7415800230404"
+    },
+    {
+      "id": 4860,
+      "nombre": "CONDONES VIVE AMOR DISPENSADOR X 16 SOBRES.",
+      "codigo": "7404001753829"
+    },
+    {
+      "id": 4861,
+      "nombre": "DESESSTRESS PLUS CAJA X 3O TAB. RECUBIERTAS.",
+      "codigo": "7410003500682"
+    },
+    {
+      "id": 4862,
+      "nombre": "JERINGAS 3 ML NIPRO.",
+      "codigo": "26958694912056"
+    },
+    {
+      "id": 4864,
+      "nombre": "IBUPROFENO F.Q. 100 MG F X 120 ML.",
+      "codigo": "IBUPROFENOFQSUSPENSIONFX120ML"
+    },
+    {
+      "id": 4865,
+      "nombre": "ACIDO FOLICO 5 MG. C X 100 TAB. FUNIVER.",
+      "codigo": "ACIDOFOLICOFUNIVERX100TAB."
+    },
+    {
+      "id": 4869,
+      "nombre": "ENVIO C807 EXPRESS",
+      "codigo": "ENVIOC807EXPRESS."
+    },
+    {
+      "id": 4870,
+      "nombre": "DICLOFENACO 75 MG 1 DE 50 AMPOLLAS PHAR-INTER.",
+      "codigo": "DICLOFENACO75MGHOSP."
+    },
+    {
+      "id": 4890,
+      "nombre": "VITADEK-C NIÑO X 2 AMP. BEBIBLES.",
+      "codigo": "7401077800754"
+    },
+    {
+      "id": 4891,
+      "nombre": "VITADEK-C ADULTO X 2 AMPOLLAS BEBIBLES.",
+      "codigo": "7401077800556"
+    },
+    {
+      "id": 4895,
+      "nombre": "MEBENDAZOL 100 MG X 96 TABLETAS.",
+      "codigo": "MEBENDAZOLTAB100MGFUNIVERX96"
+    },
+    {
+      "id": 4904,
+      "nombre": "LUBRICANTE INTIMO VIVE LUB. TUBO X30 ML.",
+      "codigo": "7404001754024"
+    },
+    {
+      "id": 4936,
+      "nombre": "FULMIHONGUS CREMA T X 20G",
+      "codigo": "FULMIHONGUSCREMATX20G"
+    },
+    {
+      "id": 4937,
+      "nombre": "FULMIHONGUS SOLUCION TOPICA X 20ML",
+      "codigo": "FULMIHONGUSSOLUCIONX20ML"
+    },
+    {
+      "id": 4939,
+      "nombre": "CEFTRIAXONA DE 1 G. X 50 VIALES I.M.I.V. DE 5ML",
+      "codigo": "PHARINTERCEFTRIAXONA1GHO."
+    },
+    {
+      "id": 4940,
+      "nombre": "CLO-PRIM METOCLOPRAMIDA 10MG X 40 TAB.",
+      "codigo": "7410000101356"
+    },
+    {
+      "id": 4942,
+      "nombre": "ROSA MOSQUETA +VITAMINA E F.Q. X30 GEL. CAPS.",
+      "codigo": "ROSAMOSQUETA+VITAMINAEX30"
+    },
+    {
+      "id": 4943,
+      "nombre": "AMOXIFARM X 100ML POLVO SUSP. 250MG/5ML",
+      "codigo": "AMOXIFARMX100ML"
+    },
+    {
+      "id": 4947,
+      "nombre": "SEGURA PLUS ANTICONCEPTIVO ORAL",
+      "codigo": "7404001754185"
+    },
+    {
+      "id": 4951,
+      "nombre": "FLUVIRIN 2  TRATAMIENTO ANTIGRIPAL X 1 AMP. I.M. 5ML.",
+      "codigo": "7410000101547"
+    },
+    {
+      "id": 4953,
+      "nombre": "FLUYTOSS JARABE 120ML",
+      "codigo": "7412492246812"
+    },
+    {
+      "id": 4954,
+      "nombre": "ESCABISAN SOLUCION OLEOSA  ESCABICIDA X 60ML",
+      "codigo": "7410000101141"
+    },
+    {
+      "id": 4958,
+      "nombre": "CIPROP FORTE 120ML",
+      "codigo": "711604100125"
+    },
+    {
+      "id": 4959,
+      "nombre": "CATETER #24G X 3/4\" 1 DE 50 UDS.",
+      "codigo": "7898909175539"
+    },
+    {
+      "id": 4963,
+      "nombre": "ALICOL JARABE 120ML",
+      "codigo": "4908"
+    },
+    {
+      "id": 4964,
+      "nombre": "ALICOL D JARABE 120ML",
+      "codigo": "13880"
+    },
+    {
+      "id": 4966,
+      "nombre": "OMEPRAZOL I.V. 40MG SAIMED",
+      "codigo": "18901790717477"
+    },
+    {
+      "id": 4967,
+      "nombre": "NEURO FERRICAL B12 FRASCO X 480ML",
+      "codigo": "7410003501061"
+    },
+    {
+      "id": 4968,
+      "nombre": "KETOROLACO TROMETAMINA 30MG/ML 10 AMP X 1ML  IM / IV",
+      "codigo": "KETOROLACO30MG/MLSAIMED"
+    },
+    {
+      "id": 4971,
+      "nombre": "DESESSKROL VIT CEREBRO Y NERVIOS X 30 GEL CAPS.",
+      "codigo": "DESESSKROLX30TAB."
+    },
+    {
+      "id": 4975,
+      "nombre": "DICLOFENACO 50MG TAB. CAJA X100 FUNIVER",
+      "codigo": "8901872003897"
+    },
+    {
+      "id": 4976,
+      "nombre": "GERIATRICO H3 FRASCO X100 GELCAPS F.Q.",
+      "codigo": "GERIATRICOH3X100"
+    },
+    {
+      "id": 4978,
+      "nombre": "ACEITE DE AJO 200MG F.Q. X100",
+      "codigo": "ACEITEDEAJOX100"
+    },
+    {
+      "id": 4980,
+      "nombre": "AZTHOMAC AZITROMICINA 200 MG / 5 ML F X 30 ML.",
+      "codigo": "711604102471"
+    },
+    {
+      "id": 4981,
+      "nombre": "GAMMACORT BETAM. 0.25MG/5ML DEXCLORFE.2.0MG/5ML F X 120 ML.",
+      "codigo": "711604203482"
+    },
+    {
+      "id": 4989,
+      "nombre": "CILFRIN-D EUCTOL120MG + GUAYAC. 50MG X 1 AMP. IM.",
+      "codigo": "7406269000714"
+    },
+    {
+      "id": 4990,
+      "nombre": "VITAMINA E FRASCO X 100 GELCAPS F.Q.",
+      "codigo": "VITAMINAEFX100F.Q."
+    },
+    {
+      "id": 4993,
+      "nombre": "TUSOLEX AMBROXOL 15 MG / 5ML (120ML)",
+      "codigo": "7410003500125"
+    },
+    {
+      "id": 4996,
+      "nombre": "AZITROMICINA 500 MG 10 CAJAS X 1 BLISTER X 3 TAB. REC. BALAXI",
+      "codigo": "8906101701193"
+    },
+    {
+      "id": 4997,
+      "nombre": "OMEPRAZOL 20 MG  CAPSULAS X 100 BALAXI",
+      "codigo": "8906101701698"
+    },
+    {
+      "id": 4998,
+      "nombre": "ALBENDAZOL 400 MG C X 20 BLIS. X 2 TAB MAST. BALAXI.",
+      "codigo": "8906101701667"
+    },
+    {
+      "id": 4999,
+      "nombre": "HIERRO SUCROSA FLAGFER SOL. INY. USP 20MG/ML X 5 AMP.",
+      "codigo": "8904209440112"
+    },
+    {
+      "id": 5002,
+      "nombre": "GLUCOSAMINA 250MG + CONDROITINA F.Q. 200 MG",
+      "codigo": "GLUCOSAMINA+CONDROITINAF.Q."
+    },
+    {
+      "id": 5003,
+      "nombre": "POLDER POLVOS SOBRE X 2.2 G.",
+      "codigo": "7410091660312"
+    },
+    {
+      "id": 5005,
+      "nombre": "FORTACHON JARABE F.Q.",
+      "codigo": "7410003500507"
+    },
+    {
+      "id": 5019,
+      "nombre": "SSN AL 5% 1000ML BONIN",
+      "codigo": "7401068500274"
+    },
+    {
+      "id": 5020,
+      "nombre": "CEFALEXINA FLAMINGO 250MG / 5ML SUSPENSION ORAL 100ML",
+      "codigo": "8901872006553"
+    },
+    {
+      "id": 5023,
+      "nombre": "ERITROPOYETINA 4.000 U.I. / I.U.",
+      "codigo": "7795355998562"
+    },
+    {
+      "id": 5039,
+      "nombre": "DICLOFENAC 1% GEL TUBO X 25 G.",
+      "codigo": "8906101703647"
+    },
+    {
+      "id": 5040,
+      "nombre": "AMOXICILINA & ACIDO CLAVULANICO  312.5MG / 5ML.",
+      "codigo": "8906101701056"
+    },
+    {
+      "id": 5041,
+      "nombre": "INFADERM ZN CREMA TOPICA TUBO X 60 GR ARSAL",
+      "codigo": "7410000102179"
+    },
+    {
+      "id": 5043,
+      "nombre": "MIOLAXIN 500 MG 5ML AMP. CAJA X 1 AMP. ARSAL",
+      "codigo": "7410000100274"
+    },
+    {
+      "id": 5047,
+      "nombre": "INDOMETACINA CAPSULAS BP 25MG X 100 CAPS FUNIVER",
+      "codigo": "INDOMETACINAFUNIVER"
+    },
+    {
+      "id": 5048,
+      "nombre": "AMPICILINA CAPSULAS BP 500MG X 100 CAPS FUNIVER",
+      "codigo": "8901872005099"
+    },
+    {
+      "id": 5051,
+      "nombre": "VIVE COLOR FRESA",
+      "codigo": "7404001753881"
+    },
+    {
+      "id": 5052,
+      "nombre": "VIVE COLOR CHICLE",
+      "codigo": "7404001753911"
+    },
+    {
+      "id": 5053,
+      "nombre": "VIVE RETARDANTE",
+      "codigo": "7404001753942"
+    },
+    {
+      "id": 5054,
+      "nombre": "VIVE COLOR UVA",
+      "codigo": "7404001753904"
+    },
+    {
+      "id": 5058,
+      "nombre": "DOXICICLINA FL 100MG X 100 CAPS PHARM-INTER",
+      "codigo": "DOXICICLINA100MGX100CAPS"
+    },
+    {
+      "id": 5061,
+      "nombre": "GLICERINA FENICADA GOTAS 15 ML VRISQUI.",
+      "codigo": "GLICERINAFENICADA15ML"
+    },
+    {
+      "id": 5062,
+      "nombre": "ACEITE GOMENOLADO F X 15 ML VRISQUI",
+      "codigo": "ACEITEGOMENOLADO15ML"
+    },
+    {
+      "id": 5063,
+      "nombre": "SULFATIAZOL POMADA 28G / 5G",
+      "codigo": "SULFATIAZOLPOMADA28G"
+    },
+    {
+      "id": 5071,
+      "nombre": "DOLO-NERVOFER SOL. INY X 2 AMP.IM.",
+      "codigo": "7410061200135"
+    },
+    {
+      "id": 5074,
+      "nombre": "VIVE COLORS CHOCOLATE C X 8 PACK DE  3 CONDONES.",
+      "codigo": "7404001753874"
+    },
+    {
+      "id": 5075,
+      "nombre": "HIRREO SUCROSA CAJA X 5 VIALES DE 5 ML.",
+      "codigo": "8907730018409"
+    },
+    {
+      "id": 5081,
+      "nombre": "CONJUNTIVAL 0.3% TOBRAMICINA 3.0MG/ML.",
+      "codigo": "711604301942"
+    },
+    {
+      "id": 5082,
+      "nombre": "CEFIGAM CEFIXIMA 400 MG X 10 TAB.",
+      "codigo": "711604203857"
+    },
+    {
+      "id": 5083,
+      "nombre": "CEFIGAM CEFIXIMA 100 MG/5ML F X 50 ML.",
+      "codigo": "711604203871"
+    },
+    {
+      "id": 5084,
+      "nombre": "CLORFENIRAMINA MALEATO JBE 2MG/5ML X 12OML GAMMA",
+      "codigo": "CLORFENIRAMINAJARABEGAMMA"
+    },
+    {
+      "id": 5085,
+      "nombre": "GAMMATOS ANTITUSIVO  F X 120 ML.",
+      "codigo": "711604100453"
+    },
+    {
+      "id": 5087,
+      "nombre": "CLORFENIRAMINA MALEATO 8MG 100TAB. GAMMA",
+      "codigo": "CLORFENIRAMINA8MGGAMMA"
+    },
+    {
+      "id": 5127,
+      "nombre": "FEVENY ESTROGENOS CONJUGADOS",
+      "codigo": "7707274721299"
+    },
+    {
+      "id": 5128,
+      "nombre": "SPASMODEX 10MG X 100 TAB. (BUTILBROMURO DE HIOSCINA)",
+      "codigo": "SPASMODEX10MGX100TAB."
+    },
+    {
+      "id": 5141,
+      "nombre": "RECOVER SUERO ORAL B X 500 ML CEREZA",
+      "codigo": "7401077800631"
+    },
+    {
+      "id": 5142,
+      "nombre": "RECOVER SUERO ORAL B X 500 ML TUTTI FRUTTI",
+      "codigo": "7401077800648"
+    },
+    {
+      "id": 5143,
+      "nombre": "EBERNET 1% EBERCONAZOL CREMA TUBO 15G.",
+      "codigo": "8435214409318"
+    },
+    {
+      "id": 5145,
+      "nombre": "FINADOL ULTRA X50 CAJA PHARMEDIC",
+      "codigo": "7410003401101"
+    },
+    {
+      "id": 5146,
+      "nombre": "RADOL EXTRA FUERTE 25 SOBRES CAJA PHARMEDIC",
+      "codigo": "7410003401255"
+    },
+    {
+      "id": 5147,
+      "nombre": "NITAPAX 500 X 6 TAB CAJA PHARMEDIC",
+      "codigo": "7410003425060"
+    },
+    {
+      "id": 5148,
+      "nombre": "SUCRAMEJOR POLVO 30 SOBRES CAJA PHARMEDIC",
+      "codigo": "7410003425701"
+    },
+    {
+      "id": 5168,
+      "nombre": "NOGESTAL-1 AMP X 1ML SSN ARSAL",
+      "codigo": "7410000100885"
+    },
+    {
+      "id": 5204,
+      "nombre": "VIRILIS GASTREU R 41",
+      "codigo": "4250632503226"
+    }
+  ]
+}

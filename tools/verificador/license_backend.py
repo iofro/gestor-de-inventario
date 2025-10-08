@@ -8,6 +8,9 @@ from __future__ import annotations
 
 import base64
 import json
+import ntpath
+import os
+import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
@@ -22,11 +25,19 @@ class AdminConfig:
     """Configuración persistente del verificador."""
 
     mode: str = "share"
-    share_path: str = r"\\\\PC_ADMIN\\LicenciasVertex\\"
-    licenses_path: str = r"\\\\PC_ADMIN\\LicenciasVertex\\licenses\\"
-    requests_path: str = r"\\\\PC_ADMIN\\LicenciasVertex\\requests\\"
+    share_path: str = r"\\\\PC_ADMIN\\LicenciasVertex"
+    licenses_path: str = r"\\\\PC_ADMIN\\LicenciasVertex\\licenses"
+    requests_path: str = r"\\\\PC_ADMIN\\LicenciasVertex\\requests"
     public_key_path: str = "tools/verificador/keys/license_pub.pem"
     private_key_path: str = "tools/verificador/keys/license_priv.pem"
+
+    def __post_init__(self) -> None:
+        if self.share_path:
+            self.share_path = normalize_unc(self.share_path)
+        if self.licenses_path:
+            self.licenses_path = normalize_unc(self.licenses_path)
+        if self.requests_path:
+            self.requests_path = normalize_unc(self.requests_path)
 
     def to_dict(self) -> Dict[str, str]:
         return {
@@ -147,8 +158,36 @@ class ShareBackend(LicenseBackend):
         return Path(self.config.public_key_path)
 
     def ensure_directories(self) -> None:
-        self._licenses_dir.mkdir(parents=True, exist_ok=True)
-        self._requests_dir.mkdir(parents=True, exist_ok=True)
+        normalized_licenses = validate_license_path(self.config.licenses_path)
+        normalized_requests = normalize_unc(self.config.requests_path)
+
+        if normalized_requests and _looks_like_unc(normalized_requests) and not UNC_PATTERN.match(normalized_requests):
+            raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
+
+        licenses_dir = Path(normalized_licenses)
+        requests_dir = Path(normalized_requests)
+
+        if normalized_requests:
+            if not os.path.isdir(normalized_requests):
+                try:
+                    requests_dir.mkdir(parents=True, exist_ok=True)
+                except OSError as exc:  # pragma: no cover - depende de FS
+                    raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE) from exc
+
+        updated = False
+        if normalized_licenses != self.config.licenses_path:
+            self.config.licenses_path = normalized_licenses
+            updated = True
+        if normalized_requests and normalized_requests != self.config.requests_path:
+            self.config.requests_path = normalized_requests
+            updated = True
+
+        self._licenses_dir = licenses_dir
+        self._requests_dir = requests_dir
+
+        if updated:
+            self.config.save(self.config_path)
+
         if self.public_key_path.parent != Path("."):
             self.public_key_path.parent.mkdir(parents=True, exist_ok=True)
         if self.private_key_path.parent != Path("."):
@@ -252,6 +291,7 @@ class ShareBackend(LicenseBackend):
 
     # --- Escritura ---
     def create_license(self, *, alias: str, device_id: str, status: str) -> LicenseRecord:
+        self.ensure_directories()
         issued_at = self.now_iso()
         record = LicenseRecord(
             alias=alias,
@@ -267,6 +307,7 @@ class ShareBackend(LicenseBackend):
         return self.save_license(record)
 
     def save_license(self, record: LicenseRecord) -> LicenseRecord:
+        self.ensure_directories()
         private_key = self.private_key()
         if private_key is None:
             raise RuntimeError(
@@ -340,3 +381,67 @@ class HttpBackend(LicenseBackend):
     def remove_request(self, request: LicenseRequest) -> None:  # pragma: no cover - stub
         raise NotImplementedError("HttpBackend aún no está implementado.")
 
+UNC_PATTERN = re.compile(r"^\\\\[^\\]+\\[^\\]+(?:\\[^\\]+)*$")
+DRIVE_PATTERN = re.compile(r"^[A-Za-z]:\\")
+
+INVALID_LICENSE_PATH_MESSAGE = (
+    "Ruta de licencias inválida. Para recursos de red use formato UNC: "
+    "\\\\PC_ADMIN\\LicenciasVertex\\licenses. En JSON deben ir escapadas las barras."
+)
+
+
+class InvalidLicensePathError(ValueError):
+    """Señala una ruta de licencias inválida o inaccesible."""
+
+
+def _strip_quotes(value: str) -> str:
+    return value.strip("'\"")
+
+
+def normalize_unc(path: str) -> str:
+    """Normaliza rutas UNC o locales usando separadores de Windows."""
+
+    cleaned = _strip_quotes(path.strip())
+    cleaned = cleaned.replace("/", "\\")
+    if not cleaned:
+        return cleaned
+
+    if cleaned.startswith("\\"):
+        cleaned = "\\\\" + cleaned.lstrip("\\")
+
+    normalized = ntpath.normpath(cleaned)
+    if cleaned.startswith("\\"):
+        normalized = normalized.rstrip("\\")
+        if normalized == "\\\\":
+            return "\\\\"
+    return normalized
+
+
+def _looks_like_unc(path: str) -> bool:
+    return path.startswith("\\\\")
+
+
+def validate_license_path(path: str) -> str:
+    """Normaliza y valida la ruta de licencias configurada."""
+
+    normalized = normalize_unc(path)
+    if not normalized:
+        raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
+
+    if _looks_like_unc(normalized):
+        if not UNC_PATTERN.match(normalized):
+            raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
+    elif DRIVE_PATTERN.match(normalized):
+        normalized = normalized.rstrip("\\")
+    else:
+        raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
+
+    try:
+        exists = os.path.isdir(normalized)
+    except OSError as exc:
+        raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE) from exc
+
+    if not exists:
+        raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
+
+    return normalized

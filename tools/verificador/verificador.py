@@ -43,11 +43,24 @@ from PyQt5.QtWidgets import (
 )
 
 from api_server import VerifierApiServer
-from license_backend import AdminConfig, HttpBackend, LicenseRecord, ShareBackend
+from license_backend import (
+    AdminConfig,
+    HttpBackend,
+    InvalidLicensePathError,
+    LicenseRecord,
+    ShareBackend,
+    validate_license_path,
+)
 
 APP_ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = APP_ROOT / "admin_config.json"
 LICENSE_STATUSES = ["ACTIVE", "BLOCKED", "EXPIRED", "TRIAL", "GRACE"]
+LICENSES_JSON_EXAMPLE = (
+    "{\n"
+    '  "mode": "share",\n'
+    '  "licenses_path": "\\\\PC_ADMIN\\LicenciasVertex\\licenses"\n'
+    "}"
+)
 
 LOGGER = logging.getLogger("verificador.ui")
 
@@ -238,6 +251,7 @@ class ConfigDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Configuración del verificador")
         self._config = config
+        self._result_config = config
 
         self.mode_combo = QComboBox(self)
         self.mode_combo.addItem("Carpeta compartida", "share")
@@ -250,6 +264,7 @@ class ConfigDialog(QDialog):
         self.requests_edit = QLineEdit(config.requests_path, self)
         self.pub_key_edit = QLineEdit(config.public_key_path, self)
         self.priv_key_edit = QLineEdit(config.private_key_path, self)
+        self.licenses_edit.setPlaceholderText("\\\\PC_ADMIN\\LicenciasVertex\\licenses")
 
         form = QFormLayout()
         form.addRow("Modo", self.mode_combo)
@@ -260,7 +275,7 @@ class ConfigDialog(QDialog):
         form.addRow("Clave privada", self.priv_key_edit)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, self)
-        buttons.accepted.connect(self.accept)
+        buttons.accepted.connect(self._accept)
         buttons.rejected.connect(self.reject)
 
         layout = QVBoxLayout(self)
@@ -268,7 +283,10 @@ class ConfigDialog(QDialog):
         layout.addWidget(buttons)
 
     def updated_config(self) -> AdminConfig:
-        config = AdminConfig(
+        return self._result_config
+
+    def _build_config(self) -> AdminConfig:
+        return AdminConfig(
             mode=self.mode_combo.currentData(),
             share_path=self.share_edit.text().strip() or self._config.share_path,
             licenses_path=self.licenses_edit.text().strip() or self._config.licenses_path,
@@ -276,7 +294,23 @@ class ConfigDialog(QDialog):
             public_key_path=self.pub_key_edit.text().strip() or self._config.public_key_path,
             private_key_path=self.priv_key_edit.text().strip() or self._config.private_key_path,
         )
-        return config
+
+    def _accept(self) -> None:
+        try:
+            config = self._build_config()
+            if config.mode == "share":
+                normalized = validate_license_path(config.licenses_path)
+                config.licenses_path = normalized
+        except InvalidLicensePathError as exc:
+            QMessageBox.warning(
+                self,
+                "Ruta inválida",
+                f"{exc}\n\nEjemplo válido en JSON:\n{LICENSES_JSON_EXAMPLE}",
+            )
+            return
+
+        self._result_config = config
+        self.accept()
 
 
 class DetailPanel(QWidget):
@@ -527,6 +561,22 @@ class VerifierMainWindow(QMainWindow):
                 "Modo no disponible",
                 "El backend HTTP aún no está implementado.",
             )
+        except InvalidLicensePathError as exc:
+            self.records = []
+            dialog = QMessageBox(self)
+            dialog.setIcon(QMessageBox.Warning)
+            dialog.setWindowTitle("Ruta de licencias inválida")
+            dialog.setText(str(exc))
+            dialog.setInformativeText(
+                f"Ejemplo válido en JSON:\n{LICENSES_JSON_EXAMPLE}"
+            )
+            config_button = dialog.addButton(
+                "Abrir configuración...", QMessageBox.ActionRole
+            )
+            dialog.addButton(QMessageBox.Close)
+            dialog.exec_()
+            if dialog.clickedButton() == config_button:
+                self.edit_config()
         except Exception as exc:
             QMessageBox.critical(self, "Error", f"No se pudo cargar la información: {exc}")
             self.records = []

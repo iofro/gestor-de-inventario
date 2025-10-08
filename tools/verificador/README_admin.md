@@ -6,6 +6,7 @@ El verificador es una herramienta administrativa para generar y mantener licenci
 
 1. Configure la carpeta compartida SMB que contendrá las licencias firmadas (`licenses/`) y las solicitudes de alta (`requests/`).
 2. Ajuste las rutas en `admin_config.json` desde la aplicación (`Configuración...`).
+   *Para rutas UNC use el formato `\\Servidor\Recurso\Carpeta`. En JSON deben escribirse como `\\\\Servidor\\Recurso\\Carpeta`.*
 3. Genere el par de claves Ed25519 con el botón **Generar claves...**. La clave pública se comparte con los clientes; la privada nunca debe salir del equipo del administrador.
 4. Use **Actualizar** para cargar las solicitudes y licencias existentes, apruebe nuevas solicitudes y cambie estados según sea necesario. Cada cambio reescribe el archivo JSON con una firma Ed25519 del payload canónico.
 

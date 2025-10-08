@@ -5,6 +5,7 @@ compartidas como fuente de verdad para las licencias firmadas.
 """
 from __future__ import annotations
 
+import logging
 import sys
 from pathlib import Path
 from typing import List, Optional
@@ -18,6 +19,7 @@ from PyQt5.QtCore import (
     QVariant,
     pyqtSignal,
 )
+from PyQt5.QtGui import QCloseEvent
 from PyQt5.QtWidgets import (
     QAction,
     QApplication,
@@ -40,11 +42,14 @@ from PyQt5.QtWidgets import (
     QWidget,
 )
 
+from api_server import VerifierApiServer
 from license_backend import AdminConfig, HttpBackend, LicenseRecord, ShareBackend
 
 APP_ROOT = Path(__file__).resolve().parent
 CONFIG_PATH = APP_ROOT / "admin_config.json"
 LICENSE_STATUSES = ["ACTIVE", "BLOCKED", "EXPIRED", "TRIAL", "GRACE"]
+
+LOGGER = logging.getLogger("verificador.ui")
 
 
 class LicenseTableModel(QAbstractTableModel):
@@ -369,8 +374,19 @@ class VerifierMainWindow(QMainWindow):
         self._current_record: Optional[LicenseRecord] = None
 
         self._setup_ui()
+        self.api_server = VerifierApiServer(APP_ROOT)
+        self._api_server_running = self.api_server.start()
+        if not self._api_server_running:
+            LOGGER.warning("No se pudo iniciar el servidor API local")
+
         self._load_mode_from_config()
         self.refresh()
+        if not self._api_server_running:
+            QMessageBox.warning(
+                self,
+                "Servidor API",
+                "No se pudo iniciar el servidor HTTP local. Revise el puerto configurado.",
+            )
 
     # --- UI ---
     def _setup_ui(self) -> None:
@@ -489,6 +505,14 @@ class VerifierMainWindow(QMainWindow):
             self.mode_combo.setCurrentIndex(idx)
         self.refresh()
 
+    def closeEvent(self, event: QCloseEvent) -> None:  # type: ignore[override]
+        try:
+            api_server = getattr(self, "api_server", None)
+            if api_server is not None:
+                api_server.shutdown()
+        finally:
+            super().closeEvent(event)
+
     # --- Operaciones ---
     def refresh(self) -> None:
         try:
@@ -518,6 +542,19 @@ class VerifierMainWindow(QMainWindow):
             text = f"Carpeta compartida: {path}"
         else:
             text = "HTTP local (pendiente de implementación)"
+        server_info = ""
+        api_server = getattr(self, "api_server", None)
+        if api_server is not None:
+            if getattr(self, "_api_server_running", False):
+                server_info = (
+                    f"API {api_server.mode.upper()} 0.0.0.0:{api_server.listening_port}"
+                )
+            else:
+                server_info = "API detenido"
+            if api_server.config.public_hint:
+                server_info = f"{server_info} ({api_server.config.public_hint})"
+        if server_info:
+            text = f"{text} | {server_info}"
         if message:
             text = f"{text} | {message}"
         self.statusBar().showMessage(text)

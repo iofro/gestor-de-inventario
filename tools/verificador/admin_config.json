@@ -1,8 +1,8 @@
 {
   "mode": "share",
-  "share_path": "\\\\PC_ADMIN\\LicenciasVertex\\",
-  "licenses_path": "\\\\PC_ADMIN\\LicenciasVertex\\licenses\\",
-  "requests_path": "\\\\PC_ADMIN\\LicenciasVertex\\requests\\",
+  "share_path": "\\\\PC_ADMIN\\LicenciasVertex",
+  "licenses_path": "\\\\PC_ADMIN\\LicenciasVertex\\licenses",
+  "requests_path": "\\\\PC_ADMIN\\LicenciasVertex\\requests",
   "public_key_path": "tools/verificador/keys/license_pub.pem",
   "private_key_path": "tools/verificador/keys/license_priv.pem"
 }

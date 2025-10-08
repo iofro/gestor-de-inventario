@@ -442,6 +442,12 @@ def validate_license_path(path: str) -> str:
         raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE) from exc
 
     if not exists:
-        raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
+        try:
+            Path(normalized).mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE) from exc
+
+        if not os.path.isdir(normalized):
+            raise InvalidLicensePathError(INVALID_LICENSE_PATH_MESSAGE)
 
     return normalized

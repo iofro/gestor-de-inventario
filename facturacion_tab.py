@@ -157,6 +157,19 @@ TIPO_DTE_DESC = {
     "06": "Nota de débito",
 }
 
+# Short labels displayed in the "Tipo de DTE" column.
+TIPO_DTE_SHORT_DESC = {
+    "consumidor final": "cons final",
+    "crédito fiscal": "cred fiscal",
+    "credito fiscal": "cred fiscal",
+    "nota de crédito": "not crédito",
+    "nota de credito": "not crédito",
+    "nota de débito": "not debito",
+    "nota de debito": "not debito",
+    "nota de remisión": "not remisión",
+    "nota de remision": "not remisión",
+}
+
 # Fallback mapping used when ``tipoDte`` is not available but the
 # human-readable description is known.
 TIPO_DTE_CODE_BY_DESC = {
@@ -2521,13 +2534,15 @@ class FacturacionTab(QWidget):
         self.table.setRowCount(len(rows))
         selected_row = None
         for row, v in enumerate(rows):
-            codigo = v.get("codigo") or ""
-            tipo = v.get("tipo") or ""
-            if codigo:
-                text_id = f"{codigo} {tipo}".strip()
-            else:
-                text_id = tipo or v.get("name", "")
-            self.table.setItem(row, 0, QTableWidgetItem(text_id))
+            tipo_item_text = self._format_tipo_display(v)
+            if not tipo_item_text:
+                codigo = v.get("codigo") or ""
+                tipo = v.get("tipo") or ""
+                if codigo:
+                    tipo_item_text = f"{codigo} {tipo}".strip()
+                else:
+                    tipo_item_text = tipo or v.get("name", "")
+            self.table.setItem(row, 0, QTableWidgetItem(tipo_item_text))
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
             cliente_item = QTableWidgetItem(self._format_cliente_display(v))
             self.table.setItem(row, 2, cliente_item)
@@ -2566,19 +2581,24 @@ class FacturacionTab(QWidget):
         self._update_send_btn()
 
     def _format_cliente_display(self, entry: dict) -> str:
-        """Return the client label including the correlativo when available."""
+        """Return the client label without correlativo information."""
 
-        cliente = entry.get("cliente") or ""
-        numero_control = entry.get("numero_control") or ""
-        if not numero_control:
-            numero_control = entry.get("name") or ""
+        return entry.get("cliente") or ""
 
+    def _format_tipo_display(self, entry: dict) -> str:
+        """Return the DTE type label including correlativo when available."""
+
+        tipo = str(entry.get("tipo") or "").strip()
+        tipo_label = TIPO_DTE_SHORT_DESC.get(tipo.lower(), tipo)
+
+        numero_control = entry.get("numero_control") or entry.get("name") or ""
         correlativo = self._extract_correlativo(numero_control)
+
         if correlativo:
-            if cliente:
-                return f"{cliente} — {correlativo}"
+            if tipo_label:
+                return f"{tipo_label} {correlativo}".strip()
             return correlativo
-        return cliente
+        return tipo_label
 
     @staticmethod
     def _extract_correlativo(numero_control: str | None) -> str:

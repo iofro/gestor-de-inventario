@@ -2424,6 +2424,7 @@ class FacturacionTab(QWidget):
                 "id": rec.get("id"),
                 "venta_id": venta_id,
                 "name": base_name,
+                "numero_control": numero_control,
                 "fecha": fecha_str,
                 "_parsed_fecha": fdate,
                 "cliente": cliente_nombre,
@@ -2528,7 +2529,8 @@ class FacturacionTab(QWidget):
                 text_id = tipo or v.get("name", "")
             self.table.setItem(row, 0, QTableWidgetItem(text_id))
             self.table.setItem(row, 1, QTableWidgetItem(v.get("fecha", "")))
-            self.table.setItem(row, 2, QTableWidgetItem(v.get("cliente", "")))
+            cliente_item = QTableWidgetItem(self._format_cliente_display(v))
+            self.table.setItem(row, 2, cliente_item)
             total = v.get("total")
             signo = v.get("sign", 1)
             if isinstance(total, (int, float)):
@@ -2562,6 +2564,39 @@ class FacturacionTab(QWidget):
         else:
             self.table.clearSelection()
         self._update_send_btn()
+
+    def _format_cliente_display(self, entry: dict) -> str:
+        """Return the client label including the correlativo when available."""
+
+        cliente = entry.get("cliente") or ""
+        numero_control = entry.get("numero_control") or ""
+        if not numero_control:
+            numero_control = entry.get("name") or ""
+
+        correlativo = self._extract_correlativo(numero_control)
+        if correlativo:
+            if cliente:
+                return f"{cliente} — {correlativo}"
+            return correlativo
+        return cliente
+
+    @staticmethod
+    def _extract_correlativo(numero_control: str | None) -> str:
+        """Extract the correlativo number without leading zeros for display."""
+
+        if not numero_control:
+            return ""
+        numero = str(numero_control).strip()
+        if not numero:
+            return ""
+        match = re.search(r"(\d+)$", numero)
+        if not match:
+            return ""
+        digits = match.group(1)
+        # Remove only the leading zeros while keeping all remaining digits,
+        # including any trailing zero that is part of the correlativo value.
+        trimmed = re.sub(r"^0+(?=\d)", "", digits)
+        return trimmed or digits or "0"
 
     def _scan_documents(self):
         result = self._get_invoices_from_db()
@@ -2714,6 +2749,7 @@ class FacturacionTab(QWidget):
                     "id": row_id,
                     "venta_id": None,
                     "name": numero,
+                    "numero_control": numero,
                     "codigo": codigo,
                     "pdf": pdf,
                     "json": js,

@@ -170,14 +170,20 @@ procedure UpdateUpgradeCaptionForPage(const PageID: Integer);
 begin
   if IsUpgrade then
   begin
-    if (PageID = wpReady) or WizardForm.NextButton.Visible then
-      WizardForm.NextButton.Caption := 'Actualizar';
+    if PageID = wpReady then
+      WizardForm.NextButton.Caption := 'Actualizar'
+    else if PageID = wpFinished then
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonFinish)
+    else
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonNext);
     WizardForm.Caption := DefaultWizardCaption + ' — Actualizar';
   end
   else
   begin
     if PageID = wpReady then
       WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall)
+    else if PageID = wpFinished then
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonFinish)
     else
       WizardForm.NextButton.Caption := SetupMessage(msgButtonNext);
     WizardForm.Caption := DefaultWizardCaption;
@@ -225,12 +231,19 @@ begin
 end;
 
 procedure InitializeUpgradeLabel;
+var
+  ParentControl: TWinControl;
+  LeftMargin: Integer;
 begin
-  UpgradeLabel := TNewStaticText.Create(WizardForm.SelectDirPage);
-  UpgradeLabel.Parent := WizardForm.DirEdit.Parent;
-  UpgradeLabel.Left := WizardForm.SelectDirPage.SelectLabel.Left;
+  ParentControl := WizardForm.DirEdit.Parent;
+  if ParentControl = nil then
+    ParentControl := WizardForm;
+  UpgradeLabel := TNewStaticText.Create(WizardForm);
+  UpgradeLabel.Parent := ParentControl;
+  LeftMargin := WizardForm.DirEdit.Left;
+  UpgradeLabel.Left := LeftMargin;
   UpgradeLabel.Top := WizardForm.DirEdit.Top + WizardForm.DirEdit.Height + ScaleY(8);
-  UpgradeLabel.Width := WizardForm.DirEdit.Parent.ClientWidth;
+  UpgradeLabel.Width := WizardForm.DirEdit.Width;
   UpgradeLabel.AutoSize := False;
   UpgradeLabel.WordWrap := True;
   UpgradeLabel.Visible := False;

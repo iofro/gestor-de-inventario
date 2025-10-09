@@ -95,11 +95,12 @@ end;
 function GetMarkerInstallDir: string;
 var
   MarkerFile: string;
-  S: string;
+  Buffer: AnsiString;
 begin
   MarkerFile := ExpandConstant('{commonappdata}\VertexDTE\install-path.txt');
-  if LoadStringFromFile(MarkerFile, S) then
-    Result := Trim(S)
+  Buffer := '';
+  if LoadStringFromFile(MarkerFile, Buffer) then
+    Result := Trim(string(Buffer))
   else
     Result := '';
 end;
@@ -169,18 +170,22 @@ procedure UpdateUpgradeCaptionForPage(const PageID: Integer);
 begin
   if IsUpgrade then
   begin
-    if WizardForm.NextButton.Visible then
-      WizardForm.NextButton.Caption := 'Actualizar';
-    if WizardForm.InstallButton.Visible then
-      WizardForm.InstallButton.Caption := 'Actualizar';
+    if PageID = wpReady then
+      WizardForm.NextButton.Caption := 'Actualizar'
+    else if PageID = wpFinished then
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonFinish)
+    else
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonNext);
     WizardForm.Caption := DefaultWizardCaption + ' — Actualizar';
   end
   else
   begin
-    if WizardForm.NextButton.Visible then
+    if PageID = wpReady then
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall)
+    else if PageID = wpFinished then
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonFinish)
+    else
       WizardForm.NextButton.Caption := SetupMessage(msgButtonNext);
-    if WizardForm.InstallButton.Visible then
-      WizardForm.InstallButton.Caption := SetupMessage(msgButtonInstall);
     WizardForm.Caption := DefaultWizardCaption;
   end;
 end;
@@ -226,12 +231,19 @@ begin
 end;
 
 procedure InitializeUpgradeLabel;
+var
+  ParentControl: TWinControl;
+  LeftMargin: Integer;
 begin
-  UpgradeLabel := TNewStaticText.Create(WizardForm.SelectDirPage);
-  UpgradeLabel.Parent := WizardForm.SelectDirPage.Surface;
-  UpgradeLabel.Left := WizardForm.SelectDirPage.SelectLabel.Left;
+  ParentControl := WizardForm.DirEdit.Parent;
+  if ParentControl = nil then
+    ParentControl := WizardForm;
+  UpgradeLabel := TNewStaticText.Create(WizardForm);
+  UpgradeLabel.Parent := ParentControl;
+  LeftMargin := WizardForm.DirEdit.Left;
+  UpgradeLabel.Left := LeftMargin;
   UpgradeLabel.Top := WizardForm.DirEdit.Top + WizardForm.DirEdit.Height + ScaleY(8);
-  UpgradeLabel.Width := WizardForm.SelectDirPage.SurfaceWidth;
+  UpgradeLabel.Width := WizardForm.DirEdit.Width;
   UpgradeLabel.AutoSize := False;
   UpgradeLabel.WordWrap := True;
   UpgradeLabel.Visible := False;

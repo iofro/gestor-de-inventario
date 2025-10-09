@@ -499,8 +499,10 @@ class MainWindow(QMainWindow):
 
         inventario_actual_buttons = QHBoxLayout()
         inventario_actual_buttons.addStretch()
+        self.btn_refresh_inventario = QPushButton("Actualizar")
         self.btn_edit_lote = QPushButton("Editar lote")
         self.btn_delete_lote = QPushButton("Eliminar lote")
+        inventario_actual_buttons.addWidget(self.btn_refresh_inventario)
         inventario_actual_buttons.addWidget(self.btn_edit_lote)
         inventario_actual_buttons.addWidget(self.btn_delete_lote)
         inventario_actual_layout.addLayout(inventario_actual_buttons)
@@ -657,6 +659,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_cliente.clicked.connect(self._eliminar_cliente)
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
+        self.btn_refresh_inventario.clicked.connect(self._actualizar_inventario_actual)
         self.btn_edit_lote.clicked.connect(self._editar_lote_inventario_actual)
         self.btn_delete_lote.clicked.connect(self._eliminar_lote_inventario_actual)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui

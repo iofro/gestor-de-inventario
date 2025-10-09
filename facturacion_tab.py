@@ -2373,6 +2373,7 @@ class FacturacionTab(QWidget):
                 except Exception:
                     ident_data = None
                     json_data = None
+            extra_data = None
             if venta:
                 getter = getattr(self.manager.db, "get_cliente", None)
                 if venta.get("cliente_id") and getter:
@@ -2384,6 +2385,16 @@ class FacturacionTab(QWidget):
                 cliente_id = venta.get("cliente_id")
                 vendedor_id = venta.get("vendedor_id")
                 total = venta.get("total")
+                raw_extra = venta.get("extra")
+                if isinstance(raw_extra, Mapping):
+                    extra_data = dict(raw_extra)
+                elif isinstance(raw_extra, str):
+                    try:
+                        extra_data = json.loads(raw_extra)
+                    except Exception:
+                        extra_data = {}
+                elif raw_extra:
+                    extra_data = {}
                 if source == "ticket":
                     row_type = "ticket"
                 else:
@@ -2401,6 +2412,24 @@ class FacturacionTab(QWidget):
             if ident_data:
                 numero_control = numero_control or ident_data.get("numeroControl")
                 codigo_generacion = codigo_generacion or ident_data.get("codigoGeneracion")
+
+            if isinstance(extra_data, Mapping):
+                numero_control = numero_control or extra_data.get("numeroControl")
+                codigo_generacion = codigo_generacion or extra_data.get("codigoGeneracion")
+                if tipo_desc is None:
+                    tipo_hint = (
+                        extra_data.get("tipoDte")
+                        or extra_data.get("tipo_dte")
+                        or extra_data.get("tipo")
+                    )
+                    if tipo_hint is not None:
+                        tipo_hint_str = str(tipo_hint).strip()
+                        if tipo_hint_str.isdigit():
+                            tipo_desc = TIPO_DTE_DESC.get(
+                                tipo_hint_str.zfill(2), tipo_desc
+                            )
+                        elif tipo_hint_str:
+                            tipo_desc = tipo_hint_str
 
             if tipo_codigo is None and ident_data:
                 tipo_codigo = ident_data.get("tipoDte")

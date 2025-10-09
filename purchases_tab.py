@@ -136,9 +136,11 @@ class PurchasesTab(QWidget):
         content_layout.addWidget(self.table)
 
         side_layout = QVBoxLayout()
+        self.btn_actualizar = QPushButton("Actualizar")
         self.btn_ver = QPushButton("Ver")
         self.btn_editar = QPushButton("Editar")
         self.btn_eliminar = QPushButton("Eliminar")
+        side_layout.addWidget(self.btn_actualizar)
         side_layout.addWidget(self.btn_ver)
         side_layout.addWidget(self.btn_editar)
         side_layout.addWidget(self.btn_eliminar)
@@ -155,6 +157,7 @@ class PurchasesTab(QWidget):
         self.distribuidor_combo.currentIndexChanged.connect(self.load_purchases)
         self.vendedor_combo.currentIndexChanged.connect(self.load_purchases)
         self.search_bar.textChanged.connect(self.load_purchases)
+        self.btn_actualizar.clicked.connect(self.refresh_purchases)
         self.btn_ver.clicked.connect(self.show_selected_detail)
         self.btn_editar.clicked.connect(self.edit_selected_purchase)
         self.btn_eliminar.clicked.connect(self.delete_selected_purchase)
@@ -444,6 +447,21 @@ class PurchasesTab(QWidget):
         self.total_comision_label.setText(f"Comisiones: ${total_comision:.2f}")
         self.prod_mas_label.setText(f"Más comprado: {mas_prod}")
         self.dist_frec_label.setText(f"Distribuidor frecuente: {mas_dist}")
+
+    def refresh_purchases(self):
+        try:
+            self.manager.refresh_data()
+        except Exception:  # pragma: no cover - defensive UI handling
+            logger.exception("Error al refrescar los datos de compras")
+            QMessageBox.critical(
+                self,
+                "Actualizar compras",
+                "Ocurrió un error al intentar actualizar la información. Intente nuevamente.",
+            )
+            return
+
+        self.refresh_filters()
+        self.load_purchases()
 
     def show_detail(self, compra_id):
         compra = self._compras_cache.get(compra_id)

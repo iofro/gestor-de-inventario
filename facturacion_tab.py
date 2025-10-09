@@ -140,6 +140,9 @@ INVOICE_DIRS = [
     CF_DIR,
     CREDITO_DIR,
     TICKETS_DIR,
+    NOTAS_DEBITO_DIR,
+    NOTAS_CREDITO_DIR,
+    NOTAS_REMISION_DIR,
     DTES_DIR,
     DTE_FALLIDOS_DIR,
     DTES_PENDIENTES_DIR,
@@ -6084,8 +6087,26 @@ class FacturacionTab(QWidget):
 
         # Handle orphan entries without touching the sales database
         if rtype == "orphan":
-            path = data.get("pdf") or data.get("json")
+            pdf_path = data.get("pdf")
+            json_path = data.get("json")
+            path = pdf_path or json_path
             base = os.path.splitext(os.path.basename(path))[0] if path else None
+
+            extra_data: dict[str, Any] = {}
+            numero_control = data.get("numero_control")
+            if numero_control:
+                extra_data["numeroControl"] = numero_control
+            tipo_codigo = data.get("codigo")
+            if tipo_codigo:
+                extra_data["tipoDte"] = tipo_codigo
+
+            correlativo_revertido = self._cleanup_invoice_artifacts(
+                data.get("venta_id"),
+                pdf_path=pdf_path,
+                ticket_path=None if pdf_path else json_path,
+                dte_json_path=json_path,
+                extra_data=extra_data or None,
+            )
 
             # Remove database record tied to the orphan file
             if path:
@@ -6108,7 +6129,11 @@ class FacturacionTab(QWidget):
                                 except OSError:
                                     pass
 
-            QMessageBox.information(self, "Eliminar", "Factura eliminada")
+            mensaje = f"{data.get('tipo') or 'Documento'} eliminado"
+            if correlativo_revertido:
+                mensaje += "\nEl correlativo regresó al valor anterior."
+
+            QMessageBox.information(self, "Eliminar", mensaje)
             self.load_invoices()
             return
 

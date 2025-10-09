@@ -372,8 +372,12 @@ class EstadoCuentaDialog(QDialog):
         self.filtrar_fechas_chk.toggled.connect(self._toggle_filtro_fechas)
         self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.filtrar_fechas_chk.toggled.connect(self._apply_quick_range)
-        self.fecha_inicio.dateChanged.connect(lambda *_: self._collect_params())
-        self.fecha_fin.dateChanged.connect(lambda *_: self._collect_params())
+        self.fecha_inicio.dateChanged.connect(
+            lambda *_: self._collect_params(require_selection=False)
+        )
+        self.fecha_fin.dateChanged.connect(
+            lambda *_: self._collect_params(require_selection=False)
+        )
         self.cliente_search.textChanged.connect(self._filtrar_clientes)
         self.vendedor_search.textChanged.connect(self._filtrar_vendedores)
         self.cliente_table.itemSelectionChanged.connect(self._seleccionar_cliente)
@@ -392,11 +396,11 @@ class EstadoCuentaDialog(QDialog):
         if checked:
             self._apply_quick_range()
         else:
-            self._collect_params()
+            self._collect_params(require_selection=False)
 
     def _apply_quick_range(self):
         if not self.filtrar_fechas_chk.isChecked():
-            self._collect_params()
+            self._collect_params(require_selection=False)
             return
         option = self.quick_range.currentText()
         today = date.today()
@@ -433,7 +437,7 @@ class EstadoCuentaDialog(QDialog):
         else:
             self.fecha_inicio.setEnabled(True)
             self.fecha_fin.setEnabled(True)
-        self._collect_params()
+        self._collect_params(require_selection=False)
 
     def _mostrar_clientes(self, clientes):
         self.cliente_table.setRowCount(len(clientes))
@@ -486,7 +490,7 @@ class EstadoCuentaDialog(QDialog):
             self.selected_vendedor = self.vendedores_mostrados[idx]
 
     # ---- Generación de PDF -----
-    def _collect_params(self):
+    def _collect_params(self, require_selection: bool = True):
         modo_idx = self.modo_combo.currentIndex()
         modo = "cliente" if modo_idx == 0 else "vendedor" if modo_idx == 1 else "todos"
         params = {
@@ -504,13 +508,19 @@ class EstadoCuentaDialog(QDialog):
         if modo == "cliente":
             idx = self.cliente_table.currentRow()
             if idx < 0 or idx >= len(self.clientes_mostrados):
-                QMessageBox.warning(self, "Validación", "No se ha seleccionado ningún cliente.")
+                if require_selection:
+                    QMessageBox.warning(
+                        self, "Validación", "No se ha seleccionado ningún cliente."
+                    )
                 return None
             params["cliente_id"] = self.clientes_mostrados[idx].get("id")
         if modo == "vendedor":
             idx = self.vendedor_table.currentRow()
             if idx < 0 or idx >= len(self.vendedores_mostrados):
-                QMessageBox.warning(self, "Validación", "No se ha seleccionado ningún vendedor.")
+                if require_selection:
+                    QMessageBox.warning(
+                        self, "Validación", "No se ha seleccionado ningún vendedor."
+                    )
                 return None
             params["vendedor_id"] = self.vendedores_mostrados[idx].get("id")
         return params

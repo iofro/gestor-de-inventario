@@ -2219,10 +2219,11 @@ class MainWindow(QMainWindow):
         dialog.stack.setCurrentIndex(tipo_idx)
         if self.estado_filtrar_fechas.isChecked():
             dialog.filtrar_fechas_chk.setChecked(True)
-            if self.estado_quick_range.currentText() == "Este año":
-                dialog.anio_actual.setChecked(True)
-            else:
-                dialog.anio_actual.setChecked(False)
+            range_text = self.estado_quick_range.currentText()
+            idx = dialog.quick_range.findText(range_text)
+            if idx >= 0:
+                dialog.quick_range.setCurrentIndex(idx)
+            if idx == 0:
                 dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
                 dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         else:
@@ -2235,10 +2236,11 @@ class MainWindow(QMainWindow):
         dialog.stack.setCurrentIndex(1)
         if self.estado_filtrar_fechas.isChecked():
             dialog.filtrar_fechas_chk.setChecked(True)
-            if self.estado_quick_range.currentText() == "Este año":
-                dialog.anio_actual.setChecked(True)
-            else:
-                dialog.anio_actual.setChecked(False)
+            range_text = self.estado_quick_range.currentText()
+            idx = dialog.quick_range.findText(range_text)
+            if idx >= 0:
+                dialog.quick_range.setCurrentIndex(idx)
+            if idx == 0:
                 dialog.fecha_inicio.setDate(self.estado_fecha_inicio.date())
                 dialog.fecha_fin.setDate(self.estado_fecha_fin.date())
         else:

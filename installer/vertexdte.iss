@@ -62,27 +62,44 @@ end;
 function GetRegisteredInstallDir: string;
 var
   SubKey: string;
+  Value: string;
 begin
   Result := '';
   SubKey := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\Vertex DTE_is1';
-  if QueryInstallLocationForRoot(HKLM, SubKey, Result) then
+  Value := '';
+  if QueryInstallLocationForRoot(HKLM, SubKey, Value) then
+  begin
+    Result := Value;
     Exit;
+  end;
   if IsWin64 then
-    if QueryInstallLocationForRoot(HKLM64, SubKey, Result) then
+  begin
+    if QueryInstallLocationForRoot(HKLM64, SubKey, Value) then
+    begin
+      Result := Value;
       Exit;
-  if QueryInstallLocationForRoot(HKCU, SubKey, Result) then
+    end;
+  end;
+  if QueryInstallLocationForRoot(HKCU, SubKey, Value) then
+  begin
+    Result := Value;
     Exit;
+  end;
   if IsWin64 then
-    QueryInstallLocationForRoot(HKCU64, SubKey, Result);
+  begin
+    if QueryInstallLocationForRoot(HKCU64, SubKey, Value) then
+      Result := Value;
+  end;
 end;
 
 function GetMarkerInstallDir: string;
 var
   MarkerFile: string;
+  S: string;
 begin
   MarkerFile := ExpandConstant('{commonappdata}\VertexDTE\install-path.txt');
-  if LoadStringFromFile(MarkerFile, Result) then
-    Result := Trim(Result)
+  if LoadStringFromFile(MarkerFile, S) then
+    Result := Trim(S)
   else
     Result := '';
 end;

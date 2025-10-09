@@ -4,6 +4,10 @@
 #define AppVersion "0.0.0"
 #endif
 
+#ifndef OutputDir
+#define OutputDir "build\\installer"
+#endif
+
 [Setup]
 AppId={{7ACDE88C-3C97-47F0-A0F1-8BFC734E7373}}
 AppName=Vertex DTE
@@ -11,8 +15,8 @@ AppVersion={#AppVersion}
 DefaultDirName={autopf}\Vertex DTE
 UsePreviousAppDir=yes
 DirExistsWarning=no
-OutputDir=build\installer
-OutputBaseFilename=VertexDTE-Setup
+OutputDir={#OutputDir}
+OutputBaseFilename=VertexDTE-Setup-{#AppVersion}
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64
 AppPublisher=Vertex
@@ -51,6 +55,11 @@ var
   DefaultWizardCaption: string;
   DefaultWelcomeLabel1: string;
   DefaultWelcomeLabel2: string;
+  ModePage: TWizardPage;
+  InstallRadio: TNewRadioButton;
+  UpdateRadio: TNewRadioButton;
+  DefaultInstallDir: string;
+  CurrentDirHasInstall: Boolean;
 
 function QueryInstallLocationForRoot(const RootKey: Integer; const SubKey: string; var Value: string): Boolean;
 begin
@@ -125,6 +134,106 @@ begin
   end;
   if FileExists(Path + '.vertex_install.json') then
     Result := True;
+end;
+
+function HasModeSelection: Boolean;
+begin
+  Result := ModePage <> nil;
+end;
+
+function UserWantsUpgrade: Boolean;
+begin
+  if not HasModeSelection then
+    Result := True
+  else if Assigned(UpdateRadio) then
+    Result := UpdateRadio.Checked
+  else
+    Result := False;
+end;
+
+procedure UpdateModeControls;
+begin
+  if not HasModeSelection then
+    Exit;
+
+  if Assigned(UpdateRadio) and UpdateRadio.Checked then
+  begin
+    if (DetectedInstallDir <> '') and (CompareText(WizardForm.DirEdit.Text, DetectedInstallDir) <> 0) then
+      WizardForm.DirEdit.Text := DetectedInstallDir;
+    if DetectedInstallDir <> '' then
+    begin
+      WizardForm.DirBrowseButton.Enabled := False;
+      WizardForm.DirEdit.Enabled := False;
+    end
+    else
+    begin
+      WizardForm.DirBrowseButton.Enabled := True;
+      WizardForm.DirEdit.Enabled := True;
+    end;
+  end
+  else
+  begin
+    WizardForm.DirBrowseButton.Enabled := True;
+    WizardForm.DirEdit.Enabled := True;
+    if (DetectedInstallDir <> '') and (DefaultInstallDir <> '') then
+    begin
+      if (CompareText(WizardForm.DirEdit.Text, DetectedInstallDir) = 0)
+        and (CompareText(DefaultInstallDir, DetectedInstallDir) <> 0) then
+        WizardForm.DirEdit.Text := DefaultInstallDir;
+    end;
+  end;
+end;
+
+procedure HandleModeSelectionChanged(Sender: TObject);
+begin
+  UpdateModeControls;
+  RefreshUpgradeState(WizardForm.DirEdit.Text);
+end;
+
+procedure CreateModeSelectionPage;
+var
+  InfoLabel: TNewStaticText;
+  TopOffset: Integer;
+begin
+  ModePage := CreateCustomPage(
+    wpWelcome,
+    'Modo de instalación',
+    'Selecciona si deseas instalar Vertex DTE desde cero o actualizar la copia existente.'
+  );
+
+  InfoLabel := TNewStaticText.Create(ModePage.Surface);
+  InfoLabel.Parent := ModePage.Surface;
+  InfoLabel.Left := 0;
+  InfoLabel.Top := 0;
+  InfoLabel.Width := ModePage.SurfaceWidth;
+  InfoLabel.Height := ScaleY(48);
+  InfoLabel.AutoSize := False;
+  InfoLabel.WordWrap := True;
+  InfoLabel.Caption :=
+    'El asistente detectó una instalación previa de Vertex DTE. ' +
+    'Puedes instalar una copia nueva en otra carpeta o actualizar la existente.';
+
+  TopOffset := InfoLabel.Top + InfoLabel.Height + ScaleY(12);
+
+  InstallRadio := TNewRadioButton.Create(ModePage.Surface);
+  InstallRadio.Parent := ModePage.Surface;
+  InstallRadio.Left := 0;
+  InstallRadio.Top := TopOffset;
+  InstallRadio.Width := ModePage.SurfaceWidth;
+  InstallRadio.Caption := 'Instalar una copia nueva en una carpeta elegida por mí';
+  InstallRadio.Checked := False;
+  InstallRadio.OnClick := @HandleModeSelectionChanged;
+
+  TopOffset := InstallRadio.Top + InstallRadio.Height + ScaleY(8);
+
+  UpdateRadio := TNewRadioButton.Create(ModePage.Surface);
+  UpdateRadio.Parent := ModePage.Surface;
+  UpdateRadio.Left := 0;
+  UpdateRadio.Top := TopOffset;
+  UpdateRadio.Width := ModePage.SurfaceWidth;
+  UpdateRadio.Caption := 'Actualizar la instalación existente detectada automáticamente';
+  UpdateRadio.Checked := True;
+  UpdateRadio.OnClick := @HandleModeSelectionChanged;
 end;
 
 function DetectExistingInstallDir: string;
@@ -203,15 +312,30 @@ begin
   end
   else
   begin
-    UpgradeLabel.Visible := False;
     WizardForm.WelcomeLabel1.Caption := DefaultWelcomeLabel1;
     WizardForm.WelcomeLabel2.Caption := DefaultWelcomeLabel2;
+    if CurrentDirHasInstall then
+    begin
+      UpgradeLabel.Caption :=
+        'Se detectó una instalación existente en: ' + WizardForm.DirEdit.Text + #13#10 +
+        'Selecciona "Actualizar" o elige otra carpeta para una instalación nueva.';
+      UpgradeLabel.Visible := True;
+    end
+    else if HasModeSelection and UserWantsUpgrade then
+    begin
+      UpgradeLabel.Caption := 'No se encontró una instalación existente en la carpeta seleccionada.';
+      UpgradeLabel.Visible := True;
+    end
+    else
+      UpgradeLabel.Visible := False;
   end;
 end;
 
 procedure RefreshUpgradeState(const Dir: string);
 begin
-  if DirContainsExistingInstall(Dir) then
+  CurrentDirHasInstall := DirContainsExistingInstall(Dir);
+
+  if UserWantsUpgrade and CurrentDirHasInstall then
   begin
     IsUpgrade := True;
     DetectedInstallDir := Dir;
@@ -219,7 +343,15 @@ begin
   else
   begin
     IsUpgrade := False;
-    DetectedInstallDir := '';
+    if not UserWantsUpgrade then
+    begin
+      if not CurrentDirHasInstall then
+        DetectedInstallDir := '';
+    end
+    else if CurrentDirHasInstall then
+      DetectedInstallDir := Dir
+    else if HasModeSelection then
+      DetectedInstallDir := '';
   end;
   UpdateUpgradeLabel;
   UpdateUpgradeCaptionForPage(WizardForm.CurPageID);
@@ -257,11 +389,21 @@ begin
   DefaultWelcomeLabel1 := WizardForm.WelcomeLabel1.Caption;
   DefaultWelcomeLabel2 := WizardForm.WelcomeLabel2.Caption;
 
+  ModePage := nil;
+  InstallRadio := nil;
+  UpdateRadio := nil;
+  CurrentDirHasInstall := False;
+
+  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
+  if DefaultInstallDir = '' then
+    DefaultInstallDir := WizardForm.DirEdit.Text;
+
   InitializeUpgradeLabel;
 
   ExistingDir := DetectExistingInstallDir;
   if ExistingDir <> '' then
   begin
+    CreateModeSelectionPage;
     WizardForm.DirEdit.Text := ExistingDir;
     DetectedInstallDir := ExistingDir;
     IsUpgrade := True;
@@ -272,14 +414,24 @@ begin
     DetectedInstallDir := '';
   end;
 
+  UpdateModeControls;
   WizardForm.DirEdit.OnChange := @DirEditChange;
   RefreshUpgradeState(WizardForm.DirEdit.Text);
 end;
 
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  if (CurPageID = wpSelectDir) or (CurPageID = wpReady) or (CurPageID = wpWelcome) then
-    RefreshUpgradeState(WizardForm.DirEdit.Text)
+  if HasModeSelection and ((ModePage <> nil) and (CurPageID = ModePage.ID)) then
+  begin
+    UpdateModeControls;
+    RefreshUpgradeState(WizardForm.DirEdit.Text);
+  end
+  else if (CurPageID = wpSelectDir) or (CurPageID = wpReady) or (CurPageID = wpWelcome) then
+  begin
+    if HasModeSelection and (CurPageID = wpSelectDir) then
+      UpdateModeControls;
+    RefreshUpgradeState(WizardForm.DirEdit.Text);
+  end
   else
     UpdateUpgradeCaptionForPage(CurPageID);
 end;

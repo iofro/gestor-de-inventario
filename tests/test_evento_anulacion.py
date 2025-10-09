@@ -615,7 +615,7 @@ def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
     assert data["selloRecibido"] == sello
 
 
-def test_enviar_invalidacion_guarda_archivos(monkeypatch):
+def test_enviar_invalidacion_guarda_archivos(monkeypatch, tmp_path):
     codigo = "12345678-1234-1234-1234-1234567890AB"
     data = {
         "identificacion": {
@@ -637,6 +637,15 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
     monkeypatch.setattr(anulacion.auth, "get_token", lambda: "token")
 
     posted = []
+
+    base_root = tmp_path / "userdata"
+
+    def fake_ensure_user_dir(*parts):
+        path = base_root.joinpath(*parts)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    monkeypatch.setattr(anulacion, "ensure_user_dir", fake_ensure_user_dir)
 
     def fake_post(url, payload, *, ambiente_config=None, **kwargs):
         posted.append((url, payload, ambiente_config, kwargs))
@@ -660,13 +669,8 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch):
 
     result = anulacion.enviar_invalidacion(None, data)
 
-    expected_dir = os.path.join(
-        os.path.dirname(anulacion.__file__),
-        "dtes",
-        "eventos",
-        "anulacion",
-        codigo,
-    )
+    base_dir = fake_ensure_user_dir("dtes", "actualizaciones", "anulacion")
+    expected_dir = os.path.join(os.fspath(base_dir), codigo)
     assert created_dirs == [(expected_dir, True)]
 
     assert len(saved) == 1

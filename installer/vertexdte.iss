@@ -227,10 +227,10 @@ end;
 procedure InitializeUpgradeLabel;
 begin
   UpgradeLabel := TNewStaticText.Create(WizardForm.SelectDirPage);
-  UpgradeLabel.Parent := WizardForm.SelectDirPage.Surface;
+  UpgradeLabel.Parent := WizardForm.DirEdit.Parent;
   UpgradeLabel.Left := WizardForm.SelectDirPage.SelectLabel.Left;
   UpgradeLabel.Top := WizardForm.DirEdit.Top + WizardForm.DirEdit.Height + ScaleY(8);
-  UpgradeLabel.Width := WizardForm.SelectDirPage.SurfaceWidth;
+  UpgradeLabel.Width := WizardForm.DirEdit.Parent.ClientWidth;
   UpgradeLabel.AutoSize := False;
   UpgradeLabel.WordWrap := True;
   UpgradeLabel.Visible := False;

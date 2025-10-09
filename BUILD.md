@@ -66,6 +66,23 @@ compilador de Inno Setup para crear el instalador ejecutable:
 Sustituye `1.0.0` por la versión deseada. El resultado se almacena en
 `build\installer\VertexDTE-Setup.exe`.
 
+### Script automatizado `make_installer.ps1`
+
+Si prefieres un único comando que construya el bundle *onedir* (copiando el
+firmador dentro de `extras/firmador`) y luego genere el instalador con Inno
+Setup, puedes ejecutar:
+
+```powershell
+.\build\make_installer.ps1 -Mode full -AppVersion 1.0.0 `
+  -PythonPath "C:\\Ruta\\a\\python.exe" -ISCCPath "C:\\Program Files\\Inno Setup 6\\ISCC.exe"
+```
+
+El script valida que el firmador esté presente, ejecuta PyInstaller usando
+`setup.py` y llama a `ISCC.exe` pasando la versión indicada. Puedes omitir
+`-PythonPath` o `-ISCCPath` si las herramientas ya están en tu `PATH`. El
+instalador resultante queda en `build\installer\VertexDTE-Setup-<versión>.exe`
+o en la carpeta definida con `-OutputDir`.
+
 ## Dónde quedan los datos de la aplicación
 
 Vertex DTE guarda su configuración, registros y documentos generados en

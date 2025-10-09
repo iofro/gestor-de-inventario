@@ -99,7 +99,7 @@ function Copy-SignerToExtras {
     }
 
     $extrasRoot = Join-Path $repoRoot 'extras'
-    $extrasDir = Join-Path $extrasRoot 'firmador'
+    $extrasDir = Join-Path $extrasRoot 'svfe-api-firmador'
     if (Test-Path -LiteralPath $extrasDir) {
         Get-ChildItem -LiteralPath $extrasDir -Force | Remove-Item -Force -Recurse
     } else {
@@ -149,7 +149,7 @@ if (-not (Test-Path -LiteralPath $exePath)) {
     throw "No se encontró el ejecutable generado: $exePath"
 }
 
-$bundledSigner = Join-Path $distDir 'extras/firmador'
+$bundledSigner = Join-Path $distDir '_internal/svfe-api-firmador'
 if (-not (Test-Path -LiteralPath $bundledSigner -PathType Container)) {
     throw "El bundle no contiene la carpeta del firmador esperada ('$bundledSigner')."
 }

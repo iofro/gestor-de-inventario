@@ -61,6 +61,8 @@ var
   DefaultInstallDir: string;
   CurrentDirHasInstall: Boolean;
 
+procedure RefreshUpgradeState(const Dir: string); forward;
+
 function QueryInstallLocationForRoot(const RootKey: Integer; const SubKey: string; var Value: string): Boolean;
 begin
   Result := RegQueryStringValue(RootKey, SubKey, 'InstallLocation', Value);

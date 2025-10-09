@@ -390,6 +390,7 @@ def normalizar_receptor(receptor: dict) -> dict:
     if tipo == "13":
         if len(num) != 9:
             raise ValueError("DUI debe tener 9 dígitos (sin guiones)")
+        receptor["numDocumento"] = f"{num[:8]}-{num[-1]}"
         if nrc_raw:
             warnings.warn(
                 "Se forzó NRC=null porque el documento es DUI", UserWarning

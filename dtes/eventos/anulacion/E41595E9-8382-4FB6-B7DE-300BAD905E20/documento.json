@@ -1,0 +1,44 @@
+{
+  "documento": {
+    "codigoGeneracion": "8C3EED8C-79BE-4CDA-BBCF-07079D24712F",
+    "codigoGeneracionR": "391E7345-8CEB-44A0-894B-394DD6520329",
+    "correo": "cityplay41@gmail.com",
+    "fecEmi": "2025-10-09",
+    "montoIva": null,
+    "nombre": "ariel",
+    "numDocumento": "06756083-3",
+    "numeroControl": "DTE-01-S001P001-000000000000018",
+    "selloRecibido": "2025656201F5736E4B5D87D9B9B04ACC200EWXNC",
+    "tipoDocumento": "13",
+    "tipoDte": "01"
+  },
+  "emisor": {
+    "codEstable": "0001",
+    "codEstableMH": "0001",
+    "codPuntoVenta": "0001",
+    "codPuntoVentaMH": "0001",
+    "correo": "arieliosefrosales@gmail.com",
+    "nit": "13240304791012",
+    "nomEstablecimiento": "melida flor ivette martinez de rosales",
+    "nombre": "melida flor ivette martinez de rosales",
+    "telefono": "74154027",
+    "tipoEstablecimiento": "01"
+  },
+  "identificacion": {
+    "ambiente": "00",
+    "codigoGeneracion": "E41595E9-8382-4FB6-B7DE-300BAD905E20",
+    "fecAnula": "2025-10-09",
+    "horAnula": "16:04:14",
+    "version": 2
+  },
+  "motivo": {
+    "motivoAnulacion": "precio incorrecto",
+    "nombreResponsable": "carlos",
+    "nombreSolicita": "ariel",
+    "numDocResponsable": "123456789",
+    "numDocSolicita": "067560833",
+    "tipDocResponsable": "13",
+    "tipDocSolicita": "13",
+    "tipoAnulacion": 1
+  }
+}

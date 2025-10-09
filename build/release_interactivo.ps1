@@ -277,7 +277,7 @@ Write-Host 'Instalando herramientas de build...'
 & $pythonExe -m pip install pyinstaller appdirs certifi
 
 $extrasRoot = Join-Path $repoRoot 'extras'
-$extrasDir = Join-Path $extrasRoot 'firmador'
+$extrasDir = Join-Path $extrasRoot 'svfe-api-firmador'
 Write-Host 'Preparando carpeta del firmador...'
 New-Item -ItemType Directory -Path $extrasRoot -Force | Out-Null
 if (Test-Path -LiteralPath $extrasDir) {
@@ -297,7 +297,7 @@ if (-not (Get-ChildItem -Path $extrasDir -Force -Recurse -File -ErrorAction Sile
 
 $specPath = Join-Path $repoRoot 'build/VertexDTE.spec'
 $distDir = Join-Path $repoRoot 'dist/VertexDTE'
-$bundleSignerPath = Join-Path $distDir 'extras/firmador'
+$bundleSignerPath = Join-Path $distDir '_internal/svfe-api-firmador'
 
 try {
     Write-Host 'Ejecutando PyInstaller...'

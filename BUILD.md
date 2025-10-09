@@ -28,12 +28,13 @@ El proceso crea:
 * `<OutputDir>\VertexDTE-<versión>-win64.zip`: copia comprimida de la carpeta anterior.
 * `<OutputDir>\VertexDTE-Setup-<versión>.exe`: instalador generado con Inno Setup (si `ISCC.exe` está disponible).
 
-Dentro de la carpeta `extras\firmador\` del bundle se copia íntegramente la
-estructura del firmador suministrado.
+Dentro de la carpeta `\_internal\svfe-api-firmador\` del bundle se copia
+íntegramente la estructura del firmador suministrado.
 
-El firmador seleccionado se copia dentro del paquete en `extras\firmador\` y el
-instalador genera `%APPDATA%\VertexDTE\settings.json` con la ruta instalada del
-firmador (`{app}\extras\firmador\...`).
+El firmador seleccionado se copia dentro del paquete en
+`\_internal\svfe-api-firmador\` y el instalador genera
+`%APPDATA%\VertexDTE\settings.json` con la ruta instalada del firmador
+(`{app}\svfe-api-firmador\...`).
 
 ## Flujo no interactivo
 
@@ -49,8 +50,8 @@ Si omites `-Version`, se tomará el valor del archivo `VERSION` (o `1.0.0` por
 omisión).
 
 Al finalizar se generan los mismos artefactos que en el modo interactivo y se
-valida automáticamente que `dist/VertexDTE/extras/firmador/` contenga la copia
-completa del firmador proporcionado.
+valida automáticamente que `dist/VertexDTE/_internal/svfe-api-firmador/`
+contenga la copia completa del firmador proporcionado.
 
 ### Comando directo para el instalador
 
@@ -69,8 +70,8 @@ Sustituye `1.0.0` por la versión deseada. El resultado se almacena en
 ### Script automatizado `make_installer.ps1`
 
 Si prefieres un único comando que construya el bundle *onedir* (copiando el
-firmador dentro de `extras/firmador`) y luego genere el instalador con Inno
-Setup, puedes ejecutar:
+firmador dentro de `\_internal/svfe-api-firmador`) y luego genere el instalador
+con Inno Setup, puedes ejecutar:
 
 ```powershell
 .\build\make_installer.ps1 -Mode full -AppVersion 1.0.0 `
@@ -88,7 +89,7 @@ o en la carpeta definida con `-OutputDir`.
 Vertex DTE guarda su configuración, registros y documentos generados en
 `%APPDATA%\VertexDTE\`, evitando escribir en `{app}` durante la ejecución.
 Durante la instalación se crea (o actualiza) `settings.json` apuntando al
-firmador instalado en `{app}\extras\firmador\`.
+firmador instalado en `{app}\svfe-api-firmador\`.
 
 ## Pruebas manuales recomendadas
 
@@ -98,4 +99,4 @@ firmador instalado en `{app}\extras\firmador\`.
 3. Genera un PDF de prueba y verifica que se guarda en la carpeta de usuario
    (`%APPDATA%\VertexDTE`).
 4. Comprueba que el firmador quedó instalado en
-   `C:\Program Files\Vertex DTE\extras\firmador\` con todos sus archivos.
+   `C:\Program Files\Vertex DTE\svfe-api-firmador\` con todos sus archivos.

@@ -95,11 +95,12 @@ end;
 function GetMarkerInstallDir: string;
 var
   MarkerFile: string;
-  S: string;
+  Buffer: AnsiString;
 begin
   MarkerFile := ExpandConstant('{commonappdata}\VertexDTE\install-path.txt');
-  if LoadStringFromFile(MarkerFile, S) then
-    Result := Trim(S)
+  Buffer := '';
+  if LoadStringFromFile(MarkerFile, Buffer) then
+    Result := Trim(string(Buffer))
   else
     Result := '';
 end;

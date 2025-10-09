@@ -95,11 +95,12 @@ end;
 function GetMarkerInstallDir: string;
 var
   MarkerFile: string;
-  S: string;
+  Buffer: AnsiString;
 begin
   MarkerFile := ExpandConstant('{commonappdata}\VertexDTE\install-path.txt');
-  if LoadStringFromFile(MarkerFile, S) then
-    Result := Trim(S)
+  Buffer := '';
+  if LoadStringFromFile(MarkerFile, Buffer) then
+    Result := Trim(string(Buffer))
   else
     Result := '';
 end;
@@ -169,18 +170,16 @@ procedure UpdateUpgradeCaptionForPage(const PageID: Integer);
 begin
   if IsUpgrade then
   begin
-    if WizardForm.NextButton.Visible then
+    if (PageID = wpReady) or WizardForm.NextButton.Visible then
       WizardForm.NextButton.Caption := 'Actualizar';
-    if WizardForm.InstallButton.Visible then
-      WizardForm.InstallButton.Caption := 'Actualizar';
     WizardForm.Caption := DefaultWizardCaption + ' — Actualizar';
   end
   else
   begin
-    if WizardForm.NextButton.Visible then
+    if PageID = wpReady then
+      WizardForm.NextButton.Caption := SetupMessage(msgButtonInstall)
+    else
       WizardForm.NextButton.Caption := SetupMessage(msgButtonNext);
-    if WizardForm.InstallButton.Visible then
-      WizardForm.InstallButton.Caption := SetupMessage(msgButtonInstall);
     WizardForm.Caption := DefaultWizardCaption;
   end;
 end;
@@ -228,10 +227,10 @@ end;
 procedure InitializeUpgradeLabel;
 begin
   UpgradeLabel := TNewStaticText.Create(WizardForm.SelectDirPage);
-  UpgradeLabel.Parent := WizardForm.SelectDirPage.Surface;
+  UpgradeLabel.Parent := WizardForm.DirEdit.Parent;
   UpgradeLabel.Left := WizardForm.SelectDirPage.SelectLabel.Left;
   UpgradeLabel.Top := WizardForm.DirEdit.Top + WizardForm.DirEdit.Height + ScaleY(8);
-  UpgradeLabel.Width := WizardForm.SelectDirPage.SurfaceWidth;
+  UpgradeLabel.Width := WizardForm.DirEdit.Parent.ClientWidth;
   UpgradeLabel.AutoSize := False;
   UpgradeLabel.WordWrap := True;
   UpgradeLabel.Visible := False;

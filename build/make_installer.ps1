@@ -1,6 +1,10 @@
 [CmdletBinding()]
 param(
-    [string]$AppVersion
+    [ValidateSet('full', 'update')]
+    [string]$Mode = 'full',
+    [string]$AppVersion,
+    [string]$PythonPath,
+    [string]$ISCCPath
 )
 
 Set-StrictMode -Version Latest
@@ -19,23 +23,46 @@ if (-not $AppVersion) {
     }
 }
 
-$python = Get-Command python -ErrorAction SilentlyContinue
-if (-not $python) {
-    throw 'Python no se encuentra en el PATH.'
+if ($PythonPath) {
+    if (-not (Test-Path $PythonPath)) {
+        throw "No se encontró Python en la ruta proporcionada: $PythonPath"
+    }
+    $pythonExecutable = (Resolve-Path $PythonPath).Path
+} else {
+    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+    if (-not $pythonCommand) {
+        throw 'Python no se encuentra en el PATH. Usa el parámetro -PythonPath para especificar la ruta al ejecutable.'
+    }
+    $pythonExecutable = $pythonCommand.Path
 }
+
+if ($ISCCPath) {
+    if (-not (Test-Path $ISCCPath)) {
+        throw "No se encontró ISCC.exe en la ruta proporcionada: $ISCCPath"
+    }
+    $isccExecutable = (Resolve-Path $ISCCPath).Path
+} else {
+    $isccCommand = Get-Command ISCC.exe -ErrorAction SilentlyContinue
+    if (-not $isccCommand) {
+        throw 'No se encontró ISCC.exe en el PATH. Instala Inno Setup o proporciona la ruta con -ISCCPath.'
+    }
+    $isccExecutable = $isccCommand.Path
+}
+
+$distDir = Join-Path $repoRoot 'dist'
+$buildDir = Join-Path $distDir 'InventarioFarmacia'
+$expectedExe = Join-Path $buildDir 'InventarioFarmacia.exe'
 
 Push-Location $repoRoot
 try {
-    $distDir = Join-Path $repoRoot 'dist'
-    $buildDir = Join-Path $distDir 'InventarioFarmacia'
     if (Test-Path $buildDir) {
         Remove-Item -Recurse -Force $buildDir
     }
 
-    & $python.Path 'setup.py' '--mode' 'full' '--bundle' 'onedir'
+    & $pythonExecutable 'setup.py' '--mode' $Mode '--bundle' 'onedir'
 
-    if (-not (Test-Path (Join-Path $buildDir 'InventarioFarmacia.exe'))) {
-        throw 'La compilación de PyInstaller no generó InventarioFarmacia.exe en modo --onedir.'
+    if (-not (Test-Path $expectedExe)) {
+        throw 'La compilación de PyInstaller no generó dist/InventarioFarmacia/InventarioFarmacia.exe.'
     }
 }
 finally {
@@ -44,20 +71,14 @@ finally {
 
 $signerDir = Join-Path $repoRoot 'svfe-api-firmador'
 if (-not (Test-Path $signerDir)) {
-    throw 'No se encontró la carpeta svfe-api-firmador requerida.'
+    throw 'No se encontró la carpeta svfe-api-firmador requerida para el instalador.'
 }
 
 $uploadsDir = Join-Path $signerDir 'uploads'
 if (Test-Path $uploadsDir) {
-    Write-Host 'La carpeta uploads existente no será empaquetada (se preservarán certificados).'
+    Write-Host 'La carpeta svfe-api-firmador\uploads se preservará fuera del instalador.'
 } else {
-    Write-Host 'Creando carpeta uploads vacía para asegurar la estructura esperada.'
-    New-Item -ItemType Directory -Path $uploadsDir | Out-Null
-}
-
-$iscc = Get-Command ISCC.exe -ErrorAction SilentlyContinue
-if (-not $iscc) {
-    throw 'No se encontró ISCC.exe en el PATH. Instala Inno Setup o agrega su carpeta al PATH.'
+    Write-Warning 'No se encontró la carpeta svfe-api-firmador\uploads; Inno Setup la creará vacía durante la instalación.'
 }
 
 $installerDir = Join-Path $repoRoot 'installer'
@@ -66,12 +87,14 @@ if (-not (Test-Path $issFile)) {
     throw 'No se encontró el script de Inno Setup installer/vertexdte.iss.'
 }
 
-$arguments = @($issFile, "/DAppVersion=$AppVersion")
-& $iscc.Path @arguments
+& $isccExecutable $issFile "/DAppVersion=$AppVersion"
 
-$expectedOutput = Join-Path $repoRoot 'build' 'installer' 'VertexDTE-Setup.exe'
-if (Test-Path $expectedOutput) {
-    Write-Host "Instalador generado en: $expectedOutput"
+$outputDir = Join-Path $installerDir 'build'
+$outputDir = Join-Path $outputDir 'installer'
+$outputExe = Join-Path $outputDir 'VertexDTE-Setup.exe'
+
+if (Test-Path $outputExe) {
+    Write-Host "Instalador generado en: $outputExe"
 } else {
-    Write-Warning 'La compilación de Inno Setup finalizó sin crear VertexDTE-Setup.exe.'
+    throw 'Inno Setup finalizó sin crear installer/build/installer/VertexDTE-Setup.exe.'
 }

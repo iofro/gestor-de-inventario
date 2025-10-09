@@ -13,6 +13,10 @@ UsePreviousAppDir=yes
 DirExistsWarning=no
 OutputDir=build\installer
 OutputBaseFilename=VertexDTE-Setup
+PrivilegesRequired=admin
+ArchitecturesInstallIn64BitMode=x64
+AppPublisher=Vertex
+MinVersion=10.0
 Compression=lzma2
 SolidCompression=yes
 CloseApplications=yes
@@ -21,9 +25,8 @@ AppMutex=VertexDTE_Running
 DisableProgramGroupPage=yes
 
 [Files]
-Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs replacesameversion
- Excludes: "tools\verificador\*"
-Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs replacesameversion; Excludes: "uploads\*"
+Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "uploads\*"
 
 [Dirs]
 Name: "{app}\svfe-api-firmador\uploads"; Flags: uninsneveruninstall
@@ -36,7 +39,6 @@ Name: "{autoprograms}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; Wor
 Name: "{autodesktop}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; WorkingDir: "{app}"; Tasks: desktopicon
 
 [Run]
-; No se ejecuta nada automáticamente tras la instalación.
 
 [UninstallDelete]
 ; No eliminar %APPDATA%\VertexDTE ni la carpeta uploads.

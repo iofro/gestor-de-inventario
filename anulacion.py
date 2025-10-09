@@ -13,7 +13,7 @@ import auth
 from mh_auth import auth_headers
 from db import DB
 from utils import stable_json
-from utils import resource_path
+from paths import ensure_user_dir
 from utils.catalogos import TRIBUTO_IVA
 from utils.sanitize import solo_digitos
 from utils.fecha import TZ_EL_SALVADOR
@@ -1220,8 +1220,8 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
             if raw_codigo:
                 codigo_generacion = str(raw_codigo).strip()
     if codigo_generacion:
-        base_dir = os.path.join(
-            resource_path("dtes", "eventos", "anulacion")
+        base_dir = os.fspath(
+            ensure_user_dir("dtes", "actualizaciones", "anulacion")
         )
         target_dir = os.path.join(base_dir, codigo_generacion)
         try:

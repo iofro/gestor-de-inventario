@@ -164,8 +164,40 @@ function Test-InstallerScript {
                 Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
             }
         }
-        throw 'El preflight del instalador detectó líneas inválidas en el script de Inno Setup.'
     }
+
+    if ($nbspLines) {
+        Write-Error 'Se encontraron caracteres U+00A0 (NBSP) en las siguientes líneas:'
+        foreach ($item in $nbspLines) {
+            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        }
+    }
+
+    throw 'El preflight del instalador detectó líneas inválidas en el script de Inno Setup.'
+}
+
+function Sanitize-InstallerScript {
+    param(
+        [string]$ScriptPath,
+        [string]$DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        throw "No se encontró el script de Inno Setup: $ScriptPath"
+    }
+
+    if (-not $DestinationPath) {
+        $DestinationPath = $ScriptPath
+    }
+
+    $content = Get-Content -LiteralPath $ScriptPath -Raw
+    $content = $content.Replace([char]0xFEFF, '')
+    $content = $content.Replace([char]0x00A0, ' ')
+    $content = $content -replace "`r?`n", "`n"
+    $content = $content -replace "`n", "`r`n"
+
+    Set-Content -LiteralPath $DestinationPath -Value $content -Encoding utf8NoBOM
+    return $DestinationPath
 }
 
 function Copy-SignerToExtras {
@@ -248,7 +280,12 @@ $defaultBuildOutputRel = 'installer\build\installer'
 $buildOutputDefine = $defaultBuildOutputRel
 $resolvedOutput = $null
 
-if ($OutputDir) {
+if ($NoDefines) {
+    $resolvedOutput = Join-Path $repoRoot $defaultBuildOutputRel
+    if (-not (Test-Path -LiteralPath $resolvedOutput)) {
+        New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
+    }
+} elseif ($OutputDir) {
     $resolvedOutput = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $OutputDir -Force).FullName).Path
     $buildOutputDefine = $resolvedOutput
 } else {
@@ -325,7 +362,12 @@ finally {
     }
 }
 
-$expectedInstaller = Join-Path $resolvedOutput "VertexDTE-Setup-$AppVersion.exe"
+if ($temporaryScript -and (Test-Path -LiteralPath $temporaryScript)) {
+    Remove-Item -LiteralPath $temporaryScript -Force -ErrorAction SilentlyContinue
+}
+
+$appVersionForOutput = if ($NoDefines) { '1.0.0' } else { $AppVersion }
+$expectedInstaller = Join-Path $resolvedOutput "VertexDTE-Setup-$appVersionForOutput.exe"
 if (Test-Path -LiteralPath $expectedInstaller -PathType Leaf) {
     Write-Host "Instalador generado: $expectedInstaller"
 } else {

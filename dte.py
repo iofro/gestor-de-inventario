@@ -1471,9 +1471,9 @@ def _clean_nit(nit):
 def _clean_nrc(nrc):
     if not nrc:
         return None
-    nrc_str = str(nrc)
-    if nrc_str.isdigit() and 1 <= len(nrc_str) <= 8:
-        return nrc_str
+    digits = "".join(c for c in str(nrc) if c.isdigit())
+    if 1 <= len(digits) <= 8:
+        return digits
     return None
 
 
@@ -4526,8 +4526,10 @@ def validate_dte_json(
                     else:
                         receptor.pop("nrc", None)
             elif tipo_doc == "36":
-                if len(num_doc) != 14:
-                    raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
+                if len(num_doc) not in (9, 14):
+                    raise ValueError(
+                        "NIT debe tener 9 o 14 dígitos (sin guiones)"
+                    )
                 if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
                     raise ValueError("NRC requerido (6–7 dígitos)")
             else:

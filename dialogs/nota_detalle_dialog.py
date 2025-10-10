@@ -87,16 +87,17 @@ class NotaDetalleDialog(QDialog):
             items = [
                 QTableWidgetItem(str(prod)),
                 QTableWidgetItem(f"{qty}"),
-                QTableWidgetItem(f"{price_iva:.2f}"),
-                QTableWidgetItem(f"{desc_iva:.2f}"),
-                QTableWidgetItem(f"{total_iva:.2f}"),
+                QTableWidgetItem(f"{price_iva:.4f}"),
+                QTableWidgetItem(f"{desc_iva:.4f}"),
+                QTableWidgetItem(f"{total_iva:.4f}"),
             ]
             for col, item in enumerate(items):
                 item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
                 self.table.setItem(row, col, item)
 
             spin = QDoubleSpinBox()
-            spin.setDecimals(2)
+            spin.setDecimals(4)
+            spin.setSingleStep(0.0001)
             if self.tipo == "credito":
                 spin.setRange(-1_000_000, 0)
             else:
@@ -125,11 +126,11 @@ class NotaDetalleDialog(QDialog):
                 gravada += base
                 iva += val - base
         total = gravada + exenta + nosujeta + iva
-        self.base_gravada_label.setText(f"Base gravada: {gravada:.2f}")
-        self.exenta_label.setText(f"Exenta: {exenta:.2f}")
-        self.nosujeta_label.setText(f"No sujeta: {nosujeta:.2f}")
-        self.iva_label.setText(f"IVA (cód. 20): {iva:.2f}")
-        self.total_label.setText(f"Total: {total:.2f}")
+        self.base_gravada_label.setText(f"Base gravada: {gravada:.4f}")
+        self.exenta_label.setText(f"Exenta: {exenta:.4f}")
+        self.nosujeta_label.setText(f"No sujeta: {nosujeta:.4f}")
+        self.iva_label.setText(f"IVA (cód. 20): {iva:.4f}")
+        self.total_label.setText(f"Total: {total:.4f}")
         self._totals = {
             "gravada": gravada,
             "exenta": exenta,

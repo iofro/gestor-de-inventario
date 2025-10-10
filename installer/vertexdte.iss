@@ -32,7 +32,7 @@ DisableProgramGroupPage=yes
 
 [Files]
 Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "tools\verificador\*"
-Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "uploads\*"
 
 [Dirs]
 Name: "{userappdata}\VertexDTE"; Flags: uninsneveruninstall
@@ -48,6 +48,36 @@ Name: "{autodesktop}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; Work
 [Code]
 const
   NL = #13#10;
+  APP_ID = '{7ACDE88C-3C97-47F0-A0F1-8BFC734E7373}';
+  PARALLEL_INSTALL_HINT = 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
+
+function ReadPrevDirFromKey(RootKey: Integer; const SubKey, ValueName: string; var OutDir: string): Boolean;
+begin
+  Result := RegQueryStringValue(RootKey, SubKey, ValueName, OutDir) and DirExists(OutDir);
+end;
+
+function FindPreviousAppDir(const AppId, DefaultDir: string): string;
+var
+  Key, D: string;
+begin
+  Key := 'Software\Microsoft\Windows\CurrentVersion\Uninstall\' + AppId + '_is1';
+  D := '';
+
+  if ReadPrevDirFromKey(HKLM, Key, 'Inno Setup: App Path', D) then
+  else if ReadPrevDirFromKey(HKLM, Key, 'InstallLocation', D) then
+
+  else if IsWin64 and ReadPrevDirFromKey(HKLM64, Key, 'Inno Setup: App Path', D) then
+  else if IsWin64 and ReadPrevDirFromKey(HKLM64, Key, 'InstallLocation', D) then
+
+  else if ReadPrevDirFromKey(HKCU, Key, 'Inno Setup: App Path', D) then
+  else if ReadPrevDirFromKey(HKCU, Key, 'InstallLocation', D) then
+    ; { nada }
+
+  if D = '' then
+    Result := DefaultDir
+  else
+    Result := D;
+end;
 
 var
   PrevDir: string;
@@ -125,8 +155,8 @@ begin
       WizardForm.DirBrowseButton.Enabled := True;
       WizardForm.DirEdit.Text := DefaultInstallDir;
       WizardDirValue := WizardForm.DirEdit.Text;
-      WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption + NL + 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
-      MsgBox('Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.', mbInformation, MB_OK);
+      WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption + NL + PARALLEL_INSTALL_HINT;
+      MsgBox(PARALLEL_INSTALL_HINT, mbInformation, MB_OK);
     end;
     UpdateDirSelectionState;
   end;
@@ -143,7 +173,7 @@ begin
   Result := True;
   if (CurPageID = wpSelectDir) and RequireDifferentDir and IsSamePath(WizardForm.DirEdit.Text, PrevDir) then
   begin
-    MsgBox('Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.', mbInformation, MB_OK);
+    MsgBox(PARALLEL_INSTALL_HINT, mbInformation, MB_OK);
     Result := False;
   end;
 end;

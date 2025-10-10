@@ -87,6 +87,46 @@ function Resolve-ISCC {
     throw 'No se encontró ISCC.exe. Proporcione -ISCCPath o instale Inno Setup 6.'
 }
 
+function Test-InstallerScript {
+    param([string]$ScriptPath)
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        throw "No se encontró el script de Inno Setup: $ScriptPath"
+    }
+
+    $invalidDirectivePattern = '^\s*#(?!define\b|undef\b|ifdef\b|ifndef\b|if\b|else\b|endif\b|include\b|file\b|emit\b|append\b|expr\b|pragma\b)'
+    $forbiddenSequencePattern = '^\s*#13#10'
+    $invalidDirectives = @()
+    $forbiddenSequences = @()
+    $lineNumber = 0
+
+    foreach ($line in Get-Content -LiteralPath $ScriptPath) {
+        $lineNumber++
+        if ($line -match $invalidDirectivePattern) {
+            $invalidDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+        }
+        if ($line -match $forbiddenSequencePattern) {
+            $forbiddenSequences += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+        }
+    }
+
+    if ($invalidDirectives -or $forbiddenSequences) {
+        if ($invalidDirectives) {
+            Write-Error 'Se encontraron líneas con directivas ISPP inválidas:'
+            foreach ($item in $invalidDirectives) {
+                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+            }
+        }
+        if ($forbiddenSequences) {
+            Write-Error 'Se encontraron secuencias prohibidas al inicio de línea:'
+            foreach ($item in $forbiddenSequences) {
+                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+            }
+        }
+        throw 'El preflight del instalador detectó líneas inválidas en el script de Inno Setup.'
+    }
+}
+
 function Copy-SignerToExtras {
     $source = Join-Path $repoRoot 'svfe-api-firmador'
     if (-not (Test-Path -LiteralPath $source -PathType Container)) {
@@ -158,27 +198,41 @@ if (-not (Get-ChildItem -LiteralPath $bundledSigner -File -Recurse -Force -Error
     throw 'La carpeta del firmador dentro del bundle está vacía.'
 }
 
-$issPath = Join-Path $repoRoot 'installer/vertexdte.iss'
-if (-not (Test-Path -LiteralPath $issPath -PathType Leaf)) {
-    throw "No se encontró el script de Inno Setup: $issPath"
-}
+$issRelativePath = 'installer\vertexdte.iss'
+$issPath = Join-Path $repoRoot $issRelativePath
+Test-InstallerScript -ScriptPath $issPath
 
-$innoArgs = @("/DAppVersion=$AppVersion")
+$defaultBuildOutputRel = 'installer\build\installer'
+$buildOutputDefine = $defaultBuildOutputRel
 $resolvedOutput = $null
+
 if ($OutputDir) {
     $resolvedOutput = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $OutputDir -Force).FullName).Path
-    $innoArgs += ('/DOutputDir="{0}"' -f $resolvedOutput)
+    $buildOutputDefine = $resolvedOutput
+} else {
+    $resolvedOutput = Join-Path $repoRoot $defaultBuildOutputRel
+    if (-not (Test-Path -LiteralPath $resolvedOutput)) {
+        New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
+    }
 }
-$innoArgs += $issPath
+
+$innoArgs = @(
+    $issRelativePath,
+    "/DAppVersion=$AppVersion",
+    ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
+)
 
 Write-Host 'Compilando instalador con Inno Setup...'
-& $isccExe @innoArgs
+$innoOutput = & $isccExe @innoArgs 2>&1
 if ($LASTEXITCODE -ne 0) {
+    Write-Error 'ISCC.exe produjo errores:'
+    if ($innoOutput) {
+        $innoOutput | ForEach-Object { Write-Error $_ }
+    }
     throw "ISCC.exe finalizó con código $LASTEXITCODE."
 }
 
-$installerDir = if ($resolvedOutput) { $resolvedOutput } else { Join-Path $repoRoot 'build/installer' }
-$expectedInstaller = Join-Path $installerDir "VertexDTE-Setup-$AppVersion.exe"
+$expectedInstaller = Join-Path $resolvedOutput "VertexDTE-Setup-$AppVersion.exe"
 if (Test-Path -LiteralPath $expectedInstaller -PathType Leaf) {
     Write-Host "Instalador generado: $expectedInstaller"
 } else {

@@ -386,7 +386,7 @@ def normalizar_receptor(receptor: dict) -> dict:
         if nrc:
             receptor["nrc"] = nrc
         else:
-            receptor["nrc"] = None
+            receptor.pop("nrc", None)
 
     if tipo == "13":
         if len(num) != 9:
@@ -400,12 +400,9 @@ def normalizar_receptor(receptor: dict) -> dict:
     elif tipo == "36":
         if not is_valid_nit(num):
             raise ValueError("NIT debe tener 9 o 14 dígitos (sin guiones)")
-        if len(num) == 14:
-            nrc = receptor.get("nrc")
-            if not nrc or len(nrc) not in (6, 7):
-                raise ValueError("NRC requerido (6–7 dígitos)")
-        else:
-            receptor["nrc"] = None
+        nrc = receptor.get("nrc")
+        if not nrc or len(nrc) not in (6, 7):
+            raise ValueError("NRC requerido (6–7 dígitos)")
     elif tipo in {"37", "03", "02"}:
         receptor["nrc"] = None
     else:

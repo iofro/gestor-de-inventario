@@ -953,13 +953,20 @@ def test_receptor_dui_sin_nrc(monkeypatch):
     )
 
 
-def test_receptor_nit_sin_nrc_error(monkeypatch):
+@pytest.mark.parametrize(
+    "num_documento",
+    [
+        "0614-140710-001-2",
+        "061414071",
+    ],
+)
+def test_receptor_nit_sin_nrc_error(monkeypatch, num_documento):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
     emisor = _sample_emisor()
     receptor = {
         "tipoDocumento": "36",
-        "numDocumento": "0614-140710-001-2",
+        "numDocumento": num_documento,
         "nombre": "Cliente",
         "bienTitulo": "01",
         "codActividad": "6201",
@@ -984,7 +991,7 @@ def test_receptor_nit_sin_nrc_error(monkeypatch):
         db,
         codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
     )
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match=r"NRC requerido \(6–7 dígitos\)"):
         generar_nota_remision_independiente(
             db,
             emisor=emisor,
@@ -1088,7 +1095,7 @@ def test_receptor_nrc_null_persists_after_double_sanitize(monkeypatch, tipo_doc,
     assert cleaned["receptor"]["nrc"] is None
 
 
-def test_receptor_nit_nueve_digitos_error(monkeypatch):
+def test_receptor_nit_nueve_digitos_valido(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
     emisor = _sample_emisor()
@@ -1120,15 +1127,18 @@ def test_receptor_nit_nueve_digitos_error(monkeypatch):
         db,
         codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
     )
-    with pytest.raises(ValueError, match="NIT debe tener 14 dígitos"):
-        generar_nota_remision_independiente(
-            db,
-            emisor=emisor,
-            receptor=receptor,
-            detalles=detalles,
-            documento_relacionado=_sample_doc_rel(),
-            extension=extension,
-        )
+    data = generar_nota_remision_independiente(
+        db,
+        emisor=emisor,
+        receptor=receptor,
+        detalles=detalles,
+        documento_relacionado=_sample_doc_rel(),
+        extension=extension,
+    )
+    rec = data["receptor"]
+    assert rec["tipoDocumento"] == "36"
+    assert solo_digitos(rec["numDocumento"]) == "061414071"
+    assert rec["nrc"] == "1234567"
 
 
 @pytest.mark.parametrize("campo", ["codActividad", "descActividad", "telefono", "correo"])

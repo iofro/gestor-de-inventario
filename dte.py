@@ -989,7 +989,22 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
         return value
 
     if schema is None:
-        schema = FC_SCHEMA
+        tipo_detectado = None
+        ident = data.get("identificacion") if isinstance(data, dict) else None
+        if isinstance(ident, dict):
+            tipo_detectado = ident.get("tipoDte")
+            if isinstance(tipo_detectado, int):
+                tipo_detectado = f"{tipo_detectado:02d}"
+            elif isinstance(tipo_detectado, str):
+                tipo_detectado = tipo_detectado.zfill(2)
+            else:
+                tipo_detectado = None
+        if tipo_detectado:
+            detected_schema = catalogos.get_dte_schema(tipo_detectado)
+            if detected_schema:
+                schema = detected_schema
+        if schema is None:
+            schema = FC_SCHEMA
     cleaned = _strip_additional_properties(data, schema)
     limpiar_documentos(cleaned)
     cleaned = _remove_nulls(cleaned)
@@ -1471,9 +1486,9 @@ def _clean_nit(nit):
 def _clean_nrc(nrc):
     if not nrc:
         return None
-    nrc_str = str(nrc)
-    if nrc_str.isdigit() and 1 <= len(nrc_str) <= 8:
-        return nrc_str
+    digits = "".join(c for c in str(nrc) if c.isdigit())
+    if 1 <= len(digits) <= 8:
+        return digits
     return None
 
 
@@ -4526,8 +4541,10 @@ def validate_dte_json(
                     else:
                         receptor.pop("nrc", None)
             elif tipo_doc == "36":
-                if len(num_doc) != 14:
-                    raise ValueError("NIT debe tener 14 dígitos (sin guiones)")
+                if len(num_doc) not in (9, 14):
+                    raise ValueError(
+                        "NIT debe tener 9 o 14 dígitos (sin guiones)"
+                    )
                 if not receptor.get("nrc") or len(receptor["nrc"]) not in (6, 7):
                     raise ValueError("NRC requerido (6–7 dígitos)")
             else:

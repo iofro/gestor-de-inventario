@@ -1088,7 +1088,7 @@ def test_receptor_nrc_null_persists_after_double_sanitize(monkeypatch, tipo_doc,
     assert cleaned["receptor"]["nrc"] is None
 
 
-def test_receptor_nit_nueve_digitos_error(monkeypatch):
+def test_receptor_nit_nueve_digitos_acepta(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
     db = DB(":memory:")
     emisor = _sample_emisor()
@@ -1120,7 +1120,51 @@ def test_receptor_nit_nueve_digitos_error(monkeypatch):
         db,
         codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
     )
-    with pytest.raises(ValueError, match="NIT debe tener 14 dígitos"):
+    data = generar_nota_remision_independiente(
+        db,
+        emisor=emisor,
+        receptor=receptor,
+        detalles=detalles,
+        documento_relacionado=_sample_doc_rel(),
+        extension=extension,
+    )
+    rec = data["receptor"]
+    assert rec["numDocumento"] == "061414071"
+    assert rec["nrc"] == "1234567"
+
+
+def test_receptor_nit_nueve_digitos_requiere_nrc(monkeypatch):
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: {"dte_api": {}})
+    db = DB(":memory:")
+    emisor = _sample_emisor()
+    receptor = {
+        "tipoDocumento": "36",
+        "numDocumento": "061414071",
+        "nombre": "Cliente",
+        "bienTitulo": "01",
+        "codActividad": "6201",
+        "descActividad": "Servicios de software",
+        "telefono": "70000001",
+        "correo": "cliente@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "23",
+            "complemento": "San Salvador",
+        },
+    }
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    detalles = [{"descripcion": "Prod", "cantidad": 1, "uniMedida": 59}]
+    _registrar_envio_relacionado(
+        db,
+        codigo_generacion=_sample_doc_rel()[0]["numeroDocumento"],
+    )
+    with pytest.raises(ValueError, match="NRC requerido"):
         generar_nota_remision_independiente(
             db,
             emisor=emisor,

@@ -1,16 +1,13 @@
 ; Vertex DTE installer generated with Inno Setup
 
-; ==== ISPP guards robustos (sin espacios raros) ====
 #ifdef AppVersion
-  ; /DAppVersion=... por línea de comandos
 #else
 #define AppVersion "0.0.0"
 #endif
 
 #ifdef BuildOutputDir
-  ; /DBuildOutputDir=... por línea de comandos
 #else
-  #define BuildOutputDir "build\\installer"
+#define BuildOutputDir "build\\installer"
 #endif
 
 [Setup]
@@ -54,6 +51,9 @@ Name: "{autodesktop}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; Work
 ; No eliminar %APPDATA%\VertexDTE ni la carpeta uploads.
 
 [Code]
+const
+  NL = #13#10;
+
 var
   PrevDir: string;
   RequireDifferentDir: Boolean;
@@ -119,7 +119,7 @@ begin
   if (PrevDir <> '') and DirExists(PrevDir) then
   begin
     MessageText := Format('Se detectó una instalación existente en: %s.%s¿Desea actualizarla?',
-      [PrevDir, #13#10]);
+      [PrevDir, NL]);
     Response := MsgBox(MessageText, mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
@@ -139,7 +139,7 @@ begin
       WizardForm.DirEdit.Text := DefaultInstallDir;
       WizardDirValue := WizardForm.DirEdit.Text;
       WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption +
-        #13#10'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
+        NL + 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
       MsgBox('Para reinstalar en paralelo, seleccione otra carpeta.', mbInformation, MB_OK);
     end;
     UpdateDirSelectionState;
@@ -172,16 +172,19 @@ begin
 end;
 
 procedure WriteInstallMarkers;
+const
+  MarkerFileName = '.vertex_install.json';
 var
   MarkerDir, MarkerContent, AppDir: string;
 begin
   AppDir := ExpandConstant('{app}');
-  MarkerContent := '{'#13#10 +
-    '  "app": "VertexDTE",'#13#10 +
-    '  "version": "' + ExpandConstant('{#AppVersion}') + '",'#13#10 +
-    '  "path": "' + EscapeForJson(AppDir) + '"'#13#10 +
+  MarkerContent :=
+    '{' + NL +
+    '  "app": "VertexDTE",' + NL +
+    '  "version": "' + ExpandConstant('{#AppVersion}') + '",' + NL +
+    '  "path": "' + EscapeForJson(AppDir) + '"' + NL +
     '}';
-  SaveStringToFile(AddBackslash(AppDir) + '.vertex_install.json', MarkerContent, False);
+  SaveStringToFile(AddBackslash(AppDir) + MarkerFileName, MarkerContent, False);
 
   MarkerDir := ExpandConstant('{commonappdata}\VertexDTE');
   if ForceDirectories(MarkerDir) then

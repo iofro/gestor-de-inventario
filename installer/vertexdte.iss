@@ -82,13 +82,10 @@ var
   Response: Integer;
   DefaultInstallDir: string;
 begin
-  PrevDir := GetPreviousAppDir('{#SetupSetting("AppId")}', '');
+  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
+  PrevDir := GetPreviousAppDir('{#SetupSetting("AppId")}', DefaultInstallDir);
   RequireDifferentDir := False;
   IsUpgrade := False;
-
-  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
-  if DefaultInstallDir = '' then
-    DefaultInstallDir := WizardForm.DirEdit.Text;
 
   if WizardSilent then
   begin
@@ -106,10 +103,11 @@ begin
   end;
 
   WizardForm.DirEdit.OnChange := @DirEditChange;
+  UpdateDirSelectionState;
 
   if (PrevDir <> '') and DirExists(PrevDir) then
   begin
-    Response := MsgBox(Format('Se detectó una instalación existente en: %s.%s¿Desea actualizar?', [PrevDir, NL]), mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
+    Response := MsgBox('Se detectó una instalación existente en: ' + PrevDir + NL + '¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
       WizardDirValue := PrevDir;

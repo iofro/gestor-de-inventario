@@ -4,7 +4,7 @@
 #ifdef AppVersion
   ; /DAppVersion=... por línea de comandos
 #else
-  #define AppVersion "0.0.0"
+#define AppVersion "0.0.0"
 #endif
 
 #ifdef BuildOutputDir

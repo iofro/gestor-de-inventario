@@ -99,9 +99,8 @@ class NotaDetalleDialog(QDialog):
             spin.setDecimals(4)
             spin.setSingleStep(0.0001)
             if self.tipo == "credito":
-                spin.setRange(-1_000_000, 0)
-            else:
-                spin.setRange(0, 1_000_000)
+                spin.setPrefix("-")
+            spin.setRange(0, 1_000_000)
             spin.setValue(0)
             spin.valueChanged.connect(self._update_total)
             self.table.setCellWidget(row, 5, spin)
@@ -146,6 +145,10 @@ class NotaDetalleDialog(QDialog):
             spin = self.table.cellWidget(row, 5)
             if isinstance(spin, QDoubleSpinBox):
                 val = float(spin.value())
+                if self.tipo == "credito":
+                    val = -abs(val)
+                else:
+                    val = abs(val)
                 if val:
                     detalles.append(
                         {

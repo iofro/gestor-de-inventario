@@ -52,6 +52,7 @@
             v-model.number="porcentaje"
             min="0"
             max="100"
+            step="0.0001"
             title="Porcentaje del total (0-100)"
           />
           <input
@@ -59,6 +60,7 @@
             type="number"
             v-model.number="monto"
             min="0"
+            step="0.0001"
             title="Monto total de la nota. Se descompone si IVA incluido"
           />
         </div>
@@ -303,7 +305,7 @@ function getPayload() {
 }
 
 function format(n: number) {
-  return n.toFixed(2);
+  return n.toFixed(4);
 }
 
 const { factura, tipo } = props;

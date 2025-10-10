@@ -38,6 +38,7 @@
             <input
               type="number"
               :value="item.cantidadAjustar"
+              step="0.0001"
               @focus="onFocus(item, 'cantidadAjustar')"
               @input="update(item, 'cantidadAjustar', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -71,6 +72,7 @@
             <input
               type="number"
               :value="item.valor"
+              step="0.0001"
               @focus="onFocus(item, 'valor')"
               @input="update(item, 'valor', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -91,6 +93,7 @@
               class="ajuste"
               type="number"
               :value="item.ajuste"
+              step="0.0001"
               @focus="onFocus(item, 'ajuste')"
               @input="update(item, 'ajuste', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -348,7 +351,7 @@ function calcTotal(item: NotaItem) {
 }
 
 function formatNumber(n: number) {
-  return isNaN(n) ? '' : n.toFixed(2);
+  return isNaN(n) ? '' : n.toFixed(4);
 }
 
 const totalCredito = computed(() =>

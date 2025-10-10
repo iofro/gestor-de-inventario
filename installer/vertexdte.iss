@@ -83,7 +83,7 @@ var
   DefaultInstallDir: string;
 begin
   DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
-  PrevDir := GetPreviousAppDir('{#SetupSetting("AppId")}', DefaultInstallDir);
+  PrevDir := GetPreviousAppDir('{7ACDE88C-3C97-47F0-A0F1-8BFC734E7373}', DefaultInstallDir);
   RequireDifferentDir := False;
   IsUpgrade := False;
 

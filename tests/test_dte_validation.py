@@ -110,6 +110,25 @@ def test_receptor_dui_num_documento_vacio(dte_metadata_factory, db_fixture):
     assert "dui" not in rec
 
 
+def test_receptor_nrc_hyphen_sanitized(dte_metadata_factory):
+    dte = dte_metadata_factory()
+    dte["receptor"]["nrc"] = "123-456"
+    clean = sanitize_dte_payload(dte)
+    assert clean["receptor"]["nrc"] == "123456"
+
+
+def test_receptor_nit_nueve_digitos_requiere_nrc(dte_metadata_factory, db_fixture):
+    dte = dte_metadata_factory()
+    rec = dte["receptor"]
+    rec["numDocumento"] = "000123456"
+    rec["tipoDocumento"] = "36"
+    rec["nrc"] = "765-432"
+    rec["nit"] = "000123456"
+    validate_dte_json(dte, db=db_fixture)
+    assert dte["receptor"]["numDocumento"] == "000123456"
+    assert dte["receptor"]["nrc"] == "765432"
+
+
 def test_receptor_tipo_37_consumidor(dte_metadata_factory, db_fixture):
     dte = dte_metadata_factory()
     rec = dte["receptor"]

@@ -6,7 +6,6 @@ param(
     [string]$PythonPath,
     [string]$ISCCPath,
     [string]$OutputDir,
-    [switch]$SanitizeInstaller,
     [switch]$NoDefines
 )
 
@@ -89,6 +88,25 @@ function Resolve-ISCC {
     throw 'No se encontró ISCC.exe. Proporcione -ISCCPath o instale Inno Setup 6.'
 }
 
+function Sanitize-InstallerScript {
+    param([string]$ScriptPath)
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        throw "No se encontró el script de Inno Setup: $ScriptPath"
+    }
+
+    $rawContent = [System.IO.File]::ReadAllText($ScriptPath)
+    $normalized = $rawContent.Replace([char]0xFEFF, '').Replace([char]0x00A0, ' ')
+    $normalized = $normalized.Replace("`r`n", "`n").Replace("`r", "`n")
+    $normalized = $normalized.Replace("`n", "`r`n")
+
+    if ($normalized -ne $rawContent) {
+        $encoding = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($ScriptPath, $normalized, $encoding)
+        Write-Host "Se normalizó el script de Inno Setup: $ScriptPath"
+    }
+}
+
 function Test-InstallerScript {
     param([string]$ScriptPath)
 
@@ -96,84 +114,55 @@ function Test-InstallerScript {
         throw "No se encontró el script de Inno Setup: $ScriptPath"
     }
 
-    $bytes = [System.IO.File]::ReadAllBytes($ScriptPath)
-    $hasUtf8Bom = $false
-    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
-        $hasUtf8Bom = $true
-    }
+    $rawContent = [System.IO.File]::ReadAllText($ScriptPath)
+    $normalizedContent = $rawContent.Replace([char]0xFEFF, '').Replace([char]0x00A0, ' ')
+    $lines = $normalizedContent -split "`r?`n"
 
-    if ($hasUtf8Bom) {
-        Write-Error 'El script contiene un BOM UTF-8 (U+FEFF) al inicio. Guárdelo sin BOM.'
-    }
+    $validDirectivePattern = '^#(define|undef|ifdef|ifndef|if|else|endif|include|file|emit|append|expr|pragma)\b'
+    $hashAtStartPattern = '^#'
+    $forbiddenSequencePattern = '^#13#10'
 
-    $encoding = [System.Text.Encoding]::UTF8
-    $text = $encoding.GetString($bytes)
-    if ($hasUtf8Bom) {
-        $text = $encoding.GetString($bytes, 3, $bytes.Length - 3)
-    }
-
-    $lines = $text -split "`r?`n"
     $invalidDirectives = @()
     $forbiddenSequences = @()
-    $indentedDirectives = @()
-    $nbspLines = @()
-    $lineNumber = 0
-    $validDirectivePattern = '^#(define|undef|ifdef|ifndef|if|else|endif|include|file|emit|append|expr|pragma)\b'
-    $invalidDirectivePrefixPattern = '^\s*#'
-    $indentedDirectivePattern = '^\s+#(define|undef|ifdef|ifndef|if|else|endif|include|file|emit|append|expr|pragma)\b'
-    $forbiddenSequencePattern = '^\s*#13#10'
-    $nbspChar = [char]0x00A0
+    $misalignedDirectives = @()
 
-    foreach ($line in $lines) {
-        $lineNumber++
-        $lineForChecks = $line.Replace([char]0xFEFF, '').Replace($nbspChar, ' ')
+    for ($index = 0; $index -lt $lines.Length; $index++) {
+        $lineNumber = $index + 1
+        $line = $lines[$index]
 
-        if ($line.Contains($nbspChar)) {
-            $nbspLines += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+        if ($line -match '^\s+#') {
+            $misalignedDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
         }
 
-        if ($lineForChecks -match $invalidDirectivePrefixPattern -and -not ($lineForChecks -match $validDirectivePattern)) {
-            $invalidDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+        if ($line -match $hashAtStartPattern) {
+            if ($line -notmatch $validDirectivePattern) {
+                $invalidDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+            }
         }
 
-        if ($lineForChecks -match $indentedDirectivePattern) {
-            $indentedDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
-        }
-
-        if ($lineForChecks -match $forbiddenSequencePattern) {
+        if ($line -match $forbiddenSequencePattern) {
             $forbiddenSequences += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
         }
     }
 
-    $hasErrors = $false
-    if ($hasUtf8Bom) { $hasErrors = $true }
-    if ($nbspLines) { $hasErrors = $true }
-    if ($invalidDirectives) { $hasErrors = $true }
-    if ($forbiddenSequences) { $hasErrors = $true }
-    if ($indentedDirectives) { $hasErrors = $true }
-
-    if (-not $hasErrors) {
-        return
-    }
-
-    if ($invalidDirectives) {
-        Write-Error 'Se encontraron líneas que comienzan con "#" y no son directivas ISPP válidas:'
-        foreach ($item in $invalidDirectives) {
-            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+    if ($invalidDirectives -or $forbiddenSequences -or $misalignedDirectives) {
+        if ($misalignedDirectives) {
+            Write-Error 'Las directivas ISPP deben comenzar en la columna 1:'
+            foreach ($item in $misalignedDirectives) {
+                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+            }
         }
-    }
-
-    if ($indentedDirectives) {
-        Write-Error 'Se encontraron directivas ISPP con espacios antes del carácter "#":'
-        foreach ($item in $indentedDirectives) {
-            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        if ($invalidDirectives) {
+            Write-Error 'Se encontraron líneas que comienzan con # pero no son directivas válidas:'
+            foreach ($item in $invalidDirectives) {
+                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+            }
         }
-    }
-
-    if ($forbiddenSequences) {
-        Write-Error 'Se encontraron secuencias prohibidas al inicio de línea:'
-        foreach ($item in $forbiddenSequences) {
-            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        if ($forbiddenSequences) {
+            Write-Error 'Se encontraron secuencias prohibidas al inicio de línea (#13#10):'
+            foreach ($item in $forbiddenSequences) {
+                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+            }
         }
     }
 
@@ -284,6 +273,7 @@ if (-not (Get-ChildItem -LiteralPath $bundledSigner -File -Recurse -Force -Error
 
 $issRelativePath = 'installer\vertexdte.iss'
 $issPath = Join-Path $repoRoot $issRelativePath
+Sanitize-InstallerScript -ScriptPath $issPath
 Test-InstallerScript -ScriptPath $issPath
 
 $defaultBuildOutputRel = 'installer\build\installer'
@@ -305,68 +295,71 @@ if ($NoDefines) {
     }
 }
 
-$scriptForCompilation = $issPath
-$temporaryScript = $null
-
-if ($SanitizeInstaller -or $NoDefines) {
-    $temporaryScript = Join-Path ([System.IO.Path]::GetTempPath()) ("vertexdte_{0}.iss" -f [Guid]::NewGuid().ToString('N'))
-    Sanitize-InstallerScript -ScriptPath $issPath -DestinationPath $temporaryScript | Out-Null
-    $scriptForCompilation = $temporaryScript
-}
+$compileScriptPath = $issPath
+$scriptArgument = $issRelativePath
+$tempIssPath = $null
 
 if ($NoDefines) {
-    $injectedDefines = "#define AppVersion \"1.0.0\"`r`n#define BuildOutputDir \"installer\\build\\installer\"`r`n"
-    $existingContent = Get-Content -LiteralPath $scriptForCompilation -Raw
-    Set-Content -LiteralPath $scriptForCompilation -Value ($injectedDefines + $existingContent) -Encoding utf8NoBOM
+    Write-Host 'Se habilitó el modo -NoDefines; se usarán definiciones predeterminadas en un script temporal.'
+    $tempIssPath = Join-Path ([System.IO.Path]::GetTempPath()) ("vertexdte_{0}.iss" -f ([System.Guid]::NewGuid().ToString('N')))
+    $defaultDefines = "#define AppVersion \"1.0.0\"`r`n#define BuildOutputDir \"installer\\build\\installer\"`r`n"
+    $originalContent = [System.IO.File]::ReadAllText($issPath)
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tempIssPath, $defaultDefines + $originalContent, $encoding)
+    $compileScriptPath = $tempIssPath
+    $scriptArgument = $compileScriptPath
 }
 
-$innoArgs = @()
-if ($scriptForCompilation -eq $issPath) {
-    $innoArgs += $issRelativePath
-} else {
-    $innoArgs += $scriptForCompilation
-}
+try {
+    $innoArgs = @($scriptArgument)
+    if (-not $NoDefines) {
+        $innoArgs += "/DAppVersion=$AppVersion"
+        $innoArgs += ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
+    }
 
-if (-not $NoDefines) {
-    $innoArgs += "/DAppVersion=$AppVersion"
-    $innoArgs += ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
-}
-
-Write-Host 'Compilando instalador con Inno Setup...'
-$innoOutput = & $isccExe @innoArgs 2>&1
-if ($innoOutput) {
-    $innoOutput | ForEach-Object { Write-Host $_ }
-}
-
-if ($LASTEXITCODE -ne 0) {
-    Write-Error 'ISCC.exe produjo errores:'
+    Write-Host 'Compilando instalador con Inno Setup...'
+    $innoOutput = & $isccExe @innoArgs 2>&1
+    $exitCode = $LASTEXITCODE
     if ($innoOutput) {
-        $innoOutput | ForEach-Object { Write-Error $_ }
+        $innoOutput | ForEach-Object { Write-Host $_ }
     }
 
-    $errorText = $innoOutput -join "`n"
-    $lineMatch = [regex]::Match($errorText, 'Error on line\s+(\d+)')
-    if ($lineMatch.Success) {
-        $errorLine = [int]$lineMatch.Groups[1].Value
-        try {
-            $scriptLines = Get-Content -LiteralPath $scriptForCompilation
-            $startIndex = [Math]::Max(0, $errorLine - 6)
-            $endIndex = [Math]::Min($scriptLines.Length - 1, $errorLine + 4)
-            Write-Error "Contexto alrededor de la línea $errorLine:"
-            for ($i = $startIndex; $i -le $endIndex; $i++) {
-                $displayLineNumber = $i + 1
-                Write-Error ("{0,5}: {1}" -f $displayLineNumber, $scriptLines[$i])
-            }
-        } catch {
-            Write-Error "No se pudo leer el script para mostrar el contexto: $_"
+    if ($exitCode -ne 0) {
+        Write-Error 'ISCC.exe produjo errores:'
+        if ($innoOutput) {
+            $innoOutput | ForEach-Object { Write-Error $_ }
         }
-    }
 
-    if ($temporaryScript -and (Test-Path -LiteralPath $temporaryScript)) {
-        Remove-Item -LiteralPath $temporaryScript -Force -ErrorAction SilentlyContinue
-    }
+        $errorLines = @()
+        if ($innoOutput) {
+            foreach ($line in $innoOutput) {
+                if ($line -match 'Error on line ([0-9]+)') {
+                    $errorLines += [int]$Matches[1]
+                }
+            }
+        }
 
-    throw "ISCC.exe finalizó con código $LASTEXITCODE."
+        if ($errorLines.Count -gt 0) {
+            $contextSource = $compileScriptPath
+            $scriptLines = [System.IO.File]::ReadAllLines($contextSource)
+            foreach ($lineNumber in ($errorLines | Sort-Object -Unique)) {
+                $start = [Math]::Max($lineNumber - 5, 1)
+                $finish = [Math]::Min($lineNumber + 5, $scriptLines.Length)
+                Write-Error ("Contexto para la línea {0}:" -f $lineNumber)
+                for ($i = $start; $i -le $finish; $i++) {
+                    $prefix = if ($i -eq $lineNumber) { '>>' } else { '  ' }
+                    Write-Error ("{0}{1,5}: {2}" -f $prefix, $i, $scriptLines[$i - 1])
+                }
+            }
+        }
+
+        throw "ISCC.exe finalizó con código $exitCode."
+    }
+}
+finally {
+    if ($tempIssPath -and (Test-Path -LiteralPath $tempIssPath)) {
+        Remove-Item -LiteralPath $tempIssPath -Force
+    }
 }
 
 if ($temporaryScript -and (Test-Path -LiteralPath $temporaryScript)) {

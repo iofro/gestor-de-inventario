@@ -469,6 +469,28 @@ end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
+  if CurStep = ssInstall then
+  begin
+    if IsUpgrade then
+      Log('Modo de instalación: actualización; los archivos existentes serán reemplazados por la nueva versión del paquete.')
+    else
+      Log('Modo de instalación: instalación nueva.');
+  end;
+
   if CurStep = ssPostInstall then
     WriteInstallMarkers;
+end;
+
+function UpdateReadyMemo(Space, NewLine: string; Memo: TStringList): string;
+begin
+  Memo.Add('');
+  if IsUpgrade then
+  begin
+    Memo.Add(Space + 'Modo de instalación: Actualización');
+    Memo.Add(Space + 'Se reemplazarán los archivos existentes por los nuevos archivos incluidos en este instalador.');
+  end
+  else
+    Memo.Add(Space + 'Modo de instalación: Instalación nueva');
+
+  Result := '';
 end;

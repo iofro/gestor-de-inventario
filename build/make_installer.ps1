@@ -5,7 +5,8 @@ param(
     [string]$AppVersion,
     [string]$PythonPath,
     [string]$ISCCPath,
-    [string]$OutputDir
+    [string]$OutputDir,
+    [switch]$NoDefines
 )
 
 $ErrorActionPreference = 'Stop'
@@ -87,6 +88,25 @@ function Resolve-ISCC {
     throw 'No se encontró ISCC.exe. Proporcione -ISCCPath o instale Inno Setup 6.'
 }
 
+function Sanitize-InstallerScript {
+    param([string]$ScriptPath)
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        throw "No se encontró el script de Inno Setup: $ScriptPath"
+    }
+
+    $rawContent = [System.IO.File]::ReadAllText($ScriptPath)
+    $normalized = $rawContent.Replace([char]0xFEFF, '').Replace([char]0x00A0, ' ')
+    $normalized = $normalized.Replace("`r`n", "`n").Replace("`r", "`n")
+    $normalized = $normalized.Replace("`n", "`r`n")
+
+    if ($normalized -ne $rawContent) {
+        $encoding = New-Object System.Text.UTF8Encoding($false)
+        [System.IO.File]::WriteAllText($ScriptPath, $normalized, $encoding)
+        Write-Host "Se normalizó el script de Inno Setup: $ScriptPath"
+    }
+}
+
 function Test-InstallerScript {
     param([string]$ScriptPath)
 
@@ -94,31 +114,52 @@ function Test-InstallerScript {
         throw "No se encontró el script de Inno Setup: $ScriptPath"
     }
 
-    $invalidDirectivePattern = '^\s*#(?!define\b|undef\b|ifdef\b|ifndef\b|if\b|else\b|endif\b|include\b|file\b|emit\b|append\b|expr\b|pragma\b)'
-    $forbiddenSequencePattern = '^\s*#13#10'
+    $rawContent = [System.IO.File]::ReadAllText($ScriptPath)
+    $normalizedContent = $rawContent.Replace([char]0xFEFF, '').Replace([char]0x00A0, ' ')
+    $lines = $normalizedContent -split "`r?`n"
+
+    $validDirectivePattern = '^#(define|undef|ifdef|ifndef|if|else|endif|include|file|emit|append|expr|pragma)\b'
+    $hashAtStartPattern = '^#'
+    $forbiddenSequencePattern = '^#13#10'
+
     $invalidDirectives = @()
     $forbiddenSequences = @()
-    $lineNumber = 0
+    $misalignedDirectives = @()
 
-    foreach ($line in Get-Content -LiteralPath $ScriptPath) {
-        $lineNumber++
-        if ($line -match $invalidDirectivePattern) {
-            $invalidDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+    for ($index = 0; $index -lt $lines.Length; $index++) {
+        $lineNumber = $index + 1
+        $line = $lines[$index]
+
+        if ($line -match '^\s+#') {
+            $misalignedDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
         }
+
+        if ($line -match $hashAtStartPattern) {
+            if ($line -notmatch $validDirectivePattern) {
+                $invalidDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+            }
+        }
+
         if ($line -match $forbiddenSequencePattern) {
             $forbiddenSequences += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
         }
     }
 
-    if ($invalidDirectives -or $forbiddenSequences) {
+    if ($invalidDirectives -or $forbiddenSequences -or $misalignedDirectives) {
+        if ($misalignedDirectives) {
+            Write-Error 'Las directivas ISPP deben comenzar en la columna 1:'
+            foreach ($item in $misalignedDirectives) {
+                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+            }
+        }
         if ($invalidDirectives) {
-            Write-Error 'Se encontraron líneas con directivas ISPP inválidas:'
+            Write-Error 'Se encontraron líneas que comienzan con # pero no son directivas válidas:'
             foreach ($item in $invalidDirectives) {
                 Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
             }
         }
         if ($forbiddenSequences) {
-            Write-Error 'Se encontraron secuencias prohibidas al inicio de línea:'
+            Write-Error 'Se encontraron secuencias prohibidas al inicio de línea (#13#10):'
             foreach ($item in $forbiddenSequences) {
                 Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
             }
@@ -200,6 +241,7 @@ if (-not (Get-ChildItem -LiteralPath $bundledSigner -File -Recurse -Force -Error
 
 $issRelativePath = 'installer\vertexdte.iss'
 $issPath = Join-Path $repoRoot $issRelativePath
+Sanitize-InstallerScript -ScriptPath $issPath
 Test-InstallerScript -ScriptPath $issPath
 
 $defaultBuildOutputRel = 'installer\build\installer'
@@ -216,20 +258,71 @@ if ($OutputDir) {
     }
 }
 
-$innoArgs = @(
-    $issRelativePath,
-    "/DAppVersion=$AppVersion",
-    ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
-)
+$compileScriptPath = $issPath
+$scriptArgument = $issRelativePath
+$tempIssPath = $null
 
-Write-Host 'Compilando instalador con Inno Setup...'
-$innoOutput = & $isccExe @innoArgs 2>&1
-if ($LASTEXITCODE -ne 0) {
-    Write-Error 'ISCC.exe produjo errores:'
-    if ($innoOutput) {
-        $innoOutput | ForEach-Object { Write-Error $_ }
+if ($NoDefines) {
+    Write-Host 'Se habilitó el modo -NoDefines; se usarán definiciones predeterminadas en un script temporal.'
+    $tempIssPath = Join-Path ([System.IO.Path]::GetTempPath()) ("vertexdte_{0}.iss" -f ([System.Guid]::NewGuid().ToString('N')))
+    $defaultDefines = "#define AppVersion \"1.0.0\"`r`n#define BuildOutputDir \"installer\\build\\installer\"`r`n"
+    $originalContent = [System.IO.File]::ReadAllText($issPath)
+    $encoding = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($tempIssPath, $defaultDefines + $originalContent, $encoding)
+    $compileScriptPath = $tempIssPath
+    $scriptArgument = $compileScriptPath
+}
+
+try {
+    $innoArgs = @($scriptArgument)
+    if (-not $NoDefines) {
+        $innoArgs += "/DAppVersion=$AppVersion"
+        $innoArgs += ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
     }
-    throw "ISCC.exe finalizó con código $LASTEXITCODE."
+
+    Write-Host 'Compilando instalador con Inno Setup...'
+    $innoOutput = & $isccExe @innoArgs 2>&1
+    $exitCode = $LASTEXITCODE
+    if ($innoOutput) {
+        $innoOutput | ForEach-Object { Write-Host $_ }
+    }
+
+    if ($exitCode -ne 0) {
+        Write-Error 'ISCC.exe produjo errores:'
+        if ($innoOutput) {
+            $innoOutput | ForEach-Object { Write-Error $_ }
+        }
+
+        $errorLines = @()
+        if ($innoOutput) {
+            foreach ($line in $innoOutput) {
+                if ($line -match 'Error on line ([0-9]+)') {
+                    $errorLines += [int]$Matches[1]
+                }
+            }
+        }
+
+        if ($errorLines.Count -gt 0) {
+            $contextSource = $compileScriptPath
+            $scriptLines = [System.IO.File]::ReadAllLines($contextSource)
+            foreach ($lineNumber in ($errorLines | Sort-Object -Unique)) {
+                $start = [Math]::Max($lineNumber - 5, 1)
+                $finish = [Math]::Min($lineNumber + 5, $scriptLines.Length)
+                Write-Error ("Contexto para la línea {0}:" -f $lineNumber)
+                for ($i = $start; $i -le $finish; $i++) {
+                    $prefix = if ($i -eq $lineNumber) { '>>' } else { '  ' }
+                    Write-Error ("{0}{1,5}: {2}" -f $prefix, $i, $scriptLines[$i - 1])
+                }
+            }
+        }
+
+        throw "ISCC.exe finalizó con código $exitCode."
+    }
+}
+finally {
+    if ($tempIssPath -and (Test-Path -LiteralPath $tempIssPath)) {
+        Remove-Item -LiteralPath $tempIssPath -Force
+    }
 }
 
 $expectedInstaller = Join-Path $resolvedOutput "VertexDTE-Setup-$AppVersion.exe"

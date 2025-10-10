@@ -1,15 +1,16 @@
 ; Vertex DTE installer generated with Inno Setup
 
-#if Defined(AppVersion)
-  ; AppVersion provided via /DAppVersion=...
+; ==== ISPP guards robustos (sin espacios raros) ====
+#ifdef AppVersion
+  ; /DAppVersion=... por línea de comandos
 #else
   #define AppVersion "0.0.0"
 #endif
 
-#if Defined(OutputDir)
-  ; OutputDir provided via /DOutputDir=...
+#ifdef BuildOutputDir
+  ; /DBuildOutputDir=... por línea de comandos
 #else
-  #define OutputDir "build\\installer"
+  #define BuildOutputDir "build\\installer"
 #endif
 
 [Setup]
@@ -19,7 +20,7 @@ AppVersion={#AppVersion}
 DefaultDirName={autopf}\Vertex DTE
 UsePreviousAppDir=yes
 DirExistsWarning=no
-OutputDir={#OutputDir}
+OutputDir={#BuildOutputDir}
 OutputBaseFilename=VertexDTE-Setup-{#AppVersion}
 PrivilegesRequired=admin
 ArchitecturesInstallIn64BitMode=x64

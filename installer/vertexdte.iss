@@ -481,16 +481,16 @@ begin
     WriteInstallMarkers;
 end;
 
-function UpdateReadyMemo(Space, NewLine: string; Memo: TStringList): string;
+function UpdateReadyMemo(Space, NewLine: string; var Memo: string): Boolean;
 begin
-  Memo.Add('');
+  Memo := Memo + NewLine + NewLine;
   if IsUpgrade then
   begin
-    Memo.Add(Space + 'Modo de instalación: Actualización');
-    Memo.Add(Space + 'Se reemplazarán los archivos existentes por los nuevos archivos incluidos en este instalador.');
+    Memo := Memo + Space + 'Modo de instalación: Actualización' + NewLine;
+    Memo := Memo + Space + 'Se reemplazarán los archivos existentes por los nuevos archivos incluidos en este instalador.' + NewLine;
   end
   else
-    Memo.Add(Space + 'Modo de instalación: Instalación nueva');
+    Memo := Memo + Space + 'Modo de instalación: Instalación nueva' + NewLine;
 
-  Result := '';
+  Result := True;
 end;

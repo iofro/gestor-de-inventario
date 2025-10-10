@@ -1,15 +1,16 @@
 ; Vertex DTE installer generated with Inno Setup
 
+; ==== ISPP guards robustos (sin espacios raros) ====
 #ifdef AppVersion
-  ; AppVersion provided via /DAppVersion=...
+  ; /DAppVersion=... por línea de comandos
 #else
 #define AppVersion "0.0.0"
 #endif
 
 #ifdef BuildOutputDir
-  ; BuildOutputDir provided via /DBuildOutputDir=...
+  ; /DBuildOutputDir=... por línea de comandos
 #else
-#define BuildOutputDir "build\\installer"
+  #define BuildOutputDir "build\\installer"
 #endif
 
 [Setup]

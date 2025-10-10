@@ -32,7 +32,7 @@ DisableProgramGroupPage=yes
 
 [Files]
 Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "tools\verificador\*"
-Source: "..\dist\InventarioFarmacia\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "uploads\*"
+Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "uploads\*"
 
 [Dirs]
 Name: "{userappdata}\VertexDTE"; Flags: uninsneveruninstall

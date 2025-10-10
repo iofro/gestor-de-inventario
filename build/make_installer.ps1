@@ -71,9 +71,9 @@ if (-not (Test-Path -LiteralPath $exePath -PathType Leaf)) {
     throw "No se encontró el ejecutable generado: $exePath"
 }
 
-$signerDir = Join-Path $distDir 'svfe-api-firmador'
+$signerDir = Join-Path $repoRoot 'svfe-api-firmador'
 if (-not (Test-Path -LiteralPath $signerDir -PathType Container)) {
-    throw "No se encontró la carpeta del firmador junto al ejecutable: $signerDir"
+    throw "No se encontró la carpeta del firmador en el repositorio: $signerDir"
 }
 
 $uploadsDir = Join-Path $signerDir 'uploads'

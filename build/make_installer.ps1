@@ -302,7 +302,10 @@ $tempIssPath = $null
 if ($NoDefines) {
     Write-Host 'Se habilitó el modo -NoDefines; se usarán definiciones predeterminadas en un script temporal.'
     $tempIssPath = Join-Path ([System.IO.Path]::GetTempPath()) ("vertexdte_{0}.iss" -f ([System.Guid]::NewGuid().ToString('N')))
-    $defaultDefines = "#define AppVersion \"1.0.0\"`r`n#define BuildOutputDir \"installer\\build\\installer\"`r`n"
+    $defaultDefines = @'
+#define AppVersion "1.0.0"
+#define BuildOutputDir "installer\build\installer"
+'@ + "`r`n"
     $originalContent = [System.IO.File]::ReadAllText($issPath)
     $encoding = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($tempIssPath, $defaultDefines + $originalContent, $encoding)

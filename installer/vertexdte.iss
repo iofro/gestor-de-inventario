@@ -1,11 +1,15 @@
 ; Vertex DTE installer generated with Inno Setup
 
-#ifndef AppVersion
-#define AppVersion "0.0.0"
+#if Defined(AppVersion)
+  ; AppVersion provided via /DAppVersion=...
+#else
+  #define AppVersion "0.0.0"
 #endif
 
-#ifndef OutputDir
-#define OutputDir "build\\installer"
+#if Defined(OutputDir)
+  ; OutputDir provided via /DOutputDir=...
+#else
+  #define OutputDir "build\\installer"
 #endif
 
 [Setup]

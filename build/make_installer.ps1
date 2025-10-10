@@ -5,7 +5,9 @@ param(
     [string]$AppVersion,
     [string]$PythonPath,
     [string]$ISCCPath,
-    [string]$OutputDir
+    [string]$OutputDir,
+    [switch]$SanitizeInstaller,
+    [switch]$NoDefines
 )
 
 $ErrorActionPreference = 'Stop'
@@ -94,37 +96,119 @@ function Test-InstallerScript {
         throw "No se encontró el script de Inno Setup: $ScriptPath"
     }
 
-    $invalidDirectivePattern = '^\s*#(?!define\b|undef\b|ifdef\b|ifndef\b|if\b|else\b|endif\b|include\b|file\b|emit\b|append\b|expr\b|pragma\b)'
-    $forbiddenSequencePattern = '^\s*#13#10'
+    $bytes = [System.IO.File]::ReadAllBytes($ScriptPath)
+    $hasUtf8Bom = $false
+    if ($bytes.Length -ge 3 -and $bytes[0] -eq 0xEF -and $bytes[1] -eq 0xBB -and $bytes[2] -eq 0xBF) {
+        $hasUtf8Bom = $true
+    }
+
+    if ($hasUtf8Bom) {
+        Write-Error 'El script contiene un BOM UTF-8 (U+FEFF) al inicio. Guárdelo sin BOM.'
+    }
+
+    $encoding = [System.Text.Encoding]::UTF8
+    $text = $encoding.GetString($bytes)
+    if ($hasUtf8Bom) {
+        $text = $encoding.GetString($bytes, 3, $bytes.Length - 3)
+    }
+
+    $lines = $text -split "`r?`n"
     $invalidDirectives = @()
     $forbiddenSequences = @()
+    $indentedDirectives = @()
+    $nbspLines = @()
     $lineNumber = 0
+    $validDirectivePattern = '^#(define|undef|ifdef|ifndef|if|else|endif|include|file|emit|append|expr|pragma)\b'
+    $invalidDirectivePrefixPattern = '^\s*#'
+    $indentedDirectivePattern = '^\s+#(define|undef|ifdef|ifndef|if|else|endif|include|file|emit|append|expr|pragma)\b'
+    $forbiddenSequencePattern = '^\s*#13#10'
+    $nbspChar = [char]0x00A0
 
-    foreach ($line in Get-Content -LiteralPath $ScriptPath) {
+    foreach ($line in $lines) {
         $lineNumber++
-        if ($line -match $invalidDirectivePattern) {
+        $lineForChecks = $line.Replace([char]0xFEFF, '').Replace($nbspChar, ' ')
+
+        if ($line.Contains($nbspChar)) {
+            $nbspLines += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+        }
+
+        if ($lineForChecks -match $invalidDirectivePrefixPattern -and -not ($lineForChecks -match $validDirectivePattern)) {
             $invalidDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
         }
-        if ($line -match $forbiddenSequencePattern) {
+
+        if ($lineForChecks -match $indentedDirectivePattern) {
+            $indentedDirectives += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
+        }
+
+        if ($lineForChecks -match $forbiddenSequencePattern) {
             $forbiddenSequences += [PSCustomObject]@{ LineNumber = $lineNumber; Text = $line }
         }
     }
 
-    if ($invalidDirectives -or $forbiddenSequences) {
-        if ($invalidDirectives) {
-            Write-Error 'Se encontraron líneas con directivas ISPP inválidas:'
-            foreach ($item in $invalidDirectives) {
-                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
-            }
-        }
-        if ($forbiddenSequences) {
-            Write-Error 'Se encontraron secuencias prohibidas al inicio de línea:'
-            foreach ($item in $forbiddenSequences) {
-                Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
-            }
-        }
-        throw 'El preflight del instalador detectó líneas inválidas en el script de Inno Setup.'
+    $hasErrors = $false
+    if ($hasUtf8Bom) { $hasErrors = $true }
+    if ($nbspLines) { $hasErrors = $true }
+    if ($invalidDirectives) { $hasErrors = $true }
+    if ($forbiddenSequences) { $hasErrors = $true }
+    if ($indentedDirectives) { $hasErrors = $true }
+
+    if (-not $hasErrors) {
+        return
     }
+
+    if ($invalidDirectives) {
+        Write-Error 'Se encontraron líneas que comienzan con "#" y no son directivas ISPP válidas:'
+        foreach ($item in $invalidDirectives) {
+            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        }
+    }
+
+    if ($indentedDirectives) {
+        Write-Error 'Se encontraron directivas ISPP con espacios antes del carácter "#":'
+        foreach ($item in $indentedDirectives) {
+            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        }
+    }
+
+    if ($forbiddenSequences) {
+        Write-Error 'Se encontraron secuencias prohibidas al inicio de línea:'
+        foreach ($item in $forbiddenSequences) {
+            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        }
+    }
+
+    if ($nbspLines) {
+        Write-Error 'Se encontraron caracteres U+00A0 (NBSP) en las siguientes líneas:'
+        foreach ($item in $nbspLines) {
+            Write-Error ("Línea {0}: {1}" -f $item.LineNumber, $item.Text)
+        }
+    }
+
+    throw 'El preflight del instalador detectó líneas inválidas en el script de Inno Setup.'
+}
+
+function Sanitize-InstallerScript {
+    param(
+        [string]$ScriptPath,
+        [string]$DestinationPath
+    )
+
+    if (-not (Test-Path -LiteralPath $ScriptPath -PathType Leaf)) {
+        throw "No se encontró el script de Inno Setup: $ScriptPath"
+    }
+
+    if (-not $DestinationPath) {
+        $DestinationPath = $ScriptPath
+    }
+
+    $content = Get-Content -LiteralPath $ScriptPath -Raw
+    $content = $content.Replace([char]0xFEFF, '')
+    $content = $content.Replace([char]0x00A0, ' ')
+    $content = $content -replace "`r?`n", "`n"
+    $content = $content -replace "`n", "`r`n"
+
+    Set-Content -LiteralPath $DestinationPath -Value $content -Encoding utf8NoBOM
+    return $DestinationPath
 }
 
 function Copy-SignerToExtras {
@@ -206,7 +290,12 @@ $defaultBuildOutputRel = 'installer\build\installer'
 $buildOutputDefine = $defaultBuildOutputRel
 $resolvedOutput = $null
 
-if ($OutputDir) {
+if ($NoDefines) {
+    $resolvedOutput = Join-Path $repoRoot $defaultBuildOutputRel
+    if (-not (Test-Path -LiteralPath $resolvedOutput)) {
+        New-Item -ItemType Directory -Path $resolvedOutput -Force | Out-Null
+    }
+} elseif ($OutputDir) {
     $resolvedOutput = (Resolve-Path -LiteralPath (New-Item -ItemType Directory -Path $OutputDir -Force).FullName).Path
     $buildOutputDefine = $resolvedOutput
 } else {
@@ -216,23 +305,76 @@ if ($OutputDir) {
     }
 }
 
-$innoArgs = @(
-    $issRelativePath,
-    "/DAppVersion=$AppVersion",
-    ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
-)
+$scriptForCompilation = $issPath
+$temporaryScript = $null
+
+if ($SanitizeInstaller -or $NoDefines) {
+    $temporaryScript = Join-Path ([System.IO.Path]::GetTempPath()) ("vertexdte_{0}.iss" -f [Guid]::NewGuid().ToString('N'))
+    Sanitize-InstallerScript -ScriptPath $issPath -DestinationPath $temporaryScript | Out-Null
+    $scriptForCompilation = $temporaryScript
+}
+
+if ($NoDefines) {
+    $injectedDefines = "#define AppVersion \"1.0.0\"`r`n#define BuildOutputDir \"installer\\build\\installer\"`r`n"
+    $existingContent = Get-Content -LiteralPath $scriptForCompilation -Raw
+    Set-Content -LiteralPath $scriptForCompilation -Value ($injectedDefines + $existingContent) -Encoding utf8NoBOM
+}
+
+$innoArgs = @()
+if ($scriptForCompilation -eq $issPath) {
+    $innoArgs += $issRelativePath
+} else {
+    $innoArgs += $scriptForCompilation
+}
+
+if (-not $NoDefines) {
+    $innoArgs += "/DAppVersion=$AppVersion"
+    $innoArgs += ('/DBuildOutputDir="{0}"' -f $buildOutputDefine)
+}
 
 Write-Host 'Compilando instalador con Inno Setup...'
 $innoOutput = & $isccExe @innoArgs 2>&1
+if ($innoOutput) {
+    $innoOutput | ForEach-Object { Write-Host $_ }
+}
+
 if ($LASTEXITCODE -ne 0) {
     Write-Error 'ISCC.exe produjo errores:'
     if ($innoOutput) {
         $innoOutput | ForEach-Object { Write-Error $_ }
     }
+
+    $errorText = $innoOutput -join "`n"
+    $lineMatch = [regex]::Match($errorText, 'Error on line\s+(\d+)')
+    if ($lineMatch.Success) {
+        $errorLine = [int]$lineMatch.Groups[1].Value
+        try {
+            $scriptLines = Get-Content -LiteralPath $scriptForCompilation
+            $startIndex = [Math]::Max(0, $errorLine - 6)
+            $endIndex = [Math]::Min($scriptLines.Length - 1, $errorLine + 4)
+            Write-Error "Contexto alrededor de la línea $errorLine:"
+            for ($i = $startIndex; $i -le $endIndex; $i++) {
+                $displayLineNumber = $i + 1
+                Write-Error ("{0,5}: {1}" -f $displayLineNumber, $scriptLines[$i])
+            }
+        } catch {
+            Write-Error "No se pudo leer el script para mostrar el contexto: $_"
+        }
+    }
+
+    if ($temporaryScript -and (Test-Path -LiteralPath $temporaryScript)) {
+        Remove-Item -LiteralPath $temporaryScript -Force -ErrorAction SilentlyContinue
+    }
+
     throw "ISCC.exe finalizó con código $LASTEXITCODE."
 }
 
-$expectedInstaller = Join-Path $resolvedOutput "VertexDTE-Setup-$AppVersion.exe"
+if ($temporaryScript -and (Test-Path -LiteralPath $temporaryScript)) {
+    Remove-Item -LiteralPath $temporaryScript -Force -ErrorAction SilentlyContinue
+}
+
+$appVersionForOutput = if ($NoDefines) { '1.0.0' } else { $AppVersion }
+$expectedInstaller = Join-Path $resolvedOutput "VertexDTE-Setup-$appVersionForOutput.exe"
 if (Test-Path -LiteralPath $expectedInstaller -PathType Leaf) {
     Write-Host "Instalador generado: $expectedInstaller"
 } else {

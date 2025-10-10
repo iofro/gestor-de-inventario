@@ -31,8 +31,8 @@ AppMutex=VertexDTE_Running
 DisableProgramGroupPage=yes
 
 [Files]
-Source: "..\\dist\\InventarioFarmacia\\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "tools\\verificador\\*"
-Source: "..\\svfe-api-firmador\\*"; DestDir: "{app}\\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion
+Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "tools\verificador\*"
+Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion
 
 [Dirs]
 Name: "{userappdata}\VertexDTE"; Flags: uninsneveruninstall
@@ -53,7 +53,6 @@ var
   PrevDir: string;
   RequireDifferentDir: Boolean;
   IsUpgrade: Boolean;
-  PrevDirEditOnChange: TNotifyEvent;
 
 function NormalizePath(const Value: string): string;
 begin
@@ -70,13 +69,11 @@ begin
   if RequireDifferentDir then
     WizardForm.NextButton.Enabled := not IsSamePath(WizardForm.DirEdit.Text, PrevDir)
   else
-    WizardForm.NextButton.Enabled := True;
+    WizardForm.NextButton.Enabled := WizardForm.DirEdit.Text <> '';
 end;
 
 procedure DirEditChange(Sender: TObject);
 begin
-  if Assigned(PrevDirEditOnChange) then
-    PrevDirEditOnChange(Sender);
   UpdateDirSelectionState;
 end;
 
@@ -108,7 +105,6 @@ begin
     Exit;
   end;
 
-  PrevDirEditOnChange := WizardForm.DirEdit.OnChange;
   WizardForm.DirEdit.OnChange := @DirEditChange;
 
   if (PrevDir <> '') and DirExists(PrevDir) then

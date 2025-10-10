@@ -32,7 +32,7 @@ DisableProgramGroupPage=yes
 
 [Files]
 Source: "..\dist\InventarioFarmacia\*"; DestDir: "{app}"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "tools\verificador\*"
-Source: "..\dist\InventarioFarmacia\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "uploads\*"
+Source: "..\svfe-api-firmador\*"; DestDir: "{app}\svfe-api-firmador"; Flags: recursesubdirs createallsubdirs ignoreversion; Excludes: "uploads\*"
 
 [Dirs]
 Name: "{userappdata}\VertexDTE"; Flags: uninsneveruninstall
@@ -44,11 +44,6 @@ Name: desktopicon; Description: "Crear acceso directo en el escritorio"; GroupDe
 [Icons]
 Name: "{autoprograms}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; WorkingDir: "{app}"; Tasks: desktopicon
-
-[Run]
-
-[UninstallDelete]
-; No eliminar %APPDATA%\VertexDTE ni la carpeta uploads.
 
 [Code]
 const
@@ -88,7 +83,7 @@ end;
 procedure InitializeWizard;
 var
   Response: Integer;
-  MessageText, DefaultInstallDir: string;
+  DefaultInstallDir: string;
 begin
   PrevDir := GetPreviousAppDir('{#SetupSetting("AppId")}', '');
   RequireDifferentDir := False;
@@ -118,13 +113,11 @@ begin
 
   if (PrevDir <> '') and DirExists(PrevDir) then
   begin
-    MessageText := Format('Se detectó una instalación existente en: %s.%s¿Desea actualizarla?',
-      [PrevDir, NL]);
-    Response := MsgBox(MessageText, mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
+    Response := MsgBox(Format('Se detectó una instalación existente en: %s.%s¿Desea actualizar?', [PrevDir, NL]), mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
-      WizardForm.DirEdit.Text := PrevDir;
       WizardDirValue := PrevDir;
+      WizardForm.DirEdit.Text := PrevDir;
       WizardForm.DirEdit.Enabled := False;
       WizardForm.DirBrowseButton.Enabled := False;
       RequireDifferentDir := False;
@@ -138,9 +131,8 @@ begin
       WizardForm.DirBrowseButton.Enabled := True;
       WizardForm.DirEdit.Text := DefaultInstallDir;
       WizardDirValue := WizardForm.DirEdit.Text;
-      WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption +
-        NL + 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
-      MsgBox('Para reinstalar en paralelo, seleccione otra carpeta.', mbInformation, MB_OK);
+      WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption + NL + 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
+      MsgBox('Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.', mbInformation, MB_OK);
     end;
     UpdateDirSelectionState;
   end;
@@ -157,65 +149,7 @@ begin
   Result := True;
   if (CurPageID = wpSelectDir) and RequireDifferentDir and IsSamePath(WizardForm.DirEdit.Text, PrevDir) then
   begin
-    MsgBox('Para reinstalar en paralelo, seleccione otra carpeta.', mbInformation, MB_OK);
+    MsgBox('Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.', mbInformation, MB_OK);
     Result := False;
   end;
-end;
-
-function EscapeForJson(const S0: string): string;
-var S: string;
-begin
-  S := S0;
-  StringChange(S, '\', '\\');
-  StringChange(S, '"', '\"');
-  Result := S;
-end;
-
-procedure WriteInstallMarkers;
-const
-  MarkerFileName = '.vertex_install.json';
-var
-  MarkerDir, MarkerContent, AppDir: string;
-begin
-  AppDir := ExpandConstant('{app}');
-  MarkerContent :=
-    '{' + NL +
-    '  "app": "VertexDTE",' + NL +
-    '  "version": "' + ExpandConstant('{#AppVersion}') + '",' + NL +
-    '  "path": "' + EscapeForJson(AppDir) + '"' + NL +
-    '}';
-  SaveStringToFile(AddBackslash(AppDir) + MarkerFileName, MarkerContent, False);
-
-  MarkerDir := ExpandConstant('{commonappdata}\VertexDTE');
-  if ForceDirectories(MarkerDir) then
-    SaveStringToFile(AddBackslash(MarkerDir) + 'install-path.txt', AppDir, False);
-end;
-
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssInstall then
-  begin
-    if IsUpgrade then
-      Log('Modo de instalación: actualización; los archivos existentes serán reemplazados por los nuevos incluidos en este instalador.')
-    else
-      Log('Modo de instalación: instalación nueva.');
-  end;
-
-  if CurStep = ssPostInstall then
-    WriteInstallMarkers;
-end;
-
-function UpdateReadyMemo(Space, NewLine, MemoUserInfo, MemoDirInfo, MemoTypeInfo: string): string;
-var
-  Info: string;
-begin
-  if IsUpgrade then
-    Info :=
-      NewLine + Space + 'Modo de instalación: Actualización' + NewLine +
-      Space + 'Se reemplazarán los archivos existentes por los nuevos incluidos en este instalador.' + NewLine
-  else
-    Info :=
-      NewLine + Space + 'Modo de instalación: Instalación nueva' + NewLine;
-
-  Result := MemoUserInfo + NewLine + MemoDirInfo + NewLine + MemoTypeInfo + Info;
 end;

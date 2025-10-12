@@ -14,13 +14,13 @@
           <th>Descripción</th>
           <th>Unidad</th>
           <th>Cant. facturada</th>
-          <th>Cant. a ajustar</th>
+          <th>Ajuste cantidad</th>
           <th>Tipo</th>
           <th>Modo</th>
           <th>Valor</th>
           <th>Afectación</th>
           <th>IVA inc.</th>
-          <th>Ajuste (USD)</th>
+          <th>Ajuste de precio (USD)</th>
           <th>Base</th>
           <th>IVA</th>
           <th>Total</th>
@@ -36,9 +36,11 @@
           <td>{{ item.cantidadFacturada }}</td>
           <td>
             <input
+              class="cantidad-ajuste"
               type="number"
               :value="item.cantidadAjustar"
               step="0.0001"
+              :disabled="item.ajusteCantidad === false"
               @focus="onFocus(item, 'cantidadAjustar')"
               @input="update(item, 'cantidadAjustar', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -94,6 +96,8 @@
               type="number"
               :value="item.ajuste"
               step="0.0001"
+              :min="item.tipo === 'debito' ? 0 : undefined"
+              :disabled="item.ajusteCantidad === true"
               @focus="onFocus(item, 'ajuste')"
               @input="update(item, 'ajuste', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -157,7 +161,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineProps, defineEmits, defineOptions } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { toBaseIva, fromBaseIva } from '../services/useIvaConversion';
 
 interface NotaItem {
@@ -178,6 +182,7 @@ interface NotaItem {
   unidad?: string;
   maxMonto?: number;
   isProduct?: boolean;
+  ajusteCantidad?: boolean;
 }
 
 interface Producto {
@@ -200,11 +205,15 @@ const emit = defineEmits(['update:modelValue']);
 
 const notaTipo = computed(() => props.notaTipo ?? props.tipoNota ?? 'debito');
 
-const items = ref<NotaItem[]>(props.modelValue ? [...props.modelValue] : []);
+let nextId = 1;
+const items = ref<NotaItem[]>([]);
+
+syncFromProps(props.modelValue ?? []);
+
 watch(
   () => props.modelValue,
   (val) => {
-    items.value = val ? [...val] : [];
+    syncFromProps(val ?? []);
   }
 );
 watch(
@@ -247,7 +256,6 @@ function toggleAll(val: boolean) {
   filteredItems.value.forEach((i) => (i.selected = val));
 }
 
-let nextId = 1;
 function addItem() {
   productSearch.value = '';
   showProductDialog.value = true;
@@ -284,20 +292,58 @@ function onEsc(item: NotaItem, field: keyof NotaItem) {
   (item as any)[field] = cache.get(key);
 }
 
-function update(item: NotaItem, field: keyof NotaItem, value: any) {
-  if (field === 'ajuste' && notaTipo.value === 'debito' && value < 0) {
-    value = 0;
+function update(item: NotaItem, field: keyof NotaItem, input: any) {
+  const targets = applyToSelected.value ? items.value.filter((i) => i.selected) : [item];
+
+  targets.forEach((target) => {
+    const isNumericField = field === 'ajuste' || field === 'cantidadAjustar';
+    const rawNum = isNumericField ? Number(input) : NaN;
+    const raw = isNumericField && Number.isFinite(rawNum) ? rawNum : isNumericField ? 0 : input;
+
+    const isDebitRow = (target.tipo ?? notaTipo.value) === 'debito';
+    const effective = field === 'ajuste' && isDebitRow && raw < 0 ? 0 : raw;
+
+    if (field === 'ajuste') {
+      handlePrecioChange(target, raw);
+    } else if (field === 'cantidadAjustar') {
+      handleCantidadChange(target, raw);
+    }
+
+    (target as any)[field] = effective;
+
+    if (target.isProduct && (field === 'cantidadAjustar' || field === 'valor')) {
+      target.ajuste = target.cantidadAjustar * target.valor;
+    }
+  });
+}
+
+function handlePrecioChange(target: NotaItem, value: any) {
+  const numericValue = Number(value);
+  if (isNonZero(numericValue)) {
+    target.ajusteCantidad = false;
+    if (Number(target.cantidadAjustar) !== 0) {
+      target.cantidadAjustar = 0;
+    }
+  } else if (target.ajusteCantidad === false && !isNonZero(numericValue)) {
+    target.ajusteCantidad = undefined;
   }
-  if (applyToSelected.value) {
-    items.value
-      .filter((i) => i.selected)
-      .forEach((i) => ((i as any)[field] = value));
-  } else {
-    (item as any)[field] = value;
+}
+
+function handleCantidadChange(target: NotaItem, value: any) {
+  const numericValue = Number(value);
+  if (isNonZero(numericValue)) {
+    target.ajusteCantidad = true;
+    if (Number(target.ajuste) !== 0) {
+      target.ajuste = 0;
+    }
+  } else if (target.ajusteCantidad === true && !isNonZero(numericValue)) {
+    target.ajusteCantidad = undefined;
   }
-  if (item.isProduct && (field === 'cantidadAjustar' || field === 'valor')) {
-    item.ajuste = item.cantidadAjustar * item.valor;
-  }
+}
+
+function isNonZero(value: any) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && Math.abs(numeric) > 0;
 }
 
 function resolveValor(item: NotaItem) {
@@ -363,6 +409,45 @@ const totalCredito = computed(() =>
 const creditoExcede = computed(() =>
   props.topeCredito !== undefined && totalCredito.value > props.topeCredito
 );
+
+function syncFromProps(source: NotaItem[]) {
+  items.value = normalizeItems(source);
+}
+
+function normalizeItems(source: NotaItem[]) {
+  return source.map((original) => {
+    const clone = { ...original };
+    const maybeId = Number((original as any).id);
+    if (Number.isFinite(maybeId) && maybeId > 0) {
+      clone.id = maybeId;
+      nextId = Math.max(nextId, maybeId + 1);
+    } else {
+      clone.id = nextId++;
+    }
+    normalizeAjusteState(clone);
+    return clone;
+  });
+}
+
+function normalizeAjusteState(item: NotaItem) {
+  if (isNonZero(item.cantidadAjustar)) {
+    item.ajusteCantidad = true;
+    if (isNonZero(item.ajuste)) {
+      item.ajuste = 0;
+    }
+    return;
+  }
+  if (isNonZero(item.ajuste)) {
+    item.ajusteCantidad = false;
+    if (Number(item.cantidadAjustar) !== 0) {
+      item.cantidadAjustar = 0;
+    }
+    return;
+  }
+  if (!isNonZero(item.ajuste) && !isNonZero(item.cantidadAjustar)) {
+    item.ajusteCantidad = undefined;
+  }
+}
 </script>
 
 <style scoped>

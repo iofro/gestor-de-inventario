@@ -41,6 +41,7 @@
               :value="item.cantidadAjustar"
               :disabled="isCantidadLocked(item)"
               step="0.0001"
+              :disabled="item.ajusteCantidad === false"
               @focus="onFocus(item, 'cantidadAjustar')"
               @input="update(item, 'cantidadAjustar', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -97,6 +98,8 @@
               :value="item.ajuste"
               :disabled="isPrecioLocked(item)"
               step="0.0001"
+              :min="item.tipo === 'debito' ? 0 : undefined"
+              :disabled="item.ajusteCantidad === true"
               @focus="onFocus(item, 'ajuste')"
               @input="update(item, 'ajuste', parseFloat($event.target.value))"
               @keydown.enter.prevent="$event.target.blur()"
@@ -291,50 +294,58 @@ function onEsc(item: NotaItem, field: keyof NotaItem) {
   (item as any)[field] = cache.get(key);
 }
 
-function update(item: NotaItem, field: keyof NotaItem, value: any) {
-  if (field === 'ajuste' && notaTipo.value === 'debito' && value < 0) {
-    value = 0;
-  }
+function update(item: NotaItem, field: keyof NotaItem, input: any) {
   const targets = applyToSelected.value ? items.value.filter((i) => i.selected) : [item];
+
   targets.forEach((target) => {
-    (target as any)[field] = value;
+    const isNumericField = field === 'ajuste' || field === 'cantidadAjustar';
+    const rawNum = isNumericField ? Number(input) : NaN;
+    const raw = isNumericField && Number.isFinite(rawNum) ? rawNum : isNumericField ? 0 : input;
+
+    const isDebitRow = (target.tipo ?? notaTipo.value) === 'debito';
+    const effective = field === 'ajuste' && isDebitRow && raw < 0 ? 0 : raw;
+
+    if (field === 'ajuste') {
+      handlePrecioChange(target, raw);
+    } else if (field === 'cantidadAjustar') {
+      handleCantidadChange(target, raw);
+    }
+
+    (target as any)[field] = effective;
+
     if (target.isProduct && (field === 'cantidadAjustar' || field === 'valor')) {
       target.ajuste = target.cantidadAjustar * target.valor;
-    }
-    if (field === 'ajuste') {
-      handlePrecioChange(target, value);
-    } else if (field === 'cantidadAjustar') {
-      handleCantidadChange(target, value);
     }
   });
 }
 
 function handlePrecioChange(target: NotaItem, value: any) {
   const numericValue = Number(value);
-  if (Number.isFinite(numericValue) && numericValue > 0) {
+  if (isNonZero(numericValue)) {
     target.ajusteCantidad = false;
     if (Number(target.cantidadAjustar) !== 0) {
       target.cantidadAjustar = 0;
     }
-  } else if (target.ajusteCantidad === false && !isPositive(target.ajuste)) {
+  } else if (target.ajusteCantidad === false && !isNonZero(numericValue)) {
     target.ajusteCantidad = undefined;
   }
 }
 
 function handleCantidadChange(target: NotaItem, value: any) {
   const numericValue = Number(value);
-  if (Number.isFinite(numericValue) && numericValue > 0) {
+  if (isNonZero(numericValue)) {
     target.ajusteCantidad = true;
     if (Number(target.ajuste) !== 0) {
       target.ajuste = 0;
     }
-  } else if (target.ajusteCantidad === true && !isPositive(target.cantidadAjustar)) {
+  } else if (target.ajusteCantidad === true && !isNonZero(numericValue)) {
     target.ajusteCantidad = undefined;
   }
 }
 
-function isPositive(value: any) {
-  return Number.isFinite(Number(value)) && Number(value) > 0;
+function isNonZero(value: any) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && Math.abs(numeric) > 0;
 }
 
 function resolveValor(item: NotaItem) {
@@ -421,21 +432,21 @@ function normalizeItems(source: NotaItem[]) {
 }
 
 function normalizeAjusteState(item: NotaItem) {
-  if (isPositive(item.cantidadAjustar)) {
+  if (isNonZero(item.cantidadAjustar)) {
     item.ajusteCantidad = true;
-    if (isPositive(item.ajuste)) {
+    if (isNonZero(item.ajuste)) {
       item.ajuste = 0;
     }
     return;
   }
-  if (isPositive(item.ajuste)) {
+  if (isNonZero(item.ajuste)) {
     item.ajusteCantidad = false;
     if (Number(item.cantidadAjustar) !== 0) {
       item.cantidadAjustar = 0;
     }
     return;
   }
-  if (!isPositive(item.ajuste) && !isPositive(item.cantidadAjustar)) {
+  if (!isNonZero(item.ajuste) && !isNonZero(item.cantidadAjustar)) {
     item.ajusteCantidad = undefined;
   }
 }

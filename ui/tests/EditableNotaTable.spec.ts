@@ -168,6 +168,7 @@ describe('EditableNotaTable', () => {
 
     const cantidadInput = wrapper.find('input.cantidad-ajuste');
     expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
     // @ts-expect-error accessing internal state for test
     expect(wrapper.vm.items[0].ajusteCantidad).toBe(false);
   });
@@ -204,6 +205,7 @@ describe('EditableNotaTable', () => {
 
     const ajusteInput = wrapper.find('input.ajuste');
     expect((ajusteInput.element as HTMLInputElement).value).toBe('0');
+    expect((ajusteInput.element as HTMLInputElement).disabled).toBe(true);
     // @ts-expect-error accessing internal state for test
     expect(wrapper.vm.items[0].ajusteCantidad).toBe(true);
   });
@@ -238,12 +240,55 @@ describe('EditableNotaTable', () => {
     await cantidadInput.setValue('3');
     await wrapper.vm.$nextTick();
     expect((wrapper.find('input.ajuste').element as HTMLInputElement).value).toBe('0');
+    expect((wrapper.find('input.ajuste').element as HTMLInputElement).disabled).toBe(true);
 
     await cantidadInput.setValue('0');
     await wrapper.vm.$nextTick();
+    expect((wrapper.find('input.ajuste').element as HTMLInputElement).disabled).toBe(false);
+
     await wrapper.find('input.ajuste').setValue('5');
     await wrapper.vm.$nextTick();
     expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
+  });
+
+  it('bloquea el campo opuesto cuando el valor es negativo', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 5,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
+
+    const ajusteInput = wrapper.find('input.ajuste');
+    await ajusteInput.setValue('-5');
+    await wrapper.vm.$nextTick();
+
+    const cantidadInput = wrapper.find('input.cantidad-ajuste');
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
+
+    await ajusteInput.setValue('0');
+    await wrapper.vm.$nextTick();
+
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
   });
 
   it('asigna un identificador interno cuando el item no lo provee', async () => {

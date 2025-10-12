@@ -14,13 +14,13 @@
           <th>Descripción</th>
           <th>Unidad</th>
           <th>Cant. facturada</th>
-          <th>Cant. a ajustar</th>
+          <th>Ajuste cantidad</th>
           <th>Tipo</th>
           <th>Modo</th>
           <th>Valor</th>
           <th>Afectación</th>
           <th>IVA inc.</th>
-          <th>Ajuste (USD)</th>
+          <th>Ajuste precio (USD)</th>
           <th>Base</th>
           <th>IVA</th>
           <th>Total</th>
@@ -36,8 +36,10 @@
           <td>{{ item.cantidadFacturada }}</td>
           <td>
             <input
+              class="cantidad-ajuste"
               type="number"
               :value="item.cantidadAjustar"
+              :disabled="isCantidadLocked(item)"
               step="0.0001"
               @focus="onFocus(item, 'cantidadAjustar')"
               @input="update(item, 'cantidadAjustar', parseFloat($event.target.value))"
@@ -93,6 +95,7 @@
               class="ajuste"
               type="number"
               :value="item.ajuste"
+              :disabled="isPrecioLocked(item)"
               step="0.0001"
               @focus="onFocus(item, 'ajuste')"
               @input="update(item, 'ajuste', parseFloat($event.target.value))"
@@ -157,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineProps, defineEmits, defineOptions } from 'vue';
+import { ref, computed, watch, defineProps, defineEmits, defineOptions, reactive } from 'vue';
 import { toBaseIva, fromBaseIva } from '../services/useIvaConversion';
 
 interface NotaItem {
@@ -178,6 +181,7 @@ interface NotaItem {
   unidad?: string;
   maxMonto?: number;
   isProduct?: boolean;
+  ajusteCantidad?: boolean;
 }
 
 interface Producto {
@@ -200,11 +204,16 @@ const emit = defineEmits(['update:modelValue']);
 
 const notaTipo = computed(() => props.notaTipo ?? props.tipoNota ?? 'debito');
 
-const items = ref<NotaItem[]>(props.modelValue ? [...props.modelValue] : []);
+let nextId = 1;
+const items = ref<NotaItem[]>([]);
+const lockedFields = reactive<Record<number, 'precio' | 'cantidad' | undefined>>({});
+
+syncFromProps(props.modelValue ?? []);
+
 watch(
   () => props.modelValue,
   (val) => {
-    items.value = val ? [...val] : [];
+    syncFromProps(val ?? []);
   }
 );
 watch(
@@ -247,7 +256,6 @@ function toggleAll(val: boolean) {
   filteredItems.value.forEach((i) => (i.selected = val));
 }
 
-let nextId = 1;
 function addItem() {
   productSearch.value = '';
   showProductDialog.value = true;
@@ -288,16 +296,27 @@ function update(item: NotaItem, field: keyof NotaItem, value: any) {
   if (field === 'ajuste' && notaTipo.value === 'debito' && value < 0) {
     value = 0;
   }
-  if (applyToSelected.value) {
-    items.value
-      .filter((i) => i.selected)
-      .forEach((i) => ((i as any)[field] = value));
-  } else {
-    (item as any)[field] = value;
-  }
-  if (item.isProduct && (field === 'cantidadAjustar' || field === 'valor')) {
-    item.ajuste = item.cantidadAjustar * item.valor;
-  }
+  const targets = applyToSelected.value ? items.value.filter((i) => i.selected) : [item];
+  targets.forEach((target) => {
+    (target as any)[field] = value;
+    if (target.isProduct && (field === 'cantidadAjustar' || field === 'valor')) {
+      target.ajuste = target.cantidadAjustar * target.valor;
+    }
+    if (field === 'ajuste') {
+      if (shouldLockByPrecio(value)) {
+        target.ajusteCantidad = false;
+      } else if (target.ajusteCantidad === false) {
+        target.ajusteCantidad = undefined;
+      }
+      updateLock(target, 'precio', value);
+    } else if (field === 'cantidadAjustar') {
+      target.ajusteCantidad = true;
+      updateLock(target, 'cantidad', value);
+      if (!shouldLockByCantidad(value)) {
+        target.ajusteCantidad = undefined;
+      }
+    }
+  });
 }
 
 function resolveValor(item: NotaItem) {
@@ -363,6 +382,64 @@ const totalCredito = computed(() =>
 const creditoExcede = computed(() =>
   props.topeCredito !== undefined && totalCredito.value > props.topeCredito
 );
+
+resetLocks();
+
+function updateLock(item: NotaItem, field: 'precio' | 'cantidad', rawValue: any) {
+  const key = item.id;
+  const shouldLock = field === 'precio' ? shouldLockByPrecio(rawValue) : shouldLockByCantidad(rawValue);
+  if (shouldLock) {
+    lockedFields[key] = field;
+  } else if (lockedFields[key] === field) {
+    delete lockedFields[key];
+  }
+}
+
+function shouldLockByPrecio(value: any) {
+  return Number.isFinite(value) && Number(value) > 0;
+}
+
+function shouldLockByCantidad(value: any) {
+  return Number.isFinite(value) && Number(value) > 0;
+}
+
+function isCantidadLocked(item: NotaItem) {
+  return lockedFields[item.id] === 'precio';
+}
+
+function isPrecioLocked(item: NotaItem) {
+  return lockedFields[item.id] === 'cantidad';
+}
+
+function resetLocks() {
+  Object.keys(lockedFields).forEach((key) => delete lockedFields[Number(key)]);
+  items.value.forEach((item) => {
+    if (item.ajusteCantidad) {
+      lockedFields[item.id] = 'cantidad';
+    } else if (shouldLockByPrecio(item.ajuste)) {
+      lockedFields[item.id] = 'precio';
+    }
+  });
+}
+
+function syncFromProps(source: NotaItem[]) {
+  items.value = normalizeItems(source);
+  resetLocks();
+}
+
+function normalizeItems(source: NotaItem[]) {
+  return source.map((original) => {
+    const clone = { ...original };
+    const maybeId = Number((original as any).id);
+    if (Number.isFinite(maybeId) && maybeId > 0) {
+      clone.id = maybeId;
+      nextId = Math.max(nextId, maybeId + 1);
+    } else {
+      clone.id = nextId++;
+    }
+    return clone;
+  });
+}
 </script>
 
 <style scoped>

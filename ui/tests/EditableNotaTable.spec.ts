@@ -135,4 +135,141 @@ describe('EditableNotaTable', () => {
     expect(cells[13].text()).toBe('13.0000');
     expect(cells[14].text()).toBe('113.0000');
   });
+
+  it('bloquea la cantidad cuando se ingresa un ajuste de precio', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 1,
+            cantidadAjustar: 0,
+            tipo: 'debito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'debito'
+      }
+    });
+
+    const ajusteInput = wrapper.find('input.ajuste');
+    await ajusteInput.setValue('10');
+    await wrapper.vm.$nextTick();
+
+    const cantidadInput = wrapper.find('input.cantidad-ajuste');
+    expect(cantidadInput.attributes('disabled')).toBeDefined();
+  });
+
+  it('bloquea el ajuste de precio cuando se modifica la cantidad', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 5,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
+
+    const cantidadInput = wrapper.find('input.cantidad-ajuste');
+    await cantidadInput.setValue('2');
+    await wrapper.vm.$nextTick();
+
+    const ajusteInput = wrapper.find('input.ajuste');
+    expect(ajusteInput.attributes('disabled')).toBeDefined();
+  });
+
+  it('reactiva el campo bloqueado cuando el ajuste vuelve a cero', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 5,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
+
+    const cantidadInput = wrapper.find('input.cantidad-ajuste');
+    await cantidadInput.setValue('3');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('input.ajuste').attributes('disabled')).toBeDefined();
+
+    await cantidadInput.setValue('0');
+    await wrapper.vm.$nextTick();
+    expect(wrapper.find('input.ajuste').attributes('disabled')).toBeUndefined();
+  });
+
+  it('asigna un identificador interno cuando el item no lo provee', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        // @ts-expect-error simulando datos sin id
+        modelValue: [
+          {
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 5,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
+
+    const ajusteInput = wrapper.find('input.ajuste');
+    await ajusteInput.setValue('5');
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.find('input.cantidad-ajuste').attributes('disabled')).toBeDefined();
+  });
 });

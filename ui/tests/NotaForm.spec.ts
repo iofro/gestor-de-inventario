@@ -40,6 +40,95 @@ describe('NotaForm', () => {
     expect(input.attributes('title')).toContain('Monto');
   });
 
+  it('muestra el encabezado de Ajuste precio en la tabla de ítems', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: {
+          tipo: '01',
+          numero: '1',
+          fecha: '2024-01-01',
+          uuid: '1234567890abcdef',
+          cliente: 'A',
+          total: 0,
+          ventas_gravadas: 0,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'credito'
+      }
+    });
+
+    const btnProducto = wrapper.findAll('.tabs button')[1];
+    await btnProducto.trigger('click');
+    await wrapper.vm.$nextTick();
+
+    const headers = wrapper.findAll('thead th').map((th) => th.text());
+    expect(headers).toContain('Ajuste precio (USD)');
+  });
+
+  it('bloquea edición simultánea de cantidad y ajuste precio', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: {
+          tipo: '01',
+          numero: '1',
+          fecha: '2024-01-01',
+          uuid: '1234567890abcdef',
+          cliente: 'A',
+          total: 0,
+          ventas_gravadas: 0,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'debito'
+      }
+    });
+
+    const btnProducto = wrapper.findAll('.tabs button')[1];
+    await btnProducto.trigger('click');
+    const addBtn = wrapper.find('button.add-item');
+    await addBtn.trigger('click');
+    const opcion = wrapper.find('.product-option');
+    await opcion.trigger('click');
+    await wrapper.vm.$nextTick();
+    const tabla = wrapper.findComponent({ name: 'EditableNotaTable' });
+
+    const cantidadInput = wrapper.get('[data-testid="cantidad-input-1"]');
+    const precioInput = wrapper.get('[data-testid="precio-input-1"]');
+
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
+    expect((precioInput.element as HTMLInputElement).disabled).toBe(false);
+
+    await cantidadInput.setValue('3');
+    await tabla.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    // @ts-expect-error inspección de estado interno para la prueba
+    expect(tabla.vm.items[0].cantidadAjustar).toBe(3);
+    expect((precioInput.element as HTMLInputElement).disabled).toBe(true);
+
+    await cantidadInput.setValue('0');
+    await tabla.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
+    // @ts-expect-error inspección de estado interno para la prueba
+    expect(tabla.vm.items[0].cantidadAjustar).toBe(0);
+    // @ts-expect-error inspección en el padre
+    expect(wrapper.vm.items[0].cantidadAjustar).toBe(0);
+    expect((precioInput.element as HTMLInputElement).disabled).toBe(false);
+
+    await precioInput.setValue('4');
+    await tabla.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
+
+    await precioInput.setValue('0');
+    await tabla.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
+  });
+
   it('muestra datos de factura en encabezado', () => {
     const wrapper = mount(NotaForm, {
       props: {

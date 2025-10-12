@@ -49,7 +49,7 @@ Name: "{autodesktop}\Vertex DTE"; Filename: "{app}\InventarioFarmacia.exe"; Work
 const
   NL = #13#10;
   APP_ID = '{7ACDE88C-3C97-47F0-A0F1-8BFC734E7373}';
-  PARALLEL_INSTALL_HINT = 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalación existente.';
+  PARALLEL_INSTALL_HINT = 'Para reinstalar en paralelo, seleccione otra carpeta distinta a la instalaciÃ³n existente.';
 
 function ReadPrevDirFromKey(RootKey: Integer; const SubKey, ValueName: string; var OutDir: string): Boolean;
 begin
@@ -160,7 +160,7 @@ begin
 
   if (PrevDir <> '') and DirExists(PrevDir) then
   begin
-    Response := MsgBox('Se detectó una instalación existente en: ' + PrevDir + NL + '¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
+    Response := MsgBox('Se detectÃ³ una instalaciÃ³n existente en: ' + PrevDir + NL + 'Â¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
       WizardDirValue := PrevDir;

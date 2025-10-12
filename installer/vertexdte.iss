@@ -119,11 +119,16 @@ begin
   PrevDirInitialized := True;
 end;
 
+function HasValidPrevDir: Boolean;
+begin
+  Result := (PrevDir <> '') and DirExists(PrevDir);
+end;
+
 function GetDefaultDirName(Default: string): string;
 begin
   EnsurePrevDirInitialized;
 
-  if (PrevDir <> '') and DirExists(PrevDir) then
+  if HasValidPrevDir then
     Result := PrevDir
   else
     Result := DefaultInstallDir;
@@ -164,17 +169,15 @@ begin
 
   if WizardSilent then
   begin
-    if (PrevDir <> '') and DirExists(PrevDir) then
-      IsUpgrade := True
-    else
-      IsUpgrade := False;
+    // No tocar el directorio aquí; GetDefaultDirName ya lo decide.
+    IsUpgrade := HasValidPrevDir;
     Exit;
   end;
 
   WizardForm.DirEdit.OnChange := @DirEditChange;
   UpdateDirSelectionState;
 
-  if (PrevDir <> '') and DirExists(PrevDir) then
+  if HasValidPrevDir then
   begin
     Response := MsgBox('Se detectó una instalación existente en: ' + PrevDir + NL + '¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then

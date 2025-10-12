@@ -89,7 +89,7 @@ from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from utils.monto import iva_item
 from utils.snapshot import SnapshotNotFoundError
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
@@ -5386,6 +5386,8 @@ class FacturacionTab(QWidget):
                     "precio_unitario_iva": iva_item(Decimal(str(d.get("ventaGravada", 0)))) if TRIBUTO_IVA in (d.get("tributos") or []) else Decimal("0"),
                     "descuento_iva": Decimal(str(d.get("montoDescu", 0))),
                     "total_linea": Decimal(str(d.get("ventaGravada", 0))),
+                    "uniMedida": d.get("uniMedida"),
+                    "tipoItem": d.get("tipoItem"),
                 }
             )
 
@@ -5395,9 +5397,71 @@ class FacturacionTab(QWidget):
         if dialog.exec_() != QDialog.Accepted:
             return
         monto, motivo, detalles_nota = dialog.get_data()
+        def _round4(value: float) -> float:
+            return float(Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
+
         for det in detalles_nota or []:
             src = detalle_map.get(det.get("detalle_id"))
-            ajuste_total = abs(det.get("ajuste", 0))
+            ajuste_total = abs(det.get("ajuste", 0)) if det.get("ajuste") is not None else 0.0
+            if det.get("ajusteCantidad"):
+                cantidad = abs(det.get("cantidad", 0))
+                if not cantidad:
+                    continue
+                afectacion = det.get("afectacion")
+                if not afectacion and src:
+                    if src.get("ventas_gravadas"):
+                        afectacion = "gravada"
+                    elif src.get("ventas_exentas"):
+                        afectacion = "exenta"
+                    elif src.get("ventas_no_sujetas"):
+                        afectacion = "no_sujeta"
+                precio_unitario = det.get("precio_unitario")
+                if precio_unitario is None and src:
+                    cantidad_src = src.get("cantidad") or 0
+                    if cantidad_src:
+                        if src.get("ventas_gravadas"):
+                            precio_unitario = src.get("ventas_gravadas", 0) / cantidad_src
+                        elif src.get("ventas_exentas"):
+                            precio_unitario = src.get("ventas_exentas", 0) / cantidad_src
+                        elif src.get("ventas_no_sujetas"):
+                            precio_unitario = src.get("ventas_no_sujetas", 0) / cantidad_src
+                    if precio_unitario is None:
+                        precio_unitario = src.get("precio_unitario")
+                precio_unitario = float(precio_unitario or 0)
+                precio_unitario = _round4(precio_unitario)
+                total_base = _round4(precio_unitario * cantidad)
+                det.update(
+                    {
+                        "cantidad": _round4(cantidad),
+                        "precio_unitario": precio_unitario,
+                        "ajusteCantidad": True,
+                    }
+                )
+                if src:
+                    det.setdefault("producto_id", src.get("producto_id"))
+                    det.setdefault("descripcion", src.get("descripcion"))
+                    det.setdefault("uniMedida", src.get("uniMedida"))
+                    det.setdefault("tipoItem", src.get("tipoItem"))
+                if afectacion == "exenta":
+                    det.update({
+                        "ventas_exentas": total_base,
+                        "iva": 0.0,
+                    })
+                elif afectacion == "no_sujeta":
+                    det.update({
+                        "ventas_no_sujetas": total_base,
+                        "iva": 0.0,
+                    })
+                else:
+                    iva = _round4(total_base * 0.13)
+                    det.update({
+                        "ventas_gravadas": total_base,
+                        "iva": iva,
+                    })
+
+            if ajuste_total == 0:
+                continue
+
             if src and src.get("ventas_gravadas"):
                 base = ajuste_total / 1.13
                 iva = ajuste_total - base
@@ -5460,15 +5524,26 @@ class FacturacionTab(QWidget):
             src = detalle_map.get(det.get("detalle_id"))
             if not src:
                 continue
-            detalle = {
-                "cantidad": 1,
-                "descripcion": src.get("descripcion", ""),
-                "precio_unitario": det.get("precio_unitario", 0),
-                "iva": det.get("iva", 0),
-                "ventas_gravadas": det.get("ventas_gravadas", 0),
-                "ventas_exentas": det.get("ventas_exentas", 0),
-                "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
-            }
+            if det.get("ajusteCantidad"):
+                detalle = {
+                    "cantidad": det.get("cantidad", 0),
+                    "descripcion": src.get("descripcion", ""),
+                    "precio_unitario": det.get("precio_unitario", 0),
+                    "iva": det.get("iva", 0),
+                    "ventas_gravadas": det.get("ventas_gravadas", 0),
+                    "ventas_exentas": det.get("ventas_exentas", 0),
+                    "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
+                }
+            else:
+                detalle = {
+                    "cantidad": 1,
+                    "descripcion": src.get("descripcion", ""),
+                    "precio_unitario": det.get("precio_unitario", 0),
+                    "iva": det.get("iva", 0),
+                    "ventas_gravadas": det.get("ventas_gravadas", 0),
+                    "ventas_exentas": det.get("ventas_exentas", 0),
+                    "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
+                }
             detalles_pdf.append(detalle)
 
         if tipo == "credito":

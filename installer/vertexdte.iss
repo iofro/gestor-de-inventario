@@ -64,19 +64,42 @@ begin
   D := '';
 
   if ReadPrevDirFromKey(HKLM, Key, 'Inno Setup: App Path', D) then
-  else if ReadPrevDirFromKey(HKLM, Key, 'InstallLocation', D) then
-
-  else if IsWin64 and ReadPrevDirFromKey(HKLM64, Key, 'Inno Setup: App Path', D) then
-  else if IsWin64 and ReadPrevDirFromKey(HKLM64, Key, 'InstallLocation', D) then
-
-  else if ReadPrevDirFromKey(HKCU, Key, 'Inno Setup: App Path', D) then
-  else if ReadPrevDirFromKey(HKCU, Key, 'InstallLocation', D) then
-    ; { nada }
-
-  if D = '' then
-    Result := DefaultDir
-  else
+  begin
     Result := D;
+    Exit;
+  end;
+
+  if ReadPrevDirFromKey(HKLM, Key, 'InstallLocation', D) then
+  begin
+    Result := D;
+    Exit;
+  end;
+
+  if IsWin64 and ReadPrevDirFromKey(HKLM64, Key, 'Inno Setup: App Path', D) then
+  begin
+    Result := D;
+    Exit;
+  end;
+
+  if IsWin64 and ReadPrevDirFromKey(HKLM64, Key, 'InstallLocation', D) then
+  begin
+    Result := D;
+    Exit;
+  end;
+
+  if ReadPrevDirFromKey(HKCU, Key, 'Inno Setup: App Path', D) then
+  begin
+    Result := D;
+    Exit;
+  end;
+
+  if ReadPrevDirFromKey(HKCU, Key, 'InstallLocation', D) then
+  begin
+    Result := D;
+    Exit;
+  end;
+
+  Result := DefaultDir;
 end;
 
 var
@@ -113,7 +136,7 @@ var
   DefaultInstallDir: string;
 begin
   DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
-  PrevDir := FindPreviousAppDir('{7ACDE88C-3C97-47F0-A0F1-8BFC734E7373}', DefaultInstallDir);
+  PrevDir := FindPreviousAppDir(APP_ID, DefaultInstallDir);
   RequireDifferentDir := False;
   IsUpgrade := False;
 

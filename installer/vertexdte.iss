@@ -106,6 +106,33 @@ var
   PrevDir: string;
   RequireDifferentDir: Boolean;
   IsUpgrade: Boolean;
+  PrevDirInitialized: Boolean;
+  DefaultInstallDir: string;
+
+procedure EnsurePrevDirInitialized;
+begin
+  if PrevDirInitialized then
+    Exit;
+
+  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
+  PrevDir := FindPreviousAppDir(APP_ID, DefaultInstallDir);
+  PrevDirInitialized := True;
+end;
+
+function HasValidPrevDir: Boolean;
+begin
+  Result := (PrevDir <> '') and DirExists(PrevDir);
+end;
+
+function GetDefaultDirName(Default: string): string;
+begin
+  EnsurePrevDirInitialized;
+
+  if HasValidPrevDir then
+    Result := PrevDir
+  else
+    Result := DefaultInstallDir;
+end;
 
 function NormalizePath(const Value: string): string;
 begin
@@ -133,37 +160,28 @@ end;
 procedure InitializeWizard;
 var
   Response: Integer;
-  DefaultInstallDir: string;
 begin
-  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
-  PrevDir := FindPreviousAppDir(APP_ID, DefaultInstallDir);
+  EnsurePrevDirInitialized;
   RequireDifferentDir := False;
   IsUpgrade := False;
 
+  WizardForm.DirEdit.Text := GetDefaultDirName('');
+
   if WizardSilent then
   begin
-    if (PrevDir <> '') and DirExists(PrevDir) then
-    begin
-      WizardDirValue := PrevDir;
-      IsUpgrade := True;
-    end
-    else
-    begin
-      WizardDirValue := DefaultInstallDir;
-      IsUpgrade := False;
-    end;
+    // No tocar el directorio aquí; GetDefaultDirName ya lo decide.
+    IsUpgrade := HasValidPrevDir;
     Exit;
   end;
 
   WizardForm.DirEdit.OnChange := @DirEditChange;
   UpdateDirSelectionState;
 
-  if (PrevDir <> '') and DirExists(PrevDir) then
+  if HasValidPrevDir then
   begin
     Response := MsgBox('Se detectÃ³ una instalaciÃ³n existente en: ' + PrevDir + NL + 'Â¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
-      WizardDirValue := PrevDir;
       WizardForm.DirEdit.Text := PrevDir;
       WizardForm.DirEdit.Enabled := False;
       WizardForm.DirBrowseButton.Enabled := False;
@@ -177,7 +195,6 @@ begin
       WizardForm.DirEdit.Enabled := True;
       WizardForm.DirBrowseButton.Enabled := True;
       WizardForm.DirEdit.Text := DefaultInstallDir;
-      WizardDirValue := WizardForm.DirEdit.Text;
       WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption + NL + PARALLEL_INSTALL_HINT;
       MsgBox(PARALLEL_INSTALL_HINT, mbInformation, MB_OK);
     end;

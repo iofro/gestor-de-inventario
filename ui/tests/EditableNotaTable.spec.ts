@@ -136,7 +136,7 @@ describe('EditableNotaTable', () => {
     expect(cells[14].text()).toBe('113.0000');
   });
 
-  it('bloquea la cantidad cuando se ingresa un ajuste de precio', async () => {
+  it('coloca la cantidad en cero cuando se ingresa un ajuste de precio', async () => {
     const wrapper = mount(EditableNotaTable, {
       props: {
         modelValue: [
@@ -167,10 +167,12 @@ describe('EditableNotaTable', () => {
     await wrapper.vm.$nextTick();
 
     const cantidadInput = wrapper.find('input.cantidad-ajuste');
-    expect(cantidadInput.attributes('disabled')).toBeDefined();
+    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
+    // @ts-expect-error accessing internal state for test
+    expect(wrapper.vm.items[0].ajusteCantidad).toBe(false);
   });
 
-  it('bloquea el ajuste de precio cuando se modifica la cantidad', async () => {
+  it('coloca el ajuste de precio en cero cuando se modifica la cantidad', async () => {
     const wrapper = mount(EditableNotaTable, {
       props: {
         modelValue: [
@@ -201,10 +203,12 @@ describe('EditableNotaTable', () => {
     await wrapper.vm.$nextTick();
 
     const ajusteInput = wrapper.find('input.ajuste');
-    expect(ajusteInput.attributes('disabled')).toBeDefined();
+    expect((ajusteInput.element as HTMLInputElement).value).toBe('0');
+    // @ts-expect-error accessing internal state for test
+    expect(wrapper.vm.items[0].ajusteCantidad).toBe(true);
   });
 
-  it('reactiva el campo bloqueado cuando el ajuste vuelve a cero', async () => {
+  it('permite reactivar ambos ajustes cuando regresan a cero', async () => {
     const wrapper = mount(EditableNotaTable, {
       props: {
         modelValue: [
@@ -233,11 +237,13 @@ describe('EditableNotaTable', () => {
     const cantidadInput = wrapper.find('input.cantidad-ajuste');
     await cantidadInput.setValue('3');
     await wrapper.vm.$nextTick();
-    expect(wrapper.find('input.ajuste').attributes('disabled')).toBeDefined();
+    expect((wrapper.find('input.ajuste').element as HTMLInputElement).value).toBe('0');
 
     await cantidadInput.setValue('0');
     await wrapper.vm.$nextTick();
-    expect(wrapper.find('input.ajuste').attributes('disabled')).toBeUndefined();
+    await wrapper.find('input.ajuste').setValue('5');
+    await wrapper.vm.$nextTick();
+    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
   });
 
   it('asigna un identificador interno cuando el item no lo provee', async () => {
@@ -270,6 +276,6 @@ describe('EditableNotaTable', () => {
     await ajusteInput.setValue('5');
     await wrapper.vm.$nextTick();
 
-    expect(wrapper.find('input.cantidad-ajuste').attributes('disabled')).toBeDefined();
+    expect((wrapper.find('input.cantidad-ajuste').element as HTMLInputElement).value).toBe('0');
   });
 });

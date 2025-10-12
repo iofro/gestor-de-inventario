@@ -20,7 +20,7 @@
           <th>Valor</th>
           <th>Afectación</th>
           <th>IVA inc.</th>
-          <th>Ajuste precio (USD)</th>
+          <th>Ajuste de precio (USD)</th>
           <th>Base</th>
           <th>IVA</th>
           <th>Total</th>
@@ -160,7 +160,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, defineProps, defineEmits, defineOptions, reactive } from 'vue';
+import { ref, computed, watch } from 'vue';
 import { toBaseIva, fromBaseIva } from '../services/useIvaConversion';
 
 interface NotaItem {
@@ -206,7 +206,6 @@ const notaTipo = computed(() => props.notaTipo ?? props.tipoNota ?? 'debito');
 
 let nextId = 1;
 const items = ref<NotaItem[]>([]);
-const lockedFields = reactive<Record<number, 'precio' | 'cantidad' | undefined>>({});
 
 syncFromProps(props.modelValue ?? []);
 
@@ -303,20 +302,39 @@ function update(item: NotaItem, field: keyof NotaItem, value: any) {
       target.ajuste = target.cantidadAjustar * target.valor;
     }
     if (field === 'ajuste') {
-      if (shouldLockByPrecio(value)) {
-        target.ajusteCantidad = false;
-      } else if (target.ajusteCantidad === false) {
-        target.ajusteCantidad = undefined;
-      }
-      updateLock(target, 'precio', value);
+      handlePrecioChange(target, value);
     } else if (field === 'cantidadAjustar') {
-      target.ajusteCantidad = true;
-      updateLock(target, 'cantidad', value);
-      if (!shouldLockByCantidad(value)) {
-        target.ajusteCantidad = undefined;
-      }
+      handleCantidadChange(target, value);
     }
   });
+}
+
+function handlePrecioChange(target: NotaItem, value: any) {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 0) {
+    target.ajusteCantidad = false;
+    if (Number(target.cantidadAjustar) !== 0) {
+      target.cantidadAjustar = 0;
+    }
+  } else if (target.ajusteCantidad === false && !isPositive(target.ajuste)) {
+    target.ajusteCantidad = undefined;
+  }
+}
+
+function handleCantidadChange(target: NotaItem, value: any) {
+  const numericValue = Number(value);
+  if (Number.isFinite(numericValue) && numericValue > 0) {
+    target.ajusteCantidad = true;
+    if (Number(target.ajuste) !== 0) {
+      target.ajuste = 0;
+    }
+  } else if (target.ajusteCantidad === true && !isPositive(target.cantidadAjustar)) {
+    target.ajusteCantidad = undefined;
+  }
+}
+
+function isPositive(value: any) {
+  return Number.isFinite(Number(value)) && Number(value) > 0;
 }
 
 function resolveValor(item: NotaItem) {
@@ -383,48 +401,8 @@ const creditoExcede = computed(() =>
   props.topeCredito !== undefined && totalCredito.value > props.topeCredito
 );
 
-resetLocks();
-
-function updateLock(item: NotaItem, field: 'precio' | 'cantidad', rawValue: any) {
-  const key = item.id;
-  const shouldLock = field === 'precio' ? shouldLockByPrecio(rawValue) : shouldLockByCantidad(rawValue);
-  if (shouldLock) {
-    lockedFields[key] = field;
-  } else if (lockedFields[key] === field) {
-    delete lockedFields[key];
-  }
-}
-
-function shouldLockByPrecio(value: any) {
-  return Number.isFinite(value) && Number(value) > 0;
-}
-
-function shouldLockByCantidad(value: any) {
-  return Number.isFinite(value) && Number(value) > 0;
-}
-
-function isCantidadLocked(item: NotaItem) {
-  return lockedFields[item.id] === 'precio';
-}
-
-function isPrecioLocked(item: NotaItem) {
-  return lockedFields[item.id] === 'cantidad';
-}
-
-function resetLocks() {
-  Object.keys(lockedFields).forEach((key) => delete lockedFields[Number(key)]);
-  items.value.forEach((item) => {
-    if (item.ajusteCantidad) {
-      lockedFields[item.id] = 'cantidad';
-    } else if (shouldLockByPrecio(item.ajuste)) {
-      lockedFields[item.id] = 'precio';
-    }
-  });
-}
-
 function syncFromProps(source: NotaItem[]) {
   items.value = normalizeItems(source);
-  resetLocks();
 }
 
 function normalizeItems(source: NotaItem[]) {
@@ -437,8 +415,29 @@ function normalizeItems(source: NotaItem[]) {
     } else {
       clone.id = nextId++;
     }
+    normalizeAjusteState(clone);
     return clone;
   });
+}
+
+function normalizeAjusteState(item: NotaItem) {
+  if (isPositive(item.cantidadAjustar)) {
+    item.ajusteCantidad = true;
+    if (isPositive(item.ajuste)) {
+      item.ajuste = 0;
+    }
+    return;
+  }
+  if (isPositive(item.ajuste)) {
+    item.ajusteCantidad = false;
+    if (Number(item.cantidadAjustar) !== 0) {
+      item.cantidadAjustar = 0;
+    }
+    return;
+  }
+  if (!isPositive(item.ajuste) && !isPositive(item.cantidadAjustar)) {
+    item.ajusteCantidad = undefined;
+  }
 }
 </script>
 

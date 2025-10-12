@@ -106,6 +106,28 @@ var
   PrevDir: string;
   RequireDifferentDir: Boolean;
   IsUpgrade: Boolean;
+  PrevDirInitialized: Boolean;
+  DefaultInstallDir: string;
+
+procedure EnsurePrevDirInitialized;
+begin
+  if PrevDirInitialized then
+    Exit;
+
+  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
+  PrevDir := FindPreviousAppDir(APP_ID, DefaultInstallDir);
+  PrevDirInitialized := True;
+end;
+
+function GetDefaultDirName(Default: string): string;
+begin
+  EnsurePrevDirInitialized;
+
+  if (PrevDir <> '') and DirExists(PrevDir) then
+    Result := PrevDir
+  else
+    Result := DefaultInstallDir;
+end;
 
 function NormalizePath(const Value: string): string;
 begin
@@ -133,25 +155,19 @@ end;
 procedure InitializeWizard;
 var
   Response: Integer;
-  DefaultInstallDir: string;
 begin
-  DefaultInstallDir := ExpandConstant('{autopf}\Vertex DTE');
-  PrevDir := FindPreviousAppDir(APP_ID, DefaultInstallDir);
+  EnsurePrevDirInitialized;
   RequireDifferentDir := False;
   IsUpgrade := False;
+
+  WizardForm.DirEdit.Text := GetDefaultDirName('');
 
   if WizardSilent then
   begin
     if (PrevDir <> '') and DirExists(PrevDir) then
-    begin
-      WizardDirValue := PrevDir;
-      IsUpgrade := True;
-    end
+      IsUpgrade := True
     else
-    begin
-      WizardDirValue := DefaultInstallDir;
       IsUpgrade := False;
-    end;
     Exit;
   end;
 
@@ -163,7 +179,6 @@ begin
     Response := MsgBox('Se detectó una instalación existente en: ' + PrevDir + NL + '¿Desea actualizar?', mbConfirmation, MB_YESNO or MB_DEFBUTTON1);
     if Response = IDYES then
     begin
-      WizardDirValue := PrevDir;
       WizardForm.DirEdit.Text := PrevDir;
       WizardForm.DirEdit.Enabled := False;
       WizardForm.DirBrowseButton.Enabled := False;
@@ -177,7 +192,6 @@ begin
       WizardForm.DirEdit.Enabled := True;
       WizardForm.DirBrowseButton.Enabled := True;
       WizardForm.DirEdit.Text := DefaultInstallDir;
-      WizardDirValue := WizardForm.DirEdit.Text;
       WizardForm.SelectDirLabel.Caption := WizardForm.SelectDirLabel.Caption + NL + PARALLEL_INSTALL_HINT;
       MsgBox(PARALLEL_INSTALL_HINT, mbInformation, MB_OK);
     end;

@@ -204,13 +204,16 @@ const emit = defineEmits(['update:modelValue']);
 
 const notaTipo = computed(() => props.notaTipo ?? props.tipoNota ?? 'debito');
 
-const items = ref<NotaItem[]>(props.modelValue ? [...props.modelValue] : []);
+let nextId = 1;
+const items = ref<NotaItem[]>([]);
 const lockedFields = reactive<Record<number, 'precio' | 'cantidad' | undefined>>({});
+
+syncFromProps(props.modelValue ?? []);
+
 watch(
   () => props.modelValue,
   (val) => {
-    items.value = val ? [...val] : [];
-    resetLocks();
+    syncFromProps(val ?? []);
   }
 );
 watch(
@@ -253,7 +256,6 @@ function toggleAll(val: boolean) {
   filteredItems.value.forEach((i) => (i.selected = val));
 }
 
-let nextId = 1;
 function addItem() {
   productSearch.value = '';
   showProductDialog.value = true;
@@ -394,7 +396,7 @@ function updateLock(item: NotaItem, field: 'precio' | 'cantidad', rawValue: any)
 }
 
 function shouldLockByPrecio(value: any) {
-  return Number.isFinite(value) && Number(value) !== 0;
+  return Number.isFinite(value) && Number(value) > 0;
 }
 
 function shouldLockByCantidad(value: any) {
@@ -417,6 +419,25 @@ function resetLocks() {
     } else if (shouldLockByPrecio(item.ajuste)) {
       lockedFields[item.id] = 'precio';
     }
+  });
+}
+
+function syncFromProps(source: NotaItem[]) {
+  items.value = normalizeItems(source);
+  resetLocks();
+}
+
+function normalizeItems(source: NotaItem[]) {
+  return source.map((original) => {
+    const clone = { ...original };
+    const maybeId = Number((original as any).id);
+    if (Number.isFinite(maybeId) && maybeId > 0) {
+      clone.id = maybeId;
+      nextId = Math.max(nextId, maybeId + 1);
+    } else {
+      clone.id = nextId++;
+    }
+    return clone;
   });
 }
 </script>

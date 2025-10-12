@@ -80,6 +80,77 @@ def _search_dui(data: object) -> str | None:
 
 STRICT_SNAPSHOT_DEFAULT = env_flag("STRICT_SNAPSHOT", default=True)
 
+Decimal_0 = Decimal("0")
+
+
+def _resolver_detalle_ajuste_cantidad(det: dict, original: dict | None) -> dict:
+    """Normaliza los ajustes de cantidad según el esquema ``fe-nd-v3``."""
+
+    if not det or not det.get("ajusteCantidad"):
+        return det
+
+    normalizado = dict(det)
+    cantidad_raw = normalizado.get("cantidad")
+    if cantidad_raw is None:
+        raise ValueError("Los ajustes por cantidad requieren el campo 'cantidad'")
+    cantidad = Decimal(str(cantidad_raw))
+    if cantidad <= Decimal_0:
+        raise ValueError("La cantidad del ajuste debe ser mayor que cero")
+
+    precio_raw = (
+        normalizado.get("precio_unitario")
+        or normalizado.get("precioUni")
+        or (original.get("precioUni") if original else None)
+    )
+    if precio_raw is None:
+        raise ValueError(
+            "Los ajustes por cantidad requieren precio unitario explícito u original"
+        )
+    precio = Decimal(str(precio_raw))
+
+    afectacion = str(normalizado.get("afectacion") or "").lower()
+    if not afectacion and original:
+        if Decimal(str(original.get("ventaGravada") or 0)) > Decimal_0:
+            afectacion = "gravada"
+        elif Decimal(str(original.get("ventaExenta") or 0)) > Decimal_0:
+            afectacion = "exenta"
+        elif Decimal(str(original.get("ventaNoSuj") or 0)) > Decimal_0:
+            afectacion = "no_sujeta"
+
+    total = d4(precio * cantidad)
+    grav = normalizado.get("ventas_gravadas") or normalizado.get("ventaGravada")
+    exenta = normalizado.get("ventas_exentas") or normalizado.get("ventaExenta")
+    nosuj = normalizado.get("ventas_no_sujetas") or normalizado.get("ventaNoSuj")
+    if grav is None and exenta is None and nosuj is None:
+        if afectacion == "exenta":
+            exenta = total
+            grav = Decimal_0
+            nosuj = Decimal_0
+        elif afectacion == "no_sujeta":
+            nosuj = total
+            grav = Decimal_0
+            exenta = Decimal_0
+        else:
+            grav = total
+            exenta = Decimal_0
+            nosuj = Decimal_0
+    grav = d4(Decimal(str(grav or 0)))
+    exenta = d4(Decimal(str(exenta or 0)))
+    nosuj = d4(Decimal(str(nosuj or 0)))
+
+    normalizado["cantidad"] = d4(cantidad)
+    normalizado["precioUni"] = d4(precio)
+    normalizado["ventaGravada"] = grav
+    normalizado["ventaExenta"] = exenta
+    normalizado["ventaNoSuj"] = nosuj
+
+    if "uniMedida" not in normalizado and original and original.get("uniMedida") is not None:
+        normalizado["uniMedida"] = original.get("uniMedida")
+    if "tipoItem" not in normalizado and original and original.get("tipoItem") is not None:
+        normalizado["tipoItem"] = original.get("tipoItem")
+
+    return normalizado
+
 
 def generar_nde_desde_nota(
     db: DB,
@@ -316,7 +387,16 @@ def generar_nde_desde_dte(
         total_exenta = Decimal("0")
         total_nosuj = Decimal("0")
         num = 1
+        orig_items = dte_origen.get("cuerpoDocumento", [])
         for det in detalles:
+            codigo = det.get("codigo")
+            numitem = det.get("numItem")
+            orig = None
+            if codigo:
+                orig = next((it for it in orig_items if it.get("codigo") == codigo), None)
+            elif numitem:
+                orig = next((it for it in orig_items if it.get("numItem") == numitem), None)
+            det = _resolver_detalle_ajuste_cantidad(det, orig)
             grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0))
             exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0))
             nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0))

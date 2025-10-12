@@ -73,9 +73,9 @@ describe('NotaForm', () => {
     await input.setValue('11.3');
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
-    expect(cells[1].text()).toBe('10.00');
-    expect(cells[4].text()).toBe('1.30');
-    expect(cells[5].text()).toBe('11.30');
+    expect(cells[1].text()).toBe('10.0000');
+    expect(cells[4].text()).toBe('1.3000');
+    expect(cells[5].text()).toBe('11.3000');
   });
 
   it('interpreta monto como base cuando ivaIncluido está inactivo', async () => {
@@ -93,9 +93,9 @@ describe('NotaForm', () => {
     await input.setValue('10');
     await wrapper.vm.$nextTick();
     const cells = wrapper.findAll('tbody td');
-    expect(cells[1].text()).toBe('10.00');
-    expect(cells[4].text()).toBe('1.30');
-    expect(cells[5].text()).toBe('11.30');
+    expect(cells[1].text()).toBe('10.0000');
+    expect(cells[4].text()).toBe('1.3000');
+    expect(cells[5].text()).toBe('11.3000');
   });
 
   it('muestra bloques de factura y nota y solo nota cambia', async () => {
@@ -275,5 +275,56 @@ describe('NotaForm', () => {
     expect(resumen).toContain('Base gravada: 100.00');
     expect(resumen).toContain('IVA: 13.00');
     expect(resumen).toContain('Total: 113.00');
+  });
+
+  it('envía detalles con ajuste de cantidad en payload', async () => {
+    const wrapper = mount(NotaForm, {
+      props: {
+        factura: {
+          numero: '1',
+          cliente: 'A',
+          total: 100,
+          ventas_gravadas: 100,
+          ventas_exentas: 0,
+          ventas_no_sujetas: 0,
+          iva: 0
+        },
+        tipo: 'credito'
+      }
+    });
+
+    const btnProducto = wrapper.findAll('.tabs button')[1];
+    await btnProducto.trigger('click');
+    wrapper.vm.ivaIncluido = false;
+    wrapper.vm.items.push({
+      id: 1,
+      selected: false,
+      codigo: 'A1',
+      descripcion: 'Test',
+      cantidadFacturada: 5,
+      cantidadAjustar: 2,
+      tipo: 'credito',
+      modo: 'monto',
+      valor: 10,
+      ivaInc: false,
+      afectacion: 'gravada',
+      previas: 0,
+      ajuste: 20,
+      concepto: 'Devolución',
+      uniMedida: 59
+    });
+    await wrapper.vm.$nextTick();
+
+    const jsonBtn = wrapper.findAll('.nota-resumen .acciones button')[1];
+    await jsonBtn.trigger('click');
+
+    expect(api.previsualizarJson).toHaveBeenCalled();
+    const payload = api.previsualizarJson.mock.calls[0][0];
+    expect(payload.detalles).toHaveLength(1);
+    const detalle = payload.detalles[0];
+    expect(detalle.ajusteCantidad).toBe(true);
+    expect(detalle.cantidad).toBeCloseTo(2, 4);
+    expect(detalle.precio_unitario).toBeCloseTo(10, 4);
+    expect(detalle.ventas_gravadas).toBeCloseTo(20, 4);
   });
 });

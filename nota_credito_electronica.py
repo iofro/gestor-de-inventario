@@ -93,6 +93,90 @@ def _pct_label(ratio: Decimal) -> str:
     return str((ratio * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
+def _resolver_detalle_ajuste_cantidad(det: dict, original: dict | None) -> dict:
+    """Normaliza un detalle que ajusta cantidad a partir del documento origen.
+
+    Cuando ``det`` indica ``ajusteCantidad`` se completan los campos
+    ``cantidad``, ``precioUni`` y ``ventaGravada``/``Exenta``/``NoSuj`` en base a
+    la información disponible.  Esto permite que la UI envíe únicamente la
+    cantidad a acreditar y que el módulo derive los importes consistentes con el
+    esquema ``fe-nc-v3``.
+    """
+
+    if not det or not det.get("ajusteCantidad"):
+        return det
+
+    normalizado = dict(det)
+    cantidad_raw = normalizado.get("cantidad")
+    if cantidad_raw is None:
+        raise ValueError("Los ajustes por cantidad requieren el campo 'cantidad'")
+    cantidad = Decimal(str(cantidad_raw))
+    if cantidad <= Decimal_0:
+        raise ValueError("La cantidad del ajuste debe ser mayor que cero")
+
+    if original:
+        try:
+            cantidad_origen = Decimal(str(original.get("cantidad") or 0))
+        except Exception:
+            cantidad_origen = Decimal_0
+        if cantidad_origen > Decimal_0 and cantidad > cantidad_origen:
+            raise ValueError("La cantidad del ajuste excede la línea original")
+
+    precio_raw = (
+        normalizado.get("precio_unitario")
+        or normalizado.get("precioUni")
+        or (original.get("precioUni") if original else None)
+    )
+    if precio_raw is None:
+        raise ValueError(
+            "Los ajustes por cantidad requieren precio unitario explícito u original"
+        )
+    precio = Decimal(str(precio_raw))
+
+    afectacion = str(normalizado.get("afectacion") or "").lower()
+    if not afectacion and original:
+        if Decimal(str(original.get("ventaGravada") or 0)) > Decimal_0:
+            afectacion = "gravada"
+        elif Decimal(str(original.get("ventaExenta") or 0)) > Decimal_0:
+            afectacion = "exenta"
+        elif Decimal(str(original.get("ventaNoSuj") or 0)) > Decimal_0:
+            afectacion = "no_sujeta"
+
+    total = (precio * cantidad).quantize(Q4)
+    grav = normalizado.get("ventas_gravadas") or normalizado.get("ventaGravada")
+    exenta = normalizado.get("ventas_exentas") or normalizado.get("ventaExenta")
+    nosuj = normalizado.get("ventas_no_sujetas") or normalizado.get("ventaNoSuj")
+    if grav is None and exenta is None and nosuj is None:
+        if afectacion == "exenta":
+            exenta = total
+            grav = Decimal_0
+            nosuj = Decimal_0
+        elif afectacion == "no_sujeta":
+            nosuj = total
+            grav = Decimal_0
+            exenta = Decimal_0
+        else:
+            grav = total
+            exenta = Decimal_0
+            nosuj = Decimal_0
+    grav = Decimal(str(grav or 0)).quantize(Q4)
+    exenta = Decimal(str(exenta or 0)).quantize(Q4)
+    nosuj = Decimal(str(nosuj or 0)).quantize(Q4)
+
+    normalizado["cantidad"] = cantidad.quantize(Q4)
+    normalizado["precioUni"] = precio.quantize(Q4)
+    normalizado["ventaGravada"] = grav
+    normalizado["ventaExenta"] = exenta
+    normalizado["ventaNoSuj"] = nosuj
+
+    if "uniMedida" not in normalizado and original and original.get("uniMedida") is not None:
+        normalizado["uniMedida"] = original.get("uniMedida")
+    if "tipoItem" not in normalizado and original and original.get("tipoItem") is not None:
+        normalizado["tipoItem"] = original.get("tipoItem")
+
+    return normalizado
+
+
 def generar_nce_desde_nota(
     db: DB,
     nota_id: int,
@@ -370,13 +454,6 @@ def generar_nce_desde_dte(
         ratio_val = ratio or Decimal_1
         orig_items = dte_origen.get("cuerpoDocumento", [])
         for det in detalles:
-            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0)).quantize(Q4)
-            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0)).quantize(Q4)
-            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0)).quantize(Q4)
-            total_grav += grav
-            total_exenta += exenta
-            total_nosuj += nosuj
-            precio = det.get("precio_unitario") or det.get("precioUni")
             codigo = det.get("codigo")
             numitem = det.get("numItem")
             orig = None
@@ -384,6 +461,14 @@ def generar_nce_desde_dte(
                 orig = next((it for it in orig_items if it.get("codigo") == codigo), None)
             elif numitem:
                 orig = next((it for it in orig_items if it.get("numItem") == numitem), None)
+            det = _resolver_detalle_ajuste_cantidad(det, orig)
+            grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0)).quantize(Q4)
+            exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0)).quantize(Q4)
+            nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0)).quantize(Q4)
+            total_grav += grav
+            total_exenta += exenta
+            total_nosuj += nosuj
+            precio = det.get("precio_unitario") or det.get("precioUni")
             if orig:
                 grav_orig = Decimal(str(orig.get("ventaGravada") or 0)).quantize(Q4)
                 exenta_orig = Decimal(str(orig.get("ventaExenta") or 0)).quantize(Q4)

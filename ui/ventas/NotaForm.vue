@@ -160,6 +160,14 @@ interface NotaItem {
   ivaInc: boolean;
   afectacion: 'gravada' | 'exenta' | 'no_sujeta';
   previas?: number;
+  ajuste?: number;
+  concepto?: string;
+  unidad?: string;
+  uniMedida?: number;
+  tipoItem?: number;
+  numItem?: number;
+  maxMonto?: number;
+  isProduct?: boolean;
 }
 
 const items = ref<NotaItem[]>([]);
@@ -181,41 +189,62 @@ function resolveValor(item: NotaItem) {
   return item.valor;
 }
 
+function calcularMontosItem(item: NotaItem) {
+  const valor = item.ajuste !== undefined ? item.ajuste : resolveValor(item);
+  const result = { base: 0, exenta: 0, noSujeta: 0, iva: 0, total: 0 };
+  if (!Number.isFinite(valor) || valor <= 0) {
+    return result;
+  }
+
+  if (item.afectacion === 'gravada') {
+    if (item.ajuste !== undefined) {
+      if (ivaIncluido.value) {
+        const { base, iva } = toBaseIva(valor);
+        result.base = base;
+        result.iva = iva;
+        result.total = valor;
+      } else {
+        const { total, iva } = fromBaseIva(valor);
+        result.base = valor;
+        result.iva = iva;
+        result.total = total;
+      }
+    } else if (item.ivaInc) {
+      const { base, iva } = toBaseIva(valor);
+      result.base = base;
+      result.iva = iva;
+      result.total = valor;
+    } else {
+      const { total, iva } = fromBaseIva(valor);
+      result.base = valor;
+      result.iva = iva;
+      result.total = total;
+    }
+  } else if (item.afectacion === 'exenta') {
+    result.exenta = valor;
+    result.total = valor;
+  } else {
+    result.noSujeta = valor;
+    result.total = valor;
+  }
+
+  return result;
+}
+
+function round4(value: number): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 10000) / 10000;
+}
+
 const itemsPreview = computed(() => {
   return items.value.reduce(
     (acc, item) => {
-      const valor = item.ajuste !== undefined ? item.ajuste : resolveValor(item);
-      if (item.afectacion === 'gravada') {
-        if (item.ajuste !== undefined) {
-          if (ivaIncluido.value) {
-            const { base, iva } = toBaseIva(valor);
-            acc.base += base;
-            acc.iva += iva;
-            acc.total += valor;
-          } else {
-            const { total, iva } = fromBaseIva(valor);
-            acc.base += valor;
-            acc.iva += iva;
-            acc.total += total;
-          }
-        } else if (item.ivaInc) {
-          const { base, iva } = toBaseIva(valor);
-          acc.base += base;
-          acc.iva += iva;
-          acc.total += valor;
-        } else {
-          const { total, iva } = fromBaseIva(valor);
-          acc.base += valor;
-          acc.iva += iva;
-          acc.total += total;
-        }
-      } else if (item.afectacion === 'exenta') {
-        acc.exenta += valor;
-        acc.total += valor;
-      } else {
-        acc.noSujeta += valor;
-        acc.total += valor;
-      }
+      const montos = calcularMontosItem(item);
+      acc.base += montos.base;
+      acc.exenta += montos.exenta;
+      acc.noSujeta += montos.noSujeta;
+      acc.iva += montos.iva;
+      acc.total += montos.total;
       return acc;
     },
     { base: 0, exenta: 0, noSujeta: 0, iva: 0, total: 0 }
@@ -270,6 +299,50 @@ const excedeSaldo = computed(
   () => totalCredito.value > (saldoDisponible.value)
 );
 
+const detallesProductos = computed(() => {
+  if (activeTab.value !== 'producto') {
+    return [] as any[];
+  }
+
+  return items.value
+    .filter((item) => item.cantidadAjustar > 0)
+    .map((item, idx) => {
+      const montos = calcularMontosItem(item);
+      const cantidad = round4(item.cantidadAjustar);
+      const baseReferencia =
+        item.afectacion === 'gravada'
+          ? montos.base
+          : item.afectacion === 'exenta'
+          ? montos.exenta
+          : montos.noSujeta;
+      const precioUnitario = cantidad > 0 ? round4(baseReferencia / cantidad) : 0;
+      const unidad =
+        typeof item.uniMedida === 'number'
+          ? item.uniMedida
+          : typeof (item as any).unidad === 'number'
+          ? (item as any).unidad
+          : 59;
+
+      return {
+        codigo: item.codigo,
+        descripcion: item.descripcion,
+        cantidad,
+        uniMedida: unidad,
+        tipoItem: item.tipoItem ?? 1,
+        numItem: item.numItem ?? idx + 1,
+        precio_unitario: precioUnitario,
+        ventas_gravadas: round4(montos.base),
+        ventas_exentas: round4(montos.exenta),
+        ventas_no_sujetas: round4(montos.noSujeta),
+        ivaItem: round4(montos.iva),
+        concepto: item.concepto,
+        ajusteCantidad: true,
+        afectacion: item.afectacion,
+      };
+    })
+    .filter((detalle) => detalle.cantidad > 0 && detalle.precio_unitario >= 0);
+});
+
 function validar() {
   return total.value > 0 && !excedeSaldo.value;
 }
@@ -295,13 +368,17 @@ async function onFirmarTransmitir() {
 }
 
 function getPayload() {
-  return {
+  const payload: Record<string, any> = {
     factura: factura.numero,
     tipo,
     motivo: motivo.value,
     monto: total.value,
     ivaIncluido: ivaIncluido.value,
   };
+  if (activeTab.value === 'producto') {
+    payload.detalles = detallesProductos.value;
+  }
+  return payload;
 }
 
 function format(n: number) {

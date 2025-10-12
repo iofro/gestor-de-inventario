@@ -804,6 +804,43 @@ def test_generar_nce_detalle_excede(monkeypatch):
         generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
 
 
+def test_generar_nce_detalle_ajuste_cantidad(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 50)
+    db.add_detalle_venta(venta_id, pid, 5, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "descripcion": "Prod",
+            "cantidad": 2,
+            "precio_unitario": 10,
+            "afectacion": "gravada",
+            "ajusteCantidad": True,
+        }
+    ]
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
+    item = data["cuerpoDocumento"][0]
+    assert Decimal(str(item["cantidad"])) == Decimal("2.0000")
+    assert Decimal(str(item["ventaGravada"])) == Decimal("20.0000")
+    assert Decimal(str(item["precioUni"])) == Decimal("10.0000")
+    assert Decimal(str(data["resumen"]["montoTotalOperacion"])) == Decimal("22.60")
+
+
 def test_nota_credito_un_dolar(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",

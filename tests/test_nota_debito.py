@@ -1,6 +1,8 @@
 import pytest
+from decimal import Decimal
 
 from db import DB
+from dte import generar_dte_json
 from nota_debito_electronica import generar_nde_desde_dte
 
 
@@ -84,3 +86,42 @@ def test_generar_nde_consumidor_final_dui_en_nit(monkeypatch):
     assert receptor["nit"] == "012345678"
     assert "nrc" in receptor
     assert receptor["nrc"] is None
+
+
+def test_generar_nde_detalle_ajuste_cantidad(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 50)
+    db.add_detalle_venta(venta_id, pid, 5, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "descripcion": "Prod",
+            "cantidad": 3,
+            "precio_unitario": 10,
+            "afectacion": "gravada",
+            "ajusteCantidad": True,
+        }
+    ]
+
+    nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste", ambiente="00")
+    item = nde["cuerpoDocumento"][0]
+    assert Decimal(str(item["cantidad"])) == Decimal("3.0000")
+    assert Decimal(str(item["ventaGravada"])) == Decimal("30.0000")
+    assert Decimal(str(item["precioUni"])) == Decimal("10.0000")
+    assert Decimal(str(nde["resumen"]["montoTotalOperacion"])) == Decimal("33.90")

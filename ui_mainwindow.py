@@ -40,7 +40,7 @@ from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
 from mh_auth import invalidate_token_cache
-from utils.party_resolver import resolve_party_names
+from utils.party_resolver import normalize_identifier, resolve_party_names
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1899,6 +1899,9 @@ class MainWindow(QMainWindow):
 
     def _ver_informacion_lote(self):
         row = self.inventario_actual_table.currentRow()
+        logger.info(
+            "Inventario actual: solicitando detalle de lote en fila %s", row
+        )
         if row < 0:
             QMessageBox.warning(
                 self,
@@ -1909,6 +1912,9 @@ class MainWindow(QMainWindow):
 
         item_producto = self.inventario_actual_table.item(row, 0)
         if not item_producto:
+            logger.warning(
+                "Inventario actual: la fila %s no tiene item asociado", row
+            )
             QMessageBox.warning(
                 self,
                 "Ver información",
@@ -1918,6 +1924,11 @@ class MainWindow(QMainWindow):
 
         data = item_producto.data(Qt.UserRole) or {}
         compra_id = data.get("compra_id")
+        logger.info(
+            "Inventario actual: lote con datos %s -> compra asociada %s",
+            {k: data.get(k) for k in ("producto", "codigo", "detalle_id")},
+            compra_id,
+        )
         if not compra_id:
             QMessageBox.warning(
                 self,
@@ -1927,6 +1938,15 @@ class MainWindow(QMainWindow):
             return
 
         compra = self.manager.db.get_compra(compra_id)
+        if compra:
+            logger.info(
+                "Inventario actual: compra %s recuperada desde base de datos",
+                compra_id,
+            )
+        else:
+            logger.warning(
+                "Inventario actual: no se pudo recuperar la compra %s", compra_id
+            )
         if not compra:
             QMessageBox.warning(
                 self,
@@ -1936,7 +1956,21 @@ class MainWindow(QMainWindow):
             return
 
         detalles = self.manager.db.get_detalles_compra(compra_id)
+        logger.info(
+            "Inventario actual: compra %s tiene %s partidas", compra_id, len(detalles)
+        )
         catalogs = getattr(self.manager, "catalogs", None)
+        vendor_name, distributor_name = resolve_party_names(compra, catalogs)
+        vendor_id = normalize_identifier(compra.get("vendedor_id"))
+        distributor_id = normalize_identifier(compra.get("Distribuidor_id"))
+        logger.info(
+            "Inventario actual: compra %s -> vendedor %s (%s), distribuidor %s (%s)",
+            compra_id,
+            vendor_id,
+            vendor_name or "<desconocido>",
+            distributor_id,
+            distributor_name or "<desconocido>",
+        )
         dialog = CompraDetalleDialog(compra, detalles, self, catalogs=catalogs)
         dialog.exec_()
 

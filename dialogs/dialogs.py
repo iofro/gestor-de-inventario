@@ -4057,6 +4057,40 @@ class CompraDetalleDialog(QDialog):
                 if vendor_source:
                     _populate_missing(catalogs.vendors, vendor_source)
 
+                def _hydrate_from_id_map(target: MutableMapping, source):
+                    if not isinstance(target, MutableMapping):
+                        return
+                    if not isinstance(source, Mapping):
+                        return
+                    for raw_identifier, raw_name in source.items():
+                        identifier = normalize_identifier(raw_identifier)
+                        if identifier is None:
+                            continue
+                        name = raw_name.strip() if isinstance(raw_name, str) else None
+                        entry = target.get(identifier)
+                        if entry is None:
+                            if name:
+                                target[identifier] = {"id": identifier, "nombre": name}
+                            else:
+                                target[identifier] = {"id": identifier}
+                            continue
+                        if isinstance(entry, MutableMapping):
+                            entry.setdefault("id", identifier)
+                            if name and not entry.get("nombre"):
+                                entry["nombre"] = name
+                            continue
+                        try:
+                            data = dict(entry)
+                        except Exception:
+                            data = {"id": identifier}
+                        if name and not data.get("nombre"):
+                            data["nombre"] = name
+                        target[identifier] = data
+
+                vendor_map = getattr(manager, "_vendedores_compra_by_id", None)
+                if vendor_map:
+                    _hydrate_from_id_map(catalogs.vendors, vendor_map)
+
                 distributor_source = getattr(manager, "_Distribuidores", None)
                 if not distributor_source and getattr(manager, "db", None):
                     try:
@@ -4065,6 +4099,10 @@ class CompraDetalleDialog(QDialog):
                         distributor_source = None
                 if distributor_source:
                     _populate_missing(catalogs.distributors, distributor_source)
+
+                distributor_map = getattr(manager, "_Distribuidores_by_id", None)
+                if distributor_map:
+                    _hydrate_from_id_map(catalogs.distributors, distributor_map)
 
                 product_source = getattr(manager, "_products", None)
                 if not product_source and getattr(manager, "db", None):

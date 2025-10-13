@@ -3860,20 +3860,87 @@ class CompraDetalleDialog(QDialog):
         logger.debug("DETALLES DE COMPRA: %s", detalles)
 
         # --- Obtén los nombres de vendedor y Distribuidor ---
-        vendedores = []
-        Distribuidores = []
-        productos = []
-        if parent and hasattr(parent, "manager"):
-            vendedores = getattr(parent.manager, "_vendedores", [])
-            Distribuidores = getattr(parent.manager, "_Distribuidores", [])
-            productos = getattr(parent.manager, "_products", [])
-        vendedores_dict = {v["id"]: v["nombre"] for v in vendedores}
-        Distribuidores_dict = {d["id"]: d["nombre"] for d in Distribuidores}
-        productos_dict = {p["id"]: p["nombre"] for p in productos}
 
+        def _safe_get(mapping, key, default=None):
+            """Recupera ``key`` de ``mapping`` sin importar si es dict o fila de SQLite."""
+
+            if isinstance(mapping, dict):
+                return mapping.get(key, default)
+            getter = getattr(mapping, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key, default)
+                except Exception:  # pragma: no cover - defensive
+                    pass
+            try:
+                return mapping[key]
+            except Exception:  # pragma: no cover - acceso heterogéneo
+                return default
+
+        def _normalize_id(value):
+            if value is None:
+                return None
+            try:
+                # Convertir cadenas y Decimals que representan números enteros.
+                return int(value)
+            except (TypeError, ValueError):
+                return value
+
+        def _merge_catalog(target: dict, catalog, *, id_field="id", name_field="nombre"):
+            """Agrega elementos de ``catalog`` al ``target`` tolerando distintos formatos."""
+
+            if not catalog:
+                return
+
+            if isinstance(catalog, dict):
+                for raw_id, raw_name in catalog.items():
+                    vendor_id = _normalize_id(raw_id)
+                    name = raw_name if isinstance(raw_name, str) else str(raw_name or "")
+                    if vendor_id is None or not name:
+                        continue
+                    target.setdefault(vendor_id, name)
+                return
+
+            for entry in catalog:
+                if isinstance(entry, (list, tuple)) and len(entry) >= 2 and not isinstance(entry[0], (list, tuple, dict)):
+                    raw_id, raw_name = entry[0], entry[1]
+                else:
+                    raw_id = _safe_get(entry, id_field)
+                    raw_name = _safe_get(entry, name_field, "")
+                vendor_id = _normalize_id(raw_id)
+                name = raw_name if isinstance(raw_name, str) else str(raw_name or "")
+                if vendor_id is None or not name:
+                    continue
+                target.setdefault(vendor_id, name)
+
+        manager = None
+        current_parent = parent
+        while current_parent is not None and manager is None:
+            if hasattr(current_parent, "manager"):
+                manager = getattr(current_parent, "manager")
+                break
+            if hasattr(current_parent, "parent"):
+                current_parent = current_parent.parent()
+            else:
+                current_parent = None
+
+        vendedores_dict: dict[int, str] = {}
+        Distribuidores_dict: dict[int, str] = {}
+        productos_dict: dict[int, str] = {}
         db = None
-        if parent and hasattr(parent, "manager"):
-            db = getattr(parent.manager, "db", None)
+
+        if manager is not None:
+            fuentes_vendedores = [
+                getattr(manager, "_vendedores", []),
+                getattr(manager, "_vendedores_compra", []),
+            ]
+            for fuente in fuentes_vendedores:
+                _merge_catalog(vendedores_dict, fuente)
+
+            _merge_catalog(Distribuidores_dict, getattr(manager, "_Distribuidores", []))
+            _merge_catalog(productos_dict, getattr(manager, "_products", []))
+
+            db = getattr(manager, "db", None)
 
         if db:
             try:
@@ -3897,15 +3964,31 @@ class CompraDetalleDialog(QDialog):
                     "No fue posible obtener la lista de Distribuidores desde la base de datos"
                 )
 
-        vendedor_id = compra.get("vendedor_id")
-        Distribuidor_id = compra.get("Distribuidor_id")
+        vendedor_id = _normalize_id(compra.get("vendedor_id"))
+        Distribuidor_id = _normalize_id(compra.get("Distribuidor_id"))
 
         vendedor_nombre = vendedores_dict.get(vendedor_id)
         Distribuidor_nombre = Distribuidores_dict.get(Distribuidor_id)
 
+        if vendedor_nombre is None:
+            vendedor_nombre = (
+                compra.get("vendedor_nombre")
+                or compra.get("vendedor")
+                or compra.get("nombre_vendedor")
+            )
+        if Distribuidor_nombre is None:
+            Distribuidor_nombre = (
+                compra.get("Distribuidor_nombre")
+                or compra.get("Distribuidor")
+                or compra.get("nombre_Distribuidor")
+            )
+
         if vendedor_nombre is None and db and vendedor_id is not None:
             try:
-                db.cursor.execute("SELECT nombre FROM vendedores WHERE id=?", (vendedor_id,))
+                db.cursor.execute(
+                    "SELECT nombre FROM vendedores WHERE id=?",
+                    (_normalize_id(vendedor_id),),
+                )
                 row = db.cursor.fetchone()
             except Exception:
                 row = None
@@ -3920,7 +4003,7 @@ class CompraDetalleDialog(QDialog):
             try:
                 db.cursor.execute(
                     "SELECT nombre FROM Distribuidores WHERE id=?",
-                    (Distribuidor_id,),
+                    (_normalize_id(Distribuidor_id),),
                 )
                 row = db.cursor.fetchone()
             except Exception:

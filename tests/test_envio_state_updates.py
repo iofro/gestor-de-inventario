@@ -52,22 +52,34 @@ def test_update_envio_estado_ui_updates_entry(tmp_path):
     assert database.update_envio_estado_ui(venta_id=venta_id, estado_ui="Rechazado", estado_ui_tag="schema")
 
     row = database.cursor.execute(
-        "SELECT estado_ui, estado_ui_tag FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
         (venta_id,),
     ).fetchone()
 
     assert row["estado_ui"] == "Rechazado"
     assert row["estado_ui_tag"] == "schema"
+    assert row["estado_ui_manual"] == 1
     assert database.update_envio_estado_ui(venta_id=9999, estado_ui="Aceptado")
 
     new_row = database.cursor.execute(
-        "SELECT venta_id, estado_ui, modo FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        """
+        SELECT venta_id, estado_ui, modo, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
         (9999,),
     ).fetchone()
 
     assert new_row["estado_ui"] == "Aceptado"
     assert new_row["venta_id"] == 9999
     assert new_row["modo"] == "manual"
+    assert new_row["estado_ui_manual"] == 1
 
 
 def test_facturacion_tab_manual_envio_update(tmp_path, qt_app, monkeypatch):
@@ -102,11 +114,17 @@ def test_facturacion_tab_manual_envio_update(tmp_path, qt_app, monkeypatch):
     assert display == "Enviado (observado)"
 
     row = database.cursor.execute(
-        "SELECT estado_ui, estado_ui_tag FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
         (venta_id,),
     ).fetchone()
     assert row["estado_ui"] == "Enviado"
     assert row["estado_ui_tag"] == "observado"
+    assert row["estado_ui_manual"] == 1
 
     options = tab._get_available_envio_states()
     assert "Pendiente de envío" in options

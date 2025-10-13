@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter
+    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout
 )
 from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker, QEvent, QSize
 from PyQt5.QtGui import (
@@ -3914,17 +3914,68 @@ class CompraDetalleDialog(QDialog):
         vendedor_nombre = vendedor_nombre or "Desconocido"
         Distribuidor_nombre = Distribuidor_nombre or "Desconocido"
 
-        layout.addWidget(QLabel(f"Fecha: {compra.get('fecha', '')}"))
-        layout.addWidget(QLabel(f"Vendedor: {vendedor_nombre}"))
-        layout.addWidget(QLabel(f"Distribuidor: {Distribuidor_nombre}"))
-        layout.addWidget(QLabel(f"Total general: ${compra.get('total', 0):.2f}"))
+        info_grid = QGridLayout()
+        row = 0
+        info_grid.addWidget(QLabel(f"ID Compra: {compra.get('id', '')}"), row, 0)
+        info_grid.addWidget(QLabel(f"Fecha: {compra.get('fecha', '')}"), row, 1)
+        row += 1
+        info_grid.addWidget(QLabel(f"Distribuidor: {Distribuidor_nombre}"), row, 0)
+        info_grid.addWidget(QLabel(f"Vendedor: {vendedor_nombre}"), row, 1)
+        row += 1
+        info_grid.addWidget(QLabel(f"Total general: ${compra.get('total', 0):.2f}"), row, 0)
+        info_grid.addWidget(
+            QLabel(f"Comisión %: {compra.get('comision_pct', 0) or 0:.2f}%"),
+            row,
+            1,
+        )
+        row += 1
+        info_grid.addWidget(
+            QLabel(f"Comisión monto: ${compra.get('comision_monto', 0) or 0:.2f}"),
+            row,
+            0,
+        )
+        info_grid.addWidget(
+            QLabel(
+                f"Cantidad registrada: {compra.get('cantidad', 0) or 0}"
+            ),
+            row,
+            1,
+        )
+        row += 1
+        info_grid.addWidget(
+            QLabel(
+                f"Precio unitario ref.: ${compra.get('precio_unitario', 0) or 0:.2f}"
+            ),
+            row,
+            0,
+        )
+        producto_id = compra.get("producto_id")
+        if producto_id:
+            producto_nombre = productos_dict.get(producto_id, "Desconocido")
+            info_grid.addWidget(
+                QLabel(f"Producto asociado: {producto_nombre}"),
+                row,
+                1,
+            )
+        layout.addLayout(info_grid)
 
         # --- Tabla de detalles ---
-        table = QTableWidget(len(detalles), 8)
-        table.setHorizontalHeaderLabels([
-            "Producto", "Cantidad", "Precio U.", "Subtotal", "Descuento",
-            "IVA", "Comisión", "Vencimiento"
-        ])
+        headers = [
+            "Producto",
+            "Cantidad",
+            "Precio U.",
+            "Subtotal",
+            "Descuento",
+            "Tipo desc.",
+            "IVA",
+            "Tipo IVA",
+            "Comisión %",
+            "Comisión $",
+            "Tipo comisión",
+            "Vencimiento",
+        ]
+        table = QTableWidget(len(detalles), len(headers))
+        table.setHorizontalHeaderLabels(headers)
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         table.setSelectionBehavior(QTableWidget.SelectRows)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -3937,11 +3988,14 @@ class CompraDetalleDialog(QDialog):
             table.setItem(i, 1, QTableWidgetItem(str(d.get("cantidad", ""))))
             table.setItem(i, 2, QTableWidgetItem(f"${precio_unitario:.2f}"))
             table.setItem(i, 3, QTableWidgetItem(f"${subtotal:.2f}"))
-            table.setItem(i, 4, QTableWidgetItem(f"${d.get('descuento', 0):.2f}"))
-            table.setItem(i, 5, QTableWidgetItem(f"${d.get('iva', 0):.2f}"))
-            # Mostrar el monto de la comisión:
-            table.setItem(i, 6, QTableWidgetItem(f"${d.get('comision_monto', 0):.2f}"))
-            table.setItem(i, 7, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
+            table.setItem(i, 4, QTableWidgetItem(f"${d.get('descuento', 0) or 0:.2f}"))
+            table.setItem(i, 5, QTableWidgetItem(str(d.get("descuento_tipo", ""))))
+            table.setItem(i, 6, QTableWidgetItem(f"${d.get('iva', 0) or 0:.2f}"))
+            table.setItem(i, 7, QTableWidgetItem(str(d.get("iva_tipo", ""))))
+            table.setItem(i, 8, QTableWidgetItem(f"{d.get('comision_pct', 0) or 0:.2f}%"))
+            table.setItem(i, 9, QTableWidgetItem(f"${d.get('comision_monto', 0) or 0:.2f}"))
+            table.setItem(i, 10, QTableWidgetItem(str(d.get("comision_tipo", ""))))
+            table.setItem(i, 11, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
         table.resizeColumnsToContents()
         layout.addWidget(table)
         self.setLayout(layout)

@@ -523,22 +523,32 @@ class PurchasesTab(QWidget):
             compra_id,
         )
 
-        compra = self._compras_cache.get(compra_id)
-        if compra:
+        cached_compra = self._compras_cache.get(compra_id)
+        if cached_compra:
             logger.info(
                 "Compras: compra %s obtenida desde caché local", compra_id
             )
         else:
             logger.info(
-                "Compras: compra %s no está en caché, consultando base de datos",
+                "Compras: compra %s no está en caché", compra_id
+            )
+
+        logger.info(
+            "Compras: refrescando compra %s desde base de datos para obtener últimos datos",
+            compra_id,
+        )
+        compra = self.manager.db.get_compra(compra_id)
+        if compra:
+            logger.info(
+                "Compras: compra %s recuperada desde base de datos", compra_id
+            )
+            self._compras_cache[compra_id] = compra
+        else:
+            logger.warning(
+                "Compras: no fue posible refrescar la compra %s desde base de datos, usando caché",
                 compra_id,
             )
-            compra = self.manager.db.get_compra(compra_id)
-            if compra:
-                logger.info(
-                    "Compras: compra %s encontrada en base de datos", compra_id
-                )
-                self._compras_cache[compra_id] = compra
+            compra = cached_compra
 
         if not compra:
             logger.warning(

@@ -3860,26 +3860,107 @@ class CompraDetalleDialog(QDialog):
         logger.debug("DETALLES DE COMPRA: %s", detalles)
 
         # --- Obtén los nombres de vendedor y Distribuidor ---
-        vendedores = []
-        Distribuidores = []
-        productos = []
-        if parent and hasattr(parent, "manager"):
-            vendedores = getattr(parent.manager, "_vendedores", [])
-            Distribuidores = getattr(parent.manager, "_Distribuidores", [])
-            productos = getattr(parent.manager, "_products", [])
-        vendedores_dict = {v["id"]: v["nombre"] for v in vendedores}
-        Distribuidores_dict = {d["id"]: d["nombre"] for d in Distribuidores}
-        productos_dict = {p["id"]: p["nombre"] for p in productos}
 
+        def _normalize_id(value):
+            if value is None:
+                return None
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return value
+
+        def _safe_fetch(entry, key, default=None):
+            if isinstance(entry, dict):
+                return entry.get(key, default)
+            getter = getattr(entry, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key, default)
+                except Exception:  # pragma: no cover - defensive
+                    return default
+            try:
+                return entry[key]
+            except Exception:  # pragma: no cover - acceso heterogéneo
+                return default
+
+        manager = None
+        current_parent = parent
+        while current_parent is not None and manager is None:
+            if hasattr(current_parent, "manager"):
+                manager = getattr(current_parent, "manager")
+                break
+            if hasattr(current_parent, "parent"):
+                current_parent = current_parent.parent()
+            else:
+                current_parent = None
+
+        vendedores_dict: dict[int, str] = {}
+        Distribuidores_dict: dict[int, str] = {}
+        productos_dict: dict[int, str] = {}
         db = None
-        if parent and hasattr(parent, "manager"):
-            db = getattr(parent.manager, "db", None)
+
+        if manager is not None:
+            catalogos_vendedores = []
+            for attr in ("_vendedores_compra_by_id", "_vendedores_by_id"):
+                mapping = getattr(manager, attr, None)
+                if isinstance(mapping, dict):
+                    catalogos_vendedores.append(mapping.items())
+            for attr in ("_vendedores_compra", "_vendedores"):
+                catalog = getattr(manager, attr, None)
+                if catalog:
+                    catalogos_vendedores.append(
+                        (_safe_fetch(item, "id"), _safe_fetch(item, "nombre"))
+                        for item in catalog
+                    )
+            for catalog in catalogos_vendedores:
+                for raw_id, raw_name in catalog:
+                    vid = _normalize_id(raw_id)
+                    if vid is None:
+                        continue
+                    nombre = raw_name if isinstance(raw_name, str) else str(raw_name or "")
+                    if not nombre:
+                        continue
+                    vendedores_dict.setdefault(vid, nombre)
+
+            catalogos_distribuidores = []
+            mapping = getattr(manager, "_Distribuidores_by_id", None)
+            if isinstance(mapping, dict):
+                catalogos_distribuidores.append(mapping.items())
+            catalog = getattr(manager, "_Distribuidores", None)
+            if catalog:
+                catalogos_distribuidores.append(
+                    (_safe_fetch(item, "id"), _safe_fetch(item, "nombre"))
+                    for item in catalog
+                )
+            for catalog in catalogos_distribuidores:
+                for raw_id, raw_name in catalog:
+                    did = _normalize_id(raw_id)
+                    if did is None:
+                        continue
+                    nombre = raw_name if isinstance(raw_name, str) else str(raw_name or "")
+                    if not nombre:
+                        continue
+                    Distribuidores_dict.setdefault(did, nombre)
+
+            productos = getattr(manager, "_products", None)
+            if productos:
+                for producto in productos:
+                    pid = _normalize_id(_safe_fetch(producto, "id"))
+                    nombre = _safe_fetch(producto, "nombre", "")
+                    if pid is None:
+                        continue
+                    nombre_str = nombre if isinstance(nombre, str) else str(nombre or "")
+                    if not nombre_str:
+                        continue
+                    productos_dict.setdefault(pid, nombre_str)
+
+            db = getattr(manager, "db", None)
 
         if db:
             try:
                 for vendedor in db.get_vendedores_distribuidores() or []:
                     vendedor_info = dict(vendedor)
-                    vid = vendedor_info.get("id")
+                    vid = _normalize_id(vendedor_info.get("id"))
                     nombre = vendedor_info.get("nombre")
                     if vid is not None and nombre:
                         vendedores_dict.setdefault(vid, nombre)
@@ -3888,7 +3969,7 @@ class CompraDetalleDialog(QDialog):
             try:
                 for distribuidor in db.get_Distribuidores() or []:
                     distribuidor_info = dict(distribuidor)
-                    did = distribuidor_info.get("id")
+                    did = _normalize_id(distribuidor_info.get("id"))
                     nombre = distribuidor_info.get("nombre")
                     if did is not None and nombre:
                         Distribuidores_dict.setdefault(did, nombre)
@@ -3897,15 +3978,31 @@ class CompraDetalleDialog(QDialog):
                     "No fue posible obtener la lista de Distribuidores desde la base de datos"
                 )
 
-        vendedor_id = compra.get("vendedor_id")
-        Distribuidor_id = compra.get("Distribuidor_id")
+        vendedor_id = _normalize_id(compra.get("vendedor_id"))
+        Distribuidor_id = _normalize_id(compra.get("Distribuidor_id"))
 
         vendedor_nombre = vendedores_dict.get(vendedor_id)
         Distribuidor_nombre = Distribuidores_dict.get(Distribuidor_id)
 
+        if vendedor_nombre is None:
+            vendedor_nombre = (
+                compra.get("vendedor_nombre")
+                or compra.get("vendedor")
+                or compra.get("nombre_vendedor")
+            )
+        if Distribuidor_nombre is None:
+            Distribuidor_nombre = (
+                compra.get("Distribuidor_nombre")
+                or compra.get("Distribuidor")
+                or compra.get("nombre_Distribuidor")
+            )
+
         if vendedor_nombre is None and db and vendedor_id is not None:
             try:
-                db.cursor.execute("SELECT nombre FROM vendedores WHERE id=?", (vendedor_id,))
+                db.cursor.execute(
+                    "SELECT nombre FROM vendedores WHERE id=?",
+                    (vendedor_id,),
+                )
                 row = db.cursor.fetchone()
             except Exception:
                 row = None

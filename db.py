@@ -3147,6 +3147,15 @@ class DB:
             _merge_estado_ui,
         )
 
+        logger.info(
+            "registrar_envio_dte: inicio venta_id=%s modo=%s estado=%s codigo_generacion=%s numero_control=%s",
+            venta_id,
+            modo,
+            estado,
+            codigo_generacion,
+            numero_control,
+        )
+
         respuesta_dict: Mapping[str, Any] | None = None
         respuesta_text: str = ""
         if isinstance(respuesta_json, Mapping):
@@ -3172,6 +3181,12 @@ class DB:
 
         mapped_estado = _map_estado_hacienda(respuesta_dict)
         new_ui = mapped_estado["ui"]
+        logger.info(
+            "registrar_envio_dte: respuesta_normalizada ui=%s tag=%s estado_base=%s",
+            new_ui,
+            mapped_estado.get("tag"),
+            mapped_estado.get("raw"),
+        )
         if new_ui == "Pendiente":
             estado_base = mapped_estado.get("raw") or str(estado or "").strip().upper()
             if estado_base == "ACEPTADO":
@@ -3200,6 +3215,14 @@ class DB:
                 """,
                 (codigo_generacion_upper,),
             ).fetchone()
+            if row is not None:
+                logger.info(
+                    "registrar_envio_dte: encontrado estado previo por codigo_generacion=%s -> ui=%s tag=%s manual=%s",
+                    codigo_generacion_upper,
+                    row["estado_ui"] if isinstance(row, sqlite3.Row) else row[0],
+                    row["estado_ui_tag"] if isinstance(row, sqlite3.Row) else row[1],
+                    row["estado_ui_manual"] if isinstance(row, sqlite3.Row) else (row[2] if len(row) > 2 else None),
+                )
         if (row is None) and numero_control_upper:
             row = self.cursor.execute(
                 """
@@ -3209,6 +3232,35 @@ class DB:
                 """,
                 (numero_control_upper,),
             ).fetchone()
+            if row is not None:
+                logger.info(
+                    "registrar_envio_dte: encontrado estado previo por numero_control=%s -> ui=%s tag=%s manual=%s",
+                    numero_control_upper,
+                    row["estado_ui"] if isinstance(row, sqlite3.Row) else row[0],
+                    row["estado_ui_tag"] if isinstance(row, sqlite3.Row) else row[1],
+                    row["estado_ui_manual"] if isinstance(row, sqlite3.Row) else (row[2] if len(row) > 2 else None),
+                )
+        if (row is None) and (venta_id is not None):
+            try:
+                venta_id_int = int(venta_id)
+            except Exception:
+                venta_id_int = venta_id
+            row = self.cursor.execute(
+                """
+                SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
+                WHERE venta_id IS NOT NULL AND venta_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (venta_id_int,),
+            ).fetchone()
+            if row is not None:
+                logger.info(
+                    "registrar_envio_dte: encontrado estado previo por venta_id=%s -> ui=%s tag=%s manual=%s",
+                    venta_id_int,
+                    row["estado_ui"] if isinstance(row, sqlite3.Row) else row[0],
+                    row["estado_ui_tag"] if isinstance(row, sqlite3.Row) else row[1],
+                    row["estado_ui_manual"] if isinstance(row, sqlite3.Row) else (row[2] if len(row) > 2 else None),
+                )
         if row is not None:
             try:
                 prev_ui = row["estado_ui"]
@@ -3236,12 +3288,30 @@ class DB:
         prev_tag_text = str(prev_tag or "").strip().lower()
         manual_override = bool(prev_manual and prev_ui_text)
 
+        logger.info(
+            "registrar_envio_dte: estado_previo ui=%s tag=%s manual=%s -> override=%s",
+            prev_ui_text,
+            prev_tag_text,
+            prev_manual,
+            manual_override,
+        )
+
         if manual_override:
             merged_ui = prev_ui_text
             merged_tag = prev_tag_text
+            logger.info(
+                "registrar_envio_dte: preservando estado manual ui=%s tag=%s",
+                merged_ui,
+                merged_tag,
+            )
         else:
             merged_ui = _merge_estado_ui(prev_ui_text, new_ui)
             merged_tag = _merge_estado_tag(prev_tag, mapped_estado.get("tag"), merged_ui)
+            logger.info(
+                "registrar_envio_dte: estado_calculado ui=%s tag=%s",
+                merged_ui,
+                merged_tag,
+            )
 
         manual_flag = 1 if manual_override else 0
 
@@ -3268,6 +3338,14 @@ class DB:
                 merged_tag,
                 manual_flag,
             ),
+        )
+        logger.info(
+            "registrar_envio_dte: guardado envio venta_id=%s modo=%s manual=%s ui=%s tag=%s",
+            venta_id,
+            modo,
+            manual_flag,
+            merged_ui,
+            merged_tag,
         )
         self.conn.commit()
 
@@ -3296,6 +3374,15 @@ class DB:
     ) -> bool:
         """Actualiza manualmente el estado de un envío registrado."""
 
+        logger.info(
+            "update_envio_estado_ui: solicitud venta_id=%s numero_control=%s codigo_generacion=%s estado_ui=%s estado_ui_tag=%s",
+            venta_id,
+            numero_control,
+            codigo_generacion,
+            estado_ui,
+            estado_ui_tag,
+        )
+
         with self.lock:
             self.ensure_column("dte_envios", "estado_ui", "TEXT")
             self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
@@ -3314,6 +3401,15 @@ class DB:
             numero_control_val = None
             if isinstance(numero_control, str):
                 numero_control_val = numero_control.strip().upper() or None
+
+            logger.info(
+                "update_envio_estado_ui: valores_normalizados venta_id=%s numero_control=%s codigo_generacion=%s estado_ui=%s estado_ui_tag=%s",
+                venta_id,
+                numero_control_val,
+                codigo_generacion_val,
+                estado_ui_val,
+                tag_val,
+            )
 
             query = None
             params: tuple[Any, ...] = ()
@@ -3337,10 +3433,20 @@ class DB:
             else:
                 return False
 
+            if query:
+                logger.info(
+                    "update_envio_estado_ui: consulta=%s params=%s",
+                    query,
+                    params,
+                )
+
             row = self.cursor.execute(query, params).fetchone() if query else None
 
             if not row:
                 # Crear un registro mínimo para almacenar el estado manual.
+                logger.info(
+                    "update_envio_estado_ui: no existe registro previo, creando uno nuevo",
+                )
                 insert_data: dict[str, Any] = {
                     "fecha_hora": datetime.now(timezone.utc).isoformat(),
                     "modo": "manual",
@@ -3362,6 +3468,11 @@ class DB:
                     tuple(insert_data.values()),
                 )
                 self.conn.commit()
+                logger.info(
+                    "update_envio_estado_ui: creado registro manual id=%s datos=%s",
+                    self.cursor.lastrowid,
+                    insert_data,
+                )
                 return True
 
             envio_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
@@ -3371,6 +3482,12 @@ class DB:
                 (estado_ui_val or None, tag_val, envio_id),
             )
             self.conn.commit()
+            logger.info(
+                "update_envio_estado_ui: actualizado registro id=%s estado_ui=%s tag=%s",
+                envio_id,
+                estado_ui_val,
+                tag_val,
+            )
         return True
 
     def get_envio_fecha_emision(self, venta_id):

@@ -8,6 +8,7 @@ from PyQt5.QtGui import QColor
 from datetime import datetime, date, timedelta
 
 from dialogs import CompraDetalleDialog, RegisterPurchaseDialog
+from utils.party_resolver import normalize_identifier, resolve_party_names
 import logging
 
 
@@ -49,23 +50,46 @@ class PurchasesTab(QWidget):
 
         self.distribuidor_combo.clear()
         self.distribuidor_combo.addItem("Todos", None)
-        for d in self.manager._Distribuidores:
-            self.distribuidor_combo.addItem(d["nombre"], d["id"])
+        catalogs = getattr(self.manager, "catalogs", None)
+        distributors = []
+        if catalogs and catalogs.distributors:
+            distributors = sorted(
+                catalogs.distributors.values(),
+                key=lambda entry: (entry.get("nombre") or "").lower(),
+            )
+        else:
+            distributors = self.manager._Distribuidores
+        for d in distributors:
+            self.distribuidor_combo.addItem(d.get("nombre", ""), d.get("id"))
 
-        vendedores = self.manager.db.get_vendedores_distribuidores()
+        if catalogs and catalogs.vendors:
+            vendedores = sorted(
+                catalogs.vendors.values(),
+                key=lambda entry: (entry.get("nombre") or "").lower(),
+            )
+        else:
+            vendedores = self.manager.db.get_vendedores_distribuidores()
         self.vendedor_combo.clear()
         self.vendedor_combo.addItem("Todos", None)
         for v in vendedores:
-            self.vendedor_combo.addItem(v["nombre"], v["id"])
+            self.vendedor_combo.addItem(v.get("nombre", ""), v.get("id"))
 
-        if current_dist in [d["id"] for d in self.manager._Distribuidores]:
+        if catalogs and catalogs.distributors:
+            available_dist_ids = {normalize_identifier(d.get("id")) for d in catalogs.distributors.values()}
+        else:
+            available_dist_ids = {d["id"] for d in self.manager._Distribuidores}
+        if current_dist in available_dist_ids:
             idx = self.distribuidor_combo.findData(current_dist)
             if idx >= 0:
                 self.distribuidor_combo.setCurrentIndex(idx)
         else:
             self.distribuidor_combo.setCurrentIndex(0)
 
-        if current_vend in [v["id"] for v in vendedores]:
+        if catalogs and catalogs.vendors:
+            available_vend_ids = {normalize_identifier(v.get("id")) for v in catalogs.vendors.values()}
+        else:
+            available_vend_ids = {v["id"] for v in vendedores}
+        if current_vend in available_vend_ids:
             idx = self.vendedor_combo.findData(current_vend)
             if idx >= 0:
                 self.vendedor_combo.setCurrentIndex(idx)
@@ -101,12 +125,28 @@ class PurchasesTab(QWidget):
         self.date_to.setCalendarPopup(True)
         self.distribuidor_combo = QComboBox()
         self.distribuidor_combo.addItem("Todos", None)
-        for d in self.manager._Distribuidores:
-            self.distribuidor_combo.addItem(d["nombre"], d["id"])
+        catalogs = getattr(self.manager, "catalogs", None)
+        distributors = []
+        if catalogs and catalogs.distributors:
+            distributors = sorted(
+                catalogs.distributors.values(),
+                key=lambda entry: (entry.get("nombre") or "").lower(),
+            )
+        else:
+            distributors = self.manager._Distribuidores
+        for d in distributors:
+            self.distribuidor_combo.addItem(d.get("nombre", ""), d.get("id"))
         self.vendedor_combo = QComboBox()
         self.vendedor_combo.addItem("Todos", None)
-        for v in self.manager.db.get_vendedores_distribuidores():
-            self.vendedor_combo.addItem(v["nombre"], v["id"])
+        if catalogs and catalogs.vendors:
+            vendors = sorted(
+                catalogs.vendors.values(),
+                key=lambda entry: (entry.get("nombre") or "").lower(),
+            )
+        else:
+            vendors = self.manager.db.get_vendedores_distribuidores()
+        for v in vendors:
+            self.vendedor_combo.addItem(v.get("nombre", ""), v.get("id"))
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("ID o producto")
 
@@ -303,6 +343,7 @@ class PurchasesTab(QWidget):
             self.date_to.setEnabled(True)
         self.load_purchases()
     def load_purchases(self):
+        catalogs = getattr(self.manager, "catalogs", None)
         compras = self.manager.db.get_compras()
         self._compras_cache = {
             c.get("id"): c
@@ -310,12 +351,25 @@ class PurchasesTab(QWidget):
             if isinstance(c, dict) and c.get("id") is not None
         }
         detalles_cache: dict[int, list[dict]] = {}
-        productos = {p["id"]: p for p in self.manager.db.get_productos()}
-        Distribuidores = {d["id"]: d["nombre"] for d in self.manager.db.get_Distribuidores()}
-        Vendedores = {
-            v["id"]: v["nombre"]
-            for v in self.manager.db.get_vendedores_distribuidores()
-        }
+        if catalogs and catalogs.products:
+            productos = catalogs.products
+            Distribuidores = {
+                did: info.get("nombre", "")
+                for did, info in catalogs.distributors.items()
+            }
+            Vendedores = {
+                vid: info.get("nombre", "")
+                for vid, info in catalogs.vendors.items()
+            }
+        else:
+            productos = {p["id"]: p for p in self.manager.db.get_productos()}
+            Distribuidores = {
+                d["id"]: d["nombre"] for d in self.manager.db.get_Distribuidores()
+            }
+            Vendedores = {
+                v["id"]: v["nombre"]
+                for v in self.manager.db.get_vendedores_distribuidores()
+            }
 
         if self.date_filter_cb.isChecked():
             d_from = self.date_from.date().toPyDate()
@@ -355,8 +409,7 @@ class PurchasesTab(QWidget):
                 (d_from and fdate < d_from) or (d_to and fdate > d_to)
             ):
                 continue
-            dist = Distribuidores.get(c.get("Distribuidor_id"), "")
-            vend = Vendedores.get(c.get("vendedor_id"), "")
+            vend, dist = resolve_party_names(c, catalogs)
             if dist_filter and c.get("Distribuidor_id") != dist_filter:
                 continue
             if vend_filter and c.get("vendedor_id") != vend_filter:
@@ -414,8 +467,9 @@ class PurchasesTab(QWidget):
                     except (ValueError, TypeError):
                         logger.exception("Fecha de vencimiento inválida: %s", fv)
                 prod_count[d["producto_id"]] = prod_count.get(d["producto_id"], 0) + d.get("cantidad", 0)
-            if compra.get("Distribuidor_id"):
-                dist_count[compra["Distribuidor_id"]] = dist_count.get(compra["Distribuidor_id"], 0) + 1
+            dist_id = normalize_identifier(compra.get("Distribuidor_id"))
+            if dist_id is not None:
+                dist_count[dist_id] = dist_count.get(dist_id, 0) + 1
             if expired:
                 for col in range(6):
                     item = self.table.item(row, col)
@@ -481,7 +535,8 @@ class PurchasesTab(QWidget):
         if detalles is None:
             detalles = self.manager.db.get_detalles_compra(compra_id)
             self._detalles_cache[compra_id] = detalles
-        dlg = CompraDetalleDialog(compra, detalles, self)
+        catalogs = getattr(self.manager, "catalogs", None)
+        dlg = CompraDetalleDialog(compra, detalles, self, catalogs=catalogs)
         dlg.exec_()
 
     def edit_purchase(self, compra_id):

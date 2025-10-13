@@ -40,6 +40,7 @@ from utils.monto import monto_a_texto_sv
 from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
 from mh_auth import invalidate_token_cache
+from utils.party_resolver import resolve_party_names
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1734,12 +1735,16 @@ class MainWindow(QMainWindow):
                 self.inventario_actual_table.hideRow(row)
         # Obtén todos los detalles de compra (lotes)
         detalles = []
+        catalogs = getattr(self.manager, "catalogs", None)
         compras = self.manager.db.get_compras()
-        productos_dict = {p["id"]: p for p in self.manager.db.get_productos()}
-        Distribuidores_dict = {v["id"]: v["nombre"] for v in self.manager.db.get_Distribuidores()}
+        if catalogs and catalogs.products:
+            productos_dict = catalogs.products
+        else:
+            productos_dict = {p["id"]: p for p in self.manager.db.get_productos()}
         for compra in compras:
             compra_id = compra["id"]
             detalles_compra = self.manager.db.get_detalles_compra(compra_id)
+            _, distribuidor_nombre = resolve_party_names(compra, catalogs)
             for d in detalles_compra:
                 prod = productos_dict.get(d["producto_id"])
                 if not prod:
@@ -1753,7 +1758,7 @@ class MainWindow(QMainWindow):
                     "precio_compra": d.get("precio_unitario", 0),
                     "fecha_compra": compra.get("fecha", ""),
                     "fecha_vencimiento": fecha_vencimiento,
-                    "Distribuidor": Distribuidores_dict.get(compra.get("Distribuidor_id"), ""),
+                    "Distribuidor": distribuidor_nombre,
                     "detalle_id": d.get("id"),
                     "producto_id": d.get("producto_id"),
                     "compra_id": compra_id,
@@ -1931,7 +1936,8 @@ class MainWindow(QMainWindow):
             return
 
         detalles = self.manager.db.get_detalles_compra(compra_id)
-        dialog = CompraDetalleDialog(compra, detalles, self)
+        catalogs = getattr(self.manager, "catalogs", None)
+        dialog = CompraDetalleDialog(compra, detalles, self, catalogs=catalogs)
         dialog.exec_()
 
     def _eliminar_lote_inventario_actual(self):

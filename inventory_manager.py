@@ -8,11 +8,13 @@ import os
 import logging
 import sqlite3
 from decimal import Decimal as D
+from typing import Mapping
 from paths import DATOS_NEGOCIO_PATH, user_logs_path
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
+from utils.party_resolver import Catalogs, normalize_identifier
 
 try:  # Prefer shared app version if available
     from dte import APP_VERSION
@@ -73,6 +75,7 @@ class InventoryManager:
         self._filter_search = ""
         self._model = None
         self._modo_transmision_actual: str | None = None
+        self.catalogs: Catalogs = Catalogs(vendors={}, distributors={}, products={}, db=self.db)
         self.refresh_data()
 
     def refresh_data(self):
@@ -84,6 +87,31 @@ class InventoryManager:
             vend["id"]: vend["nombre"] for vend in self._vendedores_compra
         }
         self._Distribuidores_by_id = {dist["id"]: dist["nombre"] for dist in self._Distribuidores}
+        vendor_catalog: dict[int, dict] = {}
+        for vend in self._vendedores_compra:
+            vid = normalize_identifier(vend.get("id")) if isinstance(vend, Mapping) else None
+            if vid is None:
+                continue
+            vendor_catalog[vid] = dict(vend)
+        distributor_catalog: dict[int, dict] = {}
+        for dist in self._Distribuidores:
+            did = normalize_identifier(dist.get("id")) if isinstance(dist, Mapping) else None
+            if did is None:
+                continue
+            distributor_catalog[did] = dict(dist)
+        all_products = self.db.get_productos()
+        product_catalog: dict[int, dict] = {}
+        for prod in all_products:
+            pid = normalize_identifier(prod.get("id")) if isinstance(prod, Mapping) else None
+            if pid is None:
+                continue
+            product_catalog[pid] = dict(prod)
+        self.catalogs = Catalogs(
+            vendors=vendor_catalog,
+            distributors=distributor_catalog,
+            products=product_catalog,
+            db=self.db,
+        )
         self._products = self.db.get_productos(
             vendedor_id=self._filter_vendedor_id,
             Distribuidor_id=self._filter_Distribuidor_id,

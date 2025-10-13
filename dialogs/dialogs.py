@@ -3860,52 +3860,231 @@ class CompraDetalleDialog(QDialog):
         logger.debug("DETALLES DE COMPRA: %s", detalles)
 
         # --- Obtén los nombres de vendedor y Distribuidor ---
-        vendedores = []
-        Distribuidores = []
-        productos = []
-        if parent and hasattr(parent, "manager"):
-            vendedores = getattr(parent.manager, "_vendedores", [])
-            Distribuidores = getattr(parent.manager, "_Distribuidores", [])
-            productos = getattr(parent.manager, "_products", [])
-        vendedores_dict = {v["id"]: v["nombre"] for v in vendedores}
-        Distribuidores_dict = {d["id"]: d["nombre"] for d in Distribuidores}
-        productos_dict = {p["id"]: p["nombre"] for p in productos}
 
-        db = None
-        if parent and hasattr(parent, "manager"):
-            db = getattr(parent.manager, "db", None)
+        def _normalize_id(value):
+            """Return a comparable identifier for database lookups."""
+
+            if value is None:
+                return None
+
+            if isinstance(value, bool):
+                # ``bool`` is a subclass of ``int`` but we never expect
+                # boolean identifiers. Return ``None`` so we do not attempt
+                # to use it as a key.
+                return None
+
+            if isinstance(value, int):
+                return value
+
+            if isinstance(value, float):
+                if value.is_integer():
+                    return int(value)
+                return value
+
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    return None
+                try:
+                    return int(text)
+                except ValueError:
+                    try:
+                        float_value = float(text)
+                    except ValueError:
+                        return text
+                    if float_value.is_integer():
+                        return int(float_value)
+                    return text
+
+            return value
+
+        def _safe_fetch(entry, key, default=None):
+            if isinstance(entry, dict):
+                return entry.get(key, default)
+            getter = getattr(entry, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key, default)
+                except Exception:  # pragma: no cover - defensive
+                    return default
+            try:
+                return entry[key]
+            except Exception:  # pragma: no cover - acceso heterogéneo
+                return default
+
+        def _find_manager(widget):
+            current = widget
+            while current is not None:
+                if hasattr(current, "manager"):
+                    return getattr(current, "manager")
+                if hasattr(current, "parent"):
+                    current = current.parent()
+                else:
+                    current = None
+            return None
+
+        manager = _find_manager(parent)
+
+        vendedores_dict: dict[object, str] = {}
+        Distribuidores_dict: dict[object, str] = {}
+        productos_dict: dict[object, str] = {}
+        db = getattr(manager, "db", None) if manager is not None else None
+
+        def _store_entry(
+            target: dict[object, str],
+            raw_id,
+            raw_name,
+            *,
+            allow_override: bool = False,
+        ) -> None:
+            identifier = _normalize_id(raw_id)
+            if identifier is None:
+                return
+            if isinstance(raw_name, str):
+                name = raw_name.strip()
+            else:
+                name = str(raw_name or "").strip()
+            if not name:
+                return
+            if not allow_override:
+                existing = target.get(identifier, "").strip()
+                if existing and existing.lower() != "desconocido":
+                    return
+            target[identifier] = name
+
+        if db is None:
+            try:
+                db = DB()
+            except Exception:
+                db = None
+                logger.exception("No fue posible inicializar la base de datos")
 
         if db:
             try:
-                for vendedor in db.get_vendedores_distribuidores() or []:
-                    vendedor_info = dict(vendedor)
-                    vid = vendedor_info.get("id")
-                    nombre = vendedor_info.get("nombre")
-                    if vid is not None and nombre:
-                        vendedores_dict.setdefault(vid, nombre)
+                for vendedor in (db.get_vendedores_distribuidores() or []):
+                    info = dict(vendedor)
+                    _store_entry(
+                        vendedores_dict,
+                        info.get("id"),
+                        info.get("nombre"),
+                        allow_override=True,
+                    )
             except Exception:
                 logger.exception("No fue posible obtener la lista de vendedores")
+
             try:
-                for distribuidor in db.get_Distribuidores() or []:
-                    distribuidor_info = dict(distribuidor)
-                    did = distribuidor_info.get("id")
-                    nombre = distribuidor_info.get("nombre")
-                    if did is not None and nombre:
-                        Distribuidores_dict.setdefault(did, nombre)
+                for vendedor in (db.get_vendedores() or []):
+                    info = dict(vendedor)
+                    _store_entry(
+                        vendedores_dict,
+                        info.get("id"),
+                        info.get("nombre") or info.get("codigo"),
+                        allow_override=True,
+                    )
+            except Exception:
+                logger.exception(
+                    "No fue posible obtener la lista completa de vendedores"
+                )
+
+            try:
+                for distribuidor in (db.get_Distribuidores() or []):
+                    info = dict(distribuidor)
+                    _store_entry(
+                        Distribuidores_dict,
+                        info.get("id"),
+                        info.get("nombre"),
+                        allow_override=True,
+                    )
             except Exception:
                 logger.exception(
                     "No fue posible obtener la lista de Distribuidores desde la base de datos"
                 )
 
-        vendedor_id = compra.get("vendedor_id")
-        Distribuidor_id = compra.get("Distribuidor_id")
+            try:
+                for producto in (db.get_productos() or []):
+                    info = dict(producto)
+                    _store_entry(
+                        productos_dict,
+                        info.get("id"),
+                        info.get("nombre"),
+                        allow_override=True,
+                    )
+            except Exception:
+                logger.exception("No fue posible obtener la lista de productos")
+
+        if manager is not None:
+            for attr in ("_vendedores_compra_by_id", "_vendedores_by_id"):
+                mapping = getattr(manager, attr, None)
+                if isinstance(mapping, dict):
+                    for raw_id, raw_name in mapping.items():
+                        _store_entry(vendedores_dict, raw_id, raw_name)
+
+            for attr in ("_vendedores_compra", "_vendedores"):
+                catalog = getattr(manager, attr, None)
+                if catalog:
+                    for item in catalog:
+                        _store_entry(
+                            vendedores_dict,
+                            _safe_fetch(item, "id"),
+                            _safe_fetch(item, "nombre"),
+                        )
+
+            for attr in ("_Distribuidores_by_id",):
+                mapping = getattr(manager, attr, None)
+                if isinstance(mapping, dict):
+                    for raw_id, raw_name in mapping.items():
+                        _store_entry(Distribuidores_dict, raw_id, raw_name)
+
+            for attr in ("_Distribuidores",):
+                catalog = getattr(manager, attr, None)
+                if catalog:
+                    for item in catalog:
+                        _store_entry(
+                            Distribuidores_dict,
+                            _safe_fetch(item, "id"),
+                            _safe_fetch(item, "nombre"),
+                        )
+
+            productos = getattr(manager, "_products", None)
+            if productos:
+                for producto in productos:
+                    _store_entry(
+                        productos_dict,
+                        _safe_fetch(producto, "id"),
+                        _safe_fetch(producto, "nombre"),
+                    )
+
+        vendedor_id = _normalize_id(compra.get("vendedor_id"))
+        Distribuidor_id = _normalize_id(compra.get("Distribuidor_id"))
 
         vendedor_nombre = vendedores_dict.get(vendedor_id)
         Distribuidor_nombre = Distribuidores_dict.get(Distribuidor_id)
 
+        if vendedor_nombre is None:
+            vendedor_nombre = (
+                compra.get("vendedor_nombre")
+                or compra.get("vendedor")
+                or compra.get("nombre_vendedor")
+                or compra.get("nombreVendedor")
+                or compra.get("Vendedor")
+                or compra.get("vendedorNombre")
+            )
+        if Distribuidor_nombre is None:
+            Distribuidor_nombre = (
+                compra.get("Distribuidor_nombre")
+                or compra.get("Distribuidor")
+                or compra.get("nombre_Distribuidor")
+                or compra.get("distribuidor")
+                or compra.get("distribuidor_nombre")
+                or compra.get("DistribuidorNombre")
+            )
+
         if vendedor_nombre is None and db and vendedor_id is not None:
             try:
-                db.cursor.execute("SELECT nombre FROM vendedores WHERE id=?", (vendedor_id,))
+                db.cursor.execute(
+                    "SELECT nombre FROM vendedores WHERE id=?",
+                    (vendedor_id,),
+                )
                 row = db.cursor.fetchone()
             except Exception:
                 row = None
@@ -3932,6 +4111,44 @@ class CompraDetalleDialog(QDialog):
             if row:
                 Distribuidor_nombre = row[0]
                 Distribuidores_dict[Distribuidor_id] = Distribuidor_nombre
+
+        if Distribuidor_nombre is None and db and vendedor_id is not None:
+            # Algunos registros de compra más antiguos no almacenaban el
+            # distribuidor directamente pero sí el vendedor asociado, el cual
+            # a su vez guarda su distribuidor.
+            try:
+                db.cursor.execute(
+                    "SELECT Distribuidor_id FROM vendedores WHERE id=?",
+                    (vendedor_id,),
+                )
+                row = db.cursor.fetchone()
+            except Exception:
+                row = None
+                logger.exception(
+                    "No fue posible obtener el distribuidor del vendedor %s",
+                    vendedor_id,
+                )
+            if row and row[0] is not None:
+                linked_dist_id = _normalize_id(row[0])
+                Distribuidor_nombre = Distribuidores_dict.get(linked_dist_id)
+                if Distribuidor_nombre is None and db:
+                    try:
+                        db.cursor.execute(
+                            "SELECT nombre FROM Distribuidores WHERE id=?",
+                            (linked_dist_id,),
+                        )
+                        dist_row = db.cursor.fetchone()
+                    except Exception:
+                        dist_row = None
+                        logger.exception(
+                            "No fue posible obtener el nombre del Distribuidor %s",
+                            linked_dist_id,
+                        )
+                    if dist_row:
+                        Distribuidor_nombre = dist_row[0]
+                        Distribuidores_dict[linked_dist_id] = Distribuidor_nombre
+                if Distribuidor_nombre and Distribuidor_id is None:
+                    Distribuidor_id = linked_dist_id
 
         vendedor_nombre = vendedor_nombre or "Desconocido"
         Distribuidor_nombre = Distribuidor_nombre or "Desconocido"
@@ -3971,9 +4188,27 @@ class CompraDetalleDialog(QDialog):
             row,
             0,
         )
-        producto_id = compra.get("producto_id")
-        if producto_id:
-            producto_nombre = productos_dict.get(producto_id, "Desconocido")
+        producto_id = _normalize_id(compra.get("producto_id"))
+        if producto_id is not None:
+            producto_nombre = productos_dict.get(producto_id)
+            if producto_nombre is None and db:
+                try:
+                    db.cursor.execute(
+                        "SELECT nombre FROM productos WHERE id=?",
+                        (producto_id,),
+                    )
+                    row = db.cursor.fetchone()
+                except Exception:
+                    row = None
+                    logger.exception(
+                        "No fue posible obtener el nombre del producto %s",
+                        producto_id,
+                    )
+                if row:
+                    producto_nombre = row[0]
+                    productos_dict[producto_id] = producto_nombre
+            if producto_nombre is None:
+                producto_nombre = "Desconocido"
             info_grid.addWidget(
                 QLabel(f"Producto asociado: {producto_nombre}"),
                 row,
@@ -4003,7 +4238,26 @@ class CompraDetalleDialog(QDialog):
         table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         for i, d in enumerate(detalles):
-            nombre_producto = productos_dict.get(d.get("producto_id"), "Desconocido")
+            detalle_pid = _normalize_id(d.get("producto_id"))
+            nombre_producto = productos_dict.get(detalle_pid)
+            if nombre_producto is None and db and detalle_pid is not None:
+                try:
+                    db.cursor.execute(
+                        "SELECT nombre FROM productos WHERE id=?",
+                        (detalle_pid,),
+                    )
+                    prod_row = db.cursor.fetchone()
+                except Exception:
+                    prod_row = None
+                    logger.exception(
+                        "No fue posible obtener el nombre del producto %s",
+                        detalle_pid,
+                    )
+                if prod_row:
+                    nombre_producto = prod_row[0]
+                    productos_dict[detalle_pid] = nombre_producto
+            if not nombre_producto:
+                nombre_producto = "Desconocido"
             precio_unitario = d.get("precio_unitario", d.get("precio", 0))
             subtotal = d.get("cantidad", 0) * precio_unitario
             table.setItem(i, 0, QTableWidgetItem(nombre_producto))

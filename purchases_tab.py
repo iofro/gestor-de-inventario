@@ -137,7 +137,7 @@ class PurchasesTab(QWidget):
 
         side_layout = QVBoxLayout()
         self.btn_actualizar = QPushButton("Actualizar")
-        self.btn_ver = QPushButton("Ver")
+        self.btn_ver = QPushButton("Ver información")
         self.btn_editar = QPushButton("Editar")
         self.btn_eliminar = QPushButton("Eliminar")
         side_layout.addWidget(self.btn_actualizar)

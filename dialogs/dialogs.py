@@ -7,7 +7,7 @@ import logging
 import base64
 import requests
 from datetime import date, timedelta, datetime
-from typing import Optional
+from typing import Mapping, MutableMapping, Optional
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
@@ -4021,15 +4021,60 @@ class CompraDetalleDialog(QDialog):
             catalogs = getattr(parent, "catalogs", None)
         if catalogs is None and manager is not None:
             catalogs = getattr(manager, "catalogs", None)
+
         db = None
         if manager is not None:
             db = getattr(manager, "db", None)
         if db is None and parent is not None:
             db = getattr(parent, "db", None)
+
         if catalogs is None:
             catalogs = Catalogs(vendors={}, distributors={}, products={}, db=db)
-        elif catalogs.db is None:
-            catalogs.db = db
+        else:
+            if catalogs.db is None:
+                catalogs.db = db
+
+            def _populate_missing(target, source_iterable):
+                if not isinstance(target, MutableMapping):
+                    return
+                for entry in source_iterable or []:
+                    identifier = normalize_identifier(entry.get("id")) if isinstance(entry, Mapping) else None
+                    if identifier is None or identifier in target:
+                        continue
+                    try:
+                        target[identifier] = dict(entry)
+                    except Exception:
+                        # Fallback to raw entry when it cannot be cloned (e.g. sqlite rows)
+                        target[identifier] = entry
+
+            if manager is not None:
+                vendor_source = getattr(manager, "_vendedores_compra", None)
+                if not vendor_source and getattr(manager, "db", None):
+                    try:
+                        vendor_source = manager.db.get_vendedores_distribuidores()
+                    except Exception:
+                        vendor_source = None
+                if vendor_source:
+                    _populate_missing(catalogs.vendors, vendor_source)
+
+                distributor_source = getattr(manager, "_Distribuidores", None)
+                if not distributor_source and getattr(manager, "db", None):
+                    try:
+                        distributor_source = manager.db.get_Distribuidores()
+                    except Exception:
+                        distributor_source = None
+                if distributor_source:
+                    _populate_missing(catalogs.distributors, distributor_source)
+
+                product_source = getattr(manager, "_products", None)
+                if not product_source and getattr(manager, "db", None):
+                    try:
+                        product_source = manager.db.get_productos()
+                    except Exception:
+                        product_source = None
+                if product_source:
+                    _populate_missing(catalogs.products, product_source)
+
         return catalogs, catalogs.db
 
 class LogoPreviewDialog(QDialog):

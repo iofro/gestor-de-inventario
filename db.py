@@ -3265,6 +3265,62 @@ class DB:
         except Exception:
             return {}
 
+    def update_envio_estado_ui(
+        self,
+        *,
+        venta_id: int | None = None,
+        numero_control: str | None = None,
+        codigo_generacion: str | None = None,
+        estado_ui: str | None = None,
+        estado_ui_tag: str | None = None,
+    ) -> bool:
+        """Actualiza manualmente el estado de un envío registrado."""
+
+        with self.lock:
+            self.ensure_column("dte_envios", "estado_ui", "TEXT")
+            self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+
+            query = None
+            params: tuple[Any, ...] = ()
+            if codigo_generacion:
+                query = (
+                    "SELECT id FROM dte_envios "
+                    "WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?) "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+                params = (codigo_generacion,)
+            elif numero_control:
+                query = (
+                    "SELECT id FROM dte_envios "
+                    "WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?) "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+                params = (numero_control,)
+            elif venta_id is not None:
+                query = "SELECT id FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1"
+                params = (venta_id,)
+            else:
+                return False
+
+            row = self.cursor.execute(query, params).fetchone() if query else None
+            if not row:
+                return False
+
+            envio_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
+
+            estado_ui_val = estado_ui.strip() if isinstance(estado_ui, str) else estado_ui
+            if isinstance(estado_ui_tag, str):
+                tag_val = estado_ui_tag.strip().lower() or None
+            else:
+                tag_val = estado_ui_tag
+
+            self.cursor.execute(
+                "UPDATE dte_envios SET estado_ui=?, estado_ui_tag=? WHERE id=?",
+                (estado_ui_val or None, tag_val, envio_id),
+            )
+            self.conn.commit()
+        return True
+
     def get_envio_fecha_emision(self, venta_id):
         """Devuelve la fecha del último envío para ``venta_id`` en formato ``DD/MM/AAAA``."""
 

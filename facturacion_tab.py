@@ -2212,6 +2212,17 @@ class FacturacionTab(QWidget):
             return _color("#6C757D")  # Gray for error states
         return None
 
+    @staticmethod
+    def _should_bold_envio_status(envio: str | None) -> bool:
+        if not envio:
+            return False
+        status = str(envio).strip().lower()
+        if not status:
+            return False
+        if "(" in status:
+            status = status.split("(", 1)[0].strip()
+        return not status.startswith("pendiente")
+
     @classmethod
     def _detectar_estado_factura(
         cls,
@@ -2775,6 +2786,10 @@ class FacturacionTab(QWidget):
             envio_color = self._get_envio_status_color(envio_text)
             if envio_color:
                 envio_item.setForeground(QBrush(envio_color))
+            if self._should_bold_envio_status(envio_text):
+                envio_font = envio_item.font()
+                envio_font.setBold(True)
+                envio_item.setFont(envio_font)
             self.table.setItem(row, 5, envio_item)
             for col in range(6):
                 item = self.table.item(row, col)

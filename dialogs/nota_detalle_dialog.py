@@ -11,6 +11,8 @@ from PyQt5.QtWidgets import (
     QLineEdit,
     QDialogButtonBox,
     QHeaderView,
+    QWidget,
+    QRadioButton,
 )
 from PyQt5.QtCore import Qt
 
@@ -23,6 +25,11 @@ class NotaDetalleDialog(QDialog):
         self.detalles = detalles
         self.tipo = tipo
         self.setWindowTitle("Detalle de Nota")
+        self._mode_radios: Dict[int, Dict[str, QRadioButton]] = {}
+        self._row_modes: Dict[int, str | None] = {}
+        self._suppress_radio_signal = False
+        self._applying_mode = False
+
         self._build_ui()
         self._populate_table()
         self._update_total()
@@ -33,7 +40,7 @@ class NotaDetalleDialog(QDialog):
         table_layout = QHBoxLayout()
         layout.addLayout(table_layout)
 
-        self.table = QTableWidget(0, 7)
+        self.table = QTableWidget(0, 8)
         self.table.setHorizontalHeaderLabels(
             [
                 "Producto",
@@ -41,8 +48,9 @@ class NotaDetalleDialog(QDialog):
                 "P. Unitario",
                 "Descuento",
                 "Total",
+                "Modo de ajuste",
                 "Ajuste cantidad",
-                "Ajuste",
+                "Ajuste precio (USD)",
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -107,18 +115,44 @@ class NotaDetalleDialog(QDialog):
             if self.tipo == "credito":
                 qty_spin.setPrefix("-")
             qty_spin.setValue(0)
-            qty_spin.valueChanged.connect(self._update_total)
-            self.table.setCellWidget(row, 5, qty_spin)
+            qty_spin.setObjectName(f"cantidad-input-{row}")
+            qty_spin.valueChanged.connect(lambda value, r=row: self._on_qty_changed(r, value))
 
-            spin = QDoubleSpinBox()
-            spin.setDecimals(4)
-            spin.setSingleStep(0.0001)
+            monto_spin = QDoubleSpinBox()
+            monto_spin.setDecimals(4)
+            monto_spin.setSingleStep(0.0001)
             if self.tipo == "credito":
-                spin.setPrefix("-")
-            spin.setRange(0, 1_000_000)
-            spin.setValue(0)
-            spin.valueChanged.connect(self._update_total)
-            self.table.setCellWidget(row, 6, spin)
+                monto_spin.setPrefix("-")
+            monto_spin.setRange(0, 1_000_000)
+            monto_spin.setValue(0)
+            monto_spin.setObjectName(f"precio-input-{row}")
+            monto_spin.valueChanged.connect(lambda value, r=row: self._on_price_changed(r, value))
+
+            mode_widget = QWidget()
+            mode_widget.setObjectName(f"mode-selector-{row}")
+            mode_layout = QVBoxLayout(mode_widget)
+            mode_layout.setContentsMargins(0, 0, 0, 0)
+            qty_radio = QRadioButton("Modificar cantidad", mode_widget)
+            qty_radio.setObjectName(f"mode-cantidad-{row}")
+            qty_radio.setAutoExclusive(False)
+            price_radio = QRadioButton("Modificar precio", mode_widget)
+            price_radio.setObjectName(f"mode-precio-{row}")
+            price_radio.setAutoExclusive(False)
+            mode_layout.addWidget(qty_radio)
+            mode_layout.addWidget(price_radio)
+            qty_radio.toggled.connect(lambda checked, r=row: self._handle_mode_toggled(r, "cantidad", checked))
+            price_radio.toggled.connect(lambda checked, r=row: self._handle_mode_toggled(r, "precio", checked))
+
+            self.table.setCellWidget(row, 5, mode_widget)
+            self.table.setCellWidget(row, 6, qty_spin)
+            self.table.setCellWidget(row, 7, monto_spin)
+
+            self._mode_radios[row] = {"cantidad": qty_radio, "precio": price_radio}
+            self._row_modes[row] = None
+
+            # Ensure both inputs start enabled
+            qty_spin.setEnabled(True)
+            monto_spin.setEnabled(True)
 
     def _update_total(self):
         gravada = Decimal("0")
@@ -126,8 +160,8 @@ class NotaDetalleDialog(QDialog):
         nosujeta = Decimal("0")
         iva = Decimal("0")
         for row, d in enumerate(self.detalles):
-            monto_spin = self.table.cellWidget(row, 6)
-            qty_spin = self.table.cellWidget(row, 5)
+            monto_spin = self.table.cellWidget(row, 7)
+            qty_spin = self.table.cellWidget(row, 6)
             monto_val = Decimal(str(abs(monto_spin.value()))) if isinstance(monto_spin, QDoubleSpinBox) else Decimal("0")
             qty_val = Decimal(str(abs(qty_spin.value()))) if isinstance(qty_spin, QDoubleSpinBox) else Decimal("0")
 
@@ -199,8 +233,8 @@ class NotaDetalleDialog(QDialog):
         self._update_total()
         detalles = []
         for row, d in enumerate(self.detalles):
-            monto_spin = self.table.cellWidget(row, 6)
-            qty_spin = self.table.cellWidget(row, 5)
+            monto_spin = self.table.cellWidget(row, 7)
+            qty_spin = self.table.cellWidget(row, 6)
             monto_val = float(monto_spin.value()) if isinstance(monto_spin, QDoubleSpinBox) else 0.0
             qty_val = float(qty_spin.value()) if isinstance(qty_spin, QDoubleSpinBox) else 0.0
 
@@ -228,3 +262,75 @@ class NotaDetalleDialog(QDialog):
                 detalles.append(payload)
         total = self._totals.get("total", 0.0)
         return total, self.motivo_edit.text(), detalles
+
+    def _handle_mode_toggled(self, row: int, mode: str, checked: bool):
+        if self._suppress_radio_signal:
+            return
+
+        radios = self._mode_radios.get(row, {})
+        other_mode = "precio" if mode == "cantidad" else "cantidad"
+        other_radio = radios.get(other_mode)
+
+        if checked:
+            if other_radio and other_radio.isChecked():
+                self._suppress_radio_signal = True
+                other_radio.setChecked(False)
+                self._suppress_radio_signal = False
+            self._apply_mode(row, mode)
+        else:
+            if other_radio and other_radio.isChecked():
+                return
+            self._apply_mode(row, None)
+
+    def _apply_mode(self, row: int, mode: str | None):
+        qty_spin = self.table.cellWidget(row, 6)
+        monto_spin = self.table.cellWidget(row, 7)
+        if not isinstance(qty_spin, QDoubleSpinBox) or not isinstance(monto_spin, QDoubleSpinBox):
+            return
+
+        self._applying_mode = True
+        try:
+            if mode == "cantidad":
+                self._row_modes[row] = "cantidad"
+                qty_spin.setEnabled(True)
+                monto_spin.blockSignals(True)
+                monto_spin.setValue(0)
+                monto_spin.blockSignals(False)
+                monto_spin.setEnabled(False)
+            elif mode == "precio":
+                self._row_modes[row] = "precio"
+                monto_spin.setEnabled(True)
+                qty_spin.blockSignals(True)
+                qty_spin.setValue(0)
+                qty_spin.blockSignals(False)
+                qty_spin.setEnabled(False)
+            else:
+                self._row_modes[row] = None
+                qty_spin.setEnabled(True)
+                monto_spin.setEnabled(True)
+        finally:
+            self._applying_mode = False
+
+        self._update_total()
+
+    def _on_qty_changed(self, row: int, value: float):
+        if self._applying_mode:
+            self._update_total()
+            return
+
+        if self._row_modes.get(row) is None and value != 0:
+            radio = self._mode_radios.get(row, {}).get("cantidad")
+            if radio:
+                radio.setChecked(True)
+        self._update_total()
+
+    def _on_price_changed(self, row: int, value: float):
+        if self._applying_mode:
+            self._update_total()
+            return
+
+        if self._row_modes.get(row) is None and value != 0:
+            radio = self._mode_radios.get(row, {}).get("precio")
+            if radio:
+                radio.setChecked(True)
+        self._update_total()

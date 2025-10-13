@@ -67,7 +67,7 @@ describe('NotaForm', () => {
     expect(headers).toContain('Ajuste precio (USD)');
   });
 
-  it('bloquea edición simultánea de cantidad y ajuste precio', async () => {
+  it('controla la edición mediante el selector de modo por fila', async () => {
     const wrapper = mount(NotaForm, {
       props: {
         factura: {
@@ -97,36 +97,30 @@ describe('NotaForm', () => {
 
     const cantidadInput = wrapper.get('[data-testid="cantidad-input-1"]');
     const precioInput = wrapper.get('[data-testid="precio-input-1"]');
+    const modoCantidad = wrapper.get('[data-testid="modo-selector-1"] input[value="cantidad"]');
+    const modoPrecio = wrapper.get('[data-testid="modo-selector-1"] input[value="precio"]');
 
     expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
     expect((precioInput.element as HTMLInputElement).disabled).toBe(false);
 
-    await cantidadInput.setValue('3');
+    await modoCantidad.setChecked();
+    await modoCantidad.trigger('change');
     await tabla.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    // @ts-expect-error inspección de estado interno para la prueba
-    expect(tabla.vm.items[0].cantidadAjustar).toBe(3);
     expect((precioInput.element as HTMLInputElement).disabled).toBe(true);
+    expect((precioInput.element as HTMLInputElement).value).toBe('0');
 
-    await cantidadInput.setValue('0');
+    await modoCantidad.trigger('click');
     await tabla.vm.$nextTick();
     await wrapper.vm.$nextTick();
-    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
-    // @ts-expect-error inspección de estado interno para la prueba
-    expect(tabla.vm.items[0].cantidadAjustar).toBe(0);
-    // @ts-expect-error inspección en el padre
-    expect(wrapper.vm.items[0].cantidadAjustar).toBe(0);
     expect((precioInput.element as HTMLInputElement).disabled).toBe(false);
 
-    await precioInput.setValue('4');
+    await modoPrecio.setChecked();
+    await modoPrecio.trigger('change');
     await tabla.vm.$nextTick();
     await wrapper.vm.$nextTick();
     expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
-
-    await precioInput.setValue('0');
-    await tabla.vm.$nextTick();
-    await wrapper.vm.$nextTick();
-    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
+    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
   });
 
   it('muestra datos de factura en encabezado', () => {

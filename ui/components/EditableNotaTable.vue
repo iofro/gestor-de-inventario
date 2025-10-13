@@ -14,6 +14,7 @@
           <th>Descripción</th>
           <th>Unidad</th>
           <th>Cant. facturada</th>
+          <th>Modo ajuste</th>
           <th>Ajuste cantidad</th>
           <th>Tipo</th>
           <th>Modo</th>
@@ -34,6 +35,35 @@
           <td>{{ item.descripcion }}</td>
           <td>{{ item.unidad }}</td>
           <td>{{ item.cantidadFacturada }}</td>
+          <td>
+            <div
+              class="modo-selector"
+              :data-testid="getModoSelectorTestId(item, index)"
+            >
+              <label>
+                <input
+                  type="radio"
+                  value="cantidad"
+                  :name="getModoGroupName(item, index)"
+                  :checked="item.ajusteCantidad === true"
+                  @click="onModoClick(item, 'cantidad', $event)"
+                  @change="onModoChange(item, 'cantidad')"
+                />
+                Modificar cantidad
+              </label>
+              <label>
+                <input
+                  type="radio"
+                  value="precio"
+                  :name="getModoGroupName(item, index)"
+                  :checked="item.ajusteCantidad === false"
+                  @click="onModoClick(item, 'precio', $event)"
+                  @change="onModoChange(item, 'precio')"
+                />
+                Modificar precio
+              </label>
+            </div>
+          </td>
           <td>
             <input
               class="cantidad-ajuste"
@@ -292,7 +322,7 @@ function onEsc(item: NotaItem, field: keyof NotaItem) {
 }
 
 function update(item: NotaItem, field: keyof NotaItem, input: any) {
-  const targets = applyToSelected.value ? items.value.filter((i) => i.selected) : [item];
+  const targets = getTargets(item);
 
   targets.forEach((target) => {
     const isNumericField = field === 'ajuste' || field === 'cantidadAjustar';
@@ -319,19 +349,15 @@ function update(item: NotaItem, field: keyof NotaItem, input: any) {
 
 function handlePrecioChange(target: NotaItem, value: any) {
   const numericValue = Number(value);
-  if (isNonZero(numericValue)) {
-    target.ajusteCantidad = false;
-  } else if (target.ajusteCantidad === false && !isNonZero(numericValue)) {
-    target.ajusteCantidad = undefined;
+  if (target.ajusteCantidad === undefined && isNonZero(numericValue)) {
+    setModo(target, 'precio');
   }
 }
 
 function handleCantidadChange(target: NotaItem, value: any) {
   const numericValue = Number(value);
-  if (isNonZero(numericValue)) {
-    target.ajusteCantidad = true;
-  } else if (target.ajusteCantidad === true && !isNonZero(numericValue)) {
-    target.ajusteCantidad = undefined;
+  if (target.ajusteCantidad === undefined && isNonZero(numericValue)) {
+    setModo(target, 'cantidad');
   }
 }
 
@@ -343,34 +369,77 @@ function getPrecioTestId(item: NotaItem, index: number) {
   return `precio-input-${getRowIdentifier(item, index)}`;
 }
 
+function getModoSelectorTestId(item: NotaItem, index: number) {
+  return `modo-selector-${getRowIdentifier(item, index)}`;
+}
+
+function getModoGroupName(item: NotaItem, index: number) {
+  return `modo-grupo-${getRowIdentifier(item, index)}`;
+}
+
 function getRowIdentifier(item: NotaItem, index: number) {
   const maybeId = Number((item as any).id);
   return Number.isFinite(maybeId) && maybeId > 0 ? maybeId : index;
 }
 
 function isCantidadLocked(item: NotaItem) {
-  if (item.ajusteCantidad === true) {
+  if (item.ajusteCantidad === undefined) {
     return false;
   }
-  if (item.ajusteCantidad === false) {
-    return true;
-  }
-  return isNonZero(Number(item.ajuste)) && !isNonZero(Number(item.cantidadAjustar));
+  return item.ajusteCantidad === false;
 }
 
 function isPrecioLocked(item: NotaItem) {
-  if (item.ajusteCantidad === false) {
+  if (item.ajusteCantidad === undefined) {
     return false;
   }
-  if (item.ajusteCantidad === true) {
-    return true;
-  }
-  return isNonZero(Number(item.cantidadAjustar));
+  return item.ajusteCantidad === true;
 }
 
 function isNonZero(value: any) {
   const numeric = Number(value);
   return Number.isFinite(numeric) && Math.abs(numeric) > 0;
+}
+
+function onModoChange(item: NotaItem, mode: 'cantidad' | 'precio') {
+  changeModo(item, mode);
+}
+
+function onModoClick(
+  item: NotaItem,
+  mode: 'cantidad' | 'precio',
+  event: MouseEvent
+) {
+  const isActive = mode === 'cantidad' ? item.ajusteCantidad === true : item.ajusteCantidad === false;
+  if (isActive) {
+    event.preventDefault();
+    changeModo(item, undefined);
+  }
+}
+
+function changeModo(item: NotaItem, mode: 'cantidad' | 'precio' | undefined) {
+  const targets = getTargets(item);
+  targets.forEach((target) => {
+    setModo(target, mode);
+  });
+  emitItems();
+}
+
+function setModo(target: NotaItem, mode: 'cantidad' | 'precio' | undefined) {
+  if (mode === 'cantidad') {
+    target.ajusteCantidad = true;
+    target.ajuste = 0;
+  } else if (mode === 'precio') {
+    target.ajusteCantidad = false;
+    target.cantidadAjustar = 0;
+  } else {
+    target.ajusteCantidad = undefined;
+  }
+}
+
+function getTargets(item: NotaItem) {
+  const targets = applyToSelected.value ? items.value.filter((i) => i.selected) : [item];
+  return targets.length > 0 ? targets : [item];
 }
 
 function resolveValor(item: NotaItem) {
@@ -467,6 +536,12 @@ function normalizeItems(source: NotaItem[]) {
 }
 
 function normalizeAjusteState(item: NotaItem) {
+  if (item.ajusteCantidad === true) {
+    return;
+  }
+  if (item.ajusteCantidad === false) {
+    return;
+  }
   if (isNonZero(item.cantidadAjustar)) {
     item.ajusteCantidad = true;
     return;
@@ -523,6 +598,11 @@ th,
 .product-option {
   cursor: pointer;
   padding: 0.25rem 0;
+}
+.modo-selector {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
 }
 </style>
 

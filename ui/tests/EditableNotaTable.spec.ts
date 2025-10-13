@@ -124,19 +124,121 @@ describe('EditableNotaTable', () => {
     await ajusteInput.setValue('113');
     await wrapper.vm.$nextTick();
     let cells = wrapper.findAll('tbody td');
-    expect(cells[12].text()).toBe('100.0000');
-    expect(cells[13].text()).toBe('13.0000');
-    expect(cells[14].text()).toBe('113.0000');
+    expect(cells[13].text()).toBe('100.0000');
+    expect(cells[14].text()).toBe('13.0000');
+    expect(cells[15].text()).toBe('113.0000');
     await wrapper.setProps({ ivaIncluido: false });
     await ajusteInput.setValue('100');
     await wrapper.vm.$nextTick();
     cells = wrapper.findAll('tbody td');
-    expect(cells[12].text()).toBe('100.0000');
-    expect(cells[13].text()).toBe('13.0000');
-    expect(cells[14].text()).toBe('113.0000');
+    expect(cells[13].text()).toBe('100.0000');
+    expect(cells[14].text()).toBe('13.0000');
+    expect(cells[15].text()).toBe('113.0000');
   });
 
-  it('aplica exclusión mutua entre cantidad y ajuste de precio', async () => {
+  it('muestra la columna Ajuste precio (USD)', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 1,
+            cantidadAjustar: 0,
+            tipo: 'debito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'debito'
+      }
+    });
+
+    const headers = wrapper.findAll('thead th').map((th) => th.text());
+    expect(headers).toContain('Ajuste precio (USD)');
+  });
+
+  it('bloquea precio al activar Modificar cantidad', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 5,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
+
+    const cantidadRadio = wrapper.get('[data-testid="modo-selector-1"] input[value="cantidad"]');
+    const precioInput = wrapper.get('[data-testid="precio-input-1"]');
+
+    await cantidadRadio.setChecked();
+    await wrapper.vm.$nextTick();
+
+    expect((precioInput.element as HTMLInputElement).disabled).toBe(true);
+    expect((precioInput.element as HTMLInputElement).value).toBe('0');
+  });
+
+  it('bloquea cantidad al activar Modificar precio', async () => {
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [
+          {
+            id: 1,
+            selected: false,
+            codigo: 'A1',
+            descripcion: 'Test',
+            cantidadFacturada: 5,
+            cantidadAjustar: 0,
+            tipo: 'credito',
+            modo: 'monto',
+            valor: 0,
+            ivaInc: false,
+            afectacion: 'gravada',
+            previas: 0,
+            ajuste: 0,
+            concepto: ''
+          }
+        ],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
+
+    const precioRadio = wrapper.get('[data-testid="modo-selector-1"] input[value="precio"]');
+    const cantidadInput = wrapper.get('[data-testid="cantidad-input-1"]');
+
+    await precioRadio.setChecked();
+    await wrapper.vm.$nextTick();
+
+    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
+    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
+  });
+
+  it('auto selecciona el modo al ingresar un valor cuando no hay selección', async () => {
     const wrapper = mount(EditableNotaTable, {
       props: {
         modelValue: [
@@ -165,27 +267,65 @@ describe('EditableNotaTable', () => {
     const cantidadInput = wrapper.get('[data-testid="cantidad-input-1"]');
     const precioInput = wrapper.get('[data-testid="precio-input-1"]');
 
-    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
-    expect((precioInput.element as HTMLInputElement).disabled).toBe(false);
-
-    await cantidadInput.setValue('1');
+    await cantidadInput.setValue('2');
     await wrapper.vm.$nextTick();
+
+    const cantidadRadio = wrapper.get('[data-testid="modo-selector-1"] input[value="cantidad"]');
+    expect((cantidadRadio.element as HTMLInputElement).checked).toBe(true);
     expect((precioInput.element as HTMLInputElement).disabled).toBe(true);
 
     await cantidadInput.setValue('0');
     await wrapper.vm.$nextTick();
+    expect((cantidadRadio.element as HTMLInputElement).checked).toBe(true);
+
+    await cantidadRadio.trigger('click');
+    await wrapper.vm.$nextTick();
+    expect((cantidadRadio.element as HTMLInputElement).checked).toBe(false);
     expect((precioInput.element as HTMLInputElement).disabled).toBe(false);
 
-    await precioInput.setValue('2');
+    await precioInput.setValue('3');
     await wrapper.vm.$nextTick();
+
+    const precioRadio = wrapper.get('[data-testid="modo-selector-1"] input[value="precio"]');
+    expect((precioRadio.element as HTMLInputElement).checked).toBe(true);
     expect((cantidadInput.element as HTMLInputElement).disabled).toBe(true);
+  });
 
-    await cantidadInput.trigger('keydown', { key: 'ArrowUp' });
-    expect((cantidadInput.element as HTMLInputElement).value).toBe('0');
+  it('no emite propiedades adicionales para el modo de edición', async () => {
+    const initialItem = {
+      id: 1,
+      selected: false,
+      codigo: 'A1',
+      descripcion: 'Test',
+      cantidadFacturada: 5,
+      cantidadAjustar: 0,
+      tipo: 'credito',
+      modo: 'monto',
+      valor: 0,
+      ivaInc: false,
+      afectacion: 'gravada',
+      previas: 0,
+      ajuste: 0,
+      concepto: ''
+    };
+    const wrapper = mount(EditableNotaTable, {
+      props: {
+        modelValue: [initialItem],
+        ivaIncluido: true,
+        notaTipo: 'credito'
+      }
+    });
 
-    await precioInput.setValue('0');
+    const precioRadio = wrapper.get('[data-testid="modo-selector-1"] input[value="precio"]');
+    await precioRadio.setChecked();
     await wrapper.vm.$nextTick();
-    expect((cantidadInput.element as HTMLInputElement).disabled).toBe(false);
+
+    const emitted = wrapper.emitted('update:modelValue');
+    expect(emitted).toBeTruthy();
+    const payload = emitted!.at(-1)![0] as Array<Record<string, unknown>>;
+    const keys = Object.keys(payload[0]).sort();
+    const expectedKeys = Object.keys({ ...initialItem, ajusteCantidad: false }).sort();
+    expect(keys).toEqual(expectedKeys);
   });
 
   it('asigna un identificador interno cuando el item no lo provee', async () => {

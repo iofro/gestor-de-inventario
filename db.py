@@ -3209,6 +3209,19 @@ class DB:
                 """,
                 (numero_control_upper,),
             ).fetchone()
+        if (row is None) and (venta_id is not None):
+            try:
+                venta_id_int = int(venta_id)
+            except Exception:
+                venta_id_int = venta_id
+            row = self.cursor.execute(
+                """
+                SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
+                WHERE venta_id IS NOT NULL AND venta_id = ?
+                ORDER BY id DESC LIMIT 1
+                """,
+                (venta_id_int,),
+            ).fetchone()
         if row is not None:
             try:
                 prev_ui = row["estado_ui"]

@@ -167,8 +167,8 @@ interfaz PyQt5. Cada fila permite elegir **un único modo de ajuste**:
 * **Modificar precio**: habilita el ajuste total y permite indicar si el
   monto incluye IVA. La cantidad queda fijada en cero.
 
-El botón **“Aplicar a filas seleccionadas”** replica el modo y el valor de la
-fila activa en el resto de filas seleccionadas, evitando mezclar ajustes.
+Cada fila debe configurarse de forma independiente para evitar mezclar
+ajustes de cantidad y precio dentro de la misma nota.
 
 ### Contratos del backend
 

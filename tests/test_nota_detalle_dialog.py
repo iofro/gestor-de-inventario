@@ -143,26 +143,6 @@ def test_unchecking_mode_returns_inputs_to_free_state(qt_app):
     assert iva_checkbox.isEnabled()
 
 
-def test_apply_to_selected_rows_copies_mode_and_value(qt_app):
-    detalles = [_make_detalle(id=1), _make_detalle(id=2)]
-    dialog = NotaDetalleDialog(detalles, "debito")
-
-    dialog.table.selectRow(0)
-    dialog.table.selectRow(1)
-    _, price_spin, _, price_radio, iva_checkbox = _get_row_widgets(dialog, 0)
-    price_radio.setChecked(True)
-    price_spin.setValue(3.5)
-    iva_checkbox.setChecked(False)
-
-    dialog.table.setCurrentCell(0, 5)
-    dialog._apply_to_selected_rows()
-
-    _, price_spin_row2, _, price_radio_row2, iva_checkbox_row2 = _get_row_widgets(dialog, 1)
-    assert price_radio_row2.isChecked()
-    assert pytest.approx(price_spin_row2.value(), rel=1e-4) == 3.5
-    assert not iva_checkbox_row2.isChecked()
-
-
 def test_get_data_raises_when_both_modes_used(qt_app):
     dialog = NotaDetalleDialog([_make_detalle()], "debito")
     qty_spin, price_spin, _, _, _ = _get_row_widgets(dialog)

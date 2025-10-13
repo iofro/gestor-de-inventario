@@ -2147,6 +2147,32 @@ class FacturacionTab(QWidget):
             return "Enviado"
         return "Pendiente de envío"
 
+    @classmethod
+    def _format_envio_state(cls, estado_ui, estado_ui_tag, estado_raw):
+        base = str(estado_ui or "").strip()
+        if base:
+            lowered = base.lower()
+            if lowered in {"pendiente", "pendiente de envio"}:
+                base_display = "Pendiente de envío"
+            else:
+                base_display = base
+            tag_text = str(estado_ui_tag or "").strip().lower()
+            if tag_text and base_display in {"Enviado", "Rechazado"}:
+                return f"{base_display} ({tag_text})"
+            return base_display
+        raw = str(estado_raw or "").strip()
+        if raw:
+            mapped = cls._map_envio_state(raw)
+            raw_upper = raw.upper()
+            if (
+                mapped == "Pendiente de envío"
+                and raw_upper not in {"PENDIENTE"}
+                and raw_upper
+            ):
+                return raw.capitalize()
+            return mapped
+        return "Pendiente de envío"
+
     @staticmethod
     def _has_successful_envio_status(envio: str | None) -> bool:
         if not envio:
@@ -2248,17 +2274,8 @@ class FacturacionTab(QWidget):
                 return "Pendiente de envío"
             ui_val = _row_get(row, "estado_ui")
             tag_val = _row_get(row, "estado_ui_tag")
-            if isinstance(ui_val, str) and ui_val.strip():
-                base = ui_val.strip()
-                if base == "Pendiente":
-                    base = "Pendiente de envío"
-                if isinstance(tag_val, str):
-                    tag_norm = tag_val.strip().lower()
-                    if tag_norm and base in {"Enviado", "Rechazado"}:
-                        return f"{base} ({tag_norm})"
-                return base
             estado_val = _row_get(row, "estado")
-            return cls._map_envio_state(estado_val)
+            return cls._format_envio_state(ui_val, tag_val, estado_val)
 
         env_row = None
         try:
@@ -2297,6 +2314,134 @@ class FacturacionTab(QWidget):
         envio = _map_row_estado(env_row)
 
         return estado, envio
+
+    def _get_available_envio_states(self, current_state: str | None = None) -> list[str]:
+        base_states = [
+            "Pendiente de envío",
+            "Enviado",
+            "Aceptado",
+            "Rechazado",
+            "Anulado",
+        ]
+        options: list[str] = []
+        seen: set[str] = set()
+
+        for state in base_states:
+            text = str(state or "").strip()
+            if text and text not in seen:
+                options.append(text)
+                seen.add(text)
+
+        extras: set[str] = set()
+        manager = getattr(self, "manager", None)
+        db = getattr(manager, "db", None) if manager else None
+        cur = getattr(db, "cursor", None) if db else None
+        if cur is not None:
+            rows = []
+            try:
+                cur.execute("SELECT estado_ui, estado_ui_tag, estado FROM dte_envios")
+                rows = cur.fetchall()
+            except Exception:
+                try:
+                    cur.execute("SELECT estado FROM dte_envios")
+                    rows = cur.fetchall()
+                except Exception:
+                    rows = []
+            for raw_row in rows:
+                try:
+                    row_dict = dict(raw_row)
+                except Exception:
+                    row_dict = {}
+                    if isinstance(raw_row, (list, tuple)):
+                        if len(raw_row) >= 3:
+                            row_dict = {
+                                "estado_ui": raw_row[0],
+                                "estado_ui_tag": raw_row[1],
+                                "estado": raw_row[2],
+                            }
+                        elif raw_row:
+                            row_dict = {"estado": raw_row[0]}
+                formatted = self._format_envio_state(
+                    row_dict.get("estado_ui"),
+                    row_dict.get("estado_ui_tag"),
+                    row_dict.get("estado"),
+                )
+                formatted_text = str(formatted or "").strip()
+                if formatted_text and formatted_text not in seen:
+                    extras.add(formatted_text)
+
+        for extra in sorted(extras, key=lambda s: s.lower()):
+            if extra not in seen:
+                options.append(extra)
+                seen.add(extra)
+
+        if current_state:
+            current_text = str(current_state).strip()
+            if current_text and current_text not in seen:
+                options.append(current_text)
+                seen.add(current_text)
+
+        return options
+
+    def _update_invoice_envio_state(
+        self,
+        entry: Mapping[str, Any] | None,
+        factura_info: Mapping[str, Any] | None,
+        factura_json: Mapping[str, Any] | None,
+        new_state: str,
+    ) -> str:
+        manager = getattr(self, "manager", None)
+        db = getattr(manager, "db", None) if manager else None
+        if db is None:
+            raise ValueError("Base de datos no disponible")
+
+        state_text = str(new_state or "").strip()
+        if not state_text:
+            raise ValueError("Seleccione un estado válido")
+
+        match = re.match(r"^(.*?)(?:\s*\(([^)]+)\))?$", state_text)
+        base = match.group(1).strip() if match else state_text
+        tag = match.group(2).strip().lower() if match and match.group(2) else ""
+        if not base:
+            raise ValueError("Seleccione un estado válido")
+
+        base_lower = base.lower()
+        if base_lower in {"pendiente de envío", "pendiente de envio"}:
+            stored_base = "Pendiente"
+        else:
+            stored_base = base
+
+        stored_tag = tag if stored_base in {"Enviado", "Rechazado"} else ""
+
+        numero_control = None
+        codigo_generacion = None
+        venta_id = None
+
+        if isinstance(factura_info, Mapping):
+            numero_control = factura_info.get("control") or factura_info.get("numero_control")
+            venta_id = factura_info.get("venta_id")
+
+        if isinstance(entry, Mapping):
+            numero_control = numero_control or entry.get("numero_control")
+            if venta_id is None:
+                venta_id = entry.get("venta_id")
+
+        ident = factura_json.get("identificacion") if isinstance(factura_json, Mapping) else None
+        if isinstance(ident, Mapping):
+            numero_control = numero_control or ident.get("numeroControl")
+            codigo_generacion = ident.get("codigoGeneracion")
+
+        updated = db.update_envio_estado_ui(
+            venta_id=venta_id,
+            numero_control=numero_control,
+            codigo_generacion=codigo_generacion,
+            estado_ui=stored_base,
+            estado_ui_tag=stored_tag or None,
+        )
+        if not updated:
+            raise ValueError("No se encontró un registro de envío para esta factura")
+
+        return self._format_envio_state(stored_base, stored_tag, None)
 
     def _get_invoices_from_db(self):
         """Return invoice entries stored in the database.
@@ -4392,6 +4537,7 @@ class FacturacionTab(QWidget):
         return output_path
 
     def mostrar_detalle_factura(self, item=None):
+        entry = self._selected_entry()
         factura = self._selected_factura()
         if not factura:
             QMessageBox.warning(self, "Detalle", "Seleccione una factura válida")
@@ -4422,6 +4568,14 @@ class FacturacionTab(QWidget):
         items = data.get("cuerpoDocumento") or []
         resumen = data.get("resumen") or {}
         ident = data.get("identificacion") or {}
+        current_envio = None
+        if isinstance(entry, Mapping):
+            current_envio = entry.get("envio")
+        envio_options = self._get_available_envio_states(current_envio)
+
+        def _apply_envio_change(selected_state: str) -> str:
+            return self._update_invoice_envio_state(entry, factura, data, selected_state)
+
         dlg = InvoiceDetailDialog(
             items,
             resumen,
@@ -4430,10 +4584,13 @@ class FacturacionTab(QWidget):
             factura=data,
             json_path=json_path,
             pdf_path=factura.get("pdf"),
+            envio_state=current_envio,
+            envio_options=envio_options,
+            on_envio_change=_apply_envio_change if envio_options else None,
             parent=self,
         )
         dlg.exec_()
-        if getattr(dlg, "anulacion_result", None):
+        if getattr(dlg, "anulacion_result", None) or getattr(dlg, "envio_updated", False):
             self.refresh_and_reload()
 
     def _anular_dte(self, factura, data):

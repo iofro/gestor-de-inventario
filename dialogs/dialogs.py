@@ -3860,20 +3860,64 @@ class CompraDetalleDialog(QDialog):
         logger.debug("DETALLES DE COMPRA: %s", detalles)
 
         # --- Obtén los nombres de vendedor y Distribuidor ---
-        vendedores = []
-        Distribuidores = []
-        productos = []
-        if parent and hasattr(parent, "manager"):
-            vendedores = getattr(parent.manager, "_vendedores", [])
-            Distribuidores = getattr(parent.manager, "_Distribuidores", [])
-            productos = getattr(parent.manager, "_products", [])
-        vendedores_dict = {v["id"]: v["nombre"] for v in vendedores}
-        Distribuidores_dict = {d["id"]: d["nombre"] for d in Distribuidores}
-        productos_dict = {p["id"]: p["nombre"] for p in productos}
 
+        def _safe_get(mapping, key, default=None):
+            """Recupera ``key`` de ``mapping`` sin importar si es dict o fila de SQLite."""
+
+            if isinstance(mapping, dict):
+                return mapping.get(key, default)
+            getter = getattr(mapping, "get", None)
+            if callable(getter):
+                try:
+                    return getter(key, default)
+                except Exception:  # pragma: no cover - defensive
+                    pass
+            try:
+                return mapping[key]
+            except Exception:  # pragma: no cover - acceso heterogéneo
+                return default
+
+        manager = None
+        current_parent = parent
+        while current_parent is not None and manager is None:
+            if hasattr(current_parent, "manager"):
+                manager = getattr(current_parent, "manager")
+                break
+            if hasattr(current_parent, "parent"):
+                current_parent = current_parent.parent()
+            else:
+                current_parent = None
+
+        vendedores_dict: dict[int, str] = {}
+        Distribuidores_dict: dict[int, str] = {}
+        productos_dict: dict[int, str] = {}
         db = None
-        if parent and hasattr(parent, "manager"):
-            db = getattr(parent.manager, "db", None)
+
+        if manager is not None:
+            fuentes_vendedores = [
+                getattr(manager, "_vendedores", []),
+                getattr(manager, "_vendedores_compra", []),
+            ]
+            for fuente in fuentes_vendedores:
+                for vendedor in fuente or []:
+                    vid = _safe_get(vendedor, "id")
+                    nombre = _safe_get(vendedor, "nombre", "")
+                    if vid is not None and nombre:
+                        vendedores_dict.setdefault(vid, nombre)
+
+            for distribuidor in getattr(manager, "_Distribuidores", []) or []:
+                did = _safe_get(distribuidor, "id")
+                nombre = _safe_get(distribuidor, "nombre", "")
+                if did is not None and nombre:
+                    Distribuidores_dict.setdefault(did, nombre)
+
+            for producto in getattr(manager, "_products", []) or []:
+                pid = _safe_get(producto, "id")
+                nombre = _safe_get(producto, "nombre", "")
+                if pid is not None and nombre:
+                    productos_dict.setdefault(pid, nombre)
+
+            db = getattr(manager, "db", None)
 
         if db:
             try:

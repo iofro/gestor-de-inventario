@@ -518,12 +518,42 @@ class PurchasesTab(QWidget):
         self.load_purchases()
 
     def show_detail(self, compra_id):
-        compra = self._compras_cache.get(compra_id)
+        logger.info(
+            "Compras: solicitando detalle para compra %s (fila seleccionada)",
+            compra_id,
+        )
+
+        cached_compra = self._compras_cache.get(compra_id)
+        if cached_compra:
+            logger.info(
+                "Compras: compra %s obtenida desde caché local", compra_id
+            )
+        else:
+            logger.info(
+                "Compras: compra %s no está en caché", compra_id
+            )
+
+        logger.info(
+            "Compras: refrescando compra %s desde base de datos para obtener últimos datos",
+            compra_id,
+        )
+        compra = self.manager.db.get_compra(compra_id)
+        if compra:
+            logger.info(
+                "Compras: compra %s recuperada desde base de datos", compra_id
+            )
+            self._compras_cache[compra_id] = compra
+        else:
+            logger.warning(
+                "Compras: no fue posible refrescar la compra %s desde base de datos, usando caché",
+                compra_id,
+            )
+            compra = cached_compra
+
         if not compra:
-            compra = self.manager.db.get_compra(compra_id)
-            if compra:
-                self._compras_cache[compra_id] = compra
-        if not compra:
+            logger.warning(
+                "Compras: no se encontró información para la compra %s", compra_id
+            )
             QMessageBox.warning(
                 self,
                 "Compra no encontrada",
@@ -533,9 +563,36 @@ class PurchasesTab(QWidget):
 
         detalles = self._detalles_cache.get(compra_id)
         if detalles is None:
+            logger.info(
+                "Compras: detalles de compra %s no están en caché, consultando base de datos",
+                compra_id,
+            )
             detalles = self.manager.db.get_detalles_compra(compra_id)
+            logger.info(
+                "Compras: se recibieron %s partidas para la compra %s",
+                len(detalles) if detalles is not None else 0,
+                compra_id,
+            )
             self._detalles_cache[compra_id] = detalles
+        else:
+            logger.info(
+                "Compras: utilizando %s partidas en caché para la compra %s",
+                len(detalles),
+                compra_id,
+            )
+
         catalogs = getattr(self.manager, "catalogs", None)
+        vendor_name, distributor_name = resolve_party_names(compra, catalogs)
+        vendor_id = normalize_identifier(compra.get("vendedor_id"))
+        distributor_id = normalize_identifier(compra.get("Distribuidor_id"))
+        logger.info(
+            "Compras: compra %s -> vendedor %s (%s), distribuidor %s (%s)",
+            compra_id,
+            vendor_id,
+            vendor_name or "<desconocido>",
+            distributor_id,
+            distributor_name or "<desconocido>",
+        )
         dlg = CompraDetalleDialog(compra, detalles, self, catalogs=catalogs)
         dlg.exec_()
 

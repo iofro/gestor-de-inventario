@@ -14,7 +14,7 @@ from __future__ import annotations
 import time
 from copy import deepcopy
 from datetime import datetime
-from decimal import Decimal, ROUND_HALF_UP
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import json
 import logging
 from typing import Optional
@@ -46,6 +46,112 @@ Decimal_0 = Decimal("0")
 Decimal_1 = Decimal("1")
 Q4 = Decimal("0.0001")
 IVA = Decimal("0.13")
+
+
+def _norm_afectacion(det: dict, original: dict | None) -> str:
+    """Return normalized afectacion for ``det`` using ``original`` as fallback."""
+
+    afectacion = str(det.get("afectacion") or "").strip().lower()
+    afectacion = afectacion.replace("-", "_").replace(" ", "_")
+    if afectacion:
+        return afectacion
+    if original:
+        if Decimal(str(original.get("ventaGravada") or 0)) > Decimal_0:
+            return "gravada"
+        if Decimal(str(original.get("ventaExenta") or 0)) > Decimal_0:
+            return "exenta"
+        if Decimal(str(original.get("ventaNoSuj") or 0)) > Decimal_0:
+            return "no_sujeta"
+    return afectacion
+
+
+def _resolver_detalle_ajuste_precio(
+    det: dict,
+    original: dict | None,
+    monto_abs: Decimal,
+) -> dict:
+    """Normaliza un detalle que ajusta el precio total."""
+
+    normalizado = dict(det)
+    normalizado["_ajuste_precio"] = True
+
+    incluye_iva = bool(
+        normalizado.get("monto_incluye_iva")
+        or normalizado.get("montoIncluyeIVA")
+        or normalizado.get("incluyeIVA")
+    )
+
+    afectacion = _norm_afectacion(normalizado, original)
+
+    if incluye_iva:
+        base_precisa, iva_precisa = to_base_iva(monto_abs)
+        base = base_precisa.quantize(Q4, rounding=ROUND_HALF_UP)
+        total_con_iva = monto_abs
+        iva_preciso = iva_precisa
+    else:
+        base = Decimal(str(normalizado.get("precio_unitario") or normalizado.get("precioUni") or monto_abs))
+        base = base.quantize(Q4, rounding=ROUND_HALF_UP)
+        total_con_iva = None
+        iva_preciso = None
+
+    grav = Decimal_0
+    exenta = Decimal_0
+    nosuj = Decimal_0
+    if afectacion == "exenta":
+        exenta = base
+    elif afectacion in {"no_sujeta", "no__sujeta", "no_suj"}:
+        nosuj = base
+    else:
+        grav = base
+
+    normalizado["cantidad"] = Decimal_1.quantize(Q4)
+    normalizado["precio_unitario"] = base
+    normalizado["precioUni"] = base
+    normalizado["ventaGravada"] = grav
+    normalizado["ventaExenta"] = exenta
+    normalizado["ventaNoSuj"] = nosuj
+    normalizado["ventas_gravadas"] = grav
+    normalizado["ventas_exentas"] = exenta
+    normalizado["ventas_no_sujetas"] = nosuj
+
+    if "uniMedida" not in normalizado:
+        if original and original.get("uniMedida") is not None:
+            normalizado["uniMedida"] = original.get("uniMedida")
+        else:
+            normalizado["uniMedida"] = 59
+    if "tipoItem" not in normalizado and original and original.get("tipoItem") is not None:
+        normalizado["tipoItem"] = original.get("tipoItem")
+    else:
+        normalizado.setdefault("tipoItem", 1)
+
+    desc_base = normalizado.get("descripcion") or (original.get("descripcion") if original else "")
+    desc_base = str(desc_base).strip()
+    if desc_base:
+        normalizado["descripcion"] = f"AJUSTE PRECIO TOTAL – {desc_base}"
+    else:
+        normalizado["descripcion"] = "AJUSTE PRECIO TOTAL"
+
+    codigo_base = normalizado.get("codigo") or (original.get("codigo") if original else None)
+    if codigo_base:
+        codigo_base = str(codigo_base)
+        if not codigo_base.startswith("AJP-"):
+            normalizado["codigo"] = f"AJP-{codigo_base}"
+        else:
+            normalizado["codigo"] = codigo_base
+    else:
+        normalizado["codigo"] = None
+
+    if total_con_iva is None:
+        if grav > Decimal_0:
+            iva_preciso = grav * IVA
+            total_con_iva = grav + iva_preciso
+        else:
+            total_con_iva = grav + exenta + nosuj
+            iva_preciso = Decimal_0
+    normalizado["_total_con_iva"] = total_con_iva
+    normalizado["_iva_preciso"] = iva_preciso or Decimal_0
+
+    return normalizado
 
 STRICT_SNAPSHOT_DEFAULT = env_flag("STRICT_SNAPSHOT", default=True)
 
@@ -93,7 +199,9 @@ def _pct_label(ratio: Decimal) -> str:
     return str((ratio * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
 
 
-def _resolver_detalle_ajuste_cantidad(det: dict, original: dict | None) -> dict:
+def _resolver_detalle_ajuste_cantidad(
+    det: dict, original: dict | None, *, permitir_exceder: bool = False
+) -> dict:
     """Normaliza un detalle que ajusta cantidad a partir del documento origen.
 
     Cuando ``det`` indica ``ajusteCantidad`` se completan los campos
@@ -114,7 +222,7 @@ def _resolver_detalle_ajuste_cantidad(det: dict, original: dict | None) -> dict:
     if cantidad <= Decimal_0:
         raise ValueError("La cantidad del ajuste debe ser mayor que cero")
 
-    if original:
+    if original and not permitir_exceder:
         try:
             cantidad_origen = Decimal(str(original.get("cantidad") or 0))
         except Exception:
@@ -450,6 +558,8 @@ def generar_nce_desde_dte(
         total_grav = Decimal_0
         total_exenta = Decimal_0
         total_nosuj = Decimal_0
+        total_con_iva = Decimal_0
+        iva_preciso_total = Decimal_0
         num = 1
         ratio_val = ratio or Decimal_1
         orig_items = dte_origen.get("cuerpoDocumento", [])
@@ -461,36 +571,92 @@ def generar_nce_desde_dte(
                 orig = next((it for it in orig_items if it.get("codigo") == codigo), None)
             elif numitem:
                 orig = next((it for it in orig_items if it.get("numItem") == numitem), None)
-            det = _resolver_detalle_ajuste_cantidad(det, orig)
+
+            ajuste_val = Decimal_0
+            if det.get("ajuste") is not None:
+                try:
+                    ajuste_val = Decimal(str(det.get("ajuste")))
+                except (InvalidOperation, ValueError) as exc:
+                    raise ValueError("El ajuste monetario debe ser numérico") from exc
+            ajuste_abs = ajuste_val.copy_abs()
+            cantidad_informada = None
+            if det.get("cantidad") is not None:
+                try:
+                    cantidad_informada = Decimal(str(det.get("cantidad")))
+                except (InvalidOperation, ValueError) as exc:
+                    raise ValueError("La cantidad debe ser numérica") from exc
+
+            if det.get("ajusteCantidad") and ajuste_abs > Decimal_0:
+                raise ValueError(
+                    "Una fila no puede llevar cantidad y ajuste monetario a la vez; elige un modo"
+                )
+            if (
+                ajuste_abs > Decimal_0
+                and cantidad_informada is not None
+                and cantidad_informada.copy_abs() > Decimal_0
+            ):
+                raise ValueError(
+                    "Una fila no puede llevar cantidad y ajuste monetario a la vez; elige un modo"
+                )
+            if ajuste_abs > Decimal_0:
+                det = _resolver_detalle_ajuste_precio(det, orig, ajuste_abs)
+            else:
+                det = _resolver_detalle_ajuste_cantidad(det, orig)
+
             grav = Decimal(str(det.get("ventas_gravadas") or det.get("ventaGravada") or 0)).quantize(Q4)
             exenta = Decimal(str(det.get("ventas_exentas") or det.get("ventaExenta") or 0)).quantize(Q4)
             nosuj = Decimal(str(det.get("ventas_no_sujetas") or det.get("ventaNoSuj") or 0)).quantize(Q4)
             total_grav += grav
             total_exenta += exenta
             total_nosuj += nosuj
-            precio = det.get("precio_unitario") or det.get("precioUni")
+
             if orig:
                 grav_orig = Decimal(str(orig.get("ventaGravada") or 0)).quantize(Q4)
                 exenta_orig = Decimal(str(orig.get("ventaExenta") or 0)).quantize(Q4)
                 nosuj_orig = Decimal(str(orig.get("ventaNoSuj") or 0)).quantize(Q4)
                 if grav > grav_orig or exenta > exenta_orig or nosuj > nosuj_orig:
                     raise ValueError("Detalle excede montos de línea original")
+
+            precio = det.get("precio_unitario") or det.get("precioUni")
             if precio is None:
                 if orig and orig.get("precioUni") is not None:
                     precio = Decimal(str(orig.get("precioUni"))) * ratio_val
                 else:
                     precio = grav + exenta + nosuj
             precio = Decimal(str(precio)).quantize(Q4)
-            cantidad = det.get("cantidad", 1)
+
+            cantidad_raw = det.get("cantidad", 1)
+            cantidad = Decimal(str(cantidad_raw)).quantize(Q4)
+
+            base_line = grav + exenta + nosuj
+            total_line_con_iva = det.get("_total_con_iva")
+            if total_line_con_iva is not None:
+                total_line_con_iva = Decimal(str(total_line_con_iva))
+                iva_preciso_line = total_line_con_iva - base_line
+            else:
+                iva_preciso_line = grav * IVA if grav > Decimal_0 else Decimal_0
+                total_line_con_iva = base_line + iva_preciso_line
+            total_con_iva += total_line_con_iva
+            iva_preciso_total += iva_preciso_line
+
+            codigo_det = det.get("codigo")
+            if not codigo_det:
+                if det.get("_ajuste_precio"):
+                    codigo_det = f"AJP-{uuid_origen[:8]}-{num}"
+                else:
+                    codigo_det = f"NC{uuid_origen[:8]}-{num}"
+
+            descripcion_det = det.get(
+                "descripcion",
+                f"Nota de crédito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
+            )
+
             items.append(
                 {
                     "numItem": num,
                     "tipoItem": det.get("tipoItem", 1),
-                    "codigo": det.get("codigo", f"NC{uuid_origen[:8]}-{num}"),
-                    "descripcion": det.get(
-                        "descripcion",
-                        f"Nota de crédito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
-                    ),
+                    "codigo": codigo_det,
+                    "descripcion": descripcion_det,
                     "cantidad": cantidad,
                     "uniMedida": det.get("uniMedida", 59),
                     "precioUni": precio,
@@ -498,22 +664,25 @@ def generar_nce_desde_dte(
                     "ventaGravada": grav,
                     "ventaExenta": exenta,
                     "ventaNoSuj": nosuj,
-                    "tributos": [TRIBUTO_IVA] if grav > 0 else [],
+                    "tributos": [TRIBUTO_IVA] if grav > 0 else None,
                     "numeroDocumento": uuid_origen,
                     "codTributo": None,
                 }
             )
             num += 1
+
+        total_grav_preciso = total_grav
+        total_exenta_preciso = total_exenta
+        total_nosuj_preciso = total_nosuj
         total_grav = total_grav.quantize(Q4)
         total_exenta = total_exenta.quantize(Q4)
         total_nosuj = total_nosuj.quantize(Q4)
+        subtotal_preciso = total_grav_preciso + total_exenta_preciso + total_nosuj_preciso
         subtotal_ventas = (total_grav + total_exenta + total_nosuj).quantize(Q4)
-        # Cuando los montos se calculan a partir de ``detalles`` evitamos
-        # recurrir al total original del documento de origen. El IVA se obtiene
-        # directamente de las ventas gravadas parciales y el total de la
-        # operación se compone sumando dicho IVA al subtotal calculado.
-        iva_val = d2(total_grav * IVA)
-        monto_total_operacion = d2(subtotal_ventas + iva_val)
+        if total_con_iva <= Decimal_0:
+            total_con_iva = subtotal_preciso
+        iva_val = d2(iva_preciso_total)
+        monto_total_operacion = d2(total_con_iva)
     else:
         if monto is not None:
             monto_abs = Decimal(str(monto)).copy_abs()
@@ -598,7 +767,7 @@ def generar_nce_desde_dte(
                         "ventaGravada": 0.0,
                         "ventaExenta": total_exenta,
                         "ventaNoSuj": 0.0,
-                        "tributos": [],
+                        "tributos": None,
                         "numeroDocumento": uuid_origen,
                         "codTributo": None,
                     }
@@ -618,7 +787,7 @@ def generar_nce_desde_dte(
                         "ventaGravada": 0.0,
                         "ventaExenta": 0.0,
                         "ventaNoSuj": total_nosuj,
-                        "tributos": [],
+                        "tributos": None,
                         "numeroDocumento": uuid_origen,
                         "codTributo": None,
                     }

@@ -4,6 +4,7 @@ import pytest
 from nota_credito_electronica import generar_nce_desde_dte
 from nota_debito_electronica import generar_nde_desde_dte
 from dte import generar_dte_json
+from utils.catalogos import TRIBUTO_IVA
 
 def create_db():
     return DB(":memory:")
@@ -120,6 +121,160 @@ def test_generar_nce_detalles_monto_total(monkeypatch):
     assert resumen["montoTotalOperacion"] < dte_origen["resumen"]["montoTotalOperacion"]
 
 
+def test_generar_nce_detalle_ajuste_precio_total(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "descripcion": "vanilla",
+            "ajuste": Decimal("-1"),
+            "monto_incluye_iva": True,
+        }
+    ]
+    data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
+    item = data["cuerpoDocumento"][0]
+    assert Decimal(str(item["cantidad"])) == Decimal("1.0000")
+    assert Decimal(str(item["precioUni"])) == Decimal("0.8850")
+    assert Decimal(str(item["ventaGravada"])) == Decimal("0.8850")
+    assert item["tributos"] == [TRIBUTO_IVA]
+    assert item["codigo"].startswith("AJP-")
+    assert item["descripcion"].startswith("AJUSTE PRECIO TOTAL –")
+    resumen = data["resumen"]
+    assert resumen["montoTotalOperacion"] == Decimal("1.00")
+    assert resumen["tributos"][0]["valor"] == Decimal("0.12")
+
+
+def test_generar_nde_detalle_ajuste_precio_total(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "descripcion": "vanilla",
+            "ajuste": Decimal("0.50"),
+            "monto_incluye_iva": True,
+        }
+    ]
+    nde = generar_nde_desde_dte(db, dte_origen, detalles, Decimal("0.50"), "Ajuste")
+    item = nde["cuerpoDocumento"][0]
+    assert Decimal(str(item["cantidad"])) == Decimal("1.0000")
+    assert Decimal(str(item["precioUni"])) == Decimal("0.4425")
+    assert Decimal(str(item["ventaGravada"])) == Decimal("0.4425")
+    assert item["tributos"] == [TRIBUTO_IVA]
+    assert item["codigo"].startswith("AJP-")
+    assert item["descripcion"].startswith("AJUSTE PRECIO TOTAL –")
+    resumen = nde["resumen"]
+    assert resumen["montoTotalOperacion"] == Decimal("0.50")
+    assert resumen["tributos"][0]["valor"] == Decimal("0.06")
+
+
+def test_generar_nce_detalle_rechaza_modo_mixto(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "ajusteCantidad": True,
+            "cantidad": 1,
+            "ajuste": Decimal("-1"),
+            "monto_incluye_iva": True,
+        }
+    ]
+    with pytest.raises(ValueError, match="Una fila no puede llevar cantidad y ajuste monetario"):
+        generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
+
+
+def test_generar_nce_detalle_rechaza_modo_mixto_sin_bandera(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    detalles = [
+        {
+            "cantidad": 1,
+            "ajuste": Decimal("-0.50"),
+            "monto_incluye_iva": True,
+        }
+    ]
+    with pytest.raises(ValueError, match="Una fila no puede llevar cantidad y ajuste monetario"):
+        generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
+
+
+def test_generar_nde_detalle_rechaza_modo_mixto(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "ajusteCantidad": True,
+            "cantidad": 1,
+            "ajuste": Decimal("0.50"),
+            "monto_incluye_iva": True,
+        }
+    ]
+    with pytest.raises(ValueError, match="Una fila no puede llevar cantidad y ajuste monetario"):
+        generar_nde_desde_dte(db, dte_origen, detalles, Decimal("0.50"), "Ajuste")
+
+
+def test_generar_nde_detalle_rechaza_modo_mixto_sin_bandera(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    detalles = [
+        {
+            "cantidad": 2,
+            "ajuste": Decimal("0.50"),
+            "monto_incluye_iva": True,
+        }
+    ]
+    with pytest.raises(ValueError, match="Una fila no puede llevar cantidad y ajuste monetario"):
+        generar_nde_desde_dte(db, dte_origen, detalles, Decimal("0.50"), "Ajuste")
+
+
 def test_generar_nota_debito_detalles(monkeypatch):
     _prep(monkeypatch)
     db = create_db()
@@ -213,9 +368,34 @@ def test_generar_nota_debito_precio_4_decimales(monkeypatch):
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("1.2345")
     assert item["ventaExenta"] == Decimal("1.2345")
+    assert item["tributos"] is None
     subtotal = Decimal("1.2345")
     expected_total = subtotal.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     assert data["resumen"]["montoTotalOperacion"] == expected_total
+
+
+def test_generar_nde_permite_exceder_linea(monkeypatch):
+    _prep(monkeypatch)
+    db = create_db()
+    db.add_vendedor("V1")
+    vid = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+    pid = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
+    codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
+    detalles = [
+        {
+            "codigo": codigo,
+            "ajusteCantidad": True,
+            "cantidad": 3,
+        }
+    ]
+    nde = generar_nde_desde_dte(db, dte_origen, detalles, Decimal("33.90"), "Ajuste")
+    item = nde["cuerpoDocumento"][0]
+    assert Decimal(str(item["cantidad"])) == Decimal("3.0000")
+    assert item["codigo"]
 
 
 def test_iva_no_excesivo_en_nota(monkeypatch):

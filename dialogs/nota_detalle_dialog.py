@@ -28,6 +28,8 @@ class NotaDetalleDialog(QDialog):
         self.detalles = detalles
         self.tipo = tipo
         self.setWindowTitle("Detalle de Nota")
+        self.setMinimumSize(1100, 700)
+        self.resize(1200, 750)
         self._mode_radios: Dict[int, Dict[str, QRadioButton]] = {}
         self._row_modes: Dict[int, str | None] = {}
         self._iva_checkboxes: Dict[int, QCheckBox] = {}

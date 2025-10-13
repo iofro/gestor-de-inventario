@@ -3875,6 +3875,28 @@ class CompraDetalleDialog(QDialog):
         if parent and hasattr(parent, "manager"):
             db = getattr(parent.manager, "db", None)
 
+        if db:
+            try:
+                for vendedor in db.get_vendedores_distribuidores() or []:
+                    vendedor_info = dict(vendedor)
+                    vid = vendedor_info.get("id")
+                    nombre = vendedor_info.get("nombre")
+                    if vid is not None and nombre:
+                        vendedores_dict.setdefault(vid, nombre)
+            except Exception:
+                logger.exception("No fue posible obtener la lista de vendedores")
+            try:
+                for distribuidor in db.get_Distribuidores() or []:
+                    distribuidor_info = dict(distribuidor)
+                    did = distribuidor_info.get("id")
+                    nombre = distribuidor_info.get("nombre")
+                    if did is not None and nombre:
+                        Distribuidores_dict.setdefault(did, nombre)
+            except Exception:
+                logger.exception(
+                    "No fue posible obtener la lista de Distribuidores desde la base de datos"
+                )
+
         vendedor_id = compra.get("vendedor_id")
         Distribuidor_id = compra.get("Distribuidor_id")
 

@@ -66,6 +66,13 @@ for name in [
     "QHeaderView",
     "QAbstractItemView",
     "QMessageBox",
+    "QComboBox",
+    "QFormLayout",
+    "QPushButton",
+    "QTabWidget",
+    "QWidget",
+    "QTreeWidget",
+    "QTreeWidgetItem",
 ]:
     setattr(qtwidgets, name, type(name, (_Base,), {}))
 
@@ -75,6 +82,7 @@ qtwidgets.QDialogButtonBox = _DialogButtonBox
 class _Qt:
     KeepAspectRatio = 0
     SmoothTransformation = 0
+    NoFocus = 0
 
 
 class _QUrl:

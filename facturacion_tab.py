@@ -2183,6 +2183,46 @@ class FacturacionTab(QWidget):
                 return True
         return False
 
+    @staticmethod
+    def _get_envio_status_color(envio: str | None) -> QColor | None:
+        if not envio:
+            return None
+        status = str(envio).strip().lower()
+        if not status:
+            return None
+
+        # Remove parenthetical notes like "Enviado (manual)"
+        if "(" in status:
+            status = status.split("(", 1)[0].strip()
+
+        def _color(code: str) -> QColor:
+            return QColor(code)
+
+        if status.startswith("enviado") or status.startswith("transmitido") or status.startswith("recibido") or status.startswith("procesado"):
+            return _color("#2E7D32")  # Green for shipped documents
+        if status.startswith("aceptado"):
+            return _color("#388E3C")  # Dark green for accepted
+        if status.startswith("rechazado"):
+            return _color("#C62828")  # Red for rejected shipments
+        if status.startswith("anulad"):
+            return _color("#1565C0")  # Blue for voided documents
+        if status.startswith("pendiente"):
+            return _color("#F57C00")  # Orange for pending shipments
+        if status.startswith("error"):
+            return _color("#6C757D")  # Gray for error states
+        return None
+
+    @staticmethod
+    def _should_bold_envio_status(envio: str | None) -> bool:
+        if not envio:
+            return False
+        status = str(envio).strip().lower()
+        if not status:
+            return False
+        if "(" in status:
+            status = status.split("(", 1)[0].strip()
+        return not status.startswith("pendiente")
+
     @classmethod
     def _detectar_estado_factura(
         cls,
@@ -2741,7 +2781,16 @@ class FacturacionTab(QWidget):
                 estado_item.setFont(estado_font)
                 estado_item.setForeground(QBrush(QColor("#D9534F")))
             self.table.setItem(row, 4, estado_item)
-            self.table.setItem(row, 5, QTableWidgetItem(v.get("envio", "")))
+            envio_text = v.get("envio", "")
+            envio_item = QTableWidgetItem(envio_text)
+            envio_color = self._get_envio_status_color(envio_text)
+            if envio_color:
+                envio_item.setForeground(QBrush(envio_color))
+            if self._should_bold_envio_status(envio_text):
+                envio_font = envio_item.font()
+                envio_font.setBold(True)
+                envio_item.setFont(envio_font)
+            self.table.setItem(row, 5, envio_item)
             for col in range(6):
                 item = self.table.item(row, col)
                 if item:

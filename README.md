@@ -157,6 +157,77 @@ enviar el DTE inmediatamente después de firmarlo en modo normal, o registrará
 un evento pendiente en modo de contingencia. Los reenvíos reutilizan el mismo
 `codigoGeneracion` guardado del DTE inicial.
 
+## Notas electrónicas (NC/ND) con UI 100 % Python
+
+El flujo de notas de crédito y débito se maneja íntegramente desde la
+interfaz PyQt5. Cada fila permite elegir **un único modo de ajuste**:
+
+* **Modificar cantidad**: habilita solo el campo de cantidad y bloquea
+  cualquier ajuste monetario.
+* **Modificar precio**: habilita el ajuste total y permite indicar si el
+  monto incluye IVA. La cantidad queda fijada en cero.
+
+El botón **“Aplicar a filas seleccionadas”** replica el modo y el valor de la
+fila activa en el resto de filas seleccionadas, evitando mezclar ajustes.
+
+### Contratos del backend
+
+La UI delega los cálculos en el backend Python que expone dos endpoints
+lógicos:
+
+* `POST /notas/preview`
+  * **Entrada**:
+    ```json
+    {
+      "tipo": "credito" | "debito",
+      "idFactura": 123,
+      "lineas": [
+        {
+          "idLineaOrigen": 10,
+          "modo": "cantidad",
+          "cantidad": 2.5
+        },
+        {
+          "idLineaOrigen": 11,
+          "modo": "precio",
+          "delta": 0.5,
+          "iva_incluido": true
+        }
+      ]
+    }
+    ```
+  * **Respuesta**:
+    ```json
+    {
+      "cuerpoDocumento": [...],
+      "resumen": {
+        "subTotal": 100.00,
+        "montoTotalOperacion": 113.00,
+        "tributos": [...]
+      }
+    }
+    ```
+
+* `POST /notas/build`
+  * **Entrada**: el mismo payload utilizado en `preview`, añadiendo el motivo
+    de la nota y los metadatos necesarios para persistir el documento.
+  * **Respuesta**: un DTE válido (`fe-nc-v3` o `fe-nd-v3`) listo para firmar y
+    transmitir.
+
+Ambos contratos impiden por diseño que una fila combine cantidad y delta. Si
+se intenta enviar ambos campos con valores mayores a cero, el backend responde
+con `422` y el mensaje *“Una fila no puede llevar cantidad y ajuste monetario
+a la vez; elige un modo”*.
+
+### Pruebas rápidas
+
+Las validaciones de la UI se cubren con `tests/test_nota_detalle_dialog.py`.
+El archivo se omite automáticamente si PyQt5 no está disponible:
+
+```bash
+pytest tests/test_nota_detalle_dialog.py
+```
+
 Cuando se use el modo de contingencia con `tipoContingencia` igual a `5`, el
 campo `motivo_contin` permite describir la causa de la contingencia con una
 longitud de entre 5 y 500 caracteres.

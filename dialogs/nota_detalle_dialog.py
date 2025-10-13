@@ -13,6 +13,9 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QWidget,
     QRadioButton,
+    QAbstractItemView,
+    QPushButton,
+    QCheckBox,
 )
 from PyQt5.QtCore import Qt
 
@@ -27,6 +30,7 @@ class NotaDetalleDialog(QDialog):
         self.setWindowTitle("Detalle de Nota")
         self._mode_radios: Dict[int, Dict[str, QRadioButton]] = {}
         self._row_modes: Dict[int, str | None] = {}
+        self._iva_checkboxes: Dict[int, QCheckBox] = {}
         self._suppress_radio_signal = False
         self._applying_mode = False
 
@@ -40,7 +44,7 @@ class NotaDetalleDialog(QDialog):
         table_layout = QHBoxLayout()
         layout.addLayout(table_layout)
 
-        self.table = QTableWidget(0, 8)
+        self.table = QTableWidget(0, 9)
         self.table.setHorizontalHeaderLabels(
             [
                 "Producto",
@@ -50,11 +54,21 @@ class NotaDetalleDialog(QDialog):
                 "Total",
                 "Modo de ajuste",
                 "Ajuste cantidad",
-                "Ajuste precio (USD)",
+                "Ajuste total",
+                "Monto incluye IVA",
             ]
         )
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         table_layout.addWidget(self.table)
+
+        actions_layout = QVBoxLayout()
+        self.apply_button = QPushButton("Aplicar a filas seleccionadas", self)
+        self.apply_button.clicked.connect(self._apply_to_selected_rows)
+        actions_layout.addWidget(self.apply_button)
+        actions_layout.addStretch()
+        table_layout.addLayout(actions_layout)
 
         resumen_layout = QVBoxLayout()
         self.base_gravada_label = QLabel("Base gravada: 0.00")
@@ -146,13 +160,19 @@ class NotaDetalleDialog(QDialog):
             self.table.setCellWidget(row, 5, mode_widget)
             self.table.setCellWidget(row, 6, qty_spin)
             self.table.setCellWidget(row, 7, monto_spin)
+            iva_checkbox = QCheckBox("Incluye IVA")
+            iva_checkbox.setObjectName(f"iva-checkbox-{row}")
+            iva_checkbox.setChecked(True)
+            self.table.setCellWidget(row, 8, iva_checkbox)
 
             self._mode_radios[row] = {"cantidad": qty_radio, "precio": price_radio}
             self._row_modes[row] = None
+            self._iva_checkboxes[row] = iva_checkbox
 
             # Ensure both inputs start enabled
             qty_spin.setEnabled(True)
             monto_spin.setEnabled(True)
+            iva_checkbox.setEnabled(True)
 
     def _update_total(self):
         gravada = Decimal("0")
@@ -162,15 +182,22 @@ class NotaDetalleDialog(QDialog):
         for row, d in enumerate(self.detalles):
             monto_spin = self.table.cellWidget(row, 7)
             qty_spin = self.table.cellWidget(row, 6)
+            iva_checkbox = self._iva_checkboxes.get(row)
             monto_val = Decimal(str(abs(monto_spin.value()))) if isinstance(monto_spin, QDoubleSpinBox) else Decimal("0")
             qty_val = Decimal(str(abs(qty_spin.value()))) if isinstance(qty_spin, QDoubleSpinBox) else Decimal("0")
 
             afectacion = self._resolve_afectacion(d)
             if monto_val > 0:
+                includes_iva = iva_checkbox.isChecked() if isinstance(iva_checkbox, QCheckBox) else False
                 if afectacion == "gravada":
-                    base = (monto_val / Decimal("1.13")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                    if includes_iva:
+                        base = (monto_val / Decimal("1.13")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                        iva_item = (monto_val - base).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                    else:
+                        base = monto_val.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                        iva_item = (base * Decimal("0.13")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
                     gravada += base
-                    iva += (monto_val - base).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+                    iva += iva_item
                 elif afectacion == "exenta":
                     exenta += monto_val
                 else:
@@ -235,8 +262,14 @@ class NotaDetalleDialog(QDialog):
         for row, d in enumerate(self.detalles):
             monto_spin = self.table.cellWidget(row, 7)
             qty_spin = self.table.cellWidget(row, 6)
+            iva_checkbox = self._iva_checkboxes.get(row)
             monto_val = float(monto_spin.value()) if isinstance(monto_spin, QDoubleSpinBox) else 0.0
             qty_val = float(qty_spin.value()) if isinstance(qty_spin, QDoubleSpinBox) else 0.0
+
+            if monto_val > 0 and qty_val > 0:
+                raise ValueError(
+                    "Una fila no puede llevar cantidad y ajuste monetario a la vez; elige un modo"
+                )
 
             payload: Dict = {
                 "detalle_id": d.get("id"),
@@ -245,6 +278,8 @@ class NotaDetalleDialog(QDialog):
 
             if monto_val:
                 payload["ajuste"] = -abs(monto_val) if self.tipo == "credito" else abs(monto_val)
+                if isinstance(iva_checkbox, QCheckBox):
+                    payload["monto_incluye_iva"] = iva_checkbox.isChecked()
 
             if qty_val:
                 afectacion = self._resolve_afectacion(d)
@@ -285,6 +320,7 @@ class NotaDetalleDialog(QDialog):
     def _apply_mode(self, row: int, mode: str | None):
         qty_spin = self.table.cellWidget(row, 6)
         monto_spin = self.table.cellWidget(row, 7)
+        iva_checkbox = self._iva_checkboxes.get(row)
         if not isinstance(qty_spin, QDoubleSpinBox) or not isinstance(monto_spin, QDoubleSpinBox):
             return
 
@@ -297,6 +333,9 @@ class NotaDetalleDialog(QDialog):
                 monto_spin.setValue(0)
                 monto_spin.blockSignals(False)
                 monto_spin.setEnabled(False)
+                if isinstance(iva_checkbox, QCheckBox):
+                    iva_checkbox.setChecked(False)
+                    iva_checkbox.setEnabled(False)
             elif mode == "precio":
                 self._row_modes[row] = "precio"
                 monto_spin.setEnabled(True)
@@ -304,10 +343,16 @@ class NotaDetalleDialog(QDialog):
                 qty_spin.setValue(0)
                 qty_spin.blockSignals(False)
                 qty_spin.setEnabled(False)
+                if isinstance(iva_checkbox, QCheckBox):
+                    iva_checkbox.setEnabled(True)
+                    iva_checkbox.setChecked(True)
             else:
                 self._row_modes[row] = None
                 qty_spin.setEnabled(True)
                 monto_spin.setEnabled(True)
+                if isinstance(iva_checkbox, QCheckBox):
+                    iva_checkbox.setEnabled(True)
+                    iva_checkbox.setChecked(True)
         finally:
             self._applying_mode = False
 
@@ -333,4 +378,43 @@ class NotaDetalleDialog(QDialog):
             radio = self._mode_radios.get(row, {}).get("precio")
             if radio:
                 radio.setChecked(True)
+        self._update_total()
+
+    def _apply_to_selected_rows(self):
+        selection_model = self.table.selectionModel()
+        if not selection_model:
+            return
+        selected_rows = {index.row() for index in selection_model.selectedRows()}
+        source_row = self.table.currentRow()
+        if source_row < 0 or source_row not in selected_rows:
+            if selected_rows:
+                source_row = next(iter(selected_rows))
+            else:
+                return
+        source_mode = self._row_modes.get(source_row)
+        qty_source = self.table.cellWidget(source_row, 6)
+        monto_source = self.table.cellWidget(source_row, 7)
+        iva_source = self._iva_checkboxes.get(source_row)
+        if not isinstance(qty_source, QDoubleSpinBox) or not isinstance(monto_source, QDoubleSpinBox):
+            return
+        for row in selected_rows:
+            if row == source_row:
+                continue
+            qty_widget = self.table.cellWidget(row, 6)
+            monto_widget = self.table.cellWidget(row, 7)
+            iva_widget = self._iva_checkboxes.get(row)
+            if not isinstance(qty_widget, QDoubleSpinBox) or not isinstance(monto_widget, QDoubleSpinBox):
+                continue
+            if source_mode == "cantidad":
+                radio = self._mode_radios.get(row, {}).get("cantidad")
+                if radio:
+                    radio.setChecked(True)
+                qty_widget.setValue(qty_source.value())
+            elif source_mode == "precio":
+                radio = self._mode_radios.get(row, {}).get("precio")
+                if radio:
+                    radio.setChecked(True)
+                monto_widget.setValue(monto_source.value())
+                if isinstance(iva_widget, QCheckBox) and isinstance(iva_source, QCheckBox):
+                    iva_widget.setChecked(iva_source.isChecked())
         self._update_total()

@@ -3125,6 +3125,7 @@ class DB:
         self.ensure_column("dte_envios", "numero_control", "TEXT")
         self.ensure_column("dte_envios", "estado_ui", "TEXT")
         self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+        self.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
 
         try:
             self.cursor.execute(
@@ -3188,11 +3189,12 @@ class DB:
 
         prev_ui = None
         prev_tag = None
+        prev_manual = False
         row = None
         if codigo_generacion_upper:
             row = self.cursor.execute(
                 """
-                SELECT estado_ui, estado_ui_tag FROM dte_envios
+                SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
                 WHERE codigo_generacion IS NOT NULL AND codigo_generacion = ?
                 ORDER BY id DESC LIMIT 1
                 """,
@@ -3201,7 +3203,7 @@ class DB:
         if (row is None) and numero_control_upper:
             row = self.cursor.execute(
                 """
-                SELECT estado_ui, estado_ui_tag FROM dte_envios
+                SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
                 WHERE numero_control IS NOT NULL AND numero_control = ?
                 ORDER BY id DESC LIMIT 1
                 """,
@@ -3222,18 +3224,35 @@ class DB:
                     prev_tag = row[1]
                 except Exception:
                     prev_tag = None
+            try:
+                prev_manual = bool(row["estado_ui_manual"])
+            except Exception:
+                try:
+                    prev_manual = bool(row[2]) if len(row) > 2 else False
+                except Exception:
+                    prev_manual = False
 
-        merged_ui = _merge_estado_ui(prev_ui, new_ui)
-        merged_tag = _merge_estado_tag(prev_tag, mapped_estado.get("tag"), merged_ui)
+        prev_ui_text = str(prev_ui or "").strip()
+        prev_tag_text = str(prev_tag or "").strip().lower()
+        manual_override = bool(prev_manual and prev_ui_text)
+
+        if manual_override:
+            merged_ui = prev_ui_text
+            merged_tag = prev_tag_text
+        else:
+            merged_ui = _merge_estado_ui(prev_ui_text, new_ui)
+            merged_tag = _merge_estado_tag(prev_tag, mapped_estado.get("tag"), merged_ui)
+
+        manual_flag = 1 if manual_override else 0
 
         fecha_hora = datetime.now(timezone.utc).isoformat()
         self.cursor.execute(
             """
             INSERT INTO dte_envios (
                 venta_id, modo, estado, sello, fecha_hora,
-                respuesta, codigo_lote, codigo_generacion, numero_control, estado_ui, estado_ui_tag
+                respuesta, codigo_lote, codigo_generacion, numero_control, estado_ui, estado_ui_tag, estado_ui_manual
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 venta_id,
@@ -3247,6 +3266,7 @@ class DB:
                 numero_control_upper,
                 merged_ui,
                 merged_tag,
+                manual_flag,
             ),
         )
         self.conn.commit()
@@ -3279,6 +3299,7 @@ class DB:
         with self.lock:
             self.ensure_column("dte_envios", "estado_ui", "TEXT")
             self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+            self.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
 
             estado_ui_val = estado_ui.strip() if isinstance(estado_ui, str) else estado_ui
             if isinstance(estado_ui_tag, str):
@@ -3325,6 +3346,7 @@ class DB:
                     "modo": "manual",
                     "estado_ui": estado_ui_val or None,
                     "estado_ui_tag": tag_val,
+                    "estado_ui_manual": 1,
                 }
                 if venta_id is not None:
                     insert_data["venta_id"] = venta_id
@@ -3345,7 +3367,7 @@ class DB:
             envio_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
 
             self.cursor.execute(
-                "UPDATE dte_envios SET estado_ui=?, estado_ui_tag=? WHERE id=?",
+                "UPDATE dte_envios SET estado_ui=?, estado_ui_tag=?, estado_ui_manual=1 WHERE id=?",
                 (estado_ui_val or None, tag_val, envio_id),
             )
             self.conn.commit()

@@ -79,6 +79,8 @@ class InvoiceDetailDialog(QDialog):
         self.anulacion_result = None
         self._open_button = None
         self.setWindowTitle("Detalle de factura")
+        self.setMinimumSize(900, 600)
+        self.resize(1000, 700)
         layout = QVBoxLayout(self)
 
         self.table = QTableWidget(0, 4)

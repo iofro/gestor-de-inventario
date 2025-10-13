@@ -5396,7 +5396,11 @@ class FacturacionTab(QWidget):
         dialog = NotaDetalleDialog(detalles_venta, tipo, self)
         if dialog.exec_() != QDialog.Accepted:
             return
-        monto, motivo, detalles_nota = dialog.get_data()
+        try:
+            monto, motivo, detalles_nota = dialog.get_data()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Nota", str(exc))
+            return
         def _round4(value: float) -> float:
             return float(Decimal(str(value)).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP))
 
@@ -5462,34 +5466,50 @@ class FacturacionTab(QWidget):
             if ajuste_total == 0:
                 continue
 
+            incluye_iva = bool(det.get("monto_incluye_iva", False))
             if src and src.get("ventas_gravadas"):
-                base = ajuste_total / 1.13
-                iva = ajuste_total - base
+                if incluye_iva:
+                    base = ajuste_total / 1.13
+                    iva = ajuste_total - base
+                else:
+                    base = ajuste_total
+                    iva = base * 0.13
+                base = _round4(base)
+                iva = _round4(iva)
                 det.update({
                     "ventas_gravadas": base,
                     "iva": iva,
                     "precio_unitario": base,
                 })
             elif src and src.get("ventas_exentas"):
+                base_exenta = _round4(ajuste_total)
                 det.update({
-                    "ventas_exentas": ajuste_total,
+                    "ventas_exentas": base_exenta,
                     "iva": 0.0,
-                    "precio_unitario": ajuste_total,
+                    "precio_unitario": base_exenta,
                 })
             elif src and src.get("ventas_no_sujetas"):
+                base_no_suj = _round4(ajuste_total)
                 det.update({
-                    "ventas_no_sujetas": ajuste_total,
+                    "ventas_no_sujetas": base_no_suj,
                     "iva": 0.0,
-                    "precio_unitario": ajuste_total,
+                    "precio_unitario": base_no_suj,
                 })
             else:
-                base = ajuste_total / 1.13
-                iva = ajuste_total - base
+                if incluye_iva:
+                    base = ajuste_total / 1.13
+                    iva = ajuste_total - base
+                else:
+                    base = ajuste_total
+                    iva = base * 0.13
+                base = _round4(base)
+                iva = _round4(iva)
                 det.update({
                     "ventas_gravadas": base,
                     "iva": iva,
                     "precio_unitario": base,
                 })
+            det.pop("monto_incluye_iva", None)
         if monto == 0:
             QMessageBox.warning(self, "Nota", "El monto total debe ser diferente de cero")
             return

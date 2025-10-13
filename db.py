@@ -3280,22 +3280,36 @@ class DB:
             self.ensure_column("dte_envios", "estado_ui", "TEXT")
             self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
 
+            estado_ui_val = estado_ui.strip() if isinstance(estado_ui, str) else estado_ui
+            if isinstance(estado_ui_tag, str):
+                tag_val = estado_ui_tag.strip().lower() or None
+            else:
+                tag_val = estado_ui_tag
+
+            codigo_generacion_val = None
+            if isinstance(codigo_generacion, str):
+                codigo_generacion_val = codigo_generacion.strip().upper() or None
+
+            numero_control_val = None
+            if isinstance(numero_control, str):
+                numero_control_val = numero_control.strip().upper() or None
+
             query = None
             params: tuple[Any, ...] = ()
-            if codigo_generacion:
+            if codigo_generacion_val:
                 query = (
                     "SELECT id FROM dte_envios "
                     "WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?) "
                     "ORDER BY id DESC LIMIT 1"
                 )
-                params = (codigo_generacion,)
-            elif numero_control:
+                params = (codigo_generacion_val,)
+            elif numero_control_val:
                 query = (
                     "SELECT id FROM dte_envios "
                     "WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?) "
                     "ORDER BY id DESC LIMIT 1"
                 )
-                params = (numero_control,)
+                params = (numero_control_val,)
             elif venta_id is not None:
                 query = "SELECT id FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1"
                 params = (venta_id,)
@@ -3303,16 +3317,32 @@ class DB:
                 return False
 
             row = self.cursor.execute(query, params).fetchone() if query else None
+
             if not row:
-                return False
+                # Crear un registro mínimo para almacenar el estado manual.
+                insert_data: dict[str, Any] = {
+                    "fecha_hora": datetime.now(timezone.utc).isoformat(),
+                    "modo": "manual",
+                    "estado_ui": estado_ui_val or None,
+                    "estado_ui_tag": tag_val,
+                }
+                if venta_id is not None:
+                    insert_data["venta_id"] = venta_id
+                if codigo_generacion_val:
+                    insert_data["codigo_generacion"] = codigo_generacion_val
+                if numero_control_val:
+                    insert_data["numero_control"] = numero_control_val
+
+                columns = ", ".join(insert_data.keys())
+                placeholders = ", ".join("?" for _ in insert_data)
+                self.cursor.execute(
+                    f"INSERT INTO dte_envios ({columns}) VALUES ({placeholders})",
+                    tuple(insert_data.values()),
+                )
+                self.conn.commit()
+                return True
 
             envio_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
-
-            estado_ui_val = estado_ui.strip() if isinstance(estado_ui, str) else estado_ui
-            if isinstance(estado_ui_tag, str):
-                tag_val = estado_ui_tag.strip().lower() or None
-            else:
-                tag_val = estado_ui_tag
 
             self.cursor.execute(
                 "UPDATE dte_envios SET estado_ui=?, estado_ui_tag=? WHERE id=?",

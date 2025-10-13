@@ -4099,7 +4099,7 @@ class CompraDetalleDialog(QDialog):
             try:
                 db.cursor.execute(
                     "SELECT nombre FROM Distribuidores WHERE id=?",
-                    (Distribuidor_id,),
+                    (_normalize_id(Distribuidor_id),),
                 )
                 row = db.cursor.fetchone()
             except Exception:

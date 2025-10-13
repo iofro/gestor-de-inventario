@@ -1,4 +1,4 @@
-from typing import List, Dict
+from typing import Callable, Dict, List
 import logging
 import os
 import shutil
@@ -13,6 +13,9 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QAbstractItemView,
     QMessageBox,
+    QComboBox,
+    QFormLayout,
+    QPushButton,
 )
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QDesktopServices
@@ -66,6 +69,9 @@ class InvoiceDetailDialog(QDialog):
         factura: Dict | None = None,
         json_path: str | None = None,
         pdf_path: str | None = None,
+        envio_state: str | None = None,
+        envio_options: List[str] | None = None,
+        on_envio_change: Callable[[str], str] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -78,6 +84,12 @@ class InvoiceDetailDialog(QDialog):
         self._source_pdf_path = pdf_path
         self.anulacion_result = None
         self._open_button = None
+        self.envio_updated = False
+        self._envio_combo: QComboBox | None = None
+        self._envio_label: QLabel | None = None
+        self._save_state_button: QPushButton | None = None
+        self._current_envio_value = (envio_state or "").strip()
+        self._on_envio_change = on_envio_change
         self.setWindowTitle("Detalle de factura")
         self.setMinimumSize(900, 600)
         self.resize(1000, 700)
@@ -133,6 +145,36 @@ class InvoiceDetailDialog(QDialog):
         totals_layout.addStretch()
         layout.addLayout(totals_layout)
 
+        envio_layout = QFormLayout()
+        envio_layout.setLabelAlignment(Qt.AlignLeft)
+        envio_layout.setFormAlignment(Qt.AlignLeft)
+        current_envio_display = self._current_envio_value or "Pendiente de envío"
+        self._envio_label = QLabel(current_envio_display, self)
+        envio_layout.addRow("Estado de envío actual:", self._envio_label)
+        if envio_options:
+            combo = QComboBox(self)
+            seen = set()
+            for option in envio_options:
+                text = str(option or "").strip()
+                if not text:
+                    continue
+                lowered = text.lower()
+                if lowered in seen:
+                    continue
+                combo.addItem(text)
+                seen.add(lowered)
+            if self._current_envio_value:
+                idx = combo.findText(self._current_envio_value)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+                else:
+                    combo.addItem(self._current_envio_value)
+                    combo.setCurrentText(self._current_envio_value)
+            combo.currentTextChanged.connect(self._on_envio_combo_changed)
+            self._envio_combo = combo
+            envio_layout.addRow("Actualizar estado:", combo)
+        layout.addLayout(envio_layout)
+
         self._sync_standard_paths()
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.button(QDialogButtonBox.Ok).setText("Cerrar")
@@ -147,6 +189,12 @@ class InvoiceDetailDialog(QDialog):
                 "Anular factura", QDialogButtonBox.ActionRole
             )
             anular_btn.clicked.connect(self._anular)
+        if self._envio_combo is not None and callable(self._on_envio_change):
+            self._save_state_button = buttons.addButton(
+                "Guardar estado de envío", QDialogButtonBox.ActionRole
+            )
+            self._save_state_button.setEnabled(False)
+            self._save_state_button.clicked.connect(self._save_envio_state)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
@@ -200,6 +248,47 @@ class InvoiceDetailDialog(QDialog):
         QMessageBox.information(self, "Anulación", res.get("estado", ""))
         self.anulacion_result = res
         self.accept()
+
+    def _on_envio_combo_changed(self, value: str) -> None:
+        if not self._save_state_button:
+            return
+        value_norm = (value or "").strip()
+        current_norm = (self._current_envio_value or "").strip()
+        enabled = bool(value_norm) and value_norm != current_norm and callable(
+            self._on_envio_change
+        )
+        self._save_state_button.setEnabled(enabled)
+
+    def _save_envio_state(self) -> None:
+        if not self._envio_combo or not callable(self._on_envio_change):
+            return
+        selection = self._envio_combo.currentText().strip()
+        if not selection:
+            QMessageBox.warning(self, "Estado de envío", "Seleccione un estado válido")
+            return
+        try:
+            new_display = self._on_envio_change(selection)
+        except Exception as exc:  # pragma: no cover - UI feedback
+            QMessageBox.warning(self, "Estado de envío", str(exc))
+            return
+        display_text = str(new_display or "").strip()
+        if not display_text:
+            QMessageBox.warning(
+                self, "Estado de envío", "No se pudo actualizar el estado seleccionado"
+            )
+            return
+        self.envio_updated = True
+        self._current_envio_value = display_text
+        if self._envio_label is not None:
+            self._envio_label.setText(display_text)
+        if self._envio_combo.findText(display_text) < 0:
+            self._envio_combo.addItem(display_text)
+        self._envio_combo.setCurrentText(display_text)
+        if self._save_state_button is not None:
+            self._save_state_button.setEnabled(False)
+        QMessageBox.information(
+            self, "Estado de envío", "Estado actualizado correctamente"
+        )
 
     def _determine_file_path(self) -> str | None:
         """Return the most relevant file path for the current invoice."""

@@ -23,6 +23,7 @@ from dialogs import (
     ClienteDialog,
     EstadoCuentaDialog,
     UserConfigDialog,
+    CompraDetalleDialog,
 )
 
 from sales_tab import SalesTab
@@ -500,9 +501,11 @@ class MainWindow(QMainWindow):
         inventario_actual_buttons = QHBoxLayout()
         inventario_actual_buttons.addStretch()
         self.btn_refresh_inventario = QPushButton("Actualizar")
+        self.btn_view_lote = QPushButton("Ver información")
         self.btn_edit_lote = QPushButton("Editar lote")
         self.btn_delete_lote = QPushButton("Eliminar lote")
         inventario_actual_buttons.addWidget(self.btn_refresh_inventario)
+        inventario_actual_buttons.addWidget(self.btn_view_lote)
         inventario_actual_buttons.addWidget(self.btn_edit_lote)
         inventario_actual_buttons.addWidget(self.btn_delete_lote)
         inventario_actual_layout.addLayout(inventario_actual_buttons)
@@ -660,6 +663,7 @@ class MainWindow(QMainWindow):
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
         self.btn_refresh_inventario.clicked.connect(self._actualizar_inventario_actual)
+        self.btn_view_lote.clicked.connect(self._ver_informacion_lote)
         self.btn_edit_lote.clicked.connect(self._editar_lote_inventario_actual)
         self.btn_delete_lote.clicked.connect(self._eliminar_lote_inventario_actual)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
@@ -1887,6 +1891,48 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()
         self.filter_products()
         self.data_changed.emit()
+
+    def _ver_informacion_lote(self):
+        row = self.inventario_actual_table.currentRow()
+        if row < 0:
+            QMessageBox.warning(
+                self,
+                "Ver información",
+                "Seleccione un lote para consultar su información.",
+            )
+            return
+
+        item_producto = self.inventario_actual_table.item(row, 0)
+        if not item_producto:
+            QMessageBox.warning(
+                self,
+                "Ver información",
+                "No se pudo obtener la información del lote seleccionado.",
+            )
+            return
+
+        data = item_producto.data(Qt.UserRole) or {}
+        compra_id = data.get("compra_id")
+        if not compra_id:
+            QMessageBox.warning(
+                self,
+                "Ver información",
+                "El lote seleccionado no tiene una compra asociada.",
+            )
+            return
+
+        compra = self.manager.db.get_compra(compra_id)
+        if not compra:
+            QMessageBox.warning(
+                self,
+                "Ver información",
+                "No fue posible cargar la compra asociada al lote seleccionado.",
+            )
+            return
+
+        detalles = self.manager.db.get_detalles_compra(compra_id)
+        dialog = CompraDetalleDialog(compra, detalles, self)
+        dialog.exec_()
 
     def _eliminar_lote_inventario_actual(self):
         row = self.inventario_actual_table.currentRow()

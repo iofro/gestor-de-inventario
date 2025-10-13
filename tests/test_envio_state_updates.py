@@ -82,6 +82,52 @@ def test_update_envio_estado_ui_updates_entry(tmp_path):
     assert new_row["estado_ui_manual"] == 1
 
 
+def test_manual_override_survives_envio_refresh(tmp_path):
+    db_path = tmp_path / "refresh.db"
+    database = DB(db_path)
+    venta_id = database.add_venta("2024-02-01", 20)
+
+    assert database.update_envio_estado_ui(
+        venta_id=venta_id, estado_ui="Enviado", estado_ui_tag="manual"
+    )
+
+    manual_row = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (venta_id,),
+    ).fetchone()
+    assert manual_row["estado_ui"] == "Enviado"
+    assert manual_row["estado_ui_tag"] == "manual"
+    assert manual_row["estado_ui_manual"] == 1
+
+    database.registrar_envio_dte(
+        venta_id,
+        modo="normal",
+        estado="Pendiente",
+        sello="",
+        respuesta_json={"estado": "RECHAZADO"},
+        codigo_generacion=None,
+        numero_control=None,
+    )
+
+    latest = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        (venta_id,),
+    ).fetchone()
+    assert latest["estado_ui"] == "Enviado"
+    assert latest["estado_ui_tag"] == "manual"
+    assert latest["estado_ui_manual"] == 1
+
+
 def test_facturacion_tab_manual_envio_update(tmp_path, qt_app, monkeypatch):
     db_path = tmp_path / "manual.db"
     database = DB(db_path)

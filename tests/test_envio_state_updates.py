@@ -58,7 +58,16 @@ def test_update_envio_estado_ui_updates_entry(tmp_path):
 
     assert row["estado_ui"] == "Rechazado"
     assert row["estado_ui_tag"] == "schema"
-    assert not database.update_envio_estado_ui(venta_id=9999, estado_ui="Aceptado")
+    assert database.update_envio_estado_ui(venta_id=9999, estado_ui="Aceptado")
+
+    new_row = database.cursor.execute(
+        "SELECT venta_id, estado_ui, modo FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+        (9999,),
+    ).fetchone()
+
+    assert new_row["estado_ui"] == "Aceptado"
+    assert new_row["venta_id"] == 9999
+    assert new_row["modo"] == "manual"
 
 
 def test_facturacion_tab_manual_envio_update(tmp_path, qt_app, monkeypatch):

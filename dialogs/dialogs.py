@@ -4053,6 +4053,79 @@ class CompraDetalleDialog(QDialog):
                     _remember_code_alias(str(product_id), name)
             return name
 
+        def _product_name_from_detail_id(detail_id: int | None) -> str | None:
+            if detail_id is None or db is None:
+                return None
+            try:
+                db.cursor.execute(
+                    """
+                    SELECT p.id AS producto_id, p.nombre, p.codigo, p.sku
+                    FROM detalles_compra dc
+                    JOIN productos p ON p.id = dc.producto_id
+                    WHERE dc.id = ?
+                    LIMIT 1
+                    """,
+                    (detail_id,),
+                )
+                row = db.cursor.fetchone()
+            except Exception:
+                logger.exception(
+                    "No fue posible obtener el producto asociado al detalle %s",
+                    detail_id,
+                )
+                return None
+            if not row:
+                return None
+            try:
+                data = dict(row)
+            except Exception:
+                data = {}
+                if isinstance(row, tuple):
+                    try:
+                        data["producto_id"] = row[0]
+                        data["nombre"] = row[1]
+                        data["codigo"] = row[2] if len(row) > 2 else None
+                        data["sku"] = row[3] if len(row) > 3 else None
+                    except Exception:
+                        data = {}
+
+            name = _coerce_product_name(data)
+            if not name:
+                return None
+
+            product_id = normalize_identifier(
+                data.get("producto_id") or data.get("id")
+            )
+            if product_id is not None:
+                productos_dict[product_id] = name
+                entry = catalogs.products.get(product_id)
+                if isinstance(entry, MutableMapping):
+                    entry.setdefault("id", product_id)
+                    if not entry.get("nombre"):
+                        entry["nombre"] = name
+                    for key in ("codigo", "sku"):
+                        value = data.get(key)
+                        if value and not entry.get(key):
+                            entry[key] = value
+                    _register_product_aliases(product_id, entry, name)
+                else:
+                    catalogs.products[product_id] = {
+                        "id": product_id,
+                        "nombre": name,
+                        "codigo": data.get("codigo"),
+                        "sku": data.get("sku"),
+                    }
+                    _register_product_aliases(
+                        product_id,
+                        catalogs.products.get(product_id),
+                        name,
+                    )
+
+            _remember_code_alias(_coerce_lookup_key(data.get("codigo")), name)
+            _remember_code_alias(_coerce_lookup_key(data.get("sku")), name)
+
+            return name
+
         def _coerce_detail_text(value: Any) -> str | None:
             if isinstance(value, str):
                 text = value.strip()
@@ -4164,6 +4237,13 @@ class CompraDetalleDialog(QDialog):
                 name = _lookup_product_name_by_code(detalle.get(key))
                 if name:
                     return name
+
+            detail_id = normalize_identifier(detalle.get("detalle_id"))
+            if detail_id is None:
+                detail_id = normalize_identifier(detalle.get("id"))
+            name = _product_name_from_detail_id(detail_id)
+            if name:
+                return name
 
             name = _lookup_product_name_by_code(detalle.get("producto"))
             return name or "Desconocido"

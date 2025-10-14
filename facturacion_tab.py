@@ -6305,6 +6305,7 @@ class FacturacionTab(QWidget):
         dte_json_path=None,
         archive_subdir=None,
         extra_data=None,
+        prompt_revert=False,
     ):
         reverted_correlativo = False
         archive_dir = None
@@ -6384,7 +6385,27 @@ class FacturacionTab(QWidget):
                     correlativo=serie_info["correlativo"],
                 )
 
-        if serie_info:
+        should_attempt_revert = bool(serie_info)
+        if serie_info and prompt_revert:
+            prompt_msg = "¿Desea revertir el correlativo asociado al DTE eliminado?"
+            if numero_control:
+                prompt_msg = (
+                    "Se encontró el correlativo para el documento"
+                    f" {numero_control}. ¿Desea revertirlo?"
+                )
+            confirm_revert = QMessageBox.question(
+                self,
+                "Revertir correlativo",
+                prompt_msg,
+                QMessageBox.Yes | QMessageBox.No,
+            )
+            if confirm_revert != QMessageBox.Yes:
+                should_attempt_revert = False
+                logger.info(
+                    "El usuario decidió no revertir el correlativo para el DTE eliminado"
+                )
+
+        if serie_info and should_attempt_revert:
             tipo = serie_info["tipo"]
             sucursal = serie_info["sucursal"]
             punto = serie_info["punto"]
@@ -6562,6 +6583,7 @@ class FacturacionTab(QWidget):
                 ticket_path=None if pdf_path else json_path,
                 dte_json_path=json_path,
                 extra_data=extra_data or None,
+                prompt_revert=True,
             )
 
             # Remove database record tied to the orphan file
@@ -6625,6 +6647,7 @@ class FacturacionTab(QWidget):
             ticket_path=ticket_path,
             dte_json_path=dte_json_path,
             extra_data=extra_data,
+            prompt_revert=True,
         )
 
         mensaje = "Factura eliminada"

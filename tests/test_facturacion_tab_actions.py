@@ -1066,6 +1066,48 @@ def test_delete_invoice_removes_all(qt_app, tmp_path, monkeypatch):
     assert db.get_dte_correlativo("01", "001", "001") == 4
 
 
+def test_delete_invoice_without_revert_keeps_correlativo(monkeypatch, qt_app):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db, credito=True)
+    correlativo = 404
+    db.set_dte_correlativo("03", "001", "001", correlativo)
+    numero_control = f"DTE-03-S001P001-{correlativo:015d}"
+    extra = {"numeroControl": numero_control, "tipoDte": "03"}
+    db.cursor.execute(
+        "UPDATE ventas SET extra=? WHERE id=?",
+        (json.dumps(extra), venta_id),
+    )
+    db.conn.commit()
+
+    tab = _make_tab(db, cid)
+    tab.manager.refresh_data = lambda: None
+    monkeypatch.setattr(
+        tab,
+        "_selected_entry",
+        lambda: {"row_type": "venta", "venta_id": venta_id},
+    )
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"control": numero_control},
+    )
+    monkeypatch.setattr(tab, "_get_invoice_paths", lambda *a, **k: (None, None, None))
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+
+    responses = [facturacion_tab.QMessageBox.Yes, facturacion_tab.QMessageBox.No]
+
+    def fake_question(*args, **kwargs):
+        return responses.pop(0) if responses else facturacion_tab.QMessageBox.No
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "question", fake_question)
+
+    tab.delete_invoice()
+
+    assert db.get_venta_by_id(venta_id) is None
+    assert db.get_dte_correlativo("03", "001", "001") == correlativo
+
+
 def test_delete_orphan_invoice_removes_files(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     base = "20240101_Test"

@@ -2521,8 +2521,58 @@ class FacturacionTab(QWidget):
             ticket_records = []
 
         records = factura_records + ticket_records
-        rows = []
+
+        grouped: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = {}
+
+        def _normalize_group_key(path: str | None) -> tuple[Any, ...]:
+            if not path:
+                return ("path", None, None)
+            try:
+                base_name = os.path.splitext(os.path.basename(path))[0]
+                directory = os.path.dirname(path) or ""
+            except Exception:
+                return ("path", None, None)
+            normalized = base_name.lower()
+            for suffix in ("_ticket", "-ticket"):
+                if normalized.endswith(suffix):
+                    normalized = normalized[: -len(suffix)]
+                    break
+            return ("path", directory.lower(), normalized)
+
         for rec in records:
+            source = rec.get("_source", "factura")
+            venta_id = rec.get("venta_id")
+            if venta_id:
+                key = ("venta", venta_id)
+            else:
+                key = _normalize_group_key(rec.get("ruta"))
+            bucket = grouped.setdefault(key, {})
+            if source == "ticket":
+                bucket.setdefault("ticket", rec)
+            else:
+                bucket.setdefault("factura", rec)
+
+        combined_records: list[dict[str, Any]] = []
+        for bucket in grouped.values():
+            factura_rec = bucket.get("factura")
+            ticket_rec = bucket.get("ticket")
+            if factura_rec and ticket_rec:
+                merged = dict(factura_rec)
+                merged["_source"] = factura_rec.get("_source", "factura")
+                merged["_ticket_record"] = dict(ticket_rec)
+                combined_records.append(merged)
+            elif factura_rec:
+                merged = dict(factura_rec)
+                merged["_source"] = factura_rec.get("_source", "factura")
+                combined_records.append(merged)
+            elif ticket_rec:
+                merged = dict(ticket_rec)
+                merged["_source"] = ticket_rec.get("_source", "ticket")
+                combined_records.append(merged)
+
+        rows = []
+        for rec in combined_records:
+            ticket_info = rec.pop("_ticket_record", None)
             source = rec.pop("_source", "factura")
             doc_tipo = rec.get("tipo")
             tipo_lower = str(doc_tipo or "").strip().lower()
@@ -2531,7 +2581,15 @@ class FacturacionTab(QWidget):
             if venta_id is not None and not tipo_lower.startswith("nota"):
                 venta = self.manager.db.get_venta_by_id(venta_id)
             ruta = rec.get("ruta")
+            if not ruta and ticket_info:
+                ruta = ticket_info.get("ruta")
             json_path = os.path.splitext(ruta)[0] + ".json" if ruta else None
+            if ticket_info and (not json_path or not os.path.exists(json_path)):
+                ticket_ruta = ticket_info.get("ruta")
+                if ticket_ruta:
+                    ticket_json = os.path.splitext(ticket_ruta)[0] + ".json"
+                    if ticket_json and os.path.exists(ticket_json):
+                        json_path = ticket_json
 
             fecha_creacion = rec.get("fecha_creacion") or ""
             fdate = None
@@ -2668,6 +2726,10 @@ class FacturacionTab(QWidget):
             }
             if json_path and os.path.exists(json_path):
                 row["json"] = json_path
+            if ticket_info:
+                ticket_path_value = ticket_info.get("ruta")
+                if ticket_path_value:
+                    row["ticket_pdf"] = ticket_path_value
 
             if row_type == "orphan":
                 row["pdf"] = ruta
@@ -4122,6 +4184,10 @@ class FacturacionTab(QWidget):
     ) -> str | None:
         if not entry:
             return None
+
+        stored_entry_ticket = entry.get("ticket_pdf") or entry.get("ticket_path")
+        if stored_entry_ticket and os.path.exists(stored_entry_ticket):
+            return stored_entry_ticket
 
         derived_path = None
         if base_pdf_path:
@@ -5997,6 +6063,9 @@ class FacturacionTab(QWidget):
                 venta = self.manager.db.get_venta_by_id(venta_id)
             except Exception:
                 venta = None
+
+        if entry and not ticket_path:
+            ticket_path = entry.get("ticket_pdf") or entry.get("ticket_path")
 
         if factura:
             dte_json_path = factura.get("json")

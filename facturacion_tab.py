@@ -53,7 +53,12 @@ from dte import (
 from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
 import nota_credito_electronica
-from utils.docs import get_document_paths, get_dte_document_paths, write_pdf_atomically
+from utils.docs import (
+    get_document_paths,
+    get_dte_document_paths,
+    write_pdf_atomically,
+    persist_client_json,
+)
 from utils.ticket_adapters import dte_to_legacy_ticket_payload
 from utils.doc_generation import generate_invoice_pdf
 from utils.email_sender import EmailSender
@@ -5624,39 +5629,66 @@ class FacturacionTab(QWidget):
         if not isinstance(payload, dict):
             return
 
+        dte_payload = payload.get("dteJson") if isinstance(payload, dict) else None
+        if not isinstance(dte_payload, Mapping):
+            dte_payload = payload
+        if not isinstance(dte_payload, Mapping):
+            return
+
+        dte_data = dict(dte_payload)
+        ident = dict(dte_data.get("identificacion") or dte_data.get("identificador") or {})
         changed = False
-        ident = payload.get("identificacion") or payload.get("identificador") or {}
+
         codigo_val = (codigo or "").strip()
         if codigo_val:
             codigo_norm = codigo_val.upper()
             current = (ident.get("codigoGeneracion") or "").strip().upper()
             if codigo_norm and codigo_norm != current:
                 ident["codigoGeneracion"] = codigo_val
-                if "identificacion" in payload:
-                    payload["identificacion"] = ident
-                elif "identificador" in payload:
-                    payload["identificador"] = ident
                 changed = True
 
-        sello_val = (sello or "").strip()
-        if sello_val:
-            if payload.get("selloRecibido") != sello_val:
-                payload["selloRecibido"] = sello_val
-                changed = True
-            respuesta = payload.get("respuesta")
-            if isinstance(respuesta, dict):
-                if respuesta.get("selloRecibido") != sello_val:
-                    respuesta["selloRecibido"] = sello_val
-                    payload["respuesta"] = respuesta
-                    changed = True
-            elif respuesta is None:
-                payload["respuesta"] = {"selloRecibido": sello_val}
-                changed = True
+        if ident != dte_data.get("identificacion"):
+            dte_data["identificacion"] = ident
+            dte_data.pop("identificador", None)
 
-        if changed:
+        def _norm_sello(value):
+            if value is None:
+                return None
             try:
-                with open(json_path, "w", encoding="utf-8") as fh:
-                    json.dump(payload, fh, ensure_ascii=False, indent=2)
+                text = str(value).strip()
+            except Exception:
+                return None
+            if not text:
+                return None
+            if re.fullmatch(r"[0-9A-Fa-f]{40}", text):
+                return text.upper()
+            return text
+
+        existing_sello = None
+        if isinstance(payload, dict):
+            existing_sello = _norm_sello(payload.get("selloRecibido"))
+            if not existing_sello:
+                respuesta = payload.get("respuesta")
+                if isinstance(respuesta, dict):
+                    existing_sello = _norm_sello(respuesta.get("selloRecibido"))
+
+        sello_norm = _norm_sello(sello)
+        if sello_norm and sello_norm != existing_sello:
+            changed = True
+
+        needs_format = not (isinstance(payload, dict) and "dteJson" in payload)
+        firma_val = payload.get("firmaElectronica") if isinstance(payload, dict) else None
+        sello_to_use = sello_norm or existing_sello
+
+        if changed or needs_format or sello_to_use or firma_val:
+            try:
+                persist_client_json(
+                    json_path,
+                    dte_data,
+                    firma=firma_val,
+                    sello=sello_to_use,
+                    existing_payload=payload,
+                )
             except Exception:
                 logger.exception(
                     "No se pudo actualizar metadatos de JSON en %s", json_path
@@ -5875,7 +5907,17 @@ class FacturacionTab(QWidget):
             codigo_generacion=nota_json["identificacion"].get("codigoGeneracion"),
             numero_control=nota_json["identificacion"].get("numeroControl"),
         )
-        sign_and_save(nota_json, str(json_path))
+        token = None
+        try:
+            _, token = sign_and_save(nota_json, str(json_path), return_token=True)
+        except Exception:
+            logger.exception("No se pudo firmar nota de remisión en %s", json_path)
+        try:
+            persist_client_json(json_path, nota_json, firma=token)
+        except Exception:
+            logger.exception(
+                "No se pudo preparar la versión para cliente de la nota en %s", json_path
+            )
         if transmitir and nota_id is not None:
             try:
                 resp = enviar_nota_remision(self.manager.db, nota_id)
@@ -6300,6 +6342,17 @@ class FacturacionTab(QWidget):
                 _, token = sign_and_save(
                     nota_json, str(json_path), return_token=True
                 )
+                try:
+                    persist_client_json(
+                        json_path,
+                        nota_json,
+                        firma=token,
+                        sello=sello_recepcion,
+                    )
+                except Exception:
+                    logger.exception(
+                        "No se pudo preparar JSON firmado para cliente en %s", json_path
+                    )
                 modo_eff = self._resolve_modo_transmision()
                 resp = dte._enviar_documento(
                     self.manager.db, nota_id, nota_json, modo=modo_eff, jws_token=token

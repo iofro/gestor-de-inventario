@@ -4,7 +4,7 @@ import os
 import re
 from datetime import datetime
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable, Mapping
 
 from dte import _map_departamento, _map_municipio, _build_receptor_direccion
 from paths import (
@@ -13,6 +13,7 @@ from paths import (
     user_data_path,
 )
 from utils import resource_path
+from utils.stable_json import save_file, stable_stringify
 
 logger = logging.getLogger(__name__)
 
@@ -57,6 +58,111 @@ def _resolve_folder(doc_type: str | None, *, root: str | os.PathLike | None) -> 
         folder = Path(BASE_DIR) / sanitize_filename(doc_type or "documentos")
     folder.mkdir(parents=True, exist_ok=True)
     return folder
+
+
+# ---------------------------------------------------------------------------
+# Helpers for client-facing JSON payloads
+# ---------------------------------------------------------------------------
+
+
+def _normalize_optional_str(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        text = str(value)
+    except Exception:
+        return None
+    text = text.strip()
+    if not text:
+        return None
+    return text
+
+
+def _normalize_sello(value: Any) -> str | None:
+    sello = _normalize_optional_str(value)
+    if not sello:
+        return None
+    if re.fullmatch(r"[0-9A-Fa-f]{40}", sello):
+        return sello.upper()
+    return sello
+
+
+def build_client_json_payload(
+    dte_payload: Mapping[str, Any] | None,
+    *,
+    firma: str | None = None,
+    sello: str | None = None,
+    existing_payload: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Return a client-facing JSON structure containing the signed DTE.
+
+    The resulting mapping always exposes the complete DTE under ``dteJson`` and,
+    when available, the electronic signature (``firmaElectronica``) and the
+    reception seal (``selloRecibido``).
+    """
+
+    if isinstance(dte_payload, Mapping):
+        dte_json = dict(dte_payload)
+    else:
+        dte_json = {}
+
+    # Ensure sensitive fields live outside the embedded DTE payload.
+    dte_json.pop("firmaElectronica", None)
+    dte_json.pop("selloRecibido", None)
+
+    firma_norm = _normalize_optional_str(firma)
+    sello_norm = _normalize_sello(sello)
+
+    if existing_payload and not firma_norm and isinstance(existing_payload, Mapping):
+        firma_norm = _normalize_optional_str(existing_payload.get("firmaElectronica"))
+
+    if existing_payload and not sello_norm and isinstance(existing_payload, Mapping):
+        sello_norm = _normalize_sello(
+            existing_payload.get("selloRecibido")
+            or getattr(existing_payload.get("respuesta", {}), "get", lambda *_: None)(
+                "selloRecibido"
+            )
+        )
+
+    client_payload: dict[str, Any] = {"dteJson": dte_json}
+    if firma_norm:
+        client_payload["firmaElectronica"] = firma_norm
+    if sello_norm:
+        client_payload["selloRecibido"] = sello_norm
+
+    return client_payload
+
+
+def persist_client_json(
+    json_path: str | os.PathLike,
+    dte_payload: Mapping[str, Any] | None,
+    *,
+    firma: str | None = None,
+    sello: str | None = None,
+    existing_payload: Mapping[str, Any] | None = None,
+) -> Path:
+    """Write a client-facing JSON representation and duplicate it as a backup.
+
+    The JSON is written to ``json_path`` and to a sibling folder named
+    ``copia de seguridad``. Both files use the same filename so they can be
+    easily correlated.
+    """
+
+    target = Path(json_path)
+    formatted = build_client_json_payload(
+        dte_payload, firma=firma, sello=sello, existing_payload=existing_payload
+    )
+    content = stable_stringify(formatted, indent=2)
+
+    target.parent.mkdir(parents=True, exist_ok=True)
+    save_file(os.fspath(target), content)
+
+    backup_dir = target.parent / "copia de seguridad"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    backup_path = backup_dir / target.name
+    save_file(os.fspath(backup_path), content)
+
+    return target
 
 
 def write_pdf_atomically(

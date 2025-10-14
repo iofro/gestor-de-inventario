@@ -68,7 +68,12 @@ def build_dialog(qty=5, price=1.00):
     dialog.vendedor_combo = QComboBox()
     dialog.vendedor_combo.addItem("Sin vendedor")
     dialog.vendedores_trabajadores = []
-    dialog.selected_cliente = {"id": 1, "nombre": "Cliente"}
+    dialog.selected_cliente = {
+        "id": 1,
+        "nombre": "Cliente",
+        "nit": "06141407100012",
+        "nrc": "1234567",
+    }
     dialog.iva_agregado_radio = QRadioButton()
     dialog.nrc_edit = QLineEdit()
     dialog.nit_edit = QLineEdit()
@@ -83,6 +88,40 @@ def build_dialog(qty=5, price=1.00):
     dialog.fecha_remision = QDateEdit(QDate.currentDate())
     dialog.Distribuidor_combo = QComboBox()
     return dialog
+
+
+def test_credito_fiscal_exige_cliente_con_identificador(qt_app, monkeypatch):
+    dialog = build_dialog()
+    dialog.selected_cliente = {}
+
+    warnings = []
+
+    def fake_warning(parent, title, text):
+        warnings.append((title, text))
+        return QMessageBox.Ok
+
+    monkeypatch.setattr(QMessageBox, "warning", fake_warning)
+
+    accepted = {"called": False}
+    dialog.accept = lambda: accepted.__setitem__("called", True)
+
+    dialog._validar_y_accept()
+
+    assert warnings, "Se debe mostrar advertencia cuando no hay identificadores válidos"
+    assert "NIT o NRC válido" in warnings[-1][1]
+    assert not accepted["called"], "No debe continuar sin un cliente válido"
+
+    warnings.clear()
+    accepted["called"] = False
+    dialog.selected_cliente = {
+        "id": 1,
+        "nombre": "Cliente",
+        "nit": "06141407100012",
+    }
+
+    dialog._validar_y_accept()
+
+    assert accepted["called"], "Debe permitir continuar con identificadores válidos"
 
 
 def test_total_label_updates_with_items(qt_app):

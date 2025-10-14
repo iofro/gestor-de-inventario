@@ -321,6 +321,40 @@ describe('FacturaForm', () => {
     expect(wrapper.find('.evento-panel').exists()).toBe(false);
   });
 
+  it('permite ver los detalles devueltos por Hacienda cuando falla el envío', async () => {
+    const wrapper = mountForm();
+    await wrapper.find('.guardar').trigger('click');
+    await wrapper.vm.$nextTick();
+    await wrapper.vm.$nextTick();
+
+    expect(wrapper.text()).toContain(
+      'No fue posible enviar la factura a Hacienda. Revisa los detalles o guárdala en contingencia.'
+    );
+
+    const inlineToggle = wrapper.find('.status.error .details-toggle');
+    expect(inlineToggle.exists()).toBe(true);
+    expect(inlineToggle.text()).toBe('Ver detalles');
+    await inlineToggle.trigger('click');
+    await wrapper.vm.$nextTick();
+    const inlineDetails = wrapper.find('.status.error .error-details');
+    expect(inlineDetails.exists()).toBe(true);
+    expect(inlineDetails.text()).toContain('fallo');
+
+    const errorDialog = wrapper
+      .findAllComponents({ name: 'ConfirmDialog' })
+      .find(dialog => dialog.props('title') === 'Error al enviar a Hacienda');
+    expect(errorDialog).toBeTruthy();
+
+    const dialogToggle = errorDialog!.find('.details-toggle');
+    expect(dialogToggle.exists()).toBe(true);
+    expect(dialogToggle.text()).toBe('Ver detalles');
+    await dialogToggle.trigger('click');
+    await wrapper.vm.$nextTick();
+    const dialogDetails = errorDialog!.find('.details-panel');
+    expect(dialogDetails.exists()).toBe(true);
+    expect(dialogDetails.text()).toContain('fallo');
+  });
+
   it('normaliza valores inválidos del modo de transmisión a normal', () => {
     const wrapper = mountForm({ modoTransmision: 5 as unknown as number });
     const modo = wrapper.find('#modo');

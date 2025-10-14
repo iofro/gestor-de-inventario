@@ -45,7 +45,24 @@
       role="alert"
       aria-live="assertive"
     >
-      {{ saveErrorMessage }}
+      <div class="status-header">
+        <span>{{ saveErrorMessage }}</span>
+        <button
+          v-if="hasSaveErrorDetails"
+          type="button"
+          class="details-toggle"
+          @click="errorDetailsExpanded = !errorDetailsExpanded"
+          :aria-expanded="errorDetailsExpanded ? 'true' : 'false'"
+        >
+          {{ errorDetailsExpanded ? 'Ocultar detalles' : 'Ver detalles' }}
+        </button>
+      </div>
+      <pre
+        v-if="errorDetailsExpanded && hasSaveErrorDetails"
+        class="error-details"
+      >
+        {{ saveErrorDetails }}
+      </pre>
     </section>
 
     <section
@@ -248,6 +265,7 @@
       message="¿Desea guardar esta factura en modo contingencia para enviarla más tarde?"
       confirm-text="Guardar en contingencia"
       cancel-text="No"
+      :details="saveErrorDetails"
       @confirm="saveContingencia"
     />
     <ConfirmDialog
@@ -317,6 +335,23 @@ const errorVisible = ref(false);
 const lossConfirmVisible = ref(false);
 const statusMessage = ref('');
 const saveErrorMessage = ref('');
+const saveErrorDetails = ref('');
+const errorDetailsExpanded = ref(false);
+const hasSaveErrorDetails = computed(
+  () => saveErrorDetails.value.trim().length > 0
+);
+
+watch(hasSaveErrorDetails, hasDetails => {
+  if (!hasDetails) {
+    errorDetailsExpanded.value = false;
+  }
+});
+
+watch(saveErrorMessage, message => {
+  if (!message) {
+    errorDetailsExpanded.value = false;
+  }
+});
 
 const modoSelect = ref<HTMLSelectElement>();
 const contingenciaButton = ref<HTMLButtonElement>();
@@ -452,6 +487,8 @@ function hasContingenciaData(): boolean {
 async function onSave() {
   statusMessage.value = '';
   saveErrorMessage.value = '';
+  saveErrorDetails.value = '';
+  errorDetailsExpanded.value = false;
   if (isContingencia.value) {
     if (!contingenciaConfigured.value) {
       saveErrorMessage.value =
@@ -466,11 +503,16 @@ async function onSave() {
   try {
     await enviarAHacienda();
   } catch (e) {
+    saveErrorMessage.value =
+      'No fue posible enviar la factura a Hacienda. Revisa los detalles o guárdala en contingencia.';
+    saveErrorDetails.value = buildErrorDetails(e);
     errorVisible.value = true;
   }
 }
 
 async function saveContingencia() {
+  saveErrorDetails.value = '';
+  errorDetailsExpanded.value = false;
   try {
     if (contingenciaConfig.tipo === null) {
       throw new Error('Configuración de contingencia incompleta.');
@@ -487,8 +529,13 @@ async function saveContingencia() {
     });
     statusMessage.value = 'Contingencia guardada en la factura.';
   } catch (error) {
-    saveErrorMessage.value =
+    const message =
       error instanceof Error ? error.message : 'Ocurrió un error al guardar.';
+    saveErrorMessage.value = message;
+    const details = buildErrorDetails(error);
+    if (details.trim().length > 0) {
+      saveErrorDetails.value = details;
+    }
   }
 }
 
@@ -841,6 +888,110 @@ function getNowInElSalvador() {
   };
 }
 
+function buildErrorDetails(error: unknown): string {
+  const seen = new WeakSet<object>();
+  const extracted = extractDetailedPayload(error, seen);
+  if (extracted.trim().length > 0) {
+    return extracted;
+  }
+  if (error instanceof Error) {
+    return error.message || 'Se produjo un error desconocido.';
+  }
+  if (typeof error === 'string') {
+    return error;
+  }
+  if (error == null) {
+    return '';
+  }
+  try {
+    const fallback = JSON.stringify(error, null, 2);
+    if (fallback === '{}' || fallback === '[]') {
+      return String(error);
+    }
+    return fallback;
+  } catch {
+    return String(error);
+  }
+}
+
+function extractDetailedPayload(value: unknown, seen: WeakSet<object>): string {
+  if (value == null) {
+    return '';
+  }
+  if (typeof value === 'string') {
+    return value;
+  }
+  if (typeof value !== 'object') {
+    return String(value);
+  }
+  if (value instanceof Error) {
+    if (seen.has(value)) {
+      return '';
+    }
+    seen.add(value);
+    const plain: Record<string, unknown> = {};
+    for (const key of Object.getOwnPropertyNames(value)) {
+      if (['name', 'stack'].includes(key)) {
+        continue;
+      }
+      const descriptor = (value as Record<string, unknown>)[key];
+      if (descriptor !== undefined) {
+        plain[key] = descriptor;
+      }
+    }
+    const fromPlain = extractDetailedPayload(plain, seen);
+    if (fromPlain.trim().length > 0) {
+      return fromPlain;
+    }
+    if ('cause' in value) {
+      const causeDetail = extractDetailedPayload(
+        (value as { cause?: unknown }).cause,
+        seen
+      );
+      if (causeDetail.trim().length > 0) {
+        return causeDetail;
+      }
+    }
+    return value.message ?? '';
+  }
+  if (seen.has(value as object)) {
+    return '';
+  }
+  seen.add(value as object);
+  const record = value as Record<string, unknown>;
+  const detailKeys = [
+    'hacienda',
+    'detalle',
+    'detalles',
+    'details',
+    'errores',
+    'errors',
+    'data',
+    'body',
+    'response',
+    'mensaje',
+    'message'
+  ];
+  for (const key of detailKeys) {
+    if (!(key in record)) {
+      continue;
+    }
+    const extracted = extractDetailedPayload(record[key], seen);
+    if (extracted.trim().length > 0) {
+      return extracted;
+    }
+  }
+  try {
+    const serialized = JSON.stringify(record, null, 2);
+    if (serialized === '{}' || serialized === '[]') {
+      return '';
+    }
+    return serialized;
+  } catch {
+    return '';
+  }
+}
+
 function sanitizeTipoDoc(tipo: unknown): string {
   const numeric = Number.parseInt(String(tipo ?? '').replace(/[^0-9]/g, ''), 10);
   if (Number.isNaN(numeric)) {
@@ -981,6 +1132,48 @@ function focusMainContingenciaTrigger() {
 .status.error {
   background: #fdecea;
   color: #c62828;
+}
+
+.status .status-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  justify-content: space-between;
+}
+
+.status .status-header span {
+  flex: 1 1 auto;
+}
+
+.status .details-toggle {
+  border: 1px solid currentColor;
+  background: transparent;
+  color: inherit;
+  border-radius: 4px;
+  padding: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+  cursor: pointer;
+}
+
+.status .details-toggle:focus {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.status.error .error-details {
+  margin-top: 0.75rem;
+  padding: 0.75rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(198, 40, 40, 0.3);
+  color: inherit;
+  max-height: 16rem;
+  overflow: auto;
+  font-family: ui-monospace, SFMono-Regular, SFMono, Menlo, Monaco, Consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .evento-panel {

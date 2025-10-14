@@ -2324,7 +2324,7 @@ class FacturacionTab(QWidget):
                     """
                     SELECT estado_ui, estado_ui_tag, estado FROM dte_envios
                     WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?)
-                    ORDER BY id DESC LIMIT 1
+                    ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
                     """,
                     (codigo_generacion or "",),
                 ).fetchone()
@@ -2333,7 +2333,7 @@ class FacturacionTab(QWidget):
                         """
                         SELECT estado_ui, estado_ui_tag, estado FROM dte_envios
                         WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?)
-                        ORDER BY id DESC LIMIT 1
+                        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
                         """,
                         (numero_control or "",),
                     ).fetchone()
@@ -3592,7 +3592,7 @@ class FacturacionTab(QWidget):
         if venta_id:
             try:
                 row = db.cursor.execute(
-                    "SELECT estado_ui, estado FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                    "SELECT estado_ui, estado FROM dte_envios WHERE venta_id=? ORDER BY estado_ui_manual DESC, id DESC LIMIT 1",
                     (venta_id,),
                 ).fetchone()
             except Exception:

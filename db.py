@@ -3211,7 +3211,7 @@ class DB:
                 """
                 SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
                 WHERE codigo_generacion IS NOT NULL AND codigo_generacion = ?
-                ORDER BY id DESC LIMIT 1
+                ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
                 """,
                 (codigo_generacion_upper,),
             ).fetchone()
@@ -3228,7 +3228,7 @@ class DB:
                 """
                 SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
                 WHERE numero_control IS NOT NULL AND numero_control = ?
-                ORDER BY id DESC LIMIT 1
+                ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
                 """,
                 (numero_control_upper,),
             ).fetchone()
@@ -3249,7 +3249,7 @@ class DB:
                 """
                 SELECT estado_ui, estado_ui_tag, estado_ui_manual FROM dte_envios
                 WHERE venta_id IS NOT NULL AND venta_id = ?
-                ORDER BY id DESC LIMIT 1
+                ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
                 """,
                 (venta_id_int,),
             ).fetchone()

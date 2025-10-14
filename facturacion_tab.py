@@ -5541,8 +5541,7 @@ class FacturacionTab(QWidget):
                 )
                 return
 
-            ident = payload.get("identificacion") or payload.get("identificador") or {}
-            codigo_json = (ident.get("codigoGeneracion") or "").strip().upper()
+            codigo_json = self._extract_codigo_generacion_from_payload(payload)
             sello_json = (
                 payload.get("selloRecibido")
                 or payload.get("sello")
@@ -5913,6 +5912,30 @@ class FacturacionTab(QWidget):
                 )
 
         return (codigo_norm or None, sello_norm or sello_val)
+
+    @staticmethod
+    def _extract_codigo_generacion_from_payload(
+        payload: Mapping[str, Any] | None,
+    ) -> str:
+        if not isinstance(payload, Mapping):
+            return ""
+
+        containers: list[Mapping[str, Any]] = []
+        dte_payload = payload.get("dteJson")
+        if isinstance(dte_payload, Mapping):
+            containers.append(dte_payload)
+        containers.append(payload)
+
+        for candidate in containers:
+            ident = candidate.get("identificacion") or candidate.get("identificador")
+            if not isinstance(ident, Mapping):
+                continue
+            codigo_val = ident.get("codigoGeneracion")
+            if isinstance(codigo_val, str):
+                codigo_norm = codigo_val.strip()
+                if codigo_norm:
+                    return codigo_norm.upper()
+        return ""
 
     def _send_orphan_email(self, entry):
         json_path = entry.get("json") if isinstance(entry, dict) else None

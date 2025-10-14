@@ -4,6 +4,8 @@ import sys
 import types
 from pathlib import Path
 
+import pytest
+
 
 qt_module = types.ModuleType("PyQt5")
 qtwidgets = types.ModuleType("PyQt5.QtWidgets")
@@ -59,7 +61,6 @@ class _DialogButtonBox(_Base):
 
 for name in [
     "QDialog",
-    "QVBoxLayout",
     "QTableWidget",
     "QTableWidgetItem",
     "QLabel",
@@ -77,6 +78,93 @@ for name in [
     setattr(qtwidgets, name, type(name, (_Base,), {}))
 
 qtwidgets.QDialogButtonBox = _DialogButtonBox
+qtwidgets.QAbstractItemView.NoSelection = 0
+qtwidgets.QAbstractItemView.NoEditTriggers = 1
+qtwidgets.QHeaderView.ResizeToContents = 0
+qtwidgets.QHeaderView.Stretch = 1
+
+
+class _TreeWidgetItem(_Base):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._children = []
+
+    def addChild(self, item):
+        self._children.append(item)
+
+    def childCount(self):
+        return len(self._children)
+
+
+class _TreeHeader:
+    def setSectionResizeMode(self, *args, **kwargs):
+        pass
+
+
+class _TreeWidget(_Base):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._root = _TreeWidgetItem()
+
+    def setColumnCount(self, *args, **kwargs):
+        pass
+
+    def setHeaderLabels(self, *args, **kwargs):
+        pass
+
+    def header(self):
+        return _TreeHeader()
+
+    def setAlternatingRowColors(self, *args, **kwargs):
+        pass
+
+    def setUniformRowHeights(self, *args, **kwargs):
+        pass
+
+    def setSelectionMode(self, *args, **kwargs):
+        pass
+
+    def setEditTriggers(self, *args, **kwargs):
+        pass
+
+    def setFocusPolicy(self, *args, **kwargs):
+        pass
+
+    def invisibleRootItem(self):
+        return self._root
+
+    def topLevelItemCount(self):
+        return len(self._root._children)
+
+    def expandToDepth(self, *args, **kwargs):
+        pass
+
+
+qtwidgets.QTreeWidgetItem = _TreeWidgetItem
+qtwidgets.QTreeWidget = _TreeWidget
+
+
+class _VBoxLayout(_Base):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+
+    def addWidget(self, *args, **kwargs):
+        pass
+
+    def addLayout(self, *args, **kwargs):
+        pass
+
+    def addStretch(self, *args, **kwargs):
+        pass
+
+    def setContentsMargins(self, *args, **kwargs):
+        pass
+
+    def setSpacing(self, *args, **kwargs):
+        pass
+
+
+qtwidgets.QVBoxLayout = _VBoxLayout
 
 
 class _Qt:
@@ -444,4 +532,20 @@ def test_sync_standard_paths_updates_db_and_reuses_canonical(tmp_path, monkeypat
     assert dialog2._pdf_path == str(expected_pdf)
     assert dialog2._json_path == str(expected_json)
     assert db.updated == [(dialog.venta_id, str(expected_pdf))]
+
+
+@pytest.mark.parametrize("tipo", ["04", "05", "06"])
+def test_metadata_tab_includes_note_payloads(tipo):
+    dialog = _make_dialog()
+    dialog.factura = {
+        "identificacion": {
+            "tipoDte": tipo,
+            "numeroControl": "NC-0001",
+        },
+        "resumen": {"montoTotalOperacion": 12.34},
+    }
+
+    info_widget = dialog._build_metadata_tab()
+
+    assert info_widget is not None
 

@@ -7,7 +7,7 @@ import logging
 import base64
 import requests
 from datetime import date, timedelta, datetime
-from typing import Mapping, MutableMapping, Optional
+from typing import Any, Mapping, MutableMapping, Optional
 
 logger = logging.getLogger(__name__)
 from PyQt5.QtWidgets import (
@@ -3889,6 +3889,27 @@ class CompraDetalleDialog(QDialog):
 
         catalogs, db = self._resolve_catalogs(parent, catalogs)
 
+        logo_layout = QHBoxLayout()
+        logo_label = QLabel()
+        logo_label.setAlignment(Qt.AlignCenter)
+        logo_pixmap = self._load_product_logo()
+        if logo_pixmap is not None:
+            logo_label.setPixmap(
+                logo_pixmap.scaled(QSize(72, 72), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        else:
+            logo_label.setText("Productos")
+        logo_layout.addWidget(logo_label, 0, Qt.AlignLeft)
+
+        status_label = QLabel(
+            "Catálogo de productos cargado para mostrar el detalle de la compra."
+        )
+        status_label.setWordWrap(True)
+        status_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        logo_layout.addWidget(status_label, 1)
+
+        layout.addLayout(logo_layout)
+
         def _coerce_product_name(info) -> str | None:
             if isinstance(info, str):
                 text = info.strip()
@@ -3944,12 +3965,43 @@ class CompraDetalleDialog(QDialog):
                 catalogs.products.setdefault(product_id, {"id": product_id, "nombre": name})
             return name
 
-        def _detail_product_name(detalle: dict) -> str:
-            descripcion = detalle.get("descripcion")
-            if isinstance(descripcion, str) and descripcion.strip():
-                return descripcion.strip()
-            pid = normalize_identifier(detalle.get("producto_id"))
-            name = _product_name_from_id(pid)
+        def _coerce_detail_text(value: Any) -> str | None:
+            if isinstance(value, str):
+                text = value.strip()
+                if text:
+                    return text
+            return None
+
+        def _detail_product_name(detalle: Mapping[str, Any]) -> str:
+            descripcion = _coerce_detail_text(detalle.get("descripcion"))
+            if descripcion:
+                return descripcion
+
+            for key in (
+                "producto",
+                "producto_nombre",
+                "nombre_producto",
+                "nombre",
+                "detalle",
+            ):
+                fallback = _coerce_detail_text(detalle.get(key))
+                if fallback:
+                    return fallback
+
+            product_id: int | None = None
+            for key in (
+                "producto_id",
+                "Producto_id",
+                "product_id",
+                "productoId",
+                "productId",
+                "ProductoId",
+            ):
+                product_id = normalize_identifier(detalle.get(key))
+                if product_id is not None:
+                    break
+
+            name = _product_name_from_id(product_id)
             return name or "Desconocido"
 
         vendedor_nombre, distribuidor_nombre = resolve_party_names(compra, catalogs)
@@ -4138,6 +4190,27 @@ class CompraDetalleDialog(QDialog):
                     _populate_missing(catalogs.products, product_source)
 
         return catalogs, catalogs.db
+
+    @staticmethod
+    def _load_product_logo() -> QPixmap | None:
+        """Load a representative logo for product operations if available."""
+
+        base_dir = Path(__file__).resolve().parent
+        candidates = [
+            base_dir / ".." / "logoinventario.jpg",
+            base_dir / ".." / "app" / "logoinventario.jpg",
+        ]
+        for candidate in candidates:
+            try:
+                path = candidate.resolve()
+            except FileNotFoundError:
+                continue
+            if not path.exists():
+                continue
+            pixmap = QPixmap(str(path))
+            if not pixmap.isNull():
+                return pixmap
+        return None
 
 class LogoPreviewDialog(QDialog):
     """Permite seleccionar y previsualizar el logo del negocio."""

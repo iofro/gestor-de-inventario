@@ -1,3 +1,5 @@
+from typing import Optional
+
 from PyQt5.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -13,7 +15,7 @@ from PyQt5.QtWidgets import (
     QMessageBox,
     QFileDialog,
     QAbstractItemView,
-
+    QFrame,
     QHeaderView,
     QSizePolicy,
     QScrollArea,
@@ -27,6 +29,19 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker
 from PyQt5.QtGui import QPixmap
 from datetime import datetime, date, timedelta
+import importlib.util
+
+_MATPLOTLIB_AVAILABLE = importlib.util.find_spec("matplotlib") is not None
+
+if _MATPLOTLIB_AVAILABLE:
+    from matplotlib import dates as mdates, ticker as mticker
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.figure import Figure
+else:
+    mdates = None
+    mticker = None
+    FigureCanvas = None
+    Figure = None
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
@@ -53,6 +68,128 @@ TICKETS_DIR = TICKETS_OUTPUT_DIR
 
 logger = logging.getLogger(__name__)
 
+
+class _StatsKpiCard(QFrame):
+    """Small helper widget to display prominent KPI values."""
+
+    def __init__(self, title: str, tooltip: str = "", parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("StatsKpiCard")
+        self.setFrameShape(QFrame.StyledPanel)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(8)
+
+        title_label = QLabel(title)
+        title_label.setWordWrap(True)
+        title_font = title_label.font()
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        if tooltip:
+            title_label.setToolTip(tooltip)
+        layout.addWidget(title_label)
+
+        self.value_label = QLabel("—")
+        value_font = self.value_label.font()
+        value_font.setPointSize(value_font.pointSize() + 6)
+        value_font.setBold(True)
+        self.value_label.setFont(value_font)
+        self.value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(self.value_label)
+
+        self.detail_label = QLabel("")
+        detail_font = self.detail_label.font()
+        detail_font.setPointSize(detail_font.pointSize() - 1)
+        self.detail_label.setFont(detail_font)
+        self.detail_label.setStyleSheet("color: #5f6b7a;")
+        self.detail_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        layout.addWidget(self.detail_label)
+
+        layout.addStretch(1)
+
+    def set_value(self, value: str, detail: str = "") -> None:
+        self.value_label.setText(value)
+        self.detail_label.setText(detail)
+
+
+class _StatsSectionFrame(QFrame):
+    """Card-style frame with padded content and title area."""
+
+    def __init__(self, title: str, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("StatsSection")
+        self.setFrameShape(QFrame.StyledPanel)
+        wrapper = QVBoxLayout(self)
+        wrapper.setContentsMargins(16, 16, 16, 16)
+        wrapper.setSpacing(16)
+
+        header = QHBoxLayout()
+        header.setContentsMargins(0, 0, 0, 0)
+        header.setSpacing(8)
+
+        title_label = QLabel(title)
+        title_font = title_label.font()
+        title_font.setBold(True)
+        title_font.setPointSize(title_font.pointSize() + 1)
+        title_label.setFont(title_font)
+        header.addWidget(title_label)
+        header.addStretch(1)
+
+        self.header_layout = header
+        wrapper.addLayout(header)
+
+        self.body_layout = QVBoxLayout()
+        self.body_layout.setContentsMargins(0, 0, 0, 0)
+        self.body_layout.setSpacing(12)
+        wrapper.addLayout(self.body_layout)
+
+    def add_header_widget(self, widget: QWidget) -> None:
+        insert_pos = self.header_layout.count() - 1
+        self.header_layout.insertWidget(insert_pos, widget)
+
+
+class _StatsChartWidget(QWidget):
+    """Simple wrapper around a Matplotlib canvas with loading/empty states."""
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        if FigureCanvas is not None and Figure is not None:
+            figure = Figure(figsize=(7, 3), constrained_layout=True)
+            figure.set_constrained_layout(True)
+            self.canvas = FigureCanvas(figure)
+            self.canvas.setMinimumHeight(260)
+            self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            layout.addWidget(self.canvas)
+            self.canvas.hide()
+        else:
+            self.canvas = None
+
+        self.empty_label = QLabel("No hay datos para mostrar")
+        self.empty_label.setAlignment(Qt.AlignCenter)
+        self.empty_label.setObjectName("StatsEmptyLabel")
+        layout.addWidget(self.empty_label)
+
+        if self.canvas is not None:
+            self.empty_label.hide()
+
+    def show_empty(self, message: str) -> None:
+        self.empty_label.setText(message)
+        self.empty_label.show()
+        if self.canvas is not None:
+            self.canvas.hide()
+
+    def show_canvas(self) -> None:
+        if self.canvas is not None:
+            self.empty_label.hide()
+            self.canvas.show()
+
+    @property
+    def has_canvas(self) -> bool:
+        return self.canvas is not None
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -219,12 +356,17 @@ class SalesTab(QWidget):
         self.sales_tabs.currentChanged.connect(self._on_inner_tab_changed)
 
     def _setup_stats_tab(self):
-        layout = QVBoxLayout(self.stats_tab)
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(12)
+        main_layout = QVBoxLayout(self.stats_tab)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
 
-        controls_layout = QHBoxLayout()
-        controls_layout.addWidget(QLabel("Rango rápido:"))
+        filter_frame = QFrame()
+        filter_frame.setObjectName("StatsFilterBar")
+        filter_layout = QHBoxLayout(filter_frame)
+        filter_layout.setContentsMargins(24, 16, 24, 16)
+        filter_layout.setSpacing(12)
+
+        filter_layout.addWidget(QLabel("Rango rápido:"))
         self.stats_quick_range = QComboBox()
         self.stats_quick_range.addItems(
             [
@@ -236,20 +378,24 @@ class SalesTab(QWidget):
                 "Últimos 30 días",
             ]
         )
-        controls_layout.addWidget(self.stats_quick_range)
-        controls_layout.addWidget(QLabel("Desde"))
+        filter_layout.addWidget(self.stats_quick_range)
+
+        filter_layout.addWidget(QLabel("Desde:"))
         self.stats_date_from = QDateEdit(QDate.currentDate().addMonths(-1))
         self.stats_date_from.setCalendarPopup(True)
-        controls_layout.addWidget(self.stats_date_from)
-        controls_layout.addWidget(QLabel("Hasta"))
+        filter_layout.addWidget(self.stats_date_from)
+
+        filter_layout.addWidget(QLabel("Hasta:"))
         self.stats_date_to = QDateEdit(QDate.currentDate())
         self.stats_date_to.setCalendarPopup(True)
-        controls_layout.addWidget(self.stats_date_to)
-        self.stats_refresh_btn = QPushButton("Actualizar")
+        filter_layout.addWidget(self.stats_date_to)
+
+        self.stats_refresh_btn = QPushButton("Aplicar")
+        self.stats_refresh_btn.setMinimumWidth(120)
         self.stats_refresh_btn.clicked.connect(self.refresh_statistics)
-        controls_layout.addWidget(self.stats_refresh_btn)
-        controls_layout.addStretch()
-        layout.addLayout(controls_layout)
+        filter_layout.addWidget(self.stats_refresh_btn)
+
+        filter_layout.addStretch(1)
 
         self.stats_quick_range.currentIndexChanged.connect(self._stats_apply_quick_range)
         self.stats_date_from.dateChanged.connect(self._stats_on_manual_date_change)
@@ -257,65 +403,190 @@ class SalesTab(QWidget):
         self.stats_date_from.setEnabled(False)
         self.stats_date_to.setEnabled(False)
 
+        self.stats_timezone_label = QLabel("")
+        self.stats_timezone_label.setObjectName("StatsTimezoneLabel")
+        filter_layout.addWidget(self.stats_timezone_label)
+
+        main_layout.addWidget(filter_frame)
+
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setFrameShadow(QFrame.Sunken)
+        main_layout.addWidget(divider)
+
+        self.stats_scroll = QScrollArea()
+        self.stats_scroll.setWidgetResizable(True)
+        self.stats_scroll.setFrameShape(QFrame.NoFrame)
+        main_layout.addWidget(self.stats_scroll)
+
+        content_widget = QWidget()
+        content_widget.setObjectName("StatsContent")
+        self.stats_scroll.setWidget(content_widget)
+
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(24, 24, 24, 24)
+        content_layout.setSpacing(24)
+
+        header_layout = QHBoxLayout()
+        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setSpacing(12)
+
+        self.stats_period_label = QLabel("Período seleccionado: —")
+        period_font = self.stats_period_label.font()
+        period_font.setBold(True)
+        period_font.setPointSize(period_font.pointSize() + 1)
+        self.stats_period_label.setFont(period_font)
+        header_layout.addWidget(self.stats_period_label)
+        header_layout.addStretch(1)
+
         self.stats_last_updated_label = QLabel("")
-        self.stats_last_updated_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
-        self.stats_last_updated_label.setStyleSheet("color:#555; font-size:11px;")
-        layout.addWidget(self.stats_last_updated_label)
+        self.stats_last_updated_label.setObjectName("StatsUpdatedLabel")
+        header_layout.addWidget(self.stats_last_updated_label)
+        content_layout.addLayout(header_layout)
 
-        summary_widget = QWidget()
-        summary_layout = QGridLayout()
-        summary_layout.setContentsMargins(0, 0, 0, 0)
-        summary_layout.setHorizontalSpacing(24)
-        summary_layout.setVerticalSpacing(8)
-        summary_widget.setLayout(summary_layout)
-        self.stats_summary_labels = {}
-        summary_metrics = [
-            ("Ventas totales", "total_sales"),
-            ("Transacciones", "total_transactions"),
-            ("Ticket promedio", "average_ticket"),
-            ("Margen bruto", "gross_margin"),
-            ("Costo estimado", "total_costs"),
-        ]
-        for idx, (label_text, key) in enumerate(summary_metrics):
-            row = idx // 2
-            col = (idx % 2) * 2
-            title_label = QLabel(label_text)
-            summary_layout.addWidget(title_label, row, col)
-            value_label = QLabel("—")
-            value_label.setStyleSheet("font-weight:bold; font-size:14px;")
-            summary_layout.addWidget(value_label, row, col + 1)
-            self.stats_summary_labels[key] = value_label
-        summary_layout.setColumnStretch(1, 1)
-        summary_layout.setColumnStretch(3, 1)
-        layout.addWidget(summary_widget)
+        kpi_frame = QWidget()
+        kpi_layout = QGridLayout(kpi_frame)
+        kpi_layout.setContentsMargins(0, 0, 0, 0)
+        kpi_layout.setHorizontalSpacing(16)
+        kpi_layout.setVerticalSpacing(16)
 
-        self.stats_period_tabs = QTabWidget()
-        self.stats_period_tables = {}
-        for key, title in (("daily", "Diario"), ("monthly", "Mensual"), ("yearly", "Anual")):
-            table = self._create_stats_table(
-                ["Periodo", "Ventas", "Transacciones", "Ticket promedio"]
+        self.stats_kpi_cards = {
+            "total_sales": _StatsKpiCard(
+                "Ventas totales",
+                "Monto total de ventas registradas en el período seleccionado.",
+            ),
+            "total_transactions": _StatsKpiCard(
+                "Transacciones",
+                "Cantidad de facturas o tickets emitidos en el período.",
+            ),
+            "average_ticket": _StatsKpiCard(
+                "Ticket promedio",
+                "Promedio por transacción: ventas totales ÷ transacciones.",
+            ),
+            "gross_margin": _StatsKpiCard(
+                "Margen bruto",
+                "Ventas totales menos el costo estimado de los productos.",
+            ),
+            "total_costs": _StatsKpiCard(
+                "CMV estimado",
+                "Costo de mercancía vendida estimado en el período.",
+            ),
+        }
+
+        positions = {
+            "total_sales": (0, 0),
+            "total_transactions": (0, 1),
+            "average_ticket": (1, 0),
+            "gross_margin": (1, 1),
+            "total_costs": (2, 0),
+        }
+        for key, card in self.stats_kpi_cards.items():
+            row, col = positions[key]
+            kpi_layout.addWidget(card, row, col)
+        kpi_layout.setColumnStretch(0, 1)
+        kpi_layout.setColumnStretch(1, 1)
+        content_layout.addWidget(kpi_frame)
+
+        self.stats_daily_section = _StatsSectionFrame("Tendencia diaria de ventas")
+        self.stats_daily_chart = _StatsChartWidget()
+        self.stats_daily_section.body_layout.addWidget(self.stats_daily_chart)
+        if self.stats_daily_chart.has_canvas:
+            hint_text = "Pase el cursor por los puntos para comparar montos diarios."
+        else:
+            hint_text = (
+                "Instale la dependencia 'matplotlib' para visualizar la tendencia diaria."
             )
-            self.stats_period_tabs.addTab(table, title)
-            self.stats_period_tables[key] = table
-        layout.addWidget(self.stats_period_tabs)
+        self.stats_daily_hint = QLabel(hint_text)
+        self.stats_daily_hint.setObjectName("SectionHint")
+        self.stats_daily_section.body_layout.addWidget(self.stats_daily_hint)
+        content_layout.addWidget(self.stats_daily_section)
 
-        layout.addWidget(QLabel("Productos más vendidos"))
+        split_container = QWidget()
+        split_layout = QHBoxLayout(split_container)
+        split_layout.setContentsMargins(0, 0, 0, 0)
+        split_layout.setSpacing(24)
+
+        self.stats_top_section = _StatsSectionFrame("Top productos")
         self.stats_top_products_table = self._create_stats_table(
             ["Producto", "Unidades", "Ventas", "Margen", "Contribución"]
         )
-        layout.addWidget(self.stats_top_products_table)
+        self.stats_top_section.body_layout.addWidget(self.stats_top_products_table)
+        self.stats_top_empty_label = QLabel("No hay productos destacados en este período.")
+        self.stats_top_empty_label.setAlignment(Qt.AlignCenter)
+        self.stats_top_empty_label.hide()
+        self.stats_top_section.body_layout.addWidget(self.stats_top_empty_label)
 
-        layout.addWidget(QLabel("Ventas por vendedor/canal"))
+        split_layout.addWidget(self.stats_top_section, 1)
+
+        self.stats_channel_section = _StatsSectionFrame("Ventas por vendedor/canal")
         self.stats_channel_table = self._create_stats_table(
             ["Canal", "Ventas", "Transacciones", "Ticket promedio"]
         )
-        layout.addWidget(self.stats_channel_table)
+        self.stats_channel_section.body_layout.addWidget(self.stats_channel_table)
+        self.stats_channel_empty_label = QLabel(
+            "No hay ventas registradas para los canales en este período."
+        )
+        self.stats_channel_empty_label.setAlignment(Qt.AlignCenter)
+        self.stats_channel_empty_label.hide()
+        self.stats_channel_section.body_layout.addWidget(self.stats_channel_empty_label)
 
-        layout.addWidget(QLabel("Existencias críticas (≤ 5 unidades)"))
+        split_layout.addWidget(self.stats_channel_section, 1)
+        content_layout.addWidget(split_container)
+
+        self.stats_stock_section = _StatsSectionFrame("Existencias críticas")
+        self.stats_stock_section.add_header_widget(QLabel("≤ 5 unidades disponibles"))
         self.stats_low_stock_table = self._create_stats_table(["Producto", "Stock"])
-        layout.addWidget(self.stats_low_stock_table)
+        self.stats_stock_section.body_layout.addWidget(self.stats_low_stock_table)
+        self.stats_stock_empty_label = QLabel("Sin productos en estado crítico de stock.")
+        self.stats_stock_empty_label.setAlignment(Qt.AlignCenter)
+        self.stats_stock_empty_label.hide()
+        self.stats_stock_section.body_layout.addWidget(self.stats_stock_empty_label)
+        content_layout.addWidget(self.stats_stock_section)
 
-        layout.addStretch(1)
+        content_layout.addStretch(1)
+
+        self.stats_tab.setStyleSheet(
+            """
+            QWidget#StatsContent {
+                background: #f4f6f9;
+            }
+            QFrame#StatsFilterBar {
+                background: #f9fbfd;
+            }
+            QLabel#StatsUpdatedLabel {
+                color: #5f6b7a;
+                font-size: 11px;
+            }
+            QLabel#StatsTimezoneLabel {
+                color: #5f6b7a;
+                font-size: 11px;
+            }
+            QFrame#StatsSection {
+                background: #ffffff;
+                border: 1px solid #dfe3eb;
+                border-radius: 10px;
+            }
+            QFrame#StatsKpiCard {
+                background: #ffffff;
+                border: 1px solid #dfe3eb;
+                border-radius: 10px;
+            }
+            QLabel#SectionHint {
+                color: #5f6b7a;
+                font-size: 11px;
+            }
+            QLabel#StatsEmptyLabel {
+                color: #5f6b7a;
+                font-style: italic;
+            }
+        """
+        )
+
+        try:
+            tz_display = datetime.now().astimezone().tzname() or "UTC"
+        except Exception:  # pragma: no cover - defensive fallback
+            tz_display = "UTC"
+        self.stats_timezone_label.setText(f"Zona horaria: {tz_display}")
 
         # Initialize default range (triggers refresh)
         self.stats_quick_range.setCurrentIndex(3)
@@ -412,21 +683,6 @@ class SalesTab(QWidget):
             ratio = 0.0
         return f"{ratio:.1f}%"
 
-    @staticmethod
-    def _format_period_label(period_type: str, value: str) -> str:
-        if not value:
-            return ""
-        try:
-            if period_type == "daily":
-                return datetime.strptime(value, "%Y-%m-%d").strftime("%d/%m/%Y")
-            if period_type == "monthly":
-                return datetime.strptime(value, "%Y-%m").strftime("%m/%Y")
-            if period_type == "yearly":
-                return value
-        except ValueError:
-            return value
-        return value
-
     def refresh_statistics(self):
         if not hasattr(self, "stats_date_from"):
             return
@@ -442,42 +698,83 @@ class SalesTab(QWidget):
 
         stats = self.manager.db.get_sales_statistics(start, end)
         summary = stats.get("summary", {})
-        for key, label in self.stats_summary_labels.items():
-            value = summary.get(key, 0)
-            if key == "total_transactions":
-                label.setText(self._format_number(value, integer=True))
-            else:
-                label.setText(self._format_currency(value))
+        total_sales = summary.get("total_sales", 0) or 0
+        total_transactions = summary.get("total_transactions", 0) or 0
+
+        if start and end:
+            self.stats_period_label.setText(
+                f"Período seleccionado: {start.strftime('%d/%m/%Y')} – {end.strftime('%d/%m/%Y')}"
+            )
+        else:
+            self.stats_period_label.setText("Período seleccionado: —")
+
+        self.stats_kpi_cards["total_sales"].set_value(
+            self._format_currency(total_sales)
+        )
+        self.stats_kpi_cards["total_transactions"].set_value(
+            self._format_number(total_transactions, integer=True)
+        )
+        self.stats_kpi_cards["average_ticket"].set_value(
+            self._format_currency(summary.get("average_ticket", 0))
+        )
+        self.stats_kpi_cards["gross_margin"].set_value(
+            self._format_currency(summary.get("gross_margin", 0))
+        )
+        self.stats_kpi_cards["total_costs"].set_value(
+            self._format_currency(summary.get("total_costs", 0))
+        )
 
         periods = stats.get("periods", {})
-        for key, table in self.stats_period_tables.items():
-            rows = periods.get(key, []) or []
-            table.setRowCount(len(rows))
-            for row_index, data in enumerate(rows):
-                period_text = self._format_period_label(key, data.get("period"))
-                table.setItem(row_index, 0, QTableWidgetItem(period_text))
+        daily_rows = periods.get("daily", []) or []
+        if not self.stats_daily_chart.has_canvas:
+            self.stats_daily_chart.show_empty(
+                "Instale la dependencia 'matplotlib' para visualizar el gráfico de tendencia."
+            )
+            self.stats_daily_hint.show()
+        else:
+            fig = self.stats_daily_chart.canvas.figure
+            fig.set_size_inches(7, 3, forward=True)
+            fig.clear()
+            if daily_rows:
+                ax = fig.subplots()
+                dates = []
+                values = []
+                for row in daily_rows:
+                    period_value = row.get("period")
+                    try:
+                        date_value = datetime.strptime(period_value, "%Y-%m-%d")
+                    except (TypeError, ValueError):
+                        continue
+                    dates.append(date_value)
+                    values.append(float(row.get("total", 0) or 0))
+                if dates and values:
+                    ax.plot(dates, values, marker="o", color="#4E79A7")
+                    ax.fill_between(dates, values, color="#4E79A7", alpha=0.1)
+                    ax.set_ylabel("Ventas")
+                    ax.yaxis.set_major_formatter(
+                        mticker.FuncFormatter(lambda x, _: f"{self._format_currency(x)}")
+                    )
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
+                    ax.grid(True, linestyle="--", alpha=0.3)
+                    fig.autofmt_xdate()
+                    self.stats_daily_chart.canvas.draw()
+                    self.stats_daily_chart.show_canvas()
+                    self.stats_daily_hint.show()
+                else:
+                    self.stats_daily_chart.show_empty("No hay datos diarios para mostrar.")
+                    self.stats_daily_hint.hide()
+            else:
+                self.stats_daily_chart.show_empty("No hay datos diarios para mostrar.")
+                self.stats_daily_hint.hide()
 
-                total_item = QTableWidgetItem(
-                    self._format_currency(data.get("total", 0))
-                )
-                total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                table.setItem(row_index, 1, total_item)
-
-                transactions_item = QTableWidgetItem(
-                    self._format_number(data.get("transactions", 0), integer=True)
-                )
-                transactions_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                table.setItem(row_index, 2, transactions_item)
-
-                avg_item = QTableWidgetItem(
-                    self._format_currency(data.get("average_ticket", 0))
-                )
-                avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
-                table.setItem(row_index, 3, avg_item)
-
-        total_sales = summary.get("total_sales", 0) or 0
         top_products = stats.get("top_products", []) or []
         self.stats_top_products_table.setRowCount(len(top_products))
+        if top_products:
+            self.stats_top_products_table.show()
+            self.stats_top_empty_label.hide()
+        else:
+            self.stats_top_products_table.hide()
+            self.stats_top_empty_label.show()
         for row_index, product in enumerate(top_products):
             self.stats_top_products_table.setItem(
                 row_index, 0, QTableWidgetItem(product.get("name", ""))
@@ -511,6 +808,12 @@ class SalesTab(QWidget):
 
         channels = stats.get("sales_by_channel", []) or []
         self.stats_channel_table.setRowCount(len(channels))
+        if channels:
+            self.stats_channel_table.show()
+            self.stats_channel_empty_label.hide()
+        else:
+            self.stats_channel_table.hide()
+            self.stats_channel_empty_label.show()
         for row_index, channel in enumerate(channels):
             self.stats_channel_table.setItem(
                 row_index, 0, QTableWidgetItem(channel.get("channel", ""))
@@ -535,6 +838,12 @@ class SalesTab(QWidget):
 
         critical_stock = stats.get("critical_stock", []) or []
         self.stats_low_stock_table.setRowCount(len(critical_stock))
+        if critical_stock:
+            self.stats_low_stock_table.show()
+            self.stats_stock_empty_label.hide()
+        else:
+            self.stats_low_stock_table.hide()
+            self.stats_stock_empty_label.show()
         for row_index, product in enumerate(critical_stock):
             self.stats_low_stock_table.setItem(
                 row_index, 0, QTableWidgetItem(product.get("name", ""))

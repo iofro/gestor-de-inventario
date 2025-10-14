@@ -99,6 +99,21 @@ ACCEPT_RAW = {"ACEPTADO"}
 REJECT_RAW = {"RECHAZADO"}
 
 
+_DTE_TIPO_FOLDERS = {
+    "01": "fcf",  # Factura consumidor final
+    "03": "ccf",  # Comprobante de crédito fiscal
+    "04": "nr",   # Nota de remisión
+    "05": "nc",   # Nota de crédito
+    "06": "nd",   # Nota de débito
+    "07": "cr",   # Comprobante de retención
+    "08": "cl",   # Comprobante de liquidación
+    "09": "dcl",  # Documento contable de liquidación
+    "11": "fex",  # Factura de exportación
+    "14": "fse",  # Factura de sujeto excluido
+    "15": "cd",   # Comprobante de donación
+}
+
+
 def _get_in(mapping: Mapping[str, Any] | None, key: str) -> Any:
     if not isinstance(mapping, AbcMapping):
         return None
@@ -5817,24 +5832,42 @@ def _dte_base_dir(
         base = DTES_PENDIENTES_DIR
     else:
         base = DTE_FALLIDOS_DIR if fallido else DTES_DIR
-    mapping = {
-        "01": "fcf",  # Factura consumidor final
-        "03": "ccf",  # Comprobante de crédito fiscal
-        "04": "nr",   # Nota de remisión
-        "05": "nc",   # Nota de crédito
-        "06": "nd",   # Nota de débito
-        "07": "cr",   # Comprobante de retención
-        "08": "cl",   # Comprobante de liquidación
-        "09": "dcl",  # Documento contable de liquidación
-        "11": "fex",  # Factura de exportación
-        "14": "fse",  # Factura de sujeto excluido
-        "15": "cd",   # Comprobante de donación
-    }
-    folder = mapping.get(tipo)
+
+    folder = _DTE_TIPO_FOLDERS.get(tipo)
     base_path = Path(base)
     target = base_path / folder if folder else base_path
     target.mkdir(parents=True, exist_ok=True)
     return str(target)
+
+
+def _iter_snapshot_json_paths(dte_data: Mapping[str, Any]) -> list[Path]:
+    ident = dte_data.get("identificacion") or {}
+    codigo = str(ident.get("codigoGeneracion") or "").strip()
+    if not codigo:
+        return []
+    tipo = str(ident.get("tipoDte") or "").zfill(2)
+    folder = _DTE_TIPO_FOLDERS.get(tipo)
+    bases = [Path(DTES_DIR), Path(DTE_FALLIDOS_DIR)]
+    paths: list[Path] = []
+    for base in bases:
+        target = base / folder if folder else base
+        paths.append(target / codigo / "documento.json")
+    return paths
+
+
+def _load_existing_snapshot(dte_data: Mapping[str, Any]) -> tuple[dict | None, str | None]:
+    for candidate in _iter_snapshot_json_paths(dte_data):
+        try:
+            with open(candidate, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+        except FileNotFoundError:
+            continue
+        except Exception:
+            logger.debug("No se pudo leer snapshot %s", candidate, exc_info=True)
+            continue
+        if isinstance(data, dict):
+            return data, str(candidate)
+    return None, None
 
 
 def _safe_filename_component(value: str) -> str:
@@ -6789,6 +6822,12 @@ def _enviar_documento(
     tipo_dte = str(raw_tipo_dte or "").strip()
     tipo_dte_norm = tipo_dte.zfill(2) if tipo_dte.isdigit() else tipo_dte
     nota_types = {"04", "05", "06"}
+    snapshot_data, snapshot_path = _load_existing_snapshot(data)
+    snapshot_ident = (
+        (snapshot_data.get("identificacion") or snapshot_data.get("identificador") or {})
+        if snapshot_data
+        else {}
+    )
     ident_codigo = (ident.get("codigoGeneracion") or "").upper()
     ident_control = (ident.get("numeroControl") or "").upper()
     SUCCESS_STATES = ("TRANSMITIDO", "RECIBIDO", "PROCESADO", "ACEPTADO")
@@ -6823,11 +6862,17 @@ def _enviar_documento(
         "codigoGeneracion": ident.get("codigoGeneracion"),
     }
     today_str = None
-    if tipo_dte_norm in nota_types:
+    if snapshot_ident:
+        if snapshot_ident.get("fecEmi"):
+            ident["fecEmi"] = snapshot_ident.get("fecEmi")
+    elif tipo_dte_norm in nota_types:
         today_str = fecha_emision_hoy_str()
         if ident.get("fecEmi") != today_str:
             ident["fecEmi"] = today_str
-    ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
+    if snapshot_ident and snapshot_ident.get("horEmi"):
+        ident["horEmi"] = snapshot_ident.get("horEmi")
+    else:
+        ident["horEmi"] = datetime.now(TZ_EL_SALVADOR).strftime("%H:%M:%S")
     if "identificacion" in data:
         data["identificacion"] = ident
     elif "identificador" in data:
@@ -6857,6 +6902,18 @@ def _enviar_documento(
         data["identificacion"] = ident
     elif "identificador" in data:
         data["identificador"] = ident
+
+    if snapshot_data is not None:
+        stored_hash = hash_json(snapshot_data)
+        current_hash = hash_json(data)
+        if current_hash != stored_hash:
+            location = f" ({snapshot_path})" if snapshot_path else ""
+            codigo_desc = ident.get("codigoGeneracion") or ident_codigo or "desconocido"
+            raise RuntimeError(
+                "El JSON almacenado para el código de generación"
+                f" {codigo_desc} difiere del payload actual{location}."
+                " Restaura el archivo original o genera un nuevo DTE."
+            )
 
     if jws_token:
         try:

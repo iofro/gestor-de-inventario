@@ -69,6 +69,15 @@ def _make_tab(db, cid):
     return tab
 
 
+def test_extract_codigo_generacion_from_client_payload():
+    payload = {
+        "dteJson": {"identificacion": {"codigoGeneracion": "abc123"}},
+        "firmaElectronica": "SIG",
+    }
+    codigo = facturacion_tab.FacturacionTab._extract_codigo_generacion_from_payload(payload)
+    assert codigo == "ABC123"
+
+
 def test_create_ticket_saves_files(qt_app, tmp_path, monkeypatch):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

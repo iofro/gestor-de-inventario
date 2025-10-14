@@ -4539,7 +4539,23 @@ class DTECorrelativoConfigDialog(QDialog):
             self.correlativos_table.setCellWidget(row, 1, spin)
             btn = QPushButton("Reiniciar")
             btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
-            btn.setFixedHeight(24)
+            btn.setFixedHeight(20)
+            btn.setStyleSheet(
+                """
+                QPushButton {
+                    background-color: #c0392b;
+                    color: white;
+                    border-radius: 4px;
+                    padding: 1px 10px;
+                }
+                QPushButton:hover {
+                    background-color: #e74c3c;
+                }
+                QPushButton:pressed {
+                    background-color: #922b21;
+                }
+                """
+            )
             btn.clicked.connect(lambda _, t=tipo: self._reset_correlativo(t))
             self.correlativos_table.setCellWidget(row, 2, btn)
             self._correlativo_spins[tipo] = spin

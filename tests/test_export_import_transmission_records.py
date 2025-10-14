@@ -39,19 +39,31 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
 
     man1 = inventory_manager.InventoryManager(DB(":memory:"))
     db = man1.db
-    db.add_Distribuidor("D1")
-    dist = db.cursor.lastrowid
-    db.add_vendedor("V1", Distribuidor_id=dist)
-    vend = db.cursor.lastrowid
-    db.add_cliente("Cliente", "", "", "", "", "", "", "", "", "")
-    cliente_id = db.cursor.lastrowid
-    db.add_producto("Prod", "P1", None,  vend, dist, 1, 2, 3, 5)
-    venta_id = db.add_venta(
-        "2024-01-01", 10, cliente_id=cliente_id, vendedor_id=vend, Distribuidor_id=dist
-    )
+    venta_id = db.add_venta("2024-01-01", 10)
+    db.ensure_column("dte_envios", "codigo_lote", "TEXT")
+    db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+    db.ensure_column("dte_envios", "numero_control", "TEXT")
+    db.ensure_column("dte_envios", "ambiente", "TEXT")
+    db.ensure_column("dte_envios", "estado_ui", "TEXT")
+    db.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+    db.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
     db.cursor.execute(
-        "INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta) VALUES (?, ?, ?, ?, ?, ?)",
-        (venta_id, "envio", "PROCESADO", "abc", "2024-01-01T00:00:00", "ok"),
+        "INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta, codigo_generacion, numero_control, codigo_lote, ambiente, estado_ui, estado_ui_tag, estado_ui_manual) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            venta_id,
+            "envio",
+            "PROCESADO",
+            "abc",
+            "2024-01-01T00:00:00",
+            "ok",
+            "ABC-123",
+            "DTE-01-0001",
+            "lote-1",
+            "01",
+            "Anulado",
+            "manual",
+            1,
+        ),
     )
     db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo, detalles) VALUES (?, ?, ?, ?, ?, ?)",
@@ -75,7 +87,12 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
 
     cur = man2.db.cursor
     row = cur.execute(
-        "SELECT modo, estado, sello, fecha_hora, respuesta FROM dte_envios"
+        """
+        SELECT modo, estado, sello, fecha_hora, respuesta, codigo_generacion,
+               numero_control, codigo_lote, ambiente, estado_ui,
+               estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        """
     ).fetchone()
     assert (
         row["modo"],
@@ -83,7 +100,27 @@ def test_export_import_transmission_records(monkeypatch, tmp_path):
         row["sello"],
         row["fecha_hora"],
         row["respuesta"],
-    ) == ("envio", "PROCESADO", "abc", "2024-01-01T00:00:00", "ok")
+        row["codigo_generacion"],
+        row["numero_control"],
+        row["codigo_lote"],
+        row["ambiente"],
+        row["estado_ui"],
+        row["estado_ui_tag"],
+        row["estado_ui_manual"],
+    ) == (
+        "envio",
+        "PROCESADO",
+        "abc",
+        "2024-01-01T00:00:00",
+        "ok",
+        "ABC-123",
+        "DTE-01-0001",
+        "lote-1",
+        "01",
+        "Anulado",
+        "manual",
+        1,
+    )
 
     row = cur.execute(
         "SELECT tipo, fecha, monto, motivo, detalles FROM notas"

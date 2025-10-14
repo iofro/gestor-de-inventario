@@ -43,10 +43,31 @@ def ensure_version(dte_json: dict, base_dir: str | None = None) -> tuple[str, st
     json_hash = hash_json(dte_json)
     version_dir = resolve_version_dir(base_dir, codigo)
     os.makedirs(version_dir, exist_ok=True)
-    save_file(
-        os.path.join(version_dir, "documento.json"),
-        stable_stringify(dte_json, indent=2),
-    )
+    json_path = os.path.join(version_dir, "documento.json")
+
+    if os.path.exists(json_path):
+        with open(json_path, "r", encoding="utf-8") as fh:
+            try:
+                existing = json.load(fh)
+            except Exception:
+                existing = None
+        if isinstance(existing, dict):
+            existing_hash = hash_json(existing)
+            if existing_hash != json_hash:
+                raise RuntimeError(
+                    "El documento JSON existente no coincide con el payload actual."
+                )
+            return version_dir, existing_hash
+        with open(json_path, "r", encoding="utf-8") as fh:
+            previous = fh.read()
+        current = stable_stringify(dte_json, indent=2)
+        if previous != current:
+            raise RuntimeError(
+                "El documento JSON existente no coincide con el payload actual."
+            )
+        return version_dir, json_hash
+
+    save_file(json_path, stable_stringify(dte_json, indent=2))
     return version_dir, json_hash
 
 

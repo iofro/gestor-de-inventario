@@ -582,17 +582,6 @@ class PurchasesTab(QWidget):
             )
 
         catalogs = getattr(self.manager, "catalogs", None)
-        vendor_name, distributor_name = resolve_party_names(compra, catalogs)
-        vendor_id = normalize_identifier(compra.get("vendedor_id"))
-        distributor_id = normalize_identifier(compra.get("Distribuidor_id"))
-        logger.info(
-            "Compras: compra %s -> vendedor %s (%s), distribuidor %s (%s)",
-            compra_id,
-            vendor_id,
-            vendor_name or "<desconocido>",
-            distributor_id,
-            distributor_name or "<desconocido>",
-        )
         dlg = CompraDetalleDialog(compra, detalles, self, catalogs=catalogs)
         dlg.exec_()
 

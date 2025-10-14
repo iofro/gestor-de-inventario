@@ -245,7 +245,7 @@ class InvoiceDetailDialog(QDialog):
 
     def _build_metadata_tab(self) -> QWidget | None:
         tipo_codigo = self._resolve_document_code()
-        if tipo_codigo not in {"01", "03"}:
+        if tipo_codigo not in {"01", "03", "04", "05", "06"}:
             return None
         factura = self.factura or {}
         if not isinstance(factura, Mapping):

@@ -1,5 +1,7 @@
 import os
 
+import pytest
+
 from utils import versioned_dte
 
 
@@ -22,3 +24,12 @@ def test_store_and_save_estado(tmp_path):
     name = versioned_dte.save_estado(version_dir, state)
     assert name == "documento_aceptado.json"
     assert os.path.exists(os.path.join(version_dir, name))
+
+
+def test_ensure_version_rejects_mismatch(tmp_path):
+    data = _sample_dte()
+    versioned_dte.ensure_version(data, base_dir=tmp_path)
+    altered = _sample_dte()
+    altered["identificacion"]["version"] = 2
+    with pytest.raises(RuntimeError):
+        versioned_dte.ensure_version(altered, base_dir=tmp_path)

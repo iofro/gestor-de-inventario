@@ -3897,6 +3897,11 @@ class CompraDetalleDialog(QDialog):
     def __init__(self, compra, detalles, parent=None, catalogs: Optional[Catalogs] = None):
         super().__init__(parent)
         self.setWindowTitle("Detalle de Compra")
+        # Amplía el tamaño inicial del diálogo para evitar que el usuario
+        # tenga que redimensionarlo manualmente cuando se muestran compras
+        # con mucha información.
+        self.resize(960, 720)
+        self.setMinimumSize(820, 600)
         layout = QVBoxLayout(self)
 
         logger.debug("DETALLES DE COMPRA: %s", detalles)

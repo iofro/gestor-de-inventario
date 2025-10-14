@@ -2199,15 +2199,15 @@ class FacturacionTab(QWidget):
             return QColor(code)
 
         if status.startswith("enviado") or status.startswith("transmitido") or status.startswith("recibido") or status.startswith("procesado"):
-            return _color("#2E7D32")  # Green for shipped documents
+            return _color("#43A047")  # Green for shipped documents (lighter tone)
         if status.startswith("aceptado"):
-            return _color("#388E3C")  # Dark green for accepted
+            return _color("#66BB6A")  # Green for accepted (lighter tone)
         if status.startswith("rechazado"):
-            return _color("#C62828")  # Red for rejected shipments
+            return _color("#EF5350")  # Red for rejected shipments (lighter tone)
         if status.startswith("anulad"):
-            return _color("#1565C0")  # Blue for voided documents
+            return _color("#42A5F5")  # Blue for voided documents (lighter tone)
         if status.startswith("pendiente"):
-            return _color("#F57C00")  # Orange for pending shipments
+            return _color("#FFA726")  # Orange for pending shipments (lighter tone)
         if status.startswith("error"):
             return _color("#6C757D")  # Gray for error states
         return None

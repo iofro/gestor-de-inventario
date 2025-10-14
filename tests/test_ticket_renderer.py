@@ -20,6 +20,16 @@ def _sample_payload():
             "nrc": "123456-7",
             "descActividad": "Farmacia",
             "direccion": {"complemento": "Av. Siempre Viva"},
+            "telefono": "22222222",
+            "correo": "emisor@example.com",
+        },
+        "receptor": {
+            "nombre": "Cliente Demo",
+            "numDocumento": "00000000-0",
+            "descActividad": "Cliente Giro",
+            "direccion": {"complemento": "Calle 1"},
+            "telefono": "77777777",
+            "correo": "cliente@example.com",
         },
         "cuerpoDocumento": [
             {
@@ -49,6 +59,7 @@ def test_render_ticket_pdf_clean(tmp_path):
     with fitz.open(out) as doc:
         text = "\n".join(page.get_text() for page in doc)
     normalized = " ".join(text.split())
+    compact = "".join(text.split())
 
     assert "cuerpoDocumento" not in text
     assert "identificacion" not in text
@@ -59,6 +70,10 @@ def test_render_ticket_pdf_clean(tmp_path):
     assert "Contado" in text or "CONTADO" in text
     assert "Sello de Recepción: SEAL-123" in text
     assert "3.39" in text  # total
+    assert "Teléfono:22222222" in compact
+    assert "Correo:emisor@example.com" in compact
+    assert "Teléfono:77777777" in compact
+    assert "Correo:cliente@example.com" in compact
 
 
 def test_render_ticket_pdf_credito_fiscal_title(tmp_path):

@@ -22,7 +22,7 @@ import unicodedata
 from utils.catalogos import CONDICION_OPERACION, DTE_TIPOS
 
 from paths import DATOS_NEGOCIO_PATH
-from factura_sv import build_qr_url
+from factura_sv import build_qr_url, format_direccion
 
 
 PT_PER_MM = 72 / 25.4
@@ -87,6 +87,13 @@ TICKET_STYLES = {
         fontSize=11,
         leading=14,
         alignment=TA_RIGHT,
+    ),
+    "kv_value_left": ParagraphStyle(
+        "KVValueLeft",
+        fontName="Helvetica",
+        fontSize=11,
+        leading=14,
+        alignment=TA_LEFT,
     ),
     "table_header": ParagraphStyle(
         "TableHeader",
@@ -201,6 +208,56 @@ def _load_datos_negocio(datos_negocio: Mapping[str, Any] | None) -> Mapping[str,
     return resultado
 
 
+def _first_non_empty(*values: Any) -> str:
+    """Return the first non-empty textual representation from ``values``."""
+
+    for raw in values:
+        if raw in (None, ""):
+            continue
+        if isinstance(raw, Mapping):
+            continue
+        if isinstance(raw, (list, tuple, set)):
+            candidate = ", ".join(str(item).strip() for item in raw if str(item).strip())
+        else:
+            candidate = str(raw).strip()
+        if candidate:
+            return candidate
+    return ""
+
+
+def _format_ticket_address(value: Any) -> str:
+    """Return a human friendly string for ``direccion`` structures."""
+
+    if not value:
+        return ""
+    if isinstance(value, str):
+        return value.strip()
+    if isinstance(value, Mapping):
+        formatted = format_direccion(value) or ""
+        formatted = formatted.strip()
+        if formatted:
+            return formatted
+        for key in ("direccion", "descripcion", "complemento"):
+            alt = value.get(key)
+            if isinstance(alt, str) and alt.strip():
+                return alt.strip()
+        dept = str(value.get("departamento") or "").strip()
+        muni = str(value.get("municipio") or "").strip()
+        codes = " ".join(part for part in (dept, muni) if part)
+        complemento = value.get("complemento")
+        if isinstance(complemento, Mapping):
+            complemento = _format_ticket_address(complemento)
+        elif complemento not in (None, ""):
+            complemento = str(complemento).strip()
+        else:
+            complemento = ""
+        parts = [part for part in (codes, complemento) if part]
+        if parts:
+            return ", ".join(parts)
+        return codes
+    return str(value).strip()
+
+
 def _build_ticket_flowables(
     datos_negocio: Mapping[str, Any],
     venta: Mapping[str, Any] | None,
@@ -274,13 +331,8 @@ def _build_ticket_flowables(
                 escape(f"Actividad: {_with_falta(giro)}"), TICKET_STYLES["center_text"]
             )
         )
-    direccion = datos_negocio.get("direccion") or emisor_json.get("direccion") or {}
-    direccion_txt = (
-        direccion.get("complemento")
-        or direccion.get("direccion")
-        or direccion.get("descripcion")
-        or ""
-    )
+    direccion = datos_negocio.get("direccion") or emisor_json.get("direccion")
+    direccion_txt = _format_ticket_address(direccion)
     if direccion_txt:
         flowables.append(
             Paragraph(
@@ -289,30 +341,113 @@ def _build_ticket_flowables(
             )
         )
 
+    telefono_emisor = _first_non_empty(
+        datos_negocio.get("telefono"),
+        datos_negocio.get("telefonos"),
+        emisor_json.get("telefono"),
+        emisor_json.get("telefonos"),
+    )
+    if telefono_emisor:
+        flowables.append(
+            Paragraph(
+                escape(f"Teléfono: {telefono_emisor}"),
+                TICKET_STYLES["center_text"],
+            )
+        )
+
+    correo_emisor = _first_non_empty(
+        datos_negocio.get("correo"),
+        datos_negocio.get("email_usuario"),
+        datos_negocio.get("email"),
+        emisor_json.get("correo"),
+        emisor_json.get("email"),
+    )
+    if correo_emisor:
+        flowables.append(
+            Paragraph(
+                escape(f"Correo: {correo_emisor}"),
+                TICKET_STYLES["center_text"],
+            )
+        )
+
     flowables.append(Spacer(1, BLOCK_SPACING))
 
-    kv_rows = [
-        ("Fecha:", _with_falta(venta.get("fecha") or ident.get("fecEmi") or "")),
-        ("No. Control:", _with_falta(ident.get("numeroControl"))),
-        ("Código Gen.:", _with_falta(ident.get("codigoGeneracion"))),
-        ("Cliente:", _with_falta(receptor.get("nombre") or venta.get("cliente"))),
+    kv_rows: list[tuple[str, str, str]] = [
+        ("Fecha:", _with_falta(venta.get("fecha") or ident.get("fecEmi") or ""), "left"),
+        ("No. Control:", _with_falta(ident.get("numeroControl")), "left"),
+        ("Código Gen.:", _with_falta(ident.get("codigoGeneracion")), "left"),
+        (
+            "Cliente:",
+            _with_falta(
+                receptor.get("nombre")
+                or receptor.get("razonSocial")
+                or receptor.get("denominacionSocial")
+                or venta.get("cliente")
+            ),
+            "left",
+        ),
         (
             "Documento:",
             _with_falta(
                 receptor.get("nit")
                 or receptor.get("dui")
                 or receptor.get("numDocumento")
+                or receptor.get("numeroDocumento")
                 or venta.get("documento")
             ),
+            "left",
         ),
     ]
-    kv_data = [
-        [
-            Paragraph(escape(label), TICKET_STYLES["kv_label"]),
-            Paragraph(escape(str(value)), TICKET_STYLES["kv_value"]),
-        ]
-        for label, value in kv_rows
-    ]
+
+    tipo_documento = _first_non_empty(
+        receptor.get("tipoDocumento"),
+        receptor.get("tipoDoc"),
+    )
+    if tipo_documento:
+        kv_rows.append(("Tipo doc.:", tipo_documento, "left"))
+
+    giro_receptor = _first_non_empty(
+        receptor.get("descActividad"),
+        receptor.get("giro"),
+        venta.get("giro"),
+    )
+    if giro_receptor:
+        kv_rows.append(("Actividad:", giro_receptor, "left"))
+
+    receptor_direccion = _format_ticket_address(
+        receptor.get("direccion") or venta.get("direccion")
+    )
+    if receptor_direccion:
+        kv_rows.append(("Dirección:", receptor_direccion, "left"))
+
+    telefono_receptor = _first_non_empty(
+        receptor.get("telefono"),
+        receptor.get("telefonos"),
+    )
+    if telefono_receptor:
+        kv_rows.append(("Teléfono:", telefono_receptor, "left"))
+
+    correo_receptor = _first_non_empty(
+        receptor.get("correo"),
+        receptor.get("email"),
+        receptor.get("correoElectronico"),
+    )
+    if correo_receptor:
+        kv_rows.append(("Correo:", correo_receptor, "left"))
+
+    kv_data = []
+    for label, value, align in kv_rows:
+        value_style = (
+            TICKET_STYLES["kv_value_left"]
+            if align == "left"
+            else TICKET_STYLES["kv_value"]
+        )
+        kv_data.append(
+            [
+                Paragraph(escape(label), TICKET_STYLES["kv_label"]),
+                Paragraph(escape(str(value)), value_style),
+            ]
+        )
     kv_table = Table(kv_data, colWidths=[CONTENT_W * 0.45, CONTENT_W * 0.55])
     kv_table.setStyle(
         TableStyle(
@@ -757,10 +892,23 @@ def render_ticket_pdf(
     giro = str(emisor.get("descActividad") or emisor.get("actividad") or "").strip()
     if giro:
         draw_center(f"Actividad: {giro}", size=7)
-    direccion = emisor.get("direccion", {}) or {}
-    direccion_txt = str(direccion.get("complemento") or direccion.get("direccion") or "").strip()
+    direccion = emisor.get("direccion") or {}
+    direccion_txt = _format_ticket_address(direccion)
     if direccion_txt:
         draw_center(direccion_txt, size=7)
+    telefono_emisor = _first_non_empty(
+        emisor.get("telefono"),
+        emisor.get("telefonos"),
+    )
+    if telefono_emisor:
+        draw_center(f"Teléfono: {telefono_emisor}", size=7)
+    correo_emisor = _first_non_empty(
+        emisor.get("correo"),
+        emisor.get("email"),
+        emisor.get("correoElectronico"),
+    )
+    if correo_emisor:
+        draw_center(f"Correo: {correo_emisor}", size=7)
     draw_rule()
 
     fecha = ident.get("fecEmi") or payload.get("fecha") or ""
@@ -792,6 +940,28 @@ def render_ticket_pdf(
     )
     if doc:
         draw_left(f"Documento: {doc}")
+    giro = _first_non_empty(
+        receptor.get("descActividad"),
+        receptor.get("giro"),
+    )
+    if giro:
+        draw_left(f"Giro: {giro}")
+    direccion_receptor = _format_ticket_address(receptor.get("direccion"))
+    if direccion_receptor:
+        draw_left(f"Dirección: {direccion_receptor}")
+    telefono_receptor = _first_non_empty(
+        receptor.get("telefono"),
+        receptor.get("telefonos"),
+    )
+    if telefono_receptor:
+        draw_left(f"Teléfono: {telefono_receptor}")
+    correo_receptor = _first_non_empty(
+        receptor.get("correo"),
+        receptor.get("email"),
+        receptor.get("correoElectronico"),
+    )
+    if correo_receptor:
+        draw_left(f"Correo: {correo_receptor}")
     draw_rule()
 
     draw_left("DETALLE DE FACTURA", bold=True)

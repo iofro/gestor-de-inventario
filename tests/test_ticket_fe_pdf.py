@@ -32,8 +32,18 @@ def test_ticket_fe_pdf_clean(tmp_path):
             "nrc": "123456-7",
             "descActividad": "Farmacia",
             "direccion": {"complemento": "Av. Siempre Viva"},
+            "telefono": "22222222",
+            "correo": "emisor@example.com",
         },
-        "receptor": {"tipoDocumento": "37", "direccion": {"complemento": "Calle 1"}},
+        "receptor": {
+            "tipoDocumento": "37",
+            "nombre": "Cliente Demo",
+            "numDocumento": "00000000-0",
+            "descActividad": "Cliente Giro",
+            "direccion": {"complemento": "Calle 1"},
+            "telefono": "77777777",
+            "correo": "cliente@example.com",
+        },
         "cuerpoDocumento": [
             {
                 "cantidad": 1,
@@ -58,6 +68,7 @@ def test_ticket_fe_pdf_clean(tmp_path):
     with fitz.open(out) as doc:
         text = "\n".join(page.get_text() for page in doc)
     normalized = " ".join(text.split())
+    compact = "".join(text.split())
 
     for bad in ("apendice", "cuerpoDocumento", "falta", "None"):
         assert bad not in text
@@ -68,6 +79,11 @@ def test_ticket_fe_pdf_clean(tmp_path):
     lower_text = text.lower()
     assert "condición de pago" in lower_text
     assert "contado" in lower_text
+    assert "Teléfono:22222222" in compact
+    assert "Correo:emisor@example.com" in compact
+    assert "Teléfono:77777777" in compact
+    assert "Correo:cliente@example.com" in compact
+    assert "Actividad:ClienteGiro" in compact
 
 
 def test_generate_ticket_pdf_defaults_and_persists_es_ticket(tmp_path, monkeypatch):

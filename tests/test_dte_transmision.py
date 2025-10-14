@@ -7,6 +7,7 @@ from pathlib import Path
 import os
 import pytest
 import auth
+from utils import versioned_dte
 from tests.conftest import make_jws
 
 
@@ -318,6 +319,49 @@ def test_consultar_envio_dte():
     venta = create_sale(db)
     db.registrar_envio_dte(venta, "normal", "Transmitido", "S", '{"ok": true}')
     assert db.consultar_envio_dte(venta) == {"ok": True}
+
+
+def test_enviar_documento_detecta_json_desincronizado(monkeypatch, tmp_path):
+    monkeypatch.setattr(dte, "DTES_DIR", str(tmp_path / "dtes"))
+    monkeypatch.setattr(dte, "DTE_FALLIDOS_DIR", str(tmp_path / "dte_fallidos"))
+    monkeypatch.setattr(versioned_dte, "DTES_DIR", str(tmp_path / "dtes"))
+
+    db = DB(":memory:")
+    venta = create_sale(db)
+    codigo = "00000000-0000-4000-8000-000000000123"
+    data = {
+        "identificacion": {
+            "tipoDte": "01",
+            "version": 2,
+            "ambiente": "00",
+            "codigoGeneracion": codigo,
+            "numeroControl": "DTE-01-S001P001-000000000000001",
+            "fecEmi": "2024-01-01",
+            "horEmi": "12:00:00",
+        },
+        "resumen": {
+            "totalGravada": 10,
+            "totalPagar": 10,
+            "totalLetras": "DIEZ",
+            "condicionOperacion": 1,
+        },
+        "cuerpoDocumento": [],
+    }
+
+    base_dir = dte._dte_base_dir(data)
+    versioned_dte.ensure_version(data, base_dir=base_dir)
+
+    data_mod = json.loads(json.dumps(data))
+    data_mod["resumen"]["totalPagar"] = 11
+
+    monkeypatch.setattr(dte, "_load_dte_api_config", lambda: {"url": "http://example"})
+    monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
+    monkeypatch.setattr("utils.jws.sign_json", lambda payload: pytest.fail("No debe firmar"))
+
+    with pytest.raises(RuntimeError) as exc:
+        dte._enviar_documento(db, venta, data_mod, "normal")
+
+    assert codigo in str(exc.value)
 
 
 def test_consultar_envio_dte_texto():

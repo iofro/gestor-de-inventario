@@ -264,7 +264,6 @@ def _build_ticket_flowables(
     detalles: Iterable[Mapping[str, Any]] | None,
     dte_json: Mapping[str, Any] | None,
     sello: str | None,
-    firma: str | None,
     qr_url: str | None,
 ) -> list[Flowable]:
     flowables: list[Flowable] = []
@@ -606,19 +605,12 @@ def _build_ticket_flowables(
         )
         flowables.append(pagos_table)
 
-    if sello or firma:
+    if sello:
         flowables.append(Spacer(1, BLOCK_SPACING))
     if sello:
         flowables.append(
             Paragraph(
                 escape(f"Sello recibido: {_with_falta(sello)}"),
-                TICKET_STYLES["small_center"],
-            )
-        )
-    if firma:
-        flowables.append(
-            Paragraph(
-                escape(f"Firma electrónica: {_with_falta(firma)}"),
                 TICKET_STYLES["small_center"],
             )
         )
@@ -1167,7 +1159,6 @@ def generar_ticket_fe_pdf(
     dte_data = dte_data or {}
     dte_json = dte_data.get("dteJson") or {}
     sello = dte_data.get("selloRecibido")
-    firma = dte_data.get("firmaElectronica")
     qr_url = build_qr_url(dte_json) if dte_json else None
 
     flowables = _build_ticket_flowables(
@@ -1176,7 +1167,6 @@ def generar_ticket_fe_pdf(
         detalles,
         dte_json,
         sello,
-        firma,
         qr_url,
     )
 
@@ -1200,7 +1190,6 @@ def generar_ticket_personalizado(
     dte_data = dte_data or {}
     dte_json = dte_data.get("dteJson") or {}
     sello = dte_data.get("selloRecibido")
-    firma = dte_data.get("firmaElectronica")
     qr_url = build_qr_url(dte_json) if dte_json else None
 
     flowables: list[Flowable] = []
@@ -1219,7 +1208,6 @@ def generar_ticket_personalizado(
             detalles,
             dte_json,
             sello,
-            firma,
             qr_url,
         )
     )

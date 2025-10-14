@@ -1395,29 +1395,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 if respuesta != QMessageBox.Yes:
                     return
 
-        cliente = getattr(self, "selected_cliente", None)
-        if not cliente:
-            QMessageBox.warning(
-                self,
-                "Validación",
-                "Seleccione un cliente con NIT o NRC válido registrado antes de continuar.",
-            )
-            return
-
-        nit_cliente = solo_digitos(get_field(cliente, "nit", "") or "")
-        nrc_cliente = solo_digitos(get_field(cliente, "nrc", "") or "")
-        nit_valido = bool(nit_cliente) and validar_nit(nit_cliente)
-        nrc_valido = bool(nrc_cliente) and validar_nrc(nrc_cliente)
-        if not (nit_valido or nrc_valido):
-            QMessageBox.warning(
-                self,
-                "Validación",
-                (
-                    "El cliente seleccionado debe tener un NIT o NRC válido ya registrado. "
-                    "Actualice los datos del cliente antes de realizar la venta a crédito fiscal."
-                ),
-            )
-            return
         self.accept()
 
 class ProductDialog(QDialog):
@@ -3091,7 +3068,11 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
     def _validar_y_accept(self):
         if not self.selected_cliente or "id" not in self.selected_cliente:
-            QMessageBox.warning(self, "Validación", "Debe seleccionar un cliente válido.")
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "Seleccione un cliente con NIT o NRC válido registrado antes de continuar.",
+            )
             return
         if not self.venta_items:
             QMessageBox.warning(self, "Validación", "Debe agregar al menos un producto a la venta.")
@@ -3100,12 +3081,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         nrc_cliente = solo_digitos(get_field(self.selected_cliente, "nrc", "") or "")
         nit_valido = bool(nit_cliente) and validar_nit(nit_cliente)
         nrc_valido = bool(nrc_cliente) and validar_nrc(nrc_cliente)
-        if not (nit_valido and nrc_valido):
+        if not (nit_valido or nrc_valido):
             QMessageBox.warning(
                 self,
                 "Validación",
                 (
-                    "El cliente seleccionado debe tener un NIT y un NRC válidos ya registrados. "
+                    "El cliente seleccionado debe tener un NIT o NRC válido ya registrado. "
                     "Actualice los datos del cliente antes de realizar la venta a crédito fiscal."
                 ),
             )

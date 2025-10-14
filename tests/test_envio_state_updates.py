@@ -1,4 +1,5 @@
 import os
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -56,7 +57,7 @@ def test_update_envio_estado_ui_updates_entry(tmp_path):
         SELECT estado_ui, estado_ui_tag, estado_ui_manual
         FROM dte_envios
         WHERE venta_id=?
-        ORDER BY id DESC LIMIT 1
+        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
         """,
         (venta_id,),
     ).fetchone()
@@ -71,7 +72,7 @@ def test_update_envio_estado_ui_updates_entry(tmp_path):
         SELECT venta_id, estado_ui, modo, estado_ui_manual
         FROM dte_envios
         WHERE venta_id=?
-        ORDER BY id DESC LIMIT 1
+        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
         """,
         (9999,),
     ).fetchone()
@@ -80,6 +81,52 @@ def test_update_envio_estado_ui_updates_entry(tmp_path):
     assert new_row["venta_id"] == 9999
     assert new_row["modo"] == "manual"
     assert new_row["estado_ui_manual"] == 1
+
+
+def test_manual_override_survives_envio_refresh(tmp_path):
+    db_path = tmp_path / "refresh.db"
+    database = DB(db_path)
+    venta_id = database.add_venta("2024-02-01", 20)
+
+    assert database.update_envio_estado_ui(
+        venta_id=venta_id, estado_ui="Enviado", estado_ui_tag="manual"
+    )
+
+    manual_row = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+        """,
+        (venta_id,),
+    ).fetchone()
+    assert manual_row["estado_ui"] == "Enviado"
+    assert manual_row["estado_ui_tag"] == "manual"
+    assert manual_row["estado_ui_manual"] == 1
+
+    database.registrar_envio_dte(
+        venta_id,
+        modo="normal",
+        estado="Pendiente",
+        sello="",
+        respuesta_json={"estado": "RECHAZADO"},
+        codigo_generacion=None,
+        numero_control=None,
+    )
+
+    latest = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+        """,
+        (venta_id,),
+    ).fetchone()
+    assert latest["estado_ui"] == "Enviado"
+    assert latest["estado_ui_tag"] == "manual"
+    assert latest["estado_ui_manual"] == 1
 
 
 def test_facturacion_tab_manual_envio_update(tmp_path, qt_app, monkeypatch):
@@ -130,6 +177,95 @@ def test_facturacion_tab_manual_envio_update(tmp_path, qt_app, monkeypatch):
     assert "Pendiente de envío" in options
     assert "Anulado" in options
     assert "Enviado (observado)" in options
+
+    if hasattr(tab, "_refresh_timer"):
+        tab._refresh_timer.stop()
+    tab.deleteLater()
+
+
+def test_manual_state_priority_over_newer_automatic(tmp_path, qt_app, monkeypatch):
+    db_path = tmp_path / "priority.db"
+    database = DB(db_path)
+    venta_id = database.add_venta("2024-03-05", 30)
+
+    assert database.update_envio_estado_ui(
+        venta_id=venta_id,
+        codigo_generacion="PRIORITY-123",
+        numero_control="DTE-PRIORITY-001",
+        estado_ui="Anulado",
+        estado_ui_tag="usuario",
+    )
+
+    manual_row = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+        FROM dte_envios
+        WHERE venta_id=?
+        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+        """,
+        (venta_id,),
+    ).fetchone()
+    assert manual_row["estado_ui"] == "Anulado"
+    assert manual_row["estado_ui_manual"] == 1
+
+    database.cursor.execute(
+        """
+        INSERT INTO dte_envios (
+            venta_id, modo, estado, sello, fecha_hora,
+            respuesta, codigo_lote, codigo_generacion, numero_control,
+            estado_ui, estado_ui_tag, estado_ui_manual
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            venta_id,
+            "normal",
+            "Procesado",
+            "",
+            datetime.now(timezone.utc).isoformat(),
+            "{}",
+            None,
+            "PRIORITY-123",
+            "DTE-PRIORITY-001",
+            "Enviado",
+            "hacienda",
+            0,
+        ),
+    )
+    database.conn.commit()
+
+    latest = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_manual
+        FROM dte_envios
+        WHERE codigo_generacion=?
+        ORDER BY id DESC LIMIT 1
+        """,
+        ("PRIORITY-123",),
+    ).fetchone()
+    assert latest["estado_ui"] == "Enviado"
+    assert latest["estado_ui_manual"] == 0
+
+    preferred = database.cursor.execute(
+        """
+        SELECT estado_ui, estado_ui_tag, estado, estado_ui_manual
+        FROM dte_envios
+        WHERE codigo_generacion=?
+        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+        """,
+        ("PRIORITY-123",),
+    ).fetchone()
+    assert preferred["estado_ui"] == "Anulado"
+    assert preferred["estado_ui_manual"] == 1
+
+    manager = SimpleNamespace(db=database, _clientes=[], _Distribuidores=[])
+    _patch_invoice_dirs(monkeypatch, tmp_path)
+    tab = facturacion_tab.FacturacionTab(manager)
+
+    display = tab._format_envio_state(
+        preferred["estado_ui"], preferred["estado_ui_tag"], preferred["estado"]
+    )
+    assert display == "Anulado"
 
     if hasattr(tab, "_refresh_timer"):
         tab._refresh_timer.stop()

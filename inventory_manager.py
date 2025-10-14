@@ -586,6 +586,16 @@ class InventoryManager:
                 return None
 
         self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
+        # Asegura que las columnas de ``dte_envios`` necesarias para los estados
+        # manuales existan antes de intentar restaurar los datos exportados.
+        self.db.ensure_column("dte_envios", "codigo_lote", "TEXT")
+        self.db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        self.db.ensure_column("dte_envios", "numero_control", "TEXT")
+        self.db.ensure_column("dte_envios", "ambiente", "TEXT")
+        self.db.ensure_column("dte_envios", "estado_ui", "TEXT")
+        self.db.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+        self.db.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+
         self.db.conn.execute("BEGIN")
         try:
             raw_vendedores = data.get("vendedores", [])
@@ -1223,9 +1233,59 @@ class InventoryManager:
                     ),
                 )
 
+            def _normalize_text(value):
+                if isinstance(value, str):
+                    text = value.strip()
+                    return text or None
+                return value
+
+            def _normalize_tag(value):
+                if isinstance(value, str):
+                    text = value.strip().lower()
+                    return text or None
+                return None if value in ("", None) else value
+
+            def _normalize_manual(value):
+                if value is None:
+                    return None
+                if isinstance(value, bool):
+                    return 1 if value else 0
+                try:
+                    intval = int(value)
+                except (TypeError, ValueError):
+                    if isinstance(value, str):
+                        lowered = value.strip().lower()
+                        if not lowered:
+                            return None
+                        if lowered in {"true", "sí", "si", "yes"}:
+                            return 1
+                        if lowered in {"false", "no"}:
+                            return 0
+                    return None
+                return 1 if intval else 0
+
             for de in data.get("dte_envios", []):
+                codigo_lote = _normalize_text(de.get("codigo_lote") or de.get("codigoLote"))
+                codigo_generacion = _normalize_text(
+                    de.get("codigo_generacion")
+                    or de.get("codigoGeneracion")
+                )
+                numero_control = _normalize_text(
+                    de.get("numero_control") or de.get("numeroControl")
+                )
+                ambiente = _normalize_text(de.get("ambiente"))
+                estado_ui = _normalize_text(de.get("estado_ui"))
+                estado_ui_tag = _normalize_tag(de.get("estado_ui_tag"))
+                estado_ui_manual = _normalize_manual(de.get("estado_ui_manual"))
+
                 self.db.cursor.execute(
-                    "INSERT INTO dte_envios (venta_id, modo, estado, sello, fecha_hora, respuesta) VALUES (?, ?, ?, ?, ?, ?)",
+                    """
+                    INSERT INTO dte_envios (
+                        venta_id, modo, estado, sello, fecha_hora, respuesta,
+                        codigo_lote, codigo_generacion, numero_control, ambiente,
+                        estado_ui, estado_ui_tag, estado_ui_manual
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
                     (
                         venta_id_map.get(de.get("venta_id")),
                         de.get("modo"),
@@ -1233,6 +1293,13 @@ class InventoryManager:
                         de.get("sello"),
                         de.get("fecha_hora"),
                         de.get("respuesta"),
+                        codigo_lote,
+                        codigo_generacion,
+                        numero_control,
+                        ambiente,
+                        estado_ui,
+                        estado_ui_tag,
+                        estado_ui_manual,
                     ),
                 )
 

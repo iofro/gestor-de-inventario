@@ -41,6 +41,7 @@ from typing import Any, Mapping
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
+    generar_factura_electronica_pdf,
     generar_nota_credito_pdf,
     generar_nota_debito_pdf,
     generar_nota_remision_pdf,
@@ -89,8 +90,8 @@ from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
-from decimal import Decimal, ROUND_HALF_UP
-from utils.monto import iva_item
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+from utils.monto import iva_item, monto_a_texto_sv
 from utils.snapshot import SnapshotNotFoundError
 from utils.catalogos import TRIBUTO_IVA, TIPO_INVALIDACION, TIPO_DOC_REC
 from utils.fecha import TZ_EL_SALVADOR
@@ -4175,6 +4176,10 @@ class FacturacionTab(QWidget):
 
         if pdf_path and os.path.exists(pdf_path):
             return pdf_path
+
+        fallback_pdf = self._build_invoice_pdf_from_json(entry, base_pdf_path=pdf_path)
+        if fallback_pdf and os.path.exists(fallback_pdf):
+            return fallback_pdf
         return None
 
     def _resolve_ticket_pdf(
@@ -4253,7 +4258,7 @@ class FacturacionTab(QWidget):
         venta_id = entry.get("venta_id")
         base_pdf_path = self._resolve_pdf_path(entry)
 
-        supports_format_choice = bool(venta_id) and self._is_cf_or_ccf(entry)
+        supports_format_choice = self._supports_ticket_format(entry, base_pdf_path)
 
         preferred_format = None
         if supports_format_choice:
@@ -4284,12 +4289,24 @@ class FacturacionTab(QWidget):
 
             carta_pdf_path = None
             if preferred_format in ("carta", "ticket"):
-                try:
-                    carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
-                except Exception:
-                    carta_pdf_path = None
-                if not carta_pdf_path or not os.path.exists(carta_pdf_path):
-                    carta_pdf_path = self._generate_invoice_pdf(venta_id)
+                if venta_id:
+                    try:
+                        carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
+                    except Exception:
+                        carta_pdf_path = None
+                    if not carta_pdf_path or not os.path.exists(carta_pdf_path):
+                        carta_pdf_path = self._generate_invoice_pdf(venta_id)
+                if not venta_id:
+                    if base_pdf_path and os.path.exists(base_pdf_path):
+                        carta_pdf_path = base_pdf_path
+                if (not carta_pdf_path or not os.path.exists(carta_pdf_path)) and preferred_format in (
+                    "carta",
+                    "ticket",
+                ):
+                    carta_pdf_path = self._build_invoice_pdf_from_json(
+                        entry,
+                        base_pdf_path=base_pdf_path,
+                    )
 
             if preferred_format == "ticket":
                 pdf_path = self._resolve_ticket_pdf(entry, carta_pdf_path)
@@ -4379,6 +4396,331 @@ class FacturacionTab(QWidget):
 
         tipo_desc = str(entry.get("tipo") or "").strip().lower()
         return tipo_desc in {"consumidor final", "crédito fiscal", "credito fiscal"}
+
+    def _supports_ticket_format(
+        self, entry: dict | None, base_pdf_path: str | None
+    ) -> bool:
+        """Return True if the entry can be printed using the ticket format."""
+
+        if not entry or not self._is_cf_or_ccf(entry):
+            return False
+
+        venta_id = entry.get("venta_id")
+        if venta_id:
+            return True
+
+        ticket_pdf = entry.get("ticket_pdf")
+        if isinstance(ticket_pdf, str) and os.path.exists(ticket_pdf):
+            return True
+
+        if base_pdf_path:
+            derived = self._derive_ticket_path(base_pdf_path)
+            if derived and os.path.exists(derived):
+                return True
+
+            candidate_json = os.path.splitext(base_pdf_path)[0] + ".json"
+            if os.path.exists(candidate_json):
+                return True
+
+        json_path = entry.get("json")
+        if isinstance(json_path, str) and os.path.exists(json_path):
+            return True
+
+        return False
+
+    def _build_invoice_pdf_from_json(
+        self,
+        entry: dict,
+        base_pdf_path: str | None = None,
+    ) -> str | None:
+        if not entry:
+            return None
+
+        json_path = entry.get("json")
+        if not json_path and base_pdf_path:
+            candidate = os.path.splitext(base_pdf_path)[0] + ".json"
+            if os.path.exists(candidate):
+                json_path = candidate
+
+        if not json_path or not os.path.exists(json_path):
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                "No se encontró la información de la factura en formato JSON.",
+            )
+            return None
+
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                payload_data = json.load(fh)
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                f"No se pudo leer la información de la factura: {exc}",
+            )
+            return None
+
+        if isinstance(payload_data, dict) and "dteJson" in payload_data:
+            dte_payload = payload_data.get("dteJson") or {}
+        else:
+            dte_payload = payload_data if isinstance(payload_data, dict) else {}
+
+        if not isinstance(dte_payload, dict) or not dte_payload:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                "El documento JSON no contiene datos válidos para la factura.",
+            )
+            return None
+
+        ident = dte_payload.get("identificacion") or {}
+        resumen = dte_payload.get("resumen") or {}
+        receptor = dte_payload.get("receptor") or {}
+        cuerpo = dte_payload.get("cuerpoDocumento") or []
+
+        numero_control = ident.get("numeroControl")
+        codigo_generacion = ident.get("codigoGeneracion")
+        if not numero_control or not codigo_generacion:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                "El JSON no contiene identificadores necesarios para generar la factura.",
+            )
+            return None
+
+        tipo_dte = str(ident.get("tipoDte") or "").strip().zfill(2)
+        doc_label = "Crédito Fiscal" if tipo_dte == "03" else "Consumidor Final"
+
+        sello = (
+            payload_data.get("selloRecibido")
+            or payload_data.get("sello")
+            or payload_data.get("acuseRecibo")
+        )
+        if not sello:
+            respuesta = payload_data.get("respuesta")
+            if isinstance(respuesta, dict):
+                sello = respuesta.get("selloRecibido") or respuesta.get("sello")
+        if not sello and isinstance(dte_payload, dict):
+            sello = (
+                dte_payload.get("selloRecibido")
+                or dte_payload.get("sello")
+                or dte_payload.get("acuseRecibo")
+            )
+
+        def _to_float(value: Any) -> float | None:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if value in (None, ""):
+                return None
+            try:
+                return float(Decimal(str(value)))
+            except (InvalidOperation, ValueError, TypeError):
+                return None
+
+        venta_data: dict[str, Any] = {}
+        fecha_emi = ident.get("fecEmi") or ident.get("fechaEmi")
+        if isinstance(fecha_emi, str) and fecha_emi.strip():
+            venta_data["fecha"] = fecha_emi.strip()
+        venta_data["numero_control"] = numero_control
+        venta_data["codigo_generacion"] = codigo_generacion
+        if sello:
+            venta_data["sello_recepcion"] = sello
+
+        ambiente = ident.get("ambiente") or "00"
+        tipo_modelo = _to_float(dte_payload.get("tipoModelo"))
+        tipo_operacion = _to_float(dte_payload.get("tipoOperacion"))
+        try:
+            tipo_modelo_int = int(tipo_modelo) if tipo_modelo is not None else 1
+        except (ValueError, TypeError):
+            tipo_modelo_int = 1
+        try:
+            tipo_operacion_int = int(tipo_operacion) if tipo_operacion is not None else 1
+        except (ValueError, TypeError):
+            tipo_operacion_int = 1
+
+        def _resumen_value(*keys):
+            for key in keys:
+                value = resumen.get(key)
+                if value not in (None, ""):
+                    return value
+            return None
+
+        def _update(target_keys: tuple[str, ...], *source_keys: str) -> None:
+            value = _resumen_value(*source_keys)
+            normalized = _to_float(value)
+            if normalized is None:
+                return
+            for key in target_keys:
+                venta_data[key] = normalized
+
+        _update(("sumas", "subTotalVentas"), "sumas", "subTotalVentas")
+        _update(("descuentos", "totalDescu"), "descuentos", "totalDescu")
+        _update(("subtotal", "subTotal"), "subTotal", "subtotal", "subTotalVentas")
+        _update(("ventas_exentas",), "totalExenta", "ventasExentas")
+        _update(("ventas_no_sujetas",), "totalNoSuj", "ventasNoSujetas")
+        _update(("ventas_gravadas",), "totalGravada", "ventasGravadas", "ventaGravada")
+
+        iva_val = _resumen_value("totalIva", "iva", "ivaPerci1")
+        iva_norm = _to_float(iva_val)
+        if iva_norm is not None:
+            venta_data["iva"] = iva_norm
+            venta_data["totalIva"] = iva_norm
+
+        total_val = _resumen_value("totalPagar", "total", "montoTotalOperacion")
+        total_norm = _to_float(total_val)
+        if total_norm is not None:
+            venta_data["total"] = total_norm
+            try:
+                venta_data.setdefault("total_letras", monto_a_texto_sv(total_norm))
+            except Exception:
+                venta_data.setdefault("total_letras", "")
+
+        detalles: list[dict[str, Any]] = []
+
+        def _first(value_map: Mapping[str, Any], *keys: str) -> Any:
+            for key in keys:
+                if key in value_map:
+                    candidate = value_map.get(key)
+                    if candidate not in (None, ""):
+                        return candidate
+            return None
+
+        for item in cuerpo:
+            if not isinstance(item, Mapping):
+                continue
+            detalle: dict[str, Any] = {}
+            descripcion = _first(
+                item,
+                "descripcion",
+                "descripcionProducto",
+                "producto",
+                "nombre",
+            )
+            detalle["descripcion"] = str(descripcion or "")
+
+            cantidad = _to_float(
+                _first(item, "cantidad", "cantidadUniMedida", "uniCantidad")
+            )
+            if cantidad is not None:
+                detalle["cantidad"] = cantidad
+
+            precio = _to_float(
+                _first(item, "precioUni", "precioUnitario", "precioUnit", "precio")
+            )
+            if precio is not None:
+                detalle["precio_unitario"] = precio
+
+            descuento = _to_float(_first(item, "montoDescu", "descuento"))
+            if descuento not in (None, 0):
+                detalle["descuento"] = descuento
+
+            gravada = _to_float(_first(item, "ventaGravada", "ventaGrav"))
+            exenta = _to_float(_first(item, "ventaExenta", "ventaExentaLiq"))
+            no_suj = _to_float(_first(item, "ventaNoSuj", "ventaNoSujeta"))
+            iva_item_val = _to_float(_first(item, "ivaItem", "iva", "montoIva"))
+
+            if gravada is not None:
+                detalle["ventas_gravadas"] = gravada
+            if exenta is not None:
+                detalle["ventas_exentas"] = exenta
+            if no_suj is not None:
+                detalle["ventas_no_sujetas"] = no_suj
+            if iva_item_val is not None:
+                detalle["iva"] = iva_item_val
+
+            detalles.append(detalle)
+
+        if not detalles:
+            detalles.append({"descripcion": ""})
+
+        cliente_payload = {}
+        for dest, candidates in (
+            ("nombre", ("nombre", "razonSocial", "denominacionSocial")),
+            ("nit", ("nit",)),
+            ("dui", ("dui", "numDocumento")),
+            ("nrc", ("nrc",)),
+            ("direccion", ("direccion",)),
+            ("correo", ("correo", "email")),
+        ):
+            value = _first(receptor, *candidates)
+            if value not in (None, ""):
+                cliente_payload[dest] = value
+
+        try:
+            datos_negocio = dte._load_datos_negocio() or {}
+        except Exception:
+            datos_negocio = {}
+
+        if base_pdf_path:
+            output_path = base_pdf_path
+        else:
+            entry_pdf = entry.get("pdf")
+            if entry_pdf:
+                output_path = entry_pdf
+            else:
+                output_path = os.path.splitext(json_path)[0] + ".pdf"
+
+        if not output_path:
+            fallback_dir = CREDITO_DIR if doc_label == "Crédito Fiscal" else CF_DIR
+            try:
+                os.makedirs(fallback_dir, exist_ok=True)
+            except OSError:
+                pass
+            base_name = numero_control or codigo_generacion or f"invoice_{uuid.uuid4().hex}"
+            sanitized = re.sub(r"[^A-Za-z0-9_-]+", "_", str(base_name))
+            output_path = os.path.join(fallback_dir, f"{sanitized}.pdf")
+
+        try:
+            os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+        except OSError:
+            pass
+
+        fecha_generacion = (
+            payload_data.get("fechaGeneracion")
+            or payload_data.get("fecha_generacion")
+            or datetime.now().strftime("%d/%m/%Y, %I:%M %p")
+        )
+
+        def _render_invoice(tmp_path: Path) -> None:
+            try:
+                generar_factura_electronica_pdf(
+                    venta_data,
+                    detalles,
+                    cliente_payload,
+                    {},
+                    doc_label,
+                    archivo=str(tmp_path),
+                    datos_negocio=datos_negocio,
+                    codigo_generacion=str(codigo_generacion or ""),
+                    numero_control=str(numero_control or ""),
+                    sello_recepcion=str(sello or ""),
+                    tipo_modelo=tipo_modelo_int,
+                    tipo_operacion=tipo_operacion_int,
+                    fecha_generacion=str(fecha_generacion),
+                    ambiente=str(ambiente or "00"),
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                raise RuntimeError(str(exc)) from exc
+
+        try:
+            write_pdf_atomically(output_path, _render_invoice)
+        except RuntimeError as exc:
+            QMessageBox.critical(
+                self,
+                "Imprimir",
+                f"No se pudo generar la factura en PDF: {exc}",
+            )
+            return None
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "Imprimir",
+                f"No se pudo escribir la factura: {exc}",
+            )
+            return None
+
+        return output_path
 
     def _derive_ticket_path(self, base_pdf_path: str | None) -> str | None:
         if not base_pdf_path:

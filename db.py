@@ -2,7 +2,7 @@ import os
 import re
 import shutil
 import sqlite3
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import logging
 import threading
@@ -312,6 +312,26 @@ class DB:
                 )
                 return False
         return True
+
+    def _has_table(self, table: str) -> bool:
+        """Return ``True`` if ``table`` exists in the current database."""
+
+        try:
+            self.cursor.execute(
+                "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
+            )
+            return self.cursor.fetchone() is not None
+        except sqlite3.Error:
+            return False
+
+    def _has_column(self, table: str, column: str) -> bool:
+        """Return ``True`` if ``column`` exists in ``table``."""
+
+        try:
+            self.cursor.execute(f"PRAGMA table_info({table})")
+        except sqlite3.Error:
+            return False
+        return any(row[1] == column for row in self.cursor.fetchall())
 
     def add_column_if_missing(self, table: str, column_def: str) -> bool:
         """Add a column to ``table`` if it is missing.
@@ -1289,6 +1309,291 @@ class DB:
                 "SELECT * FROM ventas WHERE sincronizada=?", (sincronizada,)
             )
         return [dict(row) for row in self.cursor.fetchall()]
+
+    @staticmethod
+    def _normalize_date_param(value: Any) -> str | None:
+        """Return ``value`` as an ISO formatted date string if possible."""
+
+        if isinstance(value, date):
+            return value.isoformat()
+        if value is None:
+            return None
+        return str(value)
+
+    @staticmethod
+    def _build_date_conditions(start: str | None, end: str | None, column: str):
+        """Return SQL conditions and parameters for ``DATE(column)`` filtering."""
+
+        conditions: list[str] = []
+        params: list[str] = []
+        if start:
+            conditions.append(f"DATE({column}) >= DATE(?)")
+            params.append(start)
+        if end:
+            conditions.append(f"DATE({column}) <= DATE(?)")
+            params.append(end)
+        return conditions, params
+
+    def get_sales_statistics(
+        self,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
+        *,
+        top_limit: int = 10,
+        low_stock_threshold: int = 5,
+    ) -> dict[str, Any]:
+        """Compute aggregated statistics for synchronized sales."""
+
+        start = self._normalize_date_param(start_date)
+        end = self._normalize_date_param(end_date)
+        conditions, params = self._build_date_conditions(start, end, "ventas.fecha")
+        if self._has_column("ventas", "sincronizada"):
+            conditions.append("COALESCE(ventas.sincronizada, 1)=1")
+        base_conditions = tuple(conditions)
+        base_params = tuple(params)
+
+        def make_clause(extra_conditions: list[str] | None = None) -> str:
+            parts = list(base_conditions)
+            if extra_conditions:
+                parts.extend(extra_conditions)
+            if parts:
+                return "WHERE " + " AND ".join(parts)
+            return ""
+
+        def make_params(extra_params: list[Any] | None = None) -> tuple[Any, ...]:
+            values = list(base_params)
+            if extra_params:
+                values.extend(extra_params)
+            return tuple(values)
+
+        summary: dict[str, Any] = {
+            "total_sales": 0.0,
+            "total_transactions": 0,
+            "average_ticket": 0.0,
+            "total_costs": 0.0,
+            "gross_margin": 0.0,
+        }
+        periods: dict[str, list[dict[str, Any]]] = {
+            "daily": [],
+            "monthly": [],
+            "yearly": [],
+        }
+        top_products: list[dict[str, Any]] = []
+        sales_by_channel: list[dict[str, Any]] = []
+        critical_stock: list[dict[str, Any]] = []
+
+        has_purchase_cost = self._has_column("productos", "precio_compra")
+        has_stock = self._has_column("productos", "stock")
+        has_vendor_fk = self._has_column("ventas", "vendedor_id")
+        has_trabajadores = self._has_table("trabajadores")
+
+        purchase_cost_expr = "COALESCE(productos.precio_compra, 0)" if has_purchase_cost else "0"
+
+        with self.lock:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                f"""
+                SELECT COUNT(*) AS total_transactions,
+                       SUM(COALESCE(ventas.total, 0)) AS total_sales
+                FROM ventas
+                {make_clause()}
+                """,
+                make_params(),
+            )
+            row = cursor.fetchone()
+            if row:
+                total_sales = float(row["total_sales"] or 0)
+                transactions = int(row["total_transactions"] or 0)
+                summary["total_sales"] = total_sales
+                summary["total_transactions"] = transactions
+                summary["average_ticket"] = (
+                    total_sales / transactions if transactions else 0.0
+                )
+
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        SUM(COALESCE(detalles_venta.precio_unitario, 0) * COALESCE(detalles_venta.cantidad, 0)) AS ingresos,
+                        SUM({purchase_cost_expr} * COALESCE(detalles_venta.cantidad, 0)) AS costos
+                    FROM detalles_venta
+                    JOIN ventas ON ventas.id = detalles_venta.venta_id
+                    LEFT JOIN productos ON productos.id = detalles_venta.producto_id
+                    {make_clause()}
+                    """,
+                    make_params(),
+                )
+                margin_row = cursor.fetchone()
+            except sqlite3.OperationalError:
+                margin_row = None
+            if margin_row:
+                total_costs = float(margin_row["costos"] or 0)
+                total_revenue = float(margin_row["ingresos"] or 0)
+                summary["total_costs"] = total_costs
+                summary["gross_margin"] = total_revenue - total_costs
+
+            period_specs = {
+                "daily": ("%Y-%m-%d", 30),
+                "monthly": ("%Y-%m", 24),
+                "yearly": ("%Y", 10),
+            }
+            for key, (pattern, limit) in period_specs.items():
+                cursor.execute(
+                    f"""
+                    SELECT strftime('{pattern}', ventas.fecha) AS periodo,
+                           COUNT(*) AS total_transacciones,
+                           SUM(COALESCE(ventas.total, 0)) AS total_ventas
+                    FROM ventas
+                    {make_clause()}
+                    GROUP BY periodo
+                    ORDER BY periodo DESC
+                    LIMIT ?
+                    """,
+                    make_params([limit]),
+                )
+                rows = []
+                for prow in cursor.fetchall():
+                    periodo = prow["periodo"]
+                    if periodo is None:
+                        continue
+                    transactions = int(prow["total_transacciones"] or 0)
+                    total_amount = float(prow["total_ventas"] or 0)
+                    average_ticket = (
+                        total_amount / transactions if transactions else 0.0
+                    )
+                    rows.append(
+                        {
+                            "period": periodo,
+                            "transactions": transactions,
+                            "total": total_amount,
+                            "average_ticket": average_ticket,
+                        }
+                    )
+                periods[key] = rows
+
+            try:
+                cursor.execute(
+                    f"""
+                    SELECT
+                        COALESCE(productos.nombre, 'Sin nombre') AS nombre,
+                        SUM(COALESCE(detalles_venta.cantidad, 0)) AS unidades,
+                        SUM(COALESCE(detalles_venta.cantidad, 0) * COALESCE(detalles_venta.precio_unitario, 0)) AS total,
+                        SUM(
+                            (COALESCE(detalles_venta.precio_unitario, 0) - {purchase_cost_expr})
+                            * COALESCE(detalles_venta.cantidad, 0)
+                        ) AS margen
+                    FROM detalles_venta
+                    JOIN ventas ON ventas.id = detalles_venta.venta_id
+                    LEFT JOIN productos ON productos.id = detalles_venta.producto_id
+                    {make_clause()}
+                    GROUP BY COALESCE(detalles_venta.producto_id, productos.id), nombre
+                    ORDER BY unidades DESC, total DESC
+                    LIMIT ?
+                    """,
+                    make_params([top_limit]),
+                )
+                top_products_rows = cursor.fetchall()
+            except sqlite3.OperationalError:
+                top_products_rows = []
+            top_products = [
+                {
+                    "name": row["nombre"],
+                    "units": float(row["unidades"] or 0),
+                    "total": float(row["total"] or 0),
+                    "margin": float(row["margen"] or 0),
+                }
+                for row in top_products_rows
+            ]
+
+            sales_by_channel = []
+            try:
+                if has_vendor_fk and has_trabajadores:
+                    cursor.execute(
+                        f"""
+                        SELECT COALESCE(trabajadores.nombre, 'Sin vendedor') AS canal,
+                               COUNT(*) AS total_transacciones,
+                               SUM(COALESCE(ventas.total, 0)) AS total_ventas
+                        FROM ventas
+                        LEFT JOIN trabajadores ON trabajadores.id = ventas.vendedor_id
+                        {make_clause()}
+                        GROUP BY canal
+                        ORDER BY total_ventas DESC, canal ASC
+                        """,
+                        make_params(),
+                    )
+                elif has_vendor_fk:
+                    cursor.execute(
+                        f"""
+                        SELECT
+                            CASE
+                                WHEN ventas.vendedor_id IS NULL THEN 'Sin vendedor'
+                                ELSE 'ID ' || ventas.vendedor_id
+                            END AS canal,
+                            COUNT(*) AS total_transacciones,
+                            SUM(COALESCE(ventas.total, 0)) AS total_ventas
+                        FROM ventas
+                        {make_clause()}
+                        GROUP BY canal
+                        ORDER BY total_ventas DESC, canal ASC
+                        """,
+                        make_params(),
+                    )
+                else:
+                    cursor.execute(
+                        f"""
+                        SELECT 'Sin vendedor' AS canal,
+                               COUNT(*) AS total_transacciones,
+                               SUM(COALESCE(ventas.total, 0)) AS total_ventas
+                        FROM ventas
+                        {make_clause()}
+                        """,
+                        make_params(),
+                    )
+                channel_rows = cursor.fetchall()
+            except sqlite3.OperationalError:
+                channel_rows = []
+            for row in channel_rows:
+                transactions_value = int(row["total_transacciones"] or 0)
+                total_value = float(row["total_ventas"] or 0)
+                sales_by_channel.append(
+                    {
+                        "channel": row["canal"],
+                        "transactions": transactions_value,
+                        "total": total_value,
+                        "average_ticket": (
+                            total_value / transactions_value if transactions_value else 0.0
+                        ),
+                    }
+                )
+
+            critical_stock = []
+            if has_stock:
+                try:
+                    cursor.execute(
+                        """
+                        SELECT nombre, COALESCE(stock, 0) AS stock
+                        FROM productos
+                        WHERE stock IS NOT NULL AND stock <= ?
+                        ORDER BY stock ASC, nombre ASC
+                        LIMIT ?
+                        """,
+                        (low_stock_threshold, top_limit),
+                    )
+                    stock_rows = cursor.fetchall()
+                except sqlite3.OperationalError:
+                    stock_rows = []
+                critical_stock = [
+                    {"name": row["nombre"], "stock": float(row["stock"] or 0)}
+                    for row in stock_rows
+                ]
+
+        return {
+            "summary": summary,
+            "periods": periods,
+            "top_products": top_products,
+            "sales_by_channel": sales_by_channel,
+            "critical_stock": critical_stock,
+        }
 
     def get_venta_by_id(self, venta_id: int):
         """Fetch a single sale by its ID."""

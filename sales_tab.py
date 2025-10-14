@@ -21,6 +21,8 @@ from PyQt5.QtWidgets import (
     QDialog,
     QCheckBox,
     QComboBox,
+    QTabWidget,
+    QGridLayout,
 )
 from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker
 from PyQt5.QtGui import QPixmap
@@ -65,13 +67,23 @@ class SalesTab(QWidget):
         self.email_body = ""
         self.email_thread = None
         self._email_loading_dialog = None
+        self._stats_dirty = True
         self._setup_ui()
         self._load_email_config()
         if check_smtp:
             self._check_smtp_credentials()
 
     def _setup_ui(self):
-        main_layout = QHBoxLayout(self)
+        container_layout = QVBoxLayout(self)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+
+        self.sales_tabs = QTabWidget()
+        container_layout.addWidget(self.sales_tabs)
+
+        listado_tab = QWidget()
+        listado_layout = QHBoxLayout()
+        listado_layout.setContentsMargins(0, 0, 0, 0)
+        listado_tab.setLayout(listado_layout)
 
         # Left panel
         left_layout = QVBoxLayout()
@@ -95,8 +107,14 @@ class SalesTab(QWidget):
         self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.date_from.dateChanged.connect(self.load_sales)
         self.date_to.dateChanged.connect(self.load_sales)
-        for w in [self.date_filter_cb, self.quick_range, QLabel("Desde"), self.date_from,
-                  QLabel("Hasta"), self.date_to]:
+        for w in [
+            self.date_filter_cb,
+            self.quick_range,
+            QLabel("Desde"),
+            self.date_from,
+            QLabel("Hasta"),
+            self.date_to,
+        ]:
             filter_layout.addWidget(w)
         left_layout.addLayout(filter_layout)
 
@@ -107,7 +125,11 @@ class SalesTab(QWidget):
 
         self.sales_table = QTableWidget(0, 5)
         self.sales_table.setHorizontalHeaderLabels([
-            "Nº Factura", "Cliente", "Fecha", "Total", "Estado"
+            "Nº Factura",
+            "Cliente",
+            "Fecha",
+            "Total",
+            "Estado",
         ])
         self.sales_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.sales_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -163,7 +185,9 @@ class SalesTab(QWidget):
         self.email_body_edit = QTextEdit()
         self.config_email_btn = QPushButton("Configurar correo")
         self.email_subject_edit.textChanged.connect(lambda t: setattr(self, "email_subject", t))
-        self.email_body_edit.textChanged.connect(lambda: setattr(self, "email_body", self.email_body_edit.toPlainText()))
+        self.email_body_edit.textChanged.connect(
+            lambda: setattr(self, "email_body", self.email_body_edit.toPlainText())
+        )
         self.config_email_btn.clicked.connect(self.configure_email)
         status_layout.addWidget(self.status_label)
         status_layout.addWidget(self.gen_label)
@@ -182,10 +206,348 @@ class SalesTab(QWidget):
         splitter.setStretchFactor(0, 3)
         splitter.setStretchFactor(1, 1)
 
-        main_layout.addWidget(left_widget)
-        main_layout.addWidget(splitter)
-        main_layout.setStretch(0, 2)
-        main_layout.setStretch(1, 3)
+        listado_layout.addWidget(left_widget)
+        listado_layout.addWidget(splitter)
+        listado_layout.setStretch(0, 2)
+        listado_layout.setStretch(1, 3)
+
+        self.sales_tabs.addTab(listado_tab, "Listado")
+
+        self.stats_tab = QWidget()
+        self._setup_stats_tab()
+        self.sales_tabs.addTab(self.stats_tab, "Estadística")
+        self.sales_tabs.currentChanged.connect(self._on_inner_tab_changed)
+
+    def _setup_stats_tab(self):
+        layout = QVBoxLayout(self.stats_tab)
+        layout.setContentsMargins(12, 12, 12, 12)
+        layout.setSpacing(12)
+
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QLabel("Rango rápido:"))
+        self.stats_quick_range = QComboBox()
+        self.stats_quick_range.addItems(
+            [
+                "Personalizado",
+                "Hoy",
+                "Esta semana",
+                "Este mes",
+                "Este año",
+                "Últimos 30 días",
+            ]
+        )
+        controls_layout.addWidget(self.stats_quick_range)
+        controls_layout.addWidget(QLabel("Desde"))
+        self.stats_date_from = QDateEdit(QDate.currentDate().addMonths(-1))
+        self.stats_date_from.setCalendarPopup(True)
+        controls_layout.addWidget(self.stats_date_from)
+        controls_layout.addWidget(QLabel("Hasta"))
+        self.stats_date_to = QDateEdit(QDate.currentDate())
+        self.stats_date_to.setCalendarPopup(True)
+        controls_layout.addWidget(self.stats_date_to)
+        self.stats_refresh_btn = QPushButton("Actualizar")
+        self.stats_refresh_btn.clicked.connect(self.refresh_statistics)
+        controls_layout.addWidget(self.stats_refresh_btn)
+        controls_layout.addStretch()
+        layout.addLayout(controls_layout)
+
+        self.stats_quick_range.currentIndexChanged.connect(self._stats_apply_quick_range)
+        self.stats_date_from.dateChanged.connect(self._stats_on_manual_date_change)
+        self.stats_date_to.dateChanged.connect(self._stats_on_manual_date_change)
+        self.stats_date_from.setEnabled(False)
+        self.stats_date_to.setEnabled(False)
+
+        self.stats_last_updated_label = QLabel("")
+        self.stats_last_updated_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+        self.stats_last_updated_label.setStyleSheet("color:#555; font-size:11px;")
+        layout.addWidget(self.stats_last_updated_label)
+
+        summary_widget = QWidget()
+        summary_layout = QGridLayout()
+        summary_layout.setContentsMargins(0, 0, 0, 0)
+        summary_layout.setHorizontalSpacing(24)
+        summary_layout.setVerticalSpacing(8)
+        summary_widget.setLayout(summary_layout)
+        self.stats_summary_labels = {}
+        summary_metrics = [
+            ("Ventas totales", "total_sales"),
+            ("Transacciones", "total_transactions"),
+            ("Ticket promedio", "average_ticket"),
+            ("Margen bruto", "gross_margin"),
+            ("Costo estimado", "total_costs"),
+        ]
+        for idx, (label_text, key) in enumerate(summary_metrics):
+            row = idx // 2
+            col = (idx % 2) * 2
+            title_label = QLabel(label_text)
+            summary_layout.addWidget(title_label, row, col)
+            value_label = QLabel("—")
+            value_label.setStyleSheet("font-weight:bold; font-size:14px;")
+            summary_layout.addWidget(value_label, row, col + 1)
+            self.stats_summary_labels[key] = value_label
+        summary_layout.setColumnStretch(1, 1)
+        summary_layout.setColumnStretch(3, 1)
+        layout.addWidget(summary_widget)
+
+        self.stats_period_tabs = QTabWidget()
+        self.stats_period_tables = {}
+        for key, title in (("daily", "Diario"), ("monthly", "Mensual"), ("yearly", "Anual")):
+            table = self._create_stats_table(
+                ["Periodo", "Ventas", "Transacciones", "Ticket promedio"]
+            )
+            self.stats_period_tabs.addTab(table, title)
+            self.stats_period_tables[key] = table
+        layout.addWidget(self.stats_period_tabs)
+
+        layout.addWidget(QLabel("Productos más vendidos"))
+        self.stats_top_products_table = self._create_stats_table(
+            ["Producto", "Unidades", "Ventas", "Margen", "Contribución"]
+        )
+        layout.addWidget(self.stats_top_products_table)
+
+        layout.addWidget(QLabel("Ventas por vendedor/canal"))
+        self.stats_channel_table = self._create_stats_table(
+            ["Canal", "Ventas", "Transacciones", "Ticket promedio"]
+        )
+        layout.addWidget(self.stats_channel_table)
+
+        layout.addWidget(QLabel("Existencias críticas (≤ 5 unidades)"))
+        self.stats_low_stock_table = self._create_stats_table(["Producto", "Stock"])
+        layout.addWidget(self.stats_low_stock_table)
+
+        layout.addStretch(1)
+
+        # Initialize default range (triggers refresh)
+        self.stats_quick_range.setCurrentIndex(3)
+
+    def _create_stats_table(self, headers):
+        table = QTableWidget(0, len(headers))
+        table.setHorizontalHeaderLabels(headers)
+        table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        table.setSelectionMode(QAbstractItemView.NoSelection)
+        table.setAlternatingRowColors(True)
+        table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        table.verticalHeader().setVisible(False)
+        return table
+
+    def _stats_apply_quick_range(self):
+        option = self.stats_quick_range.currentText()
+        custom = option == "Personalizado"
+        self.stats_date_from.setEnabled(custom)
+        self.stats_date_to.setEnabled(custom)
+        if custom:
+            self.refresh_statistics()
+            return
+
+        today = date.today()
+        start = today
+        end = today
+        if option == "Hoy":
+            start = end = today
+        elif option == "Esta semana":
+            start = today - timedelta(days=today.weekday())
+            end = start + timedelta(days=6)
+        elif option == "Este mes":
+            start = today.replace(day=1)
+            if today.month == 12:
+                end = date(today.year, 12, 31)
+            else:
+                end = date(today.year, today.month + 1, 1) - timedelta(days=1)
+        elif option == "Este año":
+            start = date(today.year, 1, 1)
+            end = date(today.year, 12, 31)
+        elif option == "Últimos 30 días":
+            end = today
+            start = today - timedelta(days=29)
+        else:
+            return
+
+        with QSignalBlocker(self.stats_date_from):
+            self.stats_date_from.setDate(QDate(start.year, start.month, start.day))
+        with QSignalBlocker(self.stats_date_to):
+            self.stats_date_to.setDate(QDate(end.year, end.month, end.day))
+        self.refresh_statistics()
+
+    def _stats_on_manual_date_change(self):
+        if self.stats_quick_range.currentIndex() != 0:
+            with QSignalBlocker(self.stats_quick_range):
+                self.stats_quick_range.setCurrentIndex(0)
+            self.stats_date_from.setEnabled(True)
+            self.stats_date_to.setEnabled(True)
+        self.refresh_statistics()
+
+    def _on_inner_tab_changed(self, index: int):
+        if getattr(self, "stats_tab", None) is None:
+            return
+        if self.sales_tabs.widget(index) is self.stats_tab and self._stats_dirty:
+            self.refresh_statistics()
+
+    @staticmethod
+    def _format_currency(value):
+        try:
+            amount = float(value or 0)
+        except (TypeError, ValueError):
+            amount = 0.0
+        if abs(amount) < 0.005:
+            amount = 0.0
+        return f"${amount:,.2f}"
+
+    @staticmethod
+    def _format_number(value, integer: bool = False):
+        try:
+            number = float(value or 0)
+        except (TypeError, ValueError):
+            number = 0.0
+        if integer:
+            return f"{int(round(number)):,}"
+        if abs(number - round(number)) < 0.01:
+            return f"{int(round(number)):,}"
+        return f"{number:,.2f}"
+
+    @staticmethod
+    def _format_percentage(value):
+        try:
+            ratio = float(value or 0)
+        except (TypeError, ValueError):
+            ratio = 0.0
+        return f"{ratio:.1f}%"
+
+    @staticmethod
+    def _format_period_label(period_type: str, value: str) -> str:
+        if not value:
+            return ""
+        try:
+            if period_type == "daily":
+                return datetime.strptime(value, "%Y-%m-%d").strftime("%d/%m/%Y")
+            if period_type == "monthly":
+                return datetime.strptime(value, "%Y-%m").strftime("%m/%Y")
+            if period_type == "yearly":
+                return value
+        except ValueError:
+            return value
+        return value
+
+    def refresh_statistics(self):
+        if not hasattr(self, "stats_date_from"):
+            return
+
+        start = self.stats_date_from.date().toPyDate()
+        end = self.stats_date_to.date().toPyDate()
+        if start and end and start > end:
+            start, end = end, start
+            with QSignalBlocker(self.stats_date_from):
+                self.stats_date_from.setDate(QDate(start.year, start.month, start.day))
+            with QSignalBlocker(self.stats_date_to):
+                self.stats_date_to.setDate(QDate(end.year, end.month, end.day))
+
+        stats = self.manager.db.get_sales_statistics(start, end)
+        summary = stats.get("summary", {})
+        for key, label in self.stats_summary_labels.items():
+            value = summary.get(key, 0)
+            if key == "total_transactions":
+                label.setText(self._format_number(value, integer=True))
+            else:
+                label.setText(self._format_currency(value))
+
+        periods = stats.get("periods", {})
+        for key, table in self.stats_period_tables.items():
+            rows = periods.get(key, []) or []
+            table.setRowCount(len(rows))
+            for row_index, data in enumerate(rows):
+                period_text = self._format_period_label(key, data.get("period"))
+                table.setItem(row_index, 0, QTableWidgetItem(period_text))
+
+                total_item = QTableWidgetItem(
+                    self._format_currency(data.get("total", 0))
+                )
+                total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(row_index, 1, total_item)
+
+                transactions_item = QTableWidgetItem(
+                    self._format_number(data.get("transactions", 0), integer=True)
+                )
+                transactions_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(row_index, 2, transactions_item)
+
+                avg_item = QTableWidgetItem(
+                    self._format_currency(data.get("average_ticket", 0))
+                )
+                avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                table.setItem(row_index, 3, avg_item)
+
+        total_sales = summary.get("total_sales", 0) or 0
+        top_products = stats.get("top_products", []) or []
+        self.stats_top_products_table.setRowCount(len(top_products))
+        for row_index, product in enumerate(top_products):
+            self.stats_top_products_table.setItem(
+                row_index, 0, QTableWidgetItem(product.get("name", ""))
+            )
+            units_item = QTableWidgetItem(
+                self._format_number(product.get("units", 0), integer=True)
+            )
+            units_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_top_products_table.setItem(row_index, 1, units_item)
+
+            total_item = QTableWidgetItem(
+                self._format_currency(product.get("total", 0))
+            )
+            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_top_products_table.setItem(row_index, 2, total_item)
+
+            margin_item = QTableWidgetItem(
+                self._format_currency(product.get("margin", 0))
+            )
+            margin_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_top_products_table.setItem(row_index, 3, margin_item)
+
+            contribution = (
+                (float(product.get("total", 0)) / total_sales * 100)
+                if total_sales
+                else 0.0
+            )
+            contrib_item = QTableWidgetItem(self._format_percentage(contribution))
+            contrib_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_top_products_table.setItem(row_index, 4, contrib_item)
+
+        channels = stats.get("sales_by_channel", []) or []
+        self.stats_channel_table.setRowCount(len(channels))
+        for row_index, channel in enumerate(channels):
+            self.stats_channel_table.setItem(
+                row_index, 0, QTableWidgetItem(channel.get("channel", ""))
+            )
+            total_item = QTableWidgetItem(
+                self._format_currency(channel.get("total", 0))
+            )
+            total_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_channel_table.setItem(row_index, 1, total_item)
+
+            transactions_item = QTableWidgetItem(
+                self._format_number(channel.get("transactions", 0), integer=True)
+            )
+            transactions_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_channel_table.setItem(row_index, 2, transactions_item)
+
+            avg_item = QTableWidgetItem(
+                self._format_currency(channel.get("average_ticket", 0))
+            )
+            avg_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_channel_table.setItem(row_index, 3, avg_item)
+
+        critical_stock = stats.get("critical_stock", []) or []
+        self.stats_low_stock_table.setRowCount(len(critical_stock))
+        for row_index, product in enumerate(critical_stock):
+            self.stats_low_stock_table.setItem(
+                row_index, 0, QTableWidgetItem(product.get("name", ""))
+            )
+            stock_item = QTableWidgetItem(
+                self._format_number(product.get("stock", 0), integer=True)
+            )
+            stock_item.setTextAlignment(Qt.AlignRight | Qt.AlignVCenter)
+            self.stats_low_stock_table.setItem(row_index, 1, stock_item)
+
+        now_text = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+        self.stats_last_updated_label.setText(f"Última actualización: {now_text}")
+        self._stats_dirty = False
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)
@@ -279,9 +641,15 @@ class SalesTab(QWidget):
             self.sales_table.setItem(row, 2, QTableWidgetItem(venta.get("fecha", "")))
             self.sales_table.setItem(row, 3, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
             estado = venta.get("estado", "Pendiente")
-            self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
+        self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
         self.sales_table.clearSelection()
         self.show_sale(clear=True)
+        self._stats_dirty = True
+        if (
+            getattr(self, "sales_tabs", None)
+            and self.sales_tabs.currentWidget() is self.stats_tab
+        ):
+            self.refresh_statistics()
 
     def show_sale(self, clear=False):
         if clear or self.sales_table.currentRow() < 0:

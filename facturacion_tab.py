@@ -167,6 +167,9 @@ TIPO_DTE_DESC = {
     "06": "Nota de débito",
 }
 
+# Document types that can be rendered using the ticket format.
+TICKET_ELIGIBLE_TIPOS = {"01", "03", "04", "05", "06"}
+
 # Short labels displayed in the "Tipo de DTE" column.
 TIPO_DTE_SHORT_DESC = {
     "consumidor final": "cons final",
@@ -4342,6 +4345,8 @@ class FacturacionTab(QWidget):
             return
 
         venta_id = entry.get("venta_id")
+        tipo_entry = str(entry.get("tipo") or "").strip().lower()
+        is_note = tipo_entry.startswith("nota")
         base_pdf_path = self._resolve_pdf_path(entry)
 
         supports_format_choice = self._supports_ticket_format(entry, base_pdf_path)
@@ -4353,7 +4358,7 @@ class FacturacionTab(QWidget):
             format_dialog.setIcon(QMessageBox.Question)
             format_dialog.setWindowTitle("Formato de impresión")
             format_dialog.setText(
-                "¿Desea imprimir la factura en papel tamaño carta o formato ticket?"
+                "¿Desea imprimir el documento en papel tamaño carta o formato ticket?"
             )
             carta_button = format_dialog.addButton("Carta", QMessageBox.AcceptRole)
             ticket_button = format_dialog.addButton("Ticket", QMessageBox.AcceptRole)
@@ -4375,7 +4380,7 @@ class FacturacionTab(QWidget):
 
             carta_pdf_path = None
             if preferred_format in ("carta", "ticket"):
-                if venta_id:
+                if venta_id and not is_note:
                     try:
                         carta_pdf_path = self.manager.db.get_factura_pdf(venta_id)
                     except Exception:
@@ -4454,7 +4459,7 @@ class FacturacionTab(QWidget):
         except OSError:
             pass
 
-    def _is_cf_or_ccf(self, entry: dict | None) -> bool:
+    def _is_ticket_eligible(self, entry: dict | None) -> bool:
         if not entry:
             return False
 
@@ -4466,7 +4471,7 @@ class FacturacionTab(QWidget):
                 tipo_dte = str(
                     payload.get("identificacion", {}).get("tipoDte", "")
                 ).zfill(2)
-                if tipo_dte in {"01", "03"}:
+                if tipo_dte in TICKET_ELIGIBLE_TIPOS:
                     return True
             except Exception:
                 pass
@@ -4477,18 +4482,25 @@ class FacturacionTab(QWidget):
                 tipo_codigo_str = str(tipo_codigo).zfill(2)
             except Exception:
                 tipo_codigo_str = str(tipo_codigo)
-            if tipo_codigo_str in {"01", "03"}:
+            if tipo_codigo_str in TICKET_ELIGIBLE_TIPOS:
                 return True
 
         tipo_desc = str(entry.get("tipo") or "").strip().lower()
-        return tipo_desc in {"consumidor final", "crédito fiscal", "credito fiscal"}
+        if not tipo_desc:
+            return False
+
+        tipo_from_desc = TIPO_DTE_CODE_BY_DESC.get(tipo_desc)
+        if tipo_from_desc and tipo_from_desc in TICKET_ELIGIBLE_TIPOS:
+            return True
+
+        return False
 
     def _supports_ticket_format(
         self, entry: dict | None, base_pdf_path: str | None
     ) -> bool:
         """Return True if the entry can be printed using the ticket format."""
 
-        if not entry or not self._is_cf_or_ccf(entry):
+        if not entry or not self._is_ticket_eligible(entry):
             return False
 
         venta_id = entry.get("venta_id")
@@ -4822,7 +4834,20 @@ class FacturacionTab(QWidget):
             return None
 
         lower_name = base_name.lower()
-        for suffix in ("_consumidorfinal", "_creditofiscal", "_ticket"):
+        for suffix in (
+            "_consumidorfinal",
+            "_creditofiscal",
+            "_ticket",
+            "_notacredito",
+            "_notadebito",
+            "_notaremision",
+            "-consumidorfinal",
+            "-creditofiscal",
+            "-ticket",
+            "-notacredito",
+            "-notadebito",
+            "-notaremision",
+        ):
             if lower_name.endswith(suffix):
                 base_name = base_name[: -len(suffix)] + "_Ticket"
                 break
@@ -4876,7 +4901,7 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(
                 self,
                 "Imprimir",
-                "No se encontró la información de la factura para el formato ticket.",
+                "No se encontró la información del documento para el formato ticket.",
             )
             return None
 
@@ -4887,7 +4912,7 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(
                 self,
                 "Imprimir",
-                f"No se pudo leer la información de la factura: {exc}",
+                f"No se pudo leer la información del documento: {exc}",
             )
             return None
 
@@ -5013,6 +5038,12 @@ class FacturacionTab(QWidget):
                 output_dir = CF_DIR
             elif tipo_entry in {"crédito fiscal", "credito fiscal"}:
                 output_dir = CREDITO_DIR
+            elif tipo_entry in {"nota de crédito", "nota de credito"}:
+                output_dir = NOTAS_CREDITO_DIR
+            elif tipo_entry in {"nota de débito", "nota de debito"}:
+                output_dir = NOTAS_DEBITO_DIR
+            elif tipo_entry in {"nota de remisión", "nota de remision"}:
+                output_dir = NOTAS_REMISION_DIR
         if not output_dir:
             output_dir = TICKETS_DIR
 

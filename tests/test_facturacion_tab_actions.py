@@ -965,7 +965,7 @@ def test_ticket_generation_preserves_qr_payload(monkeypatch, qt_app, tmp_path):
     assert captured["datos_negocio"] == {"nombre": "Negocio"}
 
 
-def test_print_invoice_notes_skip_format_selection(monkeypatch, qt_app, tmp_path):
+def test_print_note_allows_ticket_selection(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
     nota_path = tmp_path / "nota.pdf"
@@ -1018,28 +1018,83 @@ def test_print_invoice_notes_skip_format_selection(monkeypatch, qt_app, tmp_path
         lambda path: None,
     )
 
-    class TrackingMessageBox:
+    ticket_pdf = tmp_path / "nota_ticket.pdf"
+    ticket_pdf.write_text("ticket")
+    ticket_calls = []
+
+    def fake_resolve_ticket(entry_arg, base_path):
+        ticket_calls.append((entry_arg, base_path))
+        return str(ticket_pdf)
+
+    monkeypatch.setattr(tab, "_resolve_ticket_pdf", fake_resolve_ticket)
+
+    class FakeMessageBox:
         AcceptRole = object()
         Question = object()
         Cancel = object()
+        _next_choice = "ticket"
         instances = []
 
         def __init__(self, parent=None):
+            self._carta_button = None
+            self._ticket_button = None
+            self._cancel_button = None
+            self._clicked = None
+            self.text = ""
             type(self).instances.append(self)
+
+        def setIcon(self, icon):
+            pass
+
+        def setWindowTitle(self, title):
+            self.title = title
+
+        def setText(self, text):
+            self.text = text
+
+        def addButton(self, text_or_button, role=None):
+            if text_or_button is self.Cancel:
+                button = SimpleNamespace(kind="cancel")
+                self._cancel_button = button
+            else:
+                button = SimpleNamespace(kind="text", text=text_or_button, role=role)
+                if text_or_button == "Carta":
+                    self._carta_button = button
+                elif text_or_button == "Ticket":
+                    self._ticket_button = button
+            return button
+
+        def setDefaultButton(self, button):
+            self._default = button
+
+        def exec_(self):
+            choice = self.__class__._next_choice
+            if choice == "ticket":
+                self._clicked = self._ticket_button
+            elif choice == "cancel":
+                self._clicked = self._cancel_button
+            else:
+                self._clicked = self._carta_button
+            return 0
+
+        def clickedButton(self):
+            return self._clicked
 
         @classmethod
         def warning(cls, *args, **kwargs):
             return None
 
-    monkeypatch.setattr(facturacion_tab, "QMessageBox", TrackingMessageBox)
+    monkeypatch.setattr(facturacion_tab, "QMessageBox", FakeMessageBox)
 
     tab.print_invoice()
 
     assert preview_paths
     assert opened_paths
-    assert preview_paths[-1] == str(nota_path)
-    assert opened_paths[-1] == str(nota_path)
-    assert TrackingMessageBox.instances == []
+    assert preview_paths[-1] == str(ticket_pdf)
+    assert opened_paths[-1] == str(ticket_pdf)
+    assert ticket_calls == [(entry, str(nota_path))]
+    assert FakeMessageBox.instances
+    assert "documento" in FakeMessageBox.instances[-1].text.lower()
 
 
 

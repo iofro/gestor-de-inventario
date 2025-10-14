@@ -59,6 +59,7 @@ from utils.docs import (
     get_dte_document_paths,
     write_pdf_atomically,
     persist_client_json,
+    sync_client_json_with_canonical,
 )
 from utils.ticket_adapters import dte_to_legacy_ticket_payload
 from utils.doc_generation import generate_invoice_pdf
@@ -5359,11 +5360,15 @@ class FacturacionTab(QWidget):
         if not os.path.exists(json_path):
             return
 
-        self._ensure_invoice_json_metadata(
+        codigo_sync, sello_sync = self._ensure_invoice_json_metadata(
             json_path,
             codigo=codigo or None,
             sello=sello or None,
         )
+        if codigo_sync:
+            codigo = codigo_sync
+        if sello_sync:
+            sello = sello_sync
 
     def _show_email_loading(self, message: str = "Enviando correo…") -> None:
         if self._email_loading_dialog:
@@ -5437,14 +5442,14 @@ class FacturacionTab(QWidget):
             ).strip()
 
         if codigo_meta or sello_meta:
-            self._ensure_invoice_json_metadata(
+            codigo_meta, sello_meta = self._ensure_invoice_json_metadata(
                 json_path,
                 codigo=codigo_meta or None,
                 sello=sello_meta or None,
             )
 
-        expected_codigo_norm = codigo_meta or ""
-        expected_sello_norm = sello_meta or ""
+        expected_codigo_norm = (codigo_meta or "").strip().upper()
+        expected_sello_norm = (sello_meta or "").strip()
         attempts = 0
         while True:
             try:
@@ -5458,8 +5463,7 @@ class FacturacionTab(QWidget):
                 )
                 return
 
-            ident = payload.get("identificacion") or payload.get("identificador") or {}
-            codigo_json = (ident.get("codigoGeneracion") or "").strip().upper()
+            codigo_json = self._extract_codigo_generacion_from_payload(payload)
             sello_json = (
                 payload.get("selloRecibido")
                 or payload.get("sello")
@@ -5487,11 +5491,15 @@ class FacturacionTab(QWidget):
                         )
                         return
                     if expected_codigo_norm or expected_sello_norm:
-                        self._ensure_invoice_json_metadata(
+                        new_code, new_sello = self._ensure_invoice_json_metadata(
                             json_path,
                             codigo=expected_codigo_norm or None,
                             sello=expected_sello_norm or None,
                         )
+                        if new_code:
+                            expected_codigo_norm = str(new_code).strip().upper()
+                        if new_sello:
+                            expected_sello_norm = str(new_sello).strip()
                     attempts += 1
                     continue
 
@@ -5529,11 +5537,15 @@ class FacturacionTab(QWidget):
                         )
                         return
                     if expected_codigo_norm or expected_sello_norm:
-                        self._ensure_invoice_json_metadata(
+                        new_code, new_sello = self._ensure_invoice_json_metadata(
                             json_path,
                             codigo=expected_codigo_norm or None,
                             sello=expected_sello_norm or None,
                         )
+                        if new_code:
+                            expected_codigo_norm = str(new_code).strip().upper()
+                        if new_sello:
+                            expected_sello_norm = str(new_sello).strip()
                     attempts += 1
                     continue
 
@@ -5729,29 +5741,44 @@ class FacturacionTab(QWidget):
         *,
         codigo: str | None = None,
         sello: str | None = None,
-    ) -> None:
+    ) -> tuple[str | None, str | None]:
+        codigo_val = (codigo or "").strip()
+        sello_val = sello
+        codigo_norm = codigo_val.upper() if codigo_val else ""
+
+        sync_code, sync_sello = sync_client_json_with_canonical(
+            json_path,
+            codigo=codigo_norm or None,
+            sello=sello_val,
+            base_dir=DTES_DIR,
+        )
+        if sync_code:
+            codigo_val = sync_code
+            codigo_norm = sync_code.upper()
+        if sync_sello:
+            sello_val = sync_sello
+
         if not json_path or not os.path.exists(json_path):
-            return
+            return (codigo_norm or None, sello_val)
         try:
             with open(json_path, "r", encoding="utf-8") as fh:
                 payload = json.load(fh)
         except Exception:
-            return
+            return (codigo_norm or None, sello_val)
 
         if not isinstance(payload, dict):
-            return
+            return (codigo_norm or None, sello_val)
 
         dte_payload = payload.get("dteJson") if isinstance(payload, dict) else None
         if not isinstance(dte_payload, Mapping):
             dte_payload = payload
         if not isinstance(dte_payload, Mapping):
-            return
+            return (codigo_norm or None, sello_val)
 
         dte_data = dict(dte_payload)
         ident = dict(dte_data.get("identificacion") or dte_data.get("identificador") or {})
         changed = False
 
-        codigo_val = (codigo or "").strip()
         if codigo_val:
             codigo_norm = codigo_val.upper()
             current = (ident.get("codigoGeneracion") or "").strip().upper()
@@ -5784,7 +5811,7 @@ class FacturacionTab(QWidget):
                 if isinstance(respuesta, dict):
                     existing_sello = _norm_sello(respuesta.get("selloRecibido"))
 
-        sello_norm = _norm_sello(sello)
+        sello_norm = _norm_sello(sello_val)
         if sello_norm and sello_norm != existing_sello:
             changed = True
 
@@ -5805,6 +5832,32 @@ class FacturacionTab(QWidget):
                 logger.exception(
                     "No se pudo actualizar metadatos de JSON en %s", json_path
                 )
+
+        return (codigo_norm or None, sello_norm or sello_val)
+
+    @staticmethod
+    def _extract_codigo_generacion_from_payload(
+        payload: Mapping[str, Any] | None,
+    ) -> str:
+        if not isinstance(payload, Mapping):
+            return ""
+
+        containers: list[Mapping[str, Any]] = []
+        dte_payload = payload.get("dteJson")
+        if isinstance(dte_payload, Mapping):
+            containers.append(dte_payload)
+        containers.append(payload)
+
+        for candidate in containers:
+            ident = candidate.get("identificacion") or candidate.get("identificador")
+            if not isinstance(ident, Mapping):
+                continue
+            codigo_val = ident.get("codigoGeneracion")
+            if isinstance(codigo_val, str):
+                codigo_norm = codigo_val.strip()
+                if codigo_norm:
+                    return codigo_norm.upper()
+        return ""
 
     def _send_orphan_email(self, entry):
         json_path = entry.get("json") if isinstance(entry, dict) else None

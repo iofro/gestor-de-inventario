@@ -13,6 +13,7 @@ from paths import (
     user_data_path,
 )
 from utils import resource_path
+from utils import versioned_dte
 from utils.stable_json import save_file, stable_stringify
 
 logger = logging.getLogger(__name__)
@@ -164,6 +165,108 @@ def persist_client_json(
 
     return target
 
+
+def sync_client_json_with_canonical(
+    json_path: str | os.PathLike,
+    *,
+    codigo: str | None = None,
+    sello: str | None = None,
+    base_dir: str | os.PathLike | None = None,
+) -> tuple[str | None, str | None]:
+    """Ensure ``json_path`` mirrors the canonical DTE payload stored by código.
+
+    The helper loads the canonical ``documento.json`` tracked in the versioned
+    storage (``versioned_dte``) and rebuilds the client-facing JSON keeping the
+    current ``firmaElectronica`` and ``selloRecibido`` values when available.
+
+    Returns a tuple ``(codigo_generacion, sello_recibido)`` with the normalized
+    identifiers that ended up persisted.  When the canonical payload is not
+    available the function simply validates the provided metadata and leaves the
+    file untouched.
+    """
+
+    try:
+        json_file = Path(json_path)
+    except TypeError:
+        return (None, None)
+
+    codigo_norm = (codigo or "").strip().upper()
+    sello_norm = _normalize_sello(sello)
+
+    existing_payload: Mapping[str, Any] | None = None
+    try:
+        if json_file.exists():
+            with json_file.open("r", encoding="utf-8") as fh:
+                loaded = json.load(fh)
+            if isinstance(loaded, Mapping):
+                existing_payload = loaded
+                if not sello_norm:
+                    sello_norm = _normalize_sello(loaded.get("selloRecibido"))
+                    if not sello_norm:
+                        respuesta = loaded.get("respuesta")
+                        if isinstance(respuesta, Mapping):
+                            sello_norm = _normalize_sello(respuesta.get("selloRecibido"))
+    except Exception:
+        existing_payload = None
+
+    firma_actual = None
+    if isinstance(existing_payload, Mapping):
+        firma_actual = _normalize_optional_str(existing_payload.get("firmaElectronica"))
+
+    canonical_payload: Mapping[str, Any] | None = None
+    if codigo_norm:
+        try:
+            version_dir = versioned_dte.resolve_version_dir(base_dir, codigo_norm)
+        except Exception:
+            version_dir = None
+        if version_dir:
+            canonical_path = Path(version_dir) / "documento.json"
+            try:
+                with canonical_path.open("r", encoding="utf-8") as fh:
+                    loaded = json.load(fh)
+                if isinstance(loaded, Mapping):
+                    canonical_payload = loaded
+            except Exception:
+                canonical_payload = None
+
+    if canonical_payload is not None:
+        ident = canonical_payload.get("identificacion") or canonical_payload.get("identificador")
+        if isinstance(ident, Mapping):
+            canon_code = (ident.get("codigoGeneracion") or "").strip().upper()
+            if canon_code:
+                codigo_norm = canon_code
+    elif isinstance(existing_payload, Mapping):
+        raw_payload = existing_payload.get("dteJson")
+        if isinstance(raw_payload, Mapping):
+            canonical_payload = raw_payload
+        elif isinstance(existing_payload, Mapping):
+            canonical_payload = existing_payload
+
+    if canonical_payload is None:
+        return (codigo_norm or None, sello_norm or None)
+
+    payload_copy = dict(canonical_payload)
+    ident = payload_copy.get("identificacion") or payload_copy.get("identificador") or {}
+    if not isinstance(ident, Mapping):
+        ident = {}
+    ident_copy = dict(ident)
+    if codigo_norm:
+        ident_copy["codigoGeneracion"] = codigo_norm
+    payload_copy["identificacion"] = ident_copy
+    payload_copy.pop("identificador", None)
+
+    try:
+        persist_client_json(
+            json_file,
+            payload_copy,
+            firma=firma_actual,
+            sello=sello_norm,
+            existing_payload=existing_payload,
+        )
+    except Exception:
+        logger.exception("No se pudo sincronizar JSON con la versión canónica %s", json_file)
+
+    return (codigo_norm or None, sello_norm or None)
 
 def write_pdf_atomically(
     destination: os.PathLike | str,

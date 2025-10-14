@@ -108,7 +108,7 @@ def test_credito_fiscal_exige_cliente_con_identificador(qt_app, monkeypatch):
     dialog._validar_y_accept()
 
     assert warnings, "Se debe mostrar advertencia cuando no hay identificadores válidos"
-    assert "NIT o NRC válido" in warnings[-1][1]
+    assert "NIT y un NRC válidos" in warnings[-1][1]
     assert not accepted["called"], "No debe continuar sin un cliente válido"
 
     warnings.clear()
@@ -117,6 +117,21 @@ def test_credito_fiscal_exige_cliente_con_identificador(qt_app, monkeypatch):
         "id": 1,
         "nombre": "Cliente",
         "nit": "06141407100012",
+    }
+
+    dialog._validar_y_accept()
+
+    assert warnings, "Se debe advertir cuando falte NRC"
+    assert "NIT y un NRC válidos" in warnings[-1][1]
+    assert not accepted["called"], "No debe continuar sin ambos identificadores"
+
+    warnings.clear()
+    accepted["called"] = False
+    dialog.selected_cliente = {
+        "id": 1,
+        "nombre": "Cliente",
+        "nit": "06141407100012",
+        "nrc": "1234567",
     }
 
     dialog._validar_y_accept()

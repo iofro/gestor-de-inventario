@@ -158,7 +158,11 @@ class _StatsChartWidget(QWidget):
         layout.setSpacing(0)
 
         if FigureCanvas is not None and Figure is not None:
-            self.canvas = FigureCanvas(Figure(figsize=(5, 3)))
+            figure = Figure(figsize=(7, 3), constrained_layout=True)
+            figure.set_constrained_layout(True)
+            self.canvas = FigureCanvas(figure)
+            self.canvas.setMinimumHeight(260)
+            self.canvas.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
             layout.addWidget(self.canvas)
             self.canvas.hide()
         else:
@@ -729,9 +733,10 @@ class SalesTab(QWidget):
             self.stats_daily_hint.show()
         else:
             fig = self.stats_daily_chart.canvas.figure
+            fig.set_size_inches(7, 3, forward=True)
             fig.clear()
             if daily_rows:
-                ax = fig.add_subplot(111)
+                ax = fig.subplots()
                 dates = []
                 values = []
                 for row in daily_rows:
@@ -752,7 +757,6 @@ class SalesTab(QWidget):
                     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
                     ax.grid(True, linestyle="--", alpha=0.3)
                     fig.autofmt_xdate()
-                    fig.tight_layout()
                     self.stats_daily_chart.canvas.draw()
                     self.stats_daily_chart.show_canvas()
                     self.stats_daily_hint.show()

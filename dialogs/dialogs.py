@@ -3935,7 +3935,59 @@ class CompraDetalleDialog(QDialog):
                         return value.strip()
             return None
 
+        PRODUCT_CODE_KEYS: tuple[str, ...] = (
+            "codigo",
+            "Codigo",
+            "CODIGO",
+            "product_code",
+            "productCode",
+            "codigo_producto",
+            "codigoProducto",
+            "codigo_barras",
+            "codigoBarras",
+        )
+        PRODUCT_SKU_KEYS: tuple[str, ...] = (
+            "sku",
+            "Sku",
+            "SKU",
+            "product_sku",
+            "productSku",
+        )
+
         productos_dict: dict[int, str] = {}
+        productos_por_codigo: dict[str, str] = {}
+        productos_por_codigo_lower: dict[str, str] = {}
+
+        def _coerce_lookup_key(value: Any) -> str | None:
+            if isinstance(value, str):
+                text = value.strip()
+                return text or None
+            if isinstance(value, (int, float)) and not isinstance(value, bool):
+                if isinstance(value, float) and not value.is_integer():
+                    return None
+                return str(int(value))
+            return None
+
+        def _remember_code_alias(code: str | None, name: str) -> None:
+            if not code:
+                return
+            if code not in productos_por_codigo:
+                productos_por_codigo[code] = name
+            lowered = code.lower()
+            if lowered not in productos_por_codigo_lower:
+                productos_por_codigo_lower[lowered] = name
+
+        def _register_product_aliases(
+            pid: int, pdata: Mapping[str, Any] | None, name: str
+        ) -> None:
+            if not isinstance(pdata, Mapping):
+                return
+            for key in PRODUCT_CODE_KEYS + PRODUCT_SKU_KEYS:
+                alias = _coerce_lookup_key(pdata.get(key))
+                if alias:
+                    _remember_code_alias(alias, name)
+            _remember_code_alias(str(pid), name)
+
         for raw_pid, pdata in catalogs.products.items():
             pid = normalize_identifier(raw_pid)
             if pid is None:
@@ -3943,6 +3995,7 @@ class CompraDetalleDialog(QDialog):
             name = _coerce_product_name(pdata)
             if name:
                 productos_dict[pid] = name
+                _register_product_aliases(pid, pdata if isinstance(pdata, Mapping) else None, name)
 
         def _product_name_from_id(product_id: int | None) -> str | None:
             if product_id is None:
@@ -3955,7 +4008,10 @@ class CompraDetalleDialog(QDialog):
             name = _coerce_product_name(source)
             if not name and db is not None:
                 try:
-                    db.cursor.execute("SELECT nombre FROM productos WHERE id=?", (product_id,))
+                    db.cursor.execute(
+                        "SELECT id, nombre, codigo, sku FROM productos WHERE id=?",
+                        (product_id,),
+                    )
                     row = db.cursor.fetchone()
                 except Exception:
                     row = None
@@ -3964,19 +4020,37 @@ class CompraDetalleDialog(QDialog):
                         product_id,
                     )
                 if row:
-                    if isinstance(row, tuple):
-                        value = row[0]
-                    else:
-                        try:
-                            value = row["nombre"]
-                        except Exception:
-                            getter = getattr(row, "get", None)
-                            value = getter("nombre") if callable(getter) else None
+                    try:
+                        data = dict(row)
+                    except Exception:
+                        data = {}
+                        if isinstance(row, tuple):
+                            try:
+                                data["id"] = row[0]
+                                data["nombre"] = row[1]
+                                data["codigo"] = row[2] if len(row) > 2 else None
+                                data["sku"] = row[3] if len(row) > 3 else None
+                            except Exception:
+                                data = {"id": product_id}
+                    value = data.get("nombre")
                     if isinstance(value, str) and value.strip():
                         name = value.strip()
+                        codigo_value = _coerce_lookup_key(data.get("codigo"))
+                        sku_value = _coerce_lookup_key(data.get("sku"))
+                        _remember_code_alias(codigo_value, name)
+                        _remember_code_alias(sku_value, name)
             if name:
                 productos_dict[product_id] = name
-                catalogs.products.setdefault(product_id, {"id": product_id, "nombre": name})
+                if isinstance(source, MutableMapping):
+                    source.setdefault("id", product_id)
+                    if not source.get("nombre"):
+                        source["nombre"] = name
+                    _register_product_aliases(product_id, source, name)
+                else:
+                    catalogs.products.setdefault(
+                        product_id, {"id": product_id, "nombre": name}
+                    )
+                    _remember_code_alias(str(product_id), name)
             return name
 
         def _coerce_detail_text(value: Any) -> str | None:
@@ -3985,6 +4059,73 @@ class CompraDetalleDialog(QDialog):
                 if text:
                     return text
             return None
+
+        def _lookup_product_name_by_code(value: Any) -> str | None:
+            code = _coerce_lookup_key(value)
+            if not code:
+                return None
+            name = productos_por_codigo.get(code)
+            if name:
+                return name
+            lowered = code.lower()
+            if lowered in productos_por_codigo_lower:
+                return productos_por_codigo_lower[lowered]
+            if db is None:
+                return None
+            try:
+                db.cursor.execute(
+                    """
+                    SELECT id, nombre, codigo, sku
+                    FROM productos
+                    WHERE LOWER(codigo) = LOWER(?) OR LOWER(sku) = LOWER(?)
+                    LIMIT 1
+                    """,
+                    (code, code),
+                )
+                row = db.cursor.fetchone()
+            except Exception:
+                logger.exception(
+                    "No fue posible obtener el producto con código %s", code
+                )
+                return None
+            if not row:
+                return None
+            try:
+                data = dict(row)
+            except Exception:
+                data = {}
+                if isinstance(row, tuple):
+                    try:
+                        data["id"] = row[0]
+                        data["nombre"] = row[1]
+                        data["codigo"] = row[2] if len(row) > 2 else None
+                        data["sku"] = row[3] if len(row) > 3 else None
+                    except Exception:
+                        data = {}
+            fetched_name = data.get("nombre")
+            if isinstance(fetched_name, str):
+                fetched_name = fetched_name.strip() or None
+            else:
+                fetched_name = None
+            if not fetched_name:
+                return None
+            pid = normalize_identifier(data.get("id"))
+            if pid is not None:
+                productos_dict[pid] = fetched_name
+                catalogs.products.setdefault(
+                    pid,
+                    {
+                        "id": pid,
+                        "nombre": fetched_name,
+                        "codigo": data.get("codigo"),
+                        "sku": data.get("sku"),
+                    },
+                )
+                _remember_code_alias(str(pid), fetched_name)
+            _remember_code_alias(_coerce_lookup_key(data.get("codigo")), fetched_name)
+            _remember_code_alias(_coerce_lookup_key(data.get("sku")), fetched_name)
+            _remember_code_alias(code, fetched_name)
+            return fetched_name
 
         def _detail_product_name(detalle: Mapping[str, Any]) -> str:
             descripcion = _coerce_detail_text(detalle.get("descripcion"))
@@ -4016,6 +4157,15 @@ class CompraDetalleDialog(QDialog):
                     break
 
             name = _product_name_from_id(product_id)
+            if name:
+                return name
+
+            for key in PRODUCT_CODE_KEYS + PRODUCT_SKU_KEYS:
+                name = _lookup_product_name_by_code(detalle.get(key))
+                if name:
+                    return name
+
+            name = _lookup_product_name_by_code(detalle.get("producto"))
             return name or "Desconocido"
 
         vendedor_nombre, distribuidor_nombre = resolve_party_names(compra, catalogs)

@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QMenu,
     QAction,
     QFormLayout,
+    QStyle,
 )
 from PyQt5.QtCore import QDate, QDateTime, QTime, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage, QColor, QBrush
@@ -90,11 +91,14 @@ import shutil
 import uuid
 import dte
 import anulacion
+import pprint
+import traceback
 from db import DB
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
+from dialogs.detailed_message_dialog import DetailedMessageDialog
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from utils.monto import iva_item, monto_a_texto_sv
 from utils.snapshot import SnapshotNotFoundError
@@ -3598,6 +3602,41 @@ class FacturacionTab(QWidget):
         formatted = "\n".join(f"- {text}" for text in cleaned)
         return f"Observaciones:\n{formatted}"
 
+    def _show_send_error_dialog(
+        self,
+        message: str,
+        *,
+        details: str | None = None,
+        title: str = "Enviar a Hacienda",
+    ) -> None:
+        clean_details = details.strip() if isinstance(details, str) else None
+        icon = self.style().standardIcon(QStyle.SP_MessageBoxCritical)
+        dialog = DetailedMessageDialog(
+            title=title,
+            text=message,
+            details=clean_details if clean_details else None,
+            icon=icon,
+            parent=self,
+        )
+        dialog.exec_()
+
+    def _format_hacienda_error_details(self, resp: Mapping[str, Any] | None) -> str | None:
+        if not isinstance(resp, Mapping):
+            return None
+        try:
+            return json.dumps(
+                resp, ensure_ascii=False, indent=2, sort_keys=True, default=str
+            )
+        except TypeError:
+            return pprint.pformat(resp, width=80, sort_dicts=True)
+
+    def _format_exception_details(self, exc: BaseException) -> str:
+        tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+        tb = tb.strip()
+        if tb:
+            return tb
+        return str(exc)
+
     def _mostrar_respuesta_hacienda(
         self, resp: dict | None, title: str = "Enviar a Hacienda"
     ) -> None:
@@ -3641,7 +3680,8 @@ class FacturacionTab(QWidget):
         if aceptado or recibido or transmitido or procesado:
             QMessageBox.information(self, title, mensaje)
         else:
-            QMessageBox.critical(self, title, mensaje)
+            detalles = self._format_hacienda_error_details(resp)
+            self._show_send_error_dialog(mensaje, details=detalles, title=title)
 
     def _document_already_sent(self, entry: dict | None, factura: dict | None) -> bool:
         if not entry:
@@ -3786,11 +3826,11 @@ class FacturacionTab(QWidget):
                     if estado_norm in {"aceptado", "procesado"} and sello_norm:
                         mh_success = True
                         mh_response = resp
+                    detalles_envio = self._format_hacienda_error_details(resp)
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                            details=detalles_envio,
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         message = "Documento enviado y recibido correctamente"
@@ -3825,16 +3865,17 @@ class FacturacionTab(QWidget):
                         obs_text = self._format_observaciones_message(resp)
                         if obs_text:
                             mensaje = f"{mensaje}\n\n{obs_text}"
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             mensaje,
+                            details=detalles_envio,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    QMessageBox.critical(
-                        self, "Enviar a Hacienda", "\n".join(exc.errors)
+                    errors_text = "\n".join(exc.errors)
+                    details = json.dumps(
+                        {"errores": exc.errors}, ensure_ascii=False, indent=2
                     )
+                    self._show_send_error_dialog(errors_text, details=details)
                 except SnapshotNotFoundError as exc:
                     self._report_snapshot_missing(exc)
                     return
@@ -3860,18 +3901,16 @@ class FacturacionTab(QWidget):
                                 return
                         else:
                             logger.exception("Error al enviar documento", exc_info=exc)
-                            QMessageBox.critical(
-                                self,
-                                "Enviar a Hacienda",
+                            self._show_send_error_dialog(
                                 GENERIC_SEND_ERROR,
+                                details=self._format_exception_details(exc),
                             )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     logger.exception("Error inesperado al enviar documento", exc_info=exc)
-                    QMessageBox.critical(
-                        self,
-                        "Enviar a Hacienda",
+                    self._show_send_error_dialog(
                         GENERIC_SEND_ERROR,
+                        details=self._format_exception_details(exc),
                     )
             else:
                 tipo_dte = self._determine_tipo_dte(entry)
@@ -3909,11 +3948,11 @@ class FacturacionTab(QWidget):
                                         "No se pudo actualizar el PDF posterior al envío",
                                         exc_info=True,
                                     )
+                    detalles_envio = self._format_hacienda_error_details(resp)
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                            details=detalles_envio,
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         message = "Documento enviado y recibido correctamente"
@@ -3951,16 +3990,17 @@ class FacturacionTab(QWidget):
                         obs_text = self._format_observaciones_message(resp)
                         if obs_text:
                             mensaje = f"{mensaje}\n\n{obs_text}"
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             mensaje,
+                            details=detalles_envio,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
-                    QMessageBox.critical(
-                        self, "Enviar a Hacienda", "\n".join(exc.errors)
+                    errors_text = "\n".join(exc.errors)
+                    details = json.dumps(
+                        {"errores": exc.errors}, ensure_ascii=False, indent=2
                     )
+                    self._show_send_error_dialog(errors_text, details=details)
                 except SnapshotNotFoundError as exc:
                     self._report_snapshot_missing(exc)
                     return
@@ -3978,18 +4018,16 @@ class FacturacionTab(QWidget):
                         QMessageBox.warning(self, "Enviar a Hacienda", token_msg)
                     else:
                         logger.exception("Error al enviar documento", exc_info=exc)
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             GENERIC_SEND_ERROR,
+                            details=self._format_exception_details(exc),
                         )
                 except Exception as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     logger.exception("Error inesperado al enviar documento", exc_info=exc)
-                    QMessageBox.critical(
-                        self,
-                        "Enviar a Hacienda",
+                    self._show_send_error_dialog(
                         GENERIC_SEND_ERROR,
+                        details=self._format_exception_details(exc),
                     )
 
         if not send_email:

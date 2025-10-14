@@ -13,7 +13,12 @@ from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado, generar_ticket_fe_pdf
 from dte import generar_ticket_json, generar_dte_json, d4, generar_cabecera_dte_data
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
-from utils.docs import get_document_paths, build_invoice_json, write_pdf_atomically
+from utils.docs import (
+    get_document_paths,
+    build_invoice_json,
+    write_pdf_atomically,
+    persist_client_json,
+)
 from utils.jws import sign_and_save
 from utils import versioned_dte
 from utils.resumen import (
@@ -851,6 +856,12 @@ def generate_invoice_pdf(manager, venta_id):
     except Exception:
         logger.exception("Fallo al firmar y guardar JSON en %s", json_path)
         jws_token = None
+    try:
+        persist_client_json(json_path, json_data, firma=jws_token)
+    except Exception:
+        logger.exception(
+            "No se pudo generar la versión para cliente del JSON en %s", json_path
+        )
     try:
         pend_json_path = dte.save_dte_json(json_data, filename=json_path.name)
         version_dir = os.path.dirname(pend_json_path)

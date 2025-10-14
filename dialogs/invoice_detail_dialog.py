@@ -1,7 +1,10 @@
 from typing import Callable, Dict, List
 import logging
 import os
+import re
 import shutil
+from collections.abc import Mapping, Sequence
+from decimal import Decimal
 
 from PyQt5.QtWidgets import (
     QDialog,
@@ -16,6 +19,10 @@ from PyQt5.QtWidgets import (
     QComboBox,
     QFormLayout,
     QPushButton,
+    QTabWidget,
+    QWidget,
+    QTreeWidget,
+    QTreeWidgetItem,
 )
 from PyQt5.QtCore import Qt, QUrl
 from PyQt5.QtGui import QDesktopServices
@@ -50,6 +57,30 @@ _DOC_CODE_BY_DESC = {
     "nota de crédito": "05",
     "nota de debito": "06",
     "nota de débito": "06",
+}
+
+_FIELD_LABEL_OVERRIDES = {
+    "identificacion": "Identificación",
+    "emisor": "Emisor",
+    "receptor": "Receptor",
+    "resumen": "Resumen",
+    "cuerpoDocumento": "Cuerpo del documento",
+    "documentoRelacionado": "Documentos relacionados",
+    "apendice": "Apéndice",
+    "apéndice": "Apéndice",
+    "otrosDocumentos": "Otros documentos",
+    "extension": "Extensión",
+    "fletes": "Fletes",
+    "descuentos": "Descuentos",
+    "tributos": "Tributos",
+    "tipoDte": "Tipo DTE",
+    "numeroControl": "Número de control",
+    "codigoGeneracion": "Código de generación",
+    "montoTotalOperacion": "Monto total de la operación",
+    "selloRecibido": "Sello recibido",
+    "nombreComercial": "Nombre comercial",
+    "nombre_comercial": "Nombre comercial",
+    "montoTotalPagar": "Monto total a pagar",
 }
 
 
@@ -104,7 +135,6 @@ class InvoiceDetailDialog(QDialog):
         ])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        layout.addWidget(self.table)
 
         for it in items:
             row = self.table.rowCount()
@@ -143,7 +173,22 @@ class InvoiceDetailDialog(QDialog):
         ]:
             totals_layout.addWidget(QLabel(text))
         totals_layout.addStretch()
-        layout.addLayout(totals_layout)
+
+        info_widget = self._build_metadata_tab()
+        if info_widget is None:
+            layout.addWidget(self.table)
+            layout.addLayout(totals_layout)
+        else:
+            tabs = QTabWidget(self)
+            items_container = QWidget(self)
+            items_layout = QVBoxLayout(items_container)
+            items_layout.setContentsMargins(0, 0, 0, 0)
+            items_layout.setSpacing(8)
+            items_layout.addWidget(self.table)
+            items_layout.addLayout(totals_layout)
+            tabs.addTab(items_container, "Productos")
+            tabs.addTab(info_widget, "Información")
+            layout.addWidget(tabs)
 
         envio_layout = QFormLayout()
         envio_layout.setLabelAlignment(Qt.AlignLeft)
@@ -197,6 +242,191 @@ class InvoiceDetailDialog(QDialog):
             self._save_state_button.clicked.connect(self._save_envio_state)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
+
+    def _build_metadata_tab(self) -> QWidget | None:
+        tipo_codigo = self._resolve_document_code()
+        if tipo_codigo not in {"01", "03"}:
+            return None
+        factura = self.factura or {}
+        if not isinstance(factura, Mapping):
+            return None
+
+        tree = QTreeWidget(self)
+        tree.setColumnCount(2)
+        tree.setHeaderLabels(["Campo", "Valor"])
+        header_fn = getattr(tree, "header", None)
+        if callable(header_fn):
+            header = header_fn()
+            if header is not None:
+                resize_fn = getattr(header, "setSectionResizeMode", None)
+                if callable(resize_fn):
+                    try:
+                        resize_fn(0, QHeaderView.ResizeToContents)
+                        resize_fn(1, QHeaderView.Stretch)
+                    except Exception:
+                        pass
+        alt_colors = getattr(tree, "setAlternatingRowColors", None)
+        if callable(alt_colors):
+            alt_colors(True)
+        uniform_rows = getattr(tree, "setUniformRowHeights", None)
+        if callable(uniform_rows):
+            uniform_rows(True)
+        selection_mode = getattr(tree, "setSelectionMode", None)
+        if callable(selection_mode):
+            selection_mode(QAbstractItemView.NoSelection)
+        edit_triggers = getattr(tree, "setEditTriggers", None)
+        if callable(edit_triggers):
+            edit_triggers(QAbstractItemView.NoEditTriggers)
+        focus_policy = getattr(tree, "setFocusPolicy", None)
+        if callable(focus_policy):
+            try:
+                focus_policy(Qt.NoFocus)
+            except Exception:
+                pass
+
+        root = None
+        root_fn = getattr(tree, "invisibleRootItem", None)
+        if callable(root_fn):
+            root = root_fn()
+        if root is None:
+            return None
+
+        for key, value in factura.items():
+            if self._is_empty_value(value):
+                continue
+            label = self._format_field_label(key)
+            self._add_tree_entry(root, label, value)
+
+        top_level_count = getattr(tree, "topLevelItemCount", None)
+        if callable(top_level_count) and top_level_count() == 0:
+            return None
+
+        expand_fn = getattr(tree, "expandToDepth", None)
+        if callable(expand_fn):
+            try:
+                expand_fn(1)
+            except Exception:
+                pass
+
+        container = QWidget(self)
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.addWidget(tree)
+        return container
+
+    def _resolve_document_code(self) -> str | None:
+        factura = self.factura or {}
+        ident = factura.get("identificacion") or {}
+        candidates = [
+            ident.get("tipoDte"),
+            factura.get("tipoDte"),
+            factura.get("tipo_documento"),
+            factura.get("tipoDocumento"),
+        ]
+        for raw_tipo in candidates:
+            if raw_tipo is None:
+                continue
+            if isinstance(raw_tipo, str):
+                stripped = raw_tipo.strip()
+                if not stripped:
+                    continue
+                if stripped in _DOC_TYPE_BY_CODE:
+                    return stripped
+                lowered = stripped.lower()
+                if lowered in _DOC_CODE_BY_DESC:
+                    return _DOC_CODE_BY_DESC[lowered]
+                if stripped.isdigit():
+                    normalized = f"{int(stripped):02d}"
+                    if normalized in _DOC_TYPE_BY_CODE:
+                        return normalized
+            else:
+                try:
+                    numeric = int(raw_tipo)
+                except (TypeError, ValueError):
+                    continue
+                normalized = f"{numeric:02d}"
+                if normalized in _DOC_TYPE_BY_CODE:
+                    return normalized
+        return None
+
+    def _format_field_label(self, key) -> str:
+        if not isinstance(key, str):
+            return str(key)
+        stripped = key.strip()
+        if not stripped:
+            return str(key)
+        override = _FIELD_LABEL_OVERRIDES.get(stripped)
+        if override:
+            return override
+        normalized = re.sub(r"(?<!^)(?=[A-Z])", " ", stripped)
+        normalized = normalized.replace("_", " ")
+        normalized = re.sub(r"\s+", " ", normalized).strip()
+        upper_tokens = {"nit", "nrc", "dui", "iva"}
+        if normalized.lower() in upper_tokens:
+            return normalized.upper()
+        if not normalized:
+            return stripped
+        if normalized.isupper():
+            return normalized
+        return normalized[:1].upper() + normalized[1:]
+
+    def _format_value(self, value) -> str:
+        if isinstance(value, bool):
+            return "Sí" if value else "No"
+        if isinstance(value, Decimal):
+            txt = format(value, "f")
+            return txt.rstrip("0").rstrip(".") if "." in txt else txt
+        return str(value)
+
+    def _is_empty_value(self, value) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        if isinstance(value, Mapping):
+            for subvalue in value.values():
+                if not self._is_empty_value(subvalue):
+                    return False
+            return True
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for item in value:
+                if not self._is_empty_value(item):
+                    return False
+            return True
+        return False
+
+    def _add_tree_entry(self, parent: QTreeWidgetItem, label: str, value) -> None:
+        if self._is_empty_value(value):
+            return
+        if isinstance(value, Mapping):
+            item = QTreeWidgetItem([label, ""])
+            for subkey, subvalue in sorted(value.items(), key=lambda kv: str(kv[0])):
+                sublabel = self._format_field_label(subkey)
+                self._add_tree_entry(item, sublabel, subvalue)
+            if item.childCount() > 0:
+                parent.addChild(item)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            item = QTreeWidgetItem([label, ""])
+            for idx, element in enumerate(value, start=1):
+                entry_label = f"Elemento {idx}"
+                if isinstance(element, Mapping):
+                    child = QTreeWidgetItem([entry_label, ""])
+                    for subkey, subvalue in sorted(element.items(), key=lambda kv: str(kv[0])):
+                        sublabel = self._format_field_label(subkey)
+                        self._add_tree_entry(child, sublabel, subvalue)
+                    if child.childCount() > 0:
+                        item.addChild(child)
+                elif isinstance(element, Sequence) and not isinstance(
+                    element, (str, bytes, bytearray)
+                ):
+                    self._add_tree_entry(item, entry_label, element)
+                elif not self._is_empty_value(element):
+                    item.addChild(QTreeWidgetItem([entry_label, self._format_value(element)]))
+            if item.childCount() > 0:
+                parent.addChild(item)
+            return
+        parent.addChild(QTreeWidgetItem([label, self._format_value(value)]))
 
     def _anular(self):
         negocio = dte._load_datos_negocio()

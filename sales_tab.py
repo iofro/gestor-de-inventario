@@ -29,9 +29,19 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker
 from PyQt5.QtGui import QPixmap
 from datetime import datetime, date, timedelta
-from matplotlib import dates as mdates, ticker as mticker
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
+import importlib.util
+
+_MATPLOTLIB_AVAILABLE = importlib.util.find_spec("matplotlib") is not None
+
+if _MATPLOTLIB_AVAILABLE:
+    from matplotlib import dates as mdates, ticker as mticker
+    from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+    from matplotlib.figure import Figure
+else:
+    mdates = None
+    mticker = None
+    FigureCanvas = None
+    Figure = None
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
@@ -147,24 +157,35 @@ class _StatsChartWidget(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self.canvas = FigureCanvas(Figure(figsize=(5, 3)))
-        layout.addWidget(self.canvas)
+        if FigureCanvas is not None and Figure is not None:
+            self.canvas = FigureCanvas(Figure(figsize=(5, 3)))
+            layout.addWidget(self.canvas)
+            self.canvas.hide()
+        else:
+            self.canvas = None
 
         self.empty_label = QLabel("No hay datos para mostrar")
         self.empty_label.setAlignment(Qt.AlignCenter)
         self.empty_label.setObjectName("StatsEmptyLabel")
         layout.addWidget(self.empty_label)
 
-        self.canvas.hide()
+        if self.canvas is not None:
+            self.empty_label.hide()
 
     def show_empty(self, message: str) -> None:
         self.empty_label.setText(message)
         self.empty_label.show()
-        self.canvas.hide()
+        if self.canvas is not None:
+            self.canvas.hide()
 
     def show_canvas(self) -> None:
-        self.empty_label.hide()
-        self.canvas.show()
+        if self.canvas is not None:
+            self.empty_label.hide()
+            self.canvas.show()
+
+    @property
+    def has_canvas(self) -> bool:
+        return self.canvas is not None
 
 class SalesTab(QWidget):
     """Simple tab to list sales and preview invoices."""
@@ -465,9 +486,13 @@ class SalesTab(QWidget):
         self.stats_daily_section = _StatsSectionFrame("Tendencia diaria de ventas")
         self.stats_daily_chart = _StatsChartWidget()
         self.stats_daily_section.body_layout.addWidget(self.stats_daily_chart)
-        self.stats_daily_hint = QLabel(
-            "Pase el cursor por los puntos para comparar montos diarios."
-        )
+        if self.stats_daily_chart.has_canvas:
+            hint_text = "Pase el cursor por los puntos para comparar montos diarios."
+        else:
+            hint_text = (
+                "Instale la dependencia 'matplotlib' para visualizar la tendencia diaria."
+            )
+        self.stats_daily_hint = QLabel(hint_text)
         self.stats_daily_hint.setObjectName("SectionHint")
         self.stats_daily_section.body_layout.addWidget(self.stats_daily_hint)
         content_layout.addWidget(self.stats_daily_section)
@@ -697,40 +722,46 @@ class SalesTab(QWidget):
 
         periods = stats.get("periods", {})
         daily_rows = periods.get("daily", []) or []
-        fig = self.stats_daily_chart.canvas.figure
-        fig.clear()
-        if daily_rows:
-            ax = fig.add_subplot(111)
-            dates = []
-            values = []
-            for row in daily_rows:
-                period_value = row.get("period")
-                try:
-                    date_value = datetime.strptime(period_value, "%Y-%m-%d")
-                except (TypeError, ValueError):
-                    continue
-                dates.append(date_value)
-                values.append(float(row.get("total", 0) or 0))
-            if dates and values:
-                ax.plot(dates, values, marker="o", color="#4E79A7")
-                ax.fill_between(dates, values, color="#4E79A7", alpha=0.1)
-                ax.set_ylabel("Ventas")
-                ax.yaxis.set_major_formatter(
-                    mticker.FuncFormatter(lambda x, _: f"{self._format_currency(x)}")
-                )
-                ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
-                ax.grid(True, linestyle="--", alpha=0.3)
-                fig.autofmt_xdate()
-                fig.tight_layout()
-                self.stats_daily_chart.canvas.draw()
-                self.stats_daily_chart.show_canvas()
-                self.stats_daily_hint.show()
+        if not self.stats_daily_chart.has_canvas:
+            self.stats_daily_chart.show_empty(
+                "Instale la dependencia 'matplotlib' para visualizar el gráfico de tendencia."
+            )
+            self.stats_daily_hint.show()
+        else:
+            fig = self.stats_daily_chart.canvas.figure
+            fig.clear()
+            if daily_rows:
+                ax = fig.add_subplot(111)
+                dates = []
+                values = []
+                for row in daily_rows:
+                    period_value = row.get("period")
+                    try:
+                        date_value = datetime.strptime(period_value, "%Y-%m-%d")
+                    except (TypeError, ValueError):
+                        continue
+                    dates.append(date_value)
+                    values.append(float(row.get("total", 0) or 0))
+                if dates and values:
+                    ax.plot(dates, values, marker="o", color="#4E79A7")
+                    ax.fill_between(dates, values, color="#4E79A7", alpha=0.1)
+                    ax.set_ylabel("Ventas")
+                    ax.yaxis.set_major_formatter(
+                        mticker.FuncFormatter(lambda x, _: f"{self._format_currency(x)}")
+                    )
+                    ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
+                    ax.grid(True, linestyle="--", alpha=0.3)
+                    fig.autofmt_xdate()
+                    fig.tight_layout()
+                    self.stats_daily_chart.canvas.draw()
+                    self.stats_daily_chart.show_canvas()
+                    self.stats_daily_hint.show()
+                else:
+                    self.stats_daily_chart.show_empty("No hay datos diarios para mostrar.")
+                    self.stats_daily_hint.hide()
             else:
                 self.stats_daily_chart.show_empty("No hay datos diarios para mostrar.")
                 self.stats_daily_hint.hide()
-        else:
-            self.stats_daily_chart.show_empty("No hay datos diarios para mostrar.")
-            self.stats_daily_hint.hide()
 
         top_products = stats.get("top_products", []) or []
         self.stats_top_products_table.setRowCount(len(top_products))

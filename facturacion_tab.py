@@ -2666,6 +2666,9 @@ class FacturacionTab(QWidget):
                 "tipo": tipo_desc or doc_tipo,
                 "codigo": tipo_codigo,
             }
+            if json_path and os.path.exists(json_path):
+                row["json"] = json_path
+
             if row_type == "orphan":
                 row["pdf"] = ruta
                 row["json"] = json_path
@@ -5980,6 +5983,7 @@ class FacturacionTab(QWidget):
         ticket_path = None
         dte_json_path = None
 
+        venta = None
         if venta_id:
             try:
                 pdf_path = self.manager.db.get_factura_pdf(venta_id)
@@ -5989,6 +5993,10 @@ class FacturacionTab(QWidget):
                 ticket_path = self.manager.db.get_ticket_pdf(venta_id)
             except Exception:
                 ticket_path = None
+            try:
+                venta = self.manager.db.get_venta_by_id(venta_id)
+            except Exception:
+                venta = None
 
         if factura:
             dte_json_path = factura.get("json")
@@ -5998,6 +6006,33 @@ class FacturacionTab(QWidget):
 
         if not dte_json_path and pdf_path:
             dte_json_path = os.path.splitext(pdf_path)[0] + ".json"
+
+        venta_map = venta if hasattr(venta, "get") else None
+
+        if not dte_json_path and venta_map:
+            extra_data = venta_map.get("extra")
+            parsed_extra: Mapping[str, Any] | None = None
+            if isinstance(extra_data, Mapping):
+                parsed_extra = extra_data
+            elif isinstance(extra_data, str):
+                try:
+                    parsed_extra = json.loads(extra_data)
+                except Exception:
+                    parsed_extra = None
+            if parsed_extra:
+                for key in (
+                    "dteJsonPath",
+                    "jsonPath",
+                    "json",
+                    "path",
+                    "dteJson",
+                ):
+                    candidate = parsed_extra.get(key)
+                    if isinstance(candidate, str):
+                        candidate = candidate.strip()
+                        if candidate and os.path.exists(candidate):
+                            dte_json_path = candidate
+                            break
 
         if not dte_json_path and venta_id:
             try:
@@ -6010,7 +6045,58 @@ class FacturacionTab(QWidget):
             except Exception:
                 dte_json_path = None
 
+        if not dte_json_path and ticket_path:
+            dte_json_path = self._guess_ticket_json_path(ticket_path)
+
+        if not dte_json_path and venta_map:
+            extra_candidates = (
+                venta_map.get("dteJsonPath"),
+                venta_map.get("jsonPath"),
+                venta_map.get("json"),
+            )
+            for candidate in extra_candidates:
+                if isinstance(candidate, str):
+                    candidate = candidate.strip()
+                    if candidate and os.path.exists(candidate):
+                        dte_json_path = candidate
+                        break
+
         return pdf_path, ticket_path, dte_json_path
+
+    def _guess_ticket_json_path(self, ticket_path: str | None) -> str | None:
+        if not ticket_path:
+            return None
+
+        try:
+            base, _ = os.path.splitext(ticket_path)
+        except Exception:
+            return None
+
+        candidates: list[str] = []
+
+        def _append_candidate(path_base: str) -> None:
+            if not path_base:
+                return
+            candidates.append(f"{path_base}.json")
+            candidates.append(f"{path_base}_consumidorfinal.json")
+            candidates.append(f"{path_base}_ConsumidorFinal.json")
+            candidates.append(f"{path_base}_creditofiscal.json")
+            candidates.append(f"{path_base}_creditoFiscal.json")
+
+        _append_candidate(base)
+
+        suffixes = ["_Ticket", "_ticket", "-Ticket", "-ticket"]
+        for suffix in suffixes:
+            if base.endswith(suffix):
+                trimmed = base[: -len(suffix)]
+                _append_candidate(trimmed)
+                break
+
+        for candidate in candidates:
+            if candidate and os.path.exists(candidate):
+                return candidate
+
+        return None
 
     def _ensure_archive_directory(self, name: str) -> str:
         base_root = DTE_FALLIDOS_DIR

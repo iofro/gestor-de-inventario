@@ -559,7 +559,6 @@ def generar_factura_electronica_pdf(
     # Posición inicial para la tabla de productos
     tabla_x = x_margin
     tabla_y = box_y - 20
-    row_h = 18
     tipo_norm = (tipo_documento or "").strip().lower()
     is_consumidor_final = tipo_norm.startswith("consumidor final")
 
@@ -631,142 +630,193 @@ def generar_factura_electronica_pdf(
 
         tabla_data.append(fila)
 
-    tabla = Table(
-        tabla_data,
-        colWidths=col_widths,
-        repeatRows=1,
-    )
-    tabla.setStyle(TableStyle([
-        ('GRID', (0,0), (-1,-1), 0.7, colors.black),
-        ('BACKGROUND', (0,0), (-1,0), colors.lightgrey),
-        ('ALIGN', (0,0), (0,-1), 'CENTER'),  # Cantidad centrado
-        ('ALIGN', (2,0), (-1,-1), 'RIGHT'),  # Números a la derecha
-        ('ALIGN', (1,0), (1,-1), 'LEFT'),    # Descripción a la izquierda
-        ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-        ('FONTSIZE', (0,0), (-1,-1), body_fontsize),
-        ('FONTNAME', (0,0), (-1,0), 'Helvetica-Bold'),
-        ('FONTNAME', (0,1), (-1,-1), body_fontname),
-        ('LEFTPADDING', (0,0), (-1,-1), table_padding),
-        ('RIGHTPADDING', (0,0), (-1,-1), table_padding),
-    ]))
 
-    # Dibuja la tabla
-    tabla.wrapOn(c, width, height)
-    tabla.drawOn(c, tabla_x, tabla_y - row_h * (len(tabla_data)))
+    header_row = tabla_data[0]
+    body_rows = tabla_data[1:]
 
-    # --- Suma de ventas (justo debajo de la tabla, antes de los totales) ---
-    suma_y = tabla_y - row_h * (len(tabla_data)) - 10
-    # c.setFont("Helvetica-Bold", 9)
-    # c.drawRightString(tabla_x + 434, suma_y, f"SUMA DE VENTAS: {venta.get('sumas', 0):.2f}")
+    table_style = TableStyle([
+        ('GRID', (0, 0), (-1, -1), 0.7, colors.black),
+        ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
+        ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+        ('ALIGN', (2, 0), (-1, -1), 'RIGHT'),
+        ('ALIGN', (1, 0), (1, -1), 'LEFT'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('FONTSIZE', (0, 0), (-1, -1), body_fontsize),
+        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+        ('FONTNAME', (0, 1), (-1, -1), body_fontname),
+        ('LEFTPADDING', (0, 0), (-1, -1), table_padding),
+        ('RIGHTPADDING', (0, 0), (-1, -1), table_padding),
+    ])
 
-    # --- Bloque de totales y valor en letras, alineado y con formato solicitado ---
     bloque_totales_x = 30
     bloque_totales_w = 555
     bloque_totales_y = 80
     bloque_totales_h = 150
-
-    c.setLineWidth(0.7)
-    c.roundRect(bloque_totales_x, bloque_totales_y, bloque_totales_w, bloque_totales_h, 6, stroke=1, fill=0)
-
-    # --- Línea vertical separadora ---
     columna_totales_w = 320
     x_linea = bloque_totales_x + columna_totales_w
-    c.setLineWidth(0.5)
-    c.line(x_linea, bloque_totales_y + 8, x_linea, bloque_totales_y + bloque_totales_h - 8)
 
-    # --- Totales (columna derecha del cuadro, todos alineados) ---
-    texto_y = bloque_totales_y + bloque_totales_h - 18
-    salto = 18
+    def build_table(rows_subset):
+        data = [header_row] + rows_subset
+        table = Table(data, colWidths=col_widths, repeatRows=1)
+        table.setStyle(table_style)
+        return table
 
-    def _venta_monto(*keys, default=0.0):
-        for key in keys:
-            valor = venta.get(key)
-            if valor in (None, ""):
-                continue
-            if isinstance(valor, (int, float)):
-                return float(valor)
-            try:
-                return float(Decimal(str(valor)))
-            except (InvalidOperation, ValueError, TypeError):
-                continue
-        return float(default)
+    def table_height(rows_subset):
+        table = build_table(rows_subset)
+        _, height_used = table.wrap(0, 0)
+        return height_used
 
-    total_sumas = _venta_monto("sumas", "subTotalVentas")
-    total_descuentos = _venta_monto("descuentos", "totalDescu")
-    total_iva = _venta_monto("totalIva", "iva")
-    if not is_consumidor_final and abs(total_iva) < 0.005:
-        total_iva_detalles = Decimal("0")
-        for detalle in detalles:
-            valor_iva = detalle.get("iva")
-            if valor_iva in (None, ""):
-                continue
-            try:
-                total_iva_detalles += Decimal(str(valor_iva))
-            except (InvalidOperation, ValueError, TypeError):
-                continue
-        total_iva = float(total_iva_detalles)
-    subtotal = _venta_monto("subTotal", "subtotal", "subTotalVentas")
-    total_exentas = _venta_monto("ventas_exentas", "totalExenta")
-    total_no_sujetas = _venta_monto("ventas_no_sujetas", "totalNoSuj")
-    total_pagar = _venta_monto("total", "totalPagar", "montoTotalOperacion")
+    def rows_that_fit(max_height, rows):
+        if max_height <= 0:
+            return 0
+        count = 0
+        while count < len(rows):
+            subset = rows[: count + 1]
+            if table_height(subset) <= max_height:
+                count += 1
+            else:
+                break
+        return count
 
-    c.setFont("Helvetica", 9)
-    c.drawString(x_linea + 10, texto_y, "SUMA DE VENTAS:")
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_sumas:.2f}")
+    available_height_last = tabla_y - (bloque_totales_y + bloque_totales_h + 20)
+    available_height_standard = tabla_y - (y_margin + 40)
+    available_height_last = max(available_height_last, 0)
+    available_height_standard = max(available_height_standard, 0)
 
-    texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "Descuentos y rebajas:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_descuentos:.2f}")
+    remaining_rows = body_rows[:]
+    table_pages_rows = []
 
-    texto_y -= salto
-    if not is_consumidor_final:
-        c.setFont("Helvetica-Bold", 9)
-        c.drawString(x_linea + 10, texto_y, "IVA 13%:")
-        c.setFont("Helvetica", 9)
-        c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_iva:.2f}")
-        texto_y -= salto
+    while remaining_rows:
+        if table_height(remaining_rows) <= available_height_last:
+            table_pages_rows.append(remaining_rows[:])
+            remaining_rows = []
+        else:
+            count = rows_that_fit(available_height_standard, remaining_rows)
+            if count <= 0:
+                count = 1
+            table_pages_rows.append(remaining_rows[:count])
+            remaining_rows = remaining_rows[count:]
 
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "Subtotal:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{subtotal:.2f}")
+    if not table_pages_rows:
+        table_pages_rows.append([])
 
-    texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "Exentas:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_exentas:.2f}")
+    total_pages = len(table_pages_rows)
 
-    texto_y -= salto
-    c.setFont("Helvetica-Bold", 9)
-    c.drawString(x_linea + 10, texto_y, "No sujetas:")
-    c.setFont("Helvetica", 9)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_no_sujetas:.2f}")
+    for page_index, rows_chunk in enumerate(table_pages_rows):
+        if page_index > 0:
+            c.showPage()
+            top = height - 45
+            c.setFont("Helvetica-Bold", 14)
+            c.drawCentredString(width / 2, top, "DOCUMENTO TRIBUTARIO ELECTRÓNICO")
+            top -= 16
+            c.setFont("Helvetica-Bold", 11)
+            c.drawCentredString(width / 2, top, titulo)
 
-    texto_y -= salto + 10  # Más espacio antes de "Total a pagar"
-    c.setFont("Helvetica-Bold", 10)
-    c.drawString(x_linea + 10, texto_y, "Total a pagar:")
-    c.setFont("Helvetica-Bold", 10)
-    c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_pagar:.2f}")
+        table = build_table(rows_chunk)
+        _, table_height_used = table.wrapOn(c, width, height)
+        table.drawOn(c, tabla_x, tabla_y - table_height_used)
+        current_bottom = tabla_y - table_height_used
 
-    # --- Valor en letras (columna izquierda del cuadro, texto más grande y solo el label en negrita) ---
-    c.setFont("Helvetica-Bold", 11)
-    c.drawString(bloque_totales_x + 10, bloque_totales_y + bloque_totales_h - 18, "Valor en letras:")
-    c.setFont("Helvetica", 11)
-    draw_wrapped_text(
-        c,
-        f"{venta.get('total_letras', '')}",
-        bloque_totales_x + 120,
-        bloque_totales_y + bloque_totales_h - 18,
-        columna_totales_w - 130,
-        14,
-    )
+        if page_index == total_pages - 1:
+            c.setLineWidth(0.7)
+            c.roundRect(bloque_totales_x, bloque_totales_y, bloque_totales_w, bloque_totales_h, 6, stroke=1, fill=0)
 
-    # --- Pie de página ---
-    c.setFont("Helvetica", 8)
-    c.drawCentredString(width/2, 20, f"Página 1 de 1")
+            c.setLineWidth(0.5)
+            c.line(x_linea, bloque_totales_y + 8, x_linea, bloque_totales_y + bloque_totales_h - 8)
+
+            texto_y = bloque_totales_y + bloque_totales_h - 18
+            salto = 18
+
+            def _venta_monto(*keys, default=0.0):
+                for key in keys:
+                    valor = venta.get(key)
+                    if valor in (None, ""):
+                        continue
+                    if isinstance(valor, (int, float)):
+                        return float(valor)
+                    try:
+                        return float(Decimal(str(valor)))
+                    except (InvalidOperation, ValueError, TypeError):
+                        continue
+                return float(default)
+
+            total_sumas = _venta_monto("sumas", "subTotalVentas")
+            total_descuentos = _venta_monto("descuentos", "totalDescu")
+            total_iva = _venta_monto("totalIva", "iva")
+            if not is_consumidor_final and abs(total_iva) < 0.005:
+                total_iva_detalles = Decimal("0")
+                for detalle in detalles:
+                    valor_iva = detalle.get("iva")
+                    if valor_iva in (None, ""):
+                        continue
+                    try:
+                        total_iva_detalles += Decimal(str(valor_iva))
+                    except (InvalidOperation, ValueError, TypeError):
+                        continue
+                total_iva = float(total_iva_detalles)
+            subtotal = _venta_monto("subTotal", "subtotal", "subTotalVentas")
+            total_exentas = _venta_monto("ventas_exentas", "totalExenta")
+            total_no_sujetas = _venta_monto("ventas_no_sujetas", "totalNoSuj")
+            total_pagar = _venta_monto("total", "totalPagar", "montoTotalOperacion")
+
+            c.setFont("Helvetica", 9)
+            c.drawString(x_linea + 10, texto_y, "SUMA DE VENTAS:")
+            c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_sumas:.2f}")
+
+            texto_y -= salto
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(x_linea + 10, texto_y, "Descuentos y rebajas:")
+            c.setFont("Helvetica", 9)
+            c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_descuentos:.2f}")
+
+            texto_y -= salto
+            if not is_consumidor_final:
+                c.setFont("Helvetica-Bold", 9)
+                c.drawString(x_linea + 10, texto_y, "IVA 13%:")
+                c.setFont("Helvetica", 9)
+                c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_iva:.2f}")
+                texto_y -= salto
+
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(x_linea + 10, texto_y, "Subtotal:")
+            c.setFont("Helvetica", 9)
+            c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{subtotal:.2f}")
+
+            texto_y -= salto
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(x_linea + 10, texto_y, "Exentas:")
+            c.setFont("Helvetica", 9)
+            c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_exentas:.2f}")
+
+            texto_y -= salto
+            c.setFont("Helvetica-Bold", 9)
+            c.drawString(x_linea + 10, texto_y, "No sujetas:")
+            c.setFont("Helvetica", 9)
+            c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_no_sujetas:.2f}")
+
+            texto_y -= salto + 10
+            c.setFont("Helvetica-Bold", 10)
+            c.drawString(x_linea + 10, texto_y, "Total a pagar:")
+            c.setFont("Helvetica-Bold", 10)
+            c.drawRightString(bloque_totales_x + bloque_totales_w - 10, texto_y, f"{total_pagar:.2f}")
+
+            c.setFont("Helvetica-Bold", 11)
+            c.drawString(bloque_totales_x + 10, bloque_totales_y + bloque_totales_h - 18, "Valor en letras:")
+            c.setFont("Helvetica", 11)
+            draw_wrapped_text(
+                c,
+                f"{venta.get('total_letras', '')}",
+                bloque_totales_x + 120,
+                bloque_totales_y + bloque_totales_h - 18,
+                columna_totales_w - 130,
+                14,
+            )
+        else:
+            c.setFont("Helvetica-Oblique", 8)
+            c.drawRightString(width - x_margin, current_bottom - 10, "Continúa en la siguiente página...")
+
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(width / 2, 20, f"Página {page_index + 1} de {total_pages}")
 
     c.save()
 

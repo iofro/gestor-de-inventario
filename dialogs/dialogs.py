@@ -4468,6 +4468,14 @@ def prompt_auth_credentials(parent=None, user="", password=""):
 
 
 class DTECorrelativoConfigDialog(QDialog):
+    _TIPO_DTE_DESC = {
+        "01": "Consumidor final",
+        "03": "Crédito fiscal",
+        "04": "Nota de remisión",
+        "05": "Nota de crédito",
+        "06": "Nota de débito",
+    }
+
     def __init__(self, db=None, prefijo="DTE-01-S001P001", parent=None):
         super().__init__(parent)
         self.db = db or DB()
@@ -4477,7 +4485,7 @@ class DTECorrelativoConfigDialog(QDialog):
         layout = QVBoxLayout(self)
         self.correlativos_table = QTableWidget(0, 3)
         self.correlativos_table.setHorizontalHeaderLabels([
-            "Tipo",
+            "Tipo de DTE",
             "Correlativo",
             "",
         ])
@@ -4488,8 +4496,12 @@ class DTECorrelativoConfigDialog(QDialog):
         layout.addWidget(self.correlativos_table)
 
         btns = QHBoxLayout()
+        btns.addStretch()
         guardar = QPushButton("Guardar")
         cancelar = QPushButton("Cancelar")
+        for boton in (guardar, cancelar):
+            boton.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            boton.setFixedHeight(28)
         btns.addWidget(guardar)
         btns.addWidget(cancelar)
         layout.addLayout(btns)
@@ -4513,7 +4525,12 @@ class DTECorrelativoConfigDialog(QDialog):
         for tipo in ["01", "03", "04", "05", "06"]:
             row = self.correlativos_table.rowCount()
             self.correlativos_table.insertRow(row)
-            self.correlativos_table.setItem(row, 0, QTableWidgetItem(tipo))
+            tipo_desc = self._TIPO_DTE_DESC.get(tipo, tipo)
+            self.correlativos_table.setItem(
+                row,
+                0,
+                QTableWidgetItem(f"{tipo_desc} ({tipo})"),
+            )
             spin = QSpinBox()
             spin.setMaximum(999999999)
             valor = self.db.get_dte_correlativo(tipo, sucursal, punto)
@@ -4521,6 +4538,8 @@ class DTECorrelativoConfigDialog(QDialog):
             self._original_correlativos[tipo] = valor
             self.correlativos_table.setCellWidget(row, 1, spin)
             btn = QPushButton("Reiniciar")
+            btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+            btn.setFixedHeight(24)
             btn.clicked.connect(lambda _, t=tipo: self._reset_correlativo(t))
             self.correlativos_table.setCellWidget(row, 2, btn)
             self._correlativo_spins[tipo] = spin

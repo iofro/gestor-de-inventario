@@ -38,6 +38,7 @@ import glob
 import hashlib
 from pathlib import Path
 from typing import Any, Mapping
+from pprint import pformat
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -3430,12 +3431,8 @@ class FacturacionTab(QWidget):
             ident_info["codigoGeneracion"] = codigo_generacion
 
         motivo = self._format_rejection_reason(resp)
-        if motivo:
-            QMessageBox.critical(
-                self,
-                "Enviar a Hacienda",
-                motivo,
-            )
+        resumen = motivo or "La factura fue rechazada por Hacienda."
+        self._show_send_error_dialog(resumen, "Enviar a Hacienda", resp)
         dialog = DTERechazadoDialog(
             numero_control or "Desconocido",
             codigo_generacion or "Desconocido",
@@ -3598,6 +3595,90 @@ class FacturacionTab(QWidget):
         formatted = "\n".join(f"- {text}" for text in cleaned)
         return f"Observaciones:\n{formatted}"
 
+    @staticmethod
+    def _json_default(value: Any) -> Any:
+        if isinstance(value, (set, frozenset)):
+            return list(value)
+        if isinstance(value, Decimal):
+            return str(value)
+        if isinstance(value, (datetime, date)):
+            return value.isoformat()
+        return str(value)
+
+    def _format_hacienda_details(self, payload: Any) -> str:
+        if payload is None:
+            return ""
+        if isinstance(payload, str):
+            return payload.strip()
+        if isinstance(payload, (bytes, bytearray)):
+            try:
+                return payload.decode("utf-8", errors="replace")
+            except Exception:
+                return repr(payload)
+        try:
+            return json.dumps(
+                payload,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
+                default=self._json_default,
+            )
+        except Exception:
+            try:
+                return pformat(payload, width=80, compact=False)
+            except Exception:
+                return str(payload)
+
+    def _show_send_error_dialog(
+        self,
+        summary: str,
+        title: str,
+        details_payload: Any | None = None,
+    ) -> None:
+        dialog = QDialog(self)
+        dialog.setWindowTitle(title)
+        dialog.setModal(True)
+        layout = QVBoxLayout(dialog)
+
+        summary_text = (summary or "").strip() or "Ocurrió un error al enviar la factura."
+        summary_label = QLabel(summary_text)
+        summary_label.setWordWrap(True)
+        layout.addWidget(summary_label)
+
+        details_text = self._format_hacienda_details(details_payload)
+        details_widget: QPlainTextEdit | None = None
+        if details_text:
+            toggle_button = QPushButton("Ver detalles")
+            toggle_button.setCheckable(True)
+            layout.addWidget(toggle_button, alignment=Qt.AlignLeft)
+
+            details_widget = QPlainTextEdit()
+            details_widget.setReadOnly(True)
+            details_widget.setPlainText(details_text)
+            details_widget.setLineWrapMode(QPlainTextEdit.NoWrap)
+            details_widget.setMinimumHeight(200)
+            details_widget.hide()
+            layout.addWidget(details_widget)
+
+            def _toggle_details(checked: bool) -> None:
+                if not details_widget:
+                    return
+                details_widget.setVisible(checked)
+                toggle_button.setText("Ocultar detalles" if checked else "Ver detalles")
+                if checked and details_widget.document().blockCount() > 30:
+                    dialog.resize(dialog.width(), max(dialog.height(), 500))
+
+            toggle_button.toggled.connect(_toggle_details)
+
+        button_box = QDialogButtonBox(QDialogButtonBox.Ok)
+        button_box.accepted.connect(dialog.accept)
+        layout.addWidget(button_box)
+
+        if details_widget:
+            dialog.resize(max(dialog.sizeHint().width(), 480), dialog.sizeHint().height())
+
+        dialog.exec_()
+
     def _mostrar_respuesta_hacienda(
         self, resp: dict | None, title: str = "Enviar a Hacienda"
     ) -> None:
@@ -3641,7 +3722,7 @@ class FacturacionTab(QWidget):
         if aceptado or recibido or transmitido or procesado:
             QMessageBox.information(self, title, mensaje)
         else:
-            QMessageBox.critical(self, title, mensaje)
+            self._show_send_error_dialog(mensaje, title, resp)
 
     def _document_already_sent(self, entry: dict | None, factura: dict | None) -> bool:
         if not entry:
@@ -3787,10 +3868,10 @@ class FacturacionTab(QWidget):
                         mh_success = True
                         mh_response = resp
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                            "Enviar a Hacienda",
+                            resp,
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         message = "Documento enviado y recibido correctamente"
@@ -3825,10 +3906,10 @@ class FacturacionTab(QWidget):
                         obs_text = self._format_observaciones_message(resp)
                         if obs_text:
                             mensaje = f"{mensaje}\n\n{obs_text}"
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             mensaje,
+                            "Enviar a Hacienda",
+                            resp,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
@@ -3910,10 +3991,10 @@ class FacturacionTab(QWidget):
                                         exc_info=True,
                                     )
                     if estado == "Error" and resp.get("detalle") == "Sin conexión a Internet":
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             "No hay conexión a Internet. Active la conexión antes de reenviar.",
+                            "Enviar a Hacienda",
+                            resp,
                         )
                     elif estado in {"Transmitido", "Recibido", "PROCESADO"}:
                         message = "Documento enviado y recibido correctamente"
@@ -3951,10 +4032,10 @@ class FacturacionTab(QWidget):
                         obs_text = self._format_observaciones_message(resp)
                         if obs_text:
                             mensaje = f"{mensaje}\n\n{obs_text}"
-                        QMessageBox.critical(
-                            self,
-                            "Enviar a Hacienda",
+                        self._show_send_error_dialog(
                             mensaje,
+                            "Enviar a Hacienda",
+                            resp,
                         )
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])

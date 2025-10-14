@@ -756,7 +756,9 @@ class SalesTab(QWidget):
                     )
                     ax.xaxis.set_major_formatter(mdates.DateFormatter("%d/%m"))
                     ax.grid(True, linestyle="--", alpha=0.3)
-                    fig.autofmt_xdate()
+                    for label in ax.get_xticklabels():
+                        label.set_rotation(45)
+                        label.set_horizontalalignment("right")
                     self.stats_daily_chart.canvas.draw()
                     self.stats_daily_chart.show_canvas()
                     self.stats_daily_hint.show()

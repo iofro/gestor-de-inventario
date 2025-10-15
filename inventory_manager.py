@@ -1,20 +1,23 @@
 from copy import deepcopy
+from pathlib import Path
 from db import DB
 from PyQt5.QtCore import QAbstractTableModel, Qt
 from PyQt5.QtGui import QColor
 import json
+import re
 from datetime import datetime, timedelta
 import os
 import logging
 import sqlite3
 from decimal import Decimal as D
-from typing import Mapping
-from paths import DATOS_NEGOCIO_PATH, user_logs_path
+from typing import List, Mapping
+from paths import DATOS_NEGOCIO_PATH, ensure_user_dir, user_logs_path
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.party_resolver import Catalogs, normalize_identifier
+from declaracion.anexo_xix import DTEAnulado
 
 try:  # Prefer shared app version if available
     from dte import APP_VERSION
@@ -30,6 +33,40 @@ logger = logging.getLogger(__name__)
 
 
 _TOKEN_FIELDS = ("token_pruebas", "token_produccion")
+
+
+_ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido"}
+_PERIODO_FORMAT = re.compile(r"^\d{6}$")
+
+
+def _map_tipo_anulacion_estado(motivo: Mapping[str, object] | None) -> str | None:
+    if not isinstance(motivo, Mapping):
+        return None
+    raw_tipo = motivo.get("tipoAnulacion")
+    try:
+        tipo = int(raw_tipo)
+    except (TypeError, ValueError):
+        return None
+    if tipo == 1:
+        return "D"
+    if tipo == 2:
+        return "A"
+    if tipo == 3:
+        return "X"
+    return None
+
+
+def _metadata_estado_aceptado(metadata: Mapping[str, object] | None) -> bool:
+    if not isinstance(metadata, Mapping):
+        return False
+    respuesta = metadata.get("respuesta")
+    if isinstance(respuesta, Mapping):
+        for key in ("estado", "estadoEvento", "descripcionEstado"):
+            valor = respuesta.get(key)
+            if isinstance(valor, str) and valor.strip():
+                estado_norm = valor.strip().lower()
+                return estado_norm in _ANEXO_ESTADOS_ACEPTADOS
+    return False
 
 
 def _extract_manual_tokens(datos_negocio: dict | None) -> dict:
@@ -176,6 +213,105 @@ class InventoryManager:
 
     def get_Distribuidores(self):
         return self._Distribuidores
+
+    def get_anexo_xix_registros(self, periodo: str) -> List[DTEAnulado]:
+        periodo_text = str(periodo or "").strip()
+        if not _PERIODO_FORMAT.fullmatch(periodo_text):
+            return []
+
+        try:
+            base_dir = Path(ensure_user_dir("dtes", "actualizaciones", "anulacion"))
+        except Exception:
+            return []
+
+        if not base_dir.exists():
+            return []
+
+        registros: dict[tuple[str, str], DTEAnulado] = {}
+
+        try:
+            entries = sorted(base_dir.iterdir())
+        except OSError:
+            entries = []
+
+        for entry in entries:
+            if not entry.is_dir():
+                continue
+
+            doc_path = entry / "documento.json"
+            if not doc_path.is_file():
+                continue
+
+            try:
+                with doc_path.open("r", encoding="utf-8") as fh:
+                    evento = json.load(fh)
+            except Exception:
+                continue
+
+            if not isinstance(evento, Mapping):
+                continue
+
+            identificacion = evento.get("identificacion")
+            if not isinstance(identificacion, Mapping):
+                continue
+
+            fec_anula_raw = identificacion.get("fecAnula")
+            if fec_anula_raw in (None, ""):
+                continue
+            fec_anula_text = str(fec_anula_raw).strip()
+            if len(fec_anula_text) < 7:
+                continue
+            periodo_evento = fec_anula_text[:4] + fec_anula_text[5:7]
+            if periodo_evento != periodo_text:
+                continue
+
+            documento = evento.get("documento")
+            if not isinstance(documento, Mapping):
+                continue
+
+            numero_control = str(documento.get("numeroControl") or "").strip().upper()
+            codigo_dte = str(documento.get("codigoGeneracion") or "").strip().upper()
+            sello_recibido = str(documento.get("selloRecibido") or "").strip().upper()
+            tipo_doc_raw = documento.get("tipoDte") or documento.get("tipoDocumento")
+            tipo_doc = str(tipo_doc_raw or "").strip()
+            if tipo_doc.isdigit() and len(tipo_doc) < 2:
+                tipo_doc = tipo_doc.zfill(2)
+
+            motivo_value = evento.get("motivo")
+            motivo = motivo_value if isinstance(motivo_value, Mapping) else None
+            estado_detalle = _map_tipo_anulacion_estado(motivo)
+
+            if not (numero_control and codigo_dte and sello_recibido and tipo_doc and estado_detalle):
+                continue
+
+            metadata_path = entry / "metadata.json"
+            metadata: Mapping[str, object] | None = None
+            if metadata_path.is_file():
+                try:
+                    with metadata_path.open("r", encoding="utf-8") as fh:
+                        loaded_meta = json.load(fh)
+                    if isinstance(loaded_meta, Mapping):
+                        metadata = loaded_meta
+                except Exception:
+                    metadata = None
+
+            if not _metadata_estado_aceptado(metadata):
+                continue
+
+            key = (numero_control, codigo_dte)
+            registros[key] = DTEAnulado(
+                numero_control=numero_control,
+                tipo_documento=tipo_doc,
+                sello_recepcion=sello_recibido,
+                codigo_generacion=codigo_dte,
+                estado=estado_detalle,
+            )
+
+        if not registros:
+            return []
+
+        ordered_keys = sorted(registros.keys())
+        return [registros[key] for key in ordered_keys]
 
     def add_producto(
         self,

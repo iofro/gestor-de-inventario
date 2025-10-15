@@ -615,6 +615,82 @@ def test_anular_dte_uses_sello_from_db(qt_app, db_conn, monkeypatch):
     assert data["selloRecibido"] == sello
 
 
+def test_anular_dte_accepts_client_json_payload(qt_app, monkeypatch):
+    sello = "A" * 40
+    client_payload = {
+        "dteJson": {
+            "identificacion": {
+                "codigoGeneracion": "11111111-2222-3333-4444-555555555555",
+                "numeroControl": "DTE-01-S001P001-000000000000123",
+                "fecEmi": "2024-01-02",
+                "tipoDte": "01",
+            },
+            "receptor": {"nombre": "Cliente Demo"},
+        },
+        "selloRecibido": sello,
+        "firmaElectronica": "TOKEN",
+    }
+
+    class DummyTab(QWidget):
+        def __init__(self):
+            super().__init__()
+            self.manager = SimpleNamespace(db=None)
+
+        def refresh_and_reload(self):
+            pass
+
+    dummy = DummyTab()
+    factura = {"venta_id": None}
+
+    monkeypatch.setattr(
+        facturacion_tab.dte,
+        "_load_datos_negocio",
+        lambda: {"nombre": "Empresa", "nit": "06141404100016"},
+    )
+
+    captured = {}
+
+    class DummyDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec_(self):
+            return QDialog.Accepted
+
+        def get_data(self):
+            return {}
+
+    monkeypatch.setattr(facturacion_tab, "AnularFacturaDialog", DummyDialog)
+
+    def fake_build(factura_arg, ui_data, *, ambiente, db):
+        captured["factura"] = factura_arg
+        captured["ambiente"] = ambiente
+        captured["ui"] = ui_data
+        return {"ok": True}
+
+    monkeypatch.setattr(anulacion, "build_invalidacion_json", fake_build)
+
+    monkeypatch.setattr(
+        anulacion,
+        "enviar_invalidacion",
+        lambda db, payload: {"estado": "rechazado", "detalle": "error"},
+    )
+
+    critical_calls = []
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: critical_calls.append((a, k)))
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+
+    facturacion_tab.FacturacionTab._anular_dte(dummy, factura, client_payload)
+
+    assert not critical_calls
+    factura_used = captured["factura"]
+    assert factura_used["selloRecibido"] == sello
+    ident = factura_used.get("identificacion", {})
+    assert ident.get("codigoGeneracion") == "11111111-2222-3333-4444-555555555555"
+    assert ident.get("numeroControl") == "DTE-01-S001P001-000000000000123"
+
+
 def test_enviar_invalidacion_guarda_archivos(monkeypatch, tmp_path):
     codigo = "12345678-1234-1234-1234-1234567890AB"
     data = {

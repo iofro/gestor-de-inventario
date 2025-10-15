@@ -2117,9 +2117,42 @@ class FacturacionTab(QWidget):
         layout.addWidget(intro)
 
         form_layout = QFormLayout()
-        self.declaracion_periodo_input = QLineEdit()
-        self.declaracion_periodo_input.setPlaceholderText("YYYYMM")
-        form_layout.addRow("Período (YYYYMM):", self.declaracion_periodo_input)
+
+        periodo_container = QWidget()
+        periodo_layout = QHBoxLayout(periodo_container)
+        periodo_layout.setContentsMargins(0, 0, 0, 0)
+        periodo_layout.setSpacing(6)
+
+        self.declaracion_mes_combo = QComboBox()
+        meses = [
+            ("Enero", "01"),
+            ("Febrero", "02"),
+            ("Marzo", "03"),
+            ("Abril", "04"),
+            ("Mayo", "05"),
+            ("Junio", "06"),
+            ("Julio", "07"),
+            ("Agosto", "08"),
+            ("Septiembre", "09"),
+            ("Octubre", "10"),
+            ("Noviembre", "11"),
+            ("Diciembre", "12"),
+        ]
+        for nombre, numero in meses:
+            self.declaracion_mes_combo.addItem(nombre, numero)
+
+        today = date.today()
+        self.declaracion_mes_combo.setCurrentIndex(today.month - 1)
+
+        self.declaracion_anio_input = QLineEdit()
+        self.declaracion_anio_input.setPlaceholderText("AAAA")
+        self.declaracion_anio_input.setMaxLength(4)
+        self.declaracion_anio_input.setText(str(today.year))
+
+        periodo_layout.addWidget(self.declaracion_mes_combo)
+        periodo_layout.addWidget(self.declaracion_anio_input)
+
+        form_layout.addRow("Período:", periodo_container)
 
         output_container = QWidget()
         output_layout = QHBoxLayout(output_container)
@@ -2179,12 +2212,17 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Anexo XIX", "Seleccione la carpeta de salida.")
             return
 
-        periodo = self.declaracion_periodo_input.text().strip()
-        if not re.fullmatch(r"\d{6}", periodo):
+        anio = self.declaracion_anio_input.text().strip()
+        if not re.fullmatch(r"\d{4}", anio):
             QMessageBox.warning(
-                self, "Anexo XIX", "El período debe tener el formato YYYYMM (6 dígitos)."
+                self,
+                "Anexo XIX",
+                "El año debe tener 4 dígitos.",
             )
             return
+
+        mes = self.declaracion_mes_combo.currentData()
+        periodo = f"{anio}{mes}"
 
         try:
             registros = self._obtener_anexo_xix_registros(periodo)

@@ -3,6 +3,7 @@ import logging
 import os
 import re
 import shutil
+import json
 from collections.abc import Mapping, Sequence
 from decimal import Decimal
 
@@ -84,6 +85,75 @@ _FIELD_LABEL_OVERRIDES = {
 }
 
 
+_ITEM_HINT_KEYS = {
+    "descripcion",
+    "cantidad",
+    "numItem",
+    "ventaGravada",
+    "ventaExenta",
+    "ventaNoSuj",
+    "noGravado",
+}
+
+
+def _normalize_invoice_items(items) -> List[Dict]:
+    """Return a flat list of item dictionaries.
+
+    Older installations may persist the ``cuerpoDocumento`` field in
+    different shapes.  Some versions store it as a mapping indexed by the
+    item number, others wrap the data under an ``item`` key or even keep
+    a JSON encoded string.  The UI expects an iterable of dictionaries, so
+    the helper coerces all supported representations into that format.
+    """
+
+    def _looks_like_item(value) -> bool:
+        return isinstance(value, Mapping) and any(
+            key in value for key in _ITEM_HINT_KEYS
+        )
+
+    if isinstance(items, str):
+        try:
+            parsed = json.loads(items)
+        except Exception:
+            return []
+        return _normalize_invoice_items(parsed)
+
+    if _looks_like_item(items):
+        return [dict(items)]
+
+    if isinstance(items, Mapping):
+        if "item" in items:
+            return _normalize_invoice_items(items["item"])
+        result: List[Dict] = []
+        for value in items.values():
+            result.extend(_normalize_invoice_items(value))
+        return result
+
+    if isinstance(items, Sequence) and not isinstance(items, (bytes, bytearray, str)):
+        result: List[Dict] = []
+        for element in items:
+            if _looks_like_item(element):
+                result.append(dict(element))
+            else:
+                result.extend(_normalize_invoice_items(element))
+        return result
+
+    return []
+
+
+def _normalize_invoice_summary(summary) -> Dict:
+    if isinstance(summary, Mapping):
+        return dict(summary)
+    if isinstance(summary, str):
+        try:
+            parsed = json.loads(summary)
+        except Exception:
+            return {}
+        if isinstance(parsed, Mapping):
+            return dict(parsed)
+    return {}
+
+
 class InvoiceDetailDialog(QDialog):
     """Simple read-only dialog showing invoice items and totals.
 
@@ -136,7 +206,8 @@ class InvoiceDetailDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
 
-        for it in items:
+        normalized_items = _normalize_invoice_items(items)
+        for it in normalized_items:
             row = self.table.rowCount()
             self.table.insertRow(row)
             desc = it.get("descripcion", "")
@@ -158,12 +229,13 @@ class InvoiceDetailDialog(QDialog):
             self.table.setItem(row, 3, QTableWidgetItem(f"{total:.2f}"))
 
         totals_layout = QVBoxLayout()
-        total_gravada = float(resumen.get("totalGravada", 0))
-        total_exenta = float(resumen.get("totalExenta", 0))
-        total_no_suj = float(resumen.get("totalNoSuj", 0))
-        tribs = resumen.get("tributos") or []
+        resumen_data = _normalize_invoice_summary(resumen)
+        total_gravada = float(resumen_data.get("totalGravada", 0))
+        total_exenta = float(resumen_data.get("totalExenta", 0))
+        total_no_suj = float(resumen_data.get("totalNoSuj", 0))
+        tribs = resumen_data.get("tributos") or []
         total_iva = float(next((t.get("valor", 0) for t in tribs if t.get("codigo") == TRIBUTO_IVA), 0))
-        total = float(resumen.get("totalPagar", resumen.get("montoTotalOperacion", 0)))
+        total = float(resumen_data.get("totalPagar", resumen_data.get("montoTotalOperacion", 0)))
         for text in [
             f"Gravada: {total_gravada:.2f}",
             f"Exenta: {total_exenta:.2f}",

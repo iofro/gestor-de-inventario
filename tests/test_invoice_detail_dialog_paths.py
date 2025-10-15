@@ -1,4 +1,5 @@
 import importlib.util
+import json
 import os
 import sys
 import types
@@ -205,6 +206,8 @@ spec.loader.exec_module(invoice_detail_dialog)
 sys.modules["dialogs.invoice_detail_dialog"] = invoice_detail_dialog
 setattr(dialogs_pkg, "invoice_detail_dialog", invoice_detail_dialog)
 InvoiceDetailDialog = invoice_detail_dialog.InvoiceDetailDialog
+normalize_items = invoice_detail_dialog._normalize_invoice_items
+normalize_summary = invoice_detail_dialog._normalize_invoice_summary
 
 
 def _make_dialog():
@@ -518,7 +521,6 @@ def test_sync_standard_paths_updates_db_and_reuses_canonical(tmp_path, monkeypat
     assert dialog._json_path == str(expected_json)
     assert db.updated == [(dialog.venta_id, str(expected_pdf))]
     assert db.get_factura_pdf(dialog.venta_id) == str(expected_pdf)
-
     dialog2 = _make_dialog()
     dialog2.factura = dialog.factura
     dialog2.venta_id = dialog.venta_id
@@ -549,3 +551,31 @@ def test_metadata_tab_includes_note_payloads(tipo):
 
     assert info_widget is not None
 
+
+def test_normalize_items_handles_stringified_payload():
+    raw = json.dumps(
+        {
+            "1": {
+                "descripcion": "Prod",
+                "cantidad": "2",
+                "precioUni": "1.50",
+                "ventaGravada": "3.00",
+            }
+        }
+    )
+    items = normalize_items(raw)
+    assert len(items) == 1
+    assert items[0]["descripcion"] == "Prod"
+
+
+def test_normalize_items_recurses_nested_sequences():
+    raw = {"item": [{"descripcion": "A", "cantidad": 1}]}
+    items = normalize_items(raw)
+    assert len(items) == 1
+    assert items[0]["descripcion"] == "A"
+
+
+def test_normalize_summary_accepts_json_string():
+    summary = normalize_summary('{"totalGravada": "5", "totalPagar": "5"}')
+    assert summary["totalGravada"] == "5"
+    assert summary["totalPagar"] == "5"

@@ -93,6 +93,10 @@ import shutil
 import uuid
 import dte
 import anulacion
+from declaracion.anexo_consumidor_final import (
+    VentaCF,
+    on_click_generar_consumidor_final,
+)
 from declaracion.anexo_xix import DTEAnulado, on_click_generar_anulaciones
 from db import DB
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
@@ -1954,6 +1958,9 @@ class FacturacionTab(QWidget):
         super().__init__(parent)
         self.manager = manager
         self._anexo_xix_registros_provider = getattr(manager, "get_anexo_xix_registros", None)
+        self._anexo_consumidor_final_registros_provider = getattr(
+            manager, "get_anexo_consumidor_final_registros", None
+        )
         self.email_thread = None
         self._email_loading_dialog = None
         self._setup_ui()
@@ -2171,6 +2178,12 @@ class FacturacionTab(QWidget):
         self.declaracion_generar_btn.clicked.connect(self._handle_generar_anexo_xix)
         layout.addWidget(self.declaracion_generar_btn)
 
+        self.declaracion_generar_cf_btn = QPushButton("Generar consumidor final (II)")
+        self.declaracion_generar_cf_btn.clicked.connect(
+            self._handle_generar_anexo_consumidor_final
+        )
+        layout.addWidget(self.declaracion_generar_cf_btn)
+
         self.declaracion_result_box = QPlainTextEdit()
         self.declaracion_result_box.setReadOnly(True)
         self.declaracion_result_box.setPlaceholderText(
@@ -2206,23 +2219,40 @@ class FacturacionTab(QWidget):
 
         return []
 
-    def _handle_generar_anexo_xix(self):
+    def _obtener_anexo_consumidor_final_registros(self, periodo: str) -> List[VentaCF]:
+        provider = getattr(self, "_anexo_consumidor_final_registros_provider", None)
+        if callable(provider):
+            registros = provider(periodo)
+            return list(registros or [])
+
+        manager_provider = getattr(self.manager, "get_anexo_consumidor_final_registros", None)
+        if callable(manager_provider):
+            registros = manager_provider(periodo)
+            return list(registros or [])
+
+        return []
+
+    def _obtener_parametros_declaracion(self, titulo: str) -> tuple[str, str] | None:
         output_dir = self.declaracion_output_dir_edit.text().strip()
         if not output_dir:
-            QMessageBox.warning(self, "Anexo XIX", "Seleccione la carpeta de salida.")
-            return
+            QMessageBox.warning(self, titulo, "Seleccione la carpeta de salida.")
+            return None
 
         anio = self.declaracion_anio_input.text().strip()
         if not re.fullmatch(r"\d{4}", anio):
-            QMessageBox.warning(
-                self,
-                "Anexo XIX",
-                "El año debe tener 4 dígitos.",
-            )
-            return
+            QMessageBox.warning(self, titulo, "El año debe tener 4 dígitos.")
+            return None
 
         mes = self.declaracion_mes_combo.currentData()
         periodo = f"{anio}{mes}"
+        return output_dir, periodo
+
+    def _handle_generar_anexo_xix(self):
+        parametros = self._obtener_parametros_declaracion("Anexo XIX")
+        if not parametros:
+            return
+
+        output_dir, periodo = parametros
 
         try:
             registros = self._obtener_anexo_xix_registros(periodo)
@@ -2243,6 +2273,35 @@ class FacturacionTab(QWidget):
             QMessageBox.information(self, "Anexo XIX", resultado["message"])
         else:
             QMessageBox.warning(self, "Anexo XIX", resultado["message"])
+
+    def _handle_generar_anexo_consumidor_final(self):
+        parametros = self._obtener_parametros_declaracion("Anexo II")
+        if not parametros:
+            return
+
+        output_dir, periodo = parametros
+
+        try:
+            registros = self._obtener_anexo_consumidor_final_registros(periodo)
+        except Exception as exc:  # pragma: no cover - errores del proveedor
+            mensaje = f"No se pudo obtener la lista de ventas: {exc}"
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.warning(self, "Anexo II", mensaje)
+            return
+
+        self.declaracion_generar_cf_btn.setEnabled(False)
+        try:
+            resultado = on_click_generar_consumidor_final(
+                output_dir, periodo, registros
+            )
+        finally:
+            self.declaracion_generar_cf_btn.setEnabled(True)
+
+        self.declaracion_result_box.setPlainText(resultado["message"])
+        if resultado["success"]:
+            QMessageBox.information(self, "Anexo II", resultado["message"])
+        else:
+            QMessageBox.warning(self, "Anexo II", resultado["message"])
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)

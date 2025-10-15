@@ -28,6 +28,7 @@ from PyQt5.QtWidgets import (
     QMenu,
     QAction,
     QFormLayout,
+    QTabWidget,
 )
 from PyQt5.QtCore import QDate, QDateTime, QTime, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage, QColor, QBrush
@@ -37,7 +38,7 @@ import logging
 import glob
 import hashlib
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, List, Mapping
 from pprint import pformat
 
 from ticket_pdf import generar_ticket_personalizado
@@ -92,6 +93,7 @@ import shutil
 import uuid
 import dte
 import anulacion
+from declaracion.anexo_xix import DTEAnulado, on_click_generar_anulaciones
 from db import DB
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
@@ -1951,6 +1953,7 @@ class FacturacionTab(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
         self.manager = manager
+        self._anexo_xix_registros_provider = getattr(manager, "get_anexo_xix_registros", None)
         self.email_thread = None
         self._email_loading_dialog = None
         self._setup_ui()
@@ -1969,7 +1972,15 @@ class FacturacionTab(QWidget):
         self._refresh_timer.start()
 
     def _setup_ui(self):
-        main_layout = QHBoxLayout(self)
+        root_layout = QVBoxLayout(self)
+
+        self.section_tabs = QTabWidget(self)
+        root_layout.addWidget(self.section_tabs)
+
+        facturacion_container = QWidget()
+        self.section_tabs.addTab(facturacion_container, "Facturación")
+
+        main_layout = QHBoxLayout(facturacion_container)
 
         left_layout = QVBoxLayout()
 
@@ -2091,6 +2102,109 @@ class FacturacionTab(QWidget):
         self.btn_imprimir.clicked.connect(self.print_invoice)
         self.btn_abrir_pdf.clicked.connect(self.open_pdf)
         self.btn_eliminar.clicked.connect(self.delete_invoice)
+
+        self._setup_declaracion_tab()
+
+    def _setup_declaracion_tab(self):
+        declaracion_widget = QWidget()
+        layout = QVBoxLayout(declaracion_widget)
+        layout.setSpacing(12)
+
+        intro = QLabel(
+            "Genera los archivos del Anexo XIX (Documentos legales y electrónicos anulados)."
+        )
+        intro.setWordWrap(True)
+        layout.addWidget(intro)
+
+        form_layout = QFormLayout()
+        self.declaracion_periodo_input = QLineEdit()
+        self.declaracion_periodo_input.setPlaceholderText("YYYYMM")
+        form_layout.addRow("Período (YYYYMM):", self.declaracion_periodo_input)
+
+        output_container = QWidget()
+        output_layout = QHBoxLayout(output_container)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        self.declaracion_output_dir_edit = QLineEdit()
+        self.declaracion_output_dir_edit.setPlaceholderText("Selecciona la carpeta de salida")
+        output_layout.addWidget(self.declaracion_output_dir_edit)
+        browse_btn = QPushButton("Seleccionar carpeta…")
+        browse_btn.clicked.connect(self._browse_declaracion_output_dir)
+        output_layout.addWidget(browse_btn)
+        form_layout.addRow("Carpeta de salida:", output_container)
+
+        layout.addLayout(form_layout)
+
+        self.declaracion_generar_btn = QPushButton("Generar anulaciones (XIX)")
+        self.declaracion_generar_btn.clicked.connect(self._handle_generar_anexo_xix)
+        layout.addWidget(self.declaracion_generar_btn)
+
+        self.declaracion_result_box = QPlainTextEdit()
+        self.declaracion_result_box.setReadOnly(True)
+        self.declaracion_result_box.setPlaceholderText(
+            "Aquí se mostrarán las rutas generadas o los errores detectados."
+        )
+        self.declaracion_result_box.setMinimumHeight(120)
+        layout.addWidget(self.declaracion_result_box)
+
+        layout.addStretch(1)
+
+        self.section_tabs.addTab(declaracion_widget, "Declaración")
+
+    def _browse_declaracion_output_dir(self):
+        current_dir = self.declaracion_output_dir_edit.text().strip() or str(Path.home())
+        directory = QFileDialog.getExistingDirectory(
+            self,
+            "Seleccionar carpeta de salida",
+            current_dir,
+        )
+        if directory:
+            self.declaracion_output_dir_edit.setText(directory)
+
+    def _obtener_anexo_xix_registros(self, periodo: str) -> List[DTEAnulado]:
+        provider = self._anexo_xix_registros_provider
+        if callable(provider):
+            registros = provider(periodo)
+            return list(registros or [])
+
+        manager_provider = getattr(self.manager, "get_anexo_xix_registros", None)
+        if callable(manager_provider):
+            registros = manager_provider(periodo)
+            return list(registros or [])
+
+        return []
+
+    def _handle_generar_anexo_xix(self):
+        output_dir = self.declaracion_output_dir_edit.text().strip()
+        if not output_dir:
+            QMessageBox.warning(self, "Anexo XIX", "Seleccione la carpeta de salida.")
+            return
+
+        periodo = self.declaracion_periodo_input.text().strip()
+        if not re.fullmatch(r"\d{6}", periodo):
+            QMessageBox.warning(
+                self, "Anexo XIX", "El período debe tener el formato YYYYMM (6 dígitos)."
+            )
+            return
+
+        try:
+            registros = self._obtener_anexo_xix_registros(periodo)
+        except Exception as exc:  # pragma: no cover - errores del proveedor
+            mensaje = f"No se pudo obtener la lista de anulaciones: {exc}"
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.warning(self, "Anexo XIX", mensaje)
+            return
+
+        self.declaracion_generar_btn.setEnabled(False)
+        try:
+            resultado = on_click_generar_anulaciones(output_dir, periodo, registros)
+        finally:
+            self.declaracion_generar_btn.setEnabled(True)
+
+        self.declaracion_result_box.setPlainText(resultado["message"])
+        if resultado["success"]:
+            QMessageBox.information(self, "Anexo XIX", resultado["message"])
+        else:
+            QMessageBox.warning(self, "Anexo XIX", resultado["message"])
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)

@@ -729,6 +729,13 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch, tmp_path):
 
     monkeypatch.setattr(anulacion, "_post_invalidacion", fake_post)
 
+    def fake_resolve(base_dir, codigo_generacion):
+        target = base_root / "dtes" / codigo_generacion
+        target.mkdir(parents=True, exist_ok=True)
+        return os.fspath(target)
+
+    monkeypatch.setattr(anulacion, "resolve_version_dir", fake_resolve)
+
     created_dirs = []
 
     def fake_makedirs(path, exist_ok=False):
@@ -749,10 +756,16 @@ def test_enviar_invalidacion_guarda_archivos(monkeypatch, tmp_path):
     expected_dir = os.path.join(os.fspath(base_dir), codigo)
     assert created_dirs == [(expected_dir, True)]
 
-    assert len(saved) == 1
+    assert len(saved) == 3
     json_path = os.path.join(expected_dir, "documento.json")
     assert saved[0][0] == json_path
     assert saved[0][2] is True
+    metadata_paths = [entry[0] for entry in saved if entry[0].endswith("metadata.json")]
+    assert metadata_paths == [os.path.join(expected_dir, "metadata.json"), os.path.join(expected_dir, "metadata.json")]
+    final_metadata = json.loads(saved[-1][1])
+    assert final_metadata["documento"]["codigoGeneracion"] == codigo
+    assert final_metadata["documento"]["numeroControl"] == "DTE-01-ABCDEFGH-000000000000001"
+    assert final_metadata["respuesta"]["estado"].lower() == "aceptado"
     assert posted
     assert posted[0][0] == "https://mh.test/fesv/anulardte"
     assert posted[0][1] is data

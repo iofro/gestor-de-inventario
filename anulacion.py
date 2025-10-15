@@ -13,6 +13,7 @@ import auth
 from mh_auth import auth_headers
 from db import DB
 from utils import stable_json
+from utils.versioned_dte import resolve_version_dir
 from paths import ensure_user_dir
 from utils.catalogos import TRIBUTO_IVA
 from utils.sanitize import solo_digitos
@@ -178,6 +179,110 @@ def _load_dte_json_from_venta(db: DB, venta_id: int | None) -> dict | None:
             if cod:
                 return data
     return None
+
+
+def _persist_anulacion_metadata(
+    target_dir: str,
+    data: dict | None,
+    *,
+    json_path: str | None = None,
+    codigo_dte: str | None = None,
+    dte_json_path: str | None = None,
+    respuesta: dict | None = None,
+) -> None:
+    if not target_dir or not isinstance(data, dict):
+        return
+
+    metadata_path = os.path.join(target_dir, "metadata.json")
+    existing: dict[str, object] = {}
+    try:
+        with open(metadata_path, "r", encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            existing = loaded
+    except Exception:
+        existing = {}
+
+    metadata: dict[str, object] = dict(existing)
+
+    identificacion = data.get("identificacion")
+    if not isinstance(identificacion, dict):
+        identificacion = {}
+    evento_meta = dict(metadata.get("evento") or {})
+    codigo_evento = identificacion.get("codigoGeneracion")
+    if isinstance(codigo_evento, str) and codigo_evento.strip():
+        evento_meta["codigoGeneracion"] = codigo_evento.strip().upper()
+    if isinstance(json_path, str) and json_path.strip():
+        evento_meta["jsonPath"] = json_path.strip()
+    metadata["evento"] = evento_meta
+
+    ident_meta = dict(metadata.get("identificacion") or {})
+    fec_anula = identificacion.get("fecAnula")
+    if fec_anula not in (None, ""):
+        ident_meta["fecAnula"] = str(fec_anula)
+    hor_anula = identificacion.get("horAnula")
+    if hor_anula not in (None, ""):
+        ident_meta["horAnula"] = str(hor_anula)
+    metadata["identificacion"] = ident_meta
+
+    motivo = data.get("motivo")
+    if isinstance(motivo, dict):
+        metadata["motivo"] = dict(motivo)
+
+    documento = data.get("documento")
+    if not isinstance(documento, dict):
+        documento = {}
+    documento_meta = dict(metadata.get("documento") or {})
+    codigo_dte_val = codigo_dte
+    if not codigo_dte_val:
+        codigo_raw = documento.get("codigoGeneracion")
+        if isinstance(codigo_raw, str) and codigo_raw.strip():
+            codigo_dte_val = codigo_raw.strip().upper()
+    if isinstance(codigo_dte_val, str) and codigo_dte_val.strip():
+        documento_meta["codigoGeneracion"] = codigo_dte_val.strip().upper()
+    numero_control = documento.get("numeroControl")
+    if isinstance(numero_control, str) and numero_control.strip():
+        documento_meta["numeroControl"] = numero_control.strip().upper()
+    tipo_doc = documento.get("tipoDte") or documento.get("tipoDocumento")
+    if tipo_doc not in (None, ""):
+        tipo_text = str(tipo_doc).strip()
+        if tipo_text.isdigit() and len(tipo_text) < 2:
+            tipo_text = tipo_text.zfill(2)
+        documento_meta["tipoDte"] = tipo_text
+    sello_recibido = documento.get("selloRecibido")
+    if isinstance(sello_recibido, str) and sello_recibido.strip():
+        documento_meta["selloRecibido"] = sello_recibido.strip().upper()
+    if isinstance(dte_json_path, str) and dte_json_path.strip():
+        documento_meta["dteJsonPath"] = dte_json_path.strip()
+        documento_meta["jsonPath"] = dte_json_path.strip()
+    metadata["documento"] = documento_meta
+
+    if isinstance(respuesta, dict):
+        respuesta_meta = dict(metadata.get("respuesta") or {})
+        estado_resp = None
+        for key in ("estado", "estadoEvento", "descripcionEstado"):
+            valor = respuesta.get(key)
+            if isinstance(valor, str) and valor.strip():
+                estado_resp = valor.strip()
+                break
+        if estado_resp:
+            respuesta_meta["estado"] = estado_resp
+        sello_resp = respuesta.get("sello") or respuesta.get("selloRecepcion")
+        if isinstance(sello_resp, str) and sello_resp.strip():
+            respuesta_meta["sello"] = sello_resp.strip()
+        if respuesta_meta:
+            metadata["respuesta"] = respuesta_meta
+
+    try:
+        stable_json.save_file(
+            metadata_path,
+            stable_json.stable_stringify(metadata, indent=2),
+        )
+    except Exception:
+        logger.exception(
+            "No se pudo escribir metadatos del evento de anulación %s",
+            codigo_dte_val or codigo_evento or "",
+        )
 
 
 def _extract_metadata(source: dict | None) -> dict:
@@ -1232,17 +1337,44 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
                 codigo_generacion,
             )
             target_dir = None
+    metadata_kwargs: dict[str, object] = {}
     if target_dir and isinstance(data, dict):
         try:
             json_path = os.path.join(target_dir, "documento.json")
             stable_json.save_file(
                 json_path, stable_json.stable_stringify(data, indent=2)
             )
+            metadata_kwargs["json_path"] = json_path
         except Exception:
             logger.exception(
                 "No se pudo guardar el evento de anulación %s",
                 codigo_generacion or "",
             )
+        documento = data.get("documento") if isinstance(data, dict) else None
+        codigo_dte = None
+        if isinstance(documento, dict):
+            codigo_dte_raw = documento.get("codigoGeneracion")
+            if isinstance(codigo_dte_raw, str):
+                codigo_dte = codigo_dte_raw.strip().upper() or None
+        dte_json_path = None
+        if codigo_dte:
+            try:
+                version_dir = resolve_version_dir(None, codigo_dte)
+            except Exception:
+                version_dir = None
+            if version_dir:
+                candidate = os.path.join(version_dir, "documento.json")
+                if os.path.exists(candidate):
+                    dte_json_path = candidate
+        metadata_kwargs["codigo_dte"] = codigo_dte
+        metadata_kwargs["dte_json_path"] = dte_json_path
+        _persist_anulacion_metadata(
+            target_dir,
+            data,
+            json_path=metadata_kwargs.get("json_path"),
+            codigo_dte=codigo_dte,
+            dte_json_path=dte_json_path,
+        )
     ambiente_cfg = config.get("ambiente")
     _quick_invalidacion_checks(data, ambiente_raiz=ambiente_cfg, db=db)
     respuesta = _post_invalidacion(
@@ -1263,5 +1395,20 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
         res["detalle"] = detalle
     if respuesta.get("errores"):
         res["errores"] = respuesta["errores"]
+    if target_dir:
+        try:
+            _persist_anulacion_metadata(
+                target_dir,
+                data,
+                json_path=metadata_kwargs.get("json_path"),
+                codigo_dte=metadata_kwargs.get("codigo_dte"),
+                dte_json_path=metadata_kwargs.get("dte_json_path"),
+                respuesta=respuesta,
+            )
+        except Exception:
+            logger.exception(
+                "No se pudo actualizar los metadatos del evento de anulación %s",
+                codigo_generacion or "",
+            )
     return res
 

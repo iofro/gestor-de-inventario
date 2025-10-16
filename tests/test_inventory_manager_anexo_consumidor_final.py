@@ -99,6 +99,30 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     json_path = cf_dir / "20251002_cliente_DTE-01.json"
     json_path.write_text(json.dumps(payload), encoding="utf-8")
 
+    enviado_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-02",
+                "horEmi": "07:30:00",
+                "numeroControl": "DTE-01-S001P001-000000000000456",
+                "codigoGeneracion": "EEEFFF00-1111-2222-3333-444455556666",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.25",
+                "totalNoGravado": "0.25",
+                "totalNoSuj": "0.25",
+                "totalGravada": "5.00",
+                "totalPagar": "5.75",
+            },
+        },
+        "respuesta": {"estado": "Enviado"},
+    }
+
+    enviado_json = cf_dir / "20251002_cliente_envio.json"
+    enviado_json.write_text(json.dumps(enviado_payload), encoding="utf-8")
+
     backup_dir = cf_dir / "copia de seguridad"
     backup_dir.mkdir(parents=True, exist_ok=True)
     (backup_dir / json_path.name).write_text(json.dumps(payload), encoding="utf-8")
@@ -202,12 +226,18 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     registros_octubre = manager.get_anexo_consumidor_final_registros("202510")
     assert [r.numero_doc_del for r in registros_octubre] == [
         "B1B1B1B1-0000-1111-2222-333344445555",
+        "EEEFFF00-1111-2222-3333-444455556666",
         "ABCDEF12-3456-7890-ABCD-EF1234567890",
         "C1C1C1C1-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
         "D1D1D1D1-AAAA-BBBB-CCCC-111122223333",
     ]
 
     registros_map = {registro.numero_doc_del: registro for registro in registros_octubre}
+
+    registro_enviado = registros_map["EEEFFF00-1111-2222-3333-444455556666"]
+    assert registro_enviado.fecha == "02/10/2025"
+    assert registro_enviado.ventas_gravadas_locales == "5.00"
+    assert registro_enviado.total_ventas == "5.75"
 
     registro = registros_map["ABCDEF12-3456-7890-ABCD-EF1234567890"]
     assert registro.fecha == "02/10/2025"

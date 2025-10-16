@@ -120,6 +120,7 @@ def test_nombre_comercial_included(monkeypatch, qt_app):
     db = DummyDB()
     dialog = make_dialog(db)
 
+    dialog.tipo_contribuyente_combo.setCurrentText("Persona Jurídica")
     dialog.nombre_comercial_edit.setText('Comercial')
 
     warnings = {}
@@ -134,3 +135,23 @@ def test_nombre_comercial_included(monkeypatch, qt_app):
     assert accepted.get('called')
     data = dialog.get_data()
     assert data['nombreComercial'] == 'Comercial'
+    assert data['razonSocial'] == 'Comercial'
+    assert data['tipoContribuyente'] == 'Persona Jurídica'
+
+
+def test_persona_juridica_requires_razon_social(monkeypatch, qt_app):
+    db = DummyDB()
+    dialog = make_dialog(db)
+
+    dialog.tipo_contribuyente_combo.setCurrentText("Persona Jurídica")
+
+    warnings = {}
+    monkeypatch.setattr(QMessageBox, 'warning', lambda *a, **k: warnings.setdefault('called', True))
+
+    accepted = {}
+    dialog.accept = lambda: accepted.setdefault('called', True)
+
+    dialog._validar_y_accept()
+
+    assert warnings.get('called')
+    assert not accepted.get('called')

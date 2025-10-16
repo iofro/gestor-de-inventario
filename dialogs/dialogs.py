@@ -3533,6 +3533,8 @@ class ClienteDialog(QDialog):
 
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
+        self.tipo_contribuyente_combo = QComboBox()
+        self.tipo_contribuyente_combo.addItems(["Persona Natural", "Persona Jurídica"])
         self.nombre_comercial_edit = QLineEdit()
         self.nrc_edit = QLineEdit()
         self.nit_edit = QLineEdit()
@@ -3563,10 +3565,12 @@ class ClienteDialog(QDialog):
         )
         self._cliente_id = cliente.get("id") if cliente else None
 
+        self.nombre_comercial_label = QLabel("Razón social (opcional):")
         form = [
             ("Código:", self.codigo_edit),
             ("Nombre completo:", self.nombre_edit),
-            ("Nombre comercial:", self.nombre_comercial_edit),
+            ("Tipo contribuyente:", self.tipo_contribuyente_combo),
+            (self.nombre_comercial_label, self.nombre_comercial_edit),
             ("NRC:", self.nrc_edit),
             ("NIT:", self.nit_edit),
             ("DUI:", self.dui_edit),
@@ -3578,9 +3582,30 @@ class ClienteDialog(QDialog):
             ("Departamento:", self.departamento_edit),
             ("Municipio:", self.municipio_edit),
         ]
+        manager_obj = getattr(parent, "manager", None) if parent is not None else None
+        clientes_existentes = (
+            manager_obj._clientes if hasattr(manager_obj, "_clientes") else []
+        )
+        nombres_comerciales = sorted(
+            {
+                str(cli.get("nombreComercial", "")).strip()
+                for cli in clientes_existentes
+                if isinstance(cli, Mapping) and cli.get("nombreComercial")
+            }
+        )
+        if nombres_comerciales:
+            completer = QCompleter(nombres_comerciales, self.nombre_comercial_edit)
+            completer.setCaseSensitivity(Qt.CaseInsensitive)
+            completer.setFilterMode(Qt.MatchContains)
+            self.nombre_comercial_edit.setCompleter(completer)
+
         for label, widget in form:
+            if isinstance(label, str):
+                label_widget = QLabel(label)
+            else:
+                label_widget = label
             row = QHBoxLayout()
-            row.addWidget(QLabel(label))
+            row.addWidget(label_widget)
             row.addWidget(widget)
             layout.addLayout(row)
 
@@ -3598,6 +3623,10 @@ class ClienteDialog(QDialog):
         if codigo_sugerido and not cliente:
             self.codigo_edit.setText(codigo_sugerido)
 
+        self.tipo_contribuyente_combo.currentTextChanged.connect(
+            self._actualizar_tipo_contribuyente_estado
+        )
+
         if cliente:
             self.codigo_edit.setText(cliente.get("codigo", ""))
             self.nombre_edit.setText(cliente.get("nombre", ""))
@@ -3613,6 +3642,13 @@ class ClienteDialog(QDialog):
             _set_combo_value(self.departamento_edit, DEPARTAMENTOS, cliente.get("departamento"))
             _set_combo_value(self.municipio_edit, MUNICIPIOS, cliente.get("municipio"))
             self.municipio_edit.setEnabled(bool(self.departamento_edit.currentData()))
+            tipo_contribuyente = cliente.get("tipoContribuyente")
+            if not tipo_contribuyente:
+                extras = self._parse_cliente_otros(cliente.get("otros"))
+                tipo_contribuyente = extras.get("tipoContribuyente")
+            if tipo_contribuyente:
+                self.tipo_contribuyente_combo.setCurrentText(str(tipo_contribuyente))
+        self._actualizar_tipo_contribuyente_estado(self.tipo_contribuyente_combo.currentText())
 
 
     def _validar_y_accept(self):
@@ -3640,6 +3676,16 @@ class ClienteDialog(QDialog):
         if email and not validar_email(email):
             QMessageBox.warning(self, "Validación", "Ingrese un correo electrónico válido.")
             return
+        tipo_contribuyente = self.tipo_contribuyente_combo.currentText()
+        if tipo_contribuyente == "Persona Jurídica":
+            razon_social = self.nombre_comercial_edit.text().strip()
+            if not razon_social:
+                QMessageBox.warning(
+                    self,
+                    "Validación",
+                    "Seleccione una razón social para personas jurídicas.",
+                )
+                return
         if nit:
             db = getattr(getattr(self.parent(), "manager", None), "db", None)
             if db and db.nit_exists(nit, exclude_id=self._cliente_id):
@@ -3662,7 +3708,32 @@ class ClienteDialog(QDialog):
             "direccion": self.direccion_edit.text().strip(),
             "departamento": self.departamento_edit.currentData(),
             "municipio": self.municipio_edit.currentData(),
+            "tipoContribuyente": self.tipo_contribuyente_combo.currentText(),
+            "razonSocial": self.nombre_comercial_edit.text().strip(),
         }
+
+    @staticmethod
+    def _parse_cliente_otros(raw_otros):
+        if not raw_otros:
+            return {}
+        if isinstance(raw_otros, Mapping):
+            return dict(raw_otros)
+        if isinstance(raw_otros, str):
+            try:
+                data = json.loads(raw_otros)
+            except Exception:
+                return {}
+            return data if isinstance(data, dict) else {}
+        return {}
+
+    def _actualizar_tipo_contribuyente_estado(self, texto):
+        requerido = texto == "Persona Jurídica"
+        if requerido:
+            self.nombre_comercial_label.setText("Razón social (*):")
+            self.nombre_comercial_edit.setPlaceholderText("Razón social obligatoria")
+        else:
+            self.nombre_comercial_label.setText("Razón social (opcional):")
+            self.nombre_comercial_edit.setPlaceholderText("Razón social (opcional)")
 
 class VendedorDialog(QDialog):
     def __init__(self, Distribuidores, parent=None, vendedor=None, codigo_sugerido=None):

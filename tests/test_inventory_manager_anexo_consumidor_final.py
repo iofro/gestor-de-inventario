@@ -102,7 +102,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             },
         },
         "selloRecibido": "A" * 40,
-        "respuesta": {"estado": "Aceptado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     json_path = cf_dir / "20251002_cliente_DTE-01.json"
@@ -156,7 +156,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
                 "tipoIngreso": "2",
             },
         },
-        "respuesta": {"estado": "aceptado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     archive_json = archive_dir / "20251001_archive.json"
@@ -183,7 +183,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             },
         },
         "selloRecibido": "C" * 40,
-        "respuesta": {"estado": "aceptado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     ticket_json = tickets_dir / "20251003_ticket.json"
@@ -210,7 +210,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
                 "totalPagar": "16.00",
             },
         },
-        "respuesta": {"estado": "procesado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     dtes_json = dtes_fcf_dir / "20251004_dtes.json"

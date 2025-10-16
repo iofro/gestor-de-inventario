@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_FIELDS = ("token_pruebas", "token_produccion")
 
 
-_ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido"}
+_ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido", "enviado"}
 _PERIODO_FORMAT = re.compile(r"^\d{6}$")
 
 

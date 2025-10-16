@@ -94,6 +94,10 @@ import shutil
 import uuid
 import dte
 import anulacion
+from declaracion.anexo_contribuyentes import (
+    VentaContribuyente,
+    on_click_generar_contribuyentes,
+)
 from declaracion.anexo_consumidor_final import (
     VentaCF,
     on_click_generar_consumidor_final,
@@ -1959,6 +1963,9 @@ class FacturacionTab(QWidget):
         super().__init__(parent)
         self.manager = manager
         self._anexo_xix_registros_provider = getattr(manager, "get_anexo_xix_registros", None)
+        self._anexo_contribuyentes_registros_provider = getattr(
+            manager, "get_anexo_contribuyentes_registros", None
+        )
         self._anexo_consumidor_final_registros_provider = getattr(
             manager, "get_anexo_consumidor_final_registros", None
         )
@@ -2179,6 +2186,12 @@ class FacturacionTab(QWidget):
         buttons_layout = QHBoxLayout()
         buttons_layout.setContentsMargins(0, 0, 0, 0)
 
+        self.declaracion_cargar_contribuyentes_btn = QPushButton("Contribuyentes")
+        self.declaracion_cargar_contribuyentes_btn.clicked.connect(
+            self._handle_cargar_contribuyentes
+        )
+        buttons_layout.addWidget(self.declaracion_cargar_contribuyentes_btn)
+
         self.declaracion_cargar_cf_btn = QPushButton("Consumidor final")
         self.declaracion_cargar_cf_btn.clicked.connect(self._handle_cargar_cf)
         buttons_layout.addWidget(self.declaracion_cargar_cf_btn)
@@ -2241,6 +2254,21 @@ class FacturacionTab(QWidget):
             return list(registros or [])
 
         manager_provider = getattr(self.manager, "get_anexo_xix_registros", None)
+        if callable(manager_provider):
+            registros = manager_provider(periodo)
+            return list(registros or [])
+
+        return []
+
+    def _obtener_anexo_contribuyentes_registros(
+        self, periodo: str
+    ) -> List[VentaContribuyente]:
+        provider = getattr(self, "_anexo_contribuyentes_registros_provider", None)
+        if callable(provider):
+            registros = provider(periodo)
+            return list(registros or [])
+
+        manager_provider = getattr(self.manager, "get_anexo_contribuyentes_registros", None)
         if callable(manager_provider):
             registros = manager_provider(periodo)
             return list(registros or [])
@@ -2373,6 +2401,56 @@ class FacturacionTab(QWidget):
         self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
         self.declaracion_table.resizeRowsToContents()
 
+    def _populate_table_contribuyentes(
+        self, registros: List[VentaContribuyente]
+    ) -> None:
+        headers = [
+            "✔",
+            "Fecha",
+            "Tipo",
+            "Código (Generación)",
+            "N° Control",
+            "Cliente",
+            "Total (P)",
+            "Sello",
+        ]
+        self._configure_declaracion_table(headers)
+        self.declaracion_table.setRowCount(len(registros))
+        self._declaracion_context = "I"
+
+        for row, registro in enumerate(registros):
+            checkbox = QTableWidgetItem()
+            checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            checkbox.setCheckState(Qt.Checked)
+            checkbox.setData(Qt.UserRole, registro)
+            self.declaracion_table.setItem(row, 0, checkbox)
+
+            fecha = getattr(registro, "fecha_emision", "") or ""
+            self.declaracion_table.setItem(row, 1, self._create_table_item(str(fecha)))
+
+            tipo = getattr(registro, "tipo", "") or ""
+            self.declaracion_table.setItem(row, 2, self._create_table_item(str(tipo)))
+
+            codigo = getattr(registro, "codigo_generacion", "") or ""
+            self.declaracion_table.setItem(row, 3, self._create_table_item(str(codigo)))
+
+            numero_control = getattr(registro, "numero_control", "") or ""
+            self.declaracion_table.setItem(
+                row, 4, self._create_table_item(str(numero_control))
+            )
+
+            cliente = getattr(registro, "nombre_cliente", "") or ""
+            self.declaracion_table.setItem(row, 5, self._create_table_item(str(cliente)))
+
+            total = getattr(registro, "total_ventas", "0") or "0"
+            self.declaracion_table.setItem(row, 6, self._create_table_item(str(total)))
+
+            sello = getattr(registro, "sello_recepcion", "") or ""
+            self.declaracion_table.setItem(row, 7, self._create_table_item(str(sello)))
+
+        self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
+        self.declaracion_table.resizeRowsToContents()
+
     def _populate_table_xix(self, registros: List[DTEAnulado]) -> None:
         headers = [
             "✔",
@@ -2425,6 +2503,32 @@ class FacturacionTab(QWidget):
             if registro is not None:
                 registros.append(registro)
         return registros
+
+    def _handle_cargar_contribuyentes(self):
+        periodo = self._obtener_periodo_declaracion("Anexo I")
+        if not periodo:
+            return
+
+        try:
+            registros = self._obtener_anexo_contribuyentes_registros(periodo)
+        except Exception as exc:  # pragma: no cover - errores del proveedor
+            mensaje = f"No se pudo obtener la lista de contribuyentes: {exc}"
+            self._clear_declaracion_table()
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.warning(self, "Anexo I", mensaje)
+            return
+
+        if not registros:
+            self._clear_declaracion_table()
+            mensaje = "No hay DTE de contribuyentes para este período."
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.information(self, "Anexo I", mensaje)
+            return
+
+        self._populate_table_contribuyentes(registros)
+        self.declaracion_result_box.setPlainText(
+            f"{len(registros)} DTE listos para generar el Anexo I."
+        )
 
     def _handle_cargar_cf(self):
         periodo = self._obtener_periodo_declaracion("Anexo II")
@@ -2487,11 +2591,11 @@ class FacturacionTab(QWidget):
             return
 
         contexto = self._declaracion_context
-        if contexto not in {"II", "XIX"}:
+        if contexto not in {"I", "II", "XIX"}:
             QMessageBox.warning(
                 self,
                 "Declaración",
-                "Primero cargue la lista de Anulaciones o Consumidor final.",
+                "Primero cargue la lista de Contribuyentes, Consumidor final o Anulaciones.",
             )
             return
 
@@ -2503,9 +2607,16 @@ class FacturacionTab(QWidget):
 
         self.declaracion_generar_planilla_btn.setEnabled(False)
         resultado: dict[str, object]
-        titulo = "Anexo II" if contexto == "II" else "Anexo XIX"
+        if contexto == "I":
+            titulo = "Anexo I"
+        elif contexto == "II":
+            titulo = "Anexo II"
+        else:
+            titulo = "Anexo XIX"
         try:
-            if contexto == "II":
+            if contexto == "I":
+                resultado = on_click_generar_contribuyentes(output_dir, periodo, registros)
+            elif contexto == "II":
                 resultado = on_click_generar_consumidor_final(output_dir, periodo, registros)
             else:
                 resultado = on_click_generar_anulaciones(output_dir, periodo, registros)

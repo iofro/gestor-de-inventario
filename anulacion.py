@@ -23,6 +23,9 @@ from dte import (
     _load_datos_negocio,
     _load_dte_api_config,
     _decode_jws_payload,
+    _is_persona_juridica,
+    _choose_nombre,
+    normalize_nombre,
     format_cliente_id_from_dui,
     detect_user_agent,
     _parse_error_response,
@@ -1026,8 +1029,13 @@ def build_invalidacion_json(
     if len(nit) not in (9, 14):
         raise ValueError("NIT del emisor inválido")
 
-    nombre_emisor = (negocio.get("nombre") or "").strip()
-    if not (3 <= len(nombre_emisor) <= 250):
+    persona_juridica_emisor = _is_persona_juridica(negocio)
+    nombre_emisor = _choose_nombre(
+        persona_juridica_emisor,
+        250,
+        negocio,
+    )
+    if not nombre_emisor or len(nombre_emisor) < 3:
         raise ValueError("Nombre del emisor inválido")
 
     tipo_estable = str(negocio.get("tipoEstablecimiento") or "01").zfill(2)
@@ -1088,8 +1096,8 @@ def build_invalidacion_json(
         emisor["codPuntoVentaMH"] = cod_punto_venta_mh
 
     receptor = factura.get("receptor") or {}
-    nombre_rec = (receptor.get("nombre") or "").strip()
-    if not (5 <= len(nombre_rec) <= 200):
+    nombre_rec = normalize_nombre(receptor.get("nombre"), max_length=200)
+    if not nombre_rec or len(nombre_rec) < 5:
         raise ValueError("Nombre del receptor inválido")
 
     tip_doc_rec = receptor.get("tipoDocumento") or ("36" if receptor.get("nit") else None)

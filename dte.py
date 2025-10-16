@@ -11,6 +11,7 @@ import shutil
 import hashlib
 import logging
 import time
+import unicodedata
 from collections.abc import Mapping as AbcMapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -1017,6 +1018,22 @@ def sanitize_dte_payload(data: dict, schema: dict | None = None) -> dict:
             if tipo_doc_rec != "36":
                 rec_clean.setdefault("nrc", None)
 
+    emisor_clean = cleaned.get("emisor")
+    if isinstance(emisor_clean, dict):
+        nombre_norm = normalize_nombre(
+            emisor_clean.get("nombre"),
+            max_length=_max_nombre_length(tipo_dte, "emisor"),
+        )
+        emisor_clean["nombre"] = nombre_norm
+
+    rec_clean = cleaned.get("receptor")
+    if isinstance(rec_clean, dict):
+        nombre_norm = normalize_nombre(
+            rec_clean.get("nombre"),
+            max_length=_max_nombre_length(tipo_dte, "receptor"),
+        )
+        rec_clean["nombre"] = nombre_norm
+
     schema_props = set(schema.get("properties", {}))
     for key in (
         "documentoRelacionado",
@@ -1113,6 +1130,102 @@ def _precios_incluyen_iva_from(
 
 def _norm3(value) -> str:
     return re.sub(r"\D", "", str(value))[-3:].zfill(3)
+
+
+def _normalize_tipo_contribuyente(value: object) -> str:
+    if value in (None, ""):
+        return ""
+    text = str(value).strip()
+    if not text:
+        return ""
+    normalized = unicodedata.normalize("NFKD", text)
+    normalized = normalized.encode("ascii", "ignore").decode("ascii")
+    normalized = normalized.replace(".", " ")
+    normalized = re.sub(r"[^a-zA-Z]+", " ", normalized).strip().lower()
+    if not normalized:
+        return ""
+    if normalized in {"pj"}:
+        return "juridica"
+    if normalized in {"pn"}:
+        return "natural"
+    if "juridic" in normalized or "empresa" in normalized:
+        return "juridica"
+    if "natural" in normalized:
+        return "natural"
+    return ""
+
+
+def _is_persona_juridica(data: Mapping[str, Any] | None) -> bool:
+    if not isinstance(data, AbcMapping):
+        return False
+    for key in ("tipoContribuyente", "tipo_contribuyente"):
+        tipo = _normalize_tipo_contribuyente(data.get(key))
+        if tipo:
+            return tipo == "juridica"
+    extra = data.get("extra")
+    if isinstance(extra, AbcMapping):
+        extra_tipo = _normalize_tipo_contribuyente(
+            extra.get("tipoContribuyente") or extra.get("tipo_contribuyente")
+        )
+        if extra_tipo:
+            return extra_tipo == "juridica"
+    razon = data.get("razonSocial") or data.get("denominacionSocial")
+    return bool(razon)
+
+
+def normalize_nombre(value: object, *, max_length: int) -> str | None:
+    if value in (None, ""):
+        return None
+    text = re.sub(r"\s+", " ", str(value).strip())
+    if not text:
+        return None
+    if len(text) > max_length:
+        text = text[:max_length]
+    return text
+
+
+def _iter_nombre_candidates(
+    persona_juridica: bool, *sources: Mapping[str, Any] | str | None
+):
+    keys = (
+        ("razonSocial", "denominacionSocial", "nombre", "nombreComercial")
+        if persona_juridica
+        else ("nombre", "razonSocial", "denominacionSocial", "nombreComercial")
+    )
+    for source in sources:
+        if source in (None, ""):
+            continue
+        if isinstance(source, AbcMapping):
+            for key in keys:
+                value = source.get(key)
+                if value not in (None, ""):
+                    yield value
+        else:
+            yield source
+
+
+def _choose_nombre(
+    persona_juridica: bool, max_length: int, *sources: Mapping[str, Any] | str | None
+) -> str | None:
+    seen: set[str] = set()
+    for candidate in _iter_nombre_candidates(persona_juridica, *sources):
+        normalized = normalize_nombre(candidate, max_length=max_length)
+        if normalized and normalized not in seen:
+            return normalized
+        if normalized:
+            seen.add(normalized)
+    return None
+
+
+def _max_nombre_length(tipo_dte: str | None, role: str) -> int:
+    tipo = str(tipo_dte or "").zfill(2) if tipo_dte else ""
+    if role == "emisor":
+        if tipo == "01":
+            return 250
+        if not tipo:
+            return 250
+        return 200
+    return 250
 
 
 def normalize_uuid_v4_upper(value: str) -> str:
@@ -3269,6 +3382,16 @@ def generar_dte_json(
         "correo": datos.get("correo"),
         "tipoEstablecimiento": tipo_est,
     }
+    persona_juridica_emisor = _is_persona_juridica(datos)
+    emisor_nombre = _choose_nombre(
+        persona_juridica_emisor,
+        _max_nombre_length(tipo_dte, "emisor"),
+        datos,
+        emisor,
+    )
+    if not emisor_nombre:
+        raise ValueError("Nombre del emisor inválido")
+    emisor["nombre"] = emisor_nombre
     svfe_config.DATOS_NEGOCIO_PATH = DATOS_NEGOCIO_PATH
     datos_cfg = svfe_config.load_datos_negocio()
     dir_emisor = datos_cfg.get("direccion") or {}
@@ -3304,7 +3427,9 @@ def generar_dte_json(
 
     rec = _drop_empty(rec)
 
-    if not rec.get("numDocumento") and rec.get("dui"):
+    persona_juridica_receptor = _is_persona_juridica(rec)
+
+    if not persona_juridica_receptor and not rec.get("numDocumento") and rec.get("dui"):
         formatted = _format_dui(rec.get("dui"))
         if not formatted:
             logger.warning(
@@ -3360,8 +3485,21 @@ def generar_dte_json(
         "telefono": rec.get("telefono") or None,
         "correo": rec.get("correo") or None,
     }
-    if not receptor.get("nombre") and (tipo_dte == "01" or extra.get("es_ticket")):
+    if (
+        not receptor.get("nombre")
+        and (tipo_dte == "01" or extra.get("es_ticket"))
+        and not persona_juridica_receptor
+    ):
         receptor["nombre"] = "Consumidor Final"
+    receptor_nombre = _choose_nombre(
+        persona_juridica_receptor,
+        _max_nombre_length(tipo_dte, "receptor"),
+        rec,
+        receptor,
+    )
+    receptor["nombre"] = receptor_nombre
+    if persona_juridica_receptor and not receptor["nombre"]:
+        raise ValueError("Nombre del receptor inválido")
     direccion_src = rec.get("direccion")
     if not isinstance(direccion_src, dict):
         direccion_src = rec
@@ -4434,6 +4572,16 @@ def validate_dte_json(
     numero_control = ident.get("numeroControl")
     if not re.fullmatch(regex_nc, numero_control):
         raise ValueError("numeroControl inválido")
+    persona_juridica_emisor_payload = _is_persona_juridica(negocio)
+    emisor_nombre_normalized = _choose_nombre(
+        persona_juridica_emisor_payload,
+        _max_nombre_length(tipo, "emisor"),
+        negocio,
+        emisor,
+    )
+    if not emisor_nombre_normalized:
+        raise ValueError("Nombre del emisor inválido")
+    emisor["nombre"] = emisor_nombre_normalized
     emisor.pop("giro", None)
     emisor.pop("tipoContribuyente", None)
     required_emisor = {
@@ -4468,6 +4616,9 @@ def validate_dte_json(
     payload["emisor"] = emisor
 
     receptor = payload.get("receptor")
+    persona_juridica_receptor = False
+    if isinstance(receptor, dict):
+        persona_juridica_receptor = bool(receptor.get("nrc"))
     if tipo_dte == "01" and extra_conf.get("es_ticket"):
         if isinstance(receptor, dict):
             dir_rec = receptor.get("direccion")
@@ -4493,7 +4644,8 @@ def validate_dte_json(
                 if tipo_doc is None:
                     tipo_doc = "36"
             limpiar_documentos(receptor)
-            if "numDocumento" not in receptor and receptor.get("dui"):
+            allow_dui = not persona_juridica_receptor
+            if allow_dui and "numDocumento" not in receptor and receptor.get("dui"):
                 formatted = _format_dui(receptor.get("dui"))
                 if not formatted:
                     logger.warning(
@@ -4515,6 +4667,13 @@ def validate_dte_json(
                 tipo_doc = "36" if receptor.get("nrc") else "13"
             else:
                 tipo_doc = str(tipo_doc)
+            if persona_juridica_receptor and tipo_doc == "13":
+                nit_digits = solo_digitos(receptor.get("nit"))
+                if nit_digits:
+                    tipo_doc = "36"
+                    num_doc = nit_digits
+                else:
+                    raise ValueError("Cliente persona jurídica requiere NIT")
             allowed = {"36", "13", "37", "03", "02"}
             if tipo_doc not in allowed:
                 raise ValueError("tipoDocumento inválido en receptor")
@@ -4600,6 +4759,14 @@ def validate_dte_json(
             for f in fields_to_remove:
                 receptor.pop(f, None)
         payload["receptor"] = receptor
+        receptor_nombre_clean = _choose_nombre(
+            persona_juridica_receptor,
+            _max_nombre_length(tipo, "receptor"),
+            receptor,
+        )
+        receptor["nombre"] = receptor_nombre_clean
+        if persona_juridica_receptor and not receptor["nombre"]:
+            raise ValueError("Nombre del receptor inválido")
 
     cuerpo = payload.get("cuerpoDocumento", [])
     schema = catalogos.get_dte_schema(tipo_dte)
@@ -5547,7 +5714,12 @@ def generar_evento_contingencia(
     nit = solo_digitos(datos.get("nit"))
     if not nit:
         raise ValueError("nit requerido")
-    nombre = datos.get("nombre") or datos.get("nombreComercial")
+    persona_juridica_evento = _is_persona_juridica(datos)
+    nombre = _choose_nombre(
+        persona_juridica_evento,
+        _max_nombre_length(None, "emisor"),
+        datos,
+    )
     if not nombre:
         raise ValueError("nombre requerido")
     telefono = str(datos.get("telefono", "")).strip()

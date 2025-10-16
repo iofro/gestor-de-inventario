@@ -129,8 +129,11 @@ def _estado_apto_para_anexo(
 ) -> bool:
     """Determina si el estado permite incluir el DTE en el anexo."""
 
-    if _estado_indica_manual_aceptado(estado_manual):
-        return True
+    manual_text = None
+    if estado_manual is not None:
+        manual_text = str(estado_manual).strip()
+        if manual_text:
+            return _estado_indica_aceptado(manual_text)
 
     return _estado_indica_automatico_aceptado(estado_json)
 
@@ -641,8 +644,13 @@ class InventoryManager:
             if _valor_indica_anulado(estado_manual) or _valor_indica_anulado(payload.get("anulado")):
                 return False
 
-            if _estado_apto_para_anexo(None, estado_manual):
-                return True
+            manual_text = ""
+            if estado_manual is not None:
+                manual_text = str(estado_manual).strip()
+                if manual_text:
+                    if _estado_indica_aceptado(manual_text):
+                        return True
+                    return False
 
             if _metadata_estado_aceptado(payload):
                 return True
@@ -668,7 +676,7 @@ class InventoryManager:
             for estado in estados_a_validar:
                 if _valor_indica_anulado(estado):
                     return False
-                if _estado_apto_para_anexo(estado, estado_manual):
+                if _estado_apto_para_anexo(estado, None):
                     return True
 
             return False
@@ -719,7 +727,7 @@ class InventoryManager:
                     continue
 
                 tipo_doc = _normalize_tipo_doc(ident_raw.get("tipoDte"))
-                if tipo_doc not in {"01", "02", "10", "11"}:
+                if tipo_doc not in {"01", "02", "03", "05", "06", "10", "11"}:
                     continue
 
                 numero_control = str(ident_raw.get("numeroControl") or "").strip()

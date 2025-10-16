@@ -335,6 +335,78 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     db_manual_json = cf_dir / "20251005_manual_db.json"
     db_manual_json.write_text(json.dumps(db_manual_payload), encoding="utf-8")
 
+    credito_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "03",
+                "fecEmi": "2025-10-07",
+                "horEmi": "09:00:00",
+                "numeroControl": "CF-0003",
+                "codigoGeneracion": "G1G1G1G1-AAAA-BBBB-CCCC-333344445555",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "18.00",
+                "totalPagar": "18.00",
+            },
+        },
+        "respuesta": {"estado": "Aceptado"},
+    }
+
+    credito_json = cf_dir / "20251007_credito_fiscal.json"
+    credito_json.write_text(json.dumps(credito_payload), encoding="utf-8")
+
+    nota_debito_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "05",
+                "fecEmi": "2025-10-08",
+                "horEmi": "14:00:00",
+                "numeroControl": "ND-0005",
+                "codigoGeneracion": "H1H1H1H1-AAAA-BBBB-CCCC-555566667777",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "9.50",
+                "totalPagar": "9.50",
+            },
+        },
+        "respuesta": {"estado": "Enviado"},
+    }
+
+    nota_debito_json = cf_dir / "20251008_nota_debito.json"
+    nota_debito_json.write_text(json.dumps(nota_debito_payload), encoding="utf-8")
+
+    nota_credito_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "06",
+                "fecEmi": "2025-10-09",
+                "horEmi": "11:15:00",
+                "numeroControl": "NC-0006",
+                "codigoGeneracion": "I1I1I1I1-AAAA-BBBB-CCCC-999900001111",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "-4.00",
+                "totalPagar": "-4.00",
+            },
+        },
+        "respuesta": {"estado": "procesado"},
+    }
+
+    nota_credito_json = cf_dir / "20251009_nota_credito.json"
+    nota_credito_json.write_text(json.dumps(nota_credito_payload), encoding="utf-8")
+
     db_conn.cursor.execute("DROP TABLE IF EXISTS dte_envios")
     db_conn.cursor.execute(
         """
@@ -373,6 +445,9 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
         "D1D1D1D1-AAAA-BBBB-CCCC-111122223333",
         "E1E1E1E1-AAAA-BBBB-CCCC-777788889999",
         "F1F1F1F1-AAAA-BBBB-CCCC-000011112222",
+        "G1G1G1G1-AAAA-BBBB-CCCC-333344445555",
+        "H1H1H1H1-AAAA-BBBB-CCCC-555566667777",
+        "I1I1I1I1-AAAA-BBBB-CCCC-999900001111",
     ]
 
     registros_map = {registro.numero_doc_del: registro for registro in registros_octubre}
@@ -425,6 +500,21 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     assert getattr(registro_manual_db, "estado_manual", None) == "Aceptado"
     assert getattr(registro_manual_db, "estado", None) == "Aceptado"
     assert Path(registro_manual_db.json_path) == db_manual_json
+
+    registro_credito = registros_map["G1G1G1G1-AAAA-BBBB-CCCC-333344445555"]
+    assert registro_credito.tipo == "03"
+    assert registro_credito.total_ventas == "18.00"
+    assert Path(registro_credito.json_path) == credito_json
+
+    registro_nota_debito = registros_map["H1H1H1H1-AAAA-BBBB-CCCC-555566667777"]
+    assert registro_nota_debito.tipo == "05"
+    assert registro_nota_debito.total_ventas == "9.50"
+    assert Path(registro_nota_debito.json_path) == nota_debito_json
+
+    registro_nota_credito = registros_map["I1I1I1I1-AAAA-BBBB-CCCC-999900001111"]
+    assert registro_nota_credito.tipo == "06"
+    assert registro_nota_credito.total_ventas == "-4.00"
+    assert Path(registro_nota_credito.json_path) == nota_credito_json
 
     registros_septiembre = manager.get_anexo_consumidor_final_registros("202509")
     assert len(registros_septiembre) == 1
@@ -576,106 +666,83 @@ def test_get_anexo_consumidor_final_registros_accepts_manual_variants(
     assert getattr(db_registro, "estado", None) == "Enviado Manual"
 
 
-def test_get_anexo_consumidor_final_registros_estado_prioridad(
+def test_get_anexo_consumidor_final_registros_prioritizes_manual_state(
     monkeypatch, tmp_path, db_conn
 ):
     manager, dirs = _create_inventory_manager(monkeypatch, tmp_path, db_conn)
 
     cf_dir = dirs["canonical_cf"]
 
-    enviado_payload = {
+    manual_accept_payload = {
         "dteJson": {
             "identificacion": {
                 "tipoDte": "01",
-                "fecEmi": "2025-10-08",
-                "horEmi": "08:15:00",
-                "numeroControl": "AUTO-ENVIADO-0001",
-                "codigoGeneracion": "11111111-AAAA-BBBB-CCCC-000000000001",
-                "tipoOperacion": 1,
+                "fecEmi": "2025-11-01",
+                "horEmi": "08:00:00",
+                "numeroControl": "MANUAL-OK-0001",
+                "codigoGeneracion": "MANUAL-OK-1111-2222-3333-444455556666",
             },
-            "resumen": {
-                "totalExenta": "0.00",
-                "totalNoGravado": "0.00",
-                "totalNoSuj": "0.00",
-                "totalGravada": "5.00",
-                "totalPagar": "5.00",
+            "resumen": {"totalGravada": "5.00", "totalPagar": "5.00"},
+        },
+        "respuesta": {"estado": "Rechazado"},
+    }
+
+    manual_accept_json = cf_dir / "20251101_manual_accept.json"
+    manual_accept_json.write_text(json.dumps(manual_accept_payload), encoding="utf-8")
+    manual_accept_json.with_suffix(".meta.json").write_text(
+        json.dumps({"estadoManual": "Aceptado"}),
+        encoding="utf-8",
+    )
+
+    manual_reject_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-11-02",
+                "horEmi": "09:00:00",
+                "numeroControl": "MANUAL-BAD-0001",
+                "codigoGeneracion": "MANUAL-BAD-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
             },
+            "resumen": {"totalGravada": "6.00", "totalPagar": "6.00"},
+        },
+        "respuesta": {"estado": "Aceptado"},
+    }
+
+    manual_reject_json = cf_dir / "20251102_manual_reject.json"
+    manual_reject_json.write_text(json.dumps(manual_reject_payload), encoding="utf-8")
+    manual_reject_json.with_suffix(".meta.json").write_text(
+        json.dumps({"estadoManual": "Rechazado"}),
+        encoding="utf-8",
+    )
+
+    automatic_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-11-03",
+                "horEmi": "10:00:00",
+                "numeroControl": "AUTO-OK-0001",
+                "codigoGeneracion": "AUTO-OK-1111-AAAA-BBBB-CCCCDDDDEEEE",
+            },
+            "resumen": {"totalGravada": "7.00", "totalPagar": "7.00"},
         },
         "respuesta": {"estado": "Enviado"},
     }
 
-    rechazado_payload = {
-        "dteJson": {
-            "identificacion": {
-                "tipoDte": "01",
-                "fecEmi": "2025-10-08",
-                "horEmi": "09:00:00",
-                "numeroControl": "AUTO-RECHAZADO-0002",
-                "codigoGeneracion": "11111111-AAAA-BBBB-CCCC-000000000002",
-                "tipoOperacion": 1,
-            },
-            "resumen": {
-                "totalExenta": "0.00",
-                "totalNoGravado": "0.00",
-                "totalNoSuj": "0.00",
-                "totalGravada": "6.00",
-                "totalPagar": "6.00",
-            },
-        },
-        "respuesta": {"estado": "Rechazado"},
-    }
+    auto_json = cf_dir / "20251103_auto.json"
+    auto_json.write_text(json.dumps(automatic_payload), encoding="utf-8")
 
-    manual_payload = {
-        "dteJson": {
-            "identificacion": {
-                "tipoDte": "01",
-                "fecEmi": "2025-10-08",
-                "horEmi": "10:30:00",
-                "numeroControl": "MANUAL-ACEPTADO-0003",
-                "codigoGeneracion": "11111111-AAAA-BBBB-CCCC-000000000003",
-                "tipoOperacion": 1,
-            },
-            "resumen": {
-                "totalExenta": "0.00",
-                "totalNoGravado": "0.00",
-                "totalNoSuj": "0.00",
-                "totalGravada": "7.00",
-                "totalPagar": "7.00",
-            },
-        },
-        "respuesta": {"estado": "Rechazado"},
-    }
-
-    (cf_dir / "20251008_auto_enviado.json").write_text(
-        json.dumps(enviado_payload), encoding="utf-8"
-    )
-    (cf_dir / "20251008_auto_rechazado.json").write_text(
-        json.dumps(rechazado_payload), encoding="utf-8"
-    )
-
-    manual_path = cf_dir / "20251008_manual_override.json"
-    manual_path.write_text(json.dumps(manual_payload), encoding="utf-8")
-    manual_path.with_suffix(".meta.json").write_text(
-        json.dumps({"estadoManual": "Aceptado"}), encoding="utf-8"
-    )
-
-    registros = manager.get_anexo_consumidor_final_registros("202510")
-
+    registros = manager.get_anexo_consumidor_final_registros("202511")
     codigos = [registro.numero_doc_del for registro in registros]
+
     assert codigos == [
-        "11111111-AAAA-BBBB-CCCC-000000000001",
-        "11111111-AAAA-BBBB-CCCC-000000000003",
+        "MANUAL-OK-1111-2222-3333-444455556666",
+        "AUTO-OK-1111-AAAA-BBBB-CCCCDDDDEEEE",
     ]
 
     registros_map = {registro.numero_doc_del: registro for registro in registros}
-
-    auto_registro = registros_map[codigos[0]]
-    assert getattr(auto_registro, "estado", None) == "Enviado"
-    assert getattr(auto_registro, "estado_manual", None) is None
-
-    manual_registro = registros_map[codigos[1]]
-    assert getattr(manual_registro, "estado_manual", None) == "Aceptado"
-    assert getattr(manual_registro, "estado", None) == "Aceptado"
+    assert registros_map["MANUAL-OK-1111-2222-3333-444455556666"].tipo == "01"
+    assert registros_map["AUTO-OK-1111-AAAA-BBBB-CCCCDDDDEEEE"].tipo == "01"
 
 
 def test_on_click_generar_consumidor_final_requires_registros(tmp_path):

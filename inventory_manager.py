@@ -46,7 +46,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_FIELDS = ("token_pruebas", "token_produccion")
 
 
-_ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido"}
+_ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido", "enviado"}
 _PERIODO_FORMAT = re.compile(r"^\d{6}$")
 
 
@@ -78,6 +78,22 @@ def _metadata_estado_aceptado(metadata: Mapping[str, object] | None) -> bool:
                 estado_norm = valor.strip().lower()
                 return estado_norm in _ANEXO_ESTADOS_ACEPTADOS
     return False
+
+
+def _estado_apto_para_anexo(
+    estado_json: str | None, estado_manual: str | None
+) -> bool:
+    """Determina si el estado permite incluir el DTE en el anexo."""
+
+    def _norm(value: str | None) -> str:
+        return (value or "").strip().lower()
+
+    estado_manual_norm = _norm(estado_manual)
+    if estado_manual_norm:
+        return estado_manual_norm in _ANEXO_ESTADOS_ACEPTADOS
+
+    estado_json_norm = _norm(estado_json)
+    return estado_json_norm in _ANEXO_ESTADOS_ACEPTADOS
 
 
 def _extract_manual_tokens(datos_negocio: dict | None) -> dict:
@@ -451,7 +467,120 @@ class InventoryManager:
                 return f"{int(text):02d}"
             return text
 
-        def _accepted_payload(payload: Mapping[str, object]) -> bool:
+        def _extract_estado_manual(
+            payload: Mapping[str, object],
+            json_path: Path,
+            codigo_generacion: str,
+            numero_control: str,
+        ) -> tuple[str | None, str | None, str | None]:
+            """Obtiene estado manual y automático para priorizar inclusión y despliegue."""
+
+            def _norm_text(value: object) -> str | None:
+                if isinstance(value, str):
+                    text = value.strip()
+                    return text or None
+                return None
+
+            estado_manual: str | None = None
+            estado_manual_fuente: str | None = None
+
+            for key in ("estadoManual", "estado_manual", "estadoAsignado", "estado_asignado"):
+                candidato = _norm_text(payload.get(key))
+                if candidato:
+                    estado_manual = candidato
+                    estado_manual_fuente = "payload"
+                    break
+
+            meta_paths = [
+                json_path.with_suffix(".meta.json"),
+                json_path.with_suffix(".meta"),
+            ]
+            for meta_path in meta_paths:
+                if estado_manual:
+                    break
+                if not meta_path.exists() or not meta_path.is_file():
+                    continue
+                try:
+                    meta_content = json.loads(meta_path.read_text("utf-8"))
+                except Exception:
+                    continue
+                if isinstance(meta_content, Mapping):
+                    for key in (
+                        "estadoManual",
+                        "estado_manual",
+                        "estadoAsignado",
+                        "estado_asignado",
+                    ):
+                        candidato = _norm_text(meta_content.get(key))
+                        if candidato:
+                            estado_manual = candidato
+                            estado_manual_fuente = f"meta:{meta_path.name}"
+                            break
+
+            estado_detectado: str | None = None
+            db_cursor = getattr(self.db, "cursor", None)
+            ensure_column = getattr(self.db, "ensure_column", None)
+            if db_cursor is not None and callable(getattr(db_cursor, "execute", None)):
+                try:
+                    if callable(ensure_column):
+                        ensure_column("dte_envios", "estado_ui", "TEXT")
+                        ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+                        ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+
+                    codigo_upper = codigo_generacion.strip().upper()
+                    numero_upper = numero_control.strip().upper()
+                    row = None
+                    if codigo_upper:
+                        row = db_cursor.execute(
+                            """
+                            SELECT estado_ui, estado_ui_tag, estado_ui_manual
+                            FROM dte_envios
+                            WHERE codigo_generacion IS NOT NULL
+                              AND UPPER(codigo_generacion)=?
+                            ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                            """,
+                            (codigo_upper,),
+                        ).fetchone()
+                    if row is None and numero_upper:
+                        row = db_cursor.execute(
+                            """
+                            SELECT estado_ui, estado_ui_tag, estado_ui_manual
+                            FROM dte_envios
+                            WHERE numero_control IS NOT NULL
+                              AND UPPER(numero_control)=?
+                            ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                            """,
+                            (numero_upper,),
+                        ).fetchone()
+                    if row is not None:
+                        try:
+                            estado_ui = row["estado_ui"]
+                        except Exception:
+                            estado_ui = row[0] if isinstance(row, (tuple, list)) and row else None
+                        try:
+                            estado_manual_flag = row["estado_ui_manual"]
+                        except Exception:
+                            estado_manual_flag = (
+                                row[2]
+                                if isinstance(row, (tuple, list)) and len(row) > 2
+                                else None
+                            )
+                        estado_detectado = _norm_text(estado_ui) or estado_detectado
+                        if estado_manual_flag and estado_ui and not estado_manual:
+                            estado_manual = estado_ui
+                            estado_manual_fuente = "db"
+                except Exception:
+                    pass
+
+            return estado_manual, estado_detectado, estado_manual_fuente
+
+        def _accepted_payload(
+            payload: Mapping[str, object],
+            estado_manual: str | None = None,
+        ) -> bool:
+            if _estado_apto_para_anexo(None, estado_manual):
+                return True
+
             if _metadata_estado_aceptado(payload):
                 return True
             sello = payload.get("selloRecibido")
@@ -464,8 +593,11 @@ class InventoryManager:
                     return True
                 for key in ("estado", "estadoEvento", "descripcionEstado"):
                     valor = respuesta.get(key)
-                    if isinstance(valor, str) and valor.strip().lower() in _ANEXO_ESTADOS_ACEPTADOS:
+                    if isinstance(valor, str) and _estado_apto_para_anexo(valor, estado_manual):
                         return True
+            estado_raiz = payload.get("estado") or payload.get("status")
+            if isinstance(estado_raiz, str) and _estado_apto_para_anexo(estado_raiz, estado_manual):
+                return True
             return False
 
         registros: list[tuple[datetime, str, VentaCF]] = []
@@ -517,16 +649,23 @@ class InventoryManager:
                 if tipo_doc not in {"01", "02", "10", "11"}:
                     continue
 
+                numero_control = str(ident_raw.get("numeroControl") or "").strip()
+
                 codigo_generacion = str(ident_raw.get("codigoGeneracion") or "").strip()
                 if not codigo_generacion:
                     continue
                 if codigo_generacion in seen_codigos:
                     continue
 
-                if not _accepted_payload(payload):
-                    continue
+                estado_manual, estado_detectado_db, estado_manual_fuente = _extract_estado_manual(
+                    payload,
+                    json_path,
+                    codigo_generacion,
+                    numero_control,
+                )
 
-                numero_control = str(ident_raw.get("numeroControl") or "").strip()
+                if not _accepted_payload(payload, estado_manual):
+                    continue
 
                 resumen = dte_payload.get("resumen")
                 if not isinstance(resumen, Mapping):
@@ -613,6 +752,27 @@ class InventoryManager:
                 registro.numero_control = numero_control
                 registro.codigo_generacion = codigo_generacion
                 registro.json_path = str(json_path)
+                estado_detalle = estado_manual or None
+                if not estado_detalle:
+                    respuesta = payload.get("respuesta")
+                    if isinstance(respuesta, Mapping):
+                        for key in ("estado", "estadoEvento", "descripcionEstado"):
+                            valor = respuesta.get(key)
+                            if isinstance(valor, str) and valor.strip():
+                                estado_detalle = valor.strip()
+                                break
+                    if not estado_detalle:
+                        estado = payload.get("estado") or payload.get("status")
+                        if isinstance(estado, str) and estado.strip():
+                            estado_detalle = estado.strip()
+                if not estado_detalle and estado_detectado_db:
+                    estado_detalle = estado_detectado_db
+                if isinstance(estado_detalle, str):
+                    registro.estado = estado_detalle
+                if estado_manual:
+                    registro.estado_manual = estado_manual
+                if estado_manual_fuente:
+                    registro.estado_fuente = estado_manual_fuente
 
                 seen_codigos.add(codigo_generacion)
                 registros.append((orden_dt, numero_control, registro))

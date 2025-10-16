@@ -6,6 +6,7 @@ import types
 from pathlib import Path
 
 import paths
+from declaracion.anexo_consumidor_final import VentaCF, on_click_generar_consumidor_final
 
 
 def _setup_fake_qt(monkeypatch):
@@ -55,7 +56,7 @@ def _prepare_paths(monkeypatch, base_dir: Path):
     }
 
 
-def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, db_conn):
+def _create_inventory_manager(monkeypatch, tmp_path, db_conn):
     _setup_fake_qt(monkeypatch)
 
     base_dir = tmp_path / "userdata"
@@ -73,6 +74,13 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     )
     monkeypatch.setattr("inventory_manager.TICKETS_OUTPUT_DIR", str(dirs["tickets"]))
     monkeypatch.setattr("inventory_manager.DTES_DIR", str(dirs["dtes"]))
+
+    manager = InventoryManager(db_conn)
+    return manager, dirs
+
+
+def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, db_conn):
+    manager, dirs = _create_inventory_manager(monkeypatch, tmp_path, db_conn)
 
     cf_dir = dirs["canonical_cf"]
     payload = {
@@ -98,6 +106,30 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
 
     json_path = cf_dir / "20251002_cliente_DTE-01.json"
     json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    enviado_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-02",
+                "horEmi": "07:30:00",
+                "numeroControl": "DTE-01-S001P001-000000000000456",
+                "codigoGeneracion": "EEEFFF00-1111-2222-3333-444455556666",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.25",
+                "totalNoGravado": "0.25",
+                "totalNoSuj": "0.25",
+                "totalGravada": "5.00",
+                "totalPagar": "5.75",
+            },
+        },
+        "respuesta": {"estado": "Enviado"},
+    }
+
+    enviado_json = cf_dir / "20251002_cliente_envio.json"
+    enviado_json.write_text(json.dumps(enviado_payload), encoding="utf-8")
 
     backup_dir = cf_dir / "copia de seguridad"
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -197,17 +229,100 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     }
     (cf_dir / "20250930_old.json").write_text(json.dumps(other_payload), encoding="utf-8")
 
-    manager = InventoryManager(db_conn)
+    manual_meta_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-05",
+                "horEmi": "06:30:00",
+                "numeroControl": "MANUAL-META-0001",
+                "codigoGeneracion": "E1E1E1E1-AAAA-BBBB-CCCC-777788889999",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "8.00",
+                "totalPagar": "8.00",
+            },
+        },
+    }
+
+    manual_meta_json = cf_dir / "20251005_manual_meta.json"
+    manual_meta_json.write_text(json.dumps(manual_meta_payload), encoding="utf-8")
+    manual_meta_file = manual_meta_json.with_suffix(".meta.json")
+    manual_meta_file.write_text(json.dumps({"estadoManual": "Enviado"}), encoding="utf-8")
+
+    db_manual_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-05",
+                "horEmi": "12:30:00",
+                "numeroControl": "MANUAL-DB-0002",
+                "codigoGeneracion": "F1F1F1F1-AAAA-BBBB-CCCC-000011112222",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "12.00",
+                "totalPagar": "12.00",
+            },
+        },
+    }
+
+    db_manual_json = cf_dir / "20251005_manual_db.json"
+    db_manual_json.write_text(json.dumps(db_manual_payload), encoding="utf-8")
+
+    db_conn.cursor.execute("DROP TABLE IF EXISTS dte_envios")
+    db_conn.cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dte_envios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_generacion TEXT,
+            numero_control TEXT,
+            estado_ui TEXT,
+            estado_ui_tag TEXT,
+            estado_ui_manual INTEGER DEFAULT 0
+        )
+        """
+    )
+    db_conn.cursor.execute(
+        """
+        INSERT INTO dte_envios (
+            codigo_generacion, numero_control, estado_ui, estado_ui_tag, estado_ui_manual
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            "F1F1F1F1-AAAA-BBBB-CCCC-000011112222",
+            "MANUAL-DB-0002",
+            "Aceptado",
+            "aceptado",
+            1,
+        ),
+    )
+    db_conn.conn.commit()
 
     registros_octubre = manager.get_anexo_consumidor_final_registros("202510")
     assert [r.numero_doc_del for r in registros_octubre] == [
         "B1B1B1B1-0000-1111-2222-333344445555",
+        "EEEFFF00-1111-2222-3333-444455556666",
         "ABCDEF12-3456-7890-ABCD-EF1234567890",
         "C1C1C1C1-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
         "D1D1D1D1-AAAA-BBBB-CCCC-111122223333",
+        "E1E1E1E1-AAAA-BBBB-CCCC-777788889999",
+        "F1F1F1F1-AAAA-BBBB-CCCC-000011112222",
     ]
 
     registros_map = {registro.numero_doc_del: registro for registro in registros_octubre}
+
+    registro_enviado = registros_map["EEEFFF00-1111-2222-3333-444455556666"]
+    assert registro_enviado.fecha == "02/10/2025"
+    assert registro_enviado.ventas_gravadas_locales == "5.00"
+    assert registro_enviado.total_ventas == "5.75"
 
     registro = registros_map["ABCDEF12-3456-7890-ABCD-EF1234567890"]
     assert registro.fecha == "02/10/2025"
@@ -238,8 +353,91 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     assert registro_dtes.total_ventas == "16.00"
     assert Path(registro_dtes.json_path) == dtes_json
 
+    registro_manual_meta = registros_map["E1E1E1E1-AAAA-BBBB-CCCC-777788889999"]
+    assert registro_manual_meta.total_ventas == "8.00"
+    assert getattr(registro_manual_meta, "estado_manual", None) == "Enviado"
+    assert getattr(registro_manual_meta, "estado", None) == "Enviado"
+    assert Path(registro_manual_meta.json_path) == manual_meta_json
+
+    registro_manual_db = registros_map["F1F1F1F1-AAAA-BBBB-CCCC-000011112222"]
+    assert registro_manual_db.total_ventas == "12.00"
+    assert getattr(registro_manual_db, "estado_manual", None) == "Aceptado"
+    assert getattr(registro_manual_db, "estado", None) == "Aceptado"
+    assert Path(registro_manual_db.json_path) == db_manual_json
+
     registros_septiembre = manager.get_anexo_consumidor_final_registros("202509")
     assert len(registros_septiembre) == 1
     sept = registros_septiembre[0]
     assert sept.numero_doc_del == "FF001122-3344-5566-7788-99AABBCCDDEE"
     assert sept.total_ventas == "0.00"
+
+
+def test_get_anexo_consumidor_final_registros_accepts_weird_hour(
+    monkeypatch, tmp_path, db_conn
+):
+    manager, dirs = _create_inventory_manager(monkeypatch, tmp_path, db_conn)
+
+    cf_dir = dirs["canonical_cf"]
+    payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-02",
+                "horEmi": "07.30.00",
+                "numeroControl": "DTE-01-S001P001-000000000000999",
+                "codigoGeneracion": "ABC12345-6789-4321-BCDE-FEDCBA987654",
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "4.00",
+                "totalPagar": "4.00",
+            },
+        },
+        "selloRecibido": "D" * 40,
+    }
+
+    json_path = cf_dir / "20251002_weird_time.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    registros = manager.get_anexo_consumidor_final_registros("202510")
+    assert len(registros) == 1
+    registro = registros[0]
+    assert registro.numero_doc_del == "ABC12345-6789-4321-BCDE-FEDCBA987654"
+    assert registro.total_ventas == "4.00"
+    assert registro.fecha == "02/10/2025"
+
+
+def test_on_click_generar_consumidor_final_requires_registros(tmp_path):
+    resultado = on_click_generar_consumidor_final(str(tmp_path), "202510", [])
+    assert resultado["success"] is False
+    assert "No hay ventas" in resultado["message"]
+
+
+def test_on_click_generar_consumidor_final_reports_count(tmp_path):
+    registro = VentaCF(
+        fecha="01/10/2025",
+        clase="4",
+        tipo="01",
+        numero_doc_del="ABCDEF12-3456-7890-ABCD-EF1234567890",
+        numero_doc_al="ABCDEF12-3456-7890-ABCD-EF1234567890",
+        ventas_gravadas_locales="10.00",
+        total_ventas="10.00",
+        tipo_operacion="1",
+        tipo_ingreso="0",
+    )
+
+    resultado = on_click_generar_consumidor_final(
+        str(tmp_path),
+        "202510",
+        [registro],
+    )
+
+    assert resultado["success"] is True
+    assert resultado.get("count") == 1
+    assert "1 DTE" in resultado["message"]
+    csv_path = resultado["paths"]["csv"]
+    xlsx_path = resultado["paths"]["xlsx"]
+    assert csv_path.exists()
+    assert xlsx_path.exists()

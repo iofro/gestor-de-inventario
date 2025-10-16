@@ -497,8 +497,12 @@ def on_click_generar_consumidor_final(
     periodo_yyyymm: str,
     registros: Iterable[VentaCF],
 ) -> Dict[str, object]:
+    registros_list = list(registros)
+
     try:
-        paths = generar_anexo_consumidor_final_files(registros, output_dir, periodo_yyyymm)
+        paths = generar_anexo_consumidor_final_files(
+            registros_list, output_dir, periodo_yyyymm
+        )
     except ValueError as exc:
         return {"success": False, "message": str(exc), "paths": {}}
     except Exception as exc:
@@ -510,5 +514,15 @@ def on_click_generar_consumidor_final(
 
     csv_path = paths["csv"]
     xlsx_path = paths["xlsx"]
-    message = f"CSV: {csv_path}\nXLSX: {xlsx_path}"
-    return {"success": True, "message": message, "paths": paths}
+    cantidad = len(registros_list)
+    message_lines = [
+        f"{cantidad} DTE exportados al Anexo II.",
+        f"CSV: {csv_path}",
+        f"XLSX: {xlsx_path}",
+    ]
+    return {
+        "success": True,
+        "message": "\n".join(message_lines),
+        "paths": paths,
+        "count": cantidad,
+    }

@@ -40,6 +40,7 @@ import hashlib
 from pathlib import Path
 from typing import Any, List, Mapping
 from pprint import pformat
+from collections import Counter
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -2118,7 +2119,8 @@ class FacturacionTab(QWidget):
         layout.setSpacing(12)
 
         intro = QLabel(
-            "Genera los archivos del Anexo XIX (Documentos legales y electrónicos anulados)."
+            "Cargue la lista de documentos del período y luego genere la planilla"
+            " en formato XLSX/CSV."
         )
         intro.setWordWrap(True)
         layout.addWidget(intro)
@@ -2174,20 +2176,46 @@ class FacturacionTab(QWidget):
 
         layout.addLayout(form_layout)
 
-        self.declaracion_generar_btn = QPushButton("Generar anulaciones (XIX)")
-        self.declaracion_generar_btn.clicked.connect(self._handle_generar_anexo_xix)
-        layout.addWidget(self.declaracion_generar_btn)
+        buttons_layout = QHBoxLayout()
+        buttons_layout.setContentsMargins(0, 0, 0, 0)
 
-        self.declaracion_generar_cf_btn = QPushButton("Generar consumidor final (II)")
-        self.declaracion_generar_cf_btn.clicked.connect(
-            self._handle_generar_anexo_consumidor_final
+        self.declaracion_cargar_cf_btn = QPushButton("Consumidor final")
+        self.declaracion_cargar_cf_btn.clicked.connect(self._handle_cargar_cf)
+        buttons_layout.addWidget(self.declaracion_cargar_cf_btn)
+
+        self.declaracion_cargar_xix_btn = QPushButton("Anulaciones")
+        self.declaracion_cargar_xix_btn.clicked.connect(self._handle_cargar_xix)
+        buttons_layout.addWidget(self.declaracion_cargar_xix_btn)
+
+        buttons_layout.addStretch(1)
+
+        self.declaracion_generar_planilla_btn = QPushButton("Generar planilla")
+        self.declaracion_generar_planilla_btn.setEnabled(False)
+        self.declaracion_generar_planilla_btn.clicked.connect(
+            self._handle_generar_planilla
         )
-        layout.addWidget(self.declaracion_generar_cf_btn)
+        buttons_layout.addWidget(self.declaracion_generar_planilla_btn)
+
+        layout.addLayout(buttons_layout)
+
+        self.declaracion_table = QTableWidget()
+        self.declaracion_table.setColumnCount(0)
+        self.declaracion_table.setRowCount(0)
+        self.declaracion_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.declaracion_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.declaracion_table.setAlternatingRowColors(True)
+        self.declaracion_table.setFocusPolicy(Qt.StrongFocus)
+        layout.addWidget(self.declaracion_table)
+
+        header = self.declaracion_table.horizontalHeader()
+        header.setStretchLastSection(True)
+
+        self._declaracion_context: str | None = None
 
         self.declaracion_result_box = QPlainTextEdit()
         self.declaracion_result_box.setReadOnly(True)
         self.declaracion_result_box.setPlaceholderText(
-            "Aquí se mostrarán las rutas generadas o los errores detectados."
+            "Aquí se mostrará el resumen de los DTE cargados y el resultado de la generación."
         )
         self.declaracion_result_box.setMinimumHeight(120)
         layout.addWidget(self.declaracion_result_box)
@@ -2232,76 +2260,269 @@ class FacturacionTab(QWidget):
 
         return []
 
-    def _obtener_parametros_declaracion(self, titulo: str) -> tuple[str, str] | None:
-        output_dir = self.declaracion_output_dir_edit.text().strip()
-        if not output_dir:
-            QMessageBox.warning(self, titulo, "Seleccione la carpeta de salida.")
-            return None
-
+    def _obtener_periodo_declaracion(self, titulo: str) -> str | None:
         anio = self.declaracion_anio_input.text().strip()
         if not re.fullmatch(r"\d{4}", anio):
             QMessageBox.warning(self, titulo, "El año debe tener 4 dígitos.")
             return None
 
         mes = self.declaracion_mes_combo.currentData()
-        periodo = f"{anio}{mes}"
+        return f"{anio}{mes}"
+
+    def _obtener_parametros_declaracion(self, titulo: str) -> tuple[str, str] | None:
+        output_dir = self.declaracion_output_dir_edit.text().strip()
+        if not output_dir:
+            QMessageBox.warning(self, titulo, "Seleccione la carpeta de salida.")
+            return None
+
+        periodo = self._obtener_periodo_declaracion(titulo)
+        if not periodo:
+            return None
+
         return output_dir, periodo
 
-    def _handle_generar_anexo_xix(self):
-        parametros = self._obtener_parametros_declaracion("Anexo XIX")
-        if not parametros:
+    @staticmethod
+    def _create_table_item(texto: str) -> QTableWidgetItem:
+        item = QTableWidgetItem(texto)
+        item.setFlags(Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+        return item
+
+    def _configure_declaracion_table(self, headers: List[str]) -> None:
+        self.declaracion_table.clear()
+        self.declaracion_table.setColumnCount(len(headers))
+        self.declaracion_table.setHorizontalHeaderLabels(headers)
+        header = self.declaracion_table.horizontalHeader()
+        if header is not None:
+            for index in range(len(headers)):
+                if index == 0:
+                    header.setSectionResizeMode(index, QHeaderView.ResizeToContents)
+                else:
+                    header.setSectionResizeMode(index, QHeaderView.Stretch)
+
+    def _clear_declaracion_table(self) -> None:
+        self.declaracion_table.clear()
+        self.declaracion_table.setRowCount(0)
+        self.declaracion_table.setColumnCount(0)
+        self._declaracion_context = None
+        self.declaracion_generar_planilla_btn.setEnabled(False)
+
+    def _estado_fuente_texto(self, registro: object) -> str:
+        estado = getattr(registro, "estado_manual", None) or getattr(registro, "estado", None)
+        estado_text = str(estado).strip() if isinstance(estado, str) and estado.strip() else "—"
+        fuente = getattr(registro, "estado_fuente", None)
+        if not fuente:
+            ruta = getattr(registro, "json_path", None)
+            if ruta:
+                fuente = os.path.basename(str(ruta))
+        if fuente:
+            fuente_text = str(fuente)
+            return f"{estado_text} · {fuente_text}" if estado_text != "—" else fuente_text
+        return estado_text
+
+    @staticmethod
+    def _cf_tipo_resumen(registros: List[VentaCF]) -> str:
+        if not registros:
+            return ""
+        conteo = Counter(getattr(registro, "tipo", "") or "" for registro in registros)
+        partes = [f"{codigo}: {conteo.get(codigo, 0)}" for codigo in ("01", "02", "10", "11")]
+        return " | ".join(partes)
+
+    def _populate_table_cf(self, registros: List[VentaCF]) -> None:
+        headers = [
+            "✔",
+            "Fecha",
+            "Tipo",
+            "Código (Generación)",
+            "N° Control",
+            "Total (T)",
+            "Estado / Fuente",
+        ]
+        self._configure_declaracion_table(headers)
+        self.declaracion_table.setRowCount(len(registros))
+        self._declaracion_context = "II"
+
+        for row, registro in enumerate(registros):
+            checkbox = QTableWidgetItem()
+            checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            checkbox.setCheckState(Qt.Checked)
+            checkbox.setData(Qt.UserRole, registro)
+            self.declaracion_table.setItem(row, 0, checkbox)
+
+            fecha = getattr(registro, "fecha", "") or ""
+            self.declaracion_table.setItem(row, 1, self._create_table_item(str(fecha)))
+
+            tipo = getattr(registro, "tipo", "") or ""
+            self.declaracion_table.setItem(row, 2, self._create_table_item(str(tipo)))
+
+            codigo = getattr(registro, "numero_doc_del", None) or getattr(
+                registro, "codigo_generacion", ""
+            )
+            self.declaracion_table.setItem(row, 3, self._create_table_item(str(codigo)))
+
+            numero_control = getattr(registro, "numero_control", "") or ""
+            self.declaracion_table.setItem(
+                row, 4, self._create_table_item(str(numero_control))
+            )
+
+            total = getattr(registro, "total_ventas", "0.00") or "0.00"
+            self.declaracion_table.setItem(row, 5, self._create_table_item(str(total)))
+
+            estado_texto = self._estado_fuente_texto(registro)
+            self.declaracion_table.setItem(row, 6, self._create_table_item(estado_texto))
+
+        self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
+        self.declaracion_table.resizeRowsToContents()
+
+    def _populate_table_xix(self, registros: List[DTEAnulado]) -> None:
+        headers = [
+            "✔",
+            "Tipo",
+            "Estado",
+            "Sello",
+            "Código (Generación)",
+            "N° Control",
+        ]
+        self._configure_declaracion_table(headers)
+        self.declaracion_table.setRowCount(len(registros))
+        self._declaracion_context = "XIX"
+
+        for row, registro in enumerate(registros):
+            checkbox = QTableWidgetItem()
+            checkbox.setFlags(Qt.ItemIsUserCheckable | Qt.ItemIsEnabled | Qt.ItemIsSelectable)
+            checkbox.setCheckState(Qt.Checked)
+            checkbox.setData(Qt.UserRole, registro)
+            self.declaracion_table.setItem(row, 0, checkbox)
+
+            tipo = getattr(registro, "tipo_documento", "") or ""
+            self.declaracion_table.setItem(row, 1, self._create_table_item(str(tipo)))
+
+            estado = getattr(registro, "estado", "") or ""
+            self.declaracion_table.setItem(row, 2, self._create_table_item(str(estado)))
+
+            sello = getattr(registro, "sello_recepcion", "") or ""
+            self.declaracion_table.setItem(row, 3, self._create_table_item(str(sello)))
+
+            codigo = getattr(registro, "codigo_generacion", "") or ""
+            self.declaracion_table.setItem(row, 4, self._create_table_item(str(codigo)))
+
+            numero_control = getattr(registro, "numero_control", "") or ""
+            self.declaracion_table.setItem(
+                row, 5, self._create_table_item(str(numero_control))
+            )
+
+        self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
+        self.declaracion_table.resizeRowsToContents()
+
+    def _selected_registros_from_table(self) -> List[object]:
+        registros: List[object] = []
+        for row in range(self.declaracion_table.rowCount()):
+            item = self.declaracion_table.item(row, 0)
+            if item is None:
+                continue
+            if item.checkState() != Qt.Checked:
+                continue
+            registro = item.data(Qt.UserRole)
+            if registro is not None:
+                registros.append(registro)
+        return registros
+
+    def _handle_cargar_cf(self):
+        periodo = self._obtener_periodo_declaracion("Anexo II")
+        if not periodo:
             return
-
-        output_dir, periodo = parametros
-
-        try:
-            registros = self._obtener_anexo_xix_registros(periodo)
-        except Exception as exc:  # pragma: no cover - errores del proveedor
-            mensaje = f"No se pudo obtener la lista de anulaciones: {exc}"
-            self.declaracion_result_box.setPlainText(mensaje)
-            QMessageBox.warning(self, "Anexo XIX", mensaje)
-            return
-
-        self.declaracion_generar_btn.setEnabled(False)
-        try:
-            resultado = on_click_generar_anulaciones(output_dir, periodo, registros)
-        finally:
-            self.declaracion_generar_btn.setEnabled(True)
-
-        self.declaracion_result_box.setPlainText(resultado["message"])
-        if resultado["success"]:
-            QMessageBox.information(self, "Anexo XIX", resultado["message"])
-        else:
-            QMessageBox.warning(self, "Anexo XIX", resultado["message"])
-
-    def _handle_generar_anexo_consumidor_final(self):
-        parametros = self._obtener_parametros_declaracion("Anexo II")
-        if not parametros:
-            return
-
-        output_dir, periodo = parametros
 
         try:
             registros = self._obtener_anexo_consumidor_final_registros(periodo)
         except Exception as exc:  # pragma: no cover - errores del proveedor
             mensaje = f"No se pudo obtener la lista de ventas: {exc}"
+            self._clear_declaracion_table()
             self.declaracion_result_box.setPlainText(mensaje)
             QMessageBox.warning(self, "Anexo II", mensaje)
             return
 
-        self.declaracion_generar_cf_btn.setEnabled(False)
-        try:
-            resultado = on_click_generar_consumidor_final(
-                output_dir, periodo, registros
-            )
-        finally:
-            self.declaracion_generar_cf_btn.setEnabled(True)
+        if not registros:
+            self._clear_declaracion_table()
+            mensaje = "No hay DTE para mostrar en este período."
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.information(self, "Anexo II", mensaje)
+            return
 
-        self.declaracion_result_box.setPlainText(resultado["message"])
-        if resultado["success"]:
-            QMessageBox.information(self, "Anexo II", resultado["message"])
+        self._populate_table_cf(registros)
+        resumen = self._cf_tipo_resumen(registros)
+        mensaje = f"{len(registros)} DTE listos para generar el Anexo II."
+        if resumen:
+            mensaje = f"{mensaje} ({resumen})"
+        self.declaracion_result_box.setPlainText(mensaje)
+
+    def _handle_cargar_xix(self):
+        periodo = self._obtener_periodo_declaracion("Anexo XIX")
+        if not periodo:
+            return
+
+        try:
+            registros = self._obtener_anexo_xix_registros(periodo)
+        except Exception as exc:  # pragma: no cover - errores del proveedor
+            mensaje = f"No se pudo obtener la lista de anulaciones: {exc}"
+            self._clear_declaracion_table()
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.warning(self, "Anexo XIX", mensaje)
+            return
+
+        if not registros:
+            self._clear_declaracion_table()
+            mensaje = "No hay DTE anulados/invalidados para este período."
+            self.declaracion_result_box.setPlainText(mensaje)
+            QMessageBox.information(self, "Anexo XIX", mensaje)
+            return
+
+        self._populate_table_xix(registros)
+        self.declaracion_result_box.setPlainText(
+            f"{len(registros)} DTE listos para generar el Anexo XIX."
+        )
+
+    def _handle_generar_planilla(self):
+        registros = self._selected_registros_from_table()
+        if not registros:
+            QMessageBox.warning(self, "Declaración", "Seleccione al menos un DTE.")
+            return
+
+        contexto = self._declaracion_context
+        if contexto not in {"II", "XIX"}:
+            QMessageBox.warning(
+                self,
+                "Declaración",
+                "Primero cargue la lista de Anulaciones o Consumidor final.",
+            )
+            return
+
+        parametros = self._obtener_parametros_declaracion("Declaración")
+        if not parametros:
+            return
+
+        output_dir, periodo = parametros
+
+        self.declaracion_generar_planilla_btn.setEnabled(False)
+        resultado: dict[str, object]
+        titulo = "Anexo II" if contexto == "II" else "Anexo XIX"
+        try:
+            if contexto == "II":
+                resultado = on_click_generar_consumidor_final(output_dir, periodo, registros)
+            else:
+                resultado = on_click_generar_anulaciones(output_dir, periodo, registros)
+        except Exception as exc:  # pragma: no cover - errores inesperados
+            resultado = {
+                "success": False,
+                "message": f"No se pudo generar la planilla: {exc}",
+            }
+        finally:
+            self.declaracion_generar_planilla_btn.setEnabled(True)
+
+        mensaje = str(resultado.get("message") or "")
+        self.declaracion_result_box.setPlainText(mensaje)
+        if resultado.get("success"):
+            QMessageBox.information(self, titulo, mensaje)
         else:
-            QMessageBox.warning(self, "Anexo II", resultado["message"])
+            QMessageBox.warning(self, titulo, mensaje)
 
     def _toggle_date_filter(self, checked):
         self.quick_range.setEnabled(checked)

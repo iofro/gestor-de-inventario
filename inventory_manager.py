@@ -5,18 +5,29 @@ from PyQt5.QtCore import QAbstractTableModel, Qt
 from PyQt5.QtGui import QColor
 import json
 import re
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, time as dt_time
 import os
 import logging
 import sqlite3
-from decimal import Decimal as D
-from typing import List, Mapping
-from paths import DATOS_NEGOCIO_PATH, ensure_user_dir, user_logs_path
+from decimal import Decimal as D, InvalidOperation, ROUND_HALF_UP
+from pathlib import Path
+from typing import Iterable, List, Mapping
+from paths import (
+    DATOS_NEGOCIO_PATH,
+    DTES_DIR,
+    FACTURAS_ARCHIVE_CF_DIR,
+    FACTURAS_CONSUMIDOR_FINAL_DIR,
+    TICKETS_OUTPUT_DIR,
+    ensure_user_dir,
+    get_canonical_dte_dir,
+    user_logs_path,
+)
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.party_resolver import Catalogs, normalize_identifier
+from declaracion.anexo_consumidor_final import VentaCF
 from declaracion.anexo_xix import DTEAnulado
 
 try:  # Prefer shared app version if available
@@ -94,6 +105,66 @@ def _sanitize_datos_negocio(datos_negocio: dict | None) -> dict:
         if not dte_api:
             sanitized.pop("dte_api", None)
     return sanitized
+
+
+def _iter_cf_candidate_dirs() -> Iterable[Path]:
+    """Yield directories that may contain DTE JSON for consumidor final."""
+
+    candidates: list[Path] = []
+    try:
+        canonical = Path(get_canonical_dte_dir("ConsumidorFinal"))
+    except Exception:
+        canonical = None
+    if canonical is not None:
+        candidates.append(canonical)
+
+    for raw_dir in (
+        FACTURAS_CONSUMIDOR_FINAL_DIR,
+        FACTURAS_ARCHIVE_CF_DIR,
+        TICKETS_OUTPUT_DIR,
+        DTES_DIR,
+    ):
+        if not raw_dir:
+            continue
+        try:
+            candidates.append(Path(raw_dir))
+        except TypeError:
+            continue
+
+    seen_dirs: set[str] = set()
+
+    def _yield_once(path: Path) -> Iterable[Path]:
+        norm = os.path.normpath(str(path))
+        if norm in seen_dirs:
+            return ()
+        seen_dirs.add(norm)
+        return (path,)
+
+    for base in candidates:
+        for candidate in _yield_once(base):
+            yield candidate
+
+        base_name = base.name.lower()
+        subdir_hints: tuple[str, ...]
+        if base_name in {"dtes"}:
+            subdir_hints = (
+                "fcf",
+                "consumidor_final",
+                "consumidorfinal",
+                "consumidor-final",
+                "facturas_consumidor_final",
+            )
+        elif base_name in {"tickets"}:
+            subdir_hints = ("consumidor_final",)
+        elif base_name in {"facturas"}:
+            subdir_hints = ("consumidor_final",)
+        else:
+            subdir_hints = ()
+
+        for hint in subdir_hints:
+            hinted = base / hint
+            for candidate in _yield_once(hinted):
+                yield candidate
 
 
 class InventoryManagerError(Exception):
@@ -312,6 +383,242 @@ class InventoryManager:
 
         ordered_keys = sorted(registros.keys())
         return [registros[key] for key in ordered_keys]
+
+    def get_anexo_consumidor_final_registros(self, periodo: str) -> List[VentaCF]:
+        periodo_text = str(periodo or "").strip()
+        if not _PERIODO_FORMAT.fullmatch(periodo_text):
+            return []
+
+        year = int(periodo_text[:4])
+        month = int(periodo_text[4:])
+
+        def _parse_fecha(value: object) -> datetime | None:
+            if value is None:
+                return None
+            text = str(value).strip()
+            if not text:
+                return None
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y%m%d"):
+                try:
+                    parsed = datetime.strptime(text[:10], fmt)
+                except ValueError:
+                    continue
+                return parsed
+            return None
+
+        def _to_decimal(value: object) -> D:
+            if value in (None, "", "null"):
+                return D("0")
+            if isinstance(value, D):
+                return value
+            if isinstance(value, (int, float)):
+                return D(str(value))
+            if isinstance(value, str):
+                text = value.strip()
+                if not text:
+                    return D("0")
+                try:
+                    return D(text)
+                except InvalidOperation:
+                    text = text.replace(",", "")
+                    try:
+                        return D(text)
+                    except InvalidOperation:
+                        return D("0")
+            return D("0")
+
+        def _format_decimal(value: D) -> str:
+            quantized = value.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+            return f"{quantized:.2f}"
+
+        def _normalize_tipo(value: object) -> str:
+            text = str(value or "").strip()
+            if not text:
+                return "0"
+            if text.isdigit():
+                return str(int(text)).zfill(1)
+            try:
+                numeric = int(float(text))
+            except (ValueError, TypeError):
+                return "0"
+            return str(numeric)
+
+        def _normalize_tipo_doc(value: object) -> str:
+            text = str(value or "").strip()
+            if not text:
+                return "01"
+            if text.isdigit():
+                return f"{int(text):02d}"
+            return text
+
+        def _accepted_payload(payload: Mapping[str, object]) -> bool:
+            if _metadata_estado_aceptado(payload):
+                return True
+            sello = payload.get("selloRecibido")
+            if isinstance(sello, str) and sello.strip():
+                return True
+            respuesta = payload.get("respuesta")
+            if isinstance(respuesta, Mapping):
+                sello_resp = respuesta.get("selloRecibido")
+                if isinstance(sello_resp, str) and sello_resp.strip():
+                    return True
+                for key in ("estado", "estadoEvento", "descripcionEstado"):
+                    valor = respuesta.get(key)
+                    if isinstance(valor, str) and valor.strip().lower() in _ANEXO_ESTADOS_ACEPTADOS:
+                        return True
+            return False
+
+        registros: list[tuple[datetime, str, VentaCF]] = []
+        seen_codigos: set[str] = set()
+        seen_paths: set[str] = set()
+
+        candidate_dirs = [path for path in _iter_cf_candidate_dirs() if path.exists()]
+        if not candidate_dirs:
+            return []
+
+        for base_dir in candidate_dirs:
+            for json_path in sorted(base_dir.rglob("*.json")):
+                if any(part.lower() == "copia de seguridad" for part in json_path.parts):
+                    continue
+
+                json_norm = os.path.normpath(str(json_path))
+                if json_norm in seen_paths:
+                    continue
+                seen_paths.add(json_norm)
+
+                try:
+                    with json_path.open("r", encoding="utf-8") as fh:
+                        payload = json.load(fh)
+                except Exception:
+                    continue
+
+                if not isinstance(payload, Mapping):
+                    continue
+
+                dte_payload = payload.get("dteJson") if isinstance(payload, Mapping) else None
+                if not isinstance(dte_payload, Mapping):
+                    dte_payload = payload.get("dte_json") if isinstance(payload, Mapping) else None
+                if not isinstance(dte_payload, Mapping):
+                    dte_payload = payload.get("dte") if isinstance(payload, Mapping) else None
+                if not isinstance(dte_payload, Mapping):
+                    dte_payload = payload
+                if not isinstance(dte_payload, Mapping):
+                    continue
+
+                ident_raw = dte_payload.get("identificacion") or dte_payload.get("identificador")
+                if not isinstance(ident_raw, Mapping):
+                    continue
+
+                fecha_dt = _parse_fecha(ident_raw.get("fecEmi"))
+                if not fecha_dt or fecha_dt.year != year or fecha_dt.month != month:
+                    continue
+
+                tipo_doc = _normalize_tipo_doc(ident_raw.get("tipoDte"))
+                if tipo_doc not in {"01", "02", "10", "11"}:
+                    continue
+
+                codigo_generacion = str(ident_raw.get("codigoGeneracion") or "").strip()
+                if not codigo_generacion:
+                    continue
+                if codigo_generacion in seen_codigos:
+                    continue
+
+                if not _accepted_payload(payload):
+                    continue
+
+                numero_control = str(ident_raw.get("numeroControl") or "").strip()
+
+                resumen = dte_payload.get("resumen")
+                if not isinstance(resumen, Mapping):
+                    resumen = {}
+
+                ventas_exentas = _to_decimal(resumen.get("totalExenta"))
+                internas_ns = _to_decimal(resumen.get("totalNoGravado"))
+                ventas_no_sujetas = _to_decimal(resumen.get("totalNoSuj"))
+                ventas_gravadas = _to_decimal(resumen.get("totalGravada"))
+                exp_ca = _to_decimal(
+                    resumen.get("totalExportacionCA")
+                    or resumen.get("totalExportacionCa")
+                    or resumen.get("totalExportacionCentroAmerica")
+                )
+                exp_fuera = _to_decimal(
+                    resumen.get("totalExportacionFueraCA")
+                    or resumen.get("totalExportacion")
+                )
+                exp_servicios = _to_decimal(resumen.get("totalExportacionServicios"))
+                zonas_francas = _to_decimal(resumen.get("totalZonasFrancas"))
+                terceros_no_domic = _to_decimal(resumen.get("totalTercerosNoDomiciliados"))
+
+                componentes = [
+                    ventas_exentas,
+                    internas_ns,
+                    ventas_no_sujetas,
+                    ventas_gravadas,
+                    exp_ca,
+                    exp_fuera,
+                    exp_servicios,
+                    zonas_francas,
+                    terceros_no_domic,
+                ]
+                total_componentes = sum(componentes)
+                total_operacion = _to_decimal(
+                    resumen.get("totalPagar") or resumen.get("montoTotalOperacion")
+                )
+                if total_operacion == D("0"):
+                    total_operacion = total_componentes
+                if total_operacion != total_componentes:
+                    diferencia = total_operacion - total_componentes
+                    ventas_gravadas += diferencia
+                    componentes[3] = ventas_gravadas
+                    total_componentes = sum(componentes)
+
+                fecha_only = fecha_dt.date()
+
+                registro = VentaCF(
+                    fecha=fecha_only.strftime("%d/%m/%Y"),
+                    clase="4",
+                    tipo=tipo_doc,
+                    numero_doc_del=codigo_generacion,
+                    numero_doc_al=codigo_generacion,
+                    ventas_exentas=_format_decimal(componentes[0]),
+                    internas_exentas_ns=_format_decimal(componentes[1]),
+                    ventas_no_sujetas=_format_decimal(componentes[2]),
+                    ventas_gravadas_locales=_format_decimal(componentes[3]),
+                    exp_ca=_format_decimal(componentes[4]),
+                    exp_fuera_ca=_format_decimal(componentes[5]),
+                    exp_servicios=_format_decimal(componentes[6]),
+                    zonas_francas_dpa=_format_decimal(componentes[7]),
+                    terceros_no_domic=_format_decimal(componentes[8]),
+                    total_ventas=_format_decimal(total_componentes),
+                    tipo_operacion=_normalize_tipo(ident_raw.get("tipoOperacion")),
+                    tipo_ingreso=_normalize_tipo(resumen.get("tipoIngreso")),
+                )
+
+                hora_text = str(
+                    ident_raw.get("horEmi")
+                    or ident_raw.get("horaEmision")
+                    or ident_raw.get("horEmision")
+                    or ""
+                ).strip()
+                orden_dt = datetime.combine(fecha_only, dt_time.min)
+                if hora_text:
+                    for fmt in ("%H:%M:%S", "%H:%M"):
+                        try:
+                            hora_obj = datetime.strptime(hora_text, fmt).time()
+                        except ValueError:
+                            continue
+                        orden_dt = datetime.combine(fecha_only, hora_obj)
+                        break
+
+                registro.numero_control = numero_control
+                registro.codigo_generacion = codigo_generacion
+                registro.json_path = str(json_path)
+
+                seen_codigos.add(codigo_generacion)
+                registros.append((orden_dt, numero_control, registro))
+
+        registros.sort(key=lambda item: (item[0], item[1]))
+        return [item[2] for item in registros]
 
     def add_producto(
         self,

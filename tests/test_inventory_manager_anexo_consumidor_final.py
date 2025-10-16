@@ -1,0 +1,245 @@
+from __future__ import annotations
+
+import json
+import sys
+import types
+from pathlib import Path
+
+import paths
+
+
+def _setup_fake_qt(monkeypatch):
+    fake_pyqt = types.ModuleType("PyQt5")
+    fake_qtcore = types.ModuleType("PyQt5.QtCore")
+    fake_qtcore.QAbstractTableModel = object
+    fake_qtcore.Qt = types.SimpleNamespace(DisplayRole=0, DecorationRole=1)
+    fake_qtgui = types.ModuleType("PyQt5.QtGui")
+    fake_qtgui.QColor = lambda *args, **kwargs: None
+    fake_qtwidgets = types.ModuleType("PyQt5.QtWidgets")
+
+    monkeypatch.setitem(sys.modules, "PyQt5", fake_pyqt)
+    monkeypatch.setitem(sys.modules, "PyQt5.QtCore", fake_qtcore)
+    monkeypatch.setitem(sys.modules, "PyQt5.QtGui", fake_qtgui)
+    monkeypatch.setitem(sys.modules, "PyQt5.QtWidgets", fake_qtwidgets)
+
+
+def _prepare_paths(monkeypatch, base_dir: Path):
+    def fake_ensure_user_dir(*parts: str) -> Path:
+        path = base_dir.joinpath(*parts)
+        path.mkdir(parents=True, exist_ok=True)
+        return path
+
+    def fake_get_canonical(tipo: str) -> Path:
+        if tipo == "ConsumidorFinal":
+            return fake_ensure_user_dir("facturas_consumidor_final")
+        return fake_ensure_user_dir(tipo)
+
+    canonical_cf = fake_get_canonical("ConsumidorFinal")
+    archive_cf = fake_ensure_user_dir("facturas", "consumidor_final")
+    tickets_dir = fake_ensure_user_dir("tickets")
+    dtes_dir = fake_ensure_user_dir("dtes")
+
+    monkeypatch.setattr(paths, "USER_DATA_DIR", base_dir)
+    monkeypatch.setattr(paths, "ensure_user_dir", fake_ensure_user_dir)
+    monkeypatch.setattr(paths, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(paths, "TICKETS_OUTPUT_DIR", str(tickets_dir))
+    monkeypatch.setattr(paths, "FACTURAS_CONSUMIDOR_FINAL_DIR", str(canonical_cf))
+    monkeypatch.setattr(paths, "FACTURAS_ARCHIVE_CF_DIR", str(archive_cf))
+    monkeypatch.setattr(paths, "get_canonical_dte_dir", fake_get_canonical)
+
+    return fake_ensure_user_dir, fake_get_canonical, {
+        "canonical_cf": canonical_cf,
+        "archive_cf": archive_cf,
+        "tickets": tickets_dir,
+        "dtes": dtes_dir,
+    }
+
+
+def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, db_conn):
+    _setup_fake_qt(monkeypatch)
+
+    base_dir = tmp_path / "userdata"
+    fake_ensure_user_dir, fake_get_canonical, dirs = _prepare_paths(monkeypatch, base_dir)
+
+    from inventory_manager import InventoryManager  # patched PyQt & paths in place
+
+    monkeypatch.setattr("inventory_manager.ensure_user_dir", fake_ensure_user_dir)
+    monkeypatch.setattr("inventory_manager.get_canonical_dte_dir", fake_get_canonical)
+    monkeypatch.setattr(
+        "inventory_manager.FACTURAS_CONSUMIDOR_FINAL_DIR", str(dirs["canonical_cf"])
+    )
+    monkeypatch.setattr(
+        "inventory_manager.FACTURAS_ARCHIVE_CF_DIR", str(dirs["archive_cf"])
+    )
+    monkeypatch.setattr("inventory_manager.TICKETS_OUTPUT_DIR", str(dirs["tickets"]))
+    monkeypatch.setattr("inventory_manager.DTES_DIR", str(dirs["dtes"]))
+
+    cf_dir = dirs["canonical_cf"]
+    payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-02",
+                "horEmi": "13:45:30",
+                "numeroControl": "DTE-01-S001P001-000000000000789",
+                "codigoGeneracion": "ABCDEF12-3456-7890-ABCD-EF1234567890",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "2.00",
+                "totalNoGravado": "0.50",
+                "totalNoSuj": "0.50",
+                "totalGravada": "10.00",
+                "totalPagar": "13.00",
+            },
+        },
+        "selloRecibido": "A" * 40,
+    }
+
+    json_path = cf_dir / "20251002_cliente_DTE-01.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    backup_dir = cf_dir / "copia de seguridad"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    (backup_dir / json_path.name).write_text(json.dumps(payload), encoding="utf-8")
+
+    archive_dir = dirs["archive_cf"]
+    archive_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "02",
+                "fecEmi": "2025-10-01",
+                "horEmi": "09:00:00",
+                "numeroControl": "ARCHIVE-CF-0001",
+                "codigoGeneracion": "B1B1B1B1-0000-1111-2222-333344445555",
+                "tipoOperacion": 2,
+            },
+            "resumen": {
+                "totalExenta": "1.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "5.00",
+                "totalPagar": "6.00",
+                "tipoIngreso": "2",
+            },
+        },
+        "respuesta": {"estado": "aceptado"},
+    }
+
+    archive_json = archive_dir / "20251001_archive.json"
+    archive_json.write_text(json.dumps(archive_payload), encoding="utf-8")
+
+    tickets_dir = dirs["tickets"] / "consumidor_final"
+    tickets_dir.mkdir(parents=True, exist_ok=True)
+    ticket_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "10",
+                "fecEmi": "2025-10-03",
+                "horEmi": "08:00",
+                "numeroControl": "TICKET-CF-0001",
+                "codigoGeneracion": "C1C1C1C1-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
+                "tipoOperacion": 3,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "20.00",
+                "totalPagar": "20.00",
+            },
+        },
+        "selloRecibido": "C" * 40,
+    }
+
+    ticket_json = tickets_dir / "20251003_ticket.json"
+    ticket_json.write_text(json.dumps(ticket_payload), encoding="utf-8")
+
+    dtes_dir = dirs["dtes"]
+    dtes_fcf_dir = dtes_dir / "fcf"
+    dtes_fcf_dir.mkdir(parents=True, exist_ok=True)
+    dtes_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "11",
+                "fecEmi": "2025-10-04",
+                "horEmi": "10:30:15",
+                "numeroControl": "DTES-CF-0001",
+                "codigoGeneracion": "D1D1D1D1-AAAA-BBBB-CCCC-111122223333",
+                "tipoOperacion": 4,
+            },
+            "resumen": {
+                "totalExenta": "0.50",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.50",
+                "totalGravada": "15.00",
+                "totalPagar": "16.00",
+            },
+        },
+        "respuesta": {"estado": "procesado"},
+    }
+
+    dtes_json = dtes_fcf_dir / "20251004_dtes.json"
+    dtes_json.write_text(json.dumps(dtes_payload), encoding="utf-8")
+
+    duplicate_json = dtes_dir / "20251003_ticket_duplicate.json"
+    duplicate_json.write_text(json.dumps(ticket_payload), encoding="utf-8")
+
+    other_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-09-30",
+                "codigoGeneracion": "FF001122-3344-5566-7788-99AABBCCDDEE",
+            }
+        },
+        "selloRecibido": "B" * 40,
+    }
+    (cf_dir / "20250930_old.json").write_text(json.dumps(other_payload), encoding="utf-8")
+
+    manager = InventoryManager(db_conn)
+
+    registros_octubre = manager.get_anexo_consumidor_final_registros("202510")
+    assert [r.numero_doc_del for r in registros_octubre] == [
+        "B1B1B1B1-0000-1111-2222-333344445555",
+        "ABCDEF12-3456-7890-ABCD-EF1234567890",
+        "C1C1C1C1-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
+        "D1D1D1D1-AAAA-BBBB-CCCC-111122223333",
+    ]
+
+    registros_map = {registro.numero_doc_del: registro for registro in registros_octubre}
+
+    registro = registros_map["ABCDEF12-3456-7890-ABCD-EF1234567890"]
+    assert registro.fecha == "02/10/2025"
+    assert registro.tipo == "01"
+    assert registro.ventas_gravadas_locales == "10.00"
+    assert registro.ventas_exentas == "2.00"
+    assert registro.internas_exentas_ns == "0.50"
+    assert registro.ventas_no_sujetas == "0.50"
+    assert registro.total_ventas == "13.00"
+    assert registro.tipo_operacion == "1"
+    assert registro.tipo_ingreso == "0"
+    assert Path(registro.json_path) == json_path
+
+    registro_archive = registros_map["B1B1B1B1-0000-1111-2222-333344445555"]
+    assert registro_archive.fecha == "01/10/2025"
+    assert registro_archive.tipo == "02"
+    assert registro_archive.total_ventas == "6.00"
+    assert registro_archive.tipo_ingreso == "2"
+    assert Path(registro_archive.json_path) == archive_json
+
+    registro_ticket = registros_map["C1C1C1C1-AAAA-BBBB-CCCC-DDDDEEEEFFFF"]
+    assert registro_ticket.tipo == "10"
+    assert registro_ticket.total_ventas == "20.00"
+    assert Path(registro_ticket.json_path) == ticket_json
+
+    registro_dtes = registros_map["D1D1D1D1-AAAA-BBBB-CCCC-111122223333"]
+    assert registro_dtes.tipo == "11"
+    assert registro_dtes.total_ventas == "16.00"
+    assert Path(registro_dtes.json_path) == dtes_json
+
+    registros_septiembre = manager.get_anexo_consumidor_final_registros("202509")
+    assert len(registros_septiembre) == 1
+    sept = registros_septiembre[0]
+    assert sept.numero_doc_del == "FF001122-3344-5566-7788-99AABBCCDDEE"
+    assert sept.total_ventas == "0.00"

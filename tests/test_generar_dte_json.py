@@ -574,6 +574,81 @@ def test_generar_dte_json_asigna_nombre_consumidor_final(tmp_path):
     assert data["receptor"]["nombre"] == "Consumidor Final"
 
 
+def test_generar_dte_json_persona_juridica_prefiere_razon_social(tmp_path):
+    import dte as dte_module
+    import svfe.config as svfe_config
+
+    datos = {
+        "nit": "06141990011019",
+        "nrc": "1234567",
+        "nombre": "Mi Negocio",
+        "nombreComercial": "Negocio",
+        "razonSocial": "Mi   Negocio, S.A. de C.V.",
+        "tipoContribuyente": "Persona Jurídica",
+        "codActividad": "123456",
+        "descActividad": "Comercio",
+        "telefono": "22222222",
+        "correo": "test@example.com",
+        "direccion": {
+            "departamento": "06",
+            "municipio": "10",
+            "complemento": "Calle 1",
+        },
+        "dte_api": {"prefijo_control": "DTE-03-S001P001", "ambiente": "00"},
+    }
+
+    datos_file = tmp_path / "datos_negocio.json"
+    datos_file.write_text(json.dumps(datos))
+
+    original_path = dte_module.DATOS_NEGOCIO_PATH
+    original_loader = dte_module._load_datos_negocio
+    original_svfe_path = svfe_config.DATOS_NEGOCIO_PATH
+    original_svfe_loader = svfe_config.load_datos_negocio
+    try:
+        dte_module.DATOS_NEGOCIO_PATH = str(datos_file)
+        svfe_config.DATOS_NEGOCIO_PATH = str(datos_file)
+        dte_module._load_datos_negocio = lambda: datos
+        svfe_config.load_datos_negocio = lambda: datos
+
+        db = create_db()
+        db.add_vendedor("V1")
+        vid = db.cursor.lastrowid
+        db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
+        pid = db.cursor.lastrowid
+        db.add_cliente(
+            "Contacto",
+            "6543210",
+            "06140101010101",
+            "01234567-8",
+            "Servicios",
+            "70000001",
+            "cliente@example.com",
+            "San Salvador",
+            "06",
+            "01",
+            tipoContribuyente="Persona Jurídica",
+            razonSocial="Cliente   Sociedad   S.A. de C.V.",
+        )
+        cliente_id = db.cursor.lastrowid
+        venta_id = db.add_venta("2024-01-01", 13, cliente_id=cliente_id)
+        db.add_detalle_venta(venta_id, pid, 1, 13, vendedor_id=vid)
+
+        data = generar_dte_json(db, venta_id, tipo_dte="03")
+    finally:
+        dte_module.DATOS_NEGOCIO_PATH = original_path
+        dte_module._load_datos_negocio = original_loader
+        svfe_config.DATOS_NEGOCIO_PATH = original_svfe_path
+        svfe_config.load_datos_negocio = original_svfe_loader
+
+    assert data["emisor"]["nombre"] == "Mi Negocio, S.A. de C.V."
+    assert data["receptor"]["nombre"] == "Cliente Sociedad S.A. de C.V."
+    assert data["receptor"].get("nit") == "06140101010101"
+    assert data["receptor"].get("nrc") == "6543210"
+    assert "tipoDocumento" not in data["receptor"]
+    assert "numDocumento" not in data["receptor"]
+    assert "dui" not in data["receptor"]
+
+
 def test_generar_dte_json_precios_incluyen_iva_multiple_cant(tmp_path):
     import dte as dte_module
 

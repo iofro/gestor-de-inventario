@@ -219,8 +219,10 @@ def on_click_generar_anulaciones(
     Llama a generar_anexo_xix_files, muestra rutas generadas y captura errores.
     """
 
+    registros_list = list(registros)
+
     try:
-        paths = generar_anexo_xix_files(registros, output_dir, periodo_yyyymm)
+        paths = generar_anexo_xix_files(registros_list, output_dir, periodo_yyyymm)
     except ValueError as exc:  # errores esperados por validación
         return {"success": False, "message": str(exc), "paths": {}}
     except Exception as exc:  # errores inesperados
@@ -228,9 +230,15 @@ def on_click_generar_anulaciones(
 
     csv_path = paths["csv"]
     xlsx_path = paths["xlsx"]
+    cantidad = len(registros_list)
     message_lines = [
-        "Archivos generados correctamente:",
+        f"{cantidad} DTE incluidos en el Anexo XIX.",
         f"CSV: {csv_path}",
         f"XLSX: {xlsx_path}",
     ]
-    return {"success": True, "message": "\n".join(message_lines), "paths": paths}
+    return {
+        "success": True,
+        "message": "\n".join(message_lines),
+        "paths": paths,
+        "count": cantidad,
+    }

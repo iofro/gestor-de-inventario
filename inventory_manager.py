@@ -46,27 +46,39 @@ logger = logging.getLogger(__name__)
 _TOKEN_FIELDS = ("token_pruebas", "token_produccion")
 
 
-_ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido", "enviado"}
+_MANUAL_ESTADOS_ACEPTADOS = ("aceptad", "enviad")
+_AUTOMATICO_ESTADOS_ACEPTADOS = ("enviad",)
 _PERIODO_FORMAT = re.compile(r"^\d{6}$")
 
 
-def _estado_indica_aceptado(value: object) -> bool:
-    """Return ``True`` if ``value`` contains an accepted status token."""
-
+def _estado_tokens(value: object) -> list[str]:
     if value is None:
-        return False
+        return []
 
     text = str(value).strip().lower()
     if not text:
-        return False
+        return []
 
-    if text in _ANEXO_ESTADOS_ACEPTADOS:
-        return True
+    tokens = [text]
+    tokens.extend(token for token in re.split(r"[^0-9a-záéíóúüñ]+", text) if token)
+    return tokens
 
-    for token in re.split(r"[^0-9a-záéíóúüñ]+", text):
-        if token in _ANEXO_ESTADOS_ACEPTADOS:
+
+def _estado_indica_manual_aceptado(value: object) -> bool:
+    """Return ``True`` if a manual estado marks the DTE as accepted."""
+
+    for token in _estado_tokens(value):
+        if any(token.startswith(prefix) for prefix in _MANUAL_ESTADOS_ACEPTADOS):
             return True
+    return False
 
+
+def _estado_indica_automatico_aceptado(value: object) -> bool:
+    """Return ``True`` if an automatic estado allows including the DTE."""
+
+    for token in _estado_tokens(value):
+        if any(token.startswith(prefix) for prefix in _AUTOMATICO_ESTADOS_ACEPTADOS):
+            return True
     return False
 
 
@@ -107,7 +119,7 @@ def _metadata_estado_aceptado(metadata: Mapping[str, object] | None) -> bool:
     if isinstance(respuesta, Mapping):
         for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
             valor = respuesta.get(key)
-            if _estado_indica_aceptado(valor):
+            if _estado_indica_automatico_aceptado(valor):
                 return True
     return False
 
@@ -117,10 +129,10 @@ def _estado_apto_para_anexo(
 ) -> bool:
     """Determina si el estado permite incluir el DTE en el anexo."""
 
-    if _estado_indica_aceptado(estado_manual):
+    if _estado_indica_manual_aceptado(estado_manual):
         return True
 
-    return _estado_indica_aceptado(estado_json)
+    return _estado_indica_automatico_aceptado(estado_json)
 
 
 def _extract_manual_tokens(datos_negocio: dict | None) -> dict:

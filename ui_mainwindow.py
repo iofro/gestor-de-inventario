@@ -11,6 +11,7 @@ import os
 import json
 import sys
 import subprocess
+from typing import Mapping
 from inventory_manager import InventoryManager
 from db import DB
 from paths import DATOS_NEGOCIO_PATH, CONFIG_NEGOCIO_PATH, LAST_INVENTORY_PATH
@@ -2130,9 +2131,19 @@ class MainWindow(QMainWindow):
         except (AttributeError, ValueError, TypeError):  # pragma: no cover - defensive
             pass
 
-        dlg = DTEConfigDialog(dte_api, fe_config, env_conf, self, **dialog_kwargs)
+        dlg = DTEConfigDialog(
+            dte_api,
+            fe_config,
+            env_conf,
+            self,
+            datos_negocio=datos,
+            **dialog_kwargs,
+        )
         if dlg.exec_():
             new_dte_api, new_fe, new_urls = dlg.get_data()
+            negocio_updates = getattr(dlg, "get_negocio_updates", lambda: {})()
+            if isinstance(negocio_updates, Mapping):
+                datos.update(negocio_updates)
             ambiente = new_dte_api["ambiente"]
             datos["dte_api"] = new_dte_api
             config["ambiente"] = ambiente

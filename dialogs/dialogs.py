@@ -45,6 +45,26 @@ IVA_FACTOR = Decimal("1") + IVA_RATE
 
 CREDIT_TERM_BACKEND_ROLE = Qt.UserRole + 1
 
+TIPO_CONTRIBUYENTE_OPCIONES = ["Persona Natural", "Persona Jurídica"]
+
+
+def _normalize_tipo_contribuyente(value: str | None) -> str:
+    if not value:
+        return TIPO_CONTRIBUYENTE_OPCIONES[0]
+    normalized = value.strip().lower()
+    mapping = {
+        "pn": "persona natural",
+        "persona natural": "persona natural",
+        "persona jurídica": "persona jurídica",
+        "persona juridica": "persona jurídica",
+        "pj": "persona jurídica",
+    }
+    normalized = mapping.get(normalized, normalized)
+    for option in TIPO_CONTRIBUYENTE_OPCIONES:
+        if option.lower() == normalized:
+            return option
+    return TIPO_CONTRIBUYENTE_OPCIONES[0]
+
 
 class LoginDialog(QDialog):
     def __init__(self, *args, **kwargs):
@@ -4623,7 +4643,13 @@ class DatosNegocioDialog(QDialog):
         self.nombre_comercial = QLineEdit()
         self.cod_giro = QLineEdit()
         self.desc_actividad = QLineEdit()
-        self.tipo_contribuyente = QLineEdit()
+        self.tipo_contribuyente = QComboBox()
+        self.tipo_contribuyente.addItems(TIPO_CONTRIBUYENTE_OPCIONES)
+        self.tipo_contribuyente.currentTextChanged.connect(
+            lambda *_: self._update_razon_social_state()
+        )
+        self.razon_social = QLineEdit()
+        self.razon_social.setPlaceholderText("Opcional para persona natural")
         self.telefono = QLineEdit()
         self.correo = QLineEdit()
         self.departamento = QComboBox()
@@ -4650,6 +4676,7 @@ class DatosNegocioDialog(QDialog):
         form.addRow("Código giro:", self.cod_giro)
         form.addRow("Descripción actividad:", self.desc_actividad)
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
+        form.addRow("Razón social:", self.razon_social)
         form.addRow("Teléfono:", self.telefono)
         form.addRow("Correo:", self.correo)
         form.addRow("Departamento:", self.departamento)
@@ -4673,6 +4700,7 @@ class DatosNegocioDialog(QDialog):
             self.set_data(datos)
         else:
             self._update_logo_button()
+        self._update_razon_social_state()
 
     def _on_save(self):
         try:
@@ -4686,12 +4714,16 @@ class DatosNegocioDialog(QDialog):
         departamento = str(self.departamento.currentData() or "").zfill(2)
         municipio = str(self.municipio.currentData() or "")
         complemento = self.complemento.text()
+        razon_social = self.razon_social.text().strip()
+        tipo_contribuyente = self.tipo_contribuyente.currentText()
         if departamento not in CAT012_DEPARTAMENTOS:
             raise ValueError("Departamento inválido")
         if municipio not in CAT013_MUNICIPIOS:
             raise ValueError("Municipio inválido")
         if not complemento:
             raise ValueError("Dirección requerida")
+        if tipo_contribuyente == "Persona Jurídica" and not razon_social:
+            raise ValueError("La razón social es obligatoria para personas jurídicas")
         return {
             "nit": self.nit.text(),
             "nrc": self.nrc.text(),
@@ -4701,7 +4733,8 @@ class DatosNegocioDialog(QDialog):
             "cod_giro": self.cod_giro.text(),
             "codActividad": self.cod_giro.text(),
             "descActividad": self.desc_actividad.text(),
-            "tipoContribuyente": self.tipo_contribuyente.text(),
+            "tipoContribuyente": tipo_contribuyente,
+            "razonSocial": razon_social,
             "telefono": self.telefono.text(),
             "correo": self.correo.text(),
             "direccion": {
@@ -4720,7 +4753,9 @@ class DatosNegocioDialog(QDialog):
         self.nombre_comercial.setText(datos.get("nombreComercial", ""))
         self.cod_giro.setText(datos.get("cod_giro") or datos.get("codActividad", ""))
         self.desc_actividad.setText(datos.get("descActividad", ""))
-        self.tipo_contribuyente.setText(datos.get("tipoContribuyente", ""))
+        tipo = _normalize_tipo_contribuyente(datos.get("tipoContribuyente"))
+        self.tipo_contribuyente.setCurrentText(tipo)
+        self.razon_social.setText(datos.get("razonSocial", ""))
         self.telefono.setText(datos.get("telefono", ""))
         self.correo.setText(datos.get("correo", ""))
         dir_info = datos.get("direccion", {}) or {}
@@ -4745,6 +4780,16 @@ class DatosNegocioDialog(QDialog):
                 self.logo_path = path
                 break
         self._update_logo_button()
+        self._update_razon_social_state()
+
+    def _update_razon_social_state(self):
+        is_persona_juridica = (
+            self.tipo_contribuyente.currentText() == "Persona Jurídica"
+        )
+        if is_persona_juridica:
+            self.razon_social.setPlaceholderText("Obligatoria para persona jurídica")
+        else:
+            self.razon_social.setPlaceholderText("Opcional para persona natural")
 
     def _open_logo_dialog(self):
         dlg = LogoPreviewDialog(self.logo_path, self)
@@ -4985,7 +5030,15 @@ class DTECorrelativoConfigDialog(QDialog):
 
 
 class DTEConfigDialog(QDialog):
-    def __init__(self, dte_api=None, fe_config=None, env_config=None, parent=None, db=None):
+    def __init__(
+        self,
+        dte_api=None,
+        fe_config=None,
+        env_config=None,
+        parent=None,
+        datos_negocio=None,
+        db=None,
+    ):
         super().__init__(parent)
         self.db = db or DB()
         self.setWindowTitle("Configuración de Facturación Electrónica")
@@ -5004,7 +5057,12 @@ class DTEConfigDialog(QDialog):
         self.dte_activo = QCheckBox("Certificado activo")
         self.dte_activo.setChecked(True)
         self.tipo_contribuyente = QComboBox()
-        self.tipo_contribuyente.addItems(["Persona Natural", "Persona Jurídica"])
+        self.tipo_contribuyente.addItems(TIPO_CONTRIBUYENTE_OPCIONES)
+        self.tipo_contribuyente.currentTextChanged.connect(
+            lambda *_: self._update_razon_social_state()
+        )
+        self.razon_social = QLineEdit()
+        self.razon_social.setPlaceholderText("Opcional para persona natural")
         self.prefijo_control = QLineEdit("DTE-01-S001P001")
         self.modo_transmision = QComboBox()
         self.modo_transmision.addItems(["1 - Normal", "2 - Contingencia"])
@@ -5040,6 +5098,7 @@ class DTEConfigDialog(QDialog):
         form.addRow("Contraseña API:", self.api_pwd)
         form.addRow(self.dte_activo)
         form.addRow("Tipo contribuyente:", self.tipo_contribuyente)
+        form.addRow("Razón social:", self.razon_social)
         form.addRow("Prefijo número control:", self.prefijo_control)
         modo_widget = QWidget()
         modo_layout = QHBoxLayout(modo_widget)
@@ -5083,6 +5142,8 @@ class DTEConfigDialog(QDialog):
         btns.addWidget(cancelar)
         layout.addLayout(btns)
         self.setLayout(layout)
+        self._datos_negocio_inicial = datos_negocio or {}
+        self._negocio_updates: dict[str, str] = {}
         guardar.clicked.connect(self.accept)
         cancelar.clicked.connect(self.reject)
         restaurar.clicked.connect(self._restore_defaults)
@@ -5102,6 +5163,8 @@ class DTEConfigDialog(QDialog):
         else:
             self._set_default_urls()
             self._update_contingencia_visibility()
+            self._apply_negocio_defaults()
+        self._update_razon_social_state()
 
     def _open_correlativos(self):
         dlg = DTECorrelativoConfigDialog(
@@ -5131,7 +5194,13 @@ class DTEConfigDialog(QDialog):
             except Exception:
                 self.api_pwd.setText(pwd_api)
         self.dte_activo.setChecked(fe_config.get("activo", True))
-        self.tipo_contribuyente.setCurrentText(dte_api.get("tipo_contribuyente", "Persona Natural"))
+        tipo = dte_api.get("tipo_contribuyente")
+        if not tipo:
+            tipo = self._datos_negocio_inicial.get("tipoContribuyente")
+        if not tipo:
+            tipo = self._datos_negocio_inicial.get("tipo_contribuyente")
+        tipo = _normalize_tipo_contribuyente(tipo)
+        self.tipo_contribuyente.setCurrentText(tipo)
         self.prefijo_control.setText(dte_api.get("prefijo_control", "DTE-01-S001P001"))
         with QSignalBlocker(self.modo_transmision):
             self.modo_transmision.setCurrentText(
@@ -5169,6 +5238,11 @@ class DTEConfigDialog(QDialog):
         self.adjuntar_json_correo.setChecked(dte_api.get("adjuntar_json_correo", False))
         self.incluir_sello_pdf.setChecked(dte_api.get("incluir_sello_pdf", False))
         self.guardar_respuesta_bd.setChecked(dte_api.get("guardar_respuesta", False))
+        razon = dte_api.get("razonSocial")
+        if not razon:
+            razon = self._datos_negocio_inicial.get("razonSocial", "")
+        self.razon_social.setText(razon or "")
+        self._update_razon_social_state()
         nit = fe_config.get("nit", "")
         self.cert_path.clear()
         self.cert_path.setToolTip("")
@@ -5189,6 +5263,23 @@ class DTEConfigDialog(QDialog):
         if candidate is not None:
             self.cert_path.setText(candidate.name)
             self.cert_path.setToolTip(str(candidate))
+
+    def _apply_negocio_defaults(self):
+        tipo = self._datos_negocio_inicial.get("tipoContribuyente")
+        if not tipo:
+            tipo = self._datos_negocio_inicial.get("tipo_contribuyente")
+        self.tipo_contribuyente.setCurrentText(_normalize_tipo_contribuyente(tipo))
+        razon = self._datos_negocio_inicial.get("razonSocial", "")
+        self.razon_social.setText(razon or "")
+
+    def _update_razon_social_state(self):
+        is_persona_juridica = (
+            self.tipo_contribuyente.currentText() == "Persona Jurídica"
+        )
+        if is_persona_juridica:
+            self.razon_social.setPlaceholderText("Obligatoria para persona jurídica")
+        else:
+            self.razon_social.setPlaceholderText("Opcional para persona natural")
 
     def _restore_defaults(self):
         """Restaurar valores por defecto de URLs y token."""
@@ -5324,6 +5415,12 @@ class DTEConfigDialog(QDialog):
             "guardar_respuesta": self.guardar_respuesta_bd.isChecked(),
             "tipo_contribuyente": self.tipo_contribuyente.currentText(),
         }
+        razon_social = self.razon_social.text().strip()
+        tipo_contribuyente = dte_api["tipo_contribuyente"]
+        if tipo_contribuyente == "Persona Jurídica" and not razon_social:
+            raise ValueError("La razón social es obligatoria para personas jurídicas")
+        if razon_social:
+            dte_api["razonSocial"] = razon_social
         if token_pruebas is not None and token_pruebas != "":
             dte_api["token_pruebas"] = token_pruebas
         if token_produccion is not None and token_produccion != "":
@@ -5355,7 +5452,14 @@ class DTEConfigDialog(QDialog):
         else:
             dte_api["tipo_contingencia"] = None
         dte_api["motivo_contin"] = self._contingencia_motivo
+        self._negocio_updates = {
+            "razonSocial": razon_social,
+            "tipoContribuyente": tipo_contribuyente,
+        }
         return dte_api, fe_config, urls
+
+    def get_negocio_updates(self) -> dict[str, str]:
+        return dict(self._negocio_updates)
 
     def _parse_tipo_contingencia(self, value) -> int | None:
         if value in (None, ""):
@@ -5415,6 +5519,16 @@ class DTEConfigDialog(QDialog):
             self._update_contingencia_summary()
 
     def accept(self):
+        if (
+            self.tipo_contribuyente.currentText() == "Persona Jurídica"
+            and not self.razon_social.text().strip()
+        ):
+            QMessageBox.warning(
+                self,
+                "Validación",
+                "La razón social es obligatoria para personas jurídicas.",
+            )
+            return
         if self._is_contingencia_selected():
             if self._contingencia_tipo is None:
                 QMessageBox.warning(

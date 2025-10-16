@@ -50,6 +50,19 @@ _ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido", "enviado"}
 _PERIODO_FORMAT = re.compile(r"^\d{6}$")
 
 
+def _valor_indica_anulado(value: object) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if not text:
+            return False
+        return "anulad" in text
+    return False
+
+
 def _map_tipo_anulacion_estado(motivo: Mapping[str, object] | None) -> str | None:
     if not isinstance(motivo, Mapping):
         return None
@@ -72,7 +85,7 @@ def _metadata_estado_aceptado(metadata: Mapping[str, object] | None) -> bool:
         return False
     respuesta = metadata.get("respuesta")
     if isinstance(respuesta, Mapping):
-        for key in ("estado", "estadoEvento", "descripcionEstado"):
+        for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
             valor = respuesta.get(key)
             if isinstance(valor, str) and valor.strip():
                 estado_norm = valor.strip().lower()
@@ -472,7 +485,7 @@ class InventoryManager:
             json_path: Path,
             codigo_generacion: str,
             numero_control: str,
-        ) -> tuple[str | None, str | None, str | None]:
+        ) -> tuple[str | None, str | None, str | None, bool]:
             """Obtiene estado manual y automático para priorizar inclusión y despliegue."""
 
             def _norm_text(value: object) -> str | None:
@@ -483,12 +496,19 @@ class InventoryManager:
 
             estado_manual: str | None = None
             estado_manual_fuente: str | None = None
+            anulado_flag = _valor_indica_anulado(payload.get("anulado"))
+
+            def _mark_anulado(value: object) -> None:
+                nonlocal anulado_flag
+                if not anulado_flag and _valor_indica_anulado(value):
+                    anulado_flag = True
 
             for key in ("estadoManual", "estado_manual", "estadoAsignado", "estado_asignado"):
                 candidato = _norm_text(payload.get(key))
                 if candidato:
                     estado_manual = candidato
                     estado_manual_fuente = "payload"
+                    _mark_anulado(candidato)
                     break
 
             meta_paths = [
@@ -496,8 +516,6 @@ class InventoryManager:
                 json_path.with_suffix(".meta"),
             ]
             for meta_path in meta_paths:
-                if estado_manual:
-                    break
                 if not meta_path.exists() or not meta_path.is_file():
                     continue
                 try:
@@ -505,6 +523,7 @@ class InventoryManager:
                 except Exception:
                     continue
                 if isinstance(meta_content, Mapping):
+                    _mark_anulado(meta_content.get("anulado"))
                     for key in (
                         "estadoManual",
                         "estado_manual",
@@ -515,7 +534,10 @@ class InventoryManager:
                         if candidato:
                             estado_manual = candidato
                             estado_manual_fuente = f"meta:{meta_path.name}"
+                            _mark_anulado(candidato)
                             break
+                if estado_manual:
+                    break
 
             estado_detectado: str | None = None
             db_cursor = getattr(self.db, "cursor", None)
@@ -557,6 +579,7 @@ class InventoryManager:
                             estado_ui = row["estado_ui"]
                         except Exception:
                             estado_ui = row[0] if isinstance(row, (tuple, list)) and row else None
+                        _mark_anulado(estado_ui)
                         try:
                             estado_manual_flag = row["estado_ui_manual"]
                         except Exception:
@@ -565,39 +588,63 @@ class InventoryManager:
                                 if isinstance(row, (tuple, list)) and len(row) > 2
                                 else None
                             )
+                        try:
+                            estado_ui_tag = row["estado_ui_tag"]
+                        except Exception:
+                            estado_ui_tag = (
+                                row[1]
+                                if isinstance(row, (tuple, list)) and len(row) > 1
+                                else None
+                            )
+                        _mark_anulado(estado_ui_tag)
                         estado_detectado = _norm_text(estado_ui) or estado_detectado
                         if estado_manual_flag and estado_ui and not estado_manual:
                             estado_manual = estado_ui
                             estado_manual_fuente = "db"
+                            _mark_anulado(estado_manual)
                 except Exception:
                     pass
 
-            return estado_manual, estado_detectado, estado_manual_fuente
+            return estado_manual, estado_detectado, estado_manual_fuente, anulado_flag
 
         def _accepted_payload(
             payload: Mapping[str, object],
             estado_manual: str | None = None,
+            estados_extra: Iterable[str | None] = (),
         ) -> bool:
+            if _valor_indica_anulado(estado_manual) or _valor_indica_anulado(payload.get("anulado")):
+                return False
+
             if _estado_apto_para_anexo(None, estado_manual):
                 return True
 
             if _metadata_estado_aceptado(payload):
                 return True
-            sello = payload.get("selloRecibido")
-            if isinstance(sello, str) and sello.strip():
-                return True
+
+            estados_a_validar: list[str] = []
+
             respuesta = payload.get("respuesta")
             if isinstance(respuesta, Mapping):
-                sello_resp = respuesta.get("selloRecibido")
-                if isinstance(sello_resp, str) and sello_resp.strip():
-                    return True
-                for key in ("estado", "estadoEvento", "descripcionEstado"):
+                for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
                     valor = respuesta.get(key)
-                    if isinstance(valor, str) and _estado_apto_para_anexo(valor, estado_manual):
-                        return True
-            estado_raiz = payload.get("estado") or payload.get("status")
-            if isinstance(estado_raiz, str) and _estado_apto_para_anexo(estado_raiz, estado_manual):
-                return True
+                    if isinstance(valor, str) and valor.strip():
+                        estados_a_validar.append(valor)
+
+            for key in ("estado", "status", "estadoEnvio"):
+                valor = payload.get(key)
+                if isinstance(valor, str) and valor.strip():
+                    estados_a_validar.append(valor)
+
+            for extra in estados_extra:
+                if isinstance(extra, str) and extra.strip():
+                    estados_a_validar.append(extra)
+
+            for estado in estados_a_validar:
+                if _valor_indica_anulado(estado):
+                    return False
+                if _estado_apto_para_anexo(estado, estado_manual):
+                    return True
+
             return False
 
         registros: list[tuple[datetime, str, VentaCF]] = []
@@ -657,14 +704,24 @@ class InventoryManager:
                 if codigo_generacion in seen_codigos:
                     continue
 
-                estado_manual, estado_detectado_db, estado_manual_fuente = _extract_estado_manual(
+                (
+                    estado_manual,
+                    estado_detectado_db,
+                    estado_manual_fuente,
+                    anulado_flag,
+                ) = _extract_estado_manual(
                     payload,
                     json_path,
                     codigo_generacion,
                     numero_control,
                 )
 
-                if not _accepted_payload(payload, estado_manual):
+                if anulado_flag:
+                    continue
+
+                if not _accepted_payload(
+                    payload, estado_manual, (estado_detectado_db,)
+                ):
                     continue
 
                 resumen = dte_payload.get("resumen")

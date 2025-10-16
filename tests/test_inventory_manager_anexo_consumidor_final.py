@@ -102,6 +102,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             },
         },
         "selloRecibido": "A" * 40,
+        "respuesta": {"estado": "Aceptado"},
     }
 
     json_path = cf_dir / "20251002_cliente_DTE-01.json"
@@ -182,6 +183,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             },
         },
         "selloRecibido": "C" * 40,
+        "respuesta": {"estado": "aceptado"},
     }
 
     ticket_json = tickets_dir / "20251003_ticket.json"
@@ -214,6 +216,61 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     dtes_json = dtes_fcf_dir / "20251004_dtes.json"
     dtes_json.write_text(json.dumps(dtes_payload), encoding="utf-8")
 
+    anulado_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-06",
+                "horEmi": "09:00:00",
+                "numeroControl": "ANULADO-MANUAL-0001",
+                "codigoGeneracion": "0A0A0A0A-1111-2222-3333-444455556666",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "3.00",
+                "totalPagar": "3.00",
+            },
+        },
+        "respuesta": {"estado": "recibido"},
+    }
+
+    anulado_json = cf_dir / "20251006_anulado.json"
+    anulado_json.write_text(json.dumps(anulado_payload), encoding="utf-8")
+    anulado_meta = anulado_json.with_suffix(".meta.json")
+    anulado_meta.write_text(
+        json.dumps({"estadoManual": "Anulado", "anulado": True}),
+        encoding="utf-8",
+    )
+
+    meta_only_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-06",
+                "horEmi": "09:30:00",
+                "numeroControl": "ANULADO-META-0002",
+                "codigoGeneracion": "0B0B0B0B-1111-2222-3333-444455556666",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "4.00",
+                "totalPagar": "4.00",
+            },
+        },
+        "respuesta": {"estado": "procesado"},
+    }
+
+    meta_only_json = cf_dir / "20251006_anulado_meta_only.json"
+    meta_only_json.write_text(json.dumps(meta_only_payload), encoding="utf-8")
+    meta_only_meta = meta_only_json.with_suffix(".meta.json")
+    meta_only_meta.write_text(json.dumps({"anulado": True}), encoding="utf-8")
+
     duplicate_json = dtes_dir / "20251003_ticket_duplicate.json"
     duplicate_json.write_text(json.dumps(ticket_payload), encoding="utf-8")
 
@@ -226,6 +283,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             }
         },
         "selloRecibido": "B" * 40,
+        "respuesta": {"estado": "enviado"},
     }
     (cf_dir / "20250930_old.json").write_text(json.dumps(other_payload), encoding="utf-8")
 
@@ -319,6 +377,9 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
 
     registros_map = {registro.numero_doc_del: registro for registro in registros_octubre}
 
+    assert "0A0A0A0A-1111-2222-3333-444455556666" not in registros_map
+    assert "0B0B0B0B-1111-2222-3333-444455556666" not in registros_map
+
     registro_enviado = registros_map["EEEFFF00-1111-2222-3333-444455556666"]
     assert registro_enviado.fecha == "02/10/2025"
     assert registro_enviado.ventas_gravadas_locales == "5.00"
@@ -396,6 +457,7 @@ def test_get_anexo_consumidor_final_registros_accepts_weird_hour(
             },
         },
         "selloRecibido": "D" * 40,
+        "respuesta": {"estado": "Enviado"},
     }
 
     json_path = cf_dir / "20251002_weird_time.json"

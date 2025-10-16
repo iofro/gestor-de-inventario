@@ -82,6 +82,50 @@ _CANONICAL_TYPES = {
     "NotaRemision",
 }
 
+
+def _parse_cliente_otros(raw_otros):
+    if not raw_otros:
+        return {}
+    if isinstance(raw_otros, Mapping):
+        return dict(raw_otros)
+    if isinstance(raw_otros, str):
+        try:
+            data = json.loads(raw_otros)
+        except Exception:
+            return {}
+        return data if isinstance(data, dict) else {}
+    return {}
+
+
+def _serialize_cliente_otros(extras: Mapping[str, Any] | None) -> str | None:
+    if not extras:
+        return None
+    cleaned = {
+        key: value
+        for key, value in extras.items()
+        if value not in (None, "")
+    }
+    if not cleaned:
+        return None
+    try:
+        return json.dumps(cleaned, ensure_ascii=False)
+    except Exception:
+        return None
+
+
+def _apply_cliente_extras(cliente: Mapping[str, Any]) -> dict[str, Any]:
+    data = dict(cliente)
+    extras = _parse_cliente_otros(data.get("otros"))
+    tipo = extras.get("tipoContribuyente") or data.get("tipoContribuyente")
+    if not tipo:
+        tipo = "Persona Natural"
+    data["tipoContribuyente"] = tipo
+    razon = extras.get("razonSocial")
+    if not razon:
+        razon = data.get("nombreComercial", "")
+    data["razonSocial"] = razon
+    return data
+
 class DB:
     def __init__(self, db_name: str | Path | None = None):
         if db_name is None:
@@ -2233,6 +2277,8 @@ class DB:
         codigo=None,
         codActividad=None,
         nombreComercial=None,
+        tipoContribuyente=None,
+        razonSocial=None,
         commit: bool = True,
     ):
         if codigo is None:
@@ -2250,10 +2296,18 @@ class DB:
         nit = nit or None
         if self.nit_exists(nit):
             raise ValueError("El NIT ya existe")
+        if razonSocial is None:
+            razonSocial = nombreComercial
+        extras_json = _serialize_cliente_otros(
+            {
+                "tipoContribuyente": tipoContribuyente,
+                "razonSocial": razonSocial,
+            }
+        )
         self.cursor.execute(
             """
-            INSERT INTO clientes (codigo, nombre, nombreComercial, nrc, nit, dui, giro, codActividad, telefono, email, direccion, departamento, municipio)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO clientes (codigo, nombre, nombreComercial, nrc, nit, dui, giro, codActividad, telefono, email, direccion, departamento, municipio, otros)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 codigo,
@@ -2269,6 +2323,7 @@ class DB:
                 direccion,
                 departamento,
                 municipio,
+                extras_json,
             ),
         )
         if commit:
@@ -2305,6 +2360,8 @@ class DB:
         municipio,
         codActividad=None,
         nombreComercial=None,
+        tipoContribuyente=None,
+        razonSocial=None,
     ):
         if (
             not departamento
@@ -2319,9 +2376,17 @@ class DB:
         nit = nit or None
         if self.nit_exists(nit, exclude_id=id):
             raise ValueError("El NIT ya existe")
+        if razonSocial is None:
+            razonSocial = nombreComercial
+        extras_json = _serialize_cliente_otros(
+            {
+                "tipoContribuyente": tipoContribuyente,
+                "razonSocial": razonSocial,
+            }
+        )
         self.cursor.execute(
             """
-            UPDATE clientes SET codigo=?, nombre=?, nombreComercial=?, nrc=?, nit=?, dui=?, giro=?, codActividad=?, telefono=?, email=?, direccion=?, departamento=?, municipio=? WHERE id=?
+            UPDATE clientes SET codigo=?, nombre=?, nombreComercial=?, nrc=?, nit=?, dui=?, giro=?, codActividad=?, telefono=?, email=?, direccion=?, departamento=?, municipio=?, otros=? WHERE id=?
             """,
             (
                 codigo,
@@ -2337,6 +2402,7 @@ class DB:
                 direccion,
                 departamento,
                 municipio,
+                extras_json,
                 id,
             ),
         )
@@ -2369,13 +2435,13 @@ class DB:
             )
             params = [like, like, like, like, like, like, like, like]
         self.cursor.execute(query, params)
-        return [dict(row) for row in self.cursor.fetchall()]
+        return [_apply_cliente_extras(row) for row in self.cursor.fetchall()]
 
     def get_cliente(self, cliente_id):
         """Return a single client by id."""
         self.cursor.execute("SELECT * FROM clientes WHERE id=?", (cliente_id,))
         row = self.cursor.fetchone()
-        return dict(row) if row else None
+        return _apply_cliente_extras(row) if row else None
 
     def add_pago(self, cliente_id, monto, fecha):
         """Registra un pago aplicado a un cliente."""

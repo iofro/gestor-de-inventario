@@ -1663,6 +1663,8 @@ class MainWindow(QMainWindow):
                     data["municipio"],
                     data["codigo"],
                     nombreComercial=data["nombreComercial"],
+                    tipoContribuyente=data["tipoContribuyente"],
+                    razonSocial=data["razonSocial"],
                 )
             except ValueError as e:
                 QMessageBox.warning(dialog, "Cliente", str(e))
@@ -1694,6 +1696,8 @@ class MainWindow(QMainWindow):
                     data["municipio"],
                     codActividad=data["codActividad"],
                     nombreComercial=data["nombreComercial"],
+                    tipoContribuyente=data["tipoContribuyente"],
+                    razonSocial=data["razonSocial"],
                 )
             except ValueError as e:
                 QMessageBox.warning(dialog, "Cliente", str(e))

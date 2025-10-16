@@ -471,6 +471,111 @@ def test_get_anexo_consumidor_final_registros_accepts_weird_hour(
     assert registro.fecha == "02/10/2025"
 
 
+def test_get_anexo_consumidor_final_registros_accepts_manual_variants(
+    monkeypatch, tmp_path, db_conn
+):
+    manager, dirs = _create_inventory_manager(monkeypatch, tmp_path, db_conn)
+
+    cf_dir = dirs["canonical_cf"]
+
+    meta_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-05",
+                "horEmi": "09:15:00",
+                "numeroControl": "MANUAL-META-0001",
+                "codigoGeneracion": "ACCEPT-META-1111-2222-3333-444455556666",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "5.00",
+                "totalPagar": "5.00",
+            },
+        },
+        "respuesta": {"estado": "Pendiente"},
+    }
+
+    meta_json = cf_dir / "20251005_manual_meta.json"
+    meta_json.write_text(json.dumps(meta_payload), encoding="utf-8")
+    meta_json.with_suffix(".meta.json").write_text(
+        json.dumps({"estadoManual": "Aceptado Manual"}),
+        encoding="utf-8",
+    )
+
+    db_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-06",
+                "horEmi": "08:00:00",
+                "numeroControl": "MANUAL-DB-0001",
+                "codigoGeneracion": "ACCEPT-DB-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "7.00",
+                "totalPagar": "7.00",
+            },
+        },
+        "respuesta": {"estado": "Pendiente"},
+    }
+
+    db_json = cf_dir / "20251006_manual_db.json"
+    db_json.write_text(json.dumps(db_payload), encoding="utf-8")
+
+    db_conn.cursor.execute("DROP TABLE IF EXISTS dte_envios")
+    db_conn.cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS dte_envios (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            codigo_generacion TEXT,
+            numero_control TEXT,
+            estado_ui TEXT,
+            estado_ui_tag TEXT,
+            estado_ui_manual INTEGER DEFAULT 0
+        )
+        """
+    )
+    db_conn.cursor.execute(
+        """
+        INSERT INTO dte_envios (
+            codigo_generacion, numero_control, estado_ui, estado_ui_tag, estado_ui_manual
+        ) VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            "ACCEPT-DB-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
+            "MANUAL-DB-0001",
+            "Enviado Manual",
+            "enviado-manual",
+            1,
+        ),
+    )
+    db_conn.conn.commit()
+
+    registros = manager.get_anexo_consumidor_final_registros("202510")
+    assert [r.numero_doc_del for r in registros] == [
+        "ACCEPT-META-1111-2222-3333-444455556666",
+        "ACCEPT-DB-AAAA-BBBB-CCCC-DDDDEEEEFFFF",
+    ]
+
+    registros_map = {registro.numero_doc_del: registro for registro in registros}
+
+    meta_registro = registros_map["ACCEPT-META-1111-2222-3333-444455556666"]
+    assert getattr(meta_registro, "estado_manual", None) == "Aceptado Manual"
+    assert getattr(meta_registro, "estado", None) == "Aceptado Manual"
+
+    db_registro = registros_map["ACCEPT-DB-AAAA-BBBB-CCCC-DDDDEEEEFFFF"]
+    assert getattr(db_registro, "estado_manual", None) == "Enviado Manual"
+    assert getattr(db_registro, "estado", None) == "Enviado Manual"
+
+
 def test_on_click_generar_consumidor_final_requires_registros(tmp_path):
     resultado = on_click_generar_consumidor_final(str(tmp_path), "202510", [])
     assert resultado["success"] is False

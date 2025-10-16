@@ -50,6 +50,26 @@ _ANEXO_ESTADOS_ACEPTADOS = {"aceptado", "procesado", "recibido", "enviado"}
 _PERIODO_FORMAT = re.compile(r"^\d{6}$")
 
 
+def _estado_indica_aceptado(value: object) -> bool:
+    """Return ``True`` if ``value`` contains an accepted status token."""
+
+    if value is None:
+        return False
+
+    text = str(value).strip().lower()
+    if not text:
+        return False
+
+    if text in _ANEXO_ESTADOS_ACEPTADOS:
+        return True
+
+    for token in re.split(r"[^0-9a-záéíóúüñ]+", text):
+        if token in _ANEXO_ESTADOS_ACEPTADOS:
+            return True
+
+    return False
+
+
 def _valor_indica_anulado(value: object) -> bool:
     if isinstance(value, bool):
         return value
@@ -87,9 +107,8 @@ def _metadata_estado_aceptado(metadata: Mapping[str, object] | None) -> bool:
     if isinstance(respuesta, Mapping):
         for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
             valor = respuesta.get(key)
-            if isinstance(valor, str) and valor.strip():
-                estado_norm = valor.strip().lower()
-                return estado_norm in _ANEXO_ESTADOS_ACEPTADOS
+            if _estado_indica_aceptado(valor):
+                return True
     return False
 
 
@@ -98,15 +117,10 @@ def _estado_apto_para_anexo(
 ) -> bool:
     """Determina si el estado permite incluir el DTE en el anexo."""
 
-    def _norm(value: str | None) -> str:
-        return (value or "").strip().lower()
+    if _estado_indica_aceptado(estado_manual):
+        return True
 
-    estado_manual_norm = _norm(estado_manual)
-    if estado_manual_norm:
-        return estado_manual_norm in _ANEXO_ESTADOS_ACEPTADOS
-
-    estado_json_norm = _norm(estado_json)
-    return estado_json_norm in _ANEXO_ESTADOS_ACEPTADOS
+    return _estado_indica_aceptado(estado_json)
 
 
 def _extract_manual_tokens(datos_negocio: dict | None) -> dict:

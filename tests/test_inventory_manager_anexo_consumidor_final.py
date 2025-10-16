@@ -102,7 +102,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             },
         },
         "selloRecibido": "A" * 40,
-        "respuesta": {"estado": "Aceptado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     json_path = cf_dir / "20251002_cliente_DTE-01.json"
@@ -156,7 +156,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
                 "tipoIngreso": "2",
             },
         },
-        "respuesta": {"estado": "aceptado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     archive_json = archive_dir / "20251001_archive.json"
@@ -183,7 +183,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
             },
         },
         "selloRecibido": "C" * 40,
-        "respuesta": {"estado": "aceptado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     ticket_json = tickets_dir / "20251003_ticket.json"
@@ -210,7 +210,7 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
                 "totalPagar": "16.00",
             },
         },
-        "respuesta": {"estado": "procesado"},
+        "respuesta": {"estado": "Enviado"},
     }
 
     dtes_json = dtes_fcf_dir / "20251004_dtes.json"
@@ -574,6 +574,108 @@ def test_get_anexo_consumidor_final_registros_accepts_manual_variants(
     db_registro = registros_map["ACCEPT-DB-AAAA-BBBB-CCCC-DDDDEEEEFFFF"]
     assert getattr(db_registro, "estado_manual", None) == "Enviado Manual"
     assert getattr(db_registro, "estado", None) == "Enviado Manual"
+
+
+def test_get_anexo_consumidor_final_registros_estado_prioridad(
+    monkeypatch, tmp_path, db_conn
+):
+    manager, dirs = _create_inventory_manager(monkeypatch, tmp_path, db_conn)
+
+    cf_dir = dirs["canonical_cf"]
+
+    enviado_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-08",
+                "horEmi": "08:15:00",
+                "numeroControl": "AUTO-ENVIADO-0001",
+                "codigoGeneracion": "11111111-AAAA-BBBB-CCCC-000000000001",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "5.00",
+                "totalPagar": "5.00",
+            },
+        },
+        "respuesta": {"estado": "Enviado"},
+    }
+
+    rechazado_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-08",
+                "horEmi": "09:00:00",
+                "numeroControl": "AUTO-RECHAZADO-0002",
+                "codigoGeneracion": "11111111-AAAA-BBBB-CCCC-000000000002",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "6.00",
+                "totalPagar": "6.00",
+            },
+        },
+        "respuesta": {"estado": "Rechazado"},
+    }
+
+    manual_payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "01",
+                "fecEmi": "2025-10-08",
+                "horEmi": "10:30:00",
+                "numeroControl": "MANUAL-ACEPTADO-0003",
+                "codigoGeneracion": "11111111-AAAA-BBBB-CCCC-000000000003",
+                "tipoOperacion": 1,
+            },
+            "resumen": {
+                "totalExenta": "0.00",
+                "totalNoGravado": "0.00",
+                "totalNoSuj": "0.00",
+                "totalGravada": "7.00",
+                "totalPagar": "7.00",
+            },
+        },
+        "respuesta": {"estado": "Rechazado"},
+    }
+
+    (cf_dir / "20251008_auto_enviado.json").write_text(
+        json.dumps(enviado_payload), encoding="utf-8"
+    )
+    (cf_dir / "20251008_auto_rechazado.json").write_text(
+        json.dumps(rechazado_payload), encoding="utf-8"
+    )
+
+    manual_path = cf_dir / "20251008_manual_override.json"
+    manual_path.write_text(json.dumps(manual_payload), encoding="utf-8")
+    manual_path.with_suffix(".meta.json").write_text(
+        json.dumps({"estadoManual": "Aceptado"}), encoding="utf-8"
+    )
+
+    registros = manager.get_anexo_consumidor_final_registros("202510")
+
+    codigos = [registro.numero_doc_del for registro in registros]
+    assert codigos == [
+        "11111111-AAAA-BBBB-CCCC-000000000001",
+        "11111111-AAAA-BBBB-CCCC-000000000003",
+    ]
+
+    registros_map = {registro.numero_doc_del: registro for registro in registros}
+
+    auto_registro = registros_map[codigos[0]]
+    assert getattr(auto_registro, "estado", None) == "Enviado"
+    assert getattr(auto_registro, "estado_manual", None) is None
+
+    manual_registro = registros_map[codigos[1]]
+    assert getattr(manual_registro, "estado_manual", None) == "Aceptado"
+    assert getattr(manual_registro, "estado", None) == "Aceptado"
 
 
 def test_on_click_generar_consumidor_final_requires_registros(tmp_path):

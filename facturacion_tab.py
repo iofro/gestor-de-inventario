@@ -2412,6 +2412,7 @@ class FacturacionTab(QWidget):
             "N° Control",
             "Cliente",
             "Total (P)",
+            "Estado / Fuente",
             "Sello",
         ]
         self._configure_declaracion_table(headers)
@@ -2445,8 +2446,11 @@ class FacturacionTab(QWidget):
             total = getattr(registro, "total_ventas", "0") or "0"
             self.declaracion_table.setItem(row, 6, self._create_table_item(str(total)))
 
+            estado_texto = self._estado_fuente_texto(registro)
+            self.declaracion_table.setItem(row, 7, self._create_table_item(estado_texto))
+
             sello = getattr(registro, "sello_recepcion", "") or ""
-            self.declaracion_table.setItem(row, 7, self._create_table_item(str(sello)))
+            self.declaracion_table.setItem(row, 8, self._create_table_item(str(sello)))
 
         self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
         self.declaracion_table.resizeRowsToContents()

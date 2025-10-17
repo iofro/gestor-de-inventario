@@ -86,6 +86,10 @@ class VentaContribuyente:
     dui: str | None = None
     tipo_operacion: str | None = None
     tipo_ingreso: str | None = None
+    estado: str | None = None
+    estado_manual: str | None = None
+    estado_fuente: str | None = None
+    json_path: str | None = None
 
 
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -177,11 +181,6 @@ def generar_anexo_contribuyentes_files(
         )
         sello_recepcion = str(registro.sello_recepcion or "").strip()
 
-        if not sello_recepcion:
-            raise ValueError(
-                f"Debe indicar el sello de recepción (registro {idx + 1})."
-            )
-
         limite_noviembre = date(2022, 11, 1)
         if fecha_parseada < limite_noviembre:
             valor_d = codigo_generacion
@@ -216,6 +215,12 @@ def generar_anexo_contribuyentes_files(
         if not identificacion and not dui:
             raise ValueError(
                 f"Debe proporcionar NIT/NRC o DUI del cliente (registro {idx + 1})."
+            )
+
+        if identificacion and dui:
+            raise ValueError(
+                "No se puede registrar NIT/NRC y DUI a la vez"
+                f" (registro {idx + 1})."
             )
 
         fila = [

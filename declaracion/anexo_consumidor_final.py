@@ -41,6 +41,12 @@ class VentaCF:
     total_ventas: str = "0.00"
     tipo_operacion: str = "0"
     tipo_ingreso: str = "0"
+    codigo_generacion: Optional[str] = None
+    numero_control: Optional[str] = None
+    estado: Optional[str] = None
+    estado_manual: Optional[str] = None
+    estado_fuente: Optional[str] = None
+    json_path: Optional[str] = None
 
 
 HEADERS_CF = [

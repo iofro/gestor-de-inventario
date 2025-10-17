@@ -124,8 +124,15 @@ def test_validaciones(tmp_path: Path) -> None:
     with pytest.raises(ValueError):
         generar_anexo_contribuyentes_files([sin_identificacion], tmp_path, "202503")
 
+    ambos = _ejemplo(identificacion="0614-290790-102-3", dui="012345678")
+    with pytest.raises(ValueError):
+        generar_anexo_contribuyentes_files([ambos], tmp_path, "202503")
+
     with pytest.raises(ValueError):
         generar_anexo_contribuyentes_files([], tmp_path, "202503")
+
+    sin_sello = _ejemplo(sello_recepcion="")
+    generar_anexo_contribuyentes_files([sin_sello], tmp_path, "202503")
 
 
 def test_on_click(tmp_path: Path) -> None:

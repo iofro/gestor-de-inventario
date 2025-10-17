@@ -1,8 +1,11 @@
 # -*- mode: python ; coding: utf-8 -*-
 
-from PyInstaller.utils.hooks import collect_submodules, collect_data_files
+from PyInstaller.utils.hooks import collect_submodules, collect_all
 from PyInstaller.building.datastruct import Tree
 import certifi
+
+reportlab_datas, reportlab_binaries, reportlab_hiddenimports = collect_all("reportlab")
+openpyxl_datas, openpyxl_binaries, openpyxl_hiddenimports = collect_all("openpyxl")
 
 resource_trees = [
     Tree('schema_patches', prefix='schema_patches'),
@@ -10,17 +13,19 @@ resource_trees = [
 ]
 
 # Hidden imports
-hidden_imports = (
-    collect_submodules("reportlab.graphics.barcode")
-    + collect_submodules("openpyxl")
-    + collect_submodules("PyQt5")
-    + ["PyQt5.QtPrintSupport", "PyQt5.QtSvg"]
+hidden_imports = sorted(
+    set(
+        reportlab_hiddenimports
+        + openpyxl_hiddenimports
+        + collect_submodules("reportlab.graphics.barcode")
+        + collect_submodules("PyQt5")
+        + ["PyQt5.QtPrintSupport", "PyQt5.QtSvg"]
+    )
 )
-hidden_imports = sorted(set(hidden_imports))
 
 datas = []
-datas += collect_data_files("reportlab", include_py_files=False)
-datas += collect_data_files("openpyxl", include_py_files=False)
+datas += reportlab_datas
+datas += openpyxl_datas
 datas += [(certifi.where(), "certifi")]
 datas += [
     ('avatar.jpg', '.'),
@@ -35,10 +40,14 @@ datas += [
 ]
 datas += resource_trees
 
+binaries = []
+binaries += reportlab_binaries
+binaries += openpyxl_binaries
+
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=[],
+    binaries=binaries,
     datas=datas,
     hiddenimports=hidden_imports,
     hookspath=[],

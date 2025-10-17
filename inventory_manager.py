@@ -1,57 +1,20 @@
 from copy import deepcopy
-from dataclasses import dataclass, field
-from pathlib import Path
 from db import DB
-try:
-    from PyQt5.QtCore import QAbstractTableModel, Qt
-    from PyQt5.QtGui import QColor
-except ImportError:  # pragma: no cover - fallback for headless environments
-    class _QtFallback:
-        DisplayRole = 0
-        BackgroundRole = 1
-        Horizontal = 1
-
-    class Qt(_QtFallback):
-        pass
-
-    class QColor:
-        def __init__(self, name: str | None = None):
-            self.name = name or ""
-
-    class QAbstractTableModel:
-        def __init__(self, *args, **kwargs):
-            pass
-
-        def beginResetModel(self):
-            pass
-
-        def endResetModel(self):
-            pass
-
+from PyQt5.QtCore import QAbstractTableModel, Qt
+from PyQt5.QtGui import QColor
 import json
-import re
-from datetime import datetime, time as dt_time
-from collections import Counter
+from datetime import datetime, timedelta
 import os
 import logging
 import sqlite3
-from decimal import Decimal as D, InvalidOperation, ROUND_HALF_UP
-from typing import List, Mapping
-from paths import (
-    DATOS_NEGOCIO_PATH,
-    ensure_user_dir,
-    user_logs_path,
-)
+from decimal import Decimal as D
+from typing import Mapping
+from paths import DATOS_NEGOCIO_PATH, user_logs_path
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.party_resolver import Catalogs, normalize_identifier
-from utils.dte_estado import estado_apto_para_anexo
-from utils.facturacion_records import get_facturacion_rows
-from declaracion.anexo_consumidor_final import VentaCF
-from declaracion.anexo_contribuyentes import VentaContribuyente
-from declaracion.anexo_xix import DTEAnulado
 
 try:  # Prefer shared app version if available
     from dte import APP_VERSION
@@ -67,41 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 _TOKEN_FIELDS = ("token_pruebas", "token_produccion")
-
-
-_PERIODO_FORMAT = re.compile(r"^\d{6}$")
-
-
-def _valor_indica_anulado(value: object) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if not text:
-            return False
-        return "anulad" in text
-    return False
-
-
-def _map_tipo_anulacion_estado(motivo: Mapping[str, object] | None) -> str | None:
-    if not isinstance(motivo, Mapping):
-        return None
-    raw_tipo = motivo.get("tipoAnulacion")
-    try:
-        tipo = int(raw_tipo)
-    except (TypeError, ValueError):
-        return None
-    if tipo == 1:
-        return "D"
-    if tipo == 2:
-        return "A"
-    if tipo == 3:
-        return "X"
-    return None
-
-
 
 
 def _extract_manual_tokens(datos_negocio: dict | None) -> dict:
@@ -131,835 +59,123 @@ def _sanitize_datos_negocio(datos_negocio: dict | None) -> dict:
     return sanitized
 
 
-def _norm_text(value: object) -> str | None:
-    if isinstance(value, str):
-        text = value.strip()
-        return text or None
-    return None
-
-
-
-
 class InventoryManagerError(Exception):
-    """Raised when an inventory import operation fails."""
+    """Errores de dominio del administrador de inventario."""
+
+
+
 
 class InventoryManager:
-    def __init__(self, db: DB | None = None, *, page_size: int | None = None):
-        """Create a manager bound to ``db`` and initialize cached data."""
-        self.db = db if db is not None else DB()
-        self._page_size = page_size
+    def __init__(self, db: DB | None = None, page_size: int = 50):
+        self.db = db or DB()
+        self.page_size = page_size
+        self.current_page = 0
         self._filter_vendedor_id = None
         self._filter_Distribuidor_id = None
         self._filter_search = ""
-        self._products = []
-        self._vendedores = []
-        self._Distribuidores = []
-        self._clientes = []
-        self._vendedores_by_id = {}
-        self._Distribuidores_by_id = {}
-        self._model = ProductTableModel([], [], [])
+        self._model = None
+        self._modo_transmision_actual: str | None = None
+        self.catalogs: Catalogs = Catalogs(vendors={}, distributors={}, products={}, db=self.db)
         self.refresh_data()
 
     def refresh_data(self):
-        """Reload cached datasets from the database and apply filters."""
-        self._Distribuidores = list(self.db.get_Distribuidores())
-        self._vendedores = list(self.db.get_vendedores())
-        get_clientes = getattr(self.db, "get_clientes", None)
-        self._clientes = list(get_clientes()) if callable(get_clientes) else []
-        self._Distribuidores_by_id = {
-            d.get("id"): d.get("nombre", "")
-            for d in self._Distribuidores
-            if d.get("id") is not None
+        self._vendedores = self.db.get_vendedores()
+        self._vendedores_compra = self.db.get_vendedores_distribuidores()
+        self._Distribuidores = self.db.get_Distribuidores()
+        self._vendedores_by_id = {vend["id"]: vend["nombre"] for vend in self._vendedores}
+        self._vendedores_compra_by_id = {
+            vend["id"]: vend["nombre"] for vend in self._vendedores_compra
         }
-        self._vendedores_by_id = {
-            v.get("id"): v.get("nombre", "")
-            for v in self._vendedores
-            if v.get("id") is not None
-        }
-        if hasattr(self._model, "_vendedores"):
-            self._model._vendedores = {
-                vend.get("id"): vend.get("nombre", "")
-                for vend in self._vendedores
-                if vend.get("id") is not None
-            }
-        if hasattr(self._model, "_Distribuidores"):
-            self._model._Distribuidores = {
-                dist.get("id"): dist.get("nombre", "")
-                for dist in self._Distribuidores
-                if dist.get("id") is not None
-            }
-        self._apply_filters()
+        self._Distribuidores_by_id = {dist["id"]: dist["nombre"] for dist in self._Distribuidores}
+        vendor_catalog: dict[int, dict] = {}
+        for vend in self._vendedores_compra:
+            vid = normalize_identifier(vend.get("id")) if isinstance(vend, Mapping) else None
+            if vid is None:
+                continue
+            vendor_catalog[vid] = dict(vend)
+        distributor_catalog: dict[int, dict] = {}
+        for dist in self._Distribuidores:
+            did = normalize_identifier(dist.get("id")) if isinstance(dist, Mapping) else None
+            if did is None:
+                continue
+            distributor_catalog[did] = dict(dist)
+        all_products = self.db.get_productos()
+        product_catalog: dict[int, dict] = {}
+        for prod in all_products:
+            pid = normalize_identifier(prod.get("id")) if isinstance(prod, Mapping) else None
+            if pid is None:
+                continue
+            product_catalog[pid] = dict(prod)
+        self.catalogs = Catalogs(
+            vendors=vendor_catalog,
+            distributors=distributor_catalog,
+            products=product_catalog,
+            db=self.db,
+        )
+        self._products = self.db.get_productos(
+            vendedor_id=self._filter_vendedor_id,
+            Distribuidor_id=self._filter_Distribuidor_id,
+            search=self._filter_search,
+        )
 
-    def load_page(self, page: int = 0):
-        """Populate the product model with the requested page of items."""
-        if page < 0:
-            page = 0
-        if self._page_size:
-            start = page * self._page_size
-            end = start + self._page_size
-            page_items = self._products[start:end]
+        self._clientes = self.db.get_clientes()
+        self.load_page(self.current_page)
+
+    def load_page(self, page: int):
+        start = page * self.page_size
+        end = start + self.page_size
+        page_data = self._products[start:end]
+        if self._model is None:
+            self._model = ProductTableModel(page_data, self._vendedores, self._Distribuidores)
         else:
-            page_items = list(self._products)
-        self._model.update_data(page_items)
-        return page_items
+            self._model.update_data(page_data)
+        self.current_page = page
 
-    def get_anexo_xix_registros(self, periodo: str) -> List[DTEAnulado]:
-        periodo_text = str(periodo or "").strip()
-        if not _PERIODO_FORMAT.fullmatch(periodo_text):
-            return []
+
+    def set_modo_transmision_actual(self, modo: str | None) -> None:
+        """Actualizar el modo de transmisión activo en la interfaz."""
+
+        if modo is None:
+            self._modo_transmision_actual = None
+            return
+
+        text = str(modo).strip().lower()
+        if not text:
+            self._modo_transmision_actual = None
+        elif text.startswith("2") or "contingencia" in text:
+            self._modo_transmision_actual = "contingencia"
+        else:
+            self._modo_transmision_actual = "normal"
+
+
+    def get_modo_transmision_actual(self) -> str:
+        """Obtener el modo de transmisión activo o el configurado por defecto."""
+
+        if self._modo_transmision_actual:
+            return self._modo_transmision_actual
 
         try:
-            base_dir = Path(ensure_user_dir("dtes", "actualizaciones", "anulacion"))
+            from dte import get_default_modo_transmision
+
+            return get_default_modo_transmision()
         except Exception:
-            return []
+            return "normal"
 
-        if not base_dir.exists():
-            return []
 
-        registros: dict[tuple[str, str], DTEAnulado] = {}
+    def get_vendedor_names(self):
+        return [vend["nombre"] for vend in self._vendedores]
 
-        try:
-            entries = sorted(base_dir.iterdir())
-        except OSError:
-            entries = []
+    def get_Distribuidor_names(self):
+        return [dist["nombre"] for dist in self._Distribuidores]
 
-        for entry in entries:
-            if not entry.is_dir():
-                continue
+    def get_vendedores(self):
+        return self._vendedores
 
-            doc_path = entry / "documento.json"
-            if not doc_path.is_file():
-                continue
+    def get_vendedores_compra(self):
+        return self._vendedores_compra
 
-            try:
-                with doc_path.open("r", encoding="utf-8") as fh:
-                    evento = json.load(fh)
-            except Exception:
-                continue
-
-            if not isinstance(evento, Mapping):
-                continue
-
-            identificacion = evento.get("identificacion")
-            if not isinstance(identificacion, Mapping):
-                continue
-
-            fec_anula_raw = identificacion.get("fecAnula")
-            if fec_anula_raw in (None, ""):
-                continue
-            fec_anula_text = str(fec_anula_raw).strip()
-            if len(fec_anula_text) < 7:
-                continue
-            periodo_evento = fec_anula_text[:4] + fec_anula_text[5:7]
-            if periodo_evento != periodo_text:
-                continue
-
-            documento = evento.get("documento")
-            if not isinstance(documento, Mapping):
-                continue
-
-            numero_control = str(documento.get("numeroControl") or "").strip().upper()
-            codigo_dte = str(documento.get("codigoGeneracion") or "").strip().upper()
-            sello_recibido = str(documento.get("selloRecibido") or "").strip().upper()
-            tipo_doc_raw = documento.get("tipoDte") or documento.get("tipoDocumento")
-            tipo_doc = str(tipo_doc_raw or "").strip()
-            if tipo_doc.isdigit() and len(tipo_doc) < 2:
-                tipo_doc = tipo_doc.zfill(2)
-
-            motivo_value = evento.get("motivo")
-            motivo = motivo_value if isinstance(motivo_value, Mapping) else None
-            estado_detalle = _map_tipo_anulacion_estado(motivo)
-
-            if not (numero_control and codigo_dte and sello_recibido and tipo_doc and estado_detalle):
-                continue
-
-            metadata_path = entry / "metadata.json"
-            metadata: Mapping[str, object] | None = None
-            if metadata_path.is_file():
-                try:
-                    with metadata_path.open("r", encoding="utf-8") as fh:
-                        loaded_meta = json.load(fh)
-                    if isinstance(loaded_meta, Mapping):
-                        metadata = loaded_meta
-                except Exception:
-                    metadata = None
-
-            estado_manual_meta: str | None = None
-            estado_auto_meta: str | None = None
-            if isinstance(metadata, Mapping):
-                for key in ("estadoManual", "estado_manual", "estadoAsignado", "estado_asignado"):
-                    valor = metadata.get(key)
-                    if isinstance(valor, str) and valor.strip():
-                        estado_manual_meta = valor.strip()
-                        break
-                respuesta_meta = metadata.get("respuesta")
-                if isinstance(respuesta_meta, Mapping):
-                    for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
-                        valor = respuesta_meta.get(key)
-                        if isinstance(valor, str) and valor.strip():
-                            estado_auto_meta = valor.strip()
-                            break
-
-            if not estado_auto_meta and sello_recibido:
-                estado_auto_meta = "Recibido"
-
-            if not estado_apto_para_anexo(estado_auto_meta, estado_manual_meta):
-                logger.debug(
-                    "Anexo XIX · descartado por estado: %s · manual=%s · automatico=%s",
-                    codigo_dte,
-                    estado_manual_meta,
-                    estado_auto_meta,
-                )
-                continue
-
-            key = (numero_control, codigo_dte)
-            registros[key] = DTEAnulado(
-                numero_control=numero_control,
-                tipo_documento=tipo_doc,
-                sello_recepcion=sello_recibido,
-                codigo_generacion=codigo_dte,
-                estado=estado_detalle,
-            )
-
-        if not registros:
-            return []
-
-        ordered_keys = sorted(registros.keys())
-        return [registros[key] for key in ordered_keys]
-
-    def get_anexo_contribuyentes_registros(self, periodo: str) -> List[VentaContribuyente]:
-        periodo_text = str(periodo or "").strip()
-        if not _PERIODO_FORMAT.fullmatch(periodo_text):
-            return []
-
-        year = int(periodo_text[:4])
-        month = int(periodo_text[4:])
-
-        rows = get_facturacion_rows(self.db)
-        total_rows = len(rows)
-        tipos_validos = {"03", "05", "06"}
-
-        registros: list[tuple[datetime, str, VentaContribuyente]] = []
-        included_codes: set[str] = set()
-        facturacion_codes: set[str] = set()
-        excluded_by_state: Counter[str] = Counter()
-        excluded_by_reason: Counter[str] = Counter()
-        excluded_examples: list[str] = []
-
-        cursor = getattr(self.db, "cursor", None)
-
-        def _register_exclusion(reason: str, codigo: str | None, detail: str | None = None) -> None:
-            excluded_by_reason[reason] += 1
-            if len(excluded_examples) >= 5:
-                return
-            codigo_txt = (codigo or "—").strip() or "—"
-            if detail:
-                excluded_examples.append(f"{codigo_txt}:{detail}")
-            else:
-                excluded_examples.append(codigo_txt)
-
-        def _extract_extra(raw_extra):
-            if isinstance(raw_extra, Mapping):
-                return dict(raw_extra)
-            if isinstance(raw_extra, str) and raw_extra.strip():
-                try:
-                    data = json.loads(raw_extra)
-                    if isinstance(data, Mapping):
-                        return dict(data)
-                except Exception:
-                    return {}
-            return {}
-
-        for row in rows:
-            tipo_codigo = str(row.get("codigo") or "").zfill(2)
-            if tipo_codigo not in tipos_validos:
-                continue
-
-            envio_text = str(row.get("envio") or "").strip()
-            estado_base = envio_text.split("(", 1)[0].strip().lower()
-
-            codigo_generacion = row.get("codigo_generacion")
-            codigo_norm = str(codigo_generacion or "").strip().upper() or None
-            if codigo_norm:
-                facturacion_codes.add(codigo_norm)
-
-            if estado_base not in {"enviado", "aceptado", "recibido"}:
-                excluded_by_state[estado_base or ""] += 1
-                _register_exclusion("estado", codigo_norm, estado_base or "estado")
-                continue
-
-            venta = None
-            venta_id = row.get("venta_id")
-            if venta_id is not None:
-                try:
-                    venta = self.db.get_venta_by_id(venta_id)
-                except Exception:
-                    venta = None
-
-            extra_data = _extract_extra(venta.get("extra")) if isinstance(venta, Mapping) else {}
-            numero_control = row.get("numero_control")
-            if extra_data:
-                numero_control = numero_control or extra_data.get("numeroControl")
-                codigo_generacion = codigo_generacion or extra_data.get("codigoGeneracion")
-
-            raw_json = None
-            json_path = row.get("json")
-            if json_path and os.path.exists(json_path):
-                try:
-                    with open(json_path, "r", encoding="utf-8") as fh:
-                        raw_json = json.load(fh)
-                except Exception:
-                    raw_json = None
-
-            payload = raw_json
-            if isinstance(payload, Mapping):
-                for key in ("dteJson", "dte_json", "dte"):
-                    candidate = payload.get(key)
-                    if isinstance(candidate, Mapping):
-                        payload = candidate
-                        break
-            else:
-                payload = None
-
-            ident = None
-            resumen = {}
-            sello_recibido = None
-            if isinstance(payload, Mapping):
-                ident = payload.get("identificacion") or payload.get("identificador")
-                if not isinstance(ident, Mapping):
-                    ident = None
-                resumen = payload.get("resumen")
-                if not isinstance(resumen, Mapping):
-                    resumen = {}
-                if isinstance(raw_json, Mapping):
-                    sello_recibido = raw_json.get("selloRecibido") or raw_json.get("selloRecepcion")
-                if sello_recibido is None and isinstance(payload, Mapping):
-                    sello_recibido = payload.get("selloRecibido")
-            else:
-                resumen = {}
-
-            if ident:
-                numero_control = numero_control or ident.get("numeroControl")
-                codigo_generacion = codigo_generacion or ident.get("codigoGeneracion")
-
-            if not codigo_generacion and cursor is not None:
-                try:
-                    if numero_control:
-                        row_env = cursor.execute(
-                            """
-                            SELECT codigo_generacion FROM dte_envios
-                            WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?)
-                            ORDER BY id DESC LIMIT 1
-                            """,
-                            (numero_control,),
-                        ).fetchone()
-                        if row_env:
-                            codigo_generacion = (
-                                row_env.get("codigo_generacion")
-                                if isinstance(row_env, Mapping)
-                                else row_env[0]
-                            )
-                    if not codigo_generacion and venta_id is not None:
-                        row_env = cursor.execute(
-                            """
-                            SELECT codigo_generacion FROM dte_envios
-                            WHERE venta_id=? ORDER BY id DESC LIMIT 1
-                            """,
-                            (venta_id,),
-                        ).fetchone()
-                        if row_env:
-                            codigo_generacion = (
-                                row_env.get("codigo_generacion")
-                                if isinstance(row_env, Mapping)
-                                else row_env[0]
-                            )
-                except Exception:
-                    pass
-
-            if not codigo_generacion:
-                _register_exclusion("codigo_generacion_faltante", codigo_norm)
-                continue
-
-            codigo_norm = str(codigo_generacion or "").strip().upper() or None
-            if codigo_norm:
-                facturacion_codes.add(codigo_norm)
-            if not codigo_norm:
-                _register_exclusion("codigo_generacion_invalido", None)
-                continue
-            if codigo_norm in included_codes:
-                _register_exclusion("codigo_generacion_duplicado", codigo_norm)
-                continue
-
-            fecha_dt = None
-            if ident:
-                fecha_dt = _parse_fecha_generica(ident.get("fecEmi"))
-            if not fecha_dt and isinstance(venta, Mapping):
-                venta_fecha = venta.get("fecha")
-                if venta_fecha:
-                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-                        try:
-                            fecha_dt = datetime.strptime(str(venta_fecha)[: len(fmt)], fmt)
-                            break
-                        except ValueError:
-                            continue
-            if not fecha_dt or fecha_dt.year != year or fecha_dt.month != month:
-                _register_exclusion("periodo_no_coincide", codigo_norm, str(fecha_dt))
-                continue
-
-            if not isinstance(payload, Mapping):
-                _register_exclusion("json_incompleto", codigo_norm)
-                continue
-
-            receptor = payload.get("receptor")
-            nombre_cliente = ""
-            identificacion_cliente = ""
-            dui_cliente = ""
-            if isinstance(receptor, Mapping):
-                nombre_cliente = str(
-                    receptor.get("nombre")
-                    or receptor.get("nombreComercial")
-                    or ""
-                ).strip()
-                nit = _norm_text(receptor.get("nit"))
-                nrc = _norm_text(receptor.get("nrc"))
-                num_doc = _norm_text(receptor.get("numDocumento"))
-                tipo_doc_receptor = str(receptor.get("tipoDocumento") or "").strip()
-
-                if nit:
-                    identificacion_cliente = re.sub(r"\D", "", nit)
-                elif nrc:
-                    identificacion_cliente = re.sub(r"\D", "", nrc)
-                elif num_doc and tipo_doc_receptor not in {"03", "13"}:
-                    identificacion_cliente = re.sub(r"\D", "", num_doc)
-
-                if tipo_doc_receptor in {"03", "13"}:
-                    dui_cliente = re.sub(r"\D", "", num_doc or "")
-                elif num_doc and len(re.sub(r"\D", "", num_doc)) == 9 and not identificacion_cliente:
-                    dui_cliente = re.sub(r"\D", "", num_doc)
-
-            if dui_cliente:
-                identificacion_cliente = ""
-
-            resumen_map = resumen if isinstance(resumen, Mapping) else {}
-            ventas_exentas = _to_decimal(resumen_map.get("totalExenta"))
-            ventas_no_sujetas = _to_decimal(resumen_map.get("totalNoSuj"))
-            ventas_gravadas = _to_decimal(resumen_map.get("totalGravada"))
-            ventas_terceros = _to_decimal(resumen_map.get("totalTercerosNoDomiciliados"))
-            debito_terceros = _to_decimal(resumen_map.get("totalIvaTerceros"))
-            debito_fiscal = _to_decimal(resumen_map.get("totalIva"))
-            if debito_fiscal == D("0") and isinstance(resumen_map.get("tributos"), list):
-                for tributo in resumen_map.get("tributos"):
-                    if isinstance(tributo, Mapping):
-                        codigo_tributo = str(tributo.get("codigo") or "").strip()
-                        if codigo_tributo and codigo_tributo not in {"", "0"}:
-                            debito_fiscal += _to_decimal(tributo.get("valor"))
-
-            total_componentes = (
-                ventas_exentas
-                + ventas_no_sujetas
-                + ventas_gravadas
-                + ventas_terceros
-                + debito_terceros
-                + debito_fiscal
-            )
-            total_operacion = _to_decimal(
-                resumen_map.get("totalPagar")
-                or resumen_map.get("montoTotalOperacion")
-                or resumen_map.get("totalVentas")
-            )
-            if total_operacion == D("0"):
-                total_operacion = total_componentes
-            if total_operacion != total_componentes:
-                diferencia = total_operacion - total_componentes
-                ventas_gravadas += diferencia
-                total_componentes = (
-                    ventas_exentas
-                    + ventas_no_sujetas
-                    + ventas_gravadas
-                    + ventas_terceros
-                    + debito_terceros
-                    + debito_fiscal
-                )
-
-            registro = VentaContribuyente(
-                fecha_emision=fecha_dt.strftime("%d/%m/%Y"),
-                clase="4",
-                tipo=tipo_codigo,
-                numero_control=numero_control,
-                codigo_generacion=codigo_norm,
-                sello_recepcion=str(sello_recibido or "").strip() or None,
-                identificacion=identificacion_cliente or None,
-                nombre_cliente=nombre_cliente,
-                ventas_exentas=_format_decimal(ventas_exentas),
-                ventas_no_sujetas=_format_decimal(ventas_no_sujetas),
-                ventas_gravadas_locales=_format_decimal(ventas_gravadas),
-                debito_fiscal=_format_decimal(debito_fiscal),
-                ventas_terceros_no_domiciliados=_format_decimal(ventas_terceros),
-                debito_terceros=_format_decimal(debito_terceros),
-                total_ventas=_format_decimal(total_componentes),
-                dui=dui_cliente or None,
-                tipo_operacion=_normalize_tipo(ident.get("tipoOperacion") if ident else None),
-                tipo_ingreso=_normalize_tipo(resumen_map.get("tipoIngreso")),
-            )
-
-            registro.json_path = str(json_path) if json_path else None
-            registro.estado = envio_text or None
-
-            included_codes.add(codigo_norm)
-            registros.append((fecha_dt, str(numero_control or ""), registro))
-
-        if total_rows:
-            logger.info(
-                "Anexo I %s · facturación=%s incluidos=%s excluidos=%s",
-                periodo_text,
-                total_rows,
-                len(registros),
-                sum(excluded_by_reason.values()) + sum(excluded_by_state.values()),
-            )
-        if excluded_by_state:
-            logger.info(
-                "Anexo I %s · excluidos por estado: %s",
-                periodo_text,
-                {k or "": v for k, v in sorted(excluded_by_state.items())},
-            )
-        if excluded_by_reason:
-            logger.info(
-                "Anexo I %s · descartes: %s",
-                {k: excluded_by_reason[k] for k in sorted(excluded_by_reason)},
-            )
-        if excluded_examples:
-            logger.info("Anexo I %s · ejemplos excluidos: %s", periodo_text, excluded_examples)
-
-        if included_codes:
-            missing = included_codes - facturacion_codes
-            if missing:
-                logger.warning(
-                    "Anexo I %s · códigos sin correspondencia en Facturación: %s",
-                    periodo_text,
-                    sorted(missing),
-                )
-            else:
-                logger.info(
-                    "Anexo I %s · códigos incluidos presentes en Facturación",
-                    periodo_text,
-                )
-
-        registros.sort(key=lambda item: (item[0], item[1]))
-        return [item[2] for item in registros]
-
-
-    def get_anexo_consumidor_final_registros(self, periodo: str) -> List[VentaCF]:
-        periodo_text = str(periodo or "").strip()
-        if not _PERIODO_FORMAT.fullmatch(periodo_text):
-            return []
-
-        year = int(periodo_text[:4])
-        month = int(periodo_text[4:])
-
-        rows = get_facturacion_rows(self.db)
-        total_rows = len(rows)
-        tipos_cf_validos = {"01", "02", "10", "11"}
-
-        registros: list[tuple[datetime, str, VentaCF]] = []
-        included_codes: set[str] = set()
-        facturacion_codes: set[str] = set()
-        excluded_by_state: Counter[str] = Counter()
-        excluded_by_reason: Counter[str] = Counter()
-        excluded_examples: list[str] = []
-
-        cursor = getattr(self.db, "cursor", None)
-
-        def _register_exclusion(reason: str, codigo: str | None, detail: str | None = None) -> None:
-            excluded_by_reason[reason] += 1
-            if len(excluded_examples) >= 5:
-                return
-            codigo_txt = (codigo or "—").strip() or "—"
-            if detail:
-                excluded_examples.append(f"{codigo_txt}:{detail}")
-            else:
-                excluded_examples.append(codigo_txt)
-
-        def _extract_extra(raw_extra):
-            if isinstance(raw_extra, Mapping):
-                return dict(raw_extra)
-            if isinstance(raw_extra, str) and raw_extra.strip():
-                try:
-                    data = json.loads(raw_extra)
-                    if isinstance(data, Mapping):
-                        return dict(data)
-                except Exception:
-                    return {}
-            return {}
-
-        for row in rows:
-            tipo_codigo = str(row.get("codigo") or "").zfill(2)
-            if tipo_codigo not in tipos_cf_validos:
-                continue
-
-            envio_text = str(row.get("envio") or "").strip()
-            estado_base = envio_text.split("(", 1)[0].strip().lower()
-
-            codigo_generacion = row.get("codigo_generacion")
-            codigo_norm = str(codigo_generacion or "").strip().upper() or None
-            if codigo_norm:
-                facturacion_codes.add(codigo_norm)
-
-            if estado_base not in {"enviado", "aceptado", "recibido"}:
-                excluded_by_state[estado_base or ""] += 1
-                _register_exclusion("estado", codigo_norm, estado_base or "estado")
-                continue
-
-            venta = None
-            venta_id = row.get("venta_id")
-            if venta_id is not None:
-                try:
-                    venta = self.db.get_venta_by_id(venta_id)
-                except Exception:
-                    venta = None
-
-            extra_data = _extract_extra(venta.get("extra")) if isinstance(venta, Mapping) else {}
-            numero_control = row.get("numero_control")
-            if extra_data:
-                numero_control = numero_control or extra_data.get("numeroControl")
-                codigo_generacion = codigo_generacion or extra_data.get("codigoGeneracion")
-
-            raw_json = None
-            json_path = row.get("json")
-            if json_path and os.path.exists(json_path):
-                try:
-                    with open(json_path, "r", encoding="utf-8") as fh:
-                        raw_json = json.load(fh)
-                except Exception:
-                    raw_json = None
-
-            payload = raw_json
-            if isinstance(payload, Mapping):
-                for key in ("dteJson", "dte_json", "dte"):
-                    candidate = payload.get(key)
-                    if isinstance(candidate, Mapping):
-                        payload = candidate
-                        break
-            else:
-                payload = None
-
-            ident = None
-            resumen = {}
-            sello_recibido = None
-            if isinstance(payload, Mapping):
-                ident = payload.get("identificacion") or payload.get("identificador")
-                if not isinstance(ident, Mapping):
-                    ident = None
-                resumen = payload.get("resumen")
-                if not isinstance(resumen, Mapping):
-                    resumen = {}
-                if isinstance(raw_json, Mapping):
-                    sello_recibido = raw_json.get("selloRecibido") or raw_json.get("selloRecepcion")
-                if sello_recibido is None and isinstance(payload, Mapping):
-                    sello_recibido = payload.get("selloRecibido")
-            else:
-                resumen = {}
-
-            if ident:
-                numero_control = numero_control or ident.get("numeroControl")
-                codigo_generacion = codigo_generacion or ident.get("codigoGeneracion")
-
-            if not codigo_generacion and cursor is not None:
-                try:
-                    if numero_control:
-                        row_env = cursor.execute(
-                            """
-                            SELECT codigo_generacion FROM dte_envios
-                            WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?)
-                            ORDER BY id DESC LIMIT 1
-                            """,
-                            (numero_control,),
-                        ).fetchone()
-                        if row_env:
-                            codigo_generacion = (
-                                row_env.get("codigo_generacion")
-                                if isinstance(row_env, Mapping)
-                                else row_env[0]
-                            )
-                    if not codigo_generacion and venta_id is not None:
-                        row_env = cursor.execute(
-                            """
-                            SELECT codigo_generacion FROM dte_envios
-                            WHERE venta_id=? ORDER BY id DESC LIMIT 1
-                            """,
-                            (venta_id,),
-                        ).fetchone()
-                        if row_env:
-                            codigo_generacion = (
-                                row_env.get("codigo_generacion")
-                                if isinstance(row_env, Mapping)
-                                else row_env[0]
-                            )
-                except Exception:
-                    pass
-
-            if not codigo_generacion:
-                _register_exclusion("codigo_generacion_faltante", codigo_norm)
-                continue
-
-            codigo_norm = str(codigo_generacion or "").strip().upper() or None
-            if codigo_norm:
-                facturacion_codes.add(codigo_norm)
-            if not codigo_norm:
-                _register_exclusion("codigo_generacion_invalido", None)
-                continue
-            if codigo_norm in included_codes:
-                _register_exclusion("codigo_generacion_duplicado", codigo_norm)
-                continue
-
-            fecha_dt = None
-            if ident:
-                fecha_dt = _parse_fecha_generica(ident.get("fecEmi"))
-            if not fecha_dt and isinstance(venta, Mapping):
-                venta_fecha = venta.get("fecha")
-                if venta_fecha:
-                    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d"):
-                        try:
-                            fecha_dt = datetime.strptime(str(venta_fecha)[: len(fmt)], fmt)
-                            break
-                        except ValueError:
-                            continue
-            if not fecha_dt or fecha_dt.year != year or fecha_dt.month != month:
-                _register_exclusion("periodo_no_coincide", codigo_norm, str(fecha_dt))
-                continue
-
-            if not isinstance(payload, Mapping):
-                _register_exclusion("json_incompleto", codigo_norm)
-                continue
-
-            resumen_map = resumen if isinstance(resumen, Mapping) else {}
-            ventas_exentas = _to_decimal(resumen_map.get("totalExenta"))
-            internas_ns = _to_decimal(resumen_map.get("totalNoGravado"))
-            ventas_no_sujetas = _to_decimal(resumen_map.get("totalNoSuj"))
-            ventas_gravadas = _to_decimal(resumen_map.get("totalGravada"))
-            exp_ca = _to_decimal(
-                resumen_map.get("totalExportacionCA")
-                or resumen_map.get("totalExportacionCa")
-            )
-            exp_fuera_ca = _to_decimal(
-                resumen_map.get("totalExportacionFueraCA")
-                or resumen_map.get("totalExportacionFueraCa")
-            )
-            exp_servicios = _to_decimal(resumen_map.get("totalExportacionServicios"))
-            zonas_francas_dpa = _to_decimal(
-                resumen_map.get("totalZonasFrancasDPA")
-                or resumen_map.get("totalZonasFrancasDpa")
-            )
-            terceros_no_domic = _to_decimal(resumen_map.get("totalTercerosNoDomiciliados"))
-            debito_terceros = _to_decimal(resumen_map.get("totalIvaTerceros"))
-            total_ventas = _to_decimal(
-                resumen_map.get("totalPagar")
-                or resumen_map.get("montoTotalOperacion")
-                or resumen_map.get("totalVentas")
-            )
-
-            componentes = [
-                ventas_exentas,
-                internas_ns,
-                ventas_no_sujetas,
-                ventas_gravadas,
-                exp_ca,
-                exp_fuera_ca,
-                exp_servicios,
-                zonas_francas_dpa,
-                terceros_no_domic,
-                debito_terceros,
-            ]
-            total_componentes = sum(componentes[:-1]) + debito_terceros
-            if total_ventas == D("0"):
-                total_ventas = total_componentes
-            if total_componentes != total_ventas:
-                diferencia = total_ventas - total_componentes
-                ventas_gravadas += diferencia
-                componentes[3] = ventas_gravadas
-                total_componentes = sum(componentes[:-1]) + debito_terceros
-
-            fecha_only = fecha_dt.date()
-            orden_dt = datetime.combine(fecha_only, dt_time.min)
-            hora_text = str(
-                ident.get("horEmi")
-                if isinstance(ident, Mapping)
-                else ""
-            ).strip()
-            if hora_text:
-                for fmt in ("%H:%M:%S", "%H:%M"):
-                    try:
-                        hora_obj = datetime.strptime(hora_text, fmt).time()
-                    except ValueError:
-                        continue
-                    orden_dt = datetime.combine(fecha_only, hora_obj)
-                    break
-
-            registro = VentaCF(
-                fecha=fecha_only.strftime("%d/%m/%Y"),
-                clase="4",
-                tipo=tipo_codigo,
-                numero_doc_del=codigo_norm,
-                numero_doc_al=codigo_norm,
-                ventas_exentas=_format_decimal(componentes[0]),
-                internas_exentas_ns=_format_decimal(componentes[1]),
-                ventas_no_sujetas=_format_decimal(componentes[2]),
-                ventas_gravadas_locales=_format_decimal(componentes[3]),
-                exp_ca=_format_decimal(componentes[4]),
-                exp_fuera_ca=_format_decimal(componentes[5]),
-                exp_servicios=_format_decimal(componentes[6]),
-                zonas_francas_dpa=_format_decimal(componentes[7]),
-                terceros_no_domic=_format_decimal(componentes[8]),
-                total_ventas=_format_decimal(total_componentes),
-                tipo_operacion=_normalize_tipo(ident.get("tipoOperacion") if ident else None),
-                tipo_ingreso=_normalize_tipo(resumen_map.get("tipoIngreso")),
-            )
-
-            registro.numero_control = numero_control
-            registro.codigo_generacion = codigo_norm
-            registro.json_path = str(json_path) if json_path else None
-            registro.estado = envio_text or None
-
-            included_codes.add(codigo_norm)
-            registros.append((orden_dt, str(numero_control or ""), registro))
-
-        if total_rows:
-            logger.info(
-                "Anexo II %s · facturación=%s incluidos=%s excluidos=%s",
-                periodo_text,
-                total_rows,
-                len(registros),
-                sum(excluded_by_reason.values()) + sum(excluded_by_state.values()),
-            )
-        if excluded_by_state:
-            logger.info(
-                "Anexo II %s · excluidos por estado: %s",
-                periodo_text,
-                {k or "": v for k, v in sorted(excluded_by_state.items())},
-            )
-        if excluded_by_reason:
-            logger.info(
-                "Anexo II %s · descartes: %s",
-                {k: excluded_by_reason[k] for k in sorted(excluded_by_reason)},
-            )
-        if excluded_examples:
-            logger.info("Anexo II %s · ejemplos excluidos: %s", periodo_text, excluded_examples)
-
-        if included_codes:
-            missing = included_codes - facturacion_codes
-            if missing:
-                logger.warning(
-                    "Anexo II %s · códigos sin correspondencia en Facturación: %s",
-                    periodo_text,
-                    sorted(missing),
-                )
-            else:
-                logger.info(
-                    "Anexo II %s · códigos incluidos presentes en Facturación",
-                    periodo_text,
-                )
-
-        registros.sort(key=lambda item: (item[0], item[1]))
-        return [item[2] for item in registros]
+    def get_Distribuidores(self):
+        return self._Distribuidores
 
     def add_producto(
         self,
@@ -2246,8 +1462,6 @@ class InventoryManager:
         municipio,
         codigo=None,
         nombreComercial=None,
-        tipoContribuyente=None,
-        razonSocial=None,
     ):
         """Add a new client and refresh the cached lists."""
 
@@ -2265,8 +1479,6 @@ class InventoryManager:
             codigo=codigo,
             codActividad=codActividad,
             nombreComercial=nombreComercial,
-            tipoContribuyente=tipoContribuyente,
-            razonSocial=razonSocial,
         )
         self.refresh_data()
 
@@ -2286,8 +1498,6 @@ class InventoryManager:
         municipio,
         codActividad=None,
         nombreComercial=None,
-        tipoContribuyente=None,
-        razonSocial=None,
     ):
         """Update an existing client and refresh the cached lists."""
 
@@ -2306,8 +1516,6 @@ class InventoryManager:
             municipio,
             codActividad=codActividad,
             nombreComercial=nombreComercial,
-            tipoContribuyente=tipoContribuyente,
-            razonSocial=razonSocial,
         )
         self.refresh_data()
 

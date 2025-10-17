@@ -2,8 +2,32 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from db import DB
-from PyQt5.QtCore import QAbstractTableModel, Qt
-from PyQt5.QtGui import QColor
+try:
+    from PyQt5.QtCore import QAbstractTableModel, Qt
+    from PyQt5.QtGui import QColor
+except ImportError:  # pragma: no cover - fallback for headless environments
+    class _QtFallback:
+        DisplayRole = 0
+        BackgroundRole = 1
+        Horizontal = 1
+
+    class Qt(_QtFallback):
+        pass
+
+    class QColor:
+        def __init__(self, name: str | None = None):
+            self.name = name or ""
+
+    class QAbstractTableModel:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def beginResetModel(self):
+            pass
+
+        def endResetModel(self):
+            pass
+
 import json
 import re
 from datetime import datetime, time as dt_time
@@ -114,6 +138,70 @@ def _norm_text(value: object) -> str | None:
     return None
 
 
+
+
+class InventoryManagerError(Exception):
+    """Raised when an inventory import operation fails."""
+
+class InventoryManager:
+    def __init__(self, db: DB | None = None, *, page_size: int | None = None):
+        """Create a manager bound to ``db`` and initialize cached data."""
+        self.db = db if db is not None else DB()
+        self._page_size = page_size
+        self._filter_vendedor_id = None
+        self._filter_Distribuidor_id = None
+        self._filter_search = ""
+        self._products = []
+        self._vendedores = []
+        self._Distribuidores = []
+        self._clientes = []
+        self._vendedores_by_id = {}
+        self._Distribuidores_by_id = {}
+        self._model = ProductTableModel([], [], [])
+        self.refresh_data()
+
+    def refresh_data(self):
+        """Reload cached datasets from the database and apply filters."""
+        self._Distribuidores = list(self.db.get_Distribuidores())
+        self._vendedores = list(self.db.get_vendedores())
+        get_clientes = getattr(self.db, "get_clientes", None)
+        self._clientes = list(get_clientes()) if callable(get_clientes) else []
+        self._Distribuidores_by_id = {
+            d.get("id"): d.get("nombre", "")
+            for d in self._Distribuidores
+            if d.get("id") is not None
+        }
+        self._vendedores_by_id = {
+            v.get("id"): v.get("nombre", "")
+            for v in self._vendedores
+            if v.get("id") is not None
+        }
+        if hasattr(self._model, "_vendedores"):
+            self._model._vendedores = {
+                vend.get("id"): vend.get("nombre", "")
+                for vend in self._vendedores
+                if vend.get("id") is not None
+            }
+        if hasattr(self._model, "_Distribuidores"):
+            self._model._Distribuidores = {
+                dist.get("id"): dist.get("nombre", "")
+                for dist in self._Distribuidores
+                if dist.get("id") is not None
+            }
+        self._apply_filters()
+
+    def load_page(self, page: int = 0):
+        """Populate the product model with the requested page of items."""
+        if page < 0:
+            page = 0
+        if self._page_size:
+            start = page * self._page_size
+            end = start + self._page_size
+            page_items = self._products[start:end]
+        else:
+            page_items = list(self._products)
+        self._model.update_data(page_items)
+        return page_items
 
     def get_anexo_xix_registros(self, periodo: str) -> List[DTEAnulado]:
         periodo_text = str(periodo or "").strip()

@@ -1,5 +1,10 @@
 # -*- mode: python ; coding: utf-8 -*-
 
+from PyInstaller.utils.hooks import collect_submodules
+
+
+additional_hiddenimports = collect_submodules('openpyxl')
+
 
 a = Analysis(
     ['main.py'],
@@ -23,7 +28,7 @@ a = Analysis(
         'reportlab.graphics.barcode.usps4s',
         'reportlab.graphics.barcode.widgets',
         'openpyxl',
-    ],
+    ] + additional_hiddenimports,
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],

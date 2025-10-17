@@ -8,6 +8,24 @@ import pytest
 from declaracion import dte_provider
 
 
+def test_tipo_dte_detects_sources_and_aliases():
+    assert dte_provider._tipo_dte({"dte_json": {"identificacion": {"tipoDte": "03"}}}) == "03"
+
+    row_dte = {"dte_json": {"identificacion": {}, "tipoDte": "03"}}
+    assert dte_provider._tipo_dte(row_dte) == "03"
+
+    row_extra = {"dte_json": {"identificacion": {}}, "extra_data": {"tipoDocumento": "3"}}
+    assert dte_provider._tipo_dte(row_extra) == "03"
+
+    row_alias = {"dte_json": {"identificacion": {}}, "extra_data": {"tipo_hint": "CCF"}}
+    assert dte_provider._tipo_dte(row_alias) == "03"
+
+
+def test_clase_por_tipo_catalogo():
+    for code in dte_provider.CAT002_VALID:
+        assert dte_provider.CLASE_POR_TIPO[code] == "4"
+
+
 def _dte_payload(
     *,
     tipo: str,
@@ -241,6 +259,28 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
     )
     _insert_envio(db_conn, venta_cf_cons, codigo="CFII-001", numero="DTE-01-0001", estado="Procesado", tag="procesado", manual=0)
 
+    resumen_cf_extra = {
+        "totalExenta": "0.00",
+        "totalNoSuj": "0.00",
+        "totalGravada": "10.00",
+        "totalPagar": "10.00",
+    }
+    venta_cf_extra = db_conn.add_venta(
+        "2024-01-22",
+        10,
+        cliente_id=cliente_nat,
+        extra=_dte_payload(
+            tipo="01",
+            fecha="2024-01-22",
+            codigo="CFII-005",
+            numero_control="DTE-01-0003",
+            nombre="Persona Natural",
+            receptor={"dui": "01234567-8", "tipoDocumento": "13", "numDocumento": "01234567-8"},
+            resumen=resumen_cf_extra,
+        ),
+    )
+    _insert_envio(db_conn, venta_cf_extra, codigo="CFII-005", numero="DTE-01-0003", estado="Recibido", tag="recibido", manual=0)
+
     resumen_fc = {
         "totalExenta": "1.00",
         "totalNoSuj": "2.00",
@@ -274,10 +314,10 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         7,
         cliente_id=cliente_emp,
         extra=_dte_payload(
-            tipo="10",
+            tipo="01",
             fecha="2024/01/24",
             codigo="CFII-003",
-            numero_control="DTE-10-0001",
+            numero_control="DTE-01-0002",
             nombre="Empresa Uno",
             receptor={"nit": "06141990011019", "tipoDocumento": "36", "numDocumento": "06141990011019"},
             resumen=resumen_manual,
@@ -287,10 +327,40 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         db_conn,
         venta_manual,
         codigo="CFII-003",
-        numero="DTE-10-0001",
+        numero="DTE-01-0002",
         estado="Aceptado",
         tag="rechazado",
         manual=1,
+    )
+
+    resumen_no_cf = {
+        "totalExenta": "0.00",
+        "totalNoSuj": "0.00",
+        "totalGravada": "12.00",
+        "totalPagar": "12.00",
+    }
+    venta_no_cf = db_conn.add_venta(
+        "2024-01-27",
+        12,
+        cliente_id=cliente_emp,
+        extra=_dte_payload(
+            tipo="11",
+            fecha="2024-01-27",
+            codigo="CFII-004",
+            numero_control="DTE-11-0001",
+            nombre="Empresa Uno",
+            receptor={"nit": "06141990011019", "nrc": "1234567"},
+            resumen=resumen_no_cf,
+        ),
+    )
+    _insert_envio(
+        db_conn,
+        venta_no_cf,
+        codigo="CFII-004",
+        numero="DTE-11-0001",
+        estado="Aceptado",
+        tag="aceptado",
+        manual=0,
     )
 
     venta_cf_dup = db_conn.add_venta(
@@ -359,15 +429,24 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
     assert nc.estado_manual == "Aceptado"
     assert nc.estado == "rechazado"
 
-    cf_map = {r.codigo_generacion: r for r in cf}
-    assert set(cf_map) == {"CFII-001", "CFII-003"}
-    cf_manual = cf_map["CFII-003"]
+    cf_by_fecha = {r.fecha: r for r in cf}
+    assert set(cf_by_fecha) == {"22/01/2024", "24/01/2024"}
+    assert all(r.codigo_generacion != "CFII-004" for r in cf)
+    cf_manual = cf_by_fecha["24/01/2024"]
     assert cf_manual.estado_manual == "Aceptado"
-    assert cf_manual.numero_control == "DTE-10-0001"
+    assert cf_manual.numero_control == "DTE-01-0002"
+    assert cf_manual.clase == "4"
 
-    cf_total = cf_map["CFII-001"]
-    assert cf_total.ventas_gravadas_locales == "20.50"
-    assert cf_total.total_ventas == "20.50"
+    cf_total = cf_by_fecha["22/01/2024"]
+    assert cf_total.numero_doc_del == "CFII-001"
+    assert cf_total.numero_doc_al == "CFII-005"
+    assert cf_total.ctrl_interno_del == "DTE-01-0001"
+    assert cf_total.ctrl_interno_al == "DTE-01-0003"
+    assert cf_total.ventas_gravadas_locales == "30.50"
+    assert cf_total.total_ventas == "30.50"
+    assert cf_total.codigo_generacion == "CFII-005"
+    assert cf_total.numero_control == "DTE-01-0003"
+    assert cf_total.clase == "4"
 
     assert any("Anexo I - descartados_sin_codigo" in rec.message for rec in caplog.records)
     assert any("Anexo II - descartados_duplicado" in rec.message for rec in caplog.records)
@@ -378,3 +457,4 @@ def test_estado_normalizacion_y_apto():
     assert dte_provider.normalize_estado("Procesamiento") == "recibido"
     assert dte_provider.estado_apto("Cancelada") is False
     assert dte_provider.estado_apto("rechazado", override_manual="Aceptada") is True
+    assert dte_provider.estado_apto("Procesado") is True

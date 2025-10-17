@@ -14,6 +14,8 @@ from declaracion.anexo_consumidor_final import VentaCF
 
 logger = logging.getLogger(__name__)
 
+CAT002_VALID = {"01", "03", "04", "05", "06", "07", "08", "09", "11", "14", "15"}
+
 APTOS = {"enviado", "aceptado", "recibido"}
 ALIASES = {
     "procesado": "recibido",
@@ -40,20 +42,155 @@ ALIASES = {
     "cancelada": "anulado",
 }
 
-TIPOS_ANEXO_I = {"03", "05", "06"}
-TIPOS_ANEXO_II = {"01", "02", "10", "11"}
-
-CLASE_POR_TIPO = {
-    "01": "1",
-    "02": "1",
-    "03": "4",
-    "05": "4",
-    "06": "4",
-    "10": "1",
-    "11": "1",
+_TIPO_HINT_ALIASES = {
+    "ccf": "03",
+    "nota de credito": "05",
+    "nota de debito": "06",
+    "nota de remision": "04",
+    "factura": "01",
+    "consumidor final": "01",
 }
 
+TIPOS_ANEXO_I = {"03", "05", "06"}
+TIPOS_ANEXO_II = {"01"}  # agregar "14" si se maneja sujeto excluido como CF
+
+CLASE_POR_TIPO = {code: "4" for code in CAT002_VALID}
+
 _ACCENT_TRANSLATION = str.maketrans("áéíóúÁÉÍÓÚ", "aeiouaeiou")
+
+
+def _normalize_alias(texto: str | None) -> str | None:
+    if not texto:
+        return None
+    t = str(texto).lower().strip()
+    if not t:
+        return None
+    t = t.replace("-", " ").replace("_", " ")
+    t = "".join(ch for ch in t if ch.isalnum() or ch.isspace())
+    t = " ".join(t.split())
+    code = _TIPO_HINT_ALIASES.get(t)
+    if code in CAT002_VALID:
+        return code
+    return None
+
+
+def _collect_type_hints(row: dict) -> list[str]:
+    hints: list[str] = []
+
+    def _append(value: Any) -> None:
+        if value is None:
+            return
+        texto = str(value).strip()
+        if texto:
+            hints.append(texto)
+
+    hint_keys = [
+        "tipo_hint",
+        "tipo_nombre",
+        "tipo_label",
+        "tipo_desc",
+        "tipoDescripcion",
+        "tipoDescripcionDocumento",
+        "tipoDocumentoNombre",
+        "tipoDocumentoDescripcion",
+        "tipo_documento_nombre",
+        "tipo_documento_desc",
+        "tipo",
+        "tipo_doc",
+        "tipo_documento",
+    ]
+
+    sources: list[Any] = [row]
+    extra = row.get("extra_data") if isinstance(row, dict) else None
+    if isinstance(extra, dict):
+        sources.append(extra)
+        documento = extra.get("documento")
+        if isinstance(documento, dict):
+            sources.append(documento)
+            ident_doc = documento.get("identificacion")
+            if isinstance(ident_doc, dict):
+                sources.append(ident_doc)
+    envio = row.get("envio") if isinstance(row, dict) else None
+    if isinstance(envio, dict):
+        sources.append(envio)
+    dte_json = row.get("dte_json") if isinstance(row, dict) else None
+    if isinstance(dte_json, dict):
+        sources.append(dte_json)
+        identificacion = dte_json.get("identificacion")
+        if isinstance(identificacion, dict):
+            sources.append(identificacion)
+
+    for source in sources:
+        if not isinstance(source, dict):
+            continue
+        for key in hint_keys:
+            _append(source.get(key))
+
+    return hints
+
+
+def _try_all_known_fields(row: dict) -> str | None:
+    def _sanitize(value: Any) -> str | None:
+        if value is None:
+            return None
+        texto = str(value).strip()
+        if not texto:
+            return None
+        if texto.isdigit() and len(texto) == 1:
+            return f"0{texto}"
+        return texto
+
+    dte_json = row.get("dte_json") or {}
+    identificacion = dte_json.get("identificacion") or {}
+    candidatos = [
+        identificacion.get("tipoDte"),
+        identificacion.get("tipoDocumento"),
+        dte_json.get("tipoDte"),
+        dte_json.get("tipoDocumento"),
+    ]
+
+    extra = row.get("extra_data") or {}
+    if isinstance(extra, dict):
+        candidatos.extend(
+            [
+                extra.get("tipoDte"),
+                extra.get("tipoDocumento"),
+                extra.get("tipo"),
+                extra.get("tipo_doc"),
+                extra.get("tipo_documento"),
+            ]
+        )
+        documento = extra.get("documento")
+        if isinstance(documento, dict):
+            ident_doc = documento.get("identificacion")
+            if isinstance(ident_doc, dict):
+                candidatos.extend(
+                    [
+                        ident_doc.get("tipoDte"),
+                        ident_doc.get("tipoDocumento"),
+                    ]
+                )
+
+    envio = row.get("envio") or {}
+    if isinstance(envio, dict):
+        candidatos.extend(
+            [
+                envio.get("tipoDte"),
+                envio.get("tipoDocumento"),
+                envio.get("tipo"),
+            ]
+        )
+
+    primer_no_vacio: str | None = None
+    for candidato in candidatos:
+        texto = _sanitize(candidato)
+        if not texto:
+            continue
+        if texto in CAT002_VALID:
+            return texto
+        if primer_no_vacio is None:
+            primer_no_vacio = texto
+    return primer_no_vacio
 
 
 def _validate_periodo(periodo_yyyymm: str) -> str:
@@ -180,18 +317,25 @@ def _fecha_emision(row: dict) -> tuple[str | None, datetime | None]:
 
 
 def _tipo_dte(row: dict) -> str | None:
-    dte_json = row.get("dte_json") or {}
-    identificacion = dte_json.get("identificacion") or {}
-    tipo = identificacion.get("tipoDte")
-    if not tipo:
-        extra = row.get("extra_data") or {}
-        tipo = extra.get("tipoDte") or extra.get("tipo")
-    if not tipo:
-        return None
-    texto = str(tipo).strip()
-    if len(texto) == 1:
-        texto = f"0{texto}"
-    return texto
+    """Obtener el tipo de DTE usando varias fuentes conocidas."""
+
+    code = _try_all_known_fields(row)
+    if code and code in CAT002_VALID:
+        return code
+
+    if isinstance(code, str):
+        digits = "".join(ch for ch in code if ch.isdigit())
+        if digits:
+            candidate = digits[-2:].zfill(2)
+            if candidate in CAT002_VALID:
+                return candidate
+
+    for texto in _collect_type_hints(row):
+        alias_code = _normalize_alias(texto)
+        if alias_code:
+            return alias_code
+
+    return None
 
 
 def _estado_base(row: dict) -> tuple[str | None, str | None]:
@@ -352,6 +496,8 @@ def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
         tipo = _tipo_dte(row_data)
         if tipo:
             row_data["tipo"] = tipo
+        else:
+            descartes["sin_tipo"].append(f"venta {fila['venta_id']}")
 
         numero_control = _numero_control(row_data)
         if numero_control:
@@ -426,7 +572,7 @@ def _montos_anexo_i(row: dict) -> dict:
     }
 
 
-def _montos_anexo_ii(row: dict) -> dict:
+def _montos_anexo_ii_values(row: dict) -> dict[str, Decimal]:
     resumen = _extract_resumen(row)
     exentas = _to_decimal(resumen.get("totalExenta"))
     no_sujetas = _to_decimal(resumen.get("totalNoSuj"))
@@ -436,27 +582,39 @@ def _montos_anexo_ii(row: dict) -> dict:
     if total and subtotal != total:
         gravadas += total - subtotal
         subtotal = exentas + no_sujetas + gravadas
+    total_ventas = total or subtotal
     return {
-        "ventas_exentas": _decimal_text(exentas),
-        "internas_exentas_ns": "0.00",
-        "ventas_no_sujetas": _decimal_text(no_sujetas),
-        "ventas_gravadas_locales": _decimal_text(gravadas),
-        "exp_ca": "0.00",
-        "exp_fuera_ca": "0.00",
-        "exp_servicios": "0.00",
-        "zonas_francas_dpa": "0.00",
-        "terceros_no_domic": "0.00",
-        "total_ventas": _decimal_text(total or subtotal),
+        "ventas_exentas": exentas,
+        "internas_exentas_ns": Decimal("0.00"),
+        "ventas_no_sujetas": no_sujetas,
+        "ventas_gravadas_locales": gravadas,
+        "exp_ca": Decimal("0.00"),
+        "exp_fuera_ca": Decimal("0.00"),
+        "exp_servicios": Decimal("0.00"),
+        "zonas_francas_dpa": Decimal("0.00"),
+        "terceros_no_domic": Decimal("0.00"),
+        "total_ventas": total_ventas,
     }
+
+
+def _montos_anexo_ii(row: dict) -> dict:
+    valores = _montos_anexo_ii_values(row)
+    return {clave: _decimal_text(valor) for clave, valor in valores.items()}
 
 
 def _identificacion_anexo_i(row: dict) -> tuple[str | None, str | None, str]:
     cliente = _extract_cliente(row)
     dui = cliente.get("dui")
     if dui:
-        dui_texto = str(dui).replace("-", "").strip()
-        if dui_texto:
-            return None, dui_texto, cliente.get("nombre") or ""
+        dui_digitos = "".join(ch for ch in str(dui) if ch.isdigit())
+        fecha_obj = row.get("fecha_obj")
+        if (
+            dui_digitos
+            and len(dui_digitos) == 9
+            and isinstance(fecha_obj, datetime)
+            and (fecha_obj.year, fecha_obj.month) >= (2022, 1)
+        ):
+            return None, dui_digitos, cliente.get("nombre") or ""
     nit = cliente.get("nit")
     nrc = cliente.get("nrc")
     identificacion = None
@@ -496,7 +654,7 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
             descripcion = normalize_estado(manual) or normalize_estado(base) or "desconocido"
             motivos["estado_no_apto"].append(f"{codigo}:{descripcion}")
             continue
-        fecha_texto, fecha_obj = _fecha_emision(row)
+        _, fecha_obj = _fecha_emision(row)
         if not fecha_obj:
             stats[tipo]["excluidos"] += 1
             motivos["sin_fecha"].append(f"{codigo}")
@@ -533,11 +691,11 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
 
 
 def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
-    registros: list[VentaCF] = []
     seen: set[str] = set()
     stats = defaultdict(lambda: {"incluidos": 0, "excluidos": 0})
     motivos = defaultdict(list)
     total_considerados = 0
+    grupos: dict[tuple[str, str], dict] = {}
 
     for row in rows:
         tipo = row.get("tipo")
@@ -561,43 +719,94 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
             descripcion = normalize_estado(manual) or normalize_estado(base) or "desconocido"
             motivos["estado_no_apto"].append(f"{codigo}:{descripcion}")
             continue
-        fecha_texto, fecha_obj = _fecha_emision(row)
+        _, fecha_obj = _fecha_emision(row)
         if not fecha_obj:
             stats[tipo]["excluidos"] += 1
             motivos["sin_fecha"].append(f"{codigo}")
             continue
 
-        montos = _montos_anexo_ii(row)
         numero_control = row.get("numero_control") or _numero_control(row)
+        montos = _montos_anexo_ii_values(row)
+        key = (fecha_obj.strftime("%Y-%m-%d"), tipo)
+        if key not in grupos:
+            grupos[key] = {
+                "fecha": fecha_obj,
+                "tipo": tipo,
+                "totales": {campo: Decimal("0.00") for campo in montos},
+                "controles": [],
+                "codigos": [],
+                "estado": None,
+                "estado_manual": None,
+                "estado_fuente": None,
+                "tipo_operacion": _tipo_operacion(row),
+                "tipo_ingreso": _tipo_ingreso(row),
+                "json_path": row.get("json_path"),
+                "ultimo_control": None,
+                "ultimo_codigo": None,
+            }
+        grupo = grupos[key]
+        for campo, valor in montos.items():
+            grupo["totales"][campo] += valor
+        if numero_control:
+            grupo["controles"].append(numero_control)
+            grupo["ultimo_control"] = numero_control
+        if codigo:
+            grupo["codigos"].append(codigo)
+            grupo["ultimo_codigo"] = codigo
+        if row.get("json_path") and not grupo["json_path"]:
+            grupo["json_path"] = row.get("json_path")
+        fuente = "db" if row.get("envio") else "extra"
+        if fuente == "db" or not grupo["estado_fuente"]:
+            grupo["estado_fuente"] = fuente
+        if manual:
+            grupo["estado_manual"] = manual
+        elif not grupo["estado_manual"]:
+            grupo["estado_manual"] = manual
+        if base:
+            grupo["estado"] = base
+        elif not grupo["estado"]:
+            grupo["estado"] = base
+        seen.add(codigo)
+
+    registros: list[VentaCF] = []
+    for key in sorted(grupos):
+        grupo = grupos[key]
+        tipo = grupo["tipo"]
+        totales = grupo["totales"]
+        controles = grupo["controles"] or grupo["codigos"]
+        documentos = grupo["codigos"] or grupo["controles"]
+        ctrl_del = controles[0] if controles else None
+        ctrl_al = controles[-1] if controles else None
+        doc_del = documentos[0] if documentos else ctrl_del
+        doc_al = documentos[-1] if documentos else ctrl_al
         registro = VentaCF(
-            fecha=fecha_obj.strftime("%d/%m/%Y"),
+            fecha=grupo["fecha"].strftime("%d/%m/%Y"),
             clase=CLASE_POR_TIPO.get(tipo, "1"),
             tipo=tipo,
-            ctrl_interno_del=numero_control,
-            ctrl_interno_al=numero_control,
-            numero_doc_del=numero_control,
-            numero_doc_al=numero_control,
-            ventas_exentas=montos["ventas_exentas"],
-            internas_exentas_ns=montos["internas_exentas_ns"],
-            ventas_no_sujetas=montos["ventas_no_sujetas"],
-            ventas_gravadas_locales=montos["ventas_gravadas_locales"],
-            exp_ca=montos["exp_ca"],
-            exp_fuera_ca=montos["exp_fuera_ca"],
-            exp_servicios=montos["exp_servicios"],
-            zonas_francas_dpa=montos["zonas_francas_dpa"],
-            terceros_no_domic=montos["terceros_no_domic"],
-            total_ventas=montos["total_ventas"],
-            tipo_operacion=_tipo_operacion(row),
-            tipo_ingreso=_tipo_ingreso(row),
-            codigo_generacion=codigo,
-            numero_control=numero_control,
-            estado=base,
-            estado_manual=manual,
-            estado_fuente="db" if row.get("envio") else "extra",
-            json_path=row.get("json_path"),
+            ctrl_interno_del=ctrl_del,
+            ctrl_interno_al=ctrl_al,
+            numero_doc_del=doc_del,
+            numero_doc_al=doc_al,
+            ventas_exentas=_decimal_text(totales["ventas_exentas"]),
+            internas_exentas_ns=_decimal_text(totales["internas_exentas_ns"]),
+            ventas_no_sujetas=_decimal_text(totales["ventas_no_sujetas"]),
+            ventas_gravadas_locales=_decimal_text(totales["ventas_gravadas_locales"]),
+            exp_ca=_decimal_text(totales["exp_ca"]),
+            exp_fuera_ca=_decimal_text(totales["exp_fuera_ca"]),
+            exp_servicios=_decimal_text(totales["exp_servicios"]),
+            zonas_francas_dpa=_decimal_text(totales["zonas_francas_dpa"]),
+            terceros_no_domic=_decimal_text(totales["terceros_no_domic"]),
+            total_ventas=_decimal_text(totales["total_ventas"]),
+            tipo_operacion=grupo["tipo_operacion"],
+            tipo_ingreso=grupo["tipo_ingreso"],
+            codigo_generacion=grupo["ultimo_codigo"],
+            numero_control=grupo["ultimo_control"],
+            estado=grupo["estado"],
+            estado_manual=grupo["estado_manual"],
+            estado_fuente=grupo["estado_fuente"],
+            json_path=grupo["json_path"],
         )
         registros.append(registro)
-        seen.add(codigo)
         stats[tipo]["incluidos"] += 1
 
     _log_summary("Anexo II", total_considerados, len(registros), stats, motivos)

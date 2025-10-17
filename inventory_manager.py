@@ -16,6 +16,8 @@ from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.party_resolver import Catalogs, normalize_identifier
 
+from declaracion import dte_provider
+
 try:  # Prefer shared app version if available
     from dte import APP_VERSION
 except Exception:  # pragma: no cover - fallback when dte isn't importable
@@ -176,6 +178,18 @@ class InventoryManager:
 
     def get_Distribuidores(self):
         return self._Distribuidores
+
+    def get_anexo_contribuyentes_registros(self, periodo: str):
+        """Registros del Anexo I (ventas a contribuyentes) para la UI."""
+
+        rows = dte_provider.get_facturacion_rows(self.db, periodo)
+        return dte_provider.build_anexo_i_records(rows, self.db)
+
+    def get_anexo_consumidor_final_registros(self, periodo: str):
+        """Registros del Anexo II (ventas a consumidor final) para la UI."""
+
+        rows = dte_provider.get_facturacion_rows(self.db, periodo)
+        return dte_provider.build_anexo_ii_records(rows, self.db)
 
     def add_producto(
         self,

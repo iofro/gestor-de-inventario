@@ -1,4 +1,5 @@
 from copy import deepcopy
+from dataclasses import dataclass, field
 from pathlib import Path
 from db import DB
 from PyQt5.QtCore import QAbstractTableModel, Qt
@@ -6,6 +7,7 @@ from PyQt5.QtGui import QColor
 import json
 import re
 from datetime import datetime, timedelta, time as dt_time
+from collections import Counter, defaultdict
 import os
 import logging
 import sqlite3
@@ -16,7 +18,11 @@ from paths import (
     DATOS_NEGOCIO_PATH,
     DTES_DIR,
     FACTURAS_ARCHIVE_CF_DIR,
+    FACTURAS_ARCHIVE_CREDITO_DIR,
     FACTURAS_CONSUMIDOR_FINAL_DIR,
+    FACTURAS_CREDITO_FISCAL_DIR,
+    NOTAS_CREDITO_DIR,
+    NOTAS_DEBITO_DIR,
     TICKETS_OUTPUT_DIR,
     ensure_user_dir,
     get_canonical_dte_dir,
@@ -27,7 +33,9 @@ from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
 from utils.monto import d8
 from utils.party_resolver import Catalogs, normalize_identifier
+from utils.dte_estado import estado_apto_para_anexo, normalizar_estado, evaluar_estado
 from declaracion.anexo_consumidor_final import VentaCF
+from declaracion.anexo_contribuyentes import VentaContribuyente
 from declaracion.anexo_xix import DTEAnulado
 
 try:  # Prefer shared app version if available
@@ -46,40 +54,7 @@ logger = logging.getLogger(__name__)
 _TOKEN_FIELDS = ("token_pruebas", "token_produccion")
 
 
-_MANUAL_ESTADOS_ACEPTADOS = ("aceptad", "enviad")
-_AUTOMATICO_ESTADOS_ACEPTADOS = ("enviad",)
 _PERIODO_FORMAT = re.compile(r"^\d{6}$")
-
-
-def _estado_tokens(value: object) -> list[str]:
-    if value is None:
-        return []
-
-    text = str(value).strip().lower()
-    if not text:
-        return []
-
-    tokens = [text]
-    tokens.extend(token for token in re.split(r"[^0-9a-záéíóúüñ]+", text) if token)
-    return tokens
-
-
-def _estado_indica_manual_aceptado(value: object) -> bool:
-    """Return ``True`` if a manual estado marks the DTE as accepted."""
-
-    for token in _estado_tokens(value):
-        if any(token.startswith(prefix) for prefix in _MANUAL_ESTADOS_ACEPTADOS):
-            return True
-    return False
-
-
-def _estado_indica_automatico_aceptado(value: object) -> bool:
-    """Return ``True`` if an automatic estado allows including the DTE."""
-
-    for token in _estado_tokens(value):
-        if any(token.startswith(prefix) for prefix in _AUTOMATICO_ESTADOS_ACEPTADOS):
-            return True
-    return False
 
 
 def _valor_indica_anulado(value: object) -> bool:
@@ -112,30 +87,6 @@ def _map_tipo_anulacion_estado(motivo: Mapping[str, object] | None) -> str | Non
     return None
 
 
-def _metadata_estado_aceptado(metadata: Mapping[str, object] | None) -> bool:
-    if not isinstance(metadata, Mapping):
-        return False
-    respuesta = metadata.get("respuesta")
-    if isinstance(respuesta, Mapping):
-        for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
-            valor = respuesta.get(key)
-            if _estado_indica_automatico_aceptado(valor):
-                return True
-    return False
-
-
-def _estado_apto_para_anexo(
-    estado_json: str | None, estado_manual: str | None
-) -> bool:
-    """Determina si el estado permite incluir el DTE en el anexo."""
-
-    manual_text = None
-    if estado_manual is not None:
-        manual_text = str(estado_manual).strip()
-        if manual_text:
-            return _estado_indica_aceptado(manual_text)
-
-    return _estado_indica_automatico_aceptado(estado_json)
 
 
 def _extract_manual_tokens(datos_negocio: dict | None) -> dict:
@@ -223,6 +174,165 @@ def _iter_cf_candidate_dirs() -> Iterable[Path]:
             hinted = base / hint
             for candidate in _yield_once(hinted):
                 yield candidate
+
+
+def _iter_contribuyente_candidate_dirs() -> Iterable[Path]:
+    """Yield directories that may contain DTE JSON for contribuyentes."""
+
+    candidates: list[Path] = []
+    try:
+        canonical = Path(get_canonical_dte_dir("CreditoFiscal"))
+    except Exception:
+        canonical = None
+    if canonical is not None:
+        candidates.append(canonical)
+
+    for raw_dir in (
+        FACTURAS_CREDITO_FISCAL_DIR,
+        FACTURAS_ARCHIVE_CREDITO_DIR,
+        DTES_DIR,
+        NOTAS_CREDITO_DIR,
+        NOTAS_DEBITO_DIR,
+    ):
+        if not raw_dir:
+            continue
+        try:
+            candidates.append(Path(raw_dir))
+        except TypeError:
+            continue
+
+    seen_dirs: set[str] = set()
+
+    def _yield_once(path: Path) -> Iterable[Path]:
+        norm = os.path.normpath(str(path))
+        if norm in seen_dirs:
+            return ()
+        seen_dirs.add(norm)
+        return (path,)
+
+    for base in candidates:
+        for candidate in _yield_once(base):
+            yield candidate
+
+        base_name = base.name.lower()
+        if base_name in {"dtes"}:
+            subdir_hints = (
+                "fcf",
+                "credito_fiscal",
+                "credito-fiscal",
+                "credito",
+                "notas_credito",
+                "notas_debito",
+            )
+        elif base_name in {"facturas"}:
+            subdir_hints = ("credito_fiscal",)
+        else:
+            subdir_hints = ()
+
+        for hint in subdir_hints:
+            hinted = base / hint
+            for candidate in _yield_once(hinted):
+                yield candidate
+
+
+def _norm_text(value: object) -> str | None:
+    if isinstance(value, str):
+        text = value.strip()
+        return text or None
+    return None
+
+
+@dataclass
+class DTEEstadoInfo:
+    manual: str | None = None
+    manual_fuente: str | None = None
+    automaticos: list[tuple[str, str]] = field(default_factory=list)
+    automaticos_norm: set[str] = field(default_factory=set)
+    anulado: bool = False
+
+    def set_manual(self, valor: object, fuente: str) -> None:
+        texto = _norm_text(valor)
+        if not texto:
+            return
+        self.manual = texto
+        self.manual_fuente = fuente
+        if _valor_indica_anulado(texto):
+            self.anulado = True
+
+    def add_automatico(self, valor: object, fuente: str) -> None:
+        texto = _norm_text(valor)
+        if not texto:
+            return
+        normalizado = normalizar_estado(texto) or texto.lower()
+        if normalizado in self.automaticos_norm:
+            return
+        self.automaticos_norm.add(normalizado)
+        self.automaticos.append((texto, fuente))
+        if _valor_indica_anulado(texto):
+            self.anulado = True
+
+
+def _parse_fecha_generica(value: object) -> datetime | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y%m%d"):
+        try:
+            return datetime.strptime(text[:10], fmt)
+        except ValueError:
+            continue
+    return None
+
+
+def _to_decimal(value: object) -> D:
+    if value in (None, "", "null"):
+        return D("0")
+    if isinstance(value, D):
+        return value
+    if isinstance(value, (int, float)):
+        return D(str(value))
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return D("0")
+        try:
+            return D(text)
+        except InvalidOperation:
+            text = text.replace(",", "")
+            try:
+                return D(text)
+            except InvalidOperation:
+                return D("0")
+    return D("0")
+
+
+def _format_decimal(value: D) -> str:
+    quantized = value.quantize(D("0.01"), rounding=ROUND_HALF_UP)
+    return f"{quantized:.2f}"
+
+
+def _normalize_tipo(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "0"
+    if text.isdigit():
+        return str(int(text)).zfill(1)
+    try:
+        numeric = int(float(text))
+    except (ValueError, TypeError):
+        return "0"
+    return str(numeric)
+
+
+def _normalize_tipo_doc(value: object) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return "01"
+    if text.isdigit():
+        return f"{int(text):02d}"
+    return text
 
 
 class InventoryManagerError(Exception):
@@ -343,6 +453,442 @@ class InventoryManager:
     def get_Distribuidores(self):
         return self._Distribuidores
 
+    def _build_estado_info(
+        self,
+        payload: Mapping[str, object],
+        json_path: Path,
+        codigo_generacion: str,
+        numero_control: str,
+    ) -> DTEEstadoInfo:
+        info = DTEEstadoInfo()
+        info.anulado = _valor_indica_anulado(payload.get("anulado"))
+
+        for key in ("estadoManual", "estado_manual", "estadoAsignado", "estado_asignado"):
+            if info.manual:
+                break
+            info.set_manual(payload.get(key), "payload")
+
+        meta_paths = [
+            json_path.with_suffix(".meta.json"),
+            json_path.with_suffix(".meta"),
+        ]
+        for meta_path in meta_paths:
+            if info.manual and info.manual_fuente and info.manual_fuente.startswith("meta"):
+                break
+            if not meta_path.exists() or not meta_path.is_file():
+                continue
+            try:
+                meta_content = json.loads(meta_path.read_text("utf-8"))
+            except Exception:
+                continue
+            if not isinstance(meta_content, Mapping):
+                continue
+            info.anulado = info.anulado or _valor_indica_anulado(meta_content.get("anulado"))
+            for key in (
+                "estadoManual",
+                "estado_manual",
+                "estadoAsignado",
+                "estado_asignado",
+            ):
+                if info.manual:
+                    break
+                info.set_manual(meta_content.get(key), f"meta:{meta_path.name}")
+            respuesta_meta = meta_content.get("respuesta")
+            if isinstance(respuesta_meta, Mapping):
+                for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
+                    info.add_automatico(respuesta_meta.get(key), f"meta:{meta_path.name}")
+
+        respuesta = payload.get("respuesta")
+        if isinstance(respuesta, Mapping):
+            for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
+                info.add_automatico(respuesta.get(key), "payload:respuesta")
+
+        for key in ("estado", "status", "estadoEnvio", "descripcionEstado"):
+            info.add_automatico(payload.get(key), f"payload:{key}")
+
+        if payload.get("selloRecibido"):
+            info.add_automatico("Recibido", "payload:selloRecibido")
+
+        db_cursor = getattr(self.db, "cursor", None)
+        ensure_column = getattr(self.db, "ensure_column", None)
+        if db_cursor is not None and callable(getattr(db_cursor, "execute", None)):
+            try:
+                if callable(ensure_column):
+                    ensure_column("dte_envios", "estado_ui", "TEXT")
+                    ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+                    ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+
+                codigo_upper = codigo_generacion.strip().upper()
+                numero_upper = numero_control.strip().upper()
+                row = None
+                if codigo_upper:
+                    row = db_cursor.execute(
+                        """
+                        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+                        FROM dte_envios
+                        WHERE codigo_generacion IS NOT NULL
+                          AND UPPER(codigo_generacion)=?
+                        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                        """,
+                        (codigo_upper,),
+                    ).fetchone()
+                if row is None and numero_upper:
+                    row = db_cursor.execute(
+                        """
+                        SELECT estado_ui, estado_ui_tag, estado_ui_manual
+                        FROM dte_envios
+                        WHERE numero_control IS NOT NULL
+                          AND UPPER(numero_control)=?
+                        ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                        """,
+                        (numero_upper,),
+                    ).fetchone()
+                if row is not None:
+                    try:
+                        estado_ui = row["estado_ui"]
+                    except Exception:
+                        estado_ui = row[0] if isinstance(row, (tuple, list)) and row else None
+                    try:
+                        estado_manual_flag = row["estado_ui_manual"]
+                    except Exception:
+                        estado_manual_flag = (
+                            row[2]
+                            if isinstance(row, (tuple, list)) and len(row) > 2
+                            else None
+                        )
+                    try:
+                        estado_ui_tag = row["estado_ui_tag"]
+                    except Exception:
+                        estado_ui_tag = (
+                            row[1]
+                            if isinstance(row, (tuple, list)) and len(row) > 1
+                            else None
+                        )
+
+                    info.add_automatico(estado_ui, "db:estado_ui")
+                    info.add_automatico(estado_ui_tag, "db:estado_ui_tag")
+
+                    if estado_manual_flag and estado_ui and not info.manual:
+                        info.set_manual(estado_ui, "db")
+            except Exception:
+                pass
+
+        return info
+
+    @staticmethod
+    def _decidir_estado(info: DTEEstadoInfo) -> tuple[bool, str | None, str | None, str | None]:
+        if info.anulado:
+            return False, info.manual, info.manual_fuente, "estado_anulado"
+
+        if info.manual:
+            evaluacion = evaluar_estado(info.manual)
+            if evaluacion is not None:
+                return (
+                    bool(evaluacion),
+                    info.manual,
+                    info.manual_fuente,
+                    None if evaluacion else "estado_manual_no_apto",
+                )
+
+        for estado, fuente in info.automaticos:
+            if estado_apto_para_anexo(estado, info.manual):
+                return True, estado, fuente, None
+            evaluacion = evaluar_estado(estado)
+            if evaluacion is False:
+                return False, estado, fuente, "estado_automatico_no_apto"
+
+        return False, info.manual, info.manual_fuente, "estado_desconocido"
+
+    def get_anexo_contribuyentes_registros(self, periodo: str) -> List[VentaContribuyente]:
+        periodo_text = str(periodo or "").strip()
+        if not _PERIODO_FORMAT.fullmatch(periodo_text):
+            return []
+
+        year = int(periodo_text[:4])
+        month = int(periodo_text[4:])
+
+        registros: list[tuple[datetime, str, VentaContribuyente]] = []
+        seen_codigos: set[str] = set()
+        seen_paths: set[str] = set()
+        stats_fuente_total: Counter[str] = Counter()
+        stats_fuente_aceptados: Counter[str] = Counter()
+        stats_tipo: Counter[str] = Counter()
+        stats_estado_manual: Counter[str] = Counter()
+        stats_estado_auto: Counter[str] = Counter()
+        stats_descartes: Counter[str] = Counter()
+        descartes_samples: defaultdict[str, list[str]] = defaultdict(list)
+
+        def _registrar_descartado(reason: str, codigo: str | None, extra: str | None = None) -> None:
+            stats_descartes[reason] += 1
+            if len(descartes_samples[reason]) >= 5:
+                return
+            codigo_text = codigo or "—"
+            if extra:
+                registro = f"{codigo_text} · {extra}"
+            else:
+                registro = codigo_text
+            descartes_samples[reason].append(registro)
+
+        candidate_dirs = [path for path in _iter_contribuyente_candidate_dirs() if path.exists()]
+        if not candidate_dirs:
+            return []
+
+        tipos_validos = {"03", "05", "06"}
+
+        for base_dir in candidate_dirs:
+            fuente_label = base_dir.name or str(base_dir)
+            for json_path in sorted(base_dir.rglob("*.json")):
+                if any(part.lower() == "copia de seguridad" for part in json_path.parts):
+                    continue
+
+                json_norm = os.path.normpath(str(json_path))
+                if json_norm in seen_paths:
+                    continue
+                seen_paths.add(json_norm)
+
+                try:
+                    with json_path.open("r", encoding="utf-8") as fh:
+                        payload = json.load(fh)
+                except Exception:
+                    continue
+
+                if not isinstance(payload, Mapping):
+                    continue
+
+                dte_payload = payload.get("dteJson") if isinstance(payload, Mapping) else None
+                if not isinstance(dte_payload, Mapping):
+                    dte_payload = payload.get("dte_json") if isinstance(payload, Mapping) else None
+                if not isinstance(dte_payload, Mapping):
+                    dte_payload = payload.get("dte") if isinstance(payload, Mapping) else None
+                if not isinstance(dte_payload, Mapping):
+                    dte_payload = payload
+                if not isinstance(dte_payload, Mapping):
+                    continue
+
+                stats_fuente_total[fuente_label] += 1
+
+                ident_raw = dte_payload.get("identificacion") or dte_payload.get("identificador")
+                if not isinstance(ident_raw, Mapping):
+                    continue
+
+                fecha_dt = _parse_fecha_generica(ident_raw.get("fecEmi"))
+                if not fecha_dt or fecha_dt.year != year or fecha_dt.month != month:
+                    codigo_tmp = str(ident_raw.get("codigoGeneracion") or json_path.name)
+                    _registrar_descartado("periodo_no_coincide", codigo_tmp, str(fecha_dt))
+                    continue
+
+                tipo_doc = _normalize_tipo_doc(ident_raw.get("tipoDte"))
+                if tipo_doc not in tipos_validos:
+                    codigo_tmp = str(ident_raw.get("codigoGeneracion") or json_path.name)
+                    _registrar_descartado("tipo_no_permitido", codigo_tmp, tipo_doc)
+                    continue
+
+                numero_control = str(ident_raw.get("numeroControl") or "").strip()
+                if not numero_control:
+                    _registrar_descartado("numero_control_faltante", json_path.name)
+                    continue
+
+                codigo_generacion = str(ident_raw.get("codigoGeneracion") or "").strip()
+                if not codigo_generacion:
+                    _registrar_descartado("codigo_generacion_faltante", json_path.name)
+                    continue
+                if codigo_generacion in seen_codigos:
+                    _registrar_descartado("codigo_generacion_duplicado", codigo_generacion)
+                    continue
+
+                sello_recibido = (
+                    str(
+                        payload.get("selloRecibido")
+                        or payload.get("selloRecepcion")
+                        or dte_payload.get("selloRecibido")
+                        or ""
+                    )
+                    .strip()
+                    .upper()
+                )
+
+                estado_info = self._build_estado_info(
+                    payload,
+                    json_path,
+                    codigo_generacion,
+                    numero_control,
+                )
+
+                aceptado, estado_usado, estado_fuente, motivo_rechazo = self._decidir_estado(
+                    estado_info
+                )
+                if not aceptado:
+                    _registrar_descartado(
+                        motivo_rechazo or "estado_no_apto",
+                        codigo_generacion,
+                        estado_usado,
+                    )
+                    continue
+
+                resumen = dte_payload.get("resumen")
+                if not isinstance(resumen, Mapping):
+                    resumen = {}
+
+                ventas_exentas = _to_decimal(resumen.get("totalExenta"))
+                ventas_no_sujetas = _to_decimal(resumen.get("totalNoSuj"))
+                ventas_gravadas = _to_decimal(resumen.get("totalGravada"))
+                ventas_terceros = _to_decimal(resumen.get("totalTercerosNoDomiciliados"))
+                debito_terceros = _to_decimal(resumen.get("totalIvaTerceros"))
+
+                debito_fiscal = _to_decimal(resumen.get("totalIva"))
+                if debito_fiscal == D("0"):
+                    tributos = resumen.get("tributos")
+                    if isinstance(tributos, list):
+                        for tributo in tributos:
+                            if not isinstance(tributo, Mapping):
+                                continue
+                            codigo_tributo = str(tributo.get("codigo") or "").strip()
+                            if codigo_tributo and codigo_tributo not in {"", "0"}:
+                                debito_fiscal += _to_decimal(tributo.get("valor"))
+
+                total_componentes = (
+                    ventas_exentas
+                    + ventas_no_sujetas
+                    + ventas_gravadas
+                    + ventas_terceros
+                    + debito_terceros
+                    + debito_fiscal
+                )
+
+                total_operacion = _to_decimal(
+                    resumen.get("totalPagar")
+                    or resumen.get("montoTotalOperacion")
+                    or resumen.get("totalVentas")
+                )
+                if total_operacion == D("0"):
+                    total_operacion = total_componentes
+                if total_operacion != total_componentes:
+                    diferencia = total_operacion - total_componentes
+                    ventas_gravadas += diferencia
+                    total_componentes = (
+                        ventas_exentas
+                        + ventas_no_sujetas
+                        + ventas_gravadas
+                        + ventas_terceros
+                        + debito_terceros
+                        + debito_fiscal
+                    )
+
+                receptor = dte_payload.get("receptor")
+                identificacion_cliente = ""
+                dui_cliente = ""
+                nombre_cliente = ""
+                if isinstance(receptor, Mapping):
+                    nombre_cliente = str(
+                        receptor.get("nombre")
+                        or receptor.get("nombreComercial")
+                        or ""
+                    ).strip()
+                    nit = _norm_text(receptor.get("nit"))
+                    nrc = _norm_text(receptor.get("nrc"))
+                    num_doc = _norm_text(receptor.get("numDocumento"))
+                    tipo_doc_receptor = str(receptor.get("tipoDocumento") or "").strip()
+
+                    if nit:
+                        identificacion_cliente = re.sub(r"\D", "", nit)
+                    elif nrc:
+                        identificacion_cliente = re.sub(r"\D", "", nrc)
+                    elif num_doc and tipo_doc_receptor not in {"03", "13"}:
+                        identificacion_cliente = re.sub(r"\D", "", num_doc)
+
+                    if tipo_doc_receptor in {"03", "13"}:
+                        dui_cliente = re.sub(r"\D", "", num_doc or "")
+                    elif num_doc and len(re.sub(r"\D", "", num_doc)) == 9 and not identificacion_cliente:
+                        dui_cliente = re.sub(r"\D", "", num_doc)
+
+                if dui_cliente:
+                    identificacion_cliente = ""
+
+                registro = VentaContribuyente(
+                    fecha_emision=fecha_dt.strftime("%d/%m/%Y"),
+                    clase="4",
+                    tipo=tipo_doc,
+                    numero_control=numero_control,
+                    codigo_generacion=codigo_generacion,
+                    sello_recepcion=sello_recibido or None,
+                    identificacion=identificacion_cliente or None,
+                    nombre_cliente=nombre_cliente,
+                    ventas_exentas=_format_decimal(ventas_exentas),
+                    ventas_no_sujetas=_format_decimal(ventas_no_sujetas),
+                    ventas_gravadas_locales=_format_decimal(ventas_gravadas),
+                    debito_fiscal=_format_decimal(debito_fiscal),
+                    ventas_terceros_no_domiciliados=_format_decimal(ventas_terceros),
+                    debito_terceros=_format_decimal(debito_terceros),
+                    total_ventas=_format_decimal(total_componentes),
+                    dui=dui_cliente or None,
+                    tipo_operacion=_normalize_tipo(ident_raw.get("tipoOperacion")),
+                    tipo_ingreso=_normalize_tipo(resumen.get("tipoIngreso")),
+                )
+
+                registro.json_path = str(json_path)
+                registro.estado = estado_usado
+                if estado_info.manual:
+                    registro.estado_manual = estado_info.manual
+                if estado_fuente:
+                    registro.estado_fuente = estado_fuente
+                elif estado_info.manual_fuente:
+                    registro.estado_fuente = estado_info.manual_fuente
+
+                if estado_info.manual:
+                    stats_estado_manual[estado_info.manual] += 1
+                if estado_usado and estado_usado != estado_info.manual:
+                    stats_estado_auto[estado_usado] += 1
+
+                stats_fuente_aceptados[fuente_label] += 1
+                stats_tipo[tipo_doc] += 1
+
+                seen_codigos.add(codigo_generacion)
+                registros.append((fecha_dt, numero_control, registro))
+
+        if stats_fuente_total:
+            logger.info(
+                "Anexo I · fuentes escaneadas: %s",
+                {k: stats_fuente_total[k] for k in sorted(stats_fuente_total)},
+            )
+        if stats_fuente_aceptados:
+            logger.info(
+                "Anexo I · fuentes admitidas: %s",
+                {k: stats_fuente_aceptados[k] for k in sorted(stats_fuente_aceptados)},
+            )
+        if stats_tipo:
+            logger.info(
+                "Anexo I · tipos incluidos: %s",
+                {k: stats_tipo[k] for k in sorted(stats_tipo)},
+            )
+        if stats_estado_manual:
+            logger.info(
+                "Anexo I · estados manuales detectados: %s",
+                {k: stats_estado_manual[k] for k in sorted(stats_estado_manual)},
+            )
+        if stats_estado_auto:
+            logger.info(
+                "Anexo I · estados automáticos utilizados: %s",
+                {k: stats_estado_auto[k] for k in sorted(stats_estado_auto)},
+            )
+        if stats_descartes:
+            logger.info(
+                "Anexo I · descartes: %s",
+                {motivo: stats_descartes[motivo] for motivo in sorted(stats_descartes)},
+            )
+            logger.debug(
+                "Anexo I · descartes detalle: %s",
+                {
+                    motivo: {
+                        "count": stats_descartes[motivo],
+                        "samples": descartes_samples[motivo],
+                    }
+                    for motivo in sorted(stats_descartes)
+                },
+            )
+
+        registros.sort(key=lambda item: (item[0], item[1]))
+        return [item[2] for item in registros]
+
     def get_anexo_xix_registros(self, periodo: str) -> List[DTEAnulado]:
         periodo_text = str(periodo or "").strip()
         if not _PERIODO_FORMAT.fullmatch(periodo_text):
@@ -424,7 +970,32 @@ class InventoryManager:
                 except Exception:
                     metadata = None
 
-            if not _metadata_estado_aceptado(metadata):
+            estado_manual_meta: str | None = None
+            estado_auto_meta: str | None = None
+            if isinstance(metadata, Mapping):
+                for key in ("estadoManual", "estado_manual", "estadoAsignado", "estado_asignado"):
+                    valor = metadata.get(key)
+                    if isinstance(valor, str) and valor.strip():
+                        estado_manual_meta = valor.strip()
+                        break
+                respuesta_meta = metadata.get("respuesta")
+                if isinstance(respuesta_meta, Mapping):
+                    for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
+                        valor = respuesta_meta.get(key)
+                        if isinstance(valor, str) and valor.strip():
+                            estado_auto_meta = valor.strip()
+                            break
+
+            if not estado_auto_meta and sello_recibido:
+                estado_auto_meta = "Recibido"
+
+            if not estado_apto_para_anexo(estado_auto_meta, estado_manual_meta):
+                logger.debug(
+                    "Anexo XIX · descartado por estado: %s · manual=%s · automatico=%s",
+                    codigo_dte,
+                    estado_manual_meta,
+                    estado_auto_meta,
+                )
                 continue
 
             key = (numero_control, codigo_dte)
@@ -450,246 +1021,36 @@ class InventoryManager:
         year = int(periodo_text[:4])
         month = int(periodo_text[4:])
 
-        def _parse_fecha(value: object) -> datetime | None:
-            if value is None:
-                return None
-            text = str(value).strip()
-            if not text:
-                return None
-            for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y%m%d"):
-                try:
-                    parsed = datetime.strptime(text[:10], fmt)
-                except ValueError:
-                    continue
-                return parsed
-            return None
-
-        def _to_decimal(value: object) -> D:
-            if value in (None, "", "null"):
-                return D("0")
-            if isinstance(value, D):
-                return value
-            if isinstance(value, (int, float)):
-                return D(str(value))
-            if isinstance(value, str):
-                text = value.strip()
-                if not text:
-                    return D("0")
-                try:
-                    return D(text)
-                except InvalidOperation:
-                    text = text.replace(",", "")
-                    try:
-                        return D(text)
-                    except InvalidOperation:
-                        return D("0")
-            return D("0")
-
-        def _format_decimal(value: D) -> str:
-            quantized = value.quantize(D("0.01"), rounding=ROUND_HALF_UP)
-            return f"{quantized:.2f}"
-
-        def _normalize_tipo(value: object) -> str:
-            text = str(value or "").strip()
-            if not text:
-                return "0"
-            if text.isdigit():
-                return str(int(text)).zfill(1)
-            try:
-                numeric = int(float(text))
-            except (ValueError, TypeError):
-                return "0"
-            return str(numeric)
-
-        def _normalize_tipo_doc(value: object) -> str:
-            text = str(value or "").strip()
-            if not text:
-                return "01"
-            if text.isdigit():
-                return f"{int(text):02d}"
-            return text
-
-        def _extract_estado_manual(
-            payload: Mapping[str, object],
-            json_path: Path,
-            codigo_generacion: str,
-            numero_control: str,
-        ) -> tuple[str | None, str | None, str | None, bool]:
-            """Obtiene estado manual y automático para priorizar inclusión y despliegue."""
-
-            def _norm_text(value: object) -> str | None:
-                if isinstance(value, str):
-                    text = value.strip()
-                    return text or None
-                return None
-
-            estado_manual: str | None = None
-            estado_manual_fuente: str | None = None
-            anulado_flag = _valor_indica_anulado(payload.get("anulado"))
-
-            def _mark_anulado(value: object) -> None:
-                nonlocal anulado_flag
-                if not anulado_flag and _valor_indica_anulado(value):
-                    anulado_flag = True
-
-            for key in ("estadoManual", "estado_manual", "estadoAsignado", "estado_asignado"):
-                candidato = _norm_text(payload.get(key))
-                if candidato:
-                    estado_manual = candidato
-                    estado_manual_fuente = "payload"
-                    _mark_anulado(candidato)
-                    break
-
-            meta_paths = [
-                json_path.with_suffix(".meta.json"),
-                json_path.with_suffix(".meta"),
-            ]
-            for meta_path in meta_paths:
-                if not meta_path.exists() or not meta_path.is_file():
-                    continue
-                try:
-                    meta_content = json.loads(meta_path.read_text("utf-8"))
-                except Exception:
-                    continue
-                if isinstance(meta_content, Mapping):
-                    _mark_anulado(meta_content.get("anulado"))
-                    for key in (
-                        "estadoManual",
-                        "estado_manual",
-                        "estadoAsignado",
-                        "estado_asignado",
-                    ):
-                        candidato = _norm_text(meta_content.get(key))
-                        if candidato:
-                            estado_manual = candidato
-                            estado_manual_fuente = f"meta:{meta_path.name}"
-                            _mark_anulado(candidato)
-                            break
-                if estado_manual:
-                    break
-
-            estado_detectado: str | None = None
-            db_cursor = getattr(self.db, "cursor", None)
-            ensure_column = getattr(self.db, "ensure_column", None)
-            if db_cursor is not None and callable(getattr(db_cursor, "execute", None)):
-                try:
-                    if callable(ensure_column):
-                        ensure_column("dte_envios", "estado_ui", "TEXT")
-                        ensure_column("dte_envios", "estado_ui_tag", "TEXT")
-                        ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
-
-                    codigo_upper = codigo_generacion.strip().upper()
-                    numero_upper = numero_control.strip().upper()
-                    row = None
-                    if codigo_upper:
-                        row = db_cursor.execute(
-                            """
-                            SELECT estado_ui, estado_ui_tag, estado_ui_manual
-                            FROM dte_envios
-                            WHERE codigo_generacion IS NOT NULL
-                              AND UPPER(codigo_generacion)=?
-                            ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
-                            """,
-                            (codigo_upper,),
-                        ).fetchone()
-                    if row is None and numero_upper:
-                        row = db_cursor.execute(
-                            """
-                            SELECT estado_ui, estado_ui_tag, estado_ui_manual
-                            FROM dte_envios
-                            WHERE numero_control IS NOT NULL
-                              AND UPPER(numero_control)=?
-                            ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
-                            """,
-                            (numero_upper,),
-                        ).fetchone()
-                    if row is not None:
-                        try:
-                            estado_ui = row["estado_ui"]
-                        except Exception:
-                            estado_ui = row[0] if isinstance(row, (tuple, list)) and row else None
-                        _mark_anulado(estado_ui)
-                        try:
-                            estado_manual_flag = row["estado_ui_manual"]
-                        except Exception:
-                            estado_manual_flag = (
-                                row[2]
-                                if isinstance(row, (tuple, list)) and len(row) > 2
-                                else None
-                            )
-                        try:
-                            estado_ui_tag = row["estado_ui_tag"]
-                        except Exception:
-                            estado_ui_tag = (
-                                row[1]
-                                if isinstance(row, (tuple, list)) and len(row) > 1
-                                else None
-                            )
-                        _mark_anulado(estado_ui_tag)
-                        estado_detectado = _norm_text(estado_ui) or estado_detectado
-                        if estado_manual_flag and estado_ui and not estado_manual:
-                            estado_manual = estado_ui
-                            estado_manual_fuente = "db"
-                            _mark_anulado(estado_manual)
-                except Exception:
-                    pass
-
-            return estado_manual, estado_detectado, estado_manual_fuente, anulado_flag
-
-        def _accepted_payload(
-            payload: Mapping[str, object],
-            estado_manual: str | None = None,
-            estados_extra: Iterable[str | None] = (),
-        ) -> bool:
-            if _valor_indica_anulado(estado_manual) or _valor_indica_anulado(payload.get("anulado")):
-                return False
-
-            manual_text = ""
-            if estado_manual is not None:
-                manual_text = str(estado_manual).strip()
-                if manual_text:
-                    if _estado_indica_aceptado(manual_text):
-                        return True
-                    return False
-
-            if _metadata_estado_aceptado(payload):
-                return True
-
-            estados_a_validar: list[str] = []
-
-            respuesta = payload.get("respuesta")
-            if isinstance(respuesta, Mapping):
-                for key in ("estado", "estadoEvento", "descripcionEstado", "estadoEnvio"):
-                    valor = respuesta.get(key)
-                    if isinstance(valor, str) and valor.strip():
-                        estados_a_validar.append(valor)
-
-            for key in ("estado", "status", "estadoEnvio"):
-                valor = payload.get(key)
-                if isinstance(valor, str) and valor.strip():
-                    estados_a_validar.append(valor)
-
-            for extra in estados_extra:
-                if isinstance(extra, str) and extra.strip():
-                    estados_a_validar.append(extra)
-
-            for estado in estados_a_validar:
-                if _valor_indica_anulado(estado):
-                    return False
-                if _estado_apto_para_anexo(estado, None):
-                    return True
-
-            return False
-
         registros: list[tuple[datetime, str, VentaCF]] = []
         seen_codigos: set[str] = set()
         seen_paths: set[str] = set()
+        stats_fuente_total: Counter[str] = Counter()
+        stats_fuente_aceptados: Counter[str] = Counter()
+        stats_tipo: Counter[str] = Counter()
+        stats_estado_manual: Counter[str] = Counter()
+        stats_estado_auto: Counter[str] = Counter()
+        stats_descartes: Counter[str] = Counter()
+        descartes_samples: defaultdict[str, list[str]] = defaultdict(list)
+
+        def _registrar_descartado(reason: str, codigo: str | None, extra: str | None = None) -> None:
+            stats_descartes[reason] += 1
+            if len(descartes_samples[reason]) >= 5:
+                return
+            codigo_text = codigo or "—"
+            if extra:
+                registro = f"{codigo_text} · {extra}"
+            else:
+                registro = codigo_text
+            descartes_samples[reason].append(registro)
 
         candidate_dirs = [path for path in _iter_cf_candidate_dirs() if path.exists()]
         if not candidate_dirs:
             return []
 
+        tipos_cf_validos = {"01", "02", "10", "11"}
+
         for base_dir in candidate_dirs:
+            fuente_label = base_dir.name or str(base_dir)
             for json_path in sorted(base_dir.rglob("*.json")):
                 if any(part.lower() == "copia de seguridad" for part in json_path.parts):
                     continue
@@ -718,44 +1079,50 @@ class InventoryManager:
                 if not isinstance(dte_payload, Mapping):
                     continue
 
+                stats_fuente_total[fuente_label] += 1
+
                 ident_raw = dte_payload.get("identificacion") or dte_payload.get("identificador")
                 if not isinstance(ident_raw, Mapping):
                     continue
 
-                fecha_dt = _parse_fecha(ident_raw.get("fecEmi"))
+                fecha_dt = _parse_fecha_generica(ident_raw.get("fecEmi"))
                 if not fecha_dt or fecha_dt.year != year or fecha_dt.month != month:
+                    codigo_tmp = str(ident_raw.get("codigoGeneracion") or json_path.name)
+                    _registrar_descartado("periodo_no_coincide", codigo_tmp, str(fecha_dt))
                     continue
 
                 tipo_doc = _normalize_tipo_doc(ident_raw.get("tipoDte"))
-                if tipo_doc not in {"01", "02", "03", "05", "06", "10", "11"}:
+                if tipo_doc not in tipos_cf_validos:
+                    codigo_tmp = str(ident_raw.get("codigoGeneracion") or json_path.name)
+                    _registrar_descartado("tipo_no_permitido", codigo_tmp, tipo_doc)
                     continue
 
                 numero_control = str(ident_raw.get("numeroControl") or "").strip()
 
                 codigo_generacion = str(ident_raw.get("codigoGeneracion") or "").strip()
                 if not codigo_generacion:
+                    _registrar_descartado("codigo_generacion_faltante", json_path.name)
                     continue
                 if codigo_generacion in seen_codigos:
+                    _registrar_descartado("codigo_generacion_duplicado", codigo_generacion)
                     continue
 
-                (
-                    estado_manual,
-                    estado_detectado_db,
-                    estado_manual_fuente,
-                    anulado_flag,
-                ) = _extract_estado_manual(
+                estado_info = self._build_estado_info(
                     payload,
                     json_path,
                     codigo_generacion,
                     numero_control,
                 )
 
-                if anulado_flag:
-                    continue
-
-                if not _accepted_payload(
-                    payload, estado_manual, (estado_detectado_db,)
-                ):
+                aceptado, estado_usado, estado_fuente, motivo_rechazo = self._decidir_estado(
+                    estado_info
+                )
+                if not aceptado:
+                    _registrar_descartado(
+                        motivo_rechazo or "estado_no_apto",
+                        codigo_generacion,
+                        estado_usado,
+                    )
                     continue
 
                 resumen = dte_payload.get("resumen")
@@ -843,30 +1210,66 @@ class InventoryManager:
                 registro.numero_control = numero_control
                 registro.codigo_generacion = codigo_generacion
                 registro.json_path = str(json_path)
-                estado_detalle = estado_manual or None
-                if not estado_detalle:
-                    respuesta = payload.get("respuesta")
-                    if isinstance(respuesta, Mapping):
-                        for key in ("estado", "estadoEvento", "descripcionEstado"):
-                            valor = respuesta.get(key)
-                            if isinstance(valor, str) and valor.strip():
-                                estado_detalle = valor.strip()
-                                break
-                    if not estado_detalle:
-                        estado = payload.get("estado") or payload.get("status")
-                        if isinstance(estado, str) and estado.strip():
-                            estado_detalle = estado.strip()
-                if not estado_detalle and estado_detectado_db:
-                    estado_detalle = estado_detectado_db
-                if isinstance(estado_detalle, str):
-                    registro.estado = estado_detalle
-                if estado_manual:
-                    registro.estado_manual = estado_manual
-                if estado_manual_fuente:
-                    registro.estado_fuente = estado_manual_fuente
+                if estado_info.manual:
+                    registro.estado_manual = estado_info.manual
+                if estado_usado:
+                    registro.estado = estado_usado
+                if estado_fuente:
+                    registro.estado_fuente = estado_fuente
+                elif estado_info.manual_fuente:
+                    registro.estado_fuente = estado_info.manual_fuente
+
+                if estado_info.manual:
+                    stats_estado_manual[estado_info.manual] += 1
+                if estado_usado and estado_usado != estado_info.manual:
+                    stats_estado_auto[estado_usado] += 1
+
+                stats_fuente_aceptados[fuente_label] += 1
+                stats_tipo[tipo_doc] += 1
 
                 seen_codigos.add(codigo_generacion)
                 registros.append((orden_dt, numero_control, registro))
+
+        if stats_fuente_total:
+            logger.info(
+                "Anexo II · fuentes escaneadas: %s",
+                {k: stats_fuente_total[k] for k in sorted(stats_fuente_total)},
+            )
+        if stats_fuente_aceptados:
+            logger.info(
+                "Anexo II · fuentes admitidas: %s",
+                {k: stats_fuente_aceptados[k] for k in sorted(stats_fuente_aceptados)},
+            )
+        if stats_tipo:
+            logger.info(
+                "Anexo II · tipos incluidos: %s",
+                {k: stats_tipo[k] for k in sorted(stats_tipo)},
+            )
+        if stats_estado_manual:
+            logger.info(
+                "Anexo II · estados manuales detectados: %s",
+                {k: stats_estado_manual[k] for k in sorted(stats_estado_manual)},
+            )
+        if stats_estado_auto:
+            logger.info(
+                "Anexo II · estados automáticos utilizados: %s",
+                {k: stats_estado_auto[k] for k in sorted(stats_estado_auto)},
+            )
+        if stats_descartes:
+            logger.info(
+                "Anexo II · descartes: %s",
+                {motivo: stats_descartes[motivo] for motivo in sorted(stats_descartes)},
+            )
+            logger.debug(
+                "Anexo II · descartes detalle: %s",
+                {
+                    motivo: {
+                        "count": stats_descartes[motivo],
+                        "samples": descartes_samples[motivo],
+                    }
+                    for motivo in sorted(stats_descartes)
+                },
+            )
 
         registros.sort(key=lambda item: (item[0], item[1]))
         return [item[2] for item in registros]

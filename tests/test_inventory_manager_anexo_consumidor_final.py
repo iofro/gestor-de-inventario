@@ -445,9 +445,6 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
         "D1D1D1D1-AAAA-BBBB-CCCC-111122223333",
         "E1E1E1E1-AAAA-BBBB-CCCC-777788889999",
         "F1F1F1F1-AAAA-BBBB-CCCC-000011112222",
-        "G1G1G1G1-AAAA-BBBB-CCCC-333344445555",
-        "H1H1H1H1-AAAA-BBBB-CCCC-555566667777",
-        "I1I1I1I1-AAAA-BBBB-CCCC-999900001111",
     ]
 
     registros_map = {registro.numero_doc_del: registro for registro in registros_octubre}
@@ -501,20 +498,9 @@ def test_get_anexo_consumidor_final_registros_reads_json(monkeypatch, tmp_path, 
     assert getattr(registro_manual_db, "estado", None) == "Aceptado"
     assert Path(registro_manual_db.json_path) == db_manual_json
 
-    registro_credito = registros_map["G1G1G1G1-AAAA-BBBB-CCCC-333344445555"]
-    assert registro_credito.tipo == "03"
-    assert registro_credito.total_ventas == "18.00"
-    assert Path(registro_credito.json_path) == credito_json
-
-    registro_nota_debito = registros_map["H1H1H1H1-AAAA-BBBB-CCCC-555566667777"]
-    assert registro_nota_debito.tipo == "05"
-    assert registro_nota_debito.total_ventas == "9.50"
-    assert Path(registro_nota_debito.json_path) == nota_debito_json
-
-    registro_nota_credito = registros_map["I1I1I1I1-AAAA-BBBB-CCCC-999900001111"]
-    assert registro_nota_credito.tipo == "06"
-    assert registro_nota_credito.total_ventas == "-4.00"
-    assert Path(registro_nota_credito.json_path) == nota_credito_json
+    assert "G1G1G1G1-AAAA-BBBB-CCCC-333344445555" not in registros_map
+    assert "H1H1H1H1-AAAA-BBBB-CCCC-555566667777" not in registros_map
+    assert "I1I1I1I1-AAAA-BBBB-CCCC-999900001111" not in registros_map
 
     registros_septiembre = manager.get_anexo_consumidor_final_registros("202509")
     assert len(registros_septiembre) == 1

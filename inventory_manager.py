@@ -822,6 +822,8 @@ class InventoryManager:
                     c.get("codigo"),
                     codActividad=c.get("codActividad"),
                     nombreComercial=c.get("nombreComercial"),
+                    tipoContribuyente=c.get("tipoContribuyente"),
+                    razonSocial=c.get("razonSocial"),
                     commit=False,
                 )
                 self.db.cursor.execute(
@@ -1476,6 +1478,8 @@ class InventoryManager:
         municipio,
         codigo=None,
         nombreComercial=None,
+        tipoContribuyente=None,
+        razonSocial=None,
     ):
         """Add a new client and refresh the cached lists."""
 
@@ -1493,6 +1497,8 @@ class InventoryManager:
             codigo=codigo,
             codActividad=codActividad,
             nombreComercial=nombreComercial,
+            tipoContribuyente=tipoContribuyente,
+            razonSocial=razonSocial,
         )
         self.refresh_data()
 
@@ -1512,6 +1518,8 @@ class InventoryManager:
         municipio,
         codActividad=None,
         nombreComercial=None,
+        tipoContribuyente=None,
+        razonSocial=None,
     ):
         """Update an existing client and refresh the cached lists."""
 
@@ -1530,6 +1538,8 @@ class InventoryManager:
             municipio,
             codActividad=codActividad,
             nombreComercial=nombreComercial,
+            tipoContribuyente=tipoContribuyente,
+            razonSocial=razonSocial,
         )
         self.refresh_data()
 

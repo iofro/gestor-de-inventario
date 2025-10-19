@@ -38,7 +38,7 @@ import logging
 import glob
 import hashlib
 from pathlib import Path
-from typing import Any, List, Mapping
+from typing import Any, List, Mapping, Tuple
 from copy import deepcopy
 from pprint import pformat
 from collections import Counter
@@ -53,10 +53,10 @@ from factura_sv import (
 from dte import (
     transmitir_dte,
     enviar_nota_remision,
+    generar_nota_credito_json,
+    generar_nota_debito_json,
 )
-from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
-import nota_credito_electronica
 from utils.docs import (
     get_document_paths,
     get_dte_document_paths,
@@ -6742,50 +6742,78 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
-        detalles_pdf = []
-        for det in detalles_nota or []:
-            src = detalle_map.get(det.get("detalle_id"))
-            if not src:
-                continue
-            if det.get("ajusteCantidad"):
-                detalle = {
-                    "cantidad": det.get("cantidad", 0),
-                    "descripcion": src.get("descripcion", ""),
-                    "precio_unitario": det.get("precio_unitario", 0),
-                    "iva": det.get("iva", 0),
-                    "ventas_gravadas": det.get("ventas_gravadas", 0),
-                    "ventas_exentas": det.get("ventas_exentas", 0),
-                    "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
-                }
-            else:
-                detalle = {
-                    "cantidad": 1,
-                    "descripcion": src.get("descripcion", ""),
-                    "precio_unitario": det.get("precio_unitario", 0),
-                    "iva": det.get("iva", 0),
-                    "ventas_gravadas": det.get("ventas_gravadas", 0),
-                    "ventas_exentas": det.get("ventas_exentas", 0),
-                    "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
-                }
-            detalles_pdf.append(detalle)
+        try:
+            cfg = dte._load_dte_api_config()
+        except Exception:
+            cfg = {}
+        ambiente_cfg = str((cfg or {}).get("ambiente") or "").strip().lower()
+        ambiente = "01" if ambiente_cfg == "produccion" else "00"
 
         if tipo == "credito":
-            ratio = None
-            if not detalles_pdf:
-                ratio = Decimal(str(monto / total_original))
-            nota_json = nota_credito_electronica.generar_nce_desde_dte(
-                self.manager.db,
-                data,
-                ratio,
-                detalles=detalles_pdf or None,
-                motivo=motivo,
+            nota_json = generar_nota_credito_json(
+                self.manager.db, nota_id, ambiente=ambiente
             )
         elif tipo == "debito":
-            nota_json = generar_nde_desde_dte(
-                self.manager.db, data, detalles_pdf or None, monto, motivo
+            nota_json = generar_nota_debito_json(
+                self.manager.db, nota_id, ambiente=ambiente
             )
         else:
             nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+
+        def _to_float(value: object) -> float:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, Decimal):
+                return float(value)
+            if value in (None, ""):
+                return 0.0
+            try:
+                return float(Decimal(str(value)))
+            except Exception:
+                return 0.0
+
+        def _has_iva(tributos_item: object) -> Tuple[bool, float]:
+            if not tributos_item:
+                return False, 0.0
+            iva_val = 0.0
+            for entry in tributos_item:
+                if isinstance(entry, dict):
+                    codigo = entry.get("codigo")
+                    if str(codigo) == TRIBUTO_IVA:
+                        if entry.get("valor") is not None:
+                            iva_val = _to_float(entry.get("valor"))
+                        return True, iva_val
+                else:
+                    if str(entry) == TRIBUTO_IVA:
+                        return True, iva_val
+            return False, iva_val
+
+        detalles_pdf = []
+        for d in nota_json.get("cuerpoDocumento", []) or []:
+            tributos = d.get("tributos") or []
+            incluye_iva, iva_val = _has_iva(tributos)
+            if incluye_iva and iva_val == 0.0:
+                venta_gravada = Decimal(str(d.get("ventaGravada", 0) or 0))
+                iva_val = float(iva_item(venta_gravada))
+            detalles_pdf.append(
+                {
+                    "cantidad": _to_float(d.get("cantidad", 0)),
+                    "descripcion": d.get("descripcion", ""),
+                    "precio_unitario": _to_float(
+                        d.get("precioUni", d.get("precio_unitario", 0))
+                    ),
+                    "iva": iva_val,
+                    "ventas_gravadas": _to_float(
+                        d.get("ventaGravada", d.get("ventas_gravadas", 0))
+                    ),
+                    "ventas_exentas": _to_float(
+                        d.get("ventaExenta", d.get("ventas_exentas", 0))
+                    ),
+                    "ventas_no_sujetas": _to_float(
+                        d.get("ventaNoSuj", d.get("ventas_no_sujetas", 0))
+                    ),
+                }
+            )
 
         resumen_nota = nota_json.get("resumen", {})
         tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}

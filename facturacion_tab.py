@@ -6248,7 +6248,7 @@ class FacturacionTab(QWidget):
             self.crear_nota_remision_desde_factura()
 
     def _guardar_archivos_nota_remision(
-        self, nota_json, nota_id=None, transmitir=False
+        self, nota_json, nota_id=None, transmitir=False, venta_id=None
     ):
         resumen_nota = nota_json.get("resumen", {})
         tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}
@@ -6292,6 +6292,14 @@ class FacturacionTab(QWidget):
             codigo_generacion=nota_json["identificacion"].get("codigoGeneracion"),
             numero_control=nota_json["identificacion"].get("numeroControl"),
         )
+        db = getattr(getattr(self, "manager", None), "db", None)
+        if db is not None:
+            try:
+                db.add_factura_pdf(venta_id, "Nota de remisión", str(pdf_path))
+            except Exception:
+                logger.exception(
+                    "No se pudo registrar la nota de remisión en facturas_pdf"
+                )
         token = None
         try:
             _, token = sign_and_save(nota_json, str(json_path), return_token=True)
@@ -6347,8 +6355,16 @@ class FacturacionTab(QWidget):
             "remision", venta_id, fecha, 0, "Remision", detalles=extra
         )
         nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
-        self._guardar_archivos_nota_remision(nota_json)
-        QMessageBox.information(self, "Nota", "Nota de remisión generada correctamente")
+        self._guardar_archivos_nota_remision(
+            nota_json, nota_id=nota_id, venta_id=venta_id
+        )
+        QMessageBox.information(
+            self, "Nota", "Nota de remisión generada correctamente"
+        )
+        try:
+            self.load_invoices()
+        except Exception:
+            logger.exception("No se pudo actualizar la tabla de facturación")
 
 
     def _resolve_modo_transmision(self) -> str:

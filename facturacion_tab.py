@@ -6413,23 +6413,65 @@ class FacturacionTab(QWidget):
         if sello:
             data["selloRecibido"] = sello
 
+        def _safe_float(value) -> float:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, Decimal):
+                return float(value)
+            if value is None:
+                return 0.0
+            try:
+                text = str(value).strip()
+                if not text:
+                    return 0.0
+                return float(text)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _safe_decimal(value) -> Decimal:
+            if isinstance(value, Decimal):
+                return value
+            if isinstance(value, (int, float)):
+                return Decimal(str(value))
+            if value is None:
+                return Decimal("0")
+            try:
+                text = str(value).strip()
+                if not text:
+                    return Decimal("0")
+                return Decimal(text)
+            except (ArithmeticError, ValueError, InvalidOperation):
+                return Decimal("0")
+
         detalles_venta = []
         for d in data.get("cuerpoDocumento", []) or []:
+            venta_gravada = _safe_decimal(d.get("ventaGravada"))
+            venta_exenta = _safe_decimal(d.get("ventaExenta"))
+            venta_no_suj = _safe_decimal(d.get("ventaNoSuj"))
+            descuento = _safe_decimal(d.get("montoDescu"))
+            cantidad = _safe_float(d.get("cantidad"))
+            precio_unitario = _safe_float(d.get("precioUni"))
+
+            if TRIBUTO_IVA in (d.get("tributos") or []):
+                precio_unitario_iva = iva_item(venta_gravada)
+            else:
+                precio_unitario_iva = Decimal("0")
+
             detalles_venta.append(
                 {
                     "id": d.get("numItem"),
                     "producto_id": d.get("codigo"),
                     "descripcion": d.get("descripcion", ""),
-                    "cantidad": float(d.get("cantidad", 0)),
-                    "precio_unitario": float(d.get("precioUni", 0)),
-                    "descuento": float(d.get("montoDescu", 0)),
+                    "cantidad": cantidad,
+                    "precio_unitario": precio_unitario,
+                    "descuento": float(descuento),
                     "descuento_tipo": "$",
-                    "ventas_gravadas": float(d.get("ventaGravada", 0)),
-                    "ventas_exentas": float(d.get("ventaExenta", 0)),
-                    "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
-                    "precio_unitario_iva": iva_item(Decimal(str(d.get("ventaGravada", 0)))) if TRIBUTO_IVA in (d.get("tributos") or []) else Decimal("0"),
-                    "descuento_iva": Decimal(str(d.get("montoDescu", 0))),
-                    "total_linea": Decimal(str(d.get("ventaGravada", 0))),
+                    "ventas_gravadas": float(venta_gravada),
+                    "ventas_exentas": float(venta_exenta),
+                    "ventas_no_sujetas": float(venta_no_suj),
+                    "precio_unitario_iva": precio_unitario_iva,
+                    "descuento_iva": descuento,
+                    "total_linea": venta_gravada,
                     "uniMedida": d.get("uniMedida"),
                     "tipoItem": d.get("tipoItem"),
                 }

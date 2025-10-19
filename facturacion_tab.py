@@ -38,7 +38,8 @@ import logging
 import glob
 import hashlib
 from pathlib import Path
-from typing import Any, List, Mapping
+from typing import Any, List, Mapping, Tuple
+from copy import deepcopy
 from pprint import pformat
 from collections import Counter
 
@@ -52,10 +53,12 @@ from factura_sv import (
 from dte import (
     transmitir_dte,
     enviar_nota_remision,
+    generar_nota_credito_json,
+    generar_nota_debito_json,
 )
+import nota_credito_electronica
 from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
-import nota_credito_electronica
 from utils.docs import (
     get_document_paths,
     get_dte_document_paths,
@@ -6381,6 +6384,26 @@ class FacturacionTab(QWidget):
             QMessageBox.warning(self, "Nota", "No se pudo leer la factura")
             return
 
+        snapshot_payload = None
+        if venta_id:
+            try:
+                snapshot = self.manager.db.get_snapshot_by_venta(venta_id)
+            except SnapshotNotFoundError:
+                snapshot = None
+            if snapshot and snapshot.payload:
+                snapshot_payload = deepcopy(snapshot.payload)
+
+        if not data and snapshot_payload:
+            data = snapshot_payload
+
+        if venta_id and snapshot_payload:
+            cuerpo_snapshot = snapshot_payload.get("cuerpoDocumento") or []
+            if cuerpo_snapshot and not (data.get("cuerpoDocumento") or []):
+                data["cuerpoDocumento"] = cuerpo_snapshot
+            data.setdefault("resumen", snapshot_payload.get("resumen"))
+            data.setdefault("identificacion", snapshot_payload.get("identificacion"))
+            data.setdefault("documentoRelacionado", snapshot_payload.get("documentoRelacionado"))
+
         tipo_dte = str(data.get("identificacion", {}).get("tipoDte", "")).zfill(2)
         if tipo in {"credito", "debito"} and tipo_dte == "01":
             QMessageBox.warning(
@@ -6413,27 +6436,149 @@ class FacturacionTab(QWidget):
         if sello:
             data["selloRecibido"] = sello
 
+        def _safe_float(value) -> float:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, Decimal):
+                return float(value)
+            if value is None:
+                return 0.0
+            try:
+                text = str(value).strip()
+                if not text:
+                    return 0.0
+                return float(text)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _safe_decimal(value) -> Decimal:
+            if isinstance(value, Decimal):
+                return value
+            if isinstance(value, (int, float)):
+                return Decimal(str(value))
+            if value is None:
+                return Decimal("0")
+            try:
+                text = str(value).strip()
+                if not text:
+                    return Decimal("0")
+                return Decimal(text)
+            except (ArithmeticError, ValueError, InvalidOperation):
+                return Decimal("0")
+
         detalles_venta = []
         for d in data.get("cuerpoDocumento", []) or []:
+            venta_gravada = _safe_decimal(d.get("ventaGravada"))
+            venta_exenta = _safe_decimal(d.get("ventaExenta"))
+            venta_no_suj = _safe_decimal(d.get("ventaNoSuj"))
+            descuento = _safe_decimal(d.get("montoDescu"))
+            cantidad = _safe_float(d.get("cantidad"))
+            precio_unitario = _safe_float(d.get("precioUni"))
+
+            if TRIBUTO_IVA in (d.get("tributos") or []):
+                precio_unitario_iva = iva_item(venta_gravada)
+            else:
+                precio_unitario_iva = Decimal("0")
+
             detalles_venta.append(
                 {
                     "id": d.get("numItem"),
                     "producto_id": d.get("codigo"),
                     "descripcion": d.get("descripcion", ""),
-                    "cantidad": float(d.get("cantidad", 0)),
-                    "precio_unitario": float(d.get("precioUni", 0)),
-                    "descuento": float(d.get("montoDescu", 0)),
+                    "cantidad": cantidad,
+                    "precio_unitario": precio_unitario,
+                    "descuento": float(descuento),
                     "descuento_tipo": "$",
-                    "ventas_gravadas": float(d.get("ventaGravada", 0)),
-                    "ventas_exentas": float(d.get("ventaExenta", 0)),
-                    "ventas_no_sujetas": float(d.get("ventaNoSuj", 0)),
-                    "precio_unitario_iva": iva_item(Decimal(str(d.get("ventaGravada", 0)))) if TRIBUTO_IVA in (d.get("tributos") or []) else Decimal("0"),
-                    "descuento_iva": Decimal(str(d.get("montoDescu", 0))),
-                    "total_linea": Decimal(str(d.get("ventaGravada", 0))),
+                    "ventas_gravadas": float(venta_gravada),
+                    "ventas_exentas": float(venta_exenta),
+                    "ventas_no_sujetas": float(venta_no_suj),
+                    "precio_unitario_iva": precio_unitario_iva,
+                    "descuento_iva": descuento,
+                    "total_linea": venta_gravada,
                     "uniMedida": d.get("uniMedida"),
                     "tipoItem": d.get("tipoItem"),
                 }
             )
+
+        if not detalles_venta and venta_id:
+            try:
+                detalles_db = self.manager.db.get_detalles_venta(venta_id) or []
+            except Exception:
+                detalles_db = []
+
+            for detalle in detalles_db:
+                cantidad = _safe_float(detalle.get("cantidad"))
+                precio_unitario = _safe_float(detalle.get("precio_unitario"))
+                if not cantidad and not precio_unitario:
+                    continue
+
+                descuento_tipo = str(detalle.get("descuento_tipo") or "$").strip() or "$"
+                descuento_val = _safe_decimal(detalle.get("descuento"))
+                subtotal = Decimal(str(precio_unitario)) * Decimal(str(cantidad))
+                subtotal = subtotal.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+                if descuento_val < 0:
+                    descuento_val = -descuento_val
+
+                if descuento_val and descuento_tipo == "%":
+                    descuento_monto = (subtotal * descuento_val / Decimal("100")).quantize(
+                        Decimal("0.0001"), rounding=ROUND_HALF_UP
+                    )
+                else:
+                    descuento_monto = descuento_val.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+                base_total = subtotal - descuento_monto
+                if base_total < 0:
+                    base_total = Decimal("0")
+                base_total = base_total.quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
+                tipo_fiscal = str(detalle.get("tipo_fiscal") or "").lower()
+                ventas_gravada = Decimal("0")
+                ventas_exenta = Decimal("0")
+                ventas_nosuj = Decimal("0")
+                if "exen" in tipo_fiscal:
+                    ventas_exenta = base_total
+                elif "no" in tipo_fiscal and "suj" in tipo_fiscal:
+                    ventas_nosuj = base_total
+                else:
+                    ventas_gravada = base_total
+
+                if ventas_gravada > 0:
+                    precio_unitario_iva = iva_item(ventas_gravada)
+                else:
+                    precio_unitario_iva = Decimal("0")
+
+                extra_raw = detalle.get("extra")
+                uni_medida = None
+                tipo_item = None
+                if extra_raw:
+                    try:
+                        extra_data = json.loads(extra_raw)
+                    except Exception:
+                        extra_data = None
+                    if isinstance(extra_data, dict):
+                        uni_medida = extra_data.get("uniMedida") or extra_data.get("unidad_medida")
+                        tipo_item = extra_data.get("tipoItem")
+
+                detalles_venta.append(
+                    {
+                        "id": detalle.get("id"),
+                        "producto_id": detalle.get("producto_id"),
+                        "descripcion": detalle.get("descripcion") or "",
+                        "cantidad": cantidad,
+                        "precio_unitario": precio_unitario,
+                        "descuento": float(descuento_monto),
+                        "descuento_tipo": "$",
+                        "ventas_gravadas": float(ventas_gravada),
+                        "ventas_exentas": float(ventas_exenta),
+                        "ventas_no_sujetas": float(ventas_nosuj),
+                        "precio_unitario_iva": precio_unitario_iva,
+                        "descuento_iva": descuento_monto,
+                        "total_linea": base_total,
+                        "uniMedida": uni_medida,
+                        "tipoItem": tipo_item if tipo_item is not None else 1,
+                    }
+                )
 
         detalle_map = {d["id"]: d for d in detalles_venta}
 
@@ -6583,7 +6728,7 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
-        detalles_pdf = []
+        dialog_detalles_pdf: List[dict] = []
         for det in detalles_nota or []:
             src = detalle_map.get(det.get("detalle_id"))
             if not src:
@@ -6608,25 +6753,126 @@ class FacturacionTab(QWidget):
                     "ventas_exentas": det.get("ventas_exentas", 0),
                     "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
                 }
-            detalles_pdf.append(detalle)
+            dialog_detalles_pdf.append(detalle)
 
+        try:
+            cfg = dte._load_dte_api_config()
+        except Exception:
+            cfg = {}
+        ambiente_cfg = str((cfg or {}).get("ambiente") or "").strip().lower()
+        ambiente = "01" if ambiente_cfg == "produccion" else "00"
+
+        nota_json = None
+        snapshot_exc: SnapshotNotFoundError | None = None
         if tipo == "credito":
-            ratio = None
-            if not detalles_pdf:
-                ratio = Decimal(str(monto / total_original))
-            nota_json = nota_credito_electronica.generar_nce_desde_dte(
-                self.manager.db,
-                data,
-                ratio,
-                detalles=detalles_pdf or None,
-                motivo=motivo,
-            )
+            try:
+                nota_json = generar_nota_credito_json(
+                    self.manager.db, nota_id, ambiente=ambiente
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         elif tipo == "debito":
-            nota_json = generar_nde_desde_dte(
-                self.manager.db, data, detalles_pdf or None, monto, motivo
-            )
+            try:
+                nota_json = generar_nota_debito_json(
+                    self.manager.db, nota_id, ambiente=ambiente
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         else:
             nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+
+        if nota_json is None and snapshot_exc:
+            logger.warning(
+                "Snapshot faltante para nota %s de venta %s; usando generador de respaldo",
+                nota_id,
+                venta_id,
+                exc_info=snapshot_exc,
+            )
+            if tipo == "credito":
+                ratio = None
+                if not dialog_detalles_pdf:
+                    try:
+                        ratio = (
+                            Decimal(str(monto / total_original))
+                            if total_original
+                            else None
+                        )
+                    except Exception:
+                        ratio = None
+                nota_json = nota_credito_electronica.generar_nce_desde_dte(
+                    self.manager.db,
+                    data,
+                    ratio,
+                    detalles=dialog_detalles_pdf or None,
+                    motivo=motivo,
+                )
+            elif tipo == "debito":
+                nota_json = generar_nde_desde_dte(
+                    self.manager.db,
+                    data,
+                    dialog_detalles_pdf or None,
+                    monto,
+                    motivo,
+                )
+            else:
+                # Las notas de remisión no usan snapshot y ya deberían haber sido
+                # generadas correctamente.
+                pass
+
+        def _to_float(value: object) -> float:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, Decimal):
+                return float(value)
+            if value in (None, ""):
+                return 0.0
+            try:
+                return float(Decimal(str(value)))
+            except Exception:
+                return 0.0
+
+        def _has_iva(tributos_item: object) -> Tuple[bool, float]:
+            if not tributos_item:
+                return False, 0.0
+            iva_val = 0.0
+            for entry in tributos_item:
+                if isinstance(entry, dict):
+                    codigo = entry.get("codigo")
+                    if str(codigo) == TRIBUTO_IVA:
+                        if entry.get("valor") is not None:
+                            iva_val = _to_float(entry.get("valor"))
+                        return True, iva_val
+                else:
+                    if str(entry) == TRIBUTO_IVA:
+                        return True, iva_val
+            return False, iva_val
+
+        detalles_pdf = []
+        for d in nota_json.get("cuerpoDocumento", []) or []:
+            tributos = d.get("tributos") or []
+            incluye_iva, iva_val = _has_iva(tributos)
+            if incluye_iva and iva_val == 0.0:
+                venta_gravada = Decimal(str(d.get("ventaGravada", 0) or 0))
+                iva_val = float(iva_item(venta_gravada))
+            detalles_pdf.append(
+                {
+                    "cantidad": _to_float(d.get("cantidad", 0)),
+                    "descripcion": d.get("descripcion", ""),
+                    "precio_unitario": _to_float(
+                        d.get("precioUni", d.get("precio_unitario", 0))
+                    ),
+                    "iva": iva_val,
+                    "ventas_gravadas": _to_float(
+                        d.get("ventaGravada", d.get("ventas_gravadas", 0))
+                    ),
+                    "ventas_exentas": _to_float(
+                        d.get("ventaExenta", d.get("ventas_exentas", 0))
+                    ),
+                    "ventas_no_sujetas": _to_float(
+                        d.get("ventaNoSuj", d.get("ventas_no_sujetas", 0))
+                    ),
+                }
+            )
 
         resumen_nota = nota_json.get("resumen", {})
         tributos = {t.get("codigo"): t.get("valor", 0) for t in resumen_nota.get("tributos", []) or []}

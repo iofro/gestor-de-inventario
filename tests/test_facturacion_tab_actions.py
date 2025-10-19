@@ -262,6 +262,117 @@ def test_create_nota_propagates_ui_mode(monkeypatch, qt_app, tmp_path, ui_mode):
     assert captured["token"] == "signed-token"
 
 
+def test_crear_nota_remision_actualiza_lista(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    tab = _make_tab(db, cid)
+
+    factura_json = tmp_path / "factura.json"
+    factura_json.write_text(
+        json.dumps(
+            {
+                "identificacion": {"tipoDte": "03"},
+                "resumen": {"montoTotalOperacion": 10},
+                "cuerpoDocumento": [],
+                "receptor": {"nombre": "Cliente"},
+            }
+        )
+    )
+
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(factura_json)},
+    )
+
+    class DummyDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec_(self):
+            return facturacion_tab.QDialog.Accepted
+
+        def get_data(self):
+            return {"observaciones": "Prueba"}
+
+    monkeypatch.setattr(facturacion_tab, "NotaRemisionExtDialog", DummyDialog)
+
+    pdf_path = tmp_path / "nota.pdf"
+    json_path = tmp_path / "nota.json"
+
+    monkeypatch.setattr(
+        facturacion_tab,
+        "get_dte_document_paths",
+        lambda *a, **k: (pdf_path, json_path),
+    )
+
+    def fake_pdf(venta_data, detalles_pdf, cliente, extension, archivo, **kwargs):
+        path = Path(archivo)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("PDF")
+
+    monkeypatch.setattr(facturacion_tab, "generar_nota_remision_pdf", fake_pdf)
+
+    nota_stub = {
+        "identificacion": {
+            "tipoDte": "04",
+            "codigoGeneracion": "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
+            "numeroControl": "DTE-04-001",
+            "fecEmi": "2024-02-10",
+        },
+        "resumen": {
+            "subTotalVentas": 0,
+            "totalDescu": 0,
+            "montoTotalOperacion": 0,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "totalLetras": "CERO",
+        },
+        "cuerpoDocumento": [],
+        "receptor": {"nombre": "Cliente"},
+    }
+    monkeypatch.setattr(
+        facturacion_tab,
+        "generar_nota_remision_desde_db",
+        lambda *a, **k: nota_stub,
+    )
+
+    def fake_sign(payload, path, return_token=True):
+        Path(path).parent.mkdir(parents=True, exist_ok=True)
+        Path(path).write_text("{}")
+        return path, "token"
+
+    monkeypatch.setattr(facturacion_tab, "sign_and_save", fake_sign)
+
+    def fake_persist(path, payload, firma=None, sello=None):
+        target = Path(path)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("{}")
+        return target
+
+    monkeypatch.setattr(facturacion_tab, "persist_client_json", fake_persist)
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+
+    add_calls = []
+
+    def fake_add_factura_pdf(venta_ref, tipo, ruta):
+        add_calls.append((venta_ref, tipo, ruta))
+        return 1
+
+    monkeypatch.setattr(tab.manager.db, "add_factura_pdf", fake_add_factura_pdf)
+
+    load_calls = []
+    tab.load_invoices = lambda: load_calls.append(True)
+
+    tab.crear_nota_remision_desde_factura()
+
+    assert pdf_path.exists()
+    assert add_calls == [(venta_id, "Nota de remisión", str(pdf_path))]
+    assert load_calls
+
+
 def test_build_ticket_format_pdf_saves_alongside_invoice(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)
@@ -1192,6 +1303,148 @@ def test_send_selected_invoice(monkeypatch, qt_app, tmp_path):
     assert captured_post["args"] == ("http://example.com", "TOKEN", "SIGNED")
     assert captured_transmit["args"][3] == "01"
 
+
+def test_buscar_nota_remision_por_detalles(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    nota_id = db.agregar_nota(
+        "remision", venta_id, "2024-01-01", 0, "Remision", detalles={"extension": {}}
+    )
+    json_path = tmp_path / "nota.json"
+    payload = {
+        "identificacion": {
+            "numeroControl": "DTE-04-S001P001-000000000000001",
+            "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+            "tipoDte": "04",
+            "ambiente": "00",
+        }
+    }
+    json_path.write_text(json.dumps(payload))
+    db.update_nota_detalles(
+        nota_id,
+        {
+            "json_path": str(json_path),
+            "numeroControl": payload["identificacion"]["numeroControl"],
+            "codigoGeneracion": payload["identificacion"]["codigoGeneracion"],
+            "ambiente": "00",
+        },
+    )
+
+    manager = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    monkeypatch.setattr(
+        facturacion_tab.FacturacionTab, "_get_invoices_from_db", lambda self: None
+    )
+    tab = facturacion_tab.FacturacionTab(manager)
+    factura = {"json": str(json_path)}
+
+    found_id = tab._buscar_nota_id(factura, "remision")
+    assert found_id == nota_id
+
+
+def test_send_selected_invoice_uses_nota_remision(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    nota_id = db.agregar_nota(
+        "remision", venta_id, "2024-01-01", 0, "Remision", detalles={"extension": {}}
+    )
+    ident = {
+        "numeroControl": "DTE-04-S001P001-000000000000002",
+        "codigoGeneracion": "abcdef12-3456-7890-abcd-ef1234567890",
+        "tipoDte": "04",
+        "ambiente": "00",
+    }
+    pdf_path = tmp_path / "nota.pdf"
+    json_path = pdf_path.with_suffix(".json")
+    pdf_path.write_text("pdf")
+    json_path.write_text(json.dumps({"identificacion": ident}))
+    db.update_nota_detalles(
+        nota_id,
+        {
+            "json_path": str(json_path),
+            "numeroControl": ident["numeroControl"],
+            "codigoGeneracion": ident["codigoGeneracion"],
+            "ambiente": ident["ambiente"],
+        },
+    )
+
+    manager = SimpleNamespace(
+        db=db,
+        _clientes=[{"id": cid, "nombre": "C", "email": "c@x.com"}],
+        _Distribuidores=[],
+        get_modo_transmision_actual=lambda: "normal",
+    )
+    monkeypatch.setattr(
+        facturacion_tab.FacturacionTab, "_get_invoices_from_db", lambda self: None
+    )
+    tab = facturacion_tab.FacturacionTab(manager)
+
+    entry = {
+        "row_type": "orphan",
+        "tipo": "Nota de remisión",
+        "json": str(json_path),
+        "pdf": str(pdf_path),
+        "venta_id": venta_id,
+        "nota_id": nota_id,
+        "estado": "Completa",
+        "envio": "Pendiente de envío",
+    }
+
+    monkeypatch.setattr(tab, "_selected_entry", lambda: entry)
+
+    class DummyCheck:
+        def __init__(self, checked=False):
+            self._checked = checked
+
+        def setChecked(self, value):
+            self._checked = value
+
+        def isChecked(self):
+            return self._checked
+
+    class DummyDialog:
+        def __init__(self, *args, **kwargs):
+            self.email_cb = DummyCheck(False)
+            self.hacienda_cb = DummyCheck(True)
+
+        def exec_(self):
+            return QDialog.Accepted
+
+    monkeypatch.setattr(facturacion_tab, "SendOptionsDialog", DummyDialog)
+
+    class DummyLoading:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+    monkeypatch.setattr(facturacion_tab, "loading_dialog", lambda *a, **k: DummyLoading())
+
+    called = {}
+
+    def fake_enviar(db_obj, nota_id_arg, modo=None):
+        called["args"] = (db_obj, nota_id_arg, modo)
+        return {"estado": "PROCESADO", "sello": "SELLO"}
+
+    monkeypatch.setattr(facturacion_tab, "enviar_nota_remision", fake_enviar)
+
+    def fail_orphan(*a, **k):
+        raise AssertionError("No debe reenviarse como DTE huérfano")
+
+    monkeypatch.setattr(facturacion_tab.dte, "transmitir_dte_orphan", fail_orphan)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+    monkeypatch.setattr(
+        facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes
+    )
+
+    tab.send_selected_invoice()
+
+    assert called["args"][1] == nota_id
 
 def test_send_selected_invoice_allows_email_when_procesado(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")

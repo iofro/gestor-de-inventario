@@ -3959,9 +3959,17 @@ class FacturacionTab(QWidget):
         if db is None:
             return False
 
-        venta_id = entry.get("venta_id")
-        if factura and factura.get("venta_id"):
-            venta_id = venta_id or factura.get("venta_id")
+        note_kind = self._resolve_note_kind(entry)
+        nota_id: int | None = entry.get("nota_id") if entry else None
+        if note_kind and nota_id is None and factura:
+            try:
+                nota_id = self._buscar_nota_id(factura, note_kind)
+            except ValueError:
+                nota_id = None
+
+        venta_id = nota_id if nota_id is not None else entry.get("venta_id")
+        if venta_id is None and factura and factura.get("venta_id"):
+            venta_id = factura.get("venta_id")
 
         envio_state = None
         if venta_id:
@@ -4070,6 +4078,8 @@ class FacturacionTab(QWidget):
                             resp = self._reenviar_nota_credito(entry, factura)
                         elif note_kind == "debito":
                             resp = self._reenviar_nota_debito(entry, factura)
+                        elif note_kind == "remision":
+                            resp = self._reenviar_nota(entry, factura, "remision")
                         else:
                             resp = dte.transmitir_dte_orphan(
                                 self.manager.db, json_path
@@ -4366,15 +4376,23 @@ class FacturacionTab(QWidget):
         dialog.exec_()
 
 
-    def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:
+    @staticmethod
+    def _resolve_note_kind(entry: dict | None) -> str | None:
         if not entry:
             return None
         tipo = str(entry.get("tipo") or "").strip().lower()
-        if tipo in {"nota de crédito", "nota de credito"}:
+        if not tipo:
+            return None
+        if "nota de crédito" in tipo or "nota de credito" in tipo:
             return "credito"
-        if tipo in {"nota de débito", "nota de debito"}:
+        if "nota de débito" in tipo or "nota de debito" in tipo:
             return "debito"
+        if "nota de remisión" in tipo or "nota de remision" in tipo:
+            return "remision"
         return None
+
+    def _resolve_orphan_note_kind(self, entry: dict | None) -> str | None:
+        return self._resolve_note_kind(entry)
 
     def _reenviar_nota_credito(self, entry: dict, factura: dict) -> dict:
         return self._reenviar_nota(entry, factura, "credito")
@@ -4393,8 +4411,10 @@ class FacturacionTab(QWidget):
         if nota_id is not None:
             if expected_tipo == "credito":
                 resp = dte.enviar_nota_credito(self.manager.db, nota_id)
-            else:
+            elif expected_tipo == "debito":
                 resp = dte.enviar_nota_debito(self.manager.db, nota_id)
+            else:
+                resp = enviar_nota_remision(self.manager.db, nota_id)
             try:
                 self.load_invoices()
             except Exception:
@@ -4436,6 +4456,14 @@ class FacturacionTab(QWidget):
         if not numero_control and not codigo_generacion:
             raise ValueError("El JSON de la nota no contiene identificadores válidos")
         db = self.manager.db
+        nota_id = db.find_nota_by_document(
+            numero_control=numero_control,
+            codigo_generacion=codigo_generacion,
+            json_path=json_path,
+            tipo=expected_tipo,
+        )
+        if nota_id is not None:
+            return nota_id
         try:
             db.ensure_column("dte_envios", "numero_control", "TEXT")
             db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
@@ -6284,14 +6312,18 @@ class FacturacionTab(QWidget):
             nota_json["identificacion"].get("numeroControl"),
             "NotaRemision",
         )
+        identificacion = nota_json.get("identificacion", {}) or {}
+        codigo_generacion_val = identificacion.get("codigoGeneracion")
+        numero_control_val = identificacion.get("numeroControl")
+
         generar_nota_remision_pdf(
             venta_data,
             detalles_pdf,
             cliente,
             extension,
             archivo=str(pdf_path),
-            codigo_generacion=nota_json["identificacion"].get("codigoGeneracion"),
-            numero_control=nota_json["identificacion"].get("numeroControl"),
+            codigo_generacion=codigo_generacion_val,
+            numero_control=numero_control_val,
         )
         db = getattr(getattr(self, "manager", None), "db", None)
         if db is not None:
@@ -6301,6 +6333,20 @@ class FacturacionTab(QWidget):
                 logger.exception(
                     "No se pudo registrar la nota de remisión en facturas_pdf"
                 )
+            try:
+                db.update_nota_detalles(
+                    nota_id,
+                    {
+                        "json_path": str(json_path),
+                        "pdf_path": str(pdf_path),
+                        "codigoGeneracion": codigo_generacion_val,
+                        "numeroControl": numero_control_val,
+                        "ambiente": identificacion.get("ambiente"),
+                        "tipoDte": identificacion.get("tipoDte"),
+                    },
+                )
+            except Exception:
+                logger.exception("No se pudo actualizar metadatos de la nota %s", nota_id)
         token = None
         try:
             _, token = sign_and_save(nota_json, str(json_path), return_token=True)

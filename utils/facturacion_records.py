@@ -636,6 +636,28 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         if row_type == "orphan":
             row["pdf"] = ruta
             row["json"] = json_path
+
+        tipo_lower_desc = str((tipo_desc or doc_tipo or "").lower())
+        note_kind = None
+        if "nota" in tipo_lower_desc:
+            if "remision" in tipo_lower_desc or "remisión" in tipo_lower_desc:
+                note_kind = "remision"
+            elif "crédito" in tipo_lower_desc or "credito" in tipo_lower_desc:
+                note_kind = "credito"
+            elif "débito" in tipo_lower_desc or "debito" in tipo_lower_desc:
+                note_kind = "debito"
+        if note_kind:
+            try:
+                nota_id = db.find_nota_by_document(
+                    numero_control=numero_control,
+                    codigo_generacion=codigo_generacion,
+                    json_path=json_path,
+                    tipo=note_kind,
+                )
+            except Exception:
+                nota_id = None
+            if nota_id is not None:
+                row["nota_id"] = nota_id
         rows.append(row)
     return rows
 

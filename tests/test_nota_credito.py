@@ -10,6 +10,7 @@ from db import DB
 from dte import generar_dte_json
 import nota_credito_electronica
 from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_nota
+from nota_debito_electronica import generar_nde_desde_dte
 import pytest
 from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
@@ -526,15 +527,84 @@ def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog
     assert "notes_fallback_json" in metrics_calls
 
 
-def test_nce_receptor_con_nrc_sin_actividad_falla():
+def test_nce_doc_rel_uuid():
     db = create_db()
     dte_origen = _build_base_payload()
-    dte_origen["receptor"]["nrc"] = "7654321"
-    dte_origen["receptor"]["codActividad"] = ""
-    dte_origen["receptor"]["descActividad"] = ""
 
-    with pytest.raises(ValueError, match="Receptor con NRC requiere codActividad y descActividad válidos"):
+    nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
+
+    assert len(nce["documentoRelacionado"]) == len(nde["documentoRelacionado"]) == 1
+    doc_rel_nce = nce["documentoRelacionado"][0]
+    doc_rel_nde = nde["documentoRelacionado"][0]
+    assert doc_rel_nce["tipoDocumento"] == doc_rel_nde["tipoDocumento"]
+    assert doc_rel_nce["tipoGeneracion"] == doc_rel_nde["tipoGeneracion"]
+    assert doc_rel_nce["fechaEmision"] == doc_rel_nde["fechaEmision"]
+    assert nce["receptor"] == nde["receptor"]
+
+    assert doc_rel_nce["tipoGeneracion"] == 2
+    assert (
+        doc_rel_nce["numeroDocumento"]
+        == dte_origen["identificacion"]["codigoGeneracion"].strip().upper()
+    )
+
+
+def test_nce_doc_rel_num_ctrl():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    dte_origen["identificacion"]["codigoGeneracion"] = ""
+    dte_origen["identificacion"]["numeroControl"] = "dte-01-s001p001-000000000000999"
+    dte_origen["identificacion"]["tipoDte"] = "01"
+
+    nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
+
+    assert len(nce["documentoRelacionado"]) == len(nde["documentoRelacionado"]) == 1
+    doc_rel_nce = nce["documentoRelacionado"][0]
+    doc_rel_nde = nde["documentoRelacionado"][0]
+    assert doc_rel_nce["tipoDocumento"] == doc_rel_nde["tipoDocumento"]
+    assert doc_rel_nce["tipoGeneracion"] == doc_rel_nde["tipoGeneracion"]
+    assert doc_rel_nce["fechaEmision"] == doc_rel_nde["fechaEmision"]
+    assert nce["receptor"] == nde["receptor"]
+
+    assert doc_rel_nce["tipoGeneracion"] == 1
+    assert doc_rel_nce["numeroDocumento"] == "DTE-01-S001P001-000000000000999"
+    assert doc_rel_nce["numeroDocumento"] == doc_rel_nde["numeroDocumento"].upper()
+
+
+def test_nce_receptor_nrc_requiere_actividad():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    dte_origen["receptor"]["nrc"] = "123456-7"
+    dte_origen["receptor"].pop("codActividad", None)
+    dte_origen["receptor"].pop("descActividad", None)
+
+    with pytest.raises(
+        ValueError,
+        match="Receptor con NRC o documento 03 requiere codActividad y descActividad válidos",
+    ):
         generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+
+
+def test_nce_unimedida_default():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    detalles = [
+        {
+            "numItem": 1,
+            "descripcion": "Prod",
+            "cantidad": 1,
+            "ventaGravada": 5,
+            "precio_unitario": 5,
+        }
+    ]
+
+    nce = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
+    nde = generar_nde_desde_dte(db, dte_origen, detalles=detalles, monto=None)
+
+    assert nce["documentoRelacionado"] == nde["documentoRelacionado"]
+    assert nce["receptor"] == nde["receptor"]
+    assert all(item["uniMedida"] == 59 for item in nce["cuerpoDocumento"])
 
 
 def test_nce_receptor_actividad_numerica_a_texto():
@@ -549,26 +619,6 @@ def test_nce_receptor_actividad_numerica_a_texto():
     receptor = resultado["receptor"]
     assert receptor["codActividad"] == "123456"
     assert receptor["descActividad"] == "98765"
-
-
-def test_nce_unimedida_default():
-    db = create_db()
-    dte_origen = _build_base_payload()
-    detalles = [
-        {
-            "numItem": 1,
-            "descripcion": "Prod",
-            "cantidad": 1,
-            "uniMedida": None,
-            "ventaGravada": 5,
-            "precio_unitario": 5,
-        }
-    ]
-
-    resultado = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
-
-    for item in resultado["cuerpoDocumento"]:
-        assert item["uniMedida"] == 59
 
 
 def test_nce_plan_b_paridad_nde(monkeypatch, tmp_path):

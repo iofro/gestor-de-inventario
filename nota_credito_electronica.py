@@ -17,7 +17,7 @@ from datetime import datetime
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import json
 import logging
-from typing import Any, Callable, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional, Sequence
 
 from db import DB
 from dte import (
@@ -329,6 +329,51 @@ def generar_nce_desde_nota(
     )
     tipo_doc = "03" if credito_fiscal else "01"
 
+    def _ensure_mapping_local(value: Any) -> dict[str, Any]:
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except Exception:
+                return {}
+            return dict(parsed) if isinstance(parsed, Mapping) else {}
+        return {}
+
+    venta_extra_data = _ensure_mapping_local(venta.get("extra") if venta else None)
+
+    def _safe_int(value: Any) -> int | None:
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+
+    cliente_id = None
+    for source in (nota, venta, credito_fiscal, venta_extra_data):
+        if not isinstance(source, Mapping):
+            continue
+        for key in ("cliente_id", "clienteId"):
+            cid = _safe_int(source.get(key))
+            if cid:
+                cliente_id = cid
+                break
+        if cliente_id:
+            break
+        cliente_nested = source.get("cliente") if isinstance(source, Mapping) else None
+        if isinstance(cliente_nested, Mapping):
+            cid = _safe_int(cliente_nested.get("id"))
+            if cid:
+                cliente_id = cid
+                break
+
+    cliente_info = db.get_cliente(cliente_id) if cliente_id else None
+
+    receptor_fuentes = {
+        "nota": nota,
+        "venta_extra": venta_extra_data,
+        "cliente": cliente_info,
+    }
+
     regenerate_cb: Callable[[], Mapping[str, Any]] | None = None
     if venta_id is not None:
         regenerate_cb = lambda: generar_dte_json(  # noqa: E731
@@ -444,6 +489,7 @@ def generar_nce_desde_nota(
             ambiente=ambiente,
             motivo=nota.get("motivo"),
             fecha_origen=fecha_origen,
+            receptor_fuentes=receptor_fuentes,
         )
     else:
         resumen_origen = dte_origen.get("resumen", {})
@@ -468,6 +514,7 @@ def generar_nce_desde_nota(
             motivo=nota.get("motivo"),
             monto=monto_nc,
             fecha_origen=fecha_origen,
+            receptor_fuentes=receptor_fuentes,
         )
 
     rebuild_result = rebuild_snapshot_from_json(
@@ -527,12 +574,15 @@ def generar_nce_desde_dte(
     motivo: Optional[str] = None,
     monto: Decimal | None = None,
     fecha_origen: Optional[str] = None,
+    receptor_fuentes: Mapping[str, Any] | None = None,
 ) -> dict:
     """Genera la estructura JSON de una NCE."""
     ambiente = resolve_ambiente(ambiente)
     if detalles is None:
         if ratio is None or ratio <= Decimal_0:
             raise ValueError("El porcentaje a acreditar debe ser mayor que cero")
+
+    receptor_fuentes = receptor_fuentes or {}
 
     origen_ident = dte_origen.get("identificacion", {})
     cabecera = generar_cabecera_dte_data(1, 1, "05", db, ambiente=ambiente)
@@ -558,30 +608,10 @@ def generar_nce_desde_dte(
     # - documentoRelacionado[].fechaEmision = fecha histórica del DTE base.
     #   Nunca copiar la histórica hacia fecEmi.
 
-    receptor_origen = dte_origen.get("receptor") or {}
-    tipo_raw = origen_ident.get("tipoDte")
-    if isinstance(tipo_raw, int):
-        tipo_doc_rel = f"{tipo_raw:02d}"
-    elif isinstance(tipo_raw, str):
-        tipo_str = tipo_raw.strip()
-        if tipo_str.isdigit() and len(tipo_str) <= 2:
-            tipo_doc_rel = f"{int(tipo_str):02d}"
-        else:
-            tipo_doc_rel = tipo_str or None
-    else:
-        tipo_doc_rel = None
-    if not tipo_doc_rel:
-        tipo_doc_rel = "03" if receptor_origen.get("nrc") else "01"
-
     codigo_generacion = origen_ident.get("codigoGeneracion")
     numero_control = str(origen_ident.get("numeroControl") or "").strip()
-    if codigo_generacion:
-        tipo_generacion = 2
-        numero_documento = str(codigo_generacion).strip().upper()
-    else:
-        tipo_generacion = 1
-        numero_documento = numero_control
-    if not numero_documento:
+    tipo_generacion = 2 if codigo_generacion else 1
+    if not numero_control:
         raise ValueError("Falta numeroControl del DTE origen")
 
     fecha_doc_rel_base = None
@@ -594,18 +624,96 @@ def generar_nce_desde_dte(
     if not fecha_doc_rel_base:
         fecha_doc_rel_base = fecha_emision_por_defecto
 
-    doc_rel = [
-        {
-            "tipoDocumento": tipo_doc_rel,
-            "tipoGeneracion": tipo_generacion,
-            "numeroDocumento": numero_documento,
-            "fechaEmision": fecha_iso(fecha_doc_rel_base),
-        }
-    ]
-    numero_documento_rel = numero_documento
-
     emisor = ensure_emisor_completo(dte_origen.get("emisor"), tipo_dte="05")
+    receptor_origen = dte_origen.get("receptor") or {}
     receptor_base = deepcopy(receptor_origen)
+
+    def _ensure_mapping_receptor(value: Any) -> dict[str, Any]:
+        if isinstance(value, Mapping):
+            return dict(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except Exception:
+                return {}
+            return dict(parsed) if isinstance(parsed, Mapping) else {}
+        return {}
+
+    def _is_missing_field(value: Any) -> bool:
+        if value is None:
+            return True
+        if isinstance(value, str):
+            return not value.strip()
+        return False
+
+    sources_priority: list[dict[str, Any]] = []
+    has_context_sources = False
+    for key in ("nota", "venta_extra", "cliente"):
+        mapping = _ensure_mapping_receptor(receptor_fuentes.get(key))
+        if mapping:
+            sources_priority.append(mapping)
+            has_context_sources = True
+    if isinstance(receptor_origen, Mapping):
+        sources_priority.append(receptor_origen)
+
+    def _find_in_sources(keys: Sequence[str]) -> str | None:
+        for source in sources_priority:
+            stack: list[Mapping[str, Any]] = [source]
+            seen: set[int] = set()
+            while stack:
+                current = stack.pop()
+                ident = id(current)
+                if ident in seen:
+                    continue
+                seen.add(ident)
+                for name in keys:
+                    if name not in current:
+                        continue
+                    raw_val = current.get(name)
+                    if raw_val is None:
+                        continue
+                    if isinstance(raw_val, str):
+                        text = raw_val.strip()
+                    else:
+                        text = str(raw_val).strip()
+                    if text:
+                        return text
+                for value in current.values():
+                    if isinstance(value, Mapping):
+                        stack.append(value)
+                    elif isinstance(value, Sequence) and not isinstance(
+                        value, (str, bytes, bytearray)
+                    ):
+                        for item in value:
+                            if isinstance(item, Mapping):
+                                stack.append(item)
+        return None
+
+    if _is_missing_field(receptor_base.get("codActividad")):
+        cod_val = _find_in_sources(
+            (
+                "codActividad",
+                "cod_actividad",
+                "codigoActividad",
+                "actividadEconomica",
+                "codigoActividadEconomica",
+            )
+        )
+        if cod_val:
+            receptor_base["codActividad"] = cod_val
+    if _is_missing_field(receptor_base.get("descActividad")):
+        desc_val = _find_in_sources(
+            (
+                "descActividad",
+                "descripcionActividad",
+                "giro",
+                "actividadEconomicaDescripcion",
+                "actividad",
+                "desc_giro",
+            )
+        )
+        if desc_val:
+            receptor_base["descActividad"] = desc_val
     nit_digits = solo_digitos(receptor_base.get("nit"))
     if nit_digits and is_valid_nit(nit_digits):
         receptor_base["nit"] = nit_digits
@@ -624,15 +732,45 @@ def generar_nce_desde_dte(
     if final_nit and is_valid_nit(final_nit):
         receptor["nit"] = final_nit
 
-    nrc_original = receptor_origen.get("nrc")
+    final_nrc_val = str(receptor.get("nrc") or "").strip()
+    if final_nrc_val and final_nrc_val != "0":
+        if _is_missing_field(receptor.get("codActividad")) or _is_missing_field(
+            receptor.get("descActividad")
+        ):
+            message = "Receptor con NRC requiere codActividad y descActividad válidos"
+            if has_context_sources:
+                logger.error(message)
+                raise ValueError(message)
+            logger.warning(message)
+
+    tipo_raw = origen_ident.get("tipoDte")
+    if isinstance(tipo_raw, int):
+        tipo_doc_rel = f"{tipo_raw:02d}"
+    elif isinstance(tipo_raw, str):
+        tipo_str = tipo_raw.strip()
+        if tipo_str.isdigit() and len(tipo_str) <= 2:
+            tipo_doc_rel = f"{int(tipo_str):02d}"
+        else:
+            tipo_doc_rel = tipo_str or None
+    else:
+        tipo_doc_rel = None
+    if tipo_doc_rel in {None, "", "01", "03"}:
+        tipo_doc_rel = "03" if final_nrc_val and final_nrc_val != "0" else "01"
+
     preserve_nrc_null = False
-    if (
-        tipo_doc_rel == "01"
-        or not nrc_original
-        or str(nrc_original).strip() in {"", "0"}
-    ):
+    if tipo_doc_rel == "01" or not final_nrc_val or final_nrc_val == "0":
         receptor["nrc"] = None
         preserve_nrc_null = True
+
+    doc_rel = [
+        {
+            "tipoDocumento": tipo_doc_rel,
+            "tipoGeneracion": tipo_generacion,
+            "numeroDocumento": numero_control,
+            "fechaEmision": fecha_iso(fecha_doc_rel_base),
+        }
+    ]
+    numero_documento_rel = numero_control
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []

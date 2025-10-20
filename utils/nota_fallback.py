@@ -18,9 +18,13 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from paths import DTES_DIR
 from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa
+from utils.identificacion import is_valid_nit
+from utils.sanitize import solo_digitos
 from utils.snapshot import Snapshot, SnapshotNotFoundError, normalize_snapshot
 from utils.stable_json import hash_json
 from utils.versioned_dte import ensure_version
+
+from dte import _load_datos_negocio, _max_nombre_length, normalize_nombre
 
 try:  # pragma: no cover - para anotaciones de tipo
     from typing import TYPE_CHECKING
@@ -39,6 +43,128 @@ _SECTIONS = (
     "resumen",
     "cuerpoDocumento",
 )
+
+
+def ensure_emisor_completo(
+    emisor: Mapping[str, Any] | None, *, tipo_dte: str = "05"
+) -> dict[str, Any]:
+    """Return an ``emisor`` dictionary populated with mandatory fields."""
+
+    datos_negocio = _load_datos_negocio() or {}
+    result: dict[str, Any] = dict(emisor or {})
+
+    def _clean_text(value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return str(value)
+
+    def _valid_nrc(value: Any) -> str | None:
+        digits = solo_digitos(value)
+        if not digits or digits == "0":
+            return None
+        if len(digits) < 4:
+            return None
+        return digits
+
+    def _valid_nit(value: Any) -> str | None:
+        digits = solo_digitos(value)
+        if digits and is_valid_nit(digits):
+            return digits
+        return None
+
+    nit = _valid_nit(result.get("nit")) or _valid_nit(datos_negocio.get("nit"))
+    if nit:
+        result["nit"] = nit
+
+    nrc = _valid_nrc(result.get("nrc")) or _valid_nrc(datos_negocio.get("nrc"))
+    if nrc:
+        result["nrc"] = nrc
+
+    cod_actividad = (
+        _clean_text(result.get("codActividad"))
+        or _clean_text(datos_negocio.get("codActividad"))
+        or _clean_text(datos_negocio.get("cod_giro"))
+    )
+    if cod_actividad:
+        result["codActividad"] = cod_actividad
+
+    desc_actividad = (
+        _clean_text(result.get("descActividad"))
+        or _clean_text(datos_negocio.get("descActividad"))
+        or _clean_text(datos_negocio.get("desc_giro"))
+        or _clean_text(datos_negocio.get("descripcionActividad"))
+    )
+    if desc_actividad:
+        result["descActividad"] = desc_actividad
+
+    nombre_comercial = (
+        _clean_text(result.get("nombreComercial"))
+        or _clean_text(datos_negocio.get("nombreComercial"))
+    )
+    if nombre_comercial is not None:
+        result["nombreComercial"] = nombre_comercial
+
+    telefono = _clean_text(result.get("telefono")) or _clean_text(
+        datos_negocio.get("telefono")
+    )
+    if telefono:
+        result["telefono"] = telefono
+
+    correo = _clean_text(result.get("correo"))
+    if correo and "@" not in correo:
+        correo = None
+    if correo is None:
+        fallback_correo = _clean_text(datos_negocio.get("correo"))
+        if fallback_correo and "@" in fallback_correo:
+            correo = fallback_correo
+    if correo:
+        result["correo"] = correo
+
+    tipo_est = _clean_text(result.get("tipoEstablecimiento")) or _clean_text(
+        datos_negocio.get("tipoEstablecimiento")
+    )
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else "01"
+    result["tipoEstablecimiento"] = tipo_est
+
+    nombre_candidates = (
+        result.get("nombre"),
+        result.get("razonSocial"),
+        datos_negocio.get("razonSocial"),
+        datos_negocio.get("denominacionSocial"),
+        datos_negocio.get("nombre"),
+        datos_negocio.get("nombreComercial"),
+    )
+    max_length = _max_nombre_length(tipo_dte, "emisor")
+    for candidate in nombre_candidates:
+        nombre_norm = normalize_nombre(candidate, max_length=max_length)
+        if nombre_norm:
+            result["nombre"] = nombre_norm
+            break
+
+    direccion_actual = result.get("direccion")
+    if isinstance(direccion_actual, Mapping):
+        direccion = dict(direccion_actual)
+    else:
+        direccion = {}
+    direccion_config = datos_negocio.get("direccion")
+    if isinstance(direccion_config, Mapping):
+        for field in ("departamento", "municipio", "complemento"):
+            if not _clean_text(direccion.get(field)):
+                fallback = _clean_text(direccion_config.get(field))
+                if fallback:
+                    direccion[field] = fallback
+    if direccion:
+        result["direccion"] = direccion
+
+    for key in ("codEstable", "codEstableMH", "codPuntoVenta", "codPuntoVentaMH"):
+        value = _clean_text(result.get(key)) or _clean_text(datos_negocio.get(key))
+        if value:
+            result[key] = value
+
+    return result
 
 
 def _normalize_ambiente_str(value: Any) -> str | None:
@@ -188,6 +314,15 @@ def prepare_dte_origen(
         config_payload,
         detalles,
         venta_extra,
+    )
+
+    _complete_receptor_from_cliente(
+        base_payload,
+        db=db,
+        nota=nota,
+        venta=venta,
+        venta_extra=venta_extra,
+        logger=logger,
     )
 
     expected_ambiente = _normalize_ambiente_str(expected_ident.get("ambiente"))
@@ -586,6 +721,73 @@ def _merge_list(target: list[Any], source: Sequence[Any]) -> bool:
     return changed
 
 
+def _complete_receptor_from_cliente(
+    payload: dict[str, Any],
+    *,
+    db: "DB",
+    nota: Mapping[str, Any] | None,
+    venta: Mapping[str, Any] | None,
+    venta_extra: Mapping[str, Any],
+    logger: logging.Logger,
+) -> None:
+    receptor = _ensure_mapping(payload.get("receptor"))
+    if not receptor:
+        return
+
+    cliente_id = _extract_cliente_id(venta, nota, venta_extra)
+    if cliente_id is None:
+        return
+
+    getter = getattr(db, "get_cliente", None)
+    if not callable(getter):
+        return
+
+    try:
+        cliente = getter(cliente_id)
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception(
+            "No se pudo obtener información del cliente %s para completar el receptor",
+            cliente_id,
+        )
+        return
+
+    if not isinstance(cliente, Mapping):
+        return
+
+    updated: list[str] = []
+
+    nrc_actual = str(receptor.get("nrc") or "").strip()
+    nrc_cliente = _first_not_empty(cliente.get("nrc"))
+    if not nrc_actual or nrc_actual == "0":
+        receptor["nrc"] = nrc_cliente if nrc_cliente else None
+        if nrc_cliente:
+            updated.append("nrc")
+
+    cod_cliente = _first_not_empty(
+        cliente.get("codActividad"),
+        cliente.get("cod_actividad"),
+    )
+    if _is_missing_field(receptor.get("codActividad")) and cod_cliente:
+        receptor["codActividad"] = cod_cliente
+        updated.append("codActividad")
+
+    desc_cliente = _first_not_empty(
+        cliente.get("descActividad"),
+        cliente.get("giro"),
+    )
+    if _is_missing_field(receptor.get("descActividad")) and desc_cliente:
+        receptor["descActividad"] = desc_cliente
+        updated.append("descActividad")
+
+    if updated:
+        payload["receptor"] = receptor
+        logger.info(
+            "Receptor completado desde cliente %s con campos: %s",
+            cliente_id,
+            ", ".join(updated),
+        )
+
+
 def _has_content(value: Any) -> bool:
     if value is None:
         return False
@@ -604,6 +806,22 @@ def _ensure_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _extract_cliente_id(*sources: Mapping[str, Any] | None) -> int | None:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        for key in ("cliente_id", "clienteId", "cliente"):
+            value = source.get(key)
+            if isinstance(value, Mapping):
+                nested = value.get("id")
+                cid = _safe_int(nested)
+            else:
+                cid = _safe_int(value)
+            if cid is not None and cid > 0:
+                return cid
+    return None
+
+
 def _is_missing_field(value: Any) -> bool:
     if value is None:
         return True
@@ -614,6 +832,26 @@ def _is_missing_field(value: Any) -> bool:
     if isinstance(value, Mapping):
         return len(value) == 0
     return False
+
+
+def _first_not_empty(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+        else:
+            text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _collect_expected_ident(*sources: Mapping[str, Any] | None) -> dict[str, str]:

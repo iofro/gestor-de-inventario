@@ -316,6 +316,15 @@ def prepare_dte_origen(
         venta_extra,
     )
 
+    _complete_receptor_from_cliente(
+        base_payload,
+        db=db,
+        nota=nota,
+        venta=venta,
+        venta_extra=venta_extra,
+        logger=logger,
+    )
+
     expected_ambiente = _normalize_ambiente_str(expected_ident.get("ambiente"))
     if expected_ambiente and expected_ambiente != ambiente_normalizado:
         logger.info(
@@ -712,6 +721,73 @@ def _merge_list(target: list[Any], source: Sequence[Any]) -> bool:
     return changed
 
 
+def _complete_receptor_from_cliente(
+    payload: dict[str, Any],
+    *,
+    db: "DB",
+    nota: Mapping[str, Any] | None,
+    venta: Mapping[str, Any] | None,
+    venta_extra: Mapping[str, Any],
+    logger: logging.Logger,
+) -> None:
+    receptor = _ensure_mapping(payload.get("receptor"))
+    if not receptor:
+        return
+
+    cliente_id = _extract_cliente_id(venta, nota, venta_extra)
+    if cliente_id is None:
+        return
+
+    getter = getattr(db, "get_cliente", None)
+    if not callable(getter):
+        return
+
+    try:
+        cliente = getter(cliente_id)
+    except Exception:  # pragma: no cover - defensivo
+        logger.exception(
+            "No se pudo obtener información del cliente %s para completar el receptor",
+            cliente_id,
+        )
+        return
+
+    if not isinstance(cliente, Mapping):
+        return
+
+    updated: list[str] = []
+
+    nrc_actual = str(receptor.get("nrc") or "").strip()
+    nrc_cliente = _first_not_empty(cliente.get("nrc"))
+    if not nrc_actual or nrc_actual == "0":
+        receptor["nrc"] = nrc_cliente if nrc_cliente else None
+        if nrc_cliente:
+            updated.append("nrc")
+
+    cod_cliente = _first_not_empty(
+        cliente.get("codActividad"),
+        cliente.get("cod_actividad"),
+    )
+    if _is_missing_field(receptor.get("codActividad")) and cod_cliente:
+        receptor["codActividad"] = cod_cliente
+        updated.append("codActividad")
+
+    desc_cliente = _first_not_empty(
+        cliente.get("descActividad"),
+        cliente.get("giro"),
+    )
+    if _is_missing_field(receptor.get("descActividad")) and desc_cliente:
+        receptor["descActividad"] = desc_cliente
+        updated.append("descActividad")
+
+    if updated:
+        payload["receptor"] = receptor
+        logger.info(
+            "Receptor completado desde cliente %s con campos: %s",
+            cliente_id,
+            ", ".join(updated),
+        )
+
+
 def _has_content(value: Any) -> bool:
     if value is None:
         return False
@@ -730,6 +806,22 @@ def _ensure_mapping(value: Any) -> dict[str, Any]:
     return {}
 
 
+def _extract_cliente_id(*sources: Mapping[str, Any] | None) -> int | None:
+    for source in sources:
+        if not isinstance(source, Mapping):
+            continue
+        for key in ("cliente_id", "clienteId", "cliente"):
+            value = source.get(key)
+            if isinstance(value, Mapping):
+                nested = value.get("id")
+                cid = _safe_int(nested)
+            else:
+                cid = _safe_int(value)
+            if cid is not None and cid > 0:
+                return cid
+    return None
+
+
 def _is_missing_field(value: Any) -> bool:
     if value is None:
         return True
@@ -740,6 +832,26 @@ def _is_missing_field(value: Any) -> bool:
     if isinstance(value, Mapping):
         return len(value) == 0
     return False
+
+
+def _first_not_empty(*values: Any) -> str | None:
+    for value in values:
+        if value is None:
+            continue
+        if isinstance(value, str):
+            text = value.strip()
+        else:
+            text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _safe_int(value: Any) -> int | None:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _collect_expected_ident(*sources: Mapping[str, Any] | None) -> dict[str, str]:

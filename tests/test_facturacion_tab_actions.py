@@ -1341,6 +1341,41 @@ def test_buscar_nota_remision_por_detalles(monkeypatch, qt_app, tmp_path):
     assert found_id == nota_id
 
 
+def test_buscar_nota_remision_extrae_ident_en_dte_json(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, _ = _create_sale(db)
+    nota_id = db.agregar_nota(
+        "remision", venta_id, "2024-01-01", 0, "Remision", detalles={"extension": {}}
+    )
+    ident = {
+        "numeroControl": "DTE-04-S001P001-000000000000123",
+        "codigoGeneracion": "0f2f4ed5-9fc0-42d0-8f55-d18f0bca9e10",
+        "tipoDte": "04",
+        "ambiente": "00",
+    }
+    json_path = tmp_path / "nota_dte_json.json"
+    payload = {"dteJson": {"identificacion": ident}}
+    json_path.write_text(json.dumps(payload))
+    db.update_nota_detalles(
+        nota_id,
+        {
+            "json_path": str(json_path),
+            "numeroControl": ident["numeroControl"],
+            "codigoGeneracion": ident["codigoGeneracion"],
+        },
+    )
+
+    manager = SimpleNamespace(db=db, _clientes=[], _Distribuidores=[])
+    monkeypatch.setattr(
+        facturacion_tab.FacturacionTab, "_get_invoices_from_db", lambda self: None
+    )
+    tab = facturacion_tab.FacturacionTab(manager)
+    factura = {"json": str(json_path)}
+
+    found_id = tab._buscar_nota_id(factura, "remision")
+    assert found_id == nota_id
+
+
 def test_send_selected_invoice_uses_nota_remision(monkeypatch, qt_app, tmp_path):
     db = DB(":memory:")
     venta_id, cid = _create_sale(db)

@@ -4450,9 +4450,7 @@ class FacturacionTab(QWidget):
                 data = json.load(fh)
         except Exception as exc:
             raise ValueError(f"No se pudo leer el JSON de la nota: {exc}") from exc
-        ident = data.get("identificacion") or data.get("identificador") or {}
-        numero_control = str(ident.get("numeroControl") or "").strip()
-        codigo_generacion = str(ident.get("codigoGeneracion") or "").strip().upper()
+        numero_control, codigo_generacion = self._extract_nota_identificadores(data)
         if not numero_control and not codigo_generacion:
             raise ValueError("El JSON de la nota no contiene identificadores válidos")
         db = self.manager.db
@@ -4491,6 +4489,33 @@ class FacturacionTab(QWidget):
             if nota_tipo == expected:
                 return row["id"]
         return None
+
+    def _extract_nota_identificadores(
+        self, data: Mapping[str, Any] | None
+    ) -> tuple[str, str]:
+        if not isinstance(data, Mapping):
+            return "", ""
+
+        candidates: list[Mapping[str, Any]] = [data]
+        for key in ("dteJson", "dte_json", "dte"):
+            nested = data.get(key)
+            if isinstance(nested, Mapping):
+                candidates.append(nested)
+
+        numero_control = ""
+        codigo_generacion = ""
+        for candidate in candidates:
+            ident = candidate.get("identificacion") or candidate.get("identificador")
+            if not isinstance(ident, Mapping):
+                continue
+            if not numero_control:
+                numero_control = str(ident.get("numeroControl") or "").strip()
+            if not codigo_generacion:
+                codigo_generacion = str(ident.get("codigoGeneracion") or "").strip()
+            if numero_control and codigo_generacion:
+                break
+
+        return numero_control, codigo_generacion.upper()
 
     def _resolve_pdf_path(self, entry: dict | None) -> str | None:
         if not entry:

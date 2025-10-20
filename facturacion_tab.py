@@ -6815,7 +6815,7 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
-        detalles_pdf: List[dict] = []
+        dialog_detalles_pdf: List[dict] = []
         for det in detalles_nota or []:
             src = detalle_map.get(det.get("detalle_id"))
             if not src:
@@ -6852,7 +6852,7 @@ class FacturacionTab(QWidget):
         nota_json = None
         if tipo == "credito":
             ratio = None
-            if not detalles_pdf and total_original:
+            if not dialog_detalles_pdf and total_original:
                 try:
                     ratio = Decimal(str(monto / total_original))
                 except Exception:
@@ -6861,7 +6861,7 @@ class FacturacionTab(QWidget):
                 self.manager.db,
                 data,
                 ratio,
-                detalles=detalles_pdf or None,
+                detalles=dialog_detalles_pdf or None,
                 motivo=motivo,
             )
         elif tipo == "debito":

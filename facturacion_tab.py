@@ -7072,6 +7072,38 @@ class FacturacionTab(QWidget):
         try:
             with loading_dialog(self, "Creando DTE…"):
                 pdf_path = write_pdf_atomically(pdf_path, render_note_pdf)
+
+                db = getattr(getattr(self, "manager", None), "db", None)
+                if db is not None:
+                    nota_label = {
+                        "credito": "Nota de crédito",
+                        "debito": "Nota de débito",
+                    }.get(tipo)
+                    if nota_label and venta_id:
+                        try:
+                            db.add_factura_pdf(venta_id, nota_label, str(pdf_path))
+                        except Exception:
+                            logger.exception(
+                                "No se pudo registrar la %s en facturas_pdf", nota_label
+                            )
+                    if nota_id is not None:
+                        try:
+                            db.update_nota_detalles(
+                                nota_id,
+                                {
+                                    "json_path": str(json_path),
+                                    "pdf_path": str(pdf_path),
+                                    "codigoGeneracion": codigo_gen,
+                                    "numeroControl": num_ctrl,
+                                    "ambiente": identificacion.get("ambiente"),
+                                    "tipoDte": identificacion.get("tipoDte"),
+                                },
+                            )
+                        except Exception:
+                            logger.exception(
+                                "No se pudo actualizar metadatos de la nota %s", nota_id
+                            )
+
                 _, token = sign_and_save(
                     nota_json, str(json_path), return_token=True
                 )

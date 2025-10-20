@@ -5,6 +5,7 @@ import logging
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import json
+import logging
 from db import DB
 from dte import generar_dte_json
 import nota_credito_electronica
@@ -14,7 +15,11 @@ from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
 from utils.fecha import fecha_emision_hoy_str
 from utils.snapshot import Snapshot, SnapshotNotFoundError
-from utils.nota_fallback import OrigenResult
+from utils.nota_fallback import (
+    OrigenResult,
+    prepare_dte_origen,
+    prevalidate_dte_origen,
+)
 
 
 def create_db():
@@ -590,6 +595,188 @@ def test_plan_b_nce_json_conflicto(monkeypatch, tmp_path, caplog):
     detalles = json.loads(detalles_row["detalles"])
     assert "snapshot_conflict" in detalles
     assert "snapshot_path" not in detalles
+
+
+def test_prepare_dte_origen_completa_receptor_desde_cliente(monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {
+            "departamento": str(src.get("departamento", "05")).zfill(2),
+            "municipio": str(src.get("municipio", "24")).zfill(2),
+            "complemento": src.get("complemento", "Dir"),
+        },
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vendedor_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vendedor_id, None, 0, 0, 0, 10)
+    producto_id = db.cursor.lastrowid
+
+    db.add_cliente(
+        "Cliente Demo",
+        "987654-3",
+        "06141407100012",
+        "",
+        "Servicios",
+        "22223333",
+        "cliente@example.com",
+        "Dir Cliente",
+        "05",
+        "24",
+        codActividad="654321",
+        nombreComercial="Cliente Demo",
+    )
+    cliente_id = db.cursor.lastrowid
+
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        10,
+        "987654-3",
+        "06141407100012",
+        "Servicios",
+    )
+    db.add_detalle_venta(venta_id, producto_id, 1, 10, vendedor_id=vendedor_id)
+
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    receptor = dte_origen.get("receptor", {})
+    receptor.pop("codActividad", None)
+    receptor.pop("descActividad", None)
+
+    snapshot = Snapshot(
+        uuid=dte_origen["identificacion"]["codigoGeneracion"],
+        path="/tmp/in-memory.json",
+        tipo_documento="03",
+        fecha_emision=dte_origen["identificacion"].get("fecEmi"),
+        payload=dte_origen,
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: snapshot if vid == venta_id else None,
+    )
+
+    venta = db.get_venta_by_id(venta_id)
+    result = prepare_dte_origen(
+        db=db,
+        nota={"cliente_id": cliente_id},
+        venta=venta,
+        venta_id=venta_id,
+        tipo_doc="03",
+        ambiente="00",
+        strict=False,
+        usar_fallback_json=False,
+        nota_id=999,
+        regenerate=None,
+        logger=logging.getLogger("test-notas"),
+    )
+
+    receptor_result = result.data["receptor"]
+    assert receptor_result["nrc"] == "987654-3"
+    assert receptor_result["codActividad"] == "654321"
+    assert receptor_result["descActividad"] == "Servicios"
+
+    prevalidate_dte_origen(
+        result.data,
+        ambiente="00",
+        nota_tipo="credito",
+        logger=logging.getLogger("test-notas"),
+    )
+
+
+def test_prepare_dte_origen_completa_receptor_desde_venta_extra(monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {
+            "departamento": str(src.get("departamento", "05")).zfill(2),
+            "municipio": str(src.get("municipio", "24")).zfill(2),
+            "complemento": src.get("complemento", "Dir"),
+        },
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vendedor_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vendedor_id, None, 0, 0, 0, 10)
+    producto_id = db.cursor.lastrowid
+
+    db.add_cliente(
+        "Cliente Demo",
+        "987654-3",
+        "06141407100012",
+        "",
+        "",
+        "22223333",
+        "cliente@example.com",
+        "Dir Cliente",
+        "05",
+        "24",
+        codActividad="",
+        nombreComercial="Cliente Demo",
+    )
+    cliente_id = db.cursor.lastrowid
+
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        10,
+        "987654-3",
+        "06141407100012",
+        "",
+    )
+    db.add_detalle_venta(venta_id, producto_id, 1, 10, vendedor_id=vendedor_id)
+
+    dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    receptor = dte_origen.get("receptor", {})
+    receptor.pop("codActividad", None)
+    receptor.pop("descActividad", None)
+
+    snapshot = Snapshot(
+        uuid=dte_origen["identificacion"]["codigoGeneracion"],
+        path="/tmp/in-memory.json",
+        tipo_documento="03",
+        fecha_emision=dte_origen["identificacion"].get("fecEmi"),
+        payload=dte_origen,
+    )
+    monkeypatch.setattr(
+        db,
+        "get_snapshot_by_venta",
+        lambda vid: snapshot if vid == venta_id else None,
+    )
+
+    db.update_venta_extra(
+        venta_id,
+        {
+            "cliente": {
+                "codActividad": "654321",
+                "descActividad": "Servicios",
+            }
+        },
+    )
+
+    venta = db.get_venta_by_id(venta_id)
+    result = prepare_dte_origen(
+        db=db,
+        nota={"venta_id": venta_id},
+        venta=venta,
+        venta_id=venta_id,
+        tipo_doc="03",
+        ambiente="00",
+        strict=False,
+        usar_fallback_json=False,
+        nota_id=999,
+        regenerate=None,
+        logger=logging.getLogger("test-notas"),
+    )
+
+    receptor_result = result.data["receptor"]
+    assert receptor_result["codActividad"] == "654321"
+    assert receptor_result["descActividad"] == "Servicios"
+
+
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
@@ -677,7 +864,7 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     assert doc_rel["tipoGeneracion"] == 2
     assert (
         doc_rel["numeroDocumento"]
-        == payload["identificacion"]["numeroControl"].upper()
+        == payload["identificacion"]["codigoGeneracion"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
     today_str = fecha_emision_hoy_str()

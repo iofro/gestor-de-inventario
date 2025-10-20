@@ -14,7 +14,7 @@ from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 import copy
 import json
 import logging
-from typing import Optional
+from typing import Any, Callable, Mapping, Optional
 
 from db import DB
 from dte import (
@@ -34,7 +34,12 @@ from utils.receptor import ensure_receptor_completo
 from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa, fecha_emision_hoy_str, fecha_iso
 from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import solo_digitos
-from utils.snapshot import SnapshotNotFoundError, normalize_snapshot
+from utils.snapshot import SnapshotNotFoundError
+from utils.nota_fallback import (
+    prepare_dte_origen,
+    prevalidate_dte_origen,
+    rebuild_snapshot_from_json,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -79,6 +84,7 @@ def _search_dui(data: object) -> str | None:
 
 
 STRICT_SNAPSHOT_DEFAULT = env_flag("STRICT_SNAPSHOT", default=True)
+USAR_FALLBACK_JSON_DEFAULT = env_flag("USAR_FALLBACK_JSON", default=True)
 
 Decimal_0 = Decimal("0")
 Decimal_1 = Decimal("1")
@@ -288,30 +294,54 @@ def generar_nde_desde_nota(
     )
     tipo_doc = "03" if credito_fiscal else "01"
 
-    snapshot = db.get_snapshot_by_venta(venta_id) if venta_id is not None else None
-    source_used = "db"
-    if snapshot:
-        dte_origen = normalize_snapshot(snapshot.payload)
-        source_used = "snapshot"
-        uuid_origen = snapshot.uuid.upper() if snapshot.uuid else None
-    else:
-        if strict and venta_id is not None:
-            raise SnapshotNotFoundError(venta_id, nota_id)
-        dte_origen = generar_dte_json(
+    regenerate_cb: Callable[[], Mapping[str, Any]] | None = None
+    if venta_id is not None:
+        regenerate_cb = lambda: generar_dte_json(  # noqa: E731
             db,
             venta_id,
             tipo_dte=tipo_doc,
             ambiente=ambiente,
             _allow_missing_venta=True,
         )
-        origen_ident_tmp = dte_origen.get("identificacion") or {}
-        codigo_tmp = origen_ident_tmp.get("codigoGeneracion")
-        uuid_origen = str(codigo_tmp).upper() if codigo_tmp else None
+
+    origen_info = prepare_dte_origen(
+        db=db,
+        nota=nota,
+        venta=venta,
+        venta_id=venta_id,
+        tipo_doc=tipo_doc,
+        ambiente=ambiente,
+        strict=strict,
+        usar_fallback_json=USAR_FALLBACK_JSON_DEFAULT,
+        nota_id=nota_id,
+        regenerate=regenerate_cb,
+        logger=logger,
+    )
+
+    dte_origen = origen_info.data
+    source_used = origen_info.source_used
+    origen_ident_tmp = dte_origen.get("identificacion") or {}
+    codigo_tmp = origen_ident_tmp.get("codigoGeneracion")
+    uuid_origen = str(codigo_tmp).upper() if codigo_tmp else None
+
+    for section, source in origen_info.section_sources.items():
+        logger.info("Fuente %s: %s", section, source or "desconocido")
+
+    if origen_info.json_used:
+        logger.info(
+            "Fallback JSON activado nota_id=%s venta_id=%s path=%s",
+            nota_id,
+            venta_id,
+            origen_info.json_path,
+        )
+        metrics.inc("notes_fallback_json")
+
+    prevalidate_dte_origen(dte_origen, ambiente=ambiente, nota_tipo="debito", logger=logger)
 
     fecha_origen = None
     fecha_origen_source = None
-    if snapshot and snapshot.fecha_emision:
-        fecha_origen = fecha_ddmmaaaa(snapshot.fecha_emision)
+    if origen_info.snapshot and origen_info.snapshot.fecha_emision:
+        fecha_origen = fecha_ddmmaaaa(origen_info.snapshot.fecha_emision)
         if fecha_origen:
             fecha_origen_source = "snapshot"
     if not fecha_origen and venta_id is not None:
@@ -323,6 +353,16 @@ def generar_nde_desde_nota(
         fecha_origen = fecha_ddmmaaaa(venta.get("fecha"))
         if fecha_origen:
             fecha_origen_source = "venta"
+    if not fecha_origen:
+        ident_fecha = (
+            origen_ident_tmp.get("fechaEmision")
+            or origen_ident_tmp.get("fecEmi")
+        )
+        if ident_fecha:
+            fecha_tmp = fecha_ddmmaaaa(ident_fecha)
+            if fecha_tmp:
+                fecha_origen = fecha_tmp
+                fecha_origen_source = "identificacion"
     logger.info(
         "fecha relacionada para nota %s = %s (origen: %s)",
         nota_id,
@@ -330,21 +370,31 @@ def generar_nde_desde_nota(
         fecha_origen_source or "desconocido",
     )
 
-    detalles = None
+    detalles_lista = None
     if nota.get("detalles"):
         try:
-            detalles = json.loads(nota["detalles"])
+            parsed_detalles = json.loads(nota["detalles"])
         except Exception:
-            detalles = None
+            parsed_detalles = None
+        if isinstance(parsed_detalles, list):
+            detalles_lista = parsed_detalles
 
     resultado = generar_nde_desde_dte(
         db,
         dte_origen,
-        detalles,
+        detalles_lista,
         nota.get("monto"),
         nota.get("motivo"),
         ambiente=ambiente,
         fecha_origen=fecha_origen,
+    )
+
+    rebuild_snapshot_from_json(
+        db,
+        origen_info,
+        nota_id=nota_id,
+        venta_id=venta_id,
+        logger=logger,
     )
 
     doc_rel = resultado.get("documentoRelacionado") or []

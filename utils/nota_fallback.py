@@ -18,9 +18,13 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from paths import DTES_DIR
 from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa
+from utils.identificacion import is_valid_nit
+from utils.sanitize import solo_digitos
 from utils.snapshot import Snapshot, SnapshotNotFoundError, normalize_snapshot
 from utils.stable_json import hash_json
 from utils.versioned_dte import ensure_version
+
+from dte import _load_datos_negocio, _max_nombre_length, normalize_nombre
 
 try:  # pragma: no cover - para anotaciones de tipo
     from typing import TYPE_CHECKING
@@ -39,6 +43,128 @@ _SECTIONS = (
     "resumen",
     "cuerpoDocumento",
 )
+
+
+def ensure_emisor_completo(
+    emisor: Mapping[str, Any] | None, *, tipo_dte: str = "05"
+) -> dict[str, Any]:
+    """Return an ``emisor`` dictionary populated with mandatory fields."""
+
+    datos_negocio = _load_datos_negocio() or {}
+    result: dict[str, Any] = dict(emisor or {})
+
+    def _clean_text(value: Any) -> str | None:
+        if value in (None, ""):
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return str(value)
+
+    def _valid_nrc(value: Any) -> str | None:
+        digits = solo_digitos(value)
+        if not digits or digits == "0":
+            return None
+        if len(digits) < 4:
+            return None
+        return digits
+
+    def _valid_nit(value: Any) -> str | None:
+        digits = solo_digitos(value)
+        if digits and is_valid_nit(digits):
+            return digits
+        return None
+
+    nit = _valid_nit(result.get("nit")) or _valid_nit(datos_negocio.get("nit"))
+    if nit:
+        result["nit"] = nit
+
+    nrc = _valid_nrc(result.get("nrc")) or _valid_nrc(datos_negocio.get("nrc"))
+    if nrc:
+        result["nrc"] = nrc
+
+    cod_actividad = (
+        _clean_text(result.get("codActividad"))
+        or _clean_text(datos_negocio.get("codActividad"))
+        or _clean_text(datos_negocio.get("cod_giro"))
+    )
+    if cod_actividad:
+        result["codActividad"] = cod_actividad
+
+    desc_actividad = (
+        _clean_text(result.get("descActividad"))
+        or _clean_text(datos_negocio.get("descActividad"))
+        or _clean_text(datos_negocio.get("desc_giro"))
+        or _clean_text(datos_negocio.get("descripcionActividad"))
+    )
+    if desc_actividad:
+        result["descActividad"] = desc_actividad
+
+    nombre_comercial = (
+        _clean_text(result.get("nombreComercial"))
+        or _clean_text(datos_negocio.get("nombreComercial"))
+    )
+    if nombre_comercial is not None:
+        result["nombreComercial"] = nombre_comercial
+
+    telefono = _clean_text(result.get("telefono")) or _clean_text(
+        datos_negocio.get("telefono")
+    )
+    if telefono:
+        result["telefono"] = telefono
+
+    correo = _clean_text(result.get("correo"))
+    if correo and "@" not in correo:
+        correo = None
+    if correo is None:
+        fallback_correo = _clean_text(datos_negocio.get("correo"))
+        if fallback_correo and "@" in fallback_correo:
+            correo = fallback_correo
+    if correo:
+        result["correo"] = correo
+
+    tipo_est = _clean_text(result.get("tipoEstablecimiento")) or _clean_text(
+        datos_negocio.get("tipoEstablecimiento")
+    )
+    tipo_est = str(tipo_est).zfill(2) if tipo_est else "01"
+    result["tipoEstablecimiento"] = tipo_est
+
+    nombre_candidates = (
+        result.get("nombre"),
+        result.get("razonSocial"),
+        datos_negocio.get("razonSocial"),
+        datos_negocio.get("denominacionSocial"),
+        datos_negocio.get("nombre"),
+        datos_negocio.get("nombreComercial"),
+    )
+    max_length = _max_nombre_length(tipo_dte, "emisor")
+    for candidate in nombre_candidates:
+        nombre_norm = normalize_nombre(candidate, max_length=max_length)
+        if nombre_norm:
+            result["nombre"] = nombre_norm
+            break
+
+    direccion_actual = result.get("direccion")
+    if isinstance(direccion_actual, Mapping):
+        direccion = dict(direccion_actual)
+    else:
+        direccion = {}
+    direccion_config = datos_negocio.get("direccion")
+    if isinstance(direccion_config, Mapping):
+        for field in ("departamento", "municipio", "complemento"):
+            if not _clean_text(direccion.get(field)):
+                fallback = _clean_text(direccion_config.get(field))
+                if fallback:
+                    direccion[field] = fallback
+    if direccion:
+        result["direccion"] = direccion
+
+    for key in ("codEstable", "codEstableMH", "codPuntoVenta", "codPuntoVentaMH"):
+        value = _clean_text(result.get(key)) or _clean_text(datos_negocio.get(key))
+        if value:
+            result[key] = value
+
+    return result
 
 
 def _normalize_ambiente_str(value: Any) -> str | None:

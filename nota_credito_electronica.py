@@ -38,6 +38,7 @@ from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import solo_digitos
 from utils.snapshot import SnapshotNotFoundError
 from utils.nota_fallback import (
+    ensure_emisor_completo,
     prepare_dte_origen,
     prevalidate_dte_origen,
     rebuild_snapshot_from_json,
@@ -565,9 +566,10 @@ def generar_nce_desde_dte(
     numero_control = str(origen_ident.get("numeroControl") or "").strip()
     if codigo_generacion:
         tipo_generacion = 2
+        numero_documento = str(codigo_generacion).strip().upper()
     else:
         tipo_generacion = 1
-    numero_documento = numero_control
+        numero_documento = numero_control
     if not numero_documento:
         raise ValueError("Falta numeroControl del DTE origen")
 
@@ -591,7 +593,7 @@ def generar_nce_desde_dte(
     ]
     numero_documento_rel = numero_documento
 
-    emisor = deepcopy(dte_origen.get("emisor") or {})
+    emisor = ensure_emisor_completo(dte_origen.get("emisor"), tipo_dte="05")
     receptor_base = deepcopy(receptor_origen)
     nit_digits = solo_digitos(receptor_base.get("nit"))
     if nit_digits and is_valid_nit(nit_digits):

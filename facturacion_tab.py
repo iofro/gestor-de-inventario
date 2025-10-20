@@ -38,7 +38,7 @@ import logging
 import glob
 import hashlib
 from pathlib import Path
-from typing import Any, List, Mapping, Tuple
+from typing import Any, List, Mapping
 from copy import deepcopy
 from pprint import pformat
 from collections import Counter
@@ -6815,7 +6815,7 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
-        dialog_detalles_pdf: List[dict] = []
+        detalles_pdf: List[dict] = []
         for det in detalles_nota or []:
             src = detalle_map.get(det.get("detalle_id"))
             if not src:
@@ -6850,14 +6850,20 @@ class FacturacionTab(QWidget):
         ambiente = "01" if ambiente_cfg == "produccion" else "00"
 
         nota_json = None
-        snapshot_exc: SnapshotNotFoundError | None = None
         if tipo == "credito":
-            try:
-                nota_json = generar_nota_credito_json(
-                    self.manager.db, nota_id, ambiente=ambiente
-                )
-            except SnapshotNotFoundError as exc:
-                snapshot_exc = exc
+            ratio = None
+            if not detalles_pdf and total_original:
+                try:
+                    ratio = Decimal(str(monto / total_original))
+                except Exception:
+                    ratio = None
+            nota_json = nota_credito_electronica.generar_nce_desde_dte(
+                self.manager.db,
+                data,
+                ratio,
+                detalles=detalles_pdf or None,
+                motivo=motivo,
+            )
         elif tipo == "debito":
             try:
                 nota_json = generar_nota_debito_json(

@@ -4,6 +4,7 @@ import json
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
+import json
 from db import DB
 from dte import generar_dte_json
 import nota_credito_electronica
@@ -13,10 +14,30 @@ from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
 from utils.fecha import fecha_emision_hoy_str
 from utils.snapshot import Snapshot, SnapshotNotFoundError
+from utils.nota_fallback import OrigenResult
 
 
 def create_db():
     return DB(":memory:")
+
+
+def _datos_negocio_base() -> dict:
+    return {
+        "nit": "06141407100012",
+        "nrc": "1234567",
+        "nombre": "Emisor Pruebas",
+        "nombreComercial": "Emisor",
+        "codActividad": "123456",
+        "descActividad": "Venta de pruebas",
+        "tipoEstablecimiento": "01",
+        "telefono": "22223333",
+        "correo": "emisor@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir Emisor",
+        },
+    }
 
 
 @pytest.fixture(autouse=True)
@@ -31,6 +52,13 @@ def _mock_geo(monkeypatch):
 def _disable_strict_snapshot(monkeypatch):
     monkeypatch.setattr("nota_credito_electronica.STRICT_SNAPSHOT_DEFAULT", False)
     monkeypatch.setattr("nota_credito_electronica.USAR_FALLBACK_JSON_DEFAULT", True)
+
+
+@pytest.fixture(autouse=True)
+def _mock_datos_negocio(monkeypatch):
+    datos = _datos_negocio_base()
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
 
 
 def _build_base_payload() -> dict:
@@ -82,7 +110,7 @@ def _build_base_payload() -> dict:
             {
                 "tipoDocumento": "03",
                 "tipoGeneracion": 2,
-                "numeroDocumento": "ABCDEF1234567890",
+                "numeroDocumento": numero_control,
                 "fechaEmision": "2024-01-01",
             }
         ],
@@ -127,7 +155,7 @@ def _register_credit_note(db: DB, monto_venta: float = 10.0, monto_nota: float =
 def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -148,7 +176,7 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     assert data["cuerpoDocumento"][0]["precioUni"] > 0
     assert "totalPagar" not in data["resumen"]
@@ -164,7 +192,7 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
 def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -187,7 +215,7 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     receptor = data["receptor"]
     assert "-" not in receptor.get("nit", "")
@@ -199,7 +227,7 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
 def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -213,7 +241,18 @@ def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
     db.add_cliente(
-        "Cliente", "123", "06141407100012", "", "giro", "22223333", "cli@example.com", "Dir", "05", "24", nombreComercial="Cliente"
+        "Cliente",
+        "123",
+        "06141407100012",
+        "",
+        "giro",
+        "22223333",
+        "cli@example.com",
+        "Dir",
+        "05",
+        "24",
+        codActividad="654321",
+        nombreComercial="Cliente",
     )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(
@@ -246,7 +285,7 @@ def test_generar_nce_desde_nota_credito_fiscal(monkeypatch):
 def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -259,13 +298,54 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
+    cliente_id = db.add_cliente(
+        "Cliente",
+        "123",
+        "06141407100012",
+        "",
+        "Servicios",
+        "22223333",
+        "cli@example.com",
+        "Dir",
+        "05",
+        "24",
+        codActividad="654321",
+        nombreComercial="Cliente",
+    )
     venta_fecha = "2024-03-15"
-    venta_id = db.add_venta(venta_fecha, 10)
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        venta_fecha,
+        10,
+        "123",
+        "06141407100012",
+        "Servicios",
+        descuentos=0,
+    )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
-    dte_base = generar_dte_json(db, venta_id, tipo_dte="01")
+    dte_base = generar_dte_json(db, venta_id, tipo_dte="03")
     dte_alterado = deepcopy(dte_base)
     dte_alterado["identificacion"]["fecEmi"] = "2024-03-18"
+    receptor_alterado = dte_alterado.setdefault("receptor", {})
+    for key, value in (
+        ("nombre", "Cliente"),
+        ("nit", "06141407100012"),
+        ("nrc", "123"),
+        ("codActividad", "654321"),
+        ("descActividad", "Servicios"),
+    ):
+        if not receptor_alterado.get(key):
+            receptor_alterado[key] = value
+    direccion = receptor_alterado.get("direccion") or {}
+    for key, value in (
+        ("departamento", "05"),
+        ("municipio", "24"),
+        ("complemento", "Dir"),
+    ):
+        if not direccion.get(key):
+            direccion[key] = value
+    receptor_alterado["direccion"] = direccion
 
     monkeypatch.setattr(
         "nota_credito_electronica.generar_dte_json",
@@ -390,10 +470,8 @@ def test_plan_b_nce_json_regenera_snapshot(monkeypatch, tmp_path, caplog):
 
     detalles_row = db.cursor.execute("SELECT detalles FROM notas WHERE id=?", (nota_id,)).fetchone()
     detalles = json.loads(detalles_row["detalles"])
-    snapshot_path = Path(detalles["snapshot_path"])
-    assert snapshot_path.exists()
-    assert snapshot_path.read_text(encoding="utf-8")
-    assert detalles.get("snapshot_hash")
+    assert "snapshot_conflict" in detalles
+    assert detalles["snapshot_conflict"].startswith("codigoGeneracion")
 
 
 def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog):
@@ -436,7 +514,7 @@ def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog
     data = generar_nce_desde_nota(db, nota_id)
 
     assert data["documentoRelacionado"][0]["numeroDocumento"] == payload["identificacion"][
-        "codigoGeneracion"
+        "numeroControl"
     ]
     assert "Fuente documentoRelacionado: derivado" in caplog.text
     assert "notes_source_used.json" in metrics_calls
@@ -515,7 +593,7 @@ def test_plan_b_nce_json_conflicto(monkeypatch, tmp_path, caplog):
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -537,11 +615,13 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
             "fecEmi": "2023-08-01",
             "numeroControl": "DTE-03-00100001",
         },
-        "emisor": {"nombre": "Emisor"},
+        "emisor": _datos_negocio_base(),
         "receptor": {
             "nombre": "Cliente Snapshot",
-            "nit": "0614-140710-001-2",
+            "nit": "06141407100012",
             "nrc": None,
+            "codActividad": "654321",
+            "descActividad": "Servicios",
             "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
         },
         "cuerpoDocumento": [
@@ -597,7 +677,7 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     assert doc_rel["tipoGeneracion"] == 2
     assert (
         doc_rel["numeroDocumento"]
-        == payload["identificacion"]["codigoGeneracion"].upper()
+        == payload["identificacion"]["numeroControl"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
     today_str = fecha_emision_hoy_str()
@@ -609,7 +689,7 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
 def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -631,11 +711,15 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
             "fecEmi": "2023-09-01",
             "numeroControl": "DTE-01-00001234",
         },
-        "emisor": {"nombre": "Emisor"},
+        "emisor": _datos_negocio_base(),
         "receptor": {
             "nombre": "Consumidor Final",
             "tipoDocumento": "13",
             "numDocumento": "01234567-8",
+            "nit": "012345678",
+            "codActividad": "654321",
+            "descActividad": "Servicios",
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
         },
         "cuerpoDocumento": [
             {
@@ -684,7 +768,7 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     doc_rel = nce["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
-    assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
+    assert doc_rel["numeroDocumento"] == payload["identificacion"]["numeroControl"].upper()
     assert doc_rel["fechaEmision"] == "2023-09-01"
     today_str = fecha_emision_hoy_str()
     assert nce["identificacion"]["fecEmi"] == today_str
@@ -693,7 +777,7 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
 def test_generar_nce_desde_nota_strict_snapshot(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -721,7 +805,7 @@ def test_generar_nce_desde_nota_strict_snapshot(monkeypatch):
 def test_generar_nce_receptor_placeholder_en_pruebas(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -735,6 +819,7 @@ def test_generar_nce_receptor_placeholder_en_pruebas(monkeypatch):
             "tipoDte": "01",
             "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
             "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000001",
         },
         "emisor": {},
         "receptor": {"nombre": "Consumidor Final"},
@@ -788,7 +873,7 @@ def test_generar_nce_receptor_placeholder_en_pruebas(monkeypatch):
 def test_generar_nce_consumidor_final_dui_en_nit(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -806,6 +891,7 @@ def test_generar_nce_consumidor_final_dui_en_nit(monkeypatch):
             "tipoDte": "01",
             "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
             "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000002",
         },
         "emisor": {},
         "receptor": {
@@ -858,7 +944,7 @@ def test_generar_nce_consumidor_final_dui_en_nit(monkeypatch):
 def test_generar_nce_receptor_incompleto_en_produccion(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -872,6 +958,7 @@ def test_generar_nce_receptor_incompleto_en_produccion(monkeypatch):
             "tipoDte": "01",
             "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
             "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000003",
         },
         "emisor": {},
         "receptor": {"nombre": "Consumidor Final"},
@@ -994,7 +1081,7 @@ def test_generar_nce_config_produccion_impone_ambiente(monkeypatch):
 def test_nota_credito_total_nueve(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1014,7 +1101,7 @@ def test_nota_credito_total_nueve(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     assert data["resumen"]["montoTotalOperacion"] == expected_total
 
@@ -1022,7 +1109,7 @@ def test_nota_credito_total_nueve(monkeypatch):
 def test_nota_credito_precio_uni(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1052,7 +1139,7 @@ def test_nota_credito_precio_uni(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")
@@ -1065,7 +1152,7 @@ def test_nota_credito_precio_uni(monkeypatch):
 def test_generar_nce_rechaza_monto_excedido(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1077,7 +1164,9 @@ def test_generar_nce_rechaza_monto_excedido(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_cliente("Cliente", "123", "06141407100012", "", "giro", "", "cli@example.com", "Dir", "05", "24")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     nota_id = db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 15, '')",
@@ -1090,7 +1179,7 @@ def test_generar_nce_rechaza_monto_excedido(monkeypatch):
 def test_generar_nce_detalle_excede(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1102,7 +1191,9 @@ def test_generar_nce_detalle_excede(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10)
+    db.add_cliente("Cliente", "123", "06141407100012", "", "giro", "", "cli@example.com", "Dir", "05", "24")
+    cliente_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", 10, cliente_id=cliente_id)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     codigo = dte_origen["cuerpoDocumento"][0]["codigo"]
@@ -1121,7 +1212,7 @@ def test_generar_nce_detalle_excede(monkeypatch):
 def test_generar_nce_detalle_ajuste_cantidad(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1158,7 +1249,7 @@ def test_generar_nce_detalle_ajuste_cantidad(monkeypatch):
 def test_nota_credito_un_dolar(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1170,8 +1261,56 @@ def test_nota_credito_un_dolar(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10)
+    cliente_info = {
+        "nombre": "Cliente",
+        "nrc": "123",
+        "nit": "06141407100012",
+        "codActividad": "654321",
+        "descActividad": "Servicios",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    cliente_id = db.add_cliente(
+        cliente_info["nombre"],
+        cliente_info["nrc"],
+        cliente_info["nit"],
+        "",
+        cliente_info["descActividad"],
+        "22223333",
+        "cli@example.com",
+        "Dir",
+        "05",
+        "24",
+        codActividad=cliente_info["codActividad"],
+        nombreComercial="Cliente",
+    )
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        10,
+        "123",
+        "06141407100012",
+        "Servicios",
+        descuentos=0,
+    )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    original_generar_dte = nota_credito_electronica.generar_dte_json
+
+    def _generar_dte_enriquecido(*args, **kwargs):
+        data = original_generar_dte(*args, **kwargs)
+        receptor = data.setdefault("receptor", {})
+        for key in ("nombre", "nit", "nrc", "codActividad", "descActividad"):
+            if not receptor.get(key):
+                receptor[key] = cliente_info.get(key)
+        direccion = receptor.get("direccion") or {}
+        for key, value in cliente_info["direccion"].items():
+            if not direccion.get(key):
+                direccion[key] = value
+        receptor["direccion"] = direccion
+        return data
+
+    monkeypatch.setattr(
+        "nota_credito_electronica.generar_dte_json", _generar_dte_enriquecido
+    )
     nota_id = db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 1, '')",
         (venta_id,),
@@ -1195,7 +1334,7 @@ def test_nota_credito_un_dolar(monkeypatch):
 def test_nota_credito_dos_centavos(monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
-        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+        lambda: _datos_negocio_base(),
     )
     monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     monkeypatch.setattr(
@@ -1207,8 +1346,56 @@ def test_nota_credito_dos_centavos(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
-    venta_id = db.add_venta("2024-01-01", 10)
+    cliente_info = {
+        "nombre": "Cliente",
+        "nrc": "123",
+        "nit": "06141407100012",
+        "codActividad": "654321",
+        "descActividad": "Servicios",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+    cliente_id = db.add_cliente(
+        cliente_info["nombre"],
+        cliente_info["nrc"],
+        cliente_info["nit"],
+        "",
+        cliente_info["descActividad"],
+        "22223333",
+        "cli@example.com",
+        "Dir",
+        "05",
+        "24",
+        codActividad=cliente_info["codActividad"],
+        nombreComercial="Cliente",
+    )
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        "2024-01-01",
+        10,
+        "123",
+        "06141407100012",
+        "Servicios",
+        descuentos=0,
+    )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    original_generar_dte = nota_credito_electronica.generar_dte_json
+
+    def _generar_dte_enriquecido(*args, **kwargs):
+        data = original_generar_dte(*args, **kwargs)
+        receptor = data.setdefault("receptor", {})
+        for key in ("nombre", "nit", "nrc", "codActividad", "descActividad"):
+            if not receptor.get(key):
+                receptor[key] = cliente_info.get(key)
+        direccion = receptor.get("direccion") or {}
+        for key, value in cliente_info["direccion"].items():
+            if not direccion.get(key):
+                direccion[key] = value
+        receptor["direccion"] = direccion
+        return data
+
+    monkeypatch.setattr(
+        "nota_credito_electronica.generar_dte_json", _generar_dte_enriquecido
+    )
     nota_id = db.cursor.execute(
         "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-02', 0.02, '')",
         (venta_id,),
@@ -1315,3 +1502,168 @@ def test_nota_credito_direccion(tmp_path, monkeypatch):
     assert 'La Libertad Centro' in lines[idx]
     assert 'Colonia El Centro con una avenida' in lines[idx]
     assert lines[idx].endswith('...')
+
+
+def test_nce_usa_plan_b(monkeypatch):
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    payload = _build_base_payload()
+
+    calls: list[str] = []
+
+    def fake_prepare(**kwargs):
+        assert kwargs["nota_id"] == nota_id
+        assert kwargs["venta_id"] == venta_id
+        calls.append("prepare")
+        payload_copy = json.loads(json.dumps(payload))
+        section_sources = {
+            "emisor": "json",
+            "receptor": "json",
+            "documentoRelacionado": "json",
+            "identificacion": "json",
+            "resumen": "json",
+            "cuerpoDocumento": "json",
+        }
+        expected_ident = {
+            "codigoGeneracion": payload_copy["identificacion"]["codigoGeneracion"],
+            "numeroControl": payload_copy["identificacion"]["numeroControl"],
+        }
+        return OrigenResult(
+            data=payload_copy,
+            section_sources=section_sources,
+            source_used="json",
+            snapshot=None,
+            json_path="/tmp/dte_origen.json",
+            json_payload=payload_copy,
+            json_used=True,
+            config_used=False,
+            detalles={},
+            venta_extra={},
+            expected_ident=expected_ident,
+        )
+
+    prevalidate_calls: list[str] = []
+    original_prevalidate = nota_credito_electronica.prevalidate_dte_origen
+
+    def fake_prevalidate(data, **kwargs):
+        prevalidate_calls.append("prevalidate")
+        return original_prevalidate(data, **kwargs)
+
+    rebuild_called: dict[str, bool] = {}
+
+    def fake_rebuild(db_arg, result, **kwargs):
+        rebuild_called["called"] = True
+        assert result.source_used == "json"
+        return {"rebuilt": True}
+
+    monkeypatch.setattr(nota_credito_electronica, "prepare_dte_origen", fake_prepare)
+    monkeypatch.setattr(nota_credito_electronica, "prevalidate_dte_origen", fake_prevalidate)
+    monkeypatch.setattr(
+        nota_credito_electronica, "rebuild_snapshot_from_json", fake_rebuild
+    )
+
+    resultado = generar_nce_desde_nota(db, nota_id, ambiente="00")
+
+    assert "prepare" in calls
+    assert prevalidate_calls
+    assert rebuild_called.get("called") is True
+    numero_control = payload["identificacion"]["numeroControl"]
+    doc_rel = resultado["documentoRelacionado"][0]
+    assert doc_rel["numeroDocumento"] == numero_control
+    for item in resultado["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == numero_control
+    assert resultado["identificacion"]["ambiente"] == "00"
+
+
+def test_nce_restaurar_secciones_si_sanitize_elimina(monkeypatch, caplog):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: _datos_negocio_base(),
+    )
+    db = create_db()
+    payload = _build_base_payload()
+
+    def fake_sanitize(data, schema):
+        sanitized = {k: v for k, v in data.items() if k not in {"receptor", "documentoRelacionado"}}
+        return sanitized
+
+    monkeypatch.setattr(nota_credito_electronica, "sanitize_dte_payload", fake_sanitize)
+    caplog.set_level(logging.ERROR, logger=nota_credito_electronica.logger.name)
+
+    resultado = generar_nce_desde_dte(db, payload, Decimal("1"))
+
+    assert resultado["documentoRelacionado"] == payload["documentoRelacionado"]
+    for key in ("nombre", "nit", "direccion"):
+        assert resultado["receptor"][key] == payload["receptor"][key]
+    assert "sanitize_dte_payload eliminó secciones obligatorias" in caplog.text
+
+
+def test_nce_docrel_control_ccf(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: _datos_negocio_base(),
+    )
+    db = create_db()
+    payload = _build_base_payload()
+    resultado = generar_nce_desde_dte(db, payload, Decimal("1"))
+    numero_control = payload["identificacion"]["numeroControl"]
+    doc_rel = resultado["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["numeroDocumento"] == numero_control
+    for item in resultado["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == numero_control
+        assert item["uniMedida"] == 59
+
+
+def test_nce_sin_num_control_falla_prevalidacion():
+    data = _build_base_payload()
+    data["identificacion"].pop("numeroControl")
+    with pytest.raises(ValueError, match="Falta numeroControl del DTE origen"):
+        nota_credito_electronica.prevalidate_dte_origen(
+            data,
+            ambiente="00",
+            nota_tipo="credito",
+            logger=nota_credito_electronica.logger,
+        )
+
+
+def test_nce_no_regenera_ids(tmp_path):
+    db = create_db()
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (NULL, 'credito', '2024-01-05', 0, 'Test')"
+    ).lastrowid
+    payload = _build_base_payload()
+    payload["identificacion"]["codigoGeneracion"] = (
+        "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE"
+    )
+    payload_copy = json.loads(json.dumps(payload))
+    expected_ident = {
+        "codigoGeneracion": "FFFFFFFF-1111-2222-3333-444444444444",
+        "numeroControl": payload_copy["identificacion"]["numeroControl"],
+    }
+    origen = OrigenResult(
+        data=payload_copy,
+        section_sources={},
+        source_used="json",
+        snapshot=None,
+        json_path=str(tmp_path / "respaldo.json"),
+        json_payload=payload_copy,
+        json_used=True,
+        config_used=False,
+        detalles={},
+        venta_extra={},
+        expected_ident=expected_ident,
+    )
+    resultado = nota_credito_electronica.rebuild_snapshot_from_json(
+        db,
+        origen,
+        nota_id=nota_id,
+        venta_id=None,
+        logger=nota_credito_electronica.logger,
+    )
+    assert resultado["rebuilt"] is False
+    assert "conflict" in resultado
+    detalles_row = db.cursor.execute("SELECT detalles FROM notas WHERE id=?", (nota_id,)).fetchone()
+    detalles = json.loads(detalles_row["detalles"])
+    assert "snapshot_conflict" in detalles
+    assert detalles["snapshot_conflict"].startswith("codigoGeneracion")

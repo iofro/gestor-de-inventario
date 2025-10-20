@@ -12,6 +12,7 @@ import hashlib
 import logging
 import time
 import unicodedata
+from functools import lru_cache
 from collections.abc import Mapping as AbcMapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP, getcontext
@@ -6970,6 +6971,73 @@ def _parse_error_response(respuesta: dict) -> str:
     return mensaje
 
 
+@lru_cache(maxsize=None)
+def _resumen_allows_condicion_operacion(tipo: str | None) -> bool:
+    """Indica si el esquema del DTE permite ``resumen.condicionOperacion``."""
+
+    if not tipo:
+        return True
+    tipo = str(tipo).strip()
+    if not tipo:
+        return True
+
+    schema = catalogos.get_dte_schema(tipo)
+    if not isinstance(schema, AbcMapping):
+        return True
+
+    props = schema.get("properties")
+    if not isinstance(props, AbcMapping):
+        return True
+
+    resumen_schema = props.get("resumen")
+    if not isinstance(resumen_schema, AbcMapping):
+        return True
+
+    definitions = schema.get("definitions")
+    if not isinstance(definitions, AbcMapping):
+        definitions = {}
+
+    visited: set[int] = set()
+
+    def _contains(node: object) -> bool:
+        if not isinstance(node, AbcMapping):
+            return False
+        node_id = id(node)
+        if node_id in visited:
+            return False
+        visited.add(node_id)
+
+        node_props = node.get("properties")
+        if isinstance(node_props, AbcMapping) and "condicionOperacion" in node_props:
+            return True
+
+        for key in ("allOf", "anyOf", "oneOf"):
+            branch = node.get(key)
+            if isinstance(branch, Sequence):
+                for item in branch:
+                    if _contains(item):
+                        return True
+
+        items = node.get("items")
+        if isinstance(items, Sequence):
+            for item in items:
+                if _contains(item):
+                    return True
+        elif isinstance(items, AbcMapping) and _contains(items):
+            return True
+
+        ref = node.get("$ref")
+        if isinstance(ref, str) and ref.startswith("#/definitions/"):
+            ref_key = ref.split("/")[-1]
+            target = definitions.get(ref_key)
+            if target and _contains(target):
+                return True
+
+        return False
+
+    return _contains(resumen_schema)
+
+
 def _enviar_documento(
     db: DB, doc_id: int, data: dict, modo: str | None = "normal", jws_token: str | None = None
 ) -> dict:
@@ -7057,12 +7125,23 @@ def _enviar_documento(
             auth_host,
             recep_host,
         )
+    resumen_raw = data.get("resumen") or {}
+    if isinstance(resumen_raw, AbcMapping):
+        resumen = dict(resumen_raw)
+    else:
+        try:
+            resumen = dict(resumen_raw)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            resumen = {}
+
     try:
-        resumen = data.get("resumen", {})
-        print("DTE: VALIDATE_IN", list((resumen or {}).keys()))
-        condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
-        resumen["condicionOperacion"] = condicion
-        validate_pagos_basico(resumen, condicion)
+        print("DTE: VALIDATE_IN", list(resumen.keys()))
+        if _resumen_allows_condicion_operacion(tipo_dte_norm):
+            condicion = normalize_condicion_operacion(resumen.get("condicionOperacion"))
+            resumen["condicionOperacion"] = condicion
+            validate_pagos_basico(resumen, condicion)
+        else:
+            resumen.pop("condicionOperacion", None)
         data["resumen"] = resumen
         print("DTE: VALIDATE_OK")
     except ValueError as exc:

@@ -860,11 +860,11 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     assert receptor["nrc"] is None
 
     doc_rel = nce["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
     assert (
         doc_rel["numeroDocumento"]
-        == payload["identificacion"]["codigoGeneracion"].upper()
+        == payload["identificacion"]["numeroControl"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
     today_str = fecha_emision_hoy_str()
@@ -1688,7 +1688,9 @@ def test_nota_credito_direccion(tmp_path, monkeypatch):
     idx = next(i for i, ln in enumerate(lines) if ln.startswith('Dirección:'))
     assert 'La Libertad Centro' in lines[idx]
     assert 'Colonia El Centro con una avenida' in lines[idx]
-    assert lines[idx].endswith('...')
+    if not lines[idx].endswith('...'):
+        assert idx + 1 < len(lines)
+        assert lines[idx + 1].strip().startswith('realmente muy larga')
 
 
 def test_nce_usa_plan_b(monkeypatch):

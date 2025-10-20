@@ -261,6 +261,7 @@ def prevalidate_dte_origen(
             missing.append("documentoRelacionado.fechaEmision")
 
     identificacion = _ensure_mapping(data.get("identificacion"))
+    numero_control_missing = False
     if not identificacion:
         missing.append("identificacion")
     else:
@@ -273,6 +274,9 @@ def prevalidate_dte_origen(
         numero = identificacion.get("numeroControl")
         if _is_missing_field(codigo) and _is_missing_field(numero):
             missing.append("identificacion.codigoGeneracion")
+        if _is_missing_field(numero):
+            missing.append("identificacion.numeroControl")
+            numero_control_missing = True
         if _is_missing_field(identificacion.get("fecEmi")) and _is_missing_field(
             identificacion.get("fechaEmision")
         ):
@@ -293,6 +297,8 @@ def prevalidate_dte_origen(
 
     if missing:
         logger.error("Pre-validación fallida: %s", ", ".join(missing))
+        if numero_control_missing:
+            raise ValueError("Falta numeroControl del DTE origen")
         if len(missing) == 1:
             raise ValueError(f"Falta {missing[0]}")
         raise ValueError("Faltan campos: " + ", ".join(missing))

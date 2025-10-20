@@ -13,6 +13,7 @@ from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
 from utils.fecha import fecha_emision_hoy_str
 from utils.snapshot import Snapshot, SnapshotNotFoundError
+from utils.nota_fallback import OrigenResult
 
 
 def create_db():
@@ -81,8 +82,8 @@ def _build_base_payload() -> dict:
         "documentoRelacionado": [
             {
                 "tipoDocumento": "03",
-                "tipoGeneracion": 2,
-                "numeroDocumento": "ABCDEF1234567890",
+                "tipoGeneracion": 1,
+                "numeroDocumento": numero_control,
                 "fechaEmision": "2024-01-01",
             }
         ],
@@ -124,6 +125,166 @@ def _register_credit_note(db: DB, monto_venta: float = 10.0, monto_nota: float =
     return venta_id, nota_id
 
 
+def test_nce_usa_plan_b(monkeypatch, tmp_path):
+    db = create_db()
+    _, nota_id = _register_credit_note(db)
+
+    base_payload = _build_base_payload()
+    origen_info = OrigenResult(
+        data=deepcopy(base_payload),
+        section_sources={"identificacion": "json"},
+        source_used="json",
+        snapshot=None,
+        json_path=str(tmp_path / "origen.json"),
+        json_payload=deepcopy(base_payload),
+        json_used=True,
+        config_used=False,
+        detalles={},
+        venta_extra={},
+        expected_ident={
+            "codigoGeneracion": base_payload["identificacion"]["codigoGeneracion"],
+            "numeroControl": base_payload["identificacion"]["numeroControl"],
+        },
+    )
+
+    prepare_calls: list[int] = []
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "prepare_dte_origen",
+        lambda **kwargs: (prepare_calls.append(kwargs.get("nota_id")) or origen_info),
+    )
+
+    prevalidate_calls: list[dict] = []
+
+    def _fake_prevalidate(data, **kwargs):
+        prevalidate_calls.append(data)
+
+    monkeypatch.setattr(nota_credito_electronica, "prevalidate_dte_origen", _fake_prevalidate)
+
+    generado = {
+        "identificacion": {"numeroControl": "NC-0001"},
+        "documentoRelacionado": [
+            {
+                "tipoDocumento": "03",
+                "numeroDocumento": base_payload["identificacion"]["numeroControl"],
+                "fechaEmision": "2024-01-01",
+            }
+        ],
+    }
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "generar_nce_desde_dte",
+        lambda *args, **kwargs: generado,
+    )
+
+    rebuild_calls: list[dict] = []
+
+    def _fake_rebuild(db_arg, result, **kwargs):
+        rebuild_calls.append(kwargs)
+        return {"rebuilt": True}
+
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "rebuild_snapshot_from_json",
+        _fake_rebuild,
+    )
+
+    resultado = generar_nce_desde_nota(db, nota_id)
+
+    assert resultado is generado
+    assert prepare_calls == [nota_id]
+    assert prevalidate_calls and prevalidate_calls[0] is origen_info.data
+    assert rebuild_calls and rebuild_calls[0]["nota_id"] == nota_id
+
+
+def test_nce_no_regenera_ids(monkeypatch):
+    db = create_db()
+    _, nota_id = _register_credit_note(db)
+
+    base_payload = _build_base_payload()
+    origen_info = OrigenResult(
+        data=deepcopy(base_payload),
+        section_sources={"identificacion": "snapshot"},
+        source_used="snapshot",
+        snapshot=None,
+        json_path=None,
+        json_payload=None,
+        json_used=False,
+        config_used=False,
+        detalles={},
+        venta_extra={},
+        expected_ident={
+            "codigoGeneracion": base_payload["identificacion"]["codigoGeneracion"],
+            "numeroControl": base_payload["identificacion"]["numeroControl"],
+        },
+    )
+
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "prepare_dte_origen",
+        lambda **kwargs: origen_info,
+    )
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "prevalidate_dte_origen",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "generar_nce_desde_dte",
+        lambda *args, **kwargs: {
+            "identificacion": {"numeroControl": "NC-0002"},
+            "documentoRelacionado": [
+                {
+                    "tipoDocumento": "03",
+                    "numeroDocumento": base_payload["identificacion"]["numeroControl"],
+                    "fechaEmision": "2024-01-01",
+                }
+            ],
+        },
+    )
+
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "rebuild_snapshot_from_json",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("no debe regenerar")),
+    )
+
+    generar_nce_desde_nota(db, nota_id)
+
+
+def test_nce_docrel_control_ccf(monkeypatch):
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+    db = create_db()
+    base = _build_base_payload()
+    resultado = generar_nce_desde_dte(db, base, Decimal("1"), motivo="Ajuste")
+
+    doc_rel = resultado["documentoRelacionado"][0]
+    numero_control = base["identificacion"]["numeroControl"].upper()
+    assert doc_rel["numeroDocumento"] == numero_control
+    assert doc_rel["tipoGeneracion"] == 1
+    for item in resultado["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == numero_control
+
+
+def test_nce_sin_num_control_falla_prevalidacion():
+    payload = _build_base_payload()
+    payload["identificacion"].pop("numeroControl")
+    logger = logging.getLogger("test_nce_prevalid")
+
+    with pytest.raises(ValueError, match="Falta numeroControl del DTE origen"):
+        nota_credito_electronica.prevalidate_dte_origen(
+            payload,
+            ambiente="00",
+            nota_tipo="credito",
+            logger=logger,
+        )
+
+
 def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",
@@ -148,7 +309,7 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     assert data["cuerpoDocumento"][0]["precioUni"] > 0
     assert "totalPagar" not in data["resumen"]
@@ -187,7 +348,7 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     receptor = data["receptor"]
     assert "-" not in receptor.get("nit", "")
@@ -436,7 +597,7 @@ def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog
     data = generar_nce_desde_nota(db, nota_id)
 
     assert data["documentoRelacionado"][0]["numeroDocumento"] == payload["identificacion"][
-        "codigoGeneracion"
+        "numeroControl"
     ]
     assert "Fuente documentoRelacionado: derivado" in caplog.text
     assert "notes_source_used.json" in metrics_calls
@@ -594,10 +755,10 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
 
     doc_rel = nce["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
-    assert doc_rel["tipoGeneracion"] == 2
+    assert doc_rel["tipoGeneracion"] == 1
     assert (
         doc_rel["numeroDocumento"]
-        == payload["identificacion"]["codigoGeneracion"].upper()
+        == payload["identificacion"]["numeroControl"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
     today_str = fecha_emision_hoy_str()
@@ -683,8 +844,8 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
 
     doc_rel = nce["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "01"
-    assert doc_rel["tipoGeneracion"] == 2
-    assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
+    assert doc_rel["tipoGeneracion"] == 1
+    assert doc_rel["numeroDocumento"] == payload["identificacion"]["numeroControl"].upper()
     assert doc_rel["fechaEmision"] == "2023-09-01"
     today_str = fecha_emision_hoy_str()
     assert nce["identificacion"]["fecEmi"] == today_str
@@ -1014,7 +1175,7 @@ def test_nota_credito_total_nueve(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     assert data["resumen"]["montoTotalOperacion"] == expected_total
 
@@ -1052,7 +1213,7 @@ def test_nota_credito_precio_uni(monkeypatch):
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
     assert (
         data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")

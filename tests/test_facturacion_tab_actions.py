@@ -15,6 +15,7 @@ except ImportError as exc:  # pragma: no cover - skip when Qt is unavailable
 
 import facturacion_tab
 from db import DB
+import utils.catalogos as catalogos
 
 
 @pytest.fixture(scope="module")
@@ -260,6 +261,79 @@ def test_create_nota_propagates_ui_mode(monkeypatch, qt_app, tmp_path, ui_mode):
 
     assert captured["modo"] == ui_mode
     assert captured["token"] == "signed-token"
+
+
+def test_ui_saldo_insuficiente(monkeypatch, qt_app, tmp_path):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db, credito=True)
+    tab = _make_tab(db, cid)
+
+    factura_payload = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "abcd1234abcd1234abcd1234abcd1234",
+            "numeroControl": "DTE-03-S001P001-000000000000111",
+            "fecEmi": "2024-01-15",
+        },
+        "resumen": {"montoTotalOperacion": 10, "totalPagar": 10},
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "codigo": "P1",
+                "descripcion": "Producto",
+                "cantidad": 1,
+                "precioUni": 10,
+                "ventaGravada": 10,
+                "tributos": [catalogos.TRIBUTO_IVA],
+            }
+        ],
+    }
+
+    factura_path = tmp_path / "factura.json"
+    factura_path.write_text(json.dumps(factura_payload))
+
+    monkeypatch.setattr(
+        tab,
+        "_selected_factura",
+        lambda: {"venta_id": venta_id, "json": str(factura_path)},
+    )
+
+    class DummyDialog:
+        def __init__(self, *args, **kwargs):
+            pass
+
+        def exec_(self):
+            return facturacion_tab.QDialog.Accepted
+
+        def get_data(self):
+            return 12.0, "Motivo", [{"detalle_id": 1, "ajuste": 12.0}]
+
+    monkeypatch.setattr(facturacion_tab, "NotaDetalleDialog", DummyDialog)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes)
+
+    warnings: list[str] = []
+
+    def _capture_warning(*args, **kwargs):
+        if len(args) >= 3:
+            warnings.append(args[2])
+        elif "text" in kwargs:
+            warnings.append(kwargs["text"])
+        elif "message" in kwargs:
+            warnings.append(kwargs["message"])
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", _capture_warning)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    monkeypatch.setattr(
+        facturacion_tab.nota_credito_electronica,
+        "generar_nce_desde_dte",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("no debe generar")),
+    )
+
+    tab.create_nota("credito", factura={"venta_id": venta_id, "json": str(factura_path)})
+
+    assert "El monto excede el saldo restante de la venta" in warnings
 
 
 def test_crear_nota_remision_actualiza_lista(monkeypatch, qt_app, tmp_path):

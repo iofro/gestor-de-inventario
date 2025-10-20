@@ -6811,9 +6811,23 @@ class FacturacionTab(QWidget):
         if QMessageBox.question(self, "Confirmar", resumen, QMessageBox.Yes | QMessageBox.No) != QMessageBox.Yes:
             return
 
-        nota_id = self.manager.db.agregar_nota(
-            tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
-        )
+        try:
+            nota_id = self.manager.db.agregar_nota(
+                tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
+            )
+        except ValueError as exc:
+            logger.warning(
+                "No se registró nota por saldo insuficiente venta_id=%s tipo=%s error=%s",
+                venta_id,
+                tipo,
+                exc,
+            )
+            QMessageBox.warning(
+                self,
+                "Nota",
+                "El monto excede el saldo restante de la venta",
+            )
+            return
 
         dialog_detalles_pdf: List[dict] = []
         for det in detalles_nota or []:

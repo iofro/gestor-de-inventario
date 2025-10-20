@@ -157,8 +157,8 @@ def _resolver_detalle_ajuste_precio(
     normalizado["ventas_exentas"] = exenta
     normalizado["ventas_no_sujetas"] = nosuj
 
-    if "uniMedida" not in normalizado:
-        if original and original.get("uniMedida") is not None:
+    if normalizado.get("uniMedida") in (None, ""):
+        if original and original.get("uniMedida") not in (None, ""):
             normalizado["uniMedida"] = original.get("uniMedida")
         else:
             normalizado["uniMedida"] = 59
@@ -260,7 +260,7 @@ def _resolver_detalle_ajuste_cantidad(
     normalizado["ventaExenta"] = exenta
     normalizado["ventaNoSuj"] = nosuj
 
-    if "uniMedida" not in normalizado and original and original.get("uniMedida") is not None:
+    if normalizado.get("uniMedida") in (None, "") and original and original.get("uniMedida") not in (None, ""):
         normalizado["uniMedida"] = original.get("uniMedida")
     if "tipoItem" not in normalizado and original and original.get("tipoItem") is not None:
         normalizado["tipoItem"] = original.get("tipoItem")
@@ -479,12 +479,9 @@ def generar_nde_desde_dte(
 
     codigo_generacion = origen_ident.get("codigoGeneracion")
     numero_control = origen_ident.get("numeroControl")
-    if codigo_generacion:
-        numero_documento = str(codigo_generacion).upper()
-        tipo_generacion = 2
-    else:
-        tipo_generacion = 1
-        numero_documento = str(numero_control or "").strip()
+    numero_control_rel = str(numero_control or "").strip().upper()
+    tipo_generacion = 1
+    numero_documento = numero_control_rel
 
     fecha_doc_rel_base = None
     if fecha_origen:
@@ -538,7 +535,7 @@ def generar_nde_desde_dte(
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
-    uuid_origen = numero_documento if tipo_generacion == 2 else ""
+    uuid_origen = str(codigo_generacion or "")
     tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
     extra_desc = f": {motivo}" if motivo else ""
 
@@ -628,6 +625,13 @@ def generar_nde_desde_dte(
                 f"Nota de débito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
             )
 
+            uni_medida = det.get("uniMedida")
+            if uni_medida in (None, ""):
+                if orig and orig.get("uniMedida") not in (None, ""):
+                    uni_medida = orig.get("uniMedida")
+                else:
+                    uni_medida = 59
+
             items.append(
                 {
                     "numItem": num,
@@ -635,14 +639,14 @@ def generar_nde_desde_dte(
                     "codigo": codigo_det,
                     "descripcion": descripcion_det,
                     "cantidad": cantidad,
-                    "uniMedida": det.get("uniMedida", 59),
+                    "uniMedida": uni_medida,
                     "precioUni": precio,
                     "montoDescu": d4(det.get("montoDescu", 0.0)),
                     "ventaGravada": d4(grav),
                     "ventaExenta": d4(exenta),
                     "ventaNoSuj": d4(nosuj),
                     "tributos": [TRIBUTO_IVA] if grav > 0 else None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_control_rel,
                     "codTributo": None,
                 }
             )
@@ -705,7 +709,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": 0.0,
                     "tributos": [TRIBUTO_IVA],
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_control_rel,
                     "codTributo": None,
                 }
             )
@@ -725,7 +729,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": total_exenta,
                     "ventaNoSuj": 0.0,
                     "tributos": None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_control_rel,
                     "codTributo": None,
                 }
             )
@@ -745,7 +749,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": total_nosuj,
                     "tributos": None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_control_rel,
                     "codTributo": None,
                 }
             )

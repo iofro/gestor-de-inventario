@@ -119,8 +119,8 @@ def _resolver_detalle_ajuste_precio(
     normalizado["ventas_exentas"] = exenta
     normalizado["ventas_no_sujetas"] = nosuj
 
-    if "uniMedida" not in normalizado:
-        if original and original.get("uniMedida") is not None:
+    if normalizado.get("uniMedida") in (None, ""):
+        if original and original.get("uniMedida") not in (None, ""):
             normalizado["uniMedida"] = original.get("uniMedida")
         else:
             normalizado["uniMedida"] = 59
@@ -283,7 +283,7 @@ def _resolver_detalle_ajuste_cantidad(
     normalizado["ventaExenta"] = exenta
     normalizado["ventaNoSuj"] = nosuj
 
-    if "uniMedida" not in normalizado and original and original.get("uniMedida") is not None:
+    if normalizado.get("uniMedida") in (None, "") and original and original.get("uniMedida") not in (None, ""):
         normalizado["uniMedida"] = original.get("uniMedida")
     if "tipoItem" not in normalizado and original and original.get("tipoItem") is not None:
         normalizado["tipoItem"] = original.get("tipoItem")
@@ -357,6 +357,14 @@ def generar_nce_desde_nota(
     codigo_tmp = origen_ident_tmp.get("codigoGeneracion")
     uuid_origen = str(codigo_tmp).upper() if codigo_tmp else None
 
+    logger.info(
+        "Plan B nota credito nota_id=%s venta_id=%s source=%s json_path=%s strict=%s",
+        nota_id,
+        venta_id,
+        source_used,
+        origen_info.json_path,
+        strict,
+    )
     for section, source in origen_info.section_sources.items():
         logger.info("Fuente %s: %s", section, source or "desconocido")
 
@@ -370,6 +378,16 @@ def generar_nce_desde_nota(
         metrics.inc("notes_fallback_json")
 
     prevalidate_dte_origen(dte_origen, ambiente=ambiente, nota_tipo="credito", logger=logger)
+
+    origen_ident_log = dte_origen.get("identificacion") or {}
+    logger.info(
+        "Identificacion origen nota_id=%s venta_id=%s codigo=%s numero=%s source=%s",
+        nota_id,
+        venta_id,
+        origen_ident_log.get("codigoGeneracion"),
+        origen_ident_log.get("numeroControl"),
+        source_used,
+    )
 
     fecha_origen = None
     fecha_origen_source = None
@@ -447,13 +465,21 @@ def generar_nce_desde_nota(
             fecha_origen=fecha_origen,
         )
 
-    rebuild_snapshot_from_json(
-        db,
-        origen_info,
-        nota_id=nota_id,
-        venta_id=venta_id,
-        logger=logger,
-    )
+    if origen_info.json_used:
+        rebuild_snapshot_from_json(
+            db,
+            origen_info,
+            nota_id=nota_id,
+            venta_id=venta_id,
+            logger=logger,
+        )
+    else:
+        logger.info(
+            "Rebuild snapshot omitido source=%s nota_id=%s venta_id=%s",
+            source_used,
+            nota_id,
+            venta_id,
+        )
 
     doc_rel = resultado.get("documentoRelacionado") or []
     rel = doc_rel[0] if doc_rel else {}
@@ -542,12 +568,9 @@ def generar_nce_desde_dte(
 
     codigo_generacion = origen_ident.get("codigoGeneracion")
     numero_control = origen_ident.get("numeroControl")
-    if codigo_generacion:
-        numero_documento = str(codigo_generacion).upper()
-        tipo_generacion = 2
-    else:
-        tipo_generacion = 1
-        numero_documento = str(numero_control or "").strip()
+    numero_control_rel = str(numero_control or "").strip().upper()
+    tipo_generacion = 1
+    numero_documento = numero_control_rel
 
     fecha_doc_rel_base = None
     if fecha_origen:
@@ -701,6 +724,10 @@ def generar_nce_desde_dte(
                 f"Nota de crédito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
             )
 
+            uni_medida = det.get("uniMedida")
+            if uni_medida in (None, ""):
+                uni_medida = 59
+
             items.append(
                 {
                     "numItem": num,
@@ -708,14 +735,14 @@ def generar_nce_desde_dte(
                     "codigo": codigo_det,
                     "descripcion": descripcion_det,
                     "cantidad": cantidad,
-                    "uniMedida": det.get("uniMedida", 59),
+                    "uniMedida": uni_medida,
                     "precioUni": precio,
                     "montoDescu": det.get("montoDescu", 0.0),
                     "ventaGravada": grav,
                     "ventaExenta": exenta,
                     "ventaNoSuj": nosuj,
                     "tributos": [TRIBUTO_IVA] if grav > 0 else None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_control_rel,
                     "codTributo": None,
                 }
             )
@@ -771,7 +798,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": 0.0,
                         "ventaNoSuj": 0.0,
                         "tributos": [TRIBUTO_IVA],
-                        "numeroDocumento": uuid_origen,
+                        "numeroDocumento": numero_control_rel,
                         "codTributo": None,
                     }
                 )
@@ -798,7 +825,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": 0.0,
                         "ventaNoSuj": 0.0,
                         "tributos": [TRIBUTO_IVA],
-                        "numeroDocumento": uuid_origen,
+                        "numeroDocumento": numero_control_rel,
                         "codTributo": None,
                     }
                 )
@@ -818,7 +845,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": total_exenta,
                         "ventaNoSuj": 0.0,
                         "tributos": None,
-                        "numeroDocumento": uuid_origen,
+                        "numeroDocumento": numero_control_rel,
                         "codTributo": None,
                     }
                 )
@@ -838,7 +865,7 @@ def generar_nce_desde_dte(
                         "ventaExenta": 0.0,
                         "ventaNoSuj": total_nosuj,
                         "tributos": None,
-                        "numeroDocumento": uuid_origen,
+                        "numeroDocumento": numero_control_rel,
                         "codTributo": None,
                     }
                 )

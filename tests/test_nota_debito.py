@@ -1,6 +1,8 @@
 import pytest
 from decimal import Decimal
 
+import utils.catalogos as catalogos
+
 from db import DB
 from dte import generar_dte_json
 from nota_debito_electronica import generar_nde_desde_dte
@@ -86,6 +88,153 @@ def test_generar_nde_consumidor_final_dui_en_nit(monkeypatch):
     assert receptor["nit"] == "012345678"
     assert "nrc" in receptor
     assert receptor["nrc"] is None
+
+
+def test_nde_docrel_control_ccf(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
+            "numeroControl": "DTE-03-S001P001-000000000000999",
+            "fecEmi": "2024-02-01",
+            "ambiente": "00",
+        },
+        "emisor": {
+            "nit": "06141407100012",
+            "nrc": "1234567",
+            "nombre": "Emisor Pruebas",
+            "codActividad": "123456",
+            "descActividad": "Venta",
+            "tipoEstablecimiento": "01",
+            "telefono": "22223333",
+            "correo": "emisor@example.com",
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+        },
+        "receptor": {
+            "nombre": "Cliente",
+            "nit": "06141407100012",
+            "nrc": "7654321",
+            "codActividad": "654321",
+            "descActividad": "Servicios",
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+        },
+        "resumen": {
+            "totalGravada": 10,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "montoTotalOperacion": 10,
+        },
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "codigo": "ITEM1",
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 10,
+                "ventaGravada": 10,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [catalogos.TRIBUTO_IVA],
+            }
+        ],
+    }
+
+    nde = generar_nde_desde_dte(db, dte_origen, None, 5.0, "Ajuste", ambiente="00")
+    numero_control = dte_origen["identificacion"]["numeroControl"].upper()
+    doc_rel = nde["documentoRelacionado"][0]
+    assert doc_rel["numeroDocumento"] == numero_control
+    assert doc_rel["tipoGeneracion"] == 1
+    for item in nde["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == numero_control
+
+
+def test_nde_unimedida_default(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    )
+
+    db = create_db()
+    dte_origen = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "numeroControl": "DTE-03-S001P001-000000000000777",
+            "fecEmi": "2024-03-01",
+            "ambiente": "00",
+        },
+        "emisor": {
+            "nit": "06141407100012",
+            "nrc": "1234567",
+            "nombre": "Emisor",
+            "codActividad": "123456",
+            "descActividad": "Venta",
+            "tipoEstablecimiento": "01",
+            "telefono": "22223333",
+            "correo": "emisor@example.com",
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+        },
+        "receptor": {
+            "nombre": "Cliente",
+            "nit": "06141407100012",
+            "nrc": "7654321",
+            "codActividad": "654321",
+            "descActividad": "Servicios",
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+        },
+        "resumen": {
+            "totalGravada": 10,
+            "totalExenta": 0,
+            "totalNoSuj": 0,
+            "montoTotalOperacion": 10,
+        },
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "codigo": "ITEM2",
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 10,
+                "ventaGravada": 10,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [catalogos.TRIBUTO_IVA],
+            }
+        ],
+    }
+
+    detalles = [
+        {
+            "codigo": "ITEM2",
+            "descripcion": "Ajuste",
+            "ajuste": "5",
+            "ventas_gravadas": Decimal("5"),
+            "uniMedida": None,
+        }
+    ]
+
+    nde = generar_nde_desde_dte(db, dte_origen, detalles, None, "Ajuste", ambiente="00")
+    assert nde["cuerpoDocumento"][0]["uniMedida"] == 59
 
 
 def test_generar_nde_detalle_ajuste_cantidad(monkeypatch):

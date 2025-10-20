@@ -324,6 +324,14 @@ def prepare_dte_origen(
         venta_extra=venta_extra,
         logger=logger,
     )
+    _complete_receptor_from_metadata(
+        base_payload,
+        nota=nota,
+        venta=venta,
+        venta_extra=venta_extra,
+        detalles=detalles,
+        logger=logger,
+    )
 
     expected_ambiente = _normalize_ambiente_str(expected_ident.get("ambiente"))
     if expected_ambiente and expected_ambiente != ambiente_normalizado:
@@ -785,6 +793,115 @@ def _complete_receptor_from_cliente(
             "Receptor completado desde cliente %s con campos: %s",
             cliente_id,
             ", ".join(updated),
+        )
+
+
+def _complete_receptor_from_metadata(
+    payload: dict[str, Any],
+    *,
+    nota: Mapping[str, Any] | None,
+    venta: Mapping[str, Any] | None,
+    venta_extra: Mapping[str, Any],
+    detalles: Mapping[str, Any],
+    logger: logging.Logger,
+) -> None:
+    receptor = _ensure_mapping(payload.get("receptor"))
+    if not receptor:
+        return
+
+    sources: list[Mapping[str, Any]] = []
+
+    for raw in (nota, venta, venta_extra, detalles):
+        if isinstance(raw, Mapping):
+            sources.append(raw)
+        elif isinstance(raw, str):
+            parsed = _parse_mapping(raw)
+            if parsed:
+                sources.append(parsed)
+
+    expanded: list[Mapping[str, Any]] = []
+    for source in sources:
+        expanded.append(source)
+        extra = source.get("extra") if isinstance(source, Mapping) else None
+        if isinstance(extra, Mapping):
+            expanded.append(extra)
+        elif isinstance(extra, str):
+            parsed = _parse_mapping(extra)
+            if parsed:
+                expanded.append(parsed)
+
+    if not expanded:
+        return
+
+    def _walk_mappings(value: Mapping[str, Any]) -> Iterable[Mapping[str, Any]]:
+        seen: set[int] = set()
+        stack: list[Mapping[str, Any]] = [value]
+        while stack:
+            current = stack.pop()
+            ident = id(current)
+            if ident in seen:
+                continue
+            seen.add(ident)
+            yield current
+            for nested in current.values():
+                if isinstance(nested, Mapping):
+                    stack.append(nested)
+                elif isinstance(nested, Sequence) and not isinstance(
+                    nested, (str, bytes, bytearray)
+                ):
+                    for item in nested:
+                        if isinstance(item, Mapping):
+                            stack.append(item)
+
+    def _find_field(*names: str) -> str | None:
+        for source in expanded:
+            for mapping in _walk_mappings(source):
+                for name in names:
+                    if name not in mapping:
+                        continue
+                    text = _first_not_empty(mapping.get(name))
+                    if text:
+                        return text
+        return None
+
+    updated: list[str] = []
+
+    if _is_missing_field(receptor.get("nrc")):
+        nrc_val = _find_field("nrc", "nrcCliente", "numeroRegistro")
+        if nrc_val:
+            receptor["nrc"] = nrc_val
+            updated.append("nrc")
+
+    if _is_missing_field(receptor.get("codActividad")):
+        cod_val = _find_field(
+            "codActividad",
+            "cod_actividad",
+            "codigoActividad",
+            "actividadEconomica",
+            "codigoActividadEconomica",
+        )
+        if cod_val:
+            receptor["codActividad"] = cod_val
+            updated.append("codActividad")
+
+    if _is_missing_field(receptor.get("descActividad")):
+        desc_val = _find_field(
+            "descActividad",
+            "descripcionActividad",
+            "giro",
+            "actividadEconomicaDescripcion",
+            "actividad",
+            "desc_giro",
+        )
+        if desc_val:
+            receptor["descActividad"] = desc_val
+            updated.append("descActividad")
+
+    if updated:
+        payload["receptor"] = receptor
+        logger.info(
+            "Receptor completado desde metadatos (%s)",
+            ", ".join(sorted(set(updated))),
         )
 
 

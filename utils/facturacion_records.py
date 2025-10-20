@@ -120,6 +120,17 @@ def canonical_tipo_label(value: str | None) -> str | None:
     return CANONICAL_TIPO_LABELS.get(key)
 
 
+def _looks_like_note_label(value: str | None) -> bool:
+    if not value:
+        return False
+    lowered = str(value).strip().lower()
+    if not lowered:
+        return False
+    if "nota" in lowered:
+        return True
+    return "remision" in lowered or "remisión" in lowered
+
+
 def infer_tipo_from_name(base_name: str | None, fallback: str | None = None) -> str | None:
     suffix = None
     if base_name:
@@ -410,11 +421,31 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
 
     for rec in records:
         source = rec.get("_source", "factura")
+        doc_tipo = rec.get("tipo")
+        tipo_lower = str(doc_tipo or "").strip().lower()
+        ruta_value = rec.get("ruta")
+        inferred_tipo = None
+        if ruta_value:
+            try:
+                base_name = os.path.splitext(os.path.basename(ruta_value))[0]
+            except Exception:
+                base_name = None
+            inferred_tipo = infer_tipo_from_name(base_name, doc_tipo)
+        inferred_lower = str(inferred_tipo or "").strip().lower()
+        note_like = _looks_like_note_label(tipo_lower) or _looks_like_note_label(
+            inferred_lower
+        )
         venta_id = rec.get("venta_id")
-        if venta_id:
+        if venta_id and not note_like:
             key = ("venta", venta_id)
         else:
-            key = _normalize_group_key(rec.get("ruta"))
+            key = _normalize_group_key(ruta_value)
+            if key == ("path", None, None):
+                rec_id = rec.get("id")
+                if rec_id is not None:
+                    key = ("id", rec_id)
+                elif venta_id is not None:
+                    key = ("venta", venta_id, tipo_lower or None)
         bucket = grouped.setdefault(key, {})
         if source == "ticket":
             bucket.setdefault("ticket", rec)
@@ -605,6 +636,28 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         if row_type == "orphan":
             row["pdf"] = ruta
             row["json"] = json_path
+
+        tipo_lower_desc = str((tipo_desc or doc_tipo or "").lower())
+        note_kind = None
+        if "nota" in tipo_lower_desc:
+            if "remision" in tipo_lower_desc or "remisión" in tipo_lower_desc:
+                note_kind = "remision"
+            elif "crédito" in tipo_lower_desc or "credito" in tipo_lower_desc:
+                note_kind = "credito"
+            elif "débito" in tipo_lower_desc or "debito" in tipo_lower_desc:
+                note_kind = "debito"
+        if note_kind:
+            try:
+                nota_id = db.find_nota_by_document(
+                    numero_control=numero_control,
+                    codigo_generacion=codigo_generacion,
+                    json_path=json_path,
+                    tipo=note_kind,
+                )
+            except Exception:
+                nota_id = None
+            if nota_id is not None:
+                row["nota_id"] = nota_id
         rows.append(row)
     return rows
 

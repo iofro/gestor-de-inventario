@@ -24,18 +24,49 @@ def _patch_module(monkeypatch, module):
         monkeypatch.setattr(module, "_origen_aceptado_en_mh", lambda db, ident: True)
 
 
-def test_documento_relacionado_usa_uuid(monkeypatch):
+def _load_golden(name: str) -> dict:
+    with open(f"tests/goldens/{name}.json", "r", encoding="utf-8") as fh:
+        return json.load(fh)
+
+
+def test_nce_docrel_ccf_usa_control(monkeypatch):
     db = DB(":memory:")
     _patch_module(monkeypatch, nce_mod)
-    _patch_module(monkeypatch, nde_mod)
-    with open("tests/goldens/ccf.json") as f:
-        dte_origen = json.load(f)
-    dte_origen["selloRecibido"] = "0" * 40
-    uuid = dte_origen["identificacion"]["codigoGeneracion"]
+    ccf = _load_golden("ccf")
+    expected_control = ccf["identificacion"]["numeroControl"].upper()
 
-    nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
-    assert nce["documentoRelacionado"][0]["numeroDocumento"] == uuid
+    resultado = generar_nce_desde_dte(db, ccf, Decimal("1"))
+
+    doc_rel = resultado["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["numeroDocumento"] == expected_control
+    assert doc_rel["tipoGeneracion"] == 2
+    for item in resultado["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == expected_control
+
+
+def test_nce_docrel_factura_usa_control(monkeypatch):
+    db = DB(":memory:")
+    _patch_module(monkeypatch, nce_mod)
+    factura = _load_golden("fc")
+    expected_control = factura["identificacion"]["numeroControl"].upper()
+
+    resultado = generar_nce_desde_dte(db, factura, Decimal("1"))
+
+    doc_rel = resultado["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "01"
+    assert doc_rel["numeroDocumento"] == expected_control
+    assert doc_rel["tipoGeneracion"] == 2
+    for item in resultado["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == expected_control
+
+
+def test_nde_docrel_usa_uuid(monkeypatch):
+    db = DB(":memory:")
+    _patch_module(monkeypatch, nde_mod)
+    ccf = _load_golden("ccf")
+    uuid = ccf["identificacion"]["codigoGeneracion"]
 
     detalles = [{"descripcion": "Prod", "precio_unitario": 1, "ventas_gravadas": 1}]
-    nde = generar_nde_desde_dte(db, dte_origen, detalles, None)
+    nde = generar_nde_desde_dte(db, ccf, detalles, None)
     assert nde["documentoRelacionado"][0]["numeroDocumento"] == uuid

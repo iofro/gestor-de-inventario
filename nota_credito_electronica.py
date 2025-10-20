@@ -202,6 +202,30 @@ def _search_dui(data: object) -> str | None:
     return None
 
 
+def _tipo_dte_str(value: Any) -> str | None:
+    """Return a two-digit ``tipoDte`` representation when possible."""
+
+    if value is None:
+        return None
+    try:
+        return f"{int(str(value).strip()):02d}"
+    except (TypeError, ValueError):
+        return None
+
+
+def inferir_tipo_por_numero_control(numero_control: str) -> str | None:
+    """Infer the tipoDte from ``numero_control`` when not provided."""
+
+    if not numero_control:
+        return None
+    control = str(numero_control).strip().upper()
+    if control.startswith("DTE-03-"):
+        return "03"
+    if control.startswith("DTE-01-"):
+        return "01"
+    return None
+
+
 def _pct_label(ratio: Decimal) -> str:
     """Return percentage string (e.g., ``40`` for ``0.4``)."""
     return str((ratio * 100).quantize(Decimal("1"), rounding=ROUND_HALF_UP))
@@ -609,7 +633,7 @@ def generar_nce_desde_dte(
     #   Nunca copiar la histórica hacia fecEmi.
 
     codigo_generacion = origen_ident.get("codigoGeneracion")
-    numero_control = str(origen_ident.get("numeroControl") or "").strip()
+    numero_control = str(origen_ident.get("numeroControl") or "").strip().upper()
     tipo_generacion = 2 if codigo_generacion else 1
     if not numero_control:
         raise ValueError("Falta numeroControl del DTE origen")
@@ -626,7 +650,6 @@ def generar_nce_desde_dte(
 
     emisor = ensure_emisor_completo(dte_origen.get("emisor"), tipo_dte="05")
     receptor_origen = dte_origen.get("receptor") or {}
-    receptor_base = deepcopy(receptor_origen)
 
     def _ensure_mapping_receptor(value: Any) -> dict[str, Any]:
         if isinstance(value, Mapping):
@@ -646,15 +669,44 @@ def generar_nce_desde_dte(
             return not value.strip()
         return False
 
+    def _to_nonempty_str(value: Any) -> str | None:
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+        else:
+            text = str(value).strip()
+        return text or None
+
     sources_priority: list[dict[str, Any]] = []
-    has_context_sources = False
     for key in ("nota", "venta_extra", "cliente"):
         mapping = _ensure_mapping_receptor(receptor_fuentes.get(key))
         if mapping:
             sources_priority.append(mapping)
-            has_context_sources = True
     if isinstance(receptor_origen, Mapping):
-        sources_priority.append(receptor_origen)
+        sources_priority.append(dict(receptor_origen))
+
+    def _merge_receptor(base: dict[str, Any], source: Mapping[str, Any]) -> None:
+        for key, raw_val in source.items():
+            if _is_missing_field(raw_val):
+                continue
+            if isinstance(raw_val, Mapping):
+                existing = base.get(key)
+                if isinstance(existing, Mapping):
+                    _merge_receptor(existing, raw_val)
+                elif _is_missing_field(existing):
+                    base[key] = deepcopy(raw_val)
+                continue
+            if isinstance(raw_val, list):
+                if _is_missing_field(base.get(key)):
+                    base[key] = deepcopy(raw_val)
+                continue
+            if _is_missing_field(base.get(key)):
+                base[key] = raw_val
+
+    receptor_base: dict[str, Any] = {}
+    for source in sources_priority:
+        _merge_receptor(receptor_base, source)
 
     def _find_in_sources(keys: Sequence[str]) -> str | None:
         for source in sources_priority:
@@ -700,7 +752,9 @@ def generar_nce_desde_dte(
             )
         )
         if cod_val:
-            receptor_base["codActividad"] = cod_val
+            cod_val = _to_nonempty_str(cod_val)
+            if cod_val:
+                receptor_base["codActividad"] = cod_val
     if _is_missing_field(receptor_base.get("descActividad")):
         desc_val = _find_in_sources(
             (
@@ -713,7 +767,27 @@ def generar_nce_desde_dte(
             )
         )
         if desc_val:
-            receptor_base["descActividad"] = desc_val
+            desc_val = _to_nonempty_str(desc_val)
+            if desc_val:
+                receptor_base["descActividad"] = desc_val
+    cod_text = _to_nonempty_str(receptor_base.get("codActividad"))
+    if cod_text is not None:
+        receptor_base["codActividad"] = cod_text
+    else:
+        receptor_base.pop("codActividad", None)
+    desc_text = _to_nonempty_str(receptor_base.get("descActividad"))
+    if desc_text is not None:
+        receptor_base["descActividad"] = desc_text
+    else:
+        receptor_base.pop("descActividad", None)
+    merged_nrc_val = str(receptor_base.get("nrc") or "").strip()
+    if merged_nrc_val and merged_nrc_val != "0":
+        if _is_missing_field(receptor_base.get("codActividad")) or _is_missing_field(
+            receptor_base.get("descActividad")
+        ):
+            message = "Receptor con NRC requiere codActividad y descActividad válidos"
+            logger.error(message)
+            raise ValueError(message)
     nit_digits = solo_digitos(receptor_base.get("nit"))
     if nit_digits and is_valid_nit(nit_digits):
         receptor_base["nit"] = nit_digits
@@ -733,29 +807,15 @@ def generar_nce_desde_dte(
         receptor["nit"] = final_nit
 
     final_nrc_val = str(receptor.get("nrc") or "").strip()
-    if final_nrc_val and final_nrc_val != "0":
-        if _is_missing_field(receptor.get("codActividad")) or _is_missing_field(
-            receptor.get("descActividad")
-        ):
-            message = "Receptor con NRC requiere codActividad y descActividad válidos"
-            if has_context_sources:
-                logger.error(message)
-                raise ValueError(message)
-            logger.warning(message)
-
-    tipo_raw = origen_ident.get("tipoDte")
-    if isinstance(tipo_raw, int):
-        tipo_doc_rel = f"{tipo_raw:02d}"
-    elif isinstance(tipo_raw, str):
-        tipo_str = tipo_raw.strip()
-        if tipo_str.isdigit() and len(tipo_str) <= 2:
-            tipo_doc_rel = f"{int(tipo_str):02d}"
-        else:
-            tipo_doc_rel = tipo_str or None
-    else:
-        tipo_doc_rel = None
-    if tipo_doc_rel in {None, "", "01", "03"}:
-        tipo_doc_rel = "03" if final_nrc_val and final_nrc_val != "0" else "01"
+    tipo_doc_rel = _tipo_dte_str(origen_ident.get("tipoDte"))
+    if not tipo_doc_rel:
+        tipo_doc_rel = inferir_tipo_por_numero_control(numero_control)
+    if not tipo_doc_rel:
+        doc_rel_origen = dte_origen.get("documentoRelacionado")
+        if isinstance(doc_rel_origen, Sequence) and doc_rel_origen:
+            tipo_doc_rel = _tipo_dte_str(doc_rel_origen[0].get("tipoDocumento"))
+    if not tipo_doc_rel:
+        tipo_doc_rel = "01"
 
     preserve_nrc_null = False
     if tipo_doc_rel == "01" or not final_nrc_val or final_nrc_val == "0":
@@ -774,7 +834,7 @@ def generar_nce_desde_dte(
 
     orig_resumen = dte_origen.get("resumen", {})
     items: list[dict] = []
-    uuid_origen = origen_ident.get("codigoGeneracion", "")
+    uuid_origen = str(origen_ident.get("codigoGeneracion") or "").strip().upper()
     tipo_doc_desc = catalogos.DTE_TIPOS.get(origen_ident.get("tipoDte", ""), "documento")
     extra_desc = f": {motivo}" if motivo else ""
 
@@ -1071,10 +1131,17 @@ def generar_nce_desde_dte(
     }
 
     logger.info(
-        "NCE relaciona tipo=%s gen=%s num=%s fec=%s sello=%s",
+        (
+            "NCE relaciona tipo=%s tipoGeneracion=%s num=%s | receptor.nrc=%s "
+            "codActividad=%s descActividad=%s | origen.gen=%s fec=%s sello=%s"
+        ),
         doc_rel[0].get("tipoDocumento"),
+        doc_rel[0].get("tipoGeneracion"),
+        doc_rel[0].get("numeroDocumento"),
+        receptor.get("nrc"),
+        receptor.get("codActividad"),
+        receptor.get("descActividad"),
         origen_ident.get("codigoGeneracion"),
-        origen_ident.get("numeroControl"),
         origen_ident.get("fecEmi"),
         dte_origen.get("selloRecibido"),
     )

@@ -526,6 +526,112 @@ def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog
     assert "notes_fallback_json" in metrics_calls
 
 
+def test_nce_receptor_con_nrc_sin_actividad_falla():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    dte_origen["receptor"]["nrc"] = "7654321"
+    dte_origen["receptor"]["codActividad"] = ""
+    dte_origen["receptor"]["descActividad"] = ""
+
+    with pytest.raises(ValueError, match="Receptor con NRC requiere codActividad y descActividad válidos"):
+        generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+
+
+def test_nce_receptor_actividad_numerica_a_texto():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    dte_origen["receptor"]["nrc"] = "7654321"
+    dte_origen["receptor"]["codActividad"] = 123456
+    dte_origen["receptor"]["descActividad"] = 98765
+
+    resultado = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+
+    receptor = resultado["receptor"]
+    assert receptor["codActividad"] == "123456"
+    assert receptor["descActividad"] == "98765"
+
+
+def test_nce_unimedida_default():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    detalles = [
+        {
+            "numItem": 1,
+            "descripcion": "Prod",
+            "cantidad": 1,
+            "uniMedida": None,
+            "ventaGravada": 5,
+            "precio_unitario": 5,
+        }
+    ]
+
+    resultado = generar_nce_desde_dte(db, dte_origen, None, detalles=detalles)
+
+    for item in resultado["cuerpoDocumento"]:
+        assert item["uniMedida"] == 59
+
+
+def test_nce_plan_b_paridad_nde(monkeypatch, tmp_path):
+    negocio = _datos_negocio_base()
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: negocio)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda _src: {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    payload = _build_base_payload()
+    payload["identificacion"]["ambiente"] = "01"
+    payload["receptor"]["correo"] = "cliente@example.com"
+    payload["receptor"]["telefono"] = "70000000"
+    payload["receptor"]["nombreComercial"] = "Cliente Demo"
+    json_path = tmp_path / "plan_b.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    db.update_nota_detalles(nota_id, {"json_path": str(json_path)})
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: None)
+
+    calls: list[str] = []
+    original_prepare = nota_credito_electronica.prepare_dte_origen
+    original_prevalidate = nota_credito_electronica.prevalidate_dte_origen
+    original_generar = nota_credito_electronica.generar_nce_desde_dte
+    original_sanitize = nota_credito_electronica.sanitize_dte_payload
+    original_rebuild = nota_credito_electronica.rebuild_snapshot_from_json
+
+    def _wrap(name, func):
+        def _wrapped(*args, **kwargs):
+            calls.append(name)
+            return func(*args, **kwargs)
+
+        return _wrapped
+
+    monkeypatch.setattr(nota_credito_electronica, "prepare_dte_origen", _wrap("prepare", original_prepare))
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "prevalidate_dte_origen",
+        _wrap("prevalidate", original_prevalidate),
+    )
+    monkeypatch.setattr(nota_credito_electronica, "generar_nce_desde_dte", _wrap("generar", original_generar))
+    monkeypatch.setattr(nota_credito_electronica, "sanitize_dte_payload", _wrap("sanitize", original_sanitize))
+    monkeypatch.setattr(
+        nota_credito_electronica,
+        "rebuild_snapshot_from_json",
+        _wrap("rebuild", original_rebuild),
+    )
+
+    resultado = generar_nce_desde_nota(db, nota_id, ambiente="01")
+
+    assert calls == ["prepare", "prevalidate", "generar", "sanitize", "rebuild"]
+    ident = resultado["identificacion"]
+    assert ident["ambiente"] == "01"
+    doc_rel = resultado["documentoRelacionado"][0]
+    assert doc_rel["numeroDocumento"] == payload["identificacion"]["numeroControl"].upper()
+    assert doc_rel["tipoDocumento"] == payload["identificacion"]["tipoDte"]
+    assert doc_rel["tipoGeneracion"] == 2
+
+
 def test_plan_b_nce_json_incompleto_falla(monkeypatch, tmp_path):
     payload = _build_base_payload()
     payload["emisor"].pop("nit")

@@ -1,9 +1,12 @@
 import fitz
 from copy import deepcopy
 import json
+import logging
 from decimal import Decimal, ROUND_HALF_UP
+from pathlib import Path
 from db import DB
 from dte import generar_dte_json
+import nota_credito_electronica
 from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_nota
 import pytest
 from factura_sv import generar_nota_credito_pdf
@@ -27,6 +30,98 @@ def _mock_geo(monkeypatch):
 @pytest.fixture(autouse=True)
 def _disable_strict_snapshot(monkeypatch):
     monkeypatch.setattr("nota_credito_electronica.STRICT_SNAPSHOT_DEFAULT", False)
+    monkeypatch.setattr("nota_credito_electronica.USAR_FALLBACK_JSON_DEFAULT", True)
+
+
+def _build_base_payload() -> dict:
+    codigo = "12345678-ABCD-1234-ABCD-1234567890AB"
+    numero_control = "DTE-03-S001P001-000000000000123"
+    return {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": codigo,
+            "numeroControl": numero_control,
+            "fecEmi": "2024-01-01",
+            "horEmi": "10:00:00",
+            "tipoModelo": 1,
+            "tipoOperacion": 1,
+            "tipoContingencia": None,
+            "motivoContin": None,
+            "ambiente": "00",
+            "tipoMoneda": "USD",
+        },
+        "emisor": {
+            "nit": "06141407100012",
+            "nrc": "1234567",
+            "nombre": "Emisor Pruebas",
+            "nombreComercial": "Emisor",
+            "codActividad": "123456",
+            "descActividad": "Venta",
+            "tipoEstablecimiento": "01",
+            "telefono": "22223333",
+            "correo": "emisor@example.com",
+            "direccion": {
+                "departamento": "05",
+                "municipio": "24",
+                "complemento": "Dir Emisor",
+            },
+        },
+        "receptor": {
+            "nombre": "Cliente Demo",
+            "nit": "06141407100012",
+            "nrc": "7654321",
+            "codActividad": "654321",
+            "descActividad": "Servicios",
+            "direccion": {
+                "departamento": "05",
+                "municipio": "24",
+                "complemento": "Dir Cliente",
+            },
+        },
+        "documentoRelacionado": [
+            {
+                "tipoDocumento": "03",
+                "tipoGeneracion": 2,
+                "numeroDocumento": "ABCDEF1234567890",
+                "fechaEmision": "2024-01-01",
+            }
+        ],
+        "resumen": {
+            "montoTotalOperacion": 10,
+            "totalGravada": 10,
+            "totalNoSuj": 0,
+            "totalExenta": 0,
+            "condicionOperacion": 1,
+        },
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "tipoItem": 1,
+                "descripcion": "Servicio",
+                "cantidad": 1,
+                "uniMedida": 59,
+                "precioUni": 10,
+                "ventaGravada": 10,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [catalogos.TRIBUTO_IVA],
+            }
+        ],
+    }
+
+
+def _register_credit_note(db: DB, monto_venta: float = 10.0, monto_nota: float = 5.0) -> tuple[int, int]:
+    db.add_vendedor("V1")
+    vendedor_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vendedor_id, None, 0, 0, 0, 10)
+    producto_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-01", monto_venta)
+    db.add_detalle_venta(venta_id, producto_id, 1, monto_venta, vendedor_id=vendedor_id)
+    nota_id = db.cursor.execute(
+        "INSERT INTO notas (venta_id, tipo, fecha, monto, motivo) VALUES (?, 'credito', '2024-01-05', ?, 'Ajuste')",
+        (venta_id, monto_nota),
+    ).lastrowid
+    return venta_id, nota_id
 
 
 def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
@@ -198,6 +293,178 @@ def test_generar_nce_desde_nota_regenera_dte_fecha(monkeypatch):
     assert nce["identificacion"]["fecEmi"] == today_str
 
 
+def test_plan_b_nce_usa_snapshot(monkeypatch, tmp_path, caplog):
+    negocio = {
+        "nit": "06141407100012",
+        "nrc": "1234567",
+        "nombre": "Emisor Pruebas",
+        "nombreComercial": "Emisor",
+        "codActividad": "123456",
+        "descActividad": "Venta",
+        "tipoEstablecimiento": "01",
+        "telefono": "22223333",
+        "correo": "emisor@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir Emisor"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    payload = _build_base_payload()
+
+    snapshot = Snapshot(
+        uuid=payload["identificacion"]["codigoGeneracion"],
+        path=str(tmp_path / "documento.json"),
+        tipo_documento="03",
+        fecha_emision="01/01/2024",
+        payload=payload,
+    )
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: snapshot if vid == venta_id else None)
+
+    metrics_calls: list[str] = []
+    monkeypatch.setattr(
+        nota_credito_electronica.metrics,
+        "inc",
+        lambda name: metrics_calls.append(name),
+    )
+
+    caplog.set_level(logging.INFO, logger=nota_credito_electronica.logger.name)
+    resultado = generar_nce_desde_nota(db, nota_id)
+
+    assert resultado["identificacion"]["tipoDte"] == "05"
+    assert "Fallback JSON activado" not in caplog.text
+    assert metrics_calls.count("notes_source_used.snapshot") == 1
+    assert "notes_fallback_json" not in metrics_calls
+
+
+def test_plan_b_nce_json_regenera_snapshot(monkeypatch, tmp_path, caplog):
+    negocio = {
+        "nit": "06141407100012",
+        "nrc": "1234567",
+        "nombre": "Emisor Pruebas",
+        "nombreComercial": "Emisor",
+        "codActividad": "123456",
+        "descActividad": "Venta",
+        "tipoEstablecimiento": "01",
+        "telefono": "22223333",
+        "correo": "emisor@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir Emisor"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    payload = _build_base_payload()
+    json_path = tmp_path / "factura.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    db.update_nota_detalles(nota_id, {"json_path": str(json_path)})
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: None)
+
+    target_dir = tmp_path / "dtes"
+    monkeypatch.setattr("paths.DTES_DIR", str(target_dir))
+    monkeypatch.setattr("utils.nota_fallback.DTES_DIR", str(target_dir))
+
+    metrics_calls: list[str] = []
+    monkeypatch.setattr(
+        nota_credito_electronica.metrics,
+        "inc",
+        lambda name: metrics_calls.append(name),
+    )
+
+    caplog.set_level(logging.INFO, logger=nota_credito_electronica.logger.name)
+    generar_nce_desde_nota(db, nota_id)
+
+    assert "Fallback JSON activado" in caplog.text
+    assert "notes_source_used.json" in metrics_calls
+    assert "notes_fallback_json" in metrics_calls
+
+    detalles_row = db.cursor.execute("SELECT detalles FROM notas WHERE id=?", (nota_id,)).fetchone()
+    detalles = json.loads(detalles_row["detalles"])
+    snapshot_path = Path(detalles["snapshot_path"])
+    assert snapshot_path.exists()
+    assert snapshot_path.read_text(encoding="utf-8")
+    assert detalles.get("snapshot_hash")
+
+
+def test_plan_b_nce_json_incompleto_falla(monkeypatch, tmp_path):
+    payload = _build_base_payload()
+    payload["emisor"].pop("nit")
+
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    json_path = tmp_path / "incompleto.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    db.update_nota_detalles(nota_id, {"json_path": str(json_path)})
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: None)
+
+    monkeypatch.setattr(
+        "nota_credito_electronica.generar_dte_json",
+        lambda *a, **k: {"identificacion": payload["identificacion"], "emisor": {"nrc": "123"}},
+    )
+
+    with pytest.raises(ValueError) as exc:
+        generar_nce_desde_nota(db, nota_id)
+
+    assert "Falta emisor.nit" in str(exc.value)
+
+
+def test_plan_b_nce_json_conflicto(monkeypatch, tmp_path, caplog):
+    negocio = {
+        "nit": "06141407100012",
+        "nrc": "1234567",
+        "nombre": "Emisor Pruebas",
+        "nombreComercial": "Emisor",
+        "codActividad": "123456",
+        "descActividad": "Venta",
+        "tipoEstablecimiento": "01",
+        "telefono": "22223333",
+        "correo": "emisor@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir Emisor"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    payload = _build_base_payload()
+    json_path = tmp_path / "conflicto.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    db.update_nota_detalles(nota_id, {"json_path": str(json_path)})
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: None)
+    db.update_venta_extra(venta_id, {"codigoGeneracion": "FFFF0000-0000-0000-0000-FFFFFFFFFFFF"})
+
+    metrics_calls: list[str] = []
+    monkeypatch.setattr(
+        nota_credito_electronica.metrics,
+        "inc",
+        lambda name: metrics_calls.append(name),
+    )
+
+    caplog.set_level(logging.INFO, logger=nota_credito_electronica.logger.name)
+    generar_nce_desde_nota(db, nota_id)
+
+    assert "notes_source_used.json" in metrics_calls
+    assert "notes_fallback_json" in metrics_calls
+    assert "Conflicto al regenerar snapshot" in caplog.text
+
+    detalles_row = db.cursor.execute("SELECT detalles FROM notas WHERE id=?", (nota_id,)).fetchone()
+    detalles = json.loads(detalles_row["detalles"])
+    assert "snapshot_conflict" in detalles
+    assert "snapshot_path" not in detalles
 def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     monkeypatch.setattr(
         "svfe.config.load_datos_negocio",

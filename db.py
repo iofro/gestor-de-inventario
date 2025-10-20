@@ -3472,6 +3472,145 @@ class DB:
                     pass
         return rows
 
+    def update_nota_detalles(self, nota_id: int, updates: Mapping[str, Any] | None) -> None:
+        """Fusiona ``updates`` dentro del JSON ``detalles`` de la nota indicada."""
+
+        if not updates:
+            return
+
+        try:
+            row = self.cursor.execute(
+                "SELECT detalles FROM notas WHERE id=?", (nota_id,)
+            ).fetchone()
+        except Exception:
+            row = None
+
+        current: dict[str, Any] = {}
+        if row and row["detalles"]:
+            try:
+                parsed = json.loads(row["detalles"])
+            except Exception:
+                parsed = None
+            if isinstance(parsed, Mapping):
+                current = dict(parsed)
+
+        changed = False
+        for key, value in (updates or {}).items():
+            if value is None:
+                continue
+            normalized_key = str(key)
+            previous = current.get(normalized_key)
+            if isinstance(value, Path):
+                value = os.fspath(value)
+            if isinstance(value, str):
+                candidate = value.strip()
+                if not candidate:
+                    continue
+                value = candidate
+            if previous == value:
+                continue
+            current[normalized_key] = value
+            changed = True
+
+        if not changed:
+            return
+
+        detalles_json = json.dumps(current, ensure_ascii=False)
+        self.cursor.execute(
+            "UPDATE notas SET detalles=? WHERE id=?", (detalles_json, nota_id)
+        )
+        self.conn.commit()
+
+    def find_nota_by_document(
+        self,
+        *,
+        numero_control: str | None = None,
+        codigo_generacion: str | None = None,
+        json_path: str | None = None,
+        tipo: str | None = None,
+    ) -> int | None:
+        """Ubica el ``id`` de una nota asociada a los identificadores dados."""
+
+        numero = (numero_control or "").strip().upper()
+        codigo = (codigo_generacion or "").strip().upper()
+        tipo_norm = str(tipo or "").strip().lower() or None
+
+        if codigo or numero:
+            try:
+                self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+                self.ensure_column("dte_envios", "numero_control", "TEXT")
+            except Exception:
+                pass
+            clauses: list[str] = []
+            params: list[Any] = []
+            if codigo:
+                clauses.append("UPPER(e.codigo_generacion)=?")
+                params.append(codigo)
+            if numero:
+                clauses.append("UPPER(e.numero_control)=?")
+                params.append(numero)
+            if clauses:
+                query = (
+                    "SELECT e.venta_id, n.tipo FROM dte_envios AS e "
+                    "LEFT JOIN notas AS n ON n.id = e.venta_id "
+                    f"WHERE {' OR '.join(clauses)} ORDER BY e.id DESC"
+                )
+                try:
+                    row = self.cursor.execute(query, params).fetchone()
+                except Exception:
+                    row = None
+                if row and row["venta_id"] is not None:
+                    nota_tipo = str(row["tipo"] or "").strip().lower()
+                    if tipo_norm is None or nota_tipo == tipo_norm:
+                        return int(row["venta_id"])
+
+        target_json = None
+        if json_path:
+            try:
+                target_json = os.path.abspath(os.fspath(json_path))
+            except (TypeError, ValueError, OSError):
+                target_json = None
+
+        try:
+            rows = self.cursor.execute(
+                "SELECT id, tipo, detalles FROM notas"
+            ).fetchall()
+        except Exception:
+            rows = []
+
+        for row in rows:
+            nota_tipo = str(row["tipo"] or "").strip().lower()
+            if tipo_norm and nota_tipo != tipo_norm:
+                continue
+            raw_detalles = row["detalles"]
+            detalles: Mapping[str, Any] | None = None
+            if raw_detalles:
+                try:
+                    parsed = json.loads(raw_detalles)
+                except Exception:
+                    parsed = None
+                if isinstance(parsed, Mapping):
+                    detalles = parsed
+            if not detalles:
+                continue
+            numero_det = str(detalles.get("numeroControl") or "").strip().upper()
+            codigo_det = str(detalles.get("codigoGeneracion") or "").strip().upper()
+            if codigo and codigo_det and codigo_det == codigo:
+                return int(row["id"])
+            if numero and numero_det and numero_det == numero:
+                return int(row["id"])
+            if target_json:
+                stored_json = detalles.get("json_path") or detalles.get("jsonPath")
+                if stored_json:
+                    try:
+                        stored_norm = os.path.abspath(os.fspath(stored_json))
+                    except (TypeError, ValueError, OSError):
+                        stored_norm = None
+                    if stored_norm and stored_norm == target_json:
+                        return int(row["id"])
+
+        return None
+
     def registrar_envio_dte(
         self,
         venta_id,

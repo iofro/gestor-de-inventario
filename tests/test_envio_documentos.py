@@ -1837,7 +1837,7 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     monkeypatch.setattr(
         "nota_remision.generar_nota_remision_desde_db",
         lambda db_obj, nid, **_kwargs: {
-            "identificacion": {"numeroControl": "1"},
+            "identificacion": {"numeroControl": "1", "tipoDte": "04"},
             "documentoRelacionado": [
                 {
                     "tipoDocumento": "01",
@@ -1849,10 +1849,18 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
         },
     )
     monkeypatch.setattr("dte.apply_schema_patch", lambda data: data)
-    monkeypatch.setattr("dte.catalogos.get_dte_schema", lambda t: {})
+
+    def fake_schema(tipo):
+        if str(tipo).zfill(2) == "04":
+            return {"properties": {"resumen": {"type": "object", "properties": {}}}}
+        return {}
+
+    monkeypatch.setattr("dte.catalogos.get_dte_schema", fake_schema)
     monkeypatch.setattr(auth, "get_token", lambda: "T")
     monkeypatch.setattr(auth, "get_last_auth_host", lambda: None)
     monkeypatch.setattr("dte._save_signed_dte", lambda *a, **k: None)
+    monkeypatch.setattr("dte._contingencia_config_from_settings", lambda: (1, "motivo"))
+    monkeypatch.setattr("dte._post_dte_with_config", lambda *a, **k: {"estado": "Pendiente"})
 
     signed_payloads: list[dict] = []
 
@@ -1876,6 +1884,7 @@ def test_enviar_nota_remision_default_contingencia(monkeypatch):
     assert signed_payloads, "Se esperaba capturar el payload firmado"
     assert signed_payloads[0]["identificacion"]["fecEmi"] == forced_today
     assert signed_payloads[0]["documentoRelacionado"][0]["fechaEmision"] == "2024-01-01"
+    assert "condicionOperacion" not in signed_payloads[0]["resumen"]
 
 
 def test_enviar_nota_credito_propagates_production_ambiente(monkeypatch, tmp_path):

@@ -56,6 +56,8 @@ from dte import (
     generar_nota_credito_json,
     generar_nota_debito_json,
 )
+import nota_credito_electronica
+from nota_debito_electronica import generar_nde_desde_dte
 from nota_remision import generar_nota_remision_desde_db
 from utils.docs import (
     get_document_paths,
@@ -6813,6 +6815,33 @@ class FacturacionTab(QWidget):
             tipo, venta_id, fecha, monto, motivo, detalles=detalles_nota
         )
 
+        dialog_detalles_pdf: List[dict] = []
+        for det in detalles_nota or []:
+            src = detalle_map.get(det.get("detalle_id"))
+            if not src:
+                continue
+            if det.get("ajusteCantidad"):
+                detalle = {
+                    "cantidad": det.get("cantidad", 0),
+                    "descripcion": src.get("descripcion", ""),
+                    "precio_unitario": det.get("precio_unitario", 0),
+                    "iva": det.get("iva", 0),
+                    "ventas_gravadas": det.get("ventas_gravadas", 0),
+                    "ventas_exentas": det.get("ventas_exentas", 0),
+                    "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
+                }
+            else:
+                detalle = {
+                    "cantidad": 1,
+                    "descripcion": src.get("descripcion", ""),
+                    "precio_unitario": det.get("precio_unitario", 0),
+                    "iva": det.get("iva", 0),
+                    "ventas_gravadas": det.get("ventas_gravadas", 0),
+                    "ventas_exentas": det.get("ventas_exentas", 0),
+                    "ventas_no_sujetas": det.get("ventas_no_sujetas", 0),
+                }
+            dialog_detalles_pdf.append(detalle)
+
         try:
             cfg = dte._load_dte_api_config()
         except Exception:
@@ -6820,16 +6849,62 @@ class FacturacionTab(QWidget):
         ambiente_cfg = str((cfg or {}).get("ambiente") or "").strip().lower()
         ambiente = "01" if ambiente_cfg == "produccion" else "00"
 
+        nota_json = None
+        snapshot_exc: SnapshotNotFoundError | None = None
         if tipo == "credito":
-            nota_json = generar_nota_credito_json(
-                self.manager.db, nota_id, ambiente=ambiente
-            )
+            try:
+                nota_json = generar_nota_credito_json(
+                    self.manager.db, nota_id, ambiente=ambiente
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         elif tipo == "debito":
-            nota_json = generar_nota_debito_json(
-                self.manager.db, nota_id, ambiente=ambiente
-            )
+            try:
+                nota_json = generar_nota_debito_json(
+                    self.manager.db, nota_id, ambiente=ambiente
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         else:
             nota_json = generar_nota_remision_desde_db(self.manager.db, nota_id)
+
+        if nota_json is None and snapshot_exc:
+            logger.warning(
+                "Snapshot faltante para nota %s de venta %s; usando generador de respaldo",
+                nota_id,
+                venta_id,
+                exc_info=snapshot_exc,
+            )
+            if tipo == "credito":
+                ratio = None
+                if not dialog_detalles_pdf:
+                    try:
+                        ratio = (
+                            Decimal(str(monto / total_original))
+                            if total_original
+                            else None
+                        )
+                    except Exception:
+                        ratio = None
+                nota_json = nota_credito_electronica.generar_nce_desde_dte(
+                    self.manager.db,
+                    data,
+                    ratio,
+                    detalles=dialog_detalles_pdf or None,
+                    motivo=motivo,
+                )
+            elif tipo == "debito":
+                nota_json = generar_nde_desde_dte(
+                    self.manager.db,
+                    data,
+                    dialog_detalles_pdf or None,
+                    monto,
+                    motivo,
+                )
+            else:
+                # Las notas de remisión no usan snapshot y ya deberían haber sido
+                # generadas correctamente.
+                pass
 
         def _to_float(value: object) -> float:
             if isinstance(value, (int, float)):

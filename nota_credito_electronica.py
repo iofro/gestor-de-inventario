@@ -38,6 +38,7 @@ from utils.monto import d2, monto_a_texto_sv, to_base_iva
 from utils.sanitize import solo_digitos
 from utils.snapshot import SnapshotNotFoundError
 from utils.nota_fallback import (
+    complete_receptor_from_metadata,
     ensure_emisor_completo,
     prepare_dte_origen,
     prevalidate_dte_origen,
@@ -349,10 +350,20 @@ def generar_nce_desde_nota(
         usar_fallback_json=USAR_FALLBACK_JSON_DEFAULT,
         nota_id=nota_id,
         regenerate=regenerate_cb,
+        venta_credito_fiscal=credito_fiscal,
         logger=logger,
     )
 
     dte_origen = origen_info.data
+    complete_receptor_from_metadata(
+        dte_origen,
+        nota=nota,
+        venta=venta,
+        venta_credito_fiscal=origen_info.venta_credito_fiscal,
+        venta_extra=origen_info.venta_extra,
+        detalles=origen_info.detalles,
+        logger=logger,
+    )
     source_used = origen_info.source_used
     origen_ident_tmp = dte_origen.get("identificacion") or {}
     codigo_tmp = origen_ident_tmp.get("codigoGeneracion")

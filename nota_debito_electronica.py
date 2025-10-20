@@ -316,6 +316,7 @@ def generar_nde_desde_nota(
         usar_fallback_json=USAR_FALLBACK_JSON_DEFAULT,
         nota_id=nota_id,
         regenerate=regenerate_cb,
+        venta_credito_fiscal=credito_fiscal,
         logger=logger,
     )
 

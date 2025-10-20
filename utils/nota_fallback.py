@@ -199,6 +199,7 @@ class OrigenResult:
     config_used: bool
     detalles: dict[str, Any]
     venta_extra: dict[str, Any]
+    venta_credito_fiscal: dict[str, Any]
     expected_ident: dict[str, str]
 
 
@@ -214,12 +215,14 @@ def prepare_dte_origen(
     usar_fallback_json: bool,
     nota_id: int | None,
     regenerate: Callable[[], Mapping[str, Any]] | None,
+    venta_credito_fiscal: Mapping[str, Any] | None = None,
     logger: logging.Logger,
 ) -> OrigenResult:
     """Obtiene y fusiona la información del DTE de origen."""
 
     detalles = _parse_mapping(nota.get("detalles"))
     venta_extra = _parse_mapping(venta.get("extra") if venta else None)
+    venta_cf = _parse_mapping(venta_credito_fiscal)
 
     snapshot = db.get_snapshot_by_venta(venta_id) if venta_id is not None else None
     snapshot_payload = normalize_snapshot(snapshot.payload) if snapshot else None
@@ -324,10 +327,11 @@ def prepare_dte_origen(
         venta_extra=venta_extra,
         logger=logger,
     )
-    _complete_receptor_from_metadata(
+    complete_receptor_from_metadata(
         base_payload,
         nota=nota,
         venta=venta,
+        venta_credito_fiscal=venta_cf,
         venta_extra=venta_extra,
         detalles=detalles,
         logger=logger,
@@ -358,6 +362,7 @@ def prepare_dte_origen(
         config_used=config_used,
         detalles=detalles,
         venta_extra=venta_extra,
+        venta_credito_fiscal=venta_cf,
         expected_ident=expected_ident,
     )
 
@@ -796,11 +801,12 @@ def _complete_receptor_from_cliente(
         )
 
 
-def _complete_receptor_from_metadata(
+def complete_receptor_from_metadata(
     payload: dict[str, Any],
     *,
     nota: Mapping[str, Any] | None,
     venta: Mapping[str, Any] | None,
+    venta_credito_fiscal: Mapping[str, Any],
     venta_extra: Mapping[str, Any],
     detalles: Mapping[str, Any],
     logger: logging.Logger,
@@ -811,7 +817,7 @@ def _complete_receptor_from_metadata(
 
     sources: list[Mapping[str, Any]] = []
 
-    for raw in (nota, venta, venta_extra, detalles):
+    for raw in (nota, venta, venta_credito_fiscal, venta_extra, detalles):
         if isinstance(raw, Mapping):
             sources.append(raw)
         elif isinstance(raw, str):

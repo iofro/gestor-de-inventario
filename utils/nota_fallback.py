@@ -41,6 +41,24 @@ _SECTIONS = (
 )
 
 
+def _normalize_ambiente_str(value: Any) -> str | None:
+    """Return a canonical representation (``00``/``01``) for ``value`` when possible."""
+
+    if value is None:
+        return None
+    text = str(value).strip()
+    if not text:
+        return None
+    if text.isdigit() and len(text) <= 2:
+        return f"{int(text):02d}"
+    lowered = text.lower()
+    if lowered.startswith("prod"):
+        return "01"
+    if lowered.startswith("pru"):
+        return "00"
+    return text
+
+
 @dataclass(slots=True)
 class OrigenResult:
     """Resultado de la preparación del DTE de origen."""
@@ -153,7 +171,8 @@ def prepare_dte_origen(
 
     ident = _ensure_mapping(base_payload.get("identificacion"))
     base_payload["identificacion"] = ident
-    ident["ambiente"] = str(ambiente)
+    ambiente_normalizado = _normalize_ambiente_str(ambiente) or "00"
+    ident["ambiente"] = ambiente_normalizado
     codigo = ident.get("codigoGeneracion")
     if isinstance(codigo, str):
         ident["codigoGeneracion"] = codigo.strip().upper()
@@ -169,6 +188,20 @@ def prepare_dte_origen(
         config_payload,
         detalles,
         venta_extra,
+    )
+
+    expected_ambiente = _normalize_ambiente_str(expected_ident.get("ambiente"))
+    if expected_ambiente and expected_ambiente != ambiente_normalizado:
+        logger.info(
+            "Ambiente origen %s ≠ solicitado %s; se conserva %s",
+            expected_ambiente,
+            ambiente_normalizado,
+            ambiente_normalizado,
+        )
+    logger.info(
+        "Ambiente consolidado para DTE origen: %s (esperado=%s)",
+        ambiente_normalizado,
+        expected_ambiente or "desconocido",
     )
 
     return OrigenResult(
@@ -273,6 +306,10 @@ def prevalidate_dte_origen(
         numero = identificacion.get("numeroControl")
         if _is_missing_field(codigo) and _is_missing_field(numero):
             missing.append("identificacion.codigoGeneracion")
+        numero_control_val = str(numero or "").strip()
+        if not numero_control_val:
+            logger.error("Pre-validación fallida: Falta numeroControl del DTE origen")
+            raise ValueError("Falta numeroControl del DTE origen")
         if _is_missing_field(identificacion.get("fecEmi")) and _is_missing_field(
             identificacion.get("fechaEmision")
         ):
@@ -593,14 +630,18 @@ def _collect_expected_ident(*sources: Mapping[str, Any] | None) -> dict[str, str
                 expected["codigoGeneracion"] = str(codigo).strip().upper()
             if numero:
                 expected["numeroControl"] = str(numero).strip().upper()
-            if ambiente:
-                expected["ambiente"] = str(ambiente)
+            ambiente_norm = _normalize_ambiente_str(ambiente)
+            if ambiente_norm:
+                expected["ambiente"] = ambiente_norm
         codigo = source.get("codigoGeneracion")
         numero = source.get("numeroControl")
         if codigo:
             expected["codigoGeneracion"] = str(codigo).strip().upper()
         if numero:
             expected["numeroControl"] = str(numero).strip().upper()
+    ambiente_directo = _normalize_ambiente_str(expected.get("ambiente"))
+    if ambiente_directo:
+        expected["ambiente"] = ambiente_directo
     return expected
 
 
@@ -639,7 +680,7 @@ def _derive_documento_relacionado(
         return None
     codigo = ident.get("codigoGeneracion")
     numero_control = ident.get("numeroControl")
-    numero_documento = str(codigo or numero_control or "").strip()
+    numero_documento = str(numero_control or "").strip()
     if not numero_documento:
         return None
     tipo_generacion = 2 if codigo else 1

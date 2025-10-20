@@ -1932,3 +1932,63 @@ def test_rejected_invoice_with_revert_rolls_back_correlativo(monkeypatch, qt_app
     assert archive_called
     assert db.get_dte_correlativo("03", "001", "001") == 403
     assert db.get_venta_by_id(venta_id) is None
+
+
+def test_ui_saldo_insuficiente(qt_app, tmp_path, monkeypatch):
+    db = DB(":memory:")
+    venta_id, cid = _create_sale(db)
+    factura_path = tmp_path / "factura.json"
+    factura_json = {
+        "identificacion": {
+            "tipoDte": "03",
+            "numeroControl": "DTE-03-S001P001-000000000000123",
+            "codigoGeneracion": "12345678-ABCD-1234-ABCD-1234567890AB",
+            "fecEmi": "2024-01-01",
+        },
+        "resumen": {"montoTotalOperacion": 10, "totalPagar": 10},
+        "cuerpoDocumento": [
+            {
+                "numItem": 1,
+                "descripcion": "Producto",
+                "cantidad": 1,
+                "precioUni": 10,
+                "ventaGravada": 10,
+                "ventaExenta": 0,
+                "ventaNoSuj": 0,
+                "tributos": [],
+                "uniMedida": 59,
+                "tipoItem": 1,
+            }
+        ],
+    }
+    factura_path.write_text(json.dumps(factura_json), encoding="utf-8")
+
+    manager = SimpleNamespace(db=db, _clientes=[{"id": cid, "nombre": "C", "email": "c@x.com"}], _Distribuidores=[])
+    tab = facturacion_tab.FacturacionTab(manager)
+
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "question", lambda *a, **k: facturacion_tab.QMessageBox.Yes)
+    warnings: list[str] = []
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "warning", lambda *a, **k: warnings.append(a[2]))
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "information", lambda *a, **k: None)
+    monkeypatch.setattr(facturacion_tab.QMessageBox, "critical", lambda *a, **k: None)
+
+    class DummyDialog:
+        def __init__(self, detalles, tipo, parent):
+            self._detalles = detalles
+
+        def exec_(self):
+            return QDialog.Accepted
+
+        def get_data(self):
+            return (15.0, "Motivo", [])
+
+    monkeypatch.setattr(facturacion_tab, "NotaDetalleDialog", DummyDialog)
+
+    tab.create_nota(
+        "credito",
+        factura={"venta_id": venta_id, "json": str(factura_path)},
+    )
+
+    assert warnings == ["El monto excede el saldo restante de la venta"]
+    notas_count = db.cursor.execute("SELECT COUNT(*) FROM notas").fetchone()[0]
+    assert notas_count == 0

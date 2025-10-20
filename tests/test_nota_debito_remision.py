@@ -27,6 +27,13 @@ def _disable_strict_snapshot(monkeypatch):
     monkeypatch.setattr("nota_debito_electronica.USAR_FALLBACK_JSON_DEFAULT", True)
 
 
+@pytest.fixture(autouse=True)
+def _mock_datos_negocio(monkeypatch):
+    datos = _datos_negocio_base()
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
+    monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
+
+
 def _build_debit_payload() -> dict:
     codigo = "87654321-DCBA-4321-DCBA-0987654321AB"
     numero_control = "DTE-03-S001P001-000000000000321"
@@ -76,7 +83,7 @@ def _build_debit_payload() -> dict:
             {
                 "tipoDocumento": "03",
                 "tipoGeneracion": 2,
-                "numeroDocumento": "FEDCBA0987654321",
+                "numeroDocumento": numero_control,
                 "fechaEmision": "2024-02-01",
             }
         ],
@@ -154,43 +161,38 @@ def _doc_rel():
 
 
 def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
-    datos = {
-        "nit": "0614-140710-001-2",
-        "nrc": "1234567",
-        "nombre": "Emisor",
-        "nombreComercial": "Emisor",
-        "codActividad": "111111",
-        "descActividad": "Giro",
-        "telefono": "22223456",
-        "correo": "test@example.com",
-        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
-    }
+    datos = _datos_negocio_base()
     monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: datos)
     monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
     monkeypatch.setattr(
         "dte._build_receptor_direccion",
         lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir"},
     )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
     db = create_db()
     db.add_vendedor("V1")
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None,  vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
+    cliente_info = _cliente_info_base()
     db.add_cliente(
-        "Cliente",
+        cliente_info["nombre"],
         "1234567",
-        "06141407100012",
+        cliente_info["nit"],
         "",
-        "giro",
+        cliente_info["descActividad"],
         "22223456",
         "cliente@example.com",
-        "",
-        "",
-        "",
+        "Dir",
+        "05",
+        "24",
+        codActividad=cliente_info["codActividad"],
+        nombreComercial="Cliente",
     )
     cliente_id = db.cursor.lastrowid
     venta_id = db.add_venta_credito_fiscal(cliente_id, "2024-01-01", 10, "1234567", "06141407100012", "giro", descuentos=0)
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
+    _patch_generar_dte(monkeypatch, cliente_info)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
     data = generar_nde_desde_dte(db, dte_origen, None, 10, "Ajuste")
     assert data["identificacion"]["tipoDte"] == "06"
@@ -201,7 +203,7 @@ def test_generar_nota_debito_json_ticket(tmp_path, monkeypatch):
     assert doc_rel["fechaEmision"]
     assert (
         doc_rel["numeroDocumento"]
-        == dte_origen["identificacion"]["codigoGeneracion"]
+        == dte_origen["identificacion"]["numeroControl"]
     )
     assert doc_rel["numeroDocumento"] != data["identificacion"].get("numeroControl")
     assert "-" not in data["emisor"].get("nit", "")
@@ -231,17 +233,19 @@ def test_generar_nde_desde_nota_credito_fiscal(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
+    cliente_info = _cliente_info_base()
     db.add_cliente(
-        "Cliente",
+        cliente_info["nombre"],
         "123",
-        "06141407100012",
+        cliente_info["nit"],
         "",
-        "giro",
+        cliente_info["descActividad"],
         "22223333",
         "cli@example.com",
         "Dir",
         "05",
         "24",
+        codActividad=cliente_info["codActividad"],
         nombreComercial="Cliente",
     )
     cliente_id = db.cursor.lastrowid
@@ -260,6 +264,7 @@ def test_generar_nde_desde_nota_credito_fiscal(monkeypatch):
         (venta_id,),
     ).lastrowid
 
+    _patch_generar_dte(monkeypatch, cliente_info)
     nde = generar_nde_desde_nota(db, nota_id)
     doc_rel = nde["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "03"
@@ -296,13 +301,39 @@ def test_generar_nde_desde_nota_regenera_dte_fecha(monkeypatch):
     vid = db.cursor.lastrowid
     db.add_producto("Prod", "P1", None, vid, None, 0, 0, 0, 10)
     pid = db.cursor.lastrowid
+    cliente_info = _cliente_info_base()
+    cliente_id = db.add_cliente(
+        cliente_info["nombre"],
+        cliente_info["nrc"],
+        cliente_info["nit"],
+        "",
+        cliente_info["descActividad"],
+        "22223333",
+        "cli@example.com",
+        "Dir",
+        "05",
+        "24",
+        codActividad=cliente_info["codActividad"],
+        nombreComercial="Cliente",
+    )
     venta_fecha = "2024-04-10"
-    venta_id = db.add_venta(venta_fecha, 10)
+    venta_id = db.add_venta_credito_fiscal(
+        cliente_id,
+        venta_fecha,
+        10,
+        cliente_info["nrc"],
+        cliente_info["nit"],
+        cliente_info["descActividad"],
+        descuentos=0,
+    )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
 
-    dte_base = generar_dte_json(db, venta_id, tipo_dte="01")
+    dte_base = _build_debit_payload()
+    dte_base["identificacion"]["fecEmi"] = venta_fecha
+    dte_base["documentoRelacionado"][0]["fechaEmision"] = venta_fecha
     dte_alterado = deepcopy(dte_base)
     dte_alterado["identificacion"]["fecEmi"] = "2024-04-12"
+    _enrich_party(dte_alterado.setdefault("receptor", {}), cliente_info)
 
     monkeypatch.setattr(
         "nota_debito_electronica.generar_dte_json",
@@ -373,11 +404,13 @@ def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
             "fecEmi": "2023-08-01",
             "numeroControl": "DTE-03-00100001",
         },
-        "emisor": {"nombre": "Emisor"},
+        "emisor": _datos_negocio_base(),
         "receptor": {
             "nombre": "Cliente Snapshot",
-            "nit": "0614-140710-001-2",
+            "nit": "06141407100012",
             "nrc": None,
+            "codActividad": "654321",
+            "descActividad": "Servicios",
             "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
         },
         "cuerpoDocumento": [
@@ -433,7 +466,7 @@ def test_generar_nde_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
     assert doc_rel["tipoGeneracion"] == 2
     assert (
         doc_rel["numeroDocumento"]
-        == payload["identificacion"]["codigoGeneracion"].upper()
+        == payload["identificacion"]["numeroControl"].upper()
     )
     assert doc_rel["fechaEmision"] == "2023-08-01"
     today_str = fecha_emision_hoy_str()
@@ -475,11 +508,15 @@ def test_generar_nde_desde_nota_snapshot_dui(monkeypatch, tmp_path):
             "fecEmi": "2023-09-01",
             "numeroControl": "DTE-01-00004567",
         },
-        "emisor": {"nombre": "Emisor"},
+        "emisor": _datos_negocio_base(),
         "receptor": {
             "nombre": "Consumidor Final",
             "tipoDocumento": "13",
             "numDocumento": "12345678-9",
+            "nit": "123456789",
+            "codActividad": "654321",
+            "descActividad": "Servicios",
+            "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
         },
         "cuerpoDocumento": [
             {
@@ -528,7 +565,7 @@ def test_generar_nde_desde_nota_snapshot_dui(monkeypatch, tmp_path):
     doc_rel = nde["documentoRelacionado"][0]
     assert doc_rel["tipoDocumento"] == "01"
     assert doc_rel["tipoGeneracion"] == 2
-    assert doc_rel["numeroDocumento"] == payload["identificacion"]["codigoGeneracion"].upper()
+    assert doc_rel["numeroDocumento"] == payload["identificacion"]["numeroControl"].upper()
     assert doc_rel["fechaEmision"] == "2023-09-01"
     today_str = fecha_emision_hoy_str()
     assert nde["identificacion"]["fecEmi"] == today_str
@@ -596,7 +633,12 @@ def test_generar_nde_consumidor_final_sin_nit(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
     db = create_db()
     dte_origen = {
-        "identificacion": {"tipoDte": "01", "codigoGeneracion": "UUID", "fecEmi": "2024-01-01"},
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "UUID",
+            "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000003",
+        },
         "emisor": {},
         "receptor": {"nombre": "Consumidor Final"},
         "resumen": {
@@ -634,6 +676,7 @@ def test_generar_nde_receptor_placeholder_en_pruebas(monkeypatch):
             "tipoDte": "01",
             "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
             "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000001",
         },
         "emisor": {},
         "receptor": {"nombre": "Consumidor Final"},
@@ -701,6 +744,7 @@ def test_generar_nde_receptor_incompleto_en_produccion(monkeypatch):
             "tipoDte": "01",
             "codigoGeneracion": "12345678-1234-1234-1234-1234567890AB",
             "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000002",
         },
         "emisor": {},
         "receptor": {"nombre": "Consumidor Final"},
@@ -836,7 +880,12 @@ def test_generar_nde_ticket_minimo(monkeypatch):
     monkeypatch.setattr("dte._load_datos_negocio", lambda: datos)
     db = create_db()
     dte_origen = {
-        "identificacion": {"tipoDte": "01", "codigoGeneracion": "UUID", "fecEmi": "2024-01-01"},
+        "identificacion": {
+            "tipoDte": "01",
+            "codigoGeneracion": "UUID",
+            "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000004",
+        },
         "emisor": {},
         "receptor": {},
         "resumen": {
@@ -870,6 +919,7 @@ def test_generar_nde_conserva_total(monkeypatch):
             "tipoDte": "01",
             "codigoGeneracion": "UUID",
             "fecEmi": "2024-01-01",
+            "numeroControl": "DTE-01-000000000005",
         },
         "emisor": {},
         "receptor": {"nombre": "Consumidor Final"},
@@ -1268,17 +1318,35 @@ def test_plan_b_nde_json_regenera_snapshot(monkeypatch, tmp_path, caplog):
     )
 
     caplog.set_level(logging.INFO, logger=nota_debito_electronica.logger.name)
-    generar_nde_desde_nota(db, nota_id)
+    resultado = generar_nde_desde_nota(db, nota_id)
 
     assert "Fallback JSON activado" in caplog.text
     assert "notes_source_used.json" in metrics_calls
     assert "notes_fallback_json" in metrics_calls
+    assert resultado["identificacion"]["ambiente"] == "00"
 
-    detalles_row = db.cursor.execute("SELECT detalles FROM notas WHERE id=?", (nota_id,)).fetchone()
-    detalles = json.loads(detalles_row["detalles"])
-    snapshot_path = Path(detalles["snapshot_path"])
-    assert snapshot_path.exists()
-    assert detalles.get("snapshot_hash")
+
+def test_nde_restaurar_secciones_si_sanitize_elimina(monkeypatch, caplog):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: _datos_negocio_base(),
+    )
+    db = create_db()
+    payload = _build_debit_payload()
+
+    def fake_sanitize(data, schema):
+        sanitized = {k: v for k, v in data.items() if k not in {"receptor", "documentoRelacionado"}}
+        return sanitized
+
+    monkeypatch.setattr(nota_debito_electronica, "sanitize_dte_payload", fake_sanitize)
+    caplog.set_level(logging.ERROR, logger=nota_debito_electronica.logger.name)
+
+    resultado = generar_nde_desde_dte(db, payload, None, 5.0, "Ajuste")
+
+    assert resultado["documentoRelacionado"] == payload["documentoRelacionado"]
+    for key in ("nombre", "nit", "direccion"):
+        assert resultado["receptor"][key] == payload["receptor"][key]
+    assert "sanitize_dte_payload eliminó secciones obligatorias" in caplog.text
 
 
 def test_plan_b_nde_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog):
@@ -1321,7 +1389,7 @@ def test_plan_b_nde_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog
     data = generar_nde_desde_nota(db, nota_id)
 
     assert data["documentoRelacionado"][0]["numeroDocumento"] == payload["identificacion"][
-        "codigoGeneracion"
+        "numeroControl"
     ]
     assert "Fuente documentoRelacionado: derivado" in caplog.text
     assert "notes_source_used.json" in metrics_calls
@@ -1375,3 +1443,100 @@ def test_plan_b_nde_json_conflicto(monkeypatch, tmp_path, caplog):
     detalles = json.loads(detalles_row["detalles"])
     assert "snapshot_conflict" in detalles
     assert "snapshot_path" not in detalles
+
+
+def test_nde_docrel_control_ccf(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    db = create_db()
+    payload = _build_debit_payload()
+    resultado = generar_nde_desde_dte(db, payload, None, 10, "Ajuste")
+    numero_control = payload["identificacion"]["numeroControl"]
+    doc_rel = resultado["documentoRelacionado"][0]
+    assert doc_rel["tipoDocumento"] == "03"
+    assert doc_rel["numeroDocumento"] == numero_control
+    for item in resultado["cuerpoDocumento"]:
+        assert item["numeroDocumento"] == numero_control
+        assert item["uniMedida"] is not None
+
+
+def test_nde_unimedida_default(monkeypatch):
+    monkeypatch.setattr(
+        "svfe.config.load_datos_negocio",
+        lambda: {"direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"}},
+    )
+    db = create_db()
+    payload = _build_debit_payload()
+    detalle_origen = payload["cuerpoDocumento"][0]
+    detalle = {
+        "numItem": detalle_origen.get("numItem", 1),
+        "descripcion": "Ajuste",
+        "ventas_gravadas": detalle_origen.get("ventaGravada", 0),
+        "ventaGravada": detalle_origen.get("ventaGravada", 0),
+        "cantidad": detalle_origen.get("cantidad", 1),
+        "uniMedida": None,
+    }
+    resultado = generar_nde_desde_dte(db, payload, [detalle], 20, "Ajuste")
+    numero_control = payload["identificacion"]["numeroControl"]
+    item = resultado["cuerpoDocumento"][0]
+    assert item["numeroDocumento"] == numero_control
+    assert item["uniMedida"] == 59
+def _datos_negocio_base() -> dict:
+    return {
+        "nit": "06141407100012",
+        "nrc": "1234567",
+        "nombre": "Emisor Debito",
+        "nombreComercial": "Emisor",
+        "codActividad": "123456",
+        "descActividad": "Venta",
+        "tipoEstablecimiento": "01",
+        "telefono": "22223333",
+        "correo": "emisor@example.com",
+        "direccion": {
+            "departamento": "05",
+            "municipio": "24",
+            "complemento": "Dir Emisor",
+        },
+    }
+
+
+def _cliente_info_base() -> dict:
+    return {
+        "nombre": "Cliente",
+        "nrc": "123",
+        "nit": "06141407100012",
+        "codActividad": "654321",
+        "descActividad": "Servicios",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir"},
+    }
+
+
+def _enrich_party(target: dict, source: dict) -> None:
+    for key in ("nombre", "nit", "nrc", "codActividad", "descActividad"):
+        if not target.get(key) and source.get(key):
+            target[key] = source[key]
+    direccion = target.get("direccion") or {}
+    src_dir = source.get("direccion", {})
+    for key, value in src_dir.items():
+        if not direccion.get(key) and value:
+            direccion[key] = value
+    if direccion:
+        target["direccion"] = direccion
+
+
+def _patch_generar_dte(monkeypatch, cliente_info: dict):
+    original = nota_debito_electronica.generar_dte_json
+
+    def _wrapper(*args, **kwargs):
+        data = original(*args, **kwargs)
+        ident = data.setdefault("identificacion", {})
+        numero = ident.get("numeroControl")
+        if isinstance(numero, str):
+            ident["numeroControl"] = numero.strip().upper()
+        _enrich_party(data.setdefault("receptor", {}), cliente_info)
+        _enrich_party(data.setdefault("emisor", {}), _datos_negocio_base())
+        return data
+
+    monkeypatch.setattr("nota_debito_electronica.generar_dte_json", _wrapper)

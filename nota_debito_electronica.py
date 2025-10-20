@@ -323,6 +323,17 @@ def generar_nde_desde_nota(
     origen_ident_tmp = dte_origen.get("identificacion") or {}
     codigo_tmp = origen_ident_tmp.get("codigoGeneracion")
     uuid_origen = str(codigo_tmp).upper() if codigo_tmp else None
+    numero_control_tmp = origen_ident_tmp.get("numeroControl")
+
+    logger.info(
+        "Ident origen nota_id=%s venta_id=%s codigo=%s numero=%s source=%s json_path=%s",
+        nota_id,
+        venta_id,
+        uuid_origen,
+        numero_control_tmp,
+        source_used,
+        origen_info.json_path if origen_info.json_used else None,
+    )
 
     for section, source in origen_info.section_sources.items():
         logger.info("Fuente %s: %s", section, source or "desconocido")
@@ -389,13 +400,23 @@ def generar_nde_desde_nota(
         fecha_origen=fecha_origen,
     )
 
-    rebuild_snapshot_from_json(
+    rebuild_result = rebuild_snapshot_from_json(
         db,
         origen_info,
         nota_id=nota_id,
         venta_id=venta_id,
         logger=logger,
     )
+    if rebuild_result.get("conflict"):
+        logger.warning(
+            "Snapshot no regenerada por conflicto: %s", rebuild_result["conflict"]
+        )
+    elif rebuild_result.get("rebuilt"):
+        logger.info(
+            "Snapshot regenerada desde JSON nota_id=%s venta_id=%s",
+            nota_id,
+            venta_id,
+        )
 
     doc_rel = resultado.get("documentoRelacionado") or []
     rel = doc_rel[0] if doc_rel else {}
@@ -478,13 +499,14 @@ def generar_nde_desde_dte(
         tipo_doc_rel = "03" if (dte_origen.get("receptor") or {}).get("nrc") else "01"
 
     codigo_generacion = origen_ident.get("codigoGeneracion")
-    numero_control = origen_ident.get("numeroControl")
+    numero_control = str(origen_ident.get("numeroControl") or "").strip()
     if codigo_generacion:
-        numero_documento = str(codigo_generacion).upper()
         tipo_generacion = 2
     else:
         tipo_generacion = 1
-        numero_documento = str(numero_control or "").strip()
+    numero_documento = numero_control
+    if not numero_documento:
+        raise ValueError("Falta numeroControl del DTE origen")
 
     fecha_doc_rel_base = None
     if fecha_origen:
@@ -504,6 +526,7 @@ def generar_nde_desde_dte(
             "fechaEmision": fecha_iso(fecha_doc_rel_base),
         }
     ]
+    numero_documento_rel = numero_documento
 
     emisor = copy.deepcopy(dte_origen.get("emisor", {}))
     receptor_origen = dte_origen.get("receptor") or {}
@@ -628,6 +651,10 @@ def generar_nde_desde_dte(
                 f"Nota de débito sobre operaciones del {tipo_doc_desc} relacionado{extra_desc}",
             )
 
+            uni_medida = det.get("uniMedida")
+            if uni_medida is None:
+                uni_medida = 59
+
             items.append(
                 {
                     "numItem": num,
@@ -635,14 +662,14 @@ def generar_nde_desde_dte(
                     "codigo": codigo_det,
                     "descripcion": descripcion_det,
                     "cantidad": cantidad,
-                    "uniMedida": det.get("uniMedida", 59),
+                    "uniMedida": uni_medida,
                     "precioUni": precio,
                     "montoDescu": d4(det.get("montoDescu", 0.0)),
                     "ventaGravada": d4(grav),
                     "ventaExenta": d4(exenta),
                     "ventaNoSuj": d4(nosuj),
                     "tributos": [TRIBUTO_IVA] if grav > 0 else None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_documento_rel,
                     "codTributo": None,
                 }
             )
@@ -705,7 +732,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": 0.0,
                     "tributos": [TRIBUTO_IVA],
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_documento_rel,
                     "codTributo": None,
                 }
             )
@@ -725,7 +752,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": total_exenta,
                     "ventaNoSuj": 0.0,
                     "tributos": None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_documento_rel,
                     "codTributo": None,
                 }
             )
@@ -745,7 +772,7 @@ def generar_nde_desde_dte(
                     "ventaExenta": 0.0,
                     "ventaNoSuj": total_nosuj,
                     "tributos": None,
-                    "numeroDocumento": uuid_origen,
+                    "numeroDocumento": numero_documento_rel,
                     "codTributo": None,
                 }
             )
@@ -808,6 +835,26 @@ def generar_nde_desde_dte(
     )
     schema = catalogos.get_dte_schema("06")
     result = sanitize_dte_payload(data, schema)
+    required_sections = {
+        "identificacion": identificacion,
+        "documentoRelacionado": doc_rel,
+        "emisor": emisor,
+        "receptor": receptor,
+        "cuerpoDocumento": items,
+        "resumen": resumen,
+    }
+    restored = []
+    for section, original in required_sections.items():
+        if section not in result or (
+            section == "documentoRelacionado" and not result.get(section)
+        ):
+            result[section] = copy.deepcopy(original)
+            restored.append(section)
+    if restored:
+        logger.error(
+            "sanitize_dte_payload eliminó secciones obligatorias: %s",
+            ", ".join(sorted(restored)),
+        )
     if preserve_nrc_null:
         result.setdefault("receptor", {})["nrc"] = None
     return result

@@ -396,6 +396,53 @@ def test_plan_b_nce_json_regenera_snapshot(monkeypatch, tmp_path, caplog):
     assert detalles.get("snapshot_hash")
 
 
+def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog):
+    negocio = {
+        "nit": "06141407100012",
+        "nrc": "1234567",
+        "nombre": "Emisor Pruebas",
+        "nombreComercial": "Emisor",
+        "codActividad": "123456",
+        "descActividad": "Venta",
+        "tipoEstablecimiento": "01",
+        "telefono": "22223333",
+        "correo": "emisor@example.com",
+        "direccion": {"departamento": "05", "municipio": "24", "complemento": "Dir Emisor"},
+    }
+    monkeypatch.setattr("svfe.config.load_datos_negocio", lambda: negocio)
+    monkeypatch.setattr(
+        "dte._build_receptor_direccion",
+        lambda src: {"departamento": "05", "municipio": "24", "complemento": "Dir Cliente"},
+    )
+    monkeypatch.setattr("dte.validate_dte_json", lambda *a, **k: None)
+
+    db = create_db()
+    venta_id, nota_id = _register_credit_note(db)
+    payload = _build_base_payload()
+    payload.pop("documentoRelacionado")
+    json_path = tmp_path / "factura_sin_doc_rel.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+    db.update_nota_detalles(nota_id, {"json_path": str(json_path)})
+    monkeypatch.setattr(db, "get_snapshot_by_venta", lambda vid: None)
+
+    metrics_calls: list[str] = []
+    monkeypatch.setattr(
+        nota_credito_electronica.metrics,
+        "inc",
+        lambda name: metrics_calls.append(name),
+    )
+
+    caplog.set_level(logging.INFO, logger=nota_credito_electronica.logger.name)
+    data = generar_nce_desde_nota(db, nota_id)
+
+    assert data["documentoRelacionado"][0]["numeroDocumento"] == payload["identificacion"][
+        "codigoGeneracion"
+    ]
+    assert "Fuente documentoRelacionado: derivado" in caplog.text
+    assert "notes_source_used.json" in metrics_calls
+    assert "notes_fallback_json" in metrics_calls
+
+
 def test_plan_b_nce_json_incompleto_falla(monkeypatch, tmp_path):
     payload = _build_base_payload()
     payload["emisor"].pop("nit")

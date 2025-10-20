@@ -17,7 +17,7 @@ from datetime import datetime
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from paths import DTES_DIR
-from utils.fecha import TZ_EL_SALVADOR
+from utils.fecha import TZ_EL_SALVADOR, fecha_ddmmaaaa
 from utils.snapshot import Snapshot, SnapshotNotFoundError, normalize_snapshot
 from utils.stable_json import hash_json
 from utils.versioned_dte import ensure_version
@@ -161,6 +161,8 @@ def prepare_dte_origen(
     if isinstance(numero, str):
         ident["numeroControl"] = numero.strip().upper()
 
+    _ensure_documento_relacionado(base_payload, section_sources, tipo_doc)
+
     expected_ident = _collect_expected_ident(
         snapshot_payload,
         json_payload,
@@ -240,7 +242,11 @@ def prevalidate_dte_origen(
                     missing.append(f"receptor.{field}")
 
     doc_rel = data.get("documentoRelacionado")
-    if not isinstance(doc_rel, Sequence) or not doc_rel:
+    if not (
+        isinstance(doc_rel, Sequence)
+        and not isinstance(doc_rel, (str, bytes, bytearray))
+        and doc_rel
+    ):
         missing.append("documentoRelacionado")
     else:
         rel = _ensure_mapping(doc_rel[0])
@@ -600,8 +606,93 @@ def _collect_expected_ident(*sources: Mapping[str, Any] | None) -> dict[str, str
 
 def _allowed_tipo_rel(nota_tipo: str) -> set[str]:
     if nota_tipo == "debito":
-        return {"03", "07"}
+        return {"01", "03", "07"}
     return {"01", "02", "03", "04", "05", "06", "07"}
+
+
+def _ensure_documento_relacionado(
+    payload: dict[str, Any],
+    section_sources: dict[str, str],
+    tipo_doc: str,
+) -> None:
+    doc_rel = payload.get("documentoRelacionado")
+    if isinstance(doc_rel, Mapping):
+        payload["documentoRelacionado"] = [dict(doc_rel)]
+        return
+    if isinstance(doc_rel, Sequence) and not isinstance(doc_rel, (str, bytes, bytearray)):
+        if doc_rel:
+            return
+    derived = _derive_documento_relacionado(payload, tipo_doc)
+    if derived:
+        payload["documentoRelacionado"] = derived
+        section_sources["documentoRelacionado"] = (
+            section_sources.get("documentoRelacionado") or "derivado"
+        )
+
+
+def _derive_documento_relacionado(
+    payload: Mapping[str, Any],
+    tipo_doc: str,
+) -> list[dict[str, Any]] | None:
+    ident = _ensure_mapping(payload.get("identificacion"))
+    if not ident:
+        return None
+    codigo = ident.get("codigoGeneracion")
+    numero_control = ident.get("numeroControl")
+    numero_documento = str(codigo or numero_control or "").strip()
+    if not numero_documento:
+        return None
+    tipo_generacion = 2 if codigo else 1
+    tipo_rel = _normalize_doc_rel_tipo(ident.get("tipoDte"), tipo_doc, payload)
+    fecha_rel = _format_doc_rel_fecha(
+        ident.get("fechaEmision") or ident.get("fecEmi")
+    )
+    if not fecha_rel:
+        return None
+    return [
+        {
+            "tipoDocumento": tipo_rel,
+            "tipoGeneracion": tipo_generacion,
+            "numeroDocumento": numero_documento,
+            "fechaEmision": fecha_rel,
+        }
+    ]
+
+
+def _normalize_doc_rel_tipo(tipo_dte: Any, tipo_doc: str, payload: Mapping[str, Any]) -> str:
+    tipo: str | None
+    if isinstance(tipo_dte, int):
+        tipo = f"{tipo_dte:02d}"
+    elif isinstance(tipo_dte, str):
+        stripped = tipo_dte.strip()
+        if stripped.isdigit() and len(stripped) <= 2:
+            tipo = f"{int(stripped):02d}"
+        elif stripped:
+            tipo = stripped.zfill(2) if len(stripped) <= 2 else stripped
+        else:
+            tipo = None
+    else:
+        tipo = None
+
+    if not tipo:
+        tipo = str(tipo_doc or "").strip()
+    if not tipo:
+        receptor = _ensure_mapping(payload.get("receptor"))
+        tipo = "03" if receptor.get("nrc") else "01"
+    if tipo.isdigit() and len(tipo) <= 2:
+        return f"{int(tipo):02d}"
+    return tipo
+
+
+def _format_doc_rel_fecha(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        formatted = fecha_ddmmaaaa(value)
+        if formatted:
+            return formatted
+        return value.strip() or None
+    return fecha_ddmmaaaa(value)
 
 
 __all__ = [

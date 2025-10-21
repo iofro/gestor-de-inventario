@@ -1,7 +1,8 @@
 """Main window for the sales dashboard application."""
 from __future__ import annotations
 
-from datetime import datetime
+import calendar
+from datetime import date, datetime
 from typing import Dict, List, Optional
 
 from PyQt5 import QtCore, QtWidgets
@@ -9,7 +10,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 
 from ..core.calculations import calcContribucion
-from ..core.controller import DashboardController, FilterState, QuickRange
+from ..core.controller import DashboardController, FilterMode, FilterState
 from ..core.formatters import format_currency, format_date, format_percentage
 from ..core.metrics import CONTRIBUTION_KEY, MARGIN_KEY, DashboardData
 
@@ -22,26 +23,58 @@ class FilterBar(QtWidgets.QWidget):
         self._current_state: Optional[FilterState] = None
         self._applied_state: Optional[FilterState] = None
         self._build_ui()
+        self._update_mode_widgets()
+        self._update_current_state()
+        if self._current_state and self._applied_state is None:
+            self._applied_state = self._current_state
+            self.apply_button.setEnabled(False)
 
     def _build_ui(self) -> None:
         layout = QtWidgets.QHBoxLayout(self)
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(12)
 
-        self.range_combo = QtWidgets.QComboBox()
-        for option in QuickRange:
-            self.range_combo.addItem(option.value, option)
-        layout.addWidget(QtWidgets.QLabel("Rango rápido:"))
-        layout.addWidget(self.range_combo)
+        layout.addWidget(QtWidgets.QLabel("Filtrar por:"))
+        self.mode_combo = QtWidgets.QComboBox()
+        for option in FilterMode:
+            self.mode_combo.addItem(option.value, option)
+        layout.addWidget(self.mode_combo)
 
+        current_date = QtCore.QDate.currentDate()
+
+        self.day_label = QtWidgets.QLabel("Día:")
+        self.day_edit = QtWidgets.QDateEdit(calendarPopup=True)
+        self.day_edit.setDisplayFormat("dd/MM/yyyy")
+        self.day_edit.setDate(current_date)
+        layout.addWidget(self.day_label)
+        layout.addWidget(self.day_edit)
+
+        self.month_label = QtWidgets.QLabel("Mes:")
+        self.month_edit = QtWidgets.QDateEdit(calendarPopup=True)
+        self.month_edit.setDisplayFormat("MMMM yyyy")
+        self.month_edit.setDate(QtCore.QDate(current_date.year(), current_date.month(), 1))
+        layout.addWidget(self.month_label)
+        layout.addWidget(self.month_edit)
+
+        self.year_label = QtWidgets.QLabel("Año:")
+        self.year_spin = QtWidgets.QSpinBox()
+        self.year_spin.setRange(2000, 2100)
+        self.year_spin.setValue(current_date.year())
+        layout.addWidget(self.year_label)
+        layout.addWidget(self.year_spin)
+
+        self.from_label = QtWidgets.QLabel("Desde:")
         self.from_edit = QtWidgets.QDateEdit(calendarPopup=True)
         self.from_edit.setDisplayFormat("dd/MM/yyyy")
+        self.from_edit.setDate(current_date)
+        layout.addWidget(self.from_label)
+        layout.addWidget(self.from_edit)
+
+        self.to_label = QtWidgets.QLabel("Hasta:")
         self.to_edit = QtWidgets.QDateEdit(calendarPopup=True)
         self.to_edit.setDisplayFormat("dd/MM/yyyy")
-
-        layout.addWidget(QtWidgets.QLabel("Desde:"))
-        layout.addWidget(self.from_edit)
-        layout.addWidget(QtWidgets.QLabel("Hasta:"))
+        self.to_edit.setDate(current_date)
+        layout.addWidget(self.to_label)
         layout.addWidget(self.to_edit)
 
         self.apply_button = QtWidgets.QPushButton("Aplicar")
@@ -57,17 +90,26 @@ class FilterBar(QtWidgets.QWidget):
         self.tz_label.setStyleSheet("color: #555555;")
         layout.addWidget(self.tz_label)
 
-        self.range_combo.currentIndexChanged.connect(self._on_range_changed)
-        self.from_edit.dateChanged.connect(self._on_custom_changed)
-        self.to_edit.dateChanged.connect(self._on_custom_changed)
+        self.mode_combo.currentIndexChanged.connect(self._on_mode_changed)
+        self.day_edit.dateChanged.connect(self._on_value_changed)
+        self.month_edit.dateChanged.connect(self._on_value_changed)
+        self.year_spin.valueChanged.connect(self._on_value_changed)
+        self.from_edit.dateChanged.connect(self._on_value_changed)
+        self.to_edit.dateChanged.connect(self._on_value_changed)
         self.apply_button.clicked.connect(self._emit_filters)
 
     def set_timezone_label(self, text: str) -> None:
         self.tz_label.setText(text)
 
     def set_state(self, state: FilterState) -> None:
-        self._current_state = state
         self._applied_state = state
+        self._current_state = state
+        idx = self.mode_combo.findData(state.mode)
+        if idx >= 0:
+            self.mode_combo.blockSignals(True)
+            self.mode_combo.setCurrentIndex(idx)
+            self.mode_combo.blockSignals(False)
+        self._update_mode_widgets()
         self._update_widgets_from_state(state)
         self.apply_button.setEnabled(False)
 
@@ -76,61 +118,114 @@ class FilterBar(QtWidgets.QWidget):
         self.apply_button.setEnabled(False)
 
     # Internal helpers -------------------------------------------------
+    def _update_mode_widgets(self) -> None:
+        mode: FilterMode = self.mode_combo.currentData()
+        show_day = mode == FilterMode.DIA
+        show_month = mode == FilterMode.MES
+        show_year = mode == FilterMode.ANIO
+        show_custom = mode == FilterMode.PERSONALIZADO
+
+        for widget, visible in [
+            (self.day_label, show_day),
+            (self.day_edit, show_day),
+            (self.month_label, show_month),
+            (self.month_edit, show_month),
+            (self.year_label, show_year),
+            (self.year_spin, show_year),
+            (self.from_label, show_custom),
+            (self.from_edit, show_custom),
+            (self.to_label, show_custom),
+            (self.to_edit, show_custom),
+        ]:
+            widget.setVisible(visible)
+
     def _update_widgets_from_state(self, state: FilterState) -> None:
-        idx = self.range_combo.findData(state.quick_range)
-        if idx >= 0:
-            self.range_combo.blockSignals(True)
-            self.range_combo.setCurrentIndex(idx)
-            self.range_combo.blockSignals(False)
-        self._set_date_edits_enabled(state.quick_range == QuickRange.PERSONALIZADO)
-        if state.start:
-            self.from_edit.blockSignals(True)
-            self.from_edit.setDate(state.start.date())
-            self.from_edit.blockSignals(False)
-        if state.end:
-            self.to_edit.blockSignals(True)
-            self.to_edit.setDate(state.end.date())
-            self.to_edit.blockSignals(False)
-
-    def _set_date_edits_enabled(self, enabled: bool) -> None:
-        self.from_edit.setEnabled(enabled)
-        self.to_edit.setEnabled(enabled)
-
-    def _on_range_changed(self) -> None:
-        quick_range: QuickRange = self.range_combo.currentData()
-        if quick_range != QuickRange.PERSONALIZADO:
-            self._set_date_edits_enabled(False)
-        else:
-            self._set_date_edits_enabled(True)
-        if self._current_state:
-            start = self._current_state.start
-            end = self._current_state.end
-        else:
-            start = datetime.now()
-            end = datetime.now()
-        new_state = FilterState(quick_range=quick_range, start=start, end=end)
-        self._current_state = new_state
-        self.apply_button.setEnabled(new_state != self._applied_state)
-
-    def _on_custom_changed(self) -> None:
-        quick_range: QuickRange = self.range_combo.currentData()
-        if quick_range != QuickRange.PERSONALIZADO:
+        if not state.start or not state.end:
             return
-        start_dt = datetime.combine(self.from_edit.date().toPyDate(), datetime.min.time())
-        end_dt = datetime.combine(self.to_edit.date().toPyDate(), datetime.max.time())
-        new_state = FilterState(quick_range=quick_range, start=start_dt, end=end_dt)
-        self._current_state = new_state
-        self.apply_button.setEnabled(new_state != self._applied_state)
+        if state.mode == FilterMode.DIA:
+            self.day_edit.blockSignals(True)
+            day = state.start.date()
+            self.day_edit.setDate(QtCore.QDate(day.year, day.month, day.day))
+            self.day_edit.blockSignals(False)
+        elif state.mode == FilterMode.MES:
+            self.month_edit.blockSignals(True)
+            month_start = date(state.start.year, state.start.month, 1)
+            self.month_edit.setDate(
+                QtCore.QDate(month_start.year, month_start.month, month_start.day)
+            )
+            self.month_edit.blockSignals(False)
+        elif state.mode == FilterMode.ANIO:
+            self.year_spin.blockSignals(True)
+            self.year_spin.setValue(state.start.year)
+            self.year_spin.blockSignals(False)
+        else:
+            self.from_edit.blockSignals(True)
+            start_date = state.start.date()
+            self.from_edit.setDate(
+                QtCore.QDate(start_date.year, start_date.month, start_date.day)
+            )
+            self.from_edit.blockSignals(False)
+            self.to_edit.blockSignals(True)
+            end_date = state.end.date()
+            self.to_edit.setDate(QtCore.QDate(end_date.year, end_date.month, end_date.day))
+            self.to_edit.blockSignals(False)
+        self._update_current_state()
+
+    def _update_current_state(self) -> None:
+        state = self._build_state_from_widgets()
+        self._current_state = state
+        self.apply_button.setEnabled(self._applied_state != state)
+
+    def _on_mode_changed(self) -> None:
+        self._update_mode_widgets()
+        self._update_current_state()
+
+    def _on_value_changed(self) -> None:
+        self._update_current_state()
+
+    @staticmethod
+    def _day_bounds(day_value: date) -> tuple[datetime, datetime]:
+        start = datetime.combine(day_value, datetime.min.time())
+        end = datetime.combine(day_value, datetime.max.time())
+        return start, end
+
+    @staticmethod
+    def _month_bounds(month_value: date) -> tuple[datetime, datetime]:
+        first_day = month_value.replace(day=1)
+        last_day = calendar.monthrange(month_value.year, month_value.month)[1]
+        last_date = month_value.replace(day=last_day)
+        start = datetime.combine(first_day, datetime.min.time())
+        end = datetime.combine(last_date, datetime.max.time())
+        return start, end
+
+    @staticmethod
+    def _year_bounds(year: int) -> tuple[datetime, datetime]:
+        start = datetime.combine(date(year, 1, 1), datetime.min.time())
+        end = datetime.combine(date(year, 12, 31), datetime.max.time())
+        return start, end
+
+    def _build_state_from_widgets(self) -> FilterState:
+        mode: FilterMode = self.mode_combo.currentData()
+        if mode == FilterMode.DIA:
+            day = self.day_edit.date().toPyDate()
+            start, end = self._day_bounds(day)
+        elif mode == FilterMode.MES:
+            month_date = self.month_edit.date().toPyDate().replace(day=1)
+            start, end = self._month_bounds(month_date)
+        elif mode == FilterMode.ANIO:
+            start, end = self._year_bounds(self.year_spin.value())
+        else:
+            start_date = self.from_edit.date().toPyDate()
+            end_date = self.to_edit.date().toPyDate()
+            if start_date > end_date:
+                start_date, end_date = end_date, start_date
+            start = datetime.combine(start_date, datetime.min.time())
+            end = datetime.combine(end_date, datetime.max.time())
+        return FilterState(mode=mode, start=start, end=end)
 
     def _emit_filters(self) -> None:
-        if not self._current_state:
-            return
-        quick_range: QuickRange = self.range_combo.currentData()
-        if quick_range != QuickRange.PERSONALIZADO:
-            # Use the controller to compute the actual range when applied
-            state = FilterState(quick_range=quick_range, start=None, end=None)
-        else:
-            state = self._current_state
+        state = self._build_state_from_widgets()
+        self._current_state = state
         self.filtersApplied.emit(state)
 
 
@@ -355,6 +450,29 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
         content_layout.addWidget(self.daily_section)
         self.daily_chart.canvas.mpl_connect("motion_notify_event", self._on_daily_hover)
 
+        self.finance_section = SectionFrame("Reporte financiero")
+        self.finance_table = QtWidgets.QTableWidget(0, 4)
+        self.finance_table.setHorizontalHeaderLabels(
+            ["Período", "Ingresos", "Gastos", "Resultado"]
+        )
+        self.finance_table.horizontalHeader().setStretchLastSection(True)
+        self.finance_table.verticalHeader().setVisible(False)
+        self.finance_table.setAlternatingRowColors(True)
+        self.finance_table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.finance_section.body_layout.addWidget(self.finance_table)
+
+        self.finance_empty_label = QtWidgets.QLabel(
+            "Sin movimientos financieros en el período"
+        )
+        self.finance_empty_label.setAlignment(QtCore.Qt.AlignCenter)
+        self.finance_empty_label.hide()
+        self.finance_section.body_layout.addWidget(self.finance_empty_label)
+
+        self.finance_chart = ChartWidget("Ingresos vs gastos")
+        self.finance_section.body_layout.addWidget(self.finance_chart)
+
+        content_layout.addWidget(self.finance_section)
+
         split_container = QtWidgets.QWidget()
         split_container.setSizePolicy(
             QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Preferred
@@ -463,10 +581,7 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
 
     # Event handlers ---------------------------------------------------
     def _on_filters_applied(self, state: FilterState) -> None:
-        if state.quick_range == QuickRange.PERSONALIZADO:
-            self.controller.set_custom_dates(state.start, state.end)
-        else:
-            self.controller.set_quick_range(state.quick_range)
+        self.controller.set_state(state)
         self._refresh_dashboard()
 
     def _on_top_order_changed(self) -> None:
@@ -488,6 +603,7 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
         for card in self.kpi_cards.values():
             card.update_value("…", "")
         self.daily_chart.show_loading()
+        self.finance_chart.show_loading()
         self.top_chart.show_loading()
         self.channel_chart.show_loading()
         self.top_empty_label.hide()
@@ -495,6 +611,8 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
         self.channel_note.show()
         self.top_table.show()
         self.channel_table.show()
+        self.finance_empty_label.hide()
+        self.finance_table.show()
         self.stock_empty_label.hide()
         self.stock_table.show()
 
@@ -503,6 +621,7 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
         self._update_period_label(self.controller.state)
         self._update_kpis(data)
         self._update_daily_chart(data)
+        self._update_finances(data)
         self._update_top_products(data)
         self._update_channels(data)
         self._update_stock(data)
@@ -587,6 +706,86 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
         if event.guiEvent is not None:
             pos = self.daily_chart.canvas.mapToGlobal(event.guiEvent.pos())
             QtWidgets.QToolTip.showText(pos, text, self.daily_chart.canvas)
+
+    def _update_finances(self, data: DashboardData) -> None:
+        df = data.financial_report
+        self.finance_table.setRowCount(len(df))
+        if df.empty:
+            self.finance_table.hide()
+            self.finance_empty_label.show()
+            self.finance_chart.show_empty("Sin movimientos financieros en el período")
+            return
+        self.finance_table.show()
+        self.finance_empty_label.hide()
+        for row_idx, row in df.iterrows():
+            period_text = self._format_period_value(row["periodo"])
+            self._set_table_item(self.finance_table, row_idx, 0, period_text)
+            self._set_table_item(
+                self.finance_table,
+                row_idx,
+                1,
+                format_currency(float(row["ingresos"])),
+                alignment=QtCore.Qt.AlignRight,
+            )
+            self._set_table_item(
+                self.finance_table,
+                row_idx,
+                2,
+                format_currency(float(row["gastos"])),
+                alignment=QtCore.Qt.AlignRight,
+            )
+            self._set_table_item(
+                self.finance_table,
+                row_idx,
+                3,
+                format_currency(float(row["resultado"])),
+                alignment=QtCore.Qt.AlignRight,
+            )
+        self.finance_table.resizeColumnsToContents()
+        self.finance_table.horizontalHeader().setSectionResizeMode(
+            0, QtWidgets.QHeaderView.Stretch
+        )
+
+        plot_df = df[df["periodo"] != "Total"]
+        if plot_df.empty:
+            self.finance_chart.show_empty("Sin datos diarios para graficar")
+            return
+        fig = self.finance_chart.canvas.figure
+        fig.clear()
+        ax = fig.add_subplot(111)
+        x_positions = list(range(len(plot_df)))
+        width = 0.4
+        incomes = plot_df["ingresos"].tolist()
+        expenses = plot_df["gastos"].tolist()
+        ax.bar(
+            [pos - width / 2 for pos in x_positions],
+            incomes,
+            width,
+            label="Ingresos",
+            color="#4E79A7",
+        )
+        ax.bar(
+            [pos + width / 2 for pos in x_positions],
+            expenses,
+            width,
+            label="Gastos",
+            color="#E15759",
+        )
+        labels = [self._format_period_value(value) for value in plot_df["periodo"]]
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(labels, rotation=45, ha="right")
+        ax.set_ylabel("Monto ($)")
+        ax.legend()
+        fig.tight_layout()
+        self.finance_chart.canvas.draw()
+        self.finance_chart.show_canvas()
+
+    def _format_period_value(self, value: object) -> str:
+        if isinstance(value, datetime):
+            return format_date(value)
+        if isinstance(value, date):
+            return format_date(value)
+        return str(value)
 
     def _update_top_products(self, data: DashboardData) -> None:
         records = data.top_products

@@ -27,6 +27,7 @@ class DashboardData:
     top_products: List[Dict[str, float]]
     channel_summary: pd.DataFrame
     stock_alerts: pd.DataFrame
+    financial_report: pd.DataFrame
 
 
 MARGIN_KEY = "margen"
@@ -142,12 +143,39 @@ def compute_stock_alerts(df: pd.DataFrame, max_stock: float = 5) -> pd.DataFrame
     return alerts.sort_values(by=["stock", "producto"], ascending=[True, True]).reset_index(drop=True)
 
 
+def compute_financial_report(df: pd.DataFrame) -> pd.DataFrame:
+    columns = ["periodo", "ingresos", "gastos", "resultado"]
+    if df.empty:
+        return pd.DataFrame(columns=columns)
+    report = (
+        df.assign(
+            periodo=df["fecha"].dt.normalize(),
+            ingresos=df["total"],
+            gastos=df["unidades"] * df["costo_unit"],
+        )
+        .groupby("periodo", as_index=False)
+        .agg({"ingresos": "sum", "gastos": "sum"})
+    )
+    report["resultado"] = report["ingresos"] - report["gastos"]
+    report["periodo"] = report["periodo"].dt.date
+    totals = pd.DataFrame(
+        {
+            "periodo": ["Total"],
+            "ingresos": [report["ingresos"].sum()],
+            "gastos": [report["gastos"].sum()],
+            "resultado": [report["resultado"].sum()],
+        }
+    )
+    return pd.concat([report, totals], ignore_index=True)
+
+
 def build_dashboard_data(df: pd.DataFrame, order_by: str) -> DashboardData:
     kpis = compute_kpis(df)
     daily = compute_daily_trend(df)
     top_products = compute_top_products(df, order_by)
     channel_summary = compute_channel_summary(df)
     stock_alerts = compute_stock_alerts(df)
+    financial_report = compute_financial_report(df)
     return DashboardData(
         df=df,
         kpis=kpis,
@@ -155,4 +183,5 @@ def build_dashboard_data(df: pd.DataFrame, order_by: str) -> DashboardData:
         top_products=top_products,
         channel_summary=channel_summary,
         stock_alerts=stock_alerts,
+        financial_report=financial_report,
     )

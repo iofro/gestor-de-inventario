@@ -29,6 +29,15 @@ from db import DB
 logger = logging.getLogger(__name__)
 
 
+TIPO_DTE_LABELS = {
+    "01": "C Final",
+    "03": "C Fiscal",
+    "04": "N remision",
+    "05": "N credito",
+    "06": "N debito",
+}
+
+
 class SeleccionarDteDialog(QDialog):
     """Modal dialog to browse DTE candidates received by the tax authority."""
 
@@ -81,7 +90,7 @@ class SeleccionarDteDialog(QDialog):
 
         info_parts = []
         if self.tipo_dte:
-            info_parts.append(f"Tipo: {self.tipo_dte}")
+            info_parts.append(f"Tipo: {self._format_tipo_label(self.tipo_dte)}")
         if self.ambiente:
             info_parts.append(f"Ambiente: {self.ambiente}")
         if info_parts:
@@ -326,7 +335,7 @@ class SeleccionarDteDialog(QDialog):
         for idx, cand in enumerate(self.candidates):
             self.table.insertRow(idx)
             fecha = cand.get("fecha_emision") or ""
-            tipo = cand.get("tipo_dte") or "?"
+            tipo = self._format_tipo_label(cand.get("tipo_dte"))
             numero_control = cand.get("numero_control") or ""
             codigo = cand.get("codigo_generacion") or ""
             receptor_nombre = cand.get("receptor_nombre") or ""
@@ -376,6 +385,13 @@ class SeleccionarDteDialog(QDialog):
                 self.table.selectRow(0)
         self._update_button_state()
         self.result_label.setText(f"{len(self.candidates)} resultado(s)")
+
+    def _format_tipo_label(self, tipo: str | None) -> str:
+        code = str(tipo or "").zfill(2)
+        label = TIPO_DTE_LABELS.get(code)
+        if label:
+            return label
+        return code if code.strip("0") else "?"
 
     def _select_current(self) -> None:
         cand = self._current_candidate()

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
+import sqlite3
 from typing import Iterable
 
 from PyQt5.QtCore import QDate, QTimer, Qt
@@ -22,6 +24,9 @@ from PyQt5.QtWidgets import (
 
 import anulacion
 from db import DB
+
+
+logger = logging.getLogger(__name__)
 
 
 class SeleccionarDteDialog(QDialog):
@@ -194,6 +199,11 @@ class SeleccionarDteDialog(QDialog):
         self.search_edit.textChanged.connect(self.search_timer.start)
         self.search_timer.timeout.connect(self._refresh)
 
+        self._retry_timer = QTimer(self)
+        self._retry_timer.setSingleShot(True)
+        self._retry_timer.setInterval(250)
+        self._retry_timer.timeout.connect(self._refresh)
+
         self.recepcionado_cb.toggled.connect(self._refresh)
         self.mismo_receptor_cb.toggled.connect(self._refresh)
         self.mismo_tipo_cb.toggled.connect(self._refresh)
@@ -290,10 +300,24 @@ class SeleccionarDteDialog(QDialog):
                     "fecha_fin": self.fecha_fin.date().toString("yyyy-MM-dd"),
                 }
             )
+        if self._retry_timer.isActive():
+            self._retry_timer.stop()
+
         try:
-            self.candidates = anulacion.buscar_candidatos_reemplazo(self.db, filtros)
+            candidates = anulacion.buscar_candidatos_reemplazo(self.db, filtros)
+        except sqlite3.OperationalError as exc:
+            if "locked" in str(exc).lower():
+                logger.info("Base de datos ocupada al buscar DTE, reintentando…")
+                if not self._retry_timer.isActive():
+                    self._retry_timer.start()
+                return
+            logger.exception("Error SQLite al buscar candidatos de DTE")
+            candidates = []
         except Exception:
-            self.candidates = []
+            logger.exception("No se pudieron cargar los candidatos de DTE")
+            candidates = []
+
+        self.candidates = candidates
         self._populate_table()
 
     def _populate_table(self) -> None:

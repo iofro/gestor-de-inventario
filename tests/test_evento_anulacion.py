@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 import uuid
 from datetime import datetime, timedelta
 from types import SimpleNamespace
@@ -227,6 +228,28 @@ def test_seleccionar_dte_fecha_filter_respects_checkbox(
     assert dialog.fecha_inicio.date() <= dialog.fecha_fin.date()
     codigos_con_filtro = {c["codigo_generacion"] for c in dialog.candidates}
     assert codigo not in codigos_con_filtro
+
+    dialog.deleteLater()
+
+
+@pytest.mark.usefixtures("qt_app")
+def test_seleccionar_dte_dialog_retry_on_locked_db(monkeypatch, qtbot):
+    attempts = {"count": 0}
+    expected = [{"codigo_generacion": "ABC123"}]
+
+    def fake_buscar(db, filtros):
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise sqlite3.OperationalError("database is locked")
+        return expected
+
+    monkeypatch.setattr(anulacion, "buscar_candidatos_reemplazo", fake_buscar)
+
+    dialog = SeleccionarDteDialog(object(), tipo_dte=None, ambiente=None)
+
+    qtbot.waitUntil(lambda: attempts["count"] >= 2)
+
+    assert dialog.candidates == expected
 
     dialog.deleteLater()
 

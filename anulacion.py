@@ -584,6 +584,10 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
                 except Exception:
                     fecha_sort = None
                 else:
+                    if fecha_sort.tzinfo is not None:
+                        fecha_sort = (
+                            fecha_sort.astimezone(timezone.utc).replace(tzinfo=None)
+                        )
                     if not fecha_emision:
                         fecha_emision = str(raw_fecha)[:10]
 
@@ -644,7 +648,10 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         if isinstance(limit, int) and len(results) >= limit:
             break
 
-    results.sort(key=lambda item: item.get("_sort_key", (datetime.min, 0)), reverse=True)
+    results.sort(
+        key=lambda item: item.get("_sort_key", (datetime.min, 0)),
+        reverse=True,
+    )
     for item in results:
         item.pop("_sort_key", None)
 

@@ -168,6 +168,29 @@ def test_generar_evento_anulacion(qt_app, monkeypatch):
     assert evento["motivo"]["tipoAnulacion"] == 2
 
 
+def test_build_invalidacion_allows_null_docs(monkeypatch):
+    factura = _sample_factura()
+    factura["selloRecibido"] = SELLO_BASE36
+    form = _basic_form()
+    form.update(
+        {
+            "tipDocResponsable": "00",
+            "numDocResponsable": "",
+            "tipDocSolicita": "00",
+            "numDocSolicita": "",
+        }
+    )
+
+    _patch_negocio(monkeypatch)
+
+    evento = anulacion.build_invalidacion_json(factura, form, ambiente="00")
+
+    assert evento["motivo"]["tipDocResponsable"] is None
+    assert evento["motivo"]["numDocResponsable"] is None
+    assert evento["motivo"]["tipDocSolicita"] is None
+    assert evento["motivo"]["numDocSolicita"] is None
+
+
 @pytest.mark.usefixtures("qt_app")
 def test_seleccionar_dte_fecha_filter_respects_checkbox(
     db_conn, tmp_path, dte_metadata_factory

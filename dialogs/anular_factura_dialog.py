@@ -294,7 +294,7 @@ class AnularFacturaDialog(QDialog):
             ("Documento solicitante", self.ndoc_sol),
         ]:
             val = line.text().strip()
-            if len(val) < 3 or len(val) > 20:
+            if val and (len(val) < 3 or len(val) > 20):
                 QMessageBox.warning(self, "Anulación", f"Número de {name} inválido")
                 return False
         return True

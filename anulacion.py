@@ -1297,7 +1297,9 @@ def build_invalidacion_json(
         tip_val = str(tip or "").strip()
         if tip_val:
             tip_val = tip_val.zfill(2)
-            if tip_val not in TIPO_DOC_CAT22:
+            if tip_val == "00":
+                tip_val = None
+            elif tip_val not in TIPO_DOC_CAT22:
                 raise ValueError(f"Tipo de documento de {sujeto} inválido")
         else:
             tip_val = None

@@ -206,8 +206,13 @@ def test_create_nota_propagates_ui_mode(monkeypatch, qt_app, tmp_path, ui_mode):
 
     monkeypatch.setattr(
         facturacion_tab.nota_credito_electronica,
-        "generar_nce_desde_dte",
+        "generar_nce_desde_nota",
         lambda *a, **k: copy.deepcopy(nota_stub),
+    )
+    monkeypatch.setattr(
+        facturacion_tab.nota_credito_electronica,
+        "generar_nce_desde_dte",
+        lambda *a, **k: pytest.fail("no debe usarse el generador de respaldo"),
     )
 
     captured: dict[str, str] = {}

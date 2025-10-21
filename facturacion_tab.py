@@ -38,7 +38,7 @@ import logging
 import glob
 import hashlib
 from pathlib import Path
-from typing import Any, List, Mapping, Tuple
+from typing import Any, List, Mapping, Optional, Tuple
 from copy import deepcopy
 from pprint import pformat
 from collections import Counter
@@ -6859,20 +6859,16 @@ class FacturacionTab(QWidget):
         ambiente = "01" if ambiente_cfg == "produccion" else "00"
 
         nota_json = None
+        snapshot_exc: Optional[SnapshotNotFoundError] = None
         if tipo == "credito":
-            ratio = None
-            if not dialog_detalles_pdf and total_original:
-                try:
-                    ratio = Decimal(str(monto / total_original))
-                except Exception:
-                    ratio = None
-            nota_json = nota_credito_electronica.generar_nce_desde_dte(
-                self.manager.db,
-                data,
-                ratio,
-                detalles=dialog_detalles_pdf or None,
-                motivo=motivo,
-            )
+            try:
+                nota_json = nota_credito_electronica.generar_nce_desde_nota(
+                    self.manager.db,
+                    nota_id,
+                    ambiente=ambiente,
+                )
+            except SnapshotNotFoundError as exc:
+                snapshot_exc = exc
         elif tipo == "debito":
             try:
                 nota_json = generar_nota_debito_json(
@@ -6901,12 +6897,112 @@ class FacturacionTab(QWidget):
                         )
                     except Exception:
                         ratio = None
+                def _ensure_mapping_local(value):
+                    if isinstance(value, Mapping):
+                        return dict(value)
+                    if isinstance(value, str):
+                        try:
+                            parsed = json.loads(value)
+                        except Exception:
+                            return {}
+                        return dict(parsed) if isinstance(parsed, Mapping) else {}
+                    return {}
+
+                nota_info = None
+                try:
+                    nota_row = self.manager.db.cursor.execute(
+                        "SELECT * FROM notas WHERE id=?",
+                        (nota_id,),
+                    ).fetchone()
+                except Exception:
+                    nota_row = None
+                if nota_row:
+                    nota_info = dict(nota_row)
+                if nota_info is None:
+                    nota_info = {
+                        "id": nota_id,
+                        "tipo": tipo,
+                        "venta_id": venta_id,
+                        "monto": monto,
+                        "motivo": motivo,
+                    }
+                if detalles_nota is not None and nota_info.get("detalles") is None:
+                    try:
+                        nota_info["detalles"] = json.dumps(detalles_nota)
+                    except Exception:
+                        nota_info["detalles"] = detalles_nota
+
+                venta_info = None
+                venta_extra_data: dict[str, Any] = {}
+                if venta_id:
+                    try:
+                        venta_info = self.manager.db.get_venta_by_id(venta_id)
+                    except Exception:
+                        venta_info = None
+                    extra_raw = None
+                    if isinstance(venta_info, Mapping):
+                        extra_raw = venta_info.get("extra")
+                    if extra_raw is not None:
+                        venta_extra_data = _ensure_mapping_local(extra_raw)
+
+                try:
+                    credito_fiscal = (
+                        self.manager.db.get_venta_credito_fiscal(venta_id)
+                        if venta_id
+                        else None
+                    )
+                except Exception:
+                    credito_fiscal = None
+
+                def _safe_int(value):
+                    try:
+                        return int(value)
+                    except (TypeError, ValueError):
+                        return None
+
+                cliente_id = None
+                for source in (nota_info, venta_info, credito_fiscal, venta_extra_data):
+                    if not isinstance(source, Mapping):
+                        continue
+                    for key in ("cliente_id", "clienteId"):
+                        cid = _safe_int(source.get(key))
+                        if cid:
+                            cliente_id = cid
+                            break
+                    if cliente_id:
+                        break
+                    cliente_nested = source.get("cliente") if isinstance(source, Mapping) else None
+                    if isinstance(cliente_nested, Mapping):
+                        cid = _safe_int(cliente_nested.get("id"))
+                        if cid:
+                            cliente_id = cid
+                            break
+                    if cliente_id:
+                        break
+
+                cliente_info = None
+                if cliente_id:
+                    try:
+                        cliente_info = self.manager.db.get_cliente(cliente_id)
+                    except Exception:
+                        cliente_info = None
+
+                receptor_fuentes = {
+                    "nota": nota_info,
+                    "venta": venta_info,
+                    "venta_credito_fiscal": credito_fiscal,
+                    "venta_extra": venta_extra_data,
+                    "cliente": cliente_info,
+                }
+
                 nota_json = nota_credito_electronica.generar_nce_desde_dte(
                     self.manager.db,
                     data,
                     ratio,
                     detalles=dialog_detalles_pdf or None,
                     motivo=motivo,
+                    ambiente=ambiente,
+                    receptor_fuentes=receptor_fuentes,
                 )
             elif tipo == "debito":
                 nota_json = generar_nde_desde_dte(

@@ -627,8 +627,8 @@ def test_nce_receptor_conserva_nit_y_actividad_del_origen_cf():
     nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
 
-    doc_rel = resultado["documentoRelacionado"][0]
-    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    doc_rel = nce["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, nce["receptor"])
     _assert_doc_rel_coincide_con_origen(doc_rel, dte_origen)
     assert doc_rel["tipoGeneracion"] == 2
     assert (
@@ -636,7 +636,7 @@ def test_nce_receptor_conserva_nit_y_actividad_del_origen_cf():
         == dte_origen["identificacion"]["codigoGeneracion"].strip().upper()
     )
 
-    receptor = resultado["receptor"]
+    receptor = nce["receptor"]
     assert receptor["nit"] == "000868547"
     assert receptor["nrc"] == "2301408"
     assert receptor["codActividad"] == "46484"

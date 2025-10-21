@@ -394,6 +394,8 @@ def generar_nce_desde_nota(
 
     receptor_fuentes = {
         "nota": nota,
+        "venta": venta,
+        "venta_credito_fiscal": credito_fiscal,
         "venta_extra": venta_extra_data,
         "cliente": cliente_info,
     }
@@ -680,7 +682,13 @@ def generar_nce_desde_dte(
         return text or None
 
     sources_priority: list[dict[str, Any]] = []
-    for key in ("nota", "venta_extra", "cliente"):
+    for key in (
+        "nota",
+        "venta",
+        "venta_credito_fiscal",
+        "venta_extra",
+        "cliente",
+    ):
         mapping = _ensure_mapping_receptor(receptor_fuentes.get(key))
         if mapping:
             sources_priority.append(mapping)

@@ -113,6 +113,32 @@ class SeleccionarDteDialog(QDialog):
             )
         filters_layout.addWidget(self.mismo_receptor_cb)
 
+        self.mismo_tipo_cb = QCheckBox("Solo mismo tipo")
+        self.mismo_tipo_cb.setChecked(False)
+        self.mismo_tipo_cb.setEnabled(self.tipo_dte is not None)
+        if self.tipo_dte is None:
+            self.mismo_tipo_cb.setToolTip(
+                "No hay tipo de DTE para filtrar automáticamente."
+            )
+        else:
+            self.mismo_tipo_cb.setToolTip(
+                "Restringe los resultados al mismo tipo de DTE que el documento original."
+            )
+        filters_layout.addWidget(self.mismo_tipo_cb)
+
+        self.mismo_ambiente_cb = QCheckBox("Solo mismo ambiente")
+        self.mismo_ambiente_cb.setChecked(False)
+        self.mismo_ambiente_cb.setEnabled(self.ambiente is not None)
+        if self.ambiente is None:
+            self.mismo_ambiente_cb.setToolTip(
+                "No hay ambiente registrado para aplicar este filtro."
+            )
+        else:
+            self.mismo_ambiente_cb.setToolTip(
+                "Restringe los resultados al mismo ambiente que el documento original."
+            )
+        filters_layout.addWidget(self.mismo_ambiente_cb)
+
         self.filtrar_fecha_cb = QCheckBox("Filtrar por fecha")
         self.filtrar_fecha_cb.setChecked(False)
         filters_layout.addWidget(self.filtrar_fecha_cb)
@@ -170,6 +196,8 @@ class SeleccionarDteDialog(QDialog):
 
         self.recepcionado_cb.toggled.connect(self._refresh)
         self.mismo_receptor_cb.toggled.connect(self._refresh)
+        self.mismo_tipo_cb.toggled.connect(self._refresh)
+        self.mismo_ambiente_cb.toggled.connect(self._refresh)
         self.filtrar_fecha_cb.toggled.connect(self._on_toggle_fecha_filter)
         self.fecha_inicio.dateChanged.connect(lambda *_: self._refresh())
         self.fecha_fin.dateChanged.connect(lambda *_: self._refresh())
@@ -182,6 +210,8 @@ class SeleccionarDteDialog(QDialog):
                 self.search_edit,
                 self.recepcionado_cb,
                 self.mismo_receptor_cb,
+                self.mismo_tipo_cb,
+                self.mismo_ambiente_cb,
                 self.filtrar_fecha_cb,
                 self.fecha_inicio,
                 self.fecha_fin,
@@ -241,14 +271,16 @@ class SeleccionarDteDialog(QDialog):
             self.fecha_fin.setDate(self.fecha_inicio.date())
 
         filtros = {
-            "tipo_dte": self.tipo_dte,
-            "ambiente": self.ambiente,
             "exclude_uuid": self.exclude_uuid,
             "recepcionado": self.recepcionado_cb.isChecked(),
             "mismo_receptor": self.mismo_receptor_cb.isChecked(),
             "receptor_documentos": self.receptor_documentos,
             "search": self.search_edit.text(),
         }
+        if self.tipo_dte and self.mismo_tipo_cb.isChecked():
+            filtros["tipo_dte"] = self.tipo_dte
+        if self.ambiente and self.mismo_ambiente_cb.isChecked():
+            filtros["ambiente"] = self.ambiente
         if self.filtrar_fecha_cb.isChecked():
             filtros.update(
                 {

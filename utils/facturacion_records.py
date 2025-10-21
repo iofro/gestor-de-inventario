@@ -13,6 +13,7 @@ import os
 import re
 from collections import defaultdict
 from datetime import datetime
+from decimal import Decimal
 from typing import Any, Dict, Iterable, Mapping
 
 
@@ -156,6 +157,25 @@ def tipo_code_from_desc(tipo: str | None) -> str | None:
     if not tipo:
         return None
     return TIPO_DTE_CODE_BY_DESC.get(str(tipo).strip().lower())
+
+
+def _coerce_total(value: Any) -> float | None:
+    if isinstance(value, (int, float)):
+        return abs(float(value))
+    if isinstance(value, Decimal):
+        return abs(float(value))
+    if value is None:
+        return None
+    try:
+        text = str(value).strip()
+    except Exception:
+        return None
+    if not text:
+        return None
+    try:
+        return abs(float(text))
+    except (TypeError, ValueError):
+        return None
 
 
 def map_envio_state(state: str | None) -> str:
@@ -637,8 +657,13 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             row["pdf"] = ruta
             row["json"] = json_path
 
+        coerced_total = _coerce_total(row.get("total"))
+        if coerced_total is not None:
+            row["total"] = coerced_total
+
         tipo_lower_desc = str((tipo_desc or doc_tipo or "").lower())
         note_kind = None
+        nota_id: int | None = None
         if "nota" in tipo_lower_desc:
             if "remision" in tipo_lower_desc or "remisión" in tipo_lower_desc:
                 note_kind = "remision"
@@ -658,6 +683,39 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                 nota_id = None
             if nota_id is not None:
                 row["nota_id"] = nota_id
+
+        sign_value = 1
+        if note_kind:
+            sign_value = -1 if note_kind == "credito" else 1
+            note_total_value = None
+            if isinstance(json_data, Mapping):
+                try:
+                    resumen = json_data.get("resumen") or {}
+                except AttributeError:
+                    resumen = {}
+                if isinstance(resumen, Mapping):
+                    note_total_value = resumen.get("montoTotalOperacion")
+            if note_total_value is None and nota_id is not None and cur is not None:
+                try:
+                    nota_row = cur.execute(
+                        "SELECT monto FROM notas WHERE id=?",
+                        (nota_id,),
+                    ).fetchone()
+                except Exception:
+                    nota_row = None
+                if nota_row is not None:
+                    if isinstance(nota_row, Mapping):
+                        note_total_value = nota_row.get("monto")
+                    else:
+                        try:
+                            note_total_value = nota_row[0]
+                        except Exception:
+                            note_total_value = None
+            coerced_note_total = _coerce_total(note_total_value)
+            if coerced_note_total is not None:
+                row["total"] = coerced_note_total
+
+        row["sign"] = sign_value
         rows.append(row)
     return rows
 

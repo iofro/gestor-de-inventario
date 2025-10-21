@@ -11,6 +11,7 @@ from sales_dashboard.core.calculations import (
 )
 from sales_dashboard.core.data_loader import filter_by_period, load_sales_data
 from sales_dashboard.core.formatters import format_currency, format_date, format_percentage
+from sales_dashboard.core.metrics import build_dashboard_data, compute_financial_report
 
 
 def test_calc_ticket_promedio_rounds_correctly() -> None:
@@ -55,3 +56,41 @@ def test_load_sales_data_computes_total(tmp_path) -> None:
     assert dataset.raw.loc[0, "total"] == 10.0
     filtered = filter_by_period(dataset, datetime(2025, 1, 2), datetime(2025, 1, 2))
     assert len(filtered) == 1
+
+
+def test_compute_financial_report_returns_totals() -> None:
+    df = pd.DataFrame(
+        {
+            "fecha": pd.to_datetime(["2025-01-01", "2025-01-01", "2025-01-02"]),
+            "producto": ["A", "B", "C"],
+            "canal": ["Online", "Tienda", "Online"],
+            "unidades": [2, 1, 3],
+            "precio_unit": [5.0, 10.0, 2.0],
+            "costo_unit": [2.0, 4.0, 1.0],
+            "total": [10.0, 10.0, 6.0],
+        }
+    )
+    report = compute_financial_report(df)
+    assert list(report.columns) == ["periodo", "ingresos", "gastos", "resultado"]
+    assert len(report) == 3
+    assert report.iloc[-1]["periodo"] == "Total"
+    assert report.iloc[-1]["ingresos"] == 26.0
+    assert report.iloc[-1]["gastos"] == 11.0
+    assert report.iloc[-1]["resultado"] == 15.0
+
+
+def test_build_dashboard_data_includes_financial_report() -> None:
+    df = pd.DataFrame(
+        {
+            "fecha": pd.to_datetime(["2025-01-01", "2025-01-02"]),
+            "producto": ["A", "B"],
+            "canal": ["Online", "Tienda"],
+            "unidades": [1, 2],
+            "precio_unit": [5.0, 4.0],
+            "costo_unit": [2.0, 1.5],
+            "total": [5.0, 8.0],
+        }
+    )
+    data = build_dashboard_data(df, "ventas")
+    assert not data.financial_report.empty
+    assert set(["ingresos", "gastos", "resultado"]).issubset(data.financial_report.columns)

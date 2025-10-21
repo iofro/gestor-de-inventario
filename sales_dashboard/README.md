@@ -32,8 +32,8 @@ Argumentos disponibles:
 
 ## Contenido de la pantalla
 
-- **Barra de filtros fija** con rangos rápidos, fechas personalizadas y botón
-  "Aplicar" que solo se habilita al detectar cambios.
+- **Barra de filtros fija** con selección por día, mes, año o período
+  personalizado y botón "Aplicar" que solo se habilita al detectar cambios.
 - **Tarjetas de KPIs** con tooltips y textos de apoyo: ventas, transacciones,
   ticket promedio, margen bruto y CMV estimado.
 - **Tendencia diaria** con barras de transacciones y línea de ventas. El cursor
@@ -41,6 +41,8 @@ Argumentos disponibles:
 - **Top productos** con tabla ordenable y gráfico de barras horizontal.
 - **Ventas por canal/vendedor** con tabla y gráfico de pastel (agrupa canales
   menores a 3% en "Otros").
+- **Reporte financiero** con tabla de ingresos, gastos y resultado del período
+  además de gráfico comparativo de ingresos vs gastos.
 - **Stock crítico** con tabla y estado vacío cuando no hay alertas.
 - **Estados vacíos y mensajes** claros ante ausencia de datos.
 

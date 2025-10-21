@@ -22,7 +22,7 @@ from datetime import datetime
 from decimal import Decimal
 import json
 import re
-from typing import Iterable, Optional
+from typing import Iterable, Optional, Mapping, Any
 
 import logging
 
@@ -76,6 +76,75 @@ def _tipos_dte_validos() -> set[str]:
 
 _TIPOS_DTE_VALIDOS = _tipos_dte_validos()
 _ESTADOS_REL_PERMITIDOS = {"Enviado", "Aceptado"}
+
+
+def _normalize_identificacion_guardada(
+    value: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Sanitiza los identificadores previamente almacenados en la nota."""
+
+    if not isinstance(value, Mapping):
+        return {}
+
+    numero_control = str(value.get("numeroControl") or "").strip().upper()
+    codigo_generacion_raw = str(value.get("codigoGeneracion") or "").strip()
+    codigo_generacion = ""
+    if codigo_generacion_raw:
+        try:
+            codigo_generacion = normalize_uuid_v4_upper(codigo_generacion_raw)
+        except Exception:
+            codigo_generacion = codigo_generacion_raw.upper()
+
+    resultado: dict[str, Any] = {}
+    if numero_control:
+        resultado["numeroControl"] = numero_control
+    if codigo_generacion:
+        resultado["codigoGeneracion"] = codigo_generacion
+
+    for key in ("tipoModelo", "tipoOperacion", "tipoContingencia", "motivoContin"):
+        if key in value and value[key] is not None:
+            resultado[key] = value[key]
+
+    return resultado
+
+
+def _extraer_identificacion_guardada(extra: Mapping[str, Any] | None) -> dict[str, Any]:
+    """Construye un mapping con los identificadores almacenados en ``detalles``."""
+
+    if not isinstance(extra, Mapping):
+        return {}
+
+    candidatos: list[Mapping[str, Any]] = []
+    nested = extra.get("identificacion")
+    if isinstance(nested, Mapping):
+        candidatos.append(nested)
+
+    direct: dict[str, Any] = {}
+    for key in (
+        "codigoGeneracion",
+        "numeroControl",
+        "tipoModelo",
+        "tipoOperacion",
+        "tipoContingencia",
+        "motivoContin",
+    ):
+        valor = extra.get(key)
+        if valor not in (None, ""):
+            direct[key] = valor
+    if direct:
+        candidatos.append(direct)
+
+    if not candidatos:
+        return {}
+
+    merged: dict[str, Any] = {}
+    for candidato in candidatos:
+        for key, val in candidato.items():
+            if val in (None, ""):
+                continue
+            merged.setdefault(key, val)
+
+    return merged
 
 
 logger = logging.getLogger(__name__)
@@ -579,6 +648,7 @@ def generar_nota_remision(
     extension: Optional[dict] = None,
     ambiente: str = "00",
     fecha_documento_relacionado: Optional[str] = None,
+    identificacion_guardada: Optional[Mapping[str, Any]] = None,
 ) -> dict:
     """Genera la estructura JSON de una Nota de Remisión."""
     ambiente = resolve_ambiente(ambiente)
@@ -678,7 +748,31 @@ def generar_nota_remision(
             raise ValueError(f"{key} requerido")
     limpiar_documentos(ext)
 
-    cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
+    ident_prev = _normalize_identificacion_guardada(identificacion_guardada)
+    if ident_prev.get("numeroControl") and ident_prev.get("codigoGeneracion"):
+        numero_control = ident_prev.get("numeroControl")
+        codigo_generacion = ident_prev.get("codigoGeneracion")
+        tipo_modelo = ident_prev.get("tipoModelo", 1)
+        tipo_operacion = ident_prev.get("tipoOperacion", 1)
+        tipo_contingencia = ident_prev.get("tipoContingencia")
+        motivo_contin = ident_prev.get("motivoContin")
+    else:
+        cabecera = generar_cabecera_dte_data(1, 1, "04", db, ambiente=ambiente)
+        numero_control = cabecera["numero_control"]
+        codigo_generacion = cabecera["codigo_generacion"]
+        tipo_modelo = cabecera["tipo_modelo"]
+        tipo_operacion = cabecera["tipo_operacion"]
+        tipo_contingencia = cabecera["tipo_contingencia"]
+        motivo_contin = cabecera["motivo_contin"]
+
+    cabecera = {
+        "numero_control": numero_control,
+        "codigo_generacion": codigo_generacion,
+        "tipo_modelo": tipo_modelo,
+        "tipo_operacion": tipo_operacion,
+        "tipo_contingencia": tipo_contingencia,
+        "motivo_contin": motivo_contin,
+    }
     now = datetime.now(TZ_EL_SALVADOR)
     fecha_emision_por_defecto = fecha_ddmmaaaa(now) or fecha_emision_hoy_str(now)
     fec_emi_hoy_iso = fecha_iso(fecha_emision_por_defecto)
@@ -774,6 +868,8 @@ def generar_nota_remision_desde_db(
         extra = json.loads(detalles_raw)
     except Exception:
         extra = {}
+
+    ident_guardada = _extraer_identificacion_guardada(extra)
 
     venta_id = nota.get("venta_id")
     if venta_id:
@@ -894,6 +990,7 @@ def generar_nota_remision_desde_db(
             ambiente=ambiente,
             fecha_documento_relacionado=fecha_origen,
             tipo_documento_relacionado_hint=tipo_doc,
+            identificacion_guardada=ident_guardada,
         )
 
     factura = extra.get("factura")
@@ -906,6 +1003,7 @@ def generar_nota_remision_desde_db(
             ambiente=ambiente,
             fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
             verificar_documento_relacionado=False,
+            identificacion_guardada=ident_guardada,
         )
 
     # Nota independiente (sin venta asociada)
@@ -927,6 +1025,7 @@ def generar_nota_remision_desde_db(
         ambiente=ambiente,
         fecha_documento_relacionado=extra.get("fecha_documento_relacionado"),
         verificar_documento_relacionado=False,
+        identificacion_guardada=ident_guardada,
     )
 
 

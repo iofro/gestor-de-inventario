@@ -1078,6 +1078,91 @@ def test_generar_nota_remision_desde_db_consumidor_final(monkeypatch):
     assert doc_rel["numeroDocumento"] == codigo
 
 
+def test_generar_nota_remision_desde_db_reutiliza_identificadores(monkeypatch):
+    monkeypatch.setattr(
+        "nota_remision._verificar_documento_relacionado_recepcionado",
+        lambda *_args, **_kwargs: None,
+    )
+
+    factura_stub = {
+        "identificacion": {
+            "tipoDte": "03",
+            "codigoGeneracion": "11111111-AAAA-1111-AAAA-111111111111",
+            "numeroControl": "DTE-03-S001P001-000000000000123",
+            "fecEmi": "2024-01-01",
+        },
+        "emisor": {"nit": "06141407100012", "nrc": "1234567"},
+        "receptor": {
+            "tipoDocumento": "13",
+            "numDocumento": "012345678",
+            "nombre": "Consumidor",
+            "bienTitulo": "01",
+            "codActividad": "6201",
+            "descActividad": "Servicios",
+            "telefono": "70000001",
+            "correo": "cliente@example.com",
+            "direccion": {
+                "departamento": "06",
+                "municipio": "23",
+                "complemento": "San Salvador",
+            },
+        },
+        "cuerpoDocumento": [
+            {"descripcion": "Prod", "cantidad": 1, "uniMedida": 59},
+        ],
+    }
+    monkeypatch.setattr(
+        "dte.generar_dte_json",
+        lambda _db, _venta_id, **_kwargs: factura_stub,
+    )
+
+    db = create_db()
+    db.add_vendedor("V1")
+    vendedor_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vendedor_id, None, 0, 0, 0, 10)
+    producto_id = db.cursor.lastrowid
+    venta_id = db.add_venta("2024-01-03", 10, vendedor_id=vendedor_id)
+    db.add_detalle_venta(venta_id, producto_id, 1, 10, vendedor_id=vendedor_id)
+
+    extension = {
+        "nombEntrega": "Juan",
+        "docuEntrega": "123",
+        "nombRecibe": "Ana",
+        "docuRecibe": "456",
+        "observaciones": "Obs",
+    }
+    nota_id = db.agregar_nota(
+        "remision", venta_id, "2024-01-04", 0, "Envio", detalles={"extension": extension}
+    )
+
+    call_counter = {"count": 0}
+    original_next = db.next_dte_correlativo
+
+    def _tracking_next(tipo, sucursal, punto):
+        call_counter["count"] += 1
+        return original_next(tipo, sucursal, punto)
+
+    monkeypatch.setattr(db, "next_dte_correlativo", _tracking_next)
+
+    data_first = generar_nota_remision_desde_db(db, nota_id)
+    ident_first = data_first["identificacion"]
+    assert call_counter["count"] == 1
+
+    db.update_nota_detalles(
+        nota_id,
+        {
+            "numeroControl": ident_first["numeroControl"],
+            "codigoGeneracion": ident_first["codigoGeneracion"],
+        },
+    )
+
+    data_second = generar_nota_remision_desde_db(db, nota_id)
+    ident_second = data_second["identificacion"]
+    assert call_counter["count"] == 1
+    assert ident_second["numeroControl"] == ident_first["numeroControl"]
+    assert ident_second["codigoGeneracion"] == ident_first["codigoGeneracion"]
+
+
 def test_nota_debito_pdf(tmp_path):
     venta, detalles = _sample_data()
     out = tmp_path / "nota.pdf"

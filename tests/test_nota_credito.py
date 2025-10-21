@@ -624,7 +624,8 @@ def test_nce_receptor_conserva_nit_y_actividad_del_origen_cf():
     dte_origen["receptor"]["codActividad"] = "46484"
     dte_origen["receptor"]["descActividad"] = "Servicios medicos"
 
-    resultado = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
 
     doc_rel = resultado["documentoRelacionado"][0]
     _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])

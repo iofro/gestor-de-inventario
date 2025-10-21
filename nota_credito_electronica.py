@@ -879,6 +879,17 @@ def generar_nce_desde_dte(
 
     _ensure_final_activity(receptor)
 
+    requiere_actividad = (final_nrc_val and final_nrc_val != "0") or tipo_doc_rel == "03"
+    if requiere_actividad:
+        cod_final = str(receptor.get("codActividad") or "").strip()
+        desc_final = str(receptor.get("descActividad") or "").strip()
+        if not cod_final or not desc_final:
+            message = (
+                "Receptor con NRC o documento 03 requiere codActividad y descActividad válidos"
+            )
+            logger.error(message)
+            raise ValueError(message)
+
     preserve_nrc_null = False
     if tipo_doc_rel == "01":
         receptor["nrc"] = None

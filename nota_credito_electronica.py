@@ -748,8 +748,12 @@ def generar_nce_desde_dte(
                 "codActividad",
                 "cod_actividad",
                 "codigoActividad",
+                "codigo",
+                "actividad",
                 "actividadEconomica",
+                "actividadEconomicaCodigo",
                 "codigoActividadEconomica",
+                "codigo_giro",
             )
         )
         if cod_val:
@@ -782,33 +786,98 @@ def generar_nce_desde_dte(
     else:
         receptor_base.pop("descActividad", None)
     nit_digits = solo_digitos(receptor_base.get("nit"))
-    if nit_digits and is_valid_nit(nit_digits):
-        receptor_base["nit"] = nit_digits
-    else:
-        receptor_base.pop("nit", None)
-    if not (nit_digits and is_valid_nit(nit_digits)):
+    nit_value: str | None = None
+    if nit_digits:
+        if is_valid_nit(nit_digits):
+            nit_value = nit_digits
+        else:
+            nit_value = None
+    if nit_value is None:
         dui = (
             _search_dui(receptor_origen)
             or _search_dui(dte_origen.get("extension"))
             or _search_dui(dte_origen.get("otrosDocumentos"))
         )
         if dui:
-            receptor_base["nit"] = dui
+            nit_value = dui
+        elif nit_digits:
+            nit_value = nit_digits
+    if nit_value:
+        receptor_base["nit"] = nit_value
+    else:
+        receptor_base.pop("nit", None)
     receptor = ensure_receptor_completo(receptor_base, ambiente)
     final_nit = solo_digitos(receptor.get("nit"))
     if final_nit and is_valid_nit(final_nit):
         receptor["nit"] = final_nit
 
-    final_nrc_val = str(receptor.get("nrc") or "").strip()
     tipo_doc_rel = _tipo_dte_str(origen_ident.get("tipoDte"))
     if not tipo_doc_rel:
         tipo_doc_rel = inferir_tipo_por_numero_control(numero_control)
     if not tipo_doc_rel:
-        doc_rel_origen = dte_origen.get("documentoRelacionado")
-        if isinstance(doc_rel_origen, Sequence) and doc_rel_origen:
-            tipo_doc_rel = _tipo_dte_str(doc_rel_origen[0].get("tipoDocumento"))
-    if not tipo_doc_rel:
-        tipo_doc_rel = "01"
+        nrc_origen = str(receptor_origen.get("nrc") or "").strip()
+        tipo_doc_rel = "03" if nrc_origen and nrc_origen != "0" else "01"
+
+    def _ensure_final_activity(target: dict[str, Any]) -> None:
+        cod_final = _to_nonempty_str(target.get("codActividad"))
+        if cod_final is not None:
+            target["codActividad"] = cod_final
+        else:
+            target.pop("codActividad", None)
+        desc_final = _to_nonempty_str(target.get("descActividad"))
+        if desc_final is not None:
+            target["descActividad"] = desc_final
+        else:
+            target.pop("descActividad", None)
+
+    _ensure_final_activity(receptor)
+
+    final_nrc_val = str(receptor.get("nrc") or "").strip()
+    requiere_actividad = tipo_doc_rel == "03" or final_nrc_val not in {"", "0"}
+    if requiere_actividad:
+        cod_final = _to_nonempty_str(receptor.get("codActividad"))
+        desc_final = _to_nonempty_str(receptor.get("descActividad"))
+        if not cod_final:
+            cod_val = _find_in_sources(
+                (
+                    "codActividad",
+                    "cod_actividad",
+                    "codigoActividad",
+                    "codigo",
+                    "actividad",
+                    "actividadEconomica",
+                    "actividadEconomicaCodigo",
+                    "codigoActividadEconomica",
+                    "codigo_giro",
+                )
+            )
+            cod_final = _to_nonempty_str(cod_val)
+            if cod_final:
+                receptor["codActividad"] = cod_final
+        if not desc_final:
+            desc_val = _find_in_sources(
+                (
+                    "descActividad",
+                    "descripcionActividad",
+                    "giro",
+                    "actividadEconomicaDescripcion",
+                    "actividad",
+                    "desc_giro",
+                )
+            )
+            desc_final = _to_nonempty_str(desc_val)
+            if desc_final:
+                receptor["descActividad"] = desc_final
+        cod_final = _to_nonempty_str(receptor.get("codActividad"))
+        desc_final = _to_nonempty_str(receptor.get("descActividad"))
+        if not cod_final or not desc_final:
+            message = (
+                "Receptor con NRC o documento 03 requiere codActividad y descActividad válidos"
+            )
+            logger.error(message)
+            raise ValueError(message)
+
+    _ensure_final_activity(receptor)
 
     requiere_actividad = (final_nrc_val and final_nrc_val != "0") or tipo_doc_rel == "03"
     if requiere_actividad:
@@ -822,7 +891,7 @@ def generar_nce_desde_dte(
             raise ValueError(message)
 
     preserve_nrc_null = False
-    if tipo_doc_rel == "01" or not final_nrc_val or final_nrc_val == "0":
+    if tipo_doc_rel == "01":
         receptor["nrc"] = None
         preserve_nrc_null = True
 
@@ -1137,11 +1206,12 @@ def generar_nce_desde_dte(
     rel_log = doc_rel[0] if doc_rel else {}
     logger.info(
         "NCE: rel={tipoDoc=%s tipoGen=%s num=%s fecha=%s} "
-        "receptor={nrc=%s codActividad=%s descActividad=%s}",
+        "receptor={nit=%s nrc=%s codActividad=%s descActividad=%s}",
         rel_log.get("tipoDocumento"),
         rel_log.get("tipoGeneracion"),
         rel_log.get("numeroDocumento"),
         rel_log.get("fechaEmision"),
+        receptor.get("nit"),
         receptor.get("nrc"),
         receptor.get("codActividad"),
         receptor.get("descActividad"),

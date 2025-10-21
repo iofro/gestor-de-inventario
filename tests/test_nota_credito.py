@@ -2,6 +2,7 @@ import fitz
 from copy import deepcopy
 import json
 import logging
+import re
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 import json
@@ -9,12 +10,17 @@ import logging
 from db import DB
 from dte import generar_dte_json
 import nota_credito_electronica
-from nota_credito_electronica import generar_nce_desde_dte, generar_nce_desde_nota
+from nota_credito_electronica import (
+    generar_nce_desde_dte,
+    generar_nce_desde_nota,
+    _tipo_dte_str,
+    inferir_tipo_por_numero_control,
+)
 from nota_debito_electronica import generar_nde_desde_dte
 import pytest
 from factura_sv import generar_nota_credito_pdf
 import utils.catalogos as catalogos
-from utils.fecha import fecha_emision_hoy_str
+from utils.fecha import fecha_ddmmaaaa, fecha_emision_hoy_str, fecha_iso
 from utils.snapshot import Snapshot, SnapshotNotFoundError
 from utils.nota_fallback import (
     OrigenResult,
@@ -52,6 +58,44 @@ def _mock_geo(monkeypatch):
         "dte.validar_dep_muni_por_catalogo",
         lambda d, m, strict=True: (str(d).zfill(2), str(m).zfill(2)),
     )
+
+
+def _assert_relacionado_y_receptor(doc_rel: dict, receptor: dict) -> None:
+    assert doc_rel["tipoGeneracion"] in (1, 2)
+    numero_documento = doc_rel["numeroDocumento"]
+    if doc_rel["tipoGeneracion"] == 2:
+        assert re.match(
+            r"^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$",
+            numero_documento,
+        ), numero_documento
+    else:
+        assert numero_documento == numero_documento.upper()
+
+    tipo_doc = doc_rel["tipoDocumento"]
+    if tipo_doc == "03":
+        assert receptor.get("codActividad")
+        assert receptor.get("descActividad")
+    if tipo_doc == "01":
+        assert receptor.get("nrc") in (None, "", "0")
+
+
+def _assert_doc_rel_coincide_con_origen(doc_rel: dict, dte_origen: dict) -> None:
+    ident = dte_origen.get("identificacion", {})
+    uuid = str(ident.get("codigoGeneracion") or "").strip().upper()
+    numero_control = str(ident.get("numeroControl") or "").strip().upper()
+    expected_tipo_gen = 2 if uuid else 1
+    expected_num = uuid if expected_tipo_gen == 2 else numero_control
+    assert doc_rel["tipoGeneracion"] == expected_tipo_gen
+    assert doc_rel["numeroDocumento"] == expected_num
+
+    tipo_doc = _tipo_dte_str(ident.get("tipoDte"))
+    if not tipo_doc:
+        tipo_doc = inferir_tipo_por_numero_control(numero_control)
+    if not tipo_doc:
+        receptor_origen = dte_origen.get("receptor") or {}
+        nrc_origen = str(receptor_origen.get("nrc") or "").strip()
+        tipo_doc = "03" if nrc_origen and nrc_origen != "0" else "01"
+    assert doc_rel["tipoDocumento"] == tipo_doc
 
 
 @pytest.fixture(autouse=True)
@@ -177,13 +221,13 @@ def test_generar_nota_credito_json_ticket(tmp_path, monkeypatch):
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="01")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
+    nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
     assert data["identificacion"]["tipoDte"] == "05"
     assert data.get("documentoRelacionado")
-    assert data["documentoRelacionado"][0]["tipoDocumento"] == "01"
-    assert (
-        data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
-    )
+    doc_rel = data["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, data["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, dte_origen)
+    assert doc_rel == nde["documentoRelacionado"][0]
     assert data["cuerpoDocumento"][0]["precioUni"] > 0
     assert "totalPagar" not in data["resumen"]
     assert data["resumen"]["montoTotalOperacion"] > 0
@@ -217,12 +261,14 @@ def test_generar_nota_credito_json_factura(tmp_path, monkeypatch):
     )
     db.add_detalle_venta(venta_id, pid, 1, 10, vendedor_id=vid)
     dte_origen = generar_dte_json(db, venta_id, tipo_dte="03")
+    dte_origen["receptor"]["codActividad"] = "654321"
+    dte_origen["receptor"]["descActividad"] = "Servicios"
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), motivo="Dev")
-    assert data["documentoRelacionado"][0]["tipoDocumento"] == "03"
-    assert (
-        data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
-    )
+    nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
+    doc_rel = data["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, data["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, dte_origen)
+    assert doc_rel == nde["documentoRelacionado"][0]
     receptor = data["receptor"]
     assert "-" not in receptor.get("nit", "")
     assert receptor.get("nit")
@@ -519,15 +565,17 @@ def test_plan_b_nce_json_sin_documento_relacionado(monkeypatch, tmp_path, caplog
     caplog.set_level(logging.INFO, logger=nota_credito_electronica.logger.name)
     data = generar_nce_desde_nota(db, nota_id)
 
-    assert data["documentoRelacionado"][0]["numeroDocumento"] == payload["identificacion"][
-        "numeroControl"
-    ]
+    nde = generar_nde_desde_dte(db, payload, detalles=None, monto=Decimal("1"))
+    doc_rel = data["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, data["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
+    assert doc_rel == nde["documentoRelacionado"][0]
     assert "Fuente documentoRelacionado: derivado" in caplog.text
     assert "notes_source_used.json" in metrics_calls
     assert "notes_fallback_json" in metrics_calls
 
 
-def test_nce_doc_rel_uuid():
+def test_nce_doc_rel_usa_uuid_cuando_hay_codigo_generacion():
     db = create_db()
     dte_origen = _build_base_payload()
 
@@ -537,42 +585,65 @@ def test_nce_doc_rel_uuid():
     assert len(nce["documentoRelacionado"]) == len(nde["documentoRelacionado"]) == 1
     doc_rel_nce = nce["documentoRelacionado"][0]
     doc_rel_nde = nde["documentoRelacionado"][0]
-    assert doc_rel_nce["tipoDocumento"] == doc_rel_nde["tipoDocumento"]
-    assert doc_rel_nce["tipoGeneracion"] == doc_rel_nde["tipoGeneracion"]
-    assert doc_rel_nce["fechaEmision"] == doc_rel_nde["fechaEmision"]
-    assert nce["receptor"] == nde["receptor"]
-
+    _assert_relacionado_y_receptor(doc_rel_nce, nce["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel_nce, dte_origen)
     assert doc_rel_nce["tipoGeneracion"] == 2
     assert (
         doc_rel_nce["numeroDocumento"]
         == dte_origen["identificacion"]["codigoGeneracion"].strip().upper()
     )
+    assert doc_rel_nce == doc_rel_nde
+    assert nce["receptor"] == nde["receptor"]
 
 
-def test_nce_doc_rel_num_ctrl():
+def test_nce_receptor_hereda_nrc_y_actividad_del_origen_tipo03():
     db = create_db()
     dte_origen = _build_base_payload()
-    dte_origen["identificacion"]["codigoGeneracion"] = ""
-    dte_origen["identificacion"]["numeroControl"] = "dte-01-s001p001-000000000000999"
-    dte_origen["identificacion"]["tipoDte"] = "01"
+    dte_origen["receptor"]["nrc"] = "2301408"
+    dte_origen["receptor"]["codActividad"] = "46484"
+    dte_origen["receptor"]["descActividad"] = "Venta al por mayor"
+    fuentes = {
+        "nota": {"nrc": "", "codActividad": "000", "descActividad": ""},
+        "venta_extra": {"codActividad": None, "descActividad": None},
+        "cliente": {"codActividad": "99999", "descActividad": "Placeholder"},
+    }
+
+    resultado = generar_nce_desde_dte(db, dte_origen, Decimal("1"), receptor_fuentes=fuentes)
+
+    receptor = resultado["receptor"]
+    assert receptor["nrc"] == "2301408"
+    assert receptor["codActividad"] == "46484"
+    assert receptor["descActividad"] == "Venta al por mayor"
+
+
+def test_nce_receptor_conserva_nit_y_actividad_del_origen_cf():
+    db = create_db()
+    dte_origen = _build_base_payload()
+    dte_origen["receptor"]["nit"] = "000868547"
+    dte_origen["receptor"]["nrc"] = "2301408"
+    dte_origen["receptor"]["codActividad"] = "46484"
+    dte_origen["receptor"]["descActividad"] = "Servicios medicos"
 
     nce = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
     nde = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
 
-    assert len(nce["documentoRelacionado"]) == len(nde["documentoRelacionado"]) == 1
-    doc_rel_nce = nce["documentoRelacionado"][0]
-    doc_rel_nde = nde["documentoRelacionado"][0]
-    assert doc_rel_nce["tipoDocumento"] == doc_rel_nde["tipoDocumento"]
-    assert doc_rel_nce["tipoGeneracion"] == doc_rel_nde["tipoGeneracion"]
-    assert doc_rel_nce["fechaEmision"] == doc_rel_nde["fechaEmision"]
-    assert nce["receptor"] == nde["receptor"]
+    doc_rel = resultado["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, dte_origen)
+    assert doc_rel["tipoGeneracion"] == 2
+    assert (
+        doc_rel["numeroDocumento"]
+        == dte_origen["identificacion"]["codigoGeneracion"].strip().upper()
+    )
 
-    assert doc_rel_nce["tipoGeneracion"] == 1
-    assert doc_rel_nce["numeroDocumento"] == "DTE-01-S001P001-000000000000999"
-    assert doc_rel_nce["numeroDocumento"] == doc_rel_nde["numeroDocumento"].upper()
+    receptor = resultado["receptor"]
+    assert receptor["nit"] == "000868547"
+    assert receptor["nrc"] == "2301408"
+    assert receptor["codActividad"] == "46484"
+    assert receptor["descActividad"] == "Servicios medicos"
 
 
-def test_nce_receptor_nrc_requiere_actividad():
+def test_nce_requiere_actividad_con_nrc_o_tipo03():
     db = create_db()
     dte_origen = _build_base_payload()
     dte_origen["receptor"]["nrc"] = "123456-7"
@@ -584,6 +655,20 @@ def test_nce_receptor_nrc_requiere_actividad():
         match="Receptor con NRC o documento 03 requiere codActividad y descActividad válidos",
     ):
         generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+
+    dte_tipo01 = _build_base_payload()
+    dte_tipo01["identificacion"]["tipoDte"] = "01"
+    dte_tipo01["identificacion"]["codigoGeneracion"] = ""
+    dte_tipo01["identificacion"]["numeroControl"] = "dte-01-s001p001-000000000000321"
+    dte_tipo01["receptor"]["nrc"] = "7654321"
+    dte_tipo01["receptor"].pop("codActividad", None)
+    dte_tipo01["receptor"].pop("descActividad", None)
+
+    with pytest.raises(
+        ValueError,
+        match="Receptor con NRC o documento 03 requiere codActividad y descActividad válidos",
+    ):
+        generar_nce_desde_dte(db, dte_tipo01, Decimal("1"))
 
 
 def test_nce_unimedida_default():
@@ -619,6 +704,78 @@ def test_nce_receptor_actividad_numerica_a_texto():
     receptor = resultado["receptor"]
     assert receptor["codActividad"] == "123456"
     assert receptor["descActividad"] == "98765"
+
+
+def test_nce_log_diagnostico_incluye_ident_y_actividad(caplog):
+    db = create_db()
+    dte_origen = _build_base_payload()
+    dte_origen["receptor"]["nit"] = "000868547"
+    dte_origen["receptor"]["nrc"] = "2301408"
+    dte_origen["receptor"]["codActividad"] = "46484"
+    dte_origen["receptor"]["descActividad"] = "Servicios medicos"
+
+    caplog.set_level(logging.INFO, logger=nota_credito_electronica.logger.name)
+
+    resultado = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+
+    doc_rel = resultado["documentoRelacionado"][0]
+    receptor = resultado["receptor"]
+    _assert_relacionado_y_receptor(doc_rel, receptor)
+
+    messages = [
+        record.getMessage()
+        for record in caplog.records
+        if record.name == nota_credito_electronica.logger.name
+        and record.levelno == logging.INFO
+        and record.getMessage().startswith("NCE: rel=")
+    ]
+    assert messages, "No se registró el log diagnóstico de NCE"
+    diag_msg = messages[-1]
+
+    assert f"tipoDoc={doc_rel['tipoDocumento']}" in diag_msg
+    assert f"tipoGen={doc_rel['tipoGeneracion']}" in diag_msg
+    assert f"num={doc_rel['numeroDocumento']}" in diag_msg
+    assert f"fecha={doc_rel['fechaEmision']}" in diag_msg
+    assert f"nit={receptor.get('nit')}" in diag_msg
+    assert f"nrc={receptor.get('nrc')}" in diag_msg
+    assert f"codActividad={receptor.get('codActividad')}" in diag_msg
+    assert f"descActividad={receptor.get('descActividad')}" in diag_msg
+
+
+def test_nce_paridad_con_nde_en_relacionado_y_receptor():
+    db = create_db()
+    dte_origen = _build_base_payload()
+
+    nce_uuid = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
+    nde_uuid = generar_nde_desde_dte(db, dte_origen, detalles=None, monto=Decimal("1"))
+
+    assert nce_uuid["documentoRelacionado"] == nde_uuid["documentoRelacionado"]
+    assert nce_uuid["receptor"] == nde_uuid["receptor"]
+
+    dte_sin_uuid = _build_base_payload()
+    dte_sin_uuid["identificacion"]["codigoGeneracion"] = ""
+    dte_sin_uuid["identificacion"]["numeroControl"] = "dte-01-s001p001-000000000000654"
+    dte_sin_uuid["identificacion"]["tipoDte"] = "01"
+
+    nce_ctrl = generar_nce_desde_dte(db, dte_sin_uuid, Decimal("1"))
+    nde_ctrl = generar_nde_desde_dte(db, dte_sin_uuid, detalles=None, monto=Decimal("1"))
+
+    assert len(nce_ctrl["documentoRelacionado"]) == len(nde_ctrl["documentoRelacionado"])
+    doc_ctrl_nce = nce_ctrl["documentoRelacionado"][0]
+    doc_ctrl_nde = nde_ctrl["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_ctrl_nce, nce_ctrl["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_ctrl_nce, dte_sin_uuid)
+    assert doc_ctrl_nce["tipoDocumento"] == doc_ctrl_nde["tipoDocumento"]
+    assert doc_ctrl_nce["tipoGeneracion"] == 1
+    assert doc_ctrl_nce["tipoGeneracion"] == doc_ctrl_nde["tipoGeneracion"]
+    assert doc_ctrl_nce["fechaEmision"] == doc_ctrl_nde["fechaEmision"]
+    assert (
+        doc_ctrl_nce["numeroDocumento"]
+        == doc_ctrl_nde["numeroDocumento"].strip().upper()
+        == dte_sin_uuid["identificacion"]["numeroControl"].upper()
+    )
+    assert nce_ctrl["receptor"] == nde_ctrl["receptor"]
+    assert nce_ctrl["receptor"].get("nrc") is None
 
 
 def test_nce_plan_b_paridad_nde(monkeypatch, tmp_path):
@@ -677,9 +834,8 @@ def test_nce_plan_b_paridad_nde(monkeypatch, tmp_path):
     ident = resultado["identificacion"]
     assert ident["ambiente"] == "01"
     doc_rel = resultado["documentoRelacionado"][0]
-    assert doc_rel["numeroDocumento"] == payload["identificacion"]["numeroControl"].upper()
-    assert doc_rel["tipoDocumento"] == payload["identificacion"]["tipoDte"]
-    assert doc_rel["tipoGeneracion"] == 2
+    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
 
 
 def test_plan_b_nce_json_incompleto_falla(monkeypatch, tmp_path):
@@ -1144,15 +1300,11 @@ def test_generar_nce_desde_nota_prefiere_snapshot(monkeypatch, tmp_path):
 
     receptor = nce["receptor"]
     assert receptor["nit"] == "06141407100012"
-    assert receptor["nrc"] is None
+    assert receptor.get("nrc") in (None, "", "0")
 
     doc_rel = nce["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "01"
-    assert doc_rel["tipoGeneracion"] == 2
-    assert (
-        doc_rel["numeroDocumento"]
-        == payload["identificacion"]["numeroControl"].upper()
-    )
+    _assert_relacionado_y_receptor(doc_rel, receptor)
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
     assert doc_rel["fechaEmision"] == "2023-08-01"
     today_str = fecha_emision_hoy_str()
     assert nce["identificacion"]["fecEmi"] == today_str
@@ -1237,12 +1389,11 @@ def test_generar_nce_desde_nota_snapshot_dui(monkeypatch, tmp_path):
 
     receptor = nce["receptor"]
     assert receptor["nit"] == "012345678"
-    assert receptor["nrc"] is None
+    assert receptor.get("nrc") in (None, "", "0")
 
     doc_rel = nce["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "01"
-    assert doc_rel["tipoGeneracion"] == 2
-    assert doc_rel["numeroDocumento"] == payload["identificacion"]["numeroControl"].upper()
+    _assert_relacionado_y_receptor(doc_rel, receptor)
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
     assert doc_rel["fechaEmision"] == "2023-09-01"
     today_str = fecha_emision_hoy_str()
     assert nce["identificacion"]["fecEmi"] == today_str
@@ -1504,6 +1655,8 @@ def test_generar_nce_config_produccion_impone_ambiente(monkeypatch):
         receptor.setdefault("nombre", "Cliente")
         receptor.setdefault("nit", "06141407100012")
         receptor.setdefault("nrc", "1234567")
+        receptor.setdefault("codActividad", "111111")
+        receptor.setdefault("descActividad", "Giro")
         receptor.setdefault("tipoDocumento", "36")
         receptor.setdefault("numDocumento", "06141407100012")
         receptor.setdefault(
@@ -1573,10 +1726,9 @@ def test_nota_credito_total_nueve(monkeypatch):
     expected_total = dte_origen["resumen"]["montoTotalOperacion"]
     assert expected_total == Decimal("7.96")
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"))
-    assert (
-        data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
-    )
+    doc_rel = data["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, data["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, dte_origen)
     assert data["resumen"]["montoTotalOperacion"] == expected_total
 
 
@@ -1611,10 +1763,9 @@ def test_nota_credito_precio_uni(monkeypatch):
         }
     ]
     data = generar_nce_desde_dte(db, dte_origen, Decimal("1"), detalles=detalles)
-    assert (
-        data["documentoRelacionado"][0]["numeroDocumento"]
-        == dte_origen["identificacion"]["numeroControl"]
-    )
+    doc_rel = data["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, data["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, dte_origen)
     item = data["cuerpoDocumento"][0]
     assert item["precioUni"] == Decimal("7.9600")
     iva = Decimal("7.96") * Decimal("0.13")
@@ -2044,11 +2195,11 @@ def test_nce_usa_plan_b(monkeypatch):
     assert "prepare" in calls
     assert prevalidate_calls
     assert rebuild_called.get("called") is True
-    numero_control = payload["identificacion"]["numeroControl"]
     doc_rel = resultado["documentoRelacionado"][0]
-    assert doc_rel["numeroDocumento"] == numero_control
+    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
     for item in resultado["cuerpoDocumento"]:
-        assert item["numeroDocumento"] == numero_control
+        assert item["numeroDocumento"] == doc_rel["numeroDocumento"]
     assert resultado["identificacion"]["ambiente"] == "00"
 
 
@@ -2069,10 +2220,52 @@ def test_nce_restaurar_secciones_si_sanitize_elimina(monkeypatch, caplog):
 
     resultado = generar_nce_desde_dte(db, payload, Decimal("1"))
 
-    assert resultado["documentoRelacionado"] == payload["documentoRelacionado"]
+    doc_rel = resultado["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
     for key in ("nombre", "nit", "direccion"):
         assert resultado["receptor"][key] == payload["receptor"][key]
     assert "sanitize_dte_payload eliminó secciones obligatorias" in caplog.text
+
+
+def test_nce_sanitize_no_elimina_secciones():
+    db = create_db()
+    payload = _build_base_payload()
+    payload["receptor"]["nit"] = "000868547"
+    payload["receptor"]["nrc"] = "2301408"
+    payload["receptor"]["codActividad"] = "46484"
+    payload["receptor"]["descActividad"] = "Servicios medicos"
+
+    resultado = generar_nce_desde_dte(db, payload, Decimal("1"))
+
+    required = [
+        "identificacion",
+        "documentoRelacionado",
+        "emisor",
+        "receptor",
+        "cuerpoDocumento",
+        "resumen",
+    ]
+    for key in required:
+        assert key in resultado
+    assert resultado["documentoRelacionado"], "documentoRelacionado quedó vacío tras sanitize"
+
+    doc_rel = resultado["documentoRelacionado"][0]
+    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
+    assert doc_rel["fechaEmision"] == fecha_iso(fecha_ddmmaaaa(payload["identificacion"]["fecEmi"]))
+
+    receptor = resultado["receptor"]
+    assert receptor["nit"] == "000868547"
+    assert receptor["nrc"] == "2301408"
+    assert receptor["codActividad"] == "46484"
+    assert receptor["descActividad"] == "Servicios medicos"
+
+    schema = catalogos.get_dte_schema("05")
+    cleaned = nota_credito_electronica.sanitize_dte_payload(resultado, schema)
+    for key in required:
+        assert key in cleaned
+    assert cleaned["documentoRelacionado"], "documentoRelacionado fue removido tras re-sanitize"
 
 
 def test_nce_docrel_control_ccf(monkeypatch):
@@ -2083,12 +2276,11 @@ def test_nce_docrel_control_ccf(monkeypatch):
     db = create_db()
     payload = _build_base_payload()
     resultado = generar_nce_desde_dte(db, payload, Decimal("1"))
-    numero_control = payload["identificacion"]["numeroControl"]
     doc_rel = resultado["documentoRelacionado"][0]
-    assert doc_rel["tipoDocumento"] == "03"
-    assert doc_rel["numeroDocumento"] == numero_control
+    _assert_relacionado_y_receptor(doc_rel, resultado["receptor"])
+    _assert_doc_rel_coincide_con_origen(doc_rel, payload)
     for item in resultado["cuerpoDocumento"]:
-        assert item["numeroDocumento"] == numero_control
+        assert item["numeroDocumento"] == doc_rel["numeroDocumento"]
         assert item["uniMedida"] == 59
 
 

@@ -123,6 +123,36 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
         "UPDATE dte_envios SET ambiente=? WHERE id=?",
         (factura_c["identificacion"]["ambiente"], row_c),
     )
+
+    factura_e = _crear_factura(
+        dte_metadata_factory,
+        codigo=str(uuid.uuid4()).upper(),
+        numero="DTE-01-S001P001-000000000000555",
+        ambiente="01",
+    )
+    json_e = tmp_path / "candidato_e.json"
+    json_e.write_text(json.dumps(factura_e), encoding="utf-8")
+    extra_e = {
+        "codigoGeneracion": factura_e["identificacion"]["codigoGeneracion"],
+        "numeroControl": factura_e["identificacion"]["numeroControl"],
+        "dteJsonPath": str(json_e),
+        "selloRecibido": "E" * 40,
+    }
+    venta_e = db_conn.add_venta("2024-02-06", 30, extra=extra_e)
+    db_conn.registrar_envio_dte(
+        venta_e,
+        "manual",
+        "Aceptado",
+        "E" * 40,
+        respuesta_json=json.dumps({"documento": factura_e}),
+        codigo_generacion=factura_e["identificacion"]["codigoGeneracion"],
+        numero_control=factura_e["identificacion"]["numeroControl"],
+    )
+    row_e = db_conn.cursor.lastrowid
+    db_conn.cursor.execute(
+        "UPDATE dte_envios SET ambiente=? WHERE id=?",
+        (factura_e["identificacion"]["ambiente"], row_e),
+    )
     db_conn.conn.commit()
 
     receptor_doc = factura_a["receptor"]["numDocumento"]
@@ -141,6 +171,7 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
     assert codigo_b in codigos
     assert factura_c["identificacion"]["codigoGeneracion"] not in codigos
     assert codigo_d not in codigos
+    assert factura_e["identificacion"]["codigoGeneracion"] not in codigos
 
     datos = {item["codigo_generacion"]: item for item in resultados}
     cand_a = datos[factura_a["identificacion"]["codigoGeneracion"]]
@@ -171,6 +202,19 @@ def test_buscar_candidatos_reemplazo_filters(db_conn, tmp_path, dte_metadata_fac
     sin_filtro = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_sin_recepcionado)
     codigos_sin_filtro = {r["codigo_generacion"] for r in sin_filtro}
     assert codigo_d in codigos_sin_filtro
+    assert factura_e["identificacion"]["codigoGeneracion"] not in codigos_sin_filtro
+
+    filtros_relajados = dict(filtros)
+    filtros_relajados.update(
+        {
+            "permitir_tipo_mismatch": True,
+            "permitir_ambiente_mismatch": True,
+        }
+    )
+    relajados = anulacion.buscar_candidatos_reemplazo(db_conn, filtros_relajados)
+    codigos_relajados = {r["codigo_generacion"] for r in relajados}
+    assert factura_c["identificacion"]["codigoGeneracion"] in codigos_relajados
+    assert factura_e["identificacion"]["codigoGeneracion"] in codigos_relajados
 
 
 @pytest.mark.parametrize("metadata_source", ["payload", "respuesta"])

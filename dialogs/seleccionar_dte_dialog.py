@@ -248,6 +248,8 @@ class SeleccionarDteDialog(QDialog):
             "mismo_receptor": self.mismo_receptor_cb.isChecked(),
             "receptor_documentos": self.receptor_documentos,
             "search": self.search_edit.text(),
+            "permitir_tipo_mismatch": True,
+            "permitir_ambiente_mismatch": True,
         }
         if self.filtrar_fecha_cb.isChecked():
             filtros.update(

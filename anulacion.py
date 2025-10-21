@@ -492,6 +492,8 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         norm = _normalize_documento_id(val)
         if norm:
             receptor_docs.add(norm)
+    permitir_tipo_mismatch = bool(filtros.get("permitir_tipo_mismatch"))
+    permitir_ambiente_mismatch = bool(filtros.get("permitir_ambiente_mismatch"))
     recepcionado_only = bool(filtros.get("recepcionado"))
     mismo_receptor = bool(filtros.get("mismo_receptor"))
     search = str(filtros.get("search") or "").strip().upper()
@@ -536,20 +538,26 @@ def buscar_candidatos_reemplazo(db: DB | None, filtros: dict | None = None) -> l
         ambiente_doc = metadata.get("ambiente")
         if ambiente_doc is None:
             ambiente_doc = normalize_ambiente(row.get("ambiente"))
+            if ambiente_doc:
+                metadata["ambiente"] = ambiente_doc
 
-        ambiente_real = ambiente_doc
-        if ambiente_objetivo:
-            if ambiente_doc and ambiente_doc != ambiente_objetivo:
+        ambiente_real = metadata.get("ambiente")
+        if ambiente_objetivo and not permitir_ambiente_mismatch:
+            if ambiente_real and ambiente_real != ambiente_objetivo:
                 continue
-            if not ambiente_doc and metadata.get("ambiente") is None:
+            if not ambiente_real:
                 metadata["ambiente"] = ambiente_objetivo
+                ambiente_real = ambiente_objetivo
+        if ambiente_real is None:
+            ambiente_real = ambiente_doc
 
         tipo_dte = metadata.get("tipo_dte")
         tipo_indeterminado = False
         if tipo_dte is None:
             tipo_indeterminado = True
         elif tipo_objetivo and tipo_dte != tipo_objetivo:
-            continue
+            if not permitir_tipo_mismatch:
+                continue
 
         receptor_doc = metadata.get("receptor_documento")
         receptor_nombre = metadata.get("receptor_nombre")

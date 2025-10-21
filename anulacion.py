@@ -1123,12 +1123,16 @@ def build_invalidacion_json(
     num_doc_rec_raw = receptor.get("numDocumento") or receptor.get("nit")
     if isinstance(num_doc_rec_raw, str):
         num_doc_rec = num_doc_rec_raw.strip()
+        if not num_doc_rec:
+            num_doc_rec = None
     elif num_doc_rec_raw is None:
         num_doc_rec = None
     else:
         num_doc_rec = str(num_doc_rec_raw)
+        if not num_doc_rec:
+            num_doc_rec = None
 
-    if not nombre_rec and tip_doc_rec is None and not num_doc_rec:
+    if not nombre_rec and tip_doc_rec is None and num_doc_rec is None:
         nombre_rec = normalize_nombre("Consumidor final", max_length=200)
         tip_doc_rec = "37"
         num_doc_rec = "CF"
@@ -1136,13 +1140,14 @@ def build_invalidacion_json(
     if not nombre_rec or len(nombre_rec) < 5:
         raise ValueError("Nombre del receptor inválido")
 
-    if tip_doc_rec not in TIPO_DOC_CAT22:
+    if tip_doc_rec is not None and tip_doc_rec not in TIPO_DOC_CAT22:
         raise ValueError("Tipo de documento del receptor inválido")
 
-    if not num_doc_rec or not (2 <= len(num_doc_rec) <= 20):
-        raise ValueError("Número de documento del receptor inválido")
-    if len(num_doc_rec) < 3 and not (tip_doc_rec == "37" and num_doc_rec.upper() == "CF"):
-        raise ValueError("Número de documento del receptor inválido")
+    if num_doc_rec is not None:
+        if not (2 <= len(num_doc_rec) <= 20):
+            raise ValueError("Número de documento del receptor inválido")
+        if len(num_doc_rec) < 3 and not (tip_doc_rec == "37" and num_doc_rec.upper() == "CF"):
+            raise ValueError("Número de documento del receptor inválido")
 
     tel_rec_raw = receptor.get("telefono")
     tel_rec = None
@@ -1288,12 +1293,25 @@ def build_invalidacion_json(
         nombre_val = (nombre or "").strip()
         if not (5 <= len(nombre_val) <= 100):
             raise ValueError(f"Nombre de {sujeto} inválido")
-        tip_val = str(tip or "").zfill(2)
-        if tip_val not in TIPO_DOC_CAT22:
-            raise ValueError(f"Tipo de documento de {sujeto} inválido")
+
+        tip_val = str(tip or "").strip()
+        if tip_val:
+            tip_val = tip_val.zfill(2)
+            if tip_val not in TIPO_DOC_CAT22:
+                raise ValueError(f"Tipo de documento de {sujeto} inválido")
+        else:
+            tip_val = None
+
         num_val = (num or "").strip()
-        if not (3 <= len(num_val) <= 20):
-            raise ValueError(f"Número de documento de {sujeto} inválido")
+        if num_val:
+            if not (3 <= len(num_val) <= 20):
+                raise ValueError(f"Número de documento de {sujeto} inválido")
+        else:
+            num_val = None
+        if num_val is not None and tip_val is None:
+            raise ValueError(
+                f"Tipo de documento de {sujeto} requerido cuando se indica número"
+            )
         return nombre_val, tip_val, num_val
 
     nombre_resp, tip_resp, num_resp = _val_persona(

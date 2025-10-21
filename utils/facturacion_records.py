@@ -423,6 +423,33 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
     records = factura_records + ticket_records
 
     grouped: dict[tuple[Any, ...], dict[str, dict[str, Any]]] = defaultdict(dict)
+    factura_roots: dict[str, tuple[Any, ...]] = {}
+
+    def _document_root_from_path(path: str | None) -> str | None:
+        if not path:
+            return None
+        try:
+            base_name = os.path.splitext(os.path.basename(path))[0]
+        except Exception:
+            return None
+        if not base_name:
+            return None
+
+        lowered = base_name.lower()
+        for suffix in (
+            "_ticket",
+            "-ticket",
+            "_consumidorfinal",
+            "-consumidorfinal",
+            "_creditofiscal",
+            "-creditofiscal",
+            "_factura",
+            "-factura",
+        ):
+            if lowered.endswith(suffix):
+                lowered = lowered[: -len(suffix)]
+                break
+        return lowered or None
 
     def _normalize_group_key(path: str | None) -> tuple[Any, ...]:
         if not path:
@@ -456,7 +483,8 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             inferred_lower
         )
         venta_id = rec.get("venta_id")
-        if venta_id and not note_like:
+        key: tuple[Any, ...]
+        if venta_id is not None and not note_like:
             key = ("venta", venta_id)
         else:
             key = _normalize_group_key(ruta_value)
@@ -466,11 +494,30 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                     key = ("id", rec_id)
                 elif venta_id is not None:
                     key = ("venta", venta_id, tipo_lower or None)
+
+        if source == "ticket":
+            matched_key = None
+            if venta_id is not None and not note_like:
+                venta_key = ("venta", venta_id)
+                existing_bucket = grouped.get(venta_key)
+                if existing_bucket and "factura" in existing_bucket:
+                    matched_key = venta_key
+            if matched_key is None:
+                root_key = _document_root_from_path(ruta_value)
+                if root_key:
+                    matched_key = factura_roots.get(root_key)
+            if matched_key is not None:
+                key = matched_key
+
         bucket = grouped.setdefault(key, {})
         if source == "ticket":
             bucket.setdefault("ticket", rec)
         else:
             bucket.setdefault("factura", rec)
+            if not note_like:
+                root_key = _document_root_from_path(ruta_value)
+                if root_key and root_key not in factura_roots:
+                    factura_roots[root_key] = key
 
     combined_records: list[dict[str, Any]] = []
     for bucket in grouped.values():

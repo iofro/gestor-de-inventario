@@ -425,17 +425,31 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
 
         self.kpi_cards: Dict[str, KpiCard] = {
             "ventas": KpiCard("Ventas totales", "Ventas totales del período."),
-            "transacciones": KpiCard("Transacciones", "Número de ventas (boletas/facturas)."),
-            "ticket": KpiCard("Ticket promedio", "Ticket promedio: Ventas totales ÷ Transacciones del período."),
-            "margen": KpiCard("Margen bruto", "Margen bruto: Ventas totales − CMV estimado."),
-            "cmv": KpiCard("CMV estimado", "CMV estimado: Suma de costos unitarios de productos vendidos en el período."),
+            "transacciones": KpiCard(
+                "Transacciones", "Número de ventas (boletas/facturas)."
+            ),
+            "ticket": KpiCard(
+                "Ticket promedio",
+                "Ticket promedio: Ventas totales ÷ Transacciones del período.",
+            ),
+            "margen": KpiCard(
+                "Margen bruto", "Margen bruto: Ventas totales − CMV estimado."
+            ),
+            "ingresos": KpiCard(
+                "Ingresos totales", "Ingresos totales del reporte financiero."
+            ),
+            "cmv": KpiCard(
+                "CMV estimado",
+                "CMV estimado: Suma de costos unitarios de productos vendidos en el período.",
+            ),
         }
         positions = {
             "ventas": (0, 0, 1, 1),
             "transacciones": (0, 1, 1, 1),
             "ticket": (1, 0, 1, 1),
             "margen": (1, 1, 1, 1),
-            "cmv": (2, 0, 1, 2),
+            "cmv": (2, 0, 1, 1),
+            "ingresos": (2, 1, 1, 1),
         }
         for key, card in self.kpi_cards.items():
             row, col, row_span, col_span = positions[key]
@@ -649,6 +663,23 @@ class SalesDashboardWindow(QtWidgets.QMainWindow):
         contrib = calcContribucion(kpis.margen_bruto, kpis.ventas)
         self.kpi_cards["margen"].update_value(
             format_currency(kpis.margen_bruto), f"Contribución: {format_percentage(contrib)}"
+        )
+        ingresos_total = kpis.ventas
+        resultado_total = kpis.margen_bruto
+        report = data.financial_report
+        if report is not None and not report.empty:
+            total_row = report.iloc[-1]
+            periodo_label = total_row.get("periodo")
+            if isinstance(periodo_label, str) and periodo_label.lower() == "total":
+                ingresos_total = float(total_row.get("ingresos", ingresos_total))
+                resultado_total = float(total_row.get("resultado", resultado_total))
+            else:
+                if "ingresos" in report.columns:
+                    ingresos_total = float(report["ingresos"].sum())
+                if "resultado" in report.columns:
+                    resultado_total = float(report["resultado"].sum())
+        self.kpi_cards["ingresos"].update_value(
+            format_currency(ingresos_total), f"Resultado financiero: {format_currency(resultado_total)}"
         )
         cmv_ratio = calcContribucion(kpis.cmv, kpis.ventas) if kpis.ventas else 0.0
         self.kpi_cards["cmv"].update_value(

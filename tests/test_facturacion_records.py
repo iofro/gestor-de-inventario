@@ -33,6 +33,43 @@ def test_remision_note_does_not_get_grouped_with_base_invoice(tmp_path):
     assert nota_rows[0].get("venta_id") == venta_id
 
 
+def test_ticket_records_merge_with_invoice_even_if_sale_missing(tmp_path):
+    db = DB(":memory:")
+    venta_id = db.add_venta("2024-03-01", 75)
+
+    base_name = "20240301_0001_ConsumidorFinal"
+    invoice_pdf = tmp_path / f"{base_name}.pdf"
+    invoice_json = tmp_path / f"{base_name}.json"
+    invoice_pdf.write_text("pdf", encoding="utf-8")
+    payload = {
+        "identificacion": {
+            "numeroControl": base_name,
+            "codigoGeneracion": "ABCD1234",
+            "tipoDte": "01",
+            "fecEmi": "2024-03-01",
+        },
+        "receptor": {"nombre": "Cliente"},
+        "resumen": {"totalPagar": 75},
+    }
+    invoice_json.write_text(json.dumps(payload), encoding="utf-8")
+
+    db.add_factura_pdf(venta_id, "Consumidor Final", str(invoice_pdf))
+    # Simula registros antiguos donde la factura no quedó asociada a la venta
+    db.cursor.execute("UPDATE facturas_pdf SET venta_id=NULL")
+    db.conn.commit()
+
+    ticket_pdf = tmp_path / "20240301_0001_Ticket.pdf"
+    ticket_pdf.write_text("pdf", encoding="utf-8")
+    db.add_ticket_pdf(venta_id, str(ticket_pdf))
+
+    rows = get_facturacion_rows(db)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.get("name") == base_name
+    assert row.get("ticket_pdf") == str(ticket_pdf)
+
+
 def test_remision_label_without_nota_still_shows_note_entry(tmp_path):
     db = DB(":memory:")
     venta_id = db.add_venta("2024-01-01", 100)

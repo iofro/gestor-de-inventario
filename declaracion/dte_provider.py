@@ -2,19 +2,35 @@
 
 from __future__ import annotations
 
+import calendar
 from collections import defaultdict
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import datetime, date
 import json
 import logging
 from decimal import Decimal, ROUND_HALF_UP
-from typing import Any
+from typing import Any, Callable
 
 from declaracion.anexo_contribuyentes import VentaContribuyente
 from declaracion.anexo_consumidor_final import VentaCF
 
 logger = logging.getLogger(__name__)
 
-CAT002_VALID = {"01", "03", "04", "05", "06", "07", "08", "09", "11", "14", "15"}
+CAT002_VALID = {
+    "01",
+    "02",
+    "03",
+    "04",
+    "05",
+    "06",
+    "07",
+    "08",
+    "09",
+    "10",
+    "11",
+    "14",
+    "15",
+}
 
 APTOS = {"enviado", "aceptado", "recibido"}
 ALIASES = {
@@ -52,11 +68,170 @@ _TIPO_HINT_ALIASES = {
 }
 
 TIPOS_ANEXO_I = {"03", "05", "06"}
-TIPOS_ANEXO_II = {"01"}  # agregar "14" si se maneja sujeto excluido como CF
+TIPOS_ANEXO_II = {"01", "02", "10", "11"}
 
 CLASE_POR_TIPO = {code: "4" for code in CAT002_VALID}
 
 _ACCENT_TRANSLATION = str.maketrans("áéíóúÁÉÍÓÚ", "aeiouaeiou")
+
+
+@dataclass
+class PreviewExclusionEntry:
+    """Representa un DTE excluido de la previsualización y su motivo."""
+
+    codigo: str | None = None
+    tipo: str | None = None
+    fecha: str | None = None
+    detalle: str | None = None
+    venta_id: int | None = None
+
+    def describe(self) -> str:
+        """Texto breve para registros de log."""
+
+        partes: list[str] = []
+        if self.codigo:
+            partes.append(str(self.codigo))
+        if self.detalle:
+            partes.append(str(self.detalle))
+        if not partes:
+            if self.tipo:
+                partes.append(str(self.tipo))
+            if self.fecha:
+                partes.append(str(self.fecha))
+            if not partes and self.venta_id is not None:
+                partes.append(f"venta {self.venta_id}")
+        if not partes:
+            return ""
+        if len(partes) == 1:
+            return partes[0]
+        return ":".join(partes)
+
+    def to_display(self) -> str:
+        """Descripción enriquecida para la interfaz de usuario."""
+
+        segmentos: list[str] = []
+        if self.tipo:
+            segmentos.append(str(self.tipo))
+        if self.fecha:
+            segmentos.append(str(self.fecha))
+        if self.codigo:
+            if self.detalle:
+                segmentos.append(f"{self.codigo}: {self.detalle}")
+            else:
+                segmentos.append(str(self.codigo))
+        elif self.detalle:
+            segmentos.append(str(self.detalle))
+        if not segmentos and self.venta_id is not None:
+            segmentos.append(f"venta {self.venta_id}")
+        return " · ".join(segmentos)
+
+
+@dataclass
+class FacturacionDataset:
+    rows: list[dict]
+    total_leidos: int
+    descartes: dict[str, list[PreviewExclusionEntry]]
+
+
+@dataclass
+class PreviewRow:
+    fecha: str
+    fecha_obj: datetime | None
+    tipo: str
+    codigo_generacion: str
+    numero_control: str | None
+    cliente: str
+    identificacion: str | None
+    estado_base: str | None
+    estado_manual: str | None
+    estado_override: bool
+    estado_fuente: str | None
+    sello_recepcion: str | None
+    totales: dict[str, str]
+    venta_id: int | None = None
+
+    def sort_key(self) -> tuple:
+        return (
+            self.fecha_obj or datetime.max,
+            self.tipo or "",
+            self.numero_control or "",
+            self.codigo_generacion,
+        )
+
+
+@dataclass
+class AnexoPreviewData:
+    candidatos: int
+    incluidos: list[PreviewRow]
+    excluidos: dict[str, list[PreviewExclusionEntry]]
+    conteos_por_tipo: dict[str, dict[str, int]]
+    total_incluidos: int = field(init=False)
+    total_excluidos: int = field(init=False)
+
+    def __post_init__(self) -> None:
+        self.total_incluidos = len(self.incluidos)
+        self.total_excluidos = max(0, self.candidatos - self.total_incluidos)
+
+
+@dataclass
+class DeclaracionPreview:
+    periodo: str
+    anexo_i: AnexoPreviewData
+    anexo_ii: AnexoPreviewData
+
+
+EXCLUSION_MOTIVOS = (
+    "estado_no_apto",
+    "sin_codigo",
+    "sin_fecha",
+    "duplicado",
+    "fuera_de_periodo",
+)
+
+
+def _ensure_field(row: dict, key: str, extractor: Callable[[dict], str | None]) -> str | None:
+    value = row.get(key)
+    if value:
+        return value
+    value = extractor(row)
+    if value:
+        row[key] = value
+    return value
+
+
+def _make_exclusion_entry(
+    row: dict,
+    *,
+    detalle: str | None = None,
+    fecha: str | None = None,
+) -> PreviewExclusionEntry:
+    codigo = _ensure_field(row, "codigo_generacion", _codigo_generacion)
+    tipo = row.get("tipo")
+    fecha_texto = fecha or row.get("fecEmi")
+    detalle_texto = str(detalle).strip() if detalle else None
+    fecha_texto = str(fecha_texto).strip() if fecha_texto else None
+    tipo_texto = str(tipo).strip() if tipo else None
+    return PreviewExclusionEntry(
+        codigo=str(codigo).strip() if codigo else None,
+        tipo=tipo_texto or None,
+        fecha=fecha_texto or None,
+        detalle=detalle_texto or None,
+        venta_id=row.get("venta_id"),
+    )
+
+
+def _row_fecha_text(row: dict) -> str | None:
+    fecha_obj = row.get("fecha_obj")
+    if isinstance(fecha_obj, datetime):
+        return fecha_obj.strftime("%Y-%m-%d")
+    fec = row.get("fecEmi")
+    if fec:
+        texto = str(fec).strip()
+        if len(texto) == 8 and texto.isdigit():
+            return f"{texto[:4]}-{texto[4:6]}-{texto[6:]}"
+        return texto
+    return None
+
 
 
 def _normalize_alias(texto: str | None) -> str | None:
@@ -98,6 +273,7 @@ def _collect_type_hints(row: dict) -> list[str]:
         "tipo",
         "tipo_doc",
         "tipo_documento",
+        "tipo_dte",
     ]
 
     sources: list[Any] = [row]
@@ -143,6 +319,8 @@ def _try_all_known_fields(row: dict) -> str | None:
     dte_json = row.get("dte_json") or {}
     identificacion = dte_json.get("identificacion") or {}
     candidatos = [
+        row.get("tipo"),
+        row.get("tipo_dte"),
         identificacion.get("tipoDte"),
         identificacion.get("tipoDocumento"),
         dte_json.get("tipoDte"),
@@ -155,6 +333,7 @@ def _try_all_known_fields(row: dict) -> str | None:
             [
                 extra.get("tipoDte"),
                 extra.get("tipoDocumento"),
+                extra.get("tipo_dte"),
                 extra.get("tipo"),
                 extra.get("tipo_doc"),
                 extra.get("tipo_documento"),
@@ -178,6 +357,7 @@ def _try_all_known_fields(row: dict) -> str | None:
                 envio.get("tipoDte"),
                 envio.get("tipoDocumento"),
                 envio.get("tipo"),
+                envio.get("tipo_dte"),
             ]
         )
 
@@ -382,7 +562,13 @@ def _sello_recepcion(row: dict) -> str | None:
     return None
 
 
-def _log_summary(context: str, total: int, incluidos: int, stats: dict[str, dict[str, int]], motivos: dict[str, list[str]]) -> None:
+def _log_summary(
+    context: str,
+    total: int,
+    incluidos: int,
+    stats: dict[str, dict[str, int]],
+    motivos: dict[str, list[object]],
+) -> None:
     excluidos = total - incluidos
     logger.info(
         "%s - total_leidos=%s incluidos=%s excluidos=%s",
@@ -402,17 +588,26 @@ def _log_summary(context: str, total: int, incluidos: int, stats: dict[str, dict
                 datos.get("excluidos", 0),
             )
     for motivo, ejemplos in motivos.items():
+        muestras = []
+        for ejemplo in ejemplos[:3]:
+            if isinstance(ejemplo, PreviewExclusionEntry):
+                descripcion = ejemplo.describe()
+            else:
+                descripcion = str(ejemplo)
+            if descripcion:
+                muestras.append(descripcion)
+        extra = f" ejemplos: {' | '.join(muestras)}" if muestras else ""
         logger.info(
             "%s - descartados_%s=%s%s",
             context,
             motivo,
             len(ejemplos),
-            f" ejemplos: {' | '.join(ejemplos[:3])}" if ejemplos else "",
+            extra,
         )
 
 
-def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
-    """Obtiene filas crudas de facturación para el período indicado."""
+def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
+    """Obtiene información cruda de facturación y los descartes del período."""
 
     periodo = _validate_periodo(periodo_yyyymm)
     db.ensure_column("ventas", "extra", "TEXT")
@@ -453,7 +648,7 @@ def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
             env_map[venta_id] = payload
 
     periodo_rows: list[dict] = []
-    descartes = defaultdict(list)
+    descartes: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
 
     for fila in filas:
         extra = _load_json(fila.get("extra")) or {}
@@ -481,46 +676,53 @@ def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
         if isinstance(row_data["envio"].get("respuesta_json"), dict) and "dteJson" in row_data["envio"]["respuesta_json"]:
             row_data["dte_json"] = row_data["envio"]["respuesta_json"].get("dteJson") or row_data["dte_json"]
 
-        fec_texto, fecha_obj = _fecha_emision(row_data)
-        if not fecha_obj:
-            descartes["sin_fecha"].append(f"venta {fila['venta_id']}")
-            continue
-        periodo_fila = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
-        if periodo_fila != periodo:
-            descartes["fuera_de_periodo"].append(f"venta {fila['venta_id']} {periodo_fila}")
-            continue
-
-        row_data["fecEmi"] = fec_texto
-        row_data["fecha_obj"] = fecha_obj
+        _ensure_field(row_data, "codigo_generacion", _codigo_generacion)
+        _ensure_field(row_data, "numero_control", _numero_control)
+        _ensure_field(row_data, "sello_recepcion", _sello_recepcion)
 
         tipo = _tipo_dte(row_data)
         if tipo:
             row_data["tipo"] = tipo
         else:
-            descartes["sin_tipo"].append(f"venta {fila['venta_id']}")
+            descartes["sin_tipo"].append(
+                _make_exclusion_entry(row_data, detalle=f"venta {fila['venta_id']}")
+            )
 
-        numero_control = _numero_control(row_data)
-        if numero_control:
-            row_data["numero_control"] = numero_control
+        fec_texto, fecha_obj = _fecha_emision(row_data)
+        if fec_texto:
+            row_data["fecEmi"] = fec_texto
+        if not fecha_obj:
+            descartes["sin_fecha"].append(
+                _make_exclusion_entry(row_data, detalle="sin fecha", fecha=fec_texto)
+            )
+            continue
 
-        codigo_generacion = _codigo_generacion(row_data)
-        if codigo_generacion:
-            row_data["codigo_generacion"] = codigo_generacion
-
-        sello = _sello_recepcion(row_data)
-        if sello:
-            row_data["sello_recepcion"] = sello
+        row_data["fecha_obj"] = fecha_obj
+        periodo_fila = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
+        if periodo_fila != periodo:
+            descartes["fuera_de_periodo"].append(
+                _make_exclusion_entry(row_data, detalle=periodo_fila, fecha=fec_texto)
+            )
+            continue
 
         periodo_rows.append(row_data)
 
+    descartes_dict = {motivo: lista for motivo, lista in descartes.items()}
     _log_summary(
         f"Facturación {periodo}",
         len(filas),
         len(periodo_rows),
         {},
-        descartes,
+        descartes_dict,
     )
-    return periodo_rows
+    return FacturacionDataset(periodo_rows, len(filas), descartes_dict)
+
+
+def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
+    """Compatibilidad: devuelve únicamente las filas de facturación."""
+
+    dataset = collect_facturacion_dataset(db, periodo_yyyymm)
+    return dataset.rows
 
 
 def normalize_estado(value: str | None) -> str | None:
@@ -623,6 +825,218 @@ def _identificacion_anexo_i(row: dict) -> tuple[str | None, str | None, str]:
     elif nrc:
         identificacion = str(nrc).replace("-", "").strip()
     return identificacion or None, None, cliente.get("nombre") or ""
+
+
+def _merge_dataset_discards(
+    dataset: FacturacionDataset,
+    tipos: set[str],
+    stats: dict[str, dict[str, int]],
+    excluidos: defaultdict[str, list[PreviewExclusionEntry]],
+) -> int:
+    extras = 0
+    for motivo in ("sin_fecha", "fuera_de_periodo"):
+        for entry in dataset.descartes.get(motivo, []):
+            tipo = entry.tipo
+            if tipo and tipo not in tipos:
+                continue
+            excluidos[motivo].append(entry)
+            if tipo and tipo in tipos:
+                stats[tipo]["excluidos"] += 1
+            extras += 1
+    return extras
+
+
+def _build_preview_row_anexo_i(
+    row: dict, codigo: str, base: str | None, manual: str | None
+) -> PreviewRow:
+    fecha_obj = row.get("fecha_obj") if isinstance(row.get("fecha_obj"), datetime) else None
+    fecha_texto = _row_fecha_text(row) or ""
+    numero_control = row.get("numero_control")
+    if numero_control:
+        numero_control = str(numero_control).strip() or None
+    sello = row.get("sello_recepcion")
+    if sello:
+        sello = str(sello).strip() or None
+    cliente = _extract_cliente(row)
+    identificacion, dui, nombre_identificado = _identificacion_anexo_i(row)
+    cliente_nombre = nombre_identificado or cliente.get("nombre") or ""
+    identificacion_cliente = identificacion or dui or None
+    montos = _montos_anexo_i(row)
+    estado_base_norm = normalize_estado(base)
+    estado_manual_norm = normalize_estado(manual)
+    override = bool(
+        estado_manual_norm
+        and estado_manual_norm in APTOS
+        and (not estado_base_norm or estado_base_norm not in APTOS)
+    )
+    estado_fuente = "db" if row.get("envio") else "extra"
+    totales = {
+        "exentas": montos["ventas_exentas"],
+        "no_sujetas": montos["ventas_no_sujetas"],
+        "gravadas": montos["ventas_gravadas_locales"],
+        "debito": montos["debito_fiscal"],
+        "total": montos["total_ventas"],
+    }
+    return PreviewRow(
+        fecha=fecha_texto,
+        fecha_obj=fecha_obj,
+        tipo=str(row.get("tipo") or ""),
+        codigo_generacion=codigo,
+        numero_control=numero_control,
+        cliente=cliente_nombre,
+        identificacion=identificacion_cliente,
+        estado_base=estado_base_norm,
+        estado_manual=estado_manual_norm,
+        estado_override=override,
+        estado_fuente=estado_fuente,
+        sello_recepcion=sello,
+        totales=totales,
+        venta_id=row.get("venta_id"),
+    )
+
+
+def _build_preview_row_anexo_ii(
+    row: dict, codigo: str, base: str | None, manual: str | None
+) -> PreviewRow:
+    fecha_obj = row.get("fecha_obj") if isinstance(row.get("fecha_obj"), datetime) else None
+    fecha_texto = _row_fecha_text(row) or ""
+    numero_control = row.get("numero_control")
+    if numero_control:
+        numero_control = str(numero_control).strip() or None
+    sello = row.get("sello_recepcion")
+    if sello:
+        sello = str(sello).strip() or None
+    cliente_nombre = _extract_cliente(row).get("nombre") or ""
+    montos = _montos_anexo_ii(row)
+    estado_base_norm = normalize_estado(base)
+    estado_manual_norm = normalize_estado(manual)
+    override = bool(
+        estado_manual_norm
+        and estado_manual_norm in APTOS
+        and (not estado_base_norm or estado_base_norm not in APTOS)
+    )
+    estado_fuente = "db" if row.get("envio") else "extra"
+    totales = {
+        "exentas": montos["ventas_exentas"],
+        "no_sujetas": montos["ventas_no_sujetas"],
+        "gravadas": montos["ventas_gravadas_locales"],
+        "total": montos["total_ventas"],
+    }
+    return PreviewRow(
+        fecha=fecha_texto,
+        fecha_obj=fecha_obj,
+        tipo=str(row.get("tipo") or ""),
+        codigo_generacion=codigo,
+        numero_control=numero_control,
+        cliente=cliente_nombre,
+        identificacion=None,
+        estado_base=estado_base_norm,
+        estado_manual=estado_manual_norm,
+        estado_override=override,
+        estado_fuente=estado_fuente,
+        sello_recepcion=sello,
+        totales=totales,
+        venta_id=row.get("venta_id"),
+    )
+
+
+def _build_preview(
+    dataset: FacturacionDataset,
+    tipos: set[str],
+    *,
+    anexo: str,
+) -> AnexoPreviewData:
+    seen: set[str] = set()
+    stats: defaultdict[str, dict[str, int]] = defaultdict(lambda: {"incluidos": 0, "excluidos": 0})
+    excluidos: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
+    incluidos: list[PreviewRow] = []
+    candidatos = 0
+
+    for row in dataset.rows:
+        tipo = row.get("tipo")
+        if tipo not in tipos:
+            continue
+        candidatos += 1
+        stats[tipo]
+        codigo = _ensure_field(row, "codigo_generacion", _codigo_generacion)
+        if not codigo:
+            stats[tipo]["excluidos"] += 1
+            excluidos["sin_codigo"].append(
+                _make_exclusion_entry(row, detalle="sin código", fecha=_row_fecha_text(row))
+            )
+            continue
+        codigo = str(codigo)
+        if codigo in seen:
+            stats[tipo]["excluidos"] += 1
+            excluidos["duplicado"].append(
+                _make_exclusion_entry(row, detalle="duplicado", fecha=_row_fecha_text(row))
+            )
+            continue
+        base, manual = _estado_base(row)
+        if not estado_apto(base, manual):
+            stats[tipo]["excluidos"] += 1
+            descripcion = normalize_estado(manual) or normalize_estado(base) or "desconocido"
+            excluidos["estado_no_apto"].append(
+                _make_exclusion_entry(row, detalle=descripcion, fecha=_row_fecha_text(row))
+            )
+            continue
+        fecha_obj = row.get("fecha_obj")
+        if not isinstance(fecha_obj, datetime):
+            stats[tipo]["excluidos"] += 1
+            excluidos["sin_fecha"].append(
+                _make_exclusion_entry(row, detalle="sin fecha", fecha=_row_fecha_text(row))
+            )
+            continue
+
+        _ensure_field(row, "numero_control", _numero_control)
+        _ensure_field(row, "sello_recepcion", _sello_recepcion)
+
+        if anexo == "I":
+            preview_row = _build_preview_row_anexo_i(row, codigo, base, manual)
+        else:
+            preview_row = _build_preview_row_anexo_ii(row, codigo, base, manual)
+        incluidos.append(preview_row)
+        seen.add(codigo)
+        stats[tipo]["incluidos"] += 1
+
+    candidatos += _merge_dataset_discards(dataset, tipos, stats, excluidos)
+    incluidos.sort(key=lambda registro: registro.sort_key())
+
+    conteos: dict[str, dict[str, int]] = {}
+    for tipo in sorted(tipos):
+        datos = stats.get(tipo, {"incluidos": 0, "excluidos": 0})
+        conteos[tipo] = {
+            "incluidos": datos.get("incluidos", 0),
+            "excluidos": datos.get("excluidos", 0),
+        }
+
+    for motivo in EXCLUSION_MOTIVOS:
+        excluidos.setdefault(motivo, [])
+
+    return AnexoPreviewData(
+        candidatos=candidatos,
+        incluidos=incluidos,
+        excluidos={motivo: excluidos[motivo] for motivo in EXCLUSION_MOTIVOS},
+        conteos_por_tipo=conteos,
+    )
+
+
+def build_anexo_i_preview(dataset: FacturacionDataset) -> AnexoPreviewData:
+    return _build_preview(dataset, TIPOS_ANEXO_I, anexo="I")
+
+
+def build_anexo_ii_preview(dataset: FacturacionDataset) -> AnexoPreviewData:
+    return _build_preview(dataset, TIPOS_ANEXO_II, anexo="II")
+
+
+def get_declaracion_preview(db, periodo_yyyymm: str) -> DeclaracionPreview:
+    dataset = collect_facturacion_dataset(db, periodo_yyyymm)
+    periodo = _validate_periodo(periodo_yyyymm)
+    return DeclaracionPreview(
+        periodo=periodo,
+        anexo_i=build_anexo_i_preview(dataset),
+        anexo_ii=build_anexo_ii_preview(dataset),
+    )
 
 
 def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:

@@ -20,6 +20,9 @@ def test_tipo_dte_detects_sources_and_aliases():
     row_alias = {"dte_json": {"identificacion": {}}, "extra_data": {"tipo_hint": "CCF"}}
     assert dte_provider._tipo_dte(row_alias) == "03"
 
+    row_snake = {"extra_data": {"tipo_dte": "3"}}
+    assert dte_provider._tipo_dte(row_snake) == "03"
+
 
 def test_clase_por_tipo_catalogo():
     for code in dte_provider.CAT002_VALID:

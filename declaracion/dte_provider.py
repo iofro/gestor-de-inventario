@@ -273,6 +273,7 @@ def _collect_type_hints(row: dict) -> list[str]:
         "tipo",
         "tipo_doc",
         "tipo_documento",
+        "tipo_dte",
     ]
 
     sources: list[Any] = [row]
@@ -318,6 +319,8 @@ def _try_all_known_fields(row: dict) -> str | None:
     dte_json = row.get("dte_json") or {}
     identificacion = dte_json.get("identificacion") or {}
     candidatos = [
+        row.get("tipo"),
+        row.get("tipo_dte"),
         identificacion.get("tipoDte"),
         identificacion.get("tipoDocumento"),
         dte_json.get("tipoDte"),
@@ -330,6 +333,7 @@ def _try_all_known_fields(row: dict) -> str | None:
             [
                 extra.get("tipoDte"),
                 extra.get("tipoDocumento"),
+                extra.get("tipo_dte"),
                 extra.get("tipo"),
                 extra.get("tipo_doc"),
                 extra.get("tipo_documento"),
@@ -353,6 +357,7 @@ def _try_all_known_fields(row: dict) -> str | None:
                 envio.get("tipoDte"),
                 envio.get("tipoDocumento"),
                 envio.get("tipo"),
+                envio.get("tipo_dte"),
             ]
         )
 

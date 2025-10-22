@@ -106,11 +106,13 @@ from declaracion.anexo_consumidor_final import (
     on_click_generar_consumidor_final,
 )
 from declaracion.anexo_xix import DTEAnulado, on_click_generar_anulaciones
+from declaracion.dte_provider import get_declaracion_preview
 from db import DB
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
+from dialogs.anexos_preview_dialog import AnexosPreviewDialog
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from utils.monto import iva_item, monto_a_texto_sv
 from utils.snapshot import SnapshotNotFoundError
@@ -2176,6 +2178,10 @@ class FacturacionTab(QWidget):
         self.declaracion_cargar_xix_btn.clicked.connect(self._handle_cargar_xix)
         buttons_layout.addWidget(self.declaracion_cargar_xix_btn)
 
+        self.declaracion_preview_btn = QPushButton("Previsualizar anexos")
+        self.declaracion_preview_btn.clicked.connect(self._handle_previsualizar_anexos)
+        buttons_layout.addWidget(self.declaracion_preview_btn)
+
         buttons_layout.addStretch(1)
 
         self.declaracion_generar_planilla_btn = QPushButton("Generar planilla")
@@ -2483,6 +2489,26 @@ class FacturacionTab(QWidget):
             if registro is not None:
                 registros.append(registro)
         return registros
+
+    def _handle_previsualizar_anexos(self) -> None:
+        periodo = self._obtener_periodo_declaracion("Previsualización")
+        if not periodo:
+            return
+
+        db = getattr(self.manager, "db", None)
+        if db is None:
+            QMessageBox.warning(self, "Previsualización", "No hay base de datos disponible.")
+            return
+
+        try:
+            preview = get_declaracion_preview(db, periodo)
+        except Exception as exc:  # pragma: no cover - errores inesperados
+            mensaje = f"No se pudo obtener la previsualización: {exc}"
+            QMessageBox.warning(self, "Previsualización", mensaje)
+            return
+
+        dialogo = AnexosPreviewDialog(preview, self)
+        dialogo.exec_()
 
     def _handle_cargar_contribuyentes(self):
         periodo = self._obtener_periodo_declaracion("Anexo I")

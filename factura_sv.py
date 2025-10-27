@@ -720,6 +720,11 @@ def generar_factura_electronica_pdf(
             "fechaVencimiento",
             "vencimiento",
             "fecha_vto",
+            "fecha_venc",
+            "fechaVenc",
+            "fecha_caducidad",
+            "fechaCaducidad",
+            "caducidad",
         ])
         venc_val = _format_fecha_vencimiento(venc_raw)
 

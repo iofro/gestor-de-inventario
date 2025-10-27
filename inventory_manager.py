@@ -330,11 +330,28 @@ class InventoryManager:
         self.db.delete_detalle_compra(detalle_id)
         self.refresh_data()
 
+    def update_detalle_compra(
+        self,
+        detalle_id: int,
+        *,
+        cantidad: int | None = None,
+        codigo_lote: str | None = None,
+        fecha_vencimiento: str | None = None,
+    ) -> None:
+        """Actualiza los campos de un lote específico y refresca los datos."""
+
+        self.db.update_detalle_compra(
+            detalle_id,
+            cantidad=cantidad,
+            codigo_lote=codigo_lote,
+            fecha_vencimiento=fecha_vencimiento,
+        )
+        self.refresh_data()
+
     def update_detalle_compra_cantidad(self, detalle_id: int, nueva_cantidad: int) -> None:
         """Actualiza la cantidad de un lote específico y refresca los datos."""
 
-        self.db.update_detalle_compra_cantidad(detalle_id, nueva_cantidad)
-        self.refresh_data()
+        self.update_detalle_compra(detalle_id, cantidad=nueva_cantidad)
 
     def exportar_inventario_json(self, filename, tab_order=None):
         datos_negocio = {}

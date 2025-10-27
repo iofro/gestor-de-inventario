@@ -9,7 +9,7 @@ import threading
 import unicodedata
 from pathlib import Path
 from decimal import Decimal
-from typing import Any, Mapping
+from typing import Any, Mapping, Optional
 
 from utils import versioned_dte
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
@@ -2997,25 +2997,59 @@ class DB:
             self.conn.commit()
 
 
-    def update_detalle_compra_cantidad(self, detalle_id: int, nueva_cantidad: int) -> None:
-        """Actualiza la cantidad de un detalle de compra y sincroniza el stock.
+    def update_detalle_compra(
+        self,
+        detalle_id: int,
+        *,
+        cantidad: Optional[int] = None,
+        codigo_lote: Optional[str] = None,
+        fecha_vencimiento: Optional[str] = None,
+    ) -> None:
+        """Actualiza los datos de un detalle de compra.
 
         Args:
             detalle_id: Identificador del registro en ``detalles_compra``.
-            nueva_cantidad: Cantidad que tendrá el lote después de la edición.
+            cantidad: Nueva cantidad del lote. Si es ``None`` no se modifica.
+            codigo_lote: Código del lote. Si es ``None`` no se modifica.
+            fecha_vencimiento: Fecha de vencimiento en formato ISO
+                (``YYYY-MM-DD``).  Si es ``None`` no se modifica y si es una
+                cadena vacía se limpia el valor almacenado.
 
         Raises:
-            ValueError: Si el lote no existe o la cantidad es negativa.
+            ValueError: Si el lote no existe, la cantidad es inválida o la
+                fecha no puede interpretarse.
         """
 
         if detalle_id is None:
             raise ValueError("El lote seleccionado no existe.")
 
-        if nueva_cantidad is None:
-            raise ValueError("La cantidad no es válida.")
+        if cantidad is None and codigo_lote is None and fecha_vencimiento is None:
+            return
 
-        if nueva_cantidad < 0:
-            raise ValueError("La cantidad no puede ser negativa.")
+        updates: list[str] = []
+        params: list[Any] = []
+        requiere_actualizar_stock = False
+
+        if cantidad is not None:
+            if cantidad < 0:
+                raise ValueError("La cantidad no puede ser negativa.")
+            updates.append("cantidad=?")
+            params.append(cantidad)
+            requiere_actualizar_stock = True
+
+        if codigo_lote is not None:
+            updates.append("codigo_lote=?")
+            params.append(codigo_lote)
+
+        if fecha_vencimiento is not None:
+            normalizada = normalizar_fecha_iso(fecha_vencimiento)
+            if fecha_vencimiento and not normalizada:
+                raise ValueError("La fecha de vencimiento no es válida.")
+            updates.append("fecha_vencimiento=?")
+            params.append(normalizada)
+
+        if not updates:
+            return
 
         with self.lock:
             row = self.cursor.execute(
@@ -3028,12 +3062,13 @@ class DB:
 
             producto_id = row["producto_id"]
 
+            params.append(detalle_id)
             self.cursor.execute(
-                "UPDATE detalles_compra SET cantidad=? WHERE id=?",
-                (nueva_cantidad, detalle_id),
+                f"UPDATE detalles_compra SET {', '.join(updates)} WHERE id=?",
+                params,
             )
 
-            if producto_id:
+            if requiere_actualizar_stock and producto_id:
                 total_row = self.cursor.execute(
                     "SELECT COALESCE(SUM(cantidad), 0) AS total FROM detalles_compra WHERE producto_id=?",
                     (producto_id,),
@@ -3045,6 +3080,23 @@ class DB:
                 )
 
             self.conn.commit()
+
+
+    def update_detalle_compra_cantidad(self, detalle_id: int, nueva_cantidad: int) -> None:
+        """Actualiza la cantidad de un detalle de compra y sincroniza el stock.
+
+        Args:
+            detalle_id: Identificador del registro en ``detalles_compra``.
+            nueva_cantidad: Cantidad que tendrá el lote después de la edición.
+
+        Raises:
+            ValueError: Si el lote no existe o la cantidad es negativa.
+        """
+
+        if nueva_cantidad is None:
+            raise ValueError("La cantidad no es válida.")
+
+        self.update_detalle_compra(detalle_id, cantidad=nueva_cantidad)
 
 
     def delete_detalle_compra(self, detalle_id: int) -> None:

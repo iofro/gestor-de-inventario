@@ -3,7 +3,7 @@ from PyQt5.QtWidgets import (
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
     QListWidget, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
     QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy,
-    QInputDialog
+    QInputDialog, QFormLayout, QDialogButtonBox, QSpinBox
 )
 from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QColor
@@ -103,6 +103,82 @@ class ExportThread(QThread):
             self.finished.emit()
         except Exception as e:
             self.error.emit(str(e))
+
+
+class EditarLoteDialog(QDialog):
+    """Diálogo para editar los datos de un lote."""
+
+    def __init__(
+        self,
+        parent=None,
+        *,
+        producto: str = "",
+        codigo: str = "",
+        cantidad: int = 0,
+        codigo_lote: str = "",
+        fecha_vencimiento: str = "",
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Editar lote")
+
+        layout = QVBoxLayout(self)
+        descripcion = QLabel(f"Producto: {producto} ({codigo})")
+        descripcion.setWordWrap(True)
+        layout.addWidget(descripcion)
+
+        form = QFormLayout()
+
+        self.cantidad_spin = QSpinBox()
+        self.cantidad_spin.setMinimum(0)
+        self.cantidad_spin.setMaximum(1_000_000_000)
+        self.cantidad_spin.setValue(max(0, cantidad))
+        form.addRow("Cantidad:", self.cantidad_spin)
+
+        self.codigo_lote_edit = QLineEdit(codigo_lote)
+        self.codigo_lote_edit.setPlaceholderText("Código de lote")
+        form.addRow("Código de lote:", self.codigo_lote_edit)
+
+        self.fecha_vencimiento_edit = QDateEdit()
+        self.fecha_vencimiento_edit.setCalendarPopup(True)
+        self.fecha_vencimiento_edit.setDisplayFormat("yyyy-MM-dd")
+        self.fecha_vencimiento_edit.setMinimumDate(QDate(1900, 1, 1))
+        self.fecha_vencimiento_edit.setMaximumDate(QDate(7999, 12, 31))
+        fecha_actual = QDate.currentDate()
+        self.fecha_vencimiento_edit.setDate(fecha_actual)
+
+        self.sin_fecha_checkbox = QCheckBox("Sin fecha de vencimiento")
+        self.sin_fecha_checkbox.toggled.connect(
+            lambda checked: self.fecha_vencimiento_edit.setEnabled(not checked)
+        )
+
+        if fecha_vencimiento:
+            fecha_qt = QDate.fromString(fecha_vencimiento, "yyyy-MM-dd")
+            if fecha_qt.isValid():
+                self.fecha_vencimiento_edit.setDate(fecha_qt)
+                self.sin_fecha_checkbox.setChecked(False)
+            else:
+                self.sin_fecha_checkbox.setChecked(True)
+                self.fecha_vencimiento_edit.setEnabled(False)
+        else:
+            self.sin_fecha_checkbox.setChecked(True)
+            self.fecha_vencimiento_edit.setEnabled(False)
+
+        form.addRow("Fecha de vencimiento:", self.fecha_vencimiento_edit)
+        layout.addLayout(form)
+        layout.addWidget(self.sin_fecha_checkbox)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_values(self) -> tuple[int, str, str]:
+        cantidad = self.cantidad_spin.value()
+        codigo_lote = self.codigo_lote_edit.text().strip()
+        fecha_vencimiento = ""
+        if not self.sin_fecha_checkbox.isChecked():
+            fecha_vencimiento = self.fecha_vencimiento_edit.date().toString("yyyy-MM-dd")
+        return cantidad, codigo_lote, fecha_vencimiento
 
 
 class MainWindow(QMainWindow):
@@ -1875,22 +1951,37 @@ class MainWindow(QMainWindow):
         if not self._confirm_inventory_conflict("este lote"):
             return
 
-        nueva_cantidad, ok = QInputDialog.getInt(
+        dialog = EditarLoteDialog(
             self,
-            "Editar lote",
-            f"Ingrese la nueva cantidad para el lote de {producto} (código {codigo}):",
-            value=cantidad_actual,
-            min=0,
+            producto=producto,
+            codigo=codigo,
+            cantidad=cantidad_actual,
+            codigo_lote=data.get("codigo_lote") or "",
+            fecha_vencimiento=data.get("fecha_vencimiento") or "",
         )
 
-        if not ok:
+        if dialog.exec_() != QDialog.Accepted:
             return
 
-        if nueva_cantidad == cantidad_actual:
+        nueva_cantidad, nuevo_codigo_lote, nueva_fecha_vencimiento = dialog.get_values()
+
+        cambios: dict[str, object] = {}
+        if nueva_cantidad != cantidad_actual:
+            cambios["cantidad"] = nueva_cantidad
+
+        codigo_lote_actual = data.get("codigo_lote") or ""
+        if nuevo_codigo_lote != codigo_lote_actual:
+            cambios["codigo_lote"] = nuevo_codigo_lote
+
+        fecha_actual = data.get("fecha_vencimiento") or ""
+        if nueva_fecha_vencimiento != fecha_actual:
+            cambios["fecha_vencimiento"] = nueva_fecha_vencimiento
+
+        if not cambios:
             return
 
         try:
-            self.manager.update_detalle_compra_cantidad(detalle_id, nueva_cantidad)
+            self.manager.update_detalle_compra(detalle_id, **cambios)
         except ValueError as exc:
             QMessageBox.warning(self, "Editar lote", str(exc))
             return
@@ -1899,14 +1990,14 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(
                 self,
                 "Editar lote",
-                "Ocurrió un error al actualizar la cantidad del lote.",
+                "Ocurrió un error al actualizar el lote.",
             )
             return
 
         QMessageBox.information(
             self,
             "Editar lote",
-            "La cantidad del lote se actualizó correctamente.",
+            "El lote se actualizó correctamente.",
         )
 
         self._actualizar_inventario_actual()

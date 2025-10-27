@@ -4673,8 +4673,6 @@ def validate_dte_json(
                 if nit_digits:
                     tipo_doc = "36"
                     num_doc = nit_digits
-                else:
-                    raise ValueError("Cliente persona jurídica requiere NIT")
             allowed = {"36", "13", "37", "03", "02"}
             if tipo_doc not in allowed:
                 raise ValueError("tipoDocumento inválido en receptor")

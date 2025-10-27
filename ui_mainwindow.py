@@ -490,9 +490,16 @@ class MainWindow(QMainWindow):
         inventario_actual_layout.addLayout(filtros_actual_layout)
 
         # Tabla de inventario actual (por lote)
-        self.inventario_actual_table = QTableWidget(0, 7)
+        self.inventario_actual_table = QTableWidget(0, 8)
         self.inventario_actual_table.setHorizontalHeaderLabels([
-            "Producto", "Código", "Cantidad", "Precio compra", "Fecha compra", "Fecha vencimiento", "Distribuidor"  # <--- Cambia aquí
+            "Producto",
+            "Código",
+            "Cantidad",
+            "Precio compra",
+            "Código lote",
+            "Fecha compra",
+            "Fecha vencimiento",
+            "Distribuidor",  # <--- Cambia aquí
         ])
         self.inventario_actual_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.inventario_actual_table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -1763,6 +1770,7 @@ class MainWindow(QMainWindow):
                     "codigo": prod.get("codigo", ""),
                     "cantidad": d.get("cantidad", 0),
                     "precio_compra": d.get("precio_unitario", 0),
+                    "codigo_lote": d.get("codigo_lote") or "",
                     "fecha_compra": compra.get("fecha", ""),
                     "fecha_vencimiento": fecha_vencimiento,
                     "Distribuidor": distribuidor_nombre,
@@ -1800,7 +1808,8 @@ class MainWindow(QMainWindow):
                 item_cantidad.setBackground(QColor("lightgreen"))
             self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
-            self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["fecha_compra"]))
+            self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["codigo_lote"]))
+            self.inventario_actual_table.setItem(row, 5, QTableWidgetItem(d["fecha_compra"]))
             # --- FECHA DE VENCIMIENTO CON COLOR ---
             item_venc = QTableWidgetItem(d["fecha_vencimiento"])
             fecha_str = d["fecha_vencimiento"]
@@ -1824,8 +1833,8 @@ class MainWindow(QMainWindow):
                         item_venc.setForeground(QColor("black"))
                 except Exception:
                     pass
-            self.inventario_actual_table.setItem(row, 5, item_venc)
-            self.inventario_actual_table.setItem(row, 6, QTableWidgetItem(d["Distribuidor"]))
+            self.inventario_actual_table.setItem(row, 6, item_venc)
+            self.inventario_actual_table.setItem(row, 7, QTableWidgetItem(d["Distribuidor"]))
 
     def _confirm_inventory_conflict(self, target: str) -> bool:
         message = (

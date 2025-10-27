@@ -601,7 +601,18 @@ def generar_factura_electronica_pdf(
         spaceAfter=0,
         spaceBefore=0,
     )
-    meta_fontsize = max(body_fontsize - 1, 6)
+    meta_fontsize = min(max(body_fontsize, 9), 10)
+    meta_text_color = colors.HexColor("#555555")
+    meta_paragraph_style = ParagraphStyle(
+        name="MetaItem",
+        fontName=body_fontname,
+        fontSize=meta_fontsize,
+        leading=meta_fontsize + 1,
+        textColor=meta_text_color,
+        leftIndent=2,
+        spaceBefore=0,
+        spaceAfter=0,
+    )
 
     def _normalize_text(value):
         if value is None:
@@ -671,7 +682,7 @@ def generar_factura_electronica_pdf(
                 return dt.strftime("%d/%m/%Y")
         return text
 
-    tabla_data = [tabla_columnas]
+    row_groups: list[list[tuple[list, bool]]] = []
     for d in detalles:
         cantidad = Decimal(str(d.get("cantidad") or 0))
         precio_unitario = Decimal(str(d.get("precio_unitario") or 0))
@@ -721,21 +732,8 @@ def generar_factura_electronica_pdf(
             meta_segments.append(f"Registro Sanitario: {registro_val}")
 
         meta_text = " ".join(meta_segments)
-        if meta_text:
-            meta_text = ellipsize_text(
-                meta_text,
-                body_fontname,
-                meta_fontsize,
-                descripcion_col_width,
-            )
-            paragraph_text = (
-                f"{escape(descripcion)}"  # description already ellipsized
-                f"<br/><font color='#555555' size='{meta_fontsize}'>{escape(meta_text)}</font>"
-            )
-        else:
-            paragraph_text = escape(descripcion)
 
-        descripcion_cell = Paragraph(paragraph_text, descripcion_style)
+        descripcion_cell = Paragraph(escape(descripcion), descripcion_style)
 
         fila = [
             str(d.get("cantidad", "")),
@@ -758,13 +756,19 @@ def generar_factura_electronica_pdf(
             ]
         )
 
-        tabla_data.append(fila)
+        group_rows: list[tuple[list, bool]] = [(fila, False)]
+
+        if meta_text:
+            meta_paragraph = Paragraph(escape(meta_text), meta_paragraph_style)
+            meta_row = [meta_paragraph] + [""] * (len(tabla_columnas) - 1)
+            group_rows.append((meta_row, True))
+
+        row_groups.append(group_rows)
 
 
-    header_row = tabla_data[0]
-    body_rows = tabla_data[1:]
+    header_row = tabla_columnas
 
-    table_style = TableStyle([
+    base_style_commands = [
         ('GRID', (0, 0), (-1, -1), 0.7, colors.black),
         ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
         ('ALIGN', (0, 0), (0, -1), 'CENTER'),
@@ -776,14 +780,11 @@ def generar_factura_electronica_pdf(
         ('FONTNAME', (0, 1), (-1, -1), body_fontname),
         ('LEFTPADDING', (0, 0), (-1, -1), table_padding),
         ('RIGHTPADDING', (0, 0), (-1, -1), table_padding),
-    ])
+    ]
 
-    if len(tabla_data) > 1:
-        table_style.add(
-            'VALIGN',
-            (descripcion_col_idx, 1),
-            (descripcion_col_idx, -1),
-            'TOP',
+    if row_groups:
+        base_style_commands.append(
+            ('VALIGN', (descripcion_col_idx, 1), (descripcion_col_idx, -1), 'TOP')
         )
 
     bloque_totales_x = 30
@@ -794,9 +795,25 @@ def generar_factura_electronica_pdf(
     x_linea = bloque_totales_x + columna_totales_w
 
     def build_table(rows_subset):
-        data = [header_row] + rows_subset
+        data_rows = [row for row, _ in rows_subset]
+        data = [header_row] + data_rows
         table = Table(data, colWidths=col_widths, repeatRows=1)
-        table.setStyle(table_style)
+        commands = list(base_style_commands)
+        for idx, (_, is_meta) in enumerate(rows_subset, start=1):
+            if is_meta:
+                commands.extend([
+                    ('SPAN', (0, idx), (-1, idx)),
+                    ('FONTNAME', (0, idx), (-1, idx), body_fontname),
+                    ('FONTSIZE', (0, idx), (-1, idx), meta_fontsize),
+                    ('TEXTCOLOR', (0, idx), (-1, idx), meta_text_color),
+                    ('ALIGN', (0, idx), (-1, idx), 'LEFT'),
+                    ('LEFTPADDING', (0, idx), (-1, idx), table_padding + 2),
+                    ('RIGHTPADDING', (0, idx), (-1, idx), table_padding),
+                    ('LINEABOVE', (0, idx), (-1, idx), 0.4, colors.HexColor("#d0d0d0")),
+                    ('TOPPADDING', (0, idx), (-1, idx), max(table_padding - 3, 2)),
+                    ('BOTTOMPADDING', (0, idx), (-1, idx), max(table_padding - 2, 2)),
+                ])
+        table.setStyle(TableStyle(commands))
         return table
 
     def table_height(rows_subset):
@@ -804,13 +821,15 @@ def generar_factura_electronica_pdf(
         _, height_used = table.wrap(0, 0)
         return height_used
 
-    def rows_that_fit(max_height, rows):
+    def groups_that_fit(max_height, groups):
         if max_height <= 0:
             return 0
+        included_rows: list[tuple[list, bool]] = []
         count = 0
-        while count < len(rows):
-            subset = rows[: count + 1]
-            if table_height(subset) <= max_height:
+        for group in groups:
+            test_rows = included_rows + group
+            if table_height(test_rows) <= max_height:
+                included_rows = test_rows
                 count += 1
             else:
                 break
@@ -821,26 +840,28 @@ def generar_factura_electronica_pdf(
     available_height_last = max(available_height_last, 0)
     available_height_standard = max(available_height_standard, 0)
 
-    remaining_rows = body_rows[:]
-    table_pages_rows = []
+    remaining_groups = [group[:] for group in row_groups]
+    table_pages_groups: list[list[tuple[list, bool]]] = []
 
-    while remaining_rows:
-        if table_height(remaining_rows) <= available_height_last:
-            table_pages_rows.append(remaining_rows[:])
-            remaining_rows = []
+    while remaining_groups:
+        flat_remaining = [row for group in remaining_groups for row in group]
+        if table_height(flat_remaining) <= available_height_last:
+            table_pages_groups.append(flat_remaining)
+            remaining_groups = []
         else:
-            count = rows_that_fit(available_height_standard, remaining_rows)
-            if count <= 0:
-                count = 1
-            table_pages_rows.append(remaining_rows[:count])
-            remaining_rows = remaining_rows[count:]
+            count_groups = groups_that_fit(available_height_standard, remaining_groups)
+            if count_groups <= 0:
+                count_groups = 1
+            chunk_groups = remaining_groups[:count_groups]
+            table_pages_groups.append([row for group in chunk_groups for row in group])
+            remaining_groups = remaining_groups[count_groups:]
 
-    if not table_pages_rows:
-        table_pages_rows.append([])
+    if not table_pages_groups:
+        table_pages_groups.append([])
 
-    total_pages = len(table_pages_rows)
+    total_pages = len(table_pages_groups)
 
-    for page_index, rows_chunk in enumerate(table_pages_rows):
+    for page_index, rows_chunk in enumerate(table_pages_groups):
         if page_index > 0:
             c.showPage()
             top = height - 45

@@ -44,6 +44,7 @@ def test_update_compra_detallada_updates_totals_and_stock():
         0,
         "Añadida al total",
         codigo_lote="ABC123",
+        registro_sanitario="RS-001",
     )
     db.aumentar_stock(prod_id, 10)
 
@@ -74,6 +75,7 @@ def test_update_compra_detallada_updates_totals_and_stock():
                 "comision_monto": 5,
                 "comision_tipo": "Añadida al total",
                 "codigo_lote": "XYZ789",
+                "registro_sanitario": "RS-002",
             }
         ],
     )
@@ -89,6 +91,7 @@ def test_update_compra_detallada_updates_totals_and_stock():
     assert detalle["precio_unitario"] == 8
     assert detalle["comision_monto"] == 5
     assert detalle["codigo_lote"] == "XYZ789"
+    assert detalle["registro_sanitario"] == "RS-002"
 
     db.cursor.execute("SELECT stock FROM productos WHERE id=?", (prod_id,))
     stock = db.cursor.fetchone()["stock"]
@@ -201,17 +204,20 @@ def test_update_detalle_compra_updates_lote_fields():
         0,
         "Añadida al total",
         codigo_lote="L-001",
+        registro_sanitario="RS-100",
     )
     detalle_id = db.cursor.lastrowid
 
     db.update_detalle_compra(
         detalle_id,
         codigo_lote="L-999",
+        registro_sanitario="RS-999",
         fecha_vencimiento="2025-12-31",
     )
 
     detalle = db.get_detalles_compra(compra_id)[0]
     assert detalle["codigo_lote"] == "L-999"
+    assert detalle["registro_sanitario"] == "RS-999"
     assert detalle["fecha_vencimiento"] == "2025-12-31"
 
     db.update_detalle_compra(detalle_id, fecha_vencimiento="")

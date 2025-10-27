@@ -96,6 +96,7 @@ def test_export_and_import_preserve_purchase_details(tmp_path):
         0,
         "",
         codigo_lote="g432rs",
+        registro_sanitario="RS-EXP",
     )
     detalle_id = manager.db.cursor.lastrowid
 
@@ -141,6 +142,7 @@ def test_export_and_import_preserve_purchase_details(tmp_path):
     assert detalle["producto_id"] == product_id
     assert detalle["cantidad"] == 5
     assert detalle["codigo_lote"] == "g432rs"
+    assert detalle["registro_sanitario"] == "RS-EXP"
 
     imported.db.cursor.execute("SELECT extra FROM detalles_venta")
     extra_raw = imported.db.cursor.fetchone()[0]

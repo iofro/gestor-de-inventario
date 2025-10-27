@@ -336,6 +336,7 @@ class InventoryManager:
         *,
         cantidad: int | None = None,
         codigo_lote: str | None = None,
+        registro_sanitario: str | None = None,
         fecha_vencimiento: str | None = None,
     ) -> None:
         """Actualiza los campos de un lote específico y refresca los datos."""
@@ -344,6 +345,7 @@ class InventoryManager:
             detalle_id,
             cantidad=cantidad,
             codigo_lote=codigo_lote,
+            registro_sanitario=registro_sanitario,
             fecha_vencimiento=fecha_vencimiento,
         )
         self.refresh_data()
@@ -1120,6 +1122,7 @@ class InventoryManager:
                         "precio_unitario",
                         "fecha_vencimiento",
                         "codigo_lote",
+                        "registro_sanitario",
                         "descuento",
                         "descuento_tipo",
                         "iva",
@@ -1135,6 +1138,7 @@ class InventoryManager:
                         d.get("precio_unitario", 0),
                         d.get("fecha_vencimiento", ""),
                         d.get("codigo_lote", ""),
+                        d.get("registro_sanitario", ""),
                         d.get("descuento", 0),
                         d.get("descuento_tipo", ""),
                         d.get("iva", 0),
@@ -1694,6 +1698,7 @@ class LoteTableModel(QAbstractTableModel):
             "Producto",
             "Código",
             "Lote",
+            "Registro sanitario",
             "Cantidad",
             "Precio compra",
             "Distribuidor",
@@ -1740,17 +1745,19 @@ class LoteTableModel(QAbstractTableModel):
             elif col == 2:
                 return row.get("codigo_lote", "")
             elif col == 3:
-                return row.get("cantidad", 0)
+                return row.get("registro_sanitario", "")
             elif col == 4:
-                return f"${row.get('precio_unitario', 0):.2f}"
+                return row.get("cantidad", 0)
             elif col == 5:
+                return f"${row.get('precio_unitario', 0):.2f}"
+            elif col == 6:
                 compra_id = row.get("compra_id")
                 return self._compra_distribuidores.get(
                     compra_id, "Desconocido"
                 )
-            elif col == 6:
-                return row.get("fecha_vencimiento", "")
             elif col == 7:
+                return row.get("fecha_vencimiento", "")
+            elif col == 8:
                 return f"${row.get('comision_monto', 0) or 0:.2f}"
         return None
 

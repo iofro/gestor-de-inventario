@@ -15,6 +15,7 @@ from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis, ellipsiz
 import utils.catalogos as catalogos
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
+import ast
 import json
 import os
 from datetime import datetime
@@ -637,10 +638,15 @@ def generar_factura_electronica_pdf(
             text = raw_value.strip()
             if not text:
                 return None
+            parsed = None
             try:
                 parsed = json.loads(text)
             except Exception:
-                return None
+                if text[:1] in "[{" and text[-1:] in "]}":
+                    try:
+                        parsed = ast.literal_eval(text)
+                    except Exception:
+                        parsed = None
             if isinstance(parsed, (dict, list)):
                 return parsed
         return None
@@ -700,11 +706,17 @@ def generar_factura_electronica_pdf(
             if lot_match:
                 _assign("lote", lot_match.group(1).strip())
             venc_match = re.search(
-                r"(?i)(?:venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?)\s*[:=]?\s*([0-9]{1,4}[/-][0-9]{1,2}[/-][0-9]{2,4})",
+                r"(?i)(?:venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?)\s*[\s\"']*[:=]?\s*[\"']?([0-9]{1,4}[/-][0-9]{1,2}[/-][0-9]{2,4}(?:[ T][^\"'|,;\n]*)?)",
                 text,
             )
             if venc_match:
                 _assign("vencimiento", venc_match.group(1).strip(), formatter=_format_fecha_vencimiento)
+            fecha_key_match = re.search(
+                r"(?i)fecha[\s_]*venc(?:imiento)?[\s\"']*[:=]\s*[\"']?([^\"'|,;\n]+)",
+                text,
+            )
+            if fecha_key_match:
+                _assign("vencimiento", fecha_key_match.group(1).strip(), formatter=_format_fecha_vencimiento)
             reg_match = re.search(
                 r"(?i)registro(?:\s+sanitario)?\s*[:=]\s*([^|,;\n]+)",
                 text,

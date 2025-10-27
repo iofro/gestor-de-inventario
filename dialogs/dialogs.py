@@ -594,9 +594,11 @@ class ProductDialogBase:
     def _mostrar_productos(self, productos):
         self.product_list.clear()
         for p in productos:
+            codigo_lote = p.get("codigo_lote")
+            lote_segment = f" | Lote: {codigo_lote}" if codigo_lote else ""
             texto = (
-                f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | "
-                f"Vence: {p.get('fecha_vencimiento', '')}"
+                f"{p.get('nombre', '')} | Código: {p.get('codigo', '')} | Stock: {p.get('stock', 0)}"
+                f"{lote_segment} | Vence: {p.get('fecha_vencimiento', '')}"
             )
             item = QListWidgetItem(texto)
             stock = p.get("stock", 0)
@@ -618,9 +620,11 @@ class ProductDialogBase:
             if texto in p.get("nombre", "").lower()
             or texto in p.get("codigo", "").lower()
             or texto in (
-                f"{p['nombre']} | Código: {p['codigo']} | Stock: {p['stock']} | "
+                f"{p.get('nombre', '')} | Código: {p.get('codigo', '')} | Stock: {p.get('stock', 0)}"
+                f"{' | Lote: ' + p.get('codigo_lote', '') if p.get('codigo_lote') else ''} | "
                 f"Vence: {p.get('fecha_vencimiento', '')}"
             ).lower()
+            or texto in (p.get("codigo_lote", "") or "").lower()
         ]
         self._mostrar_productos(filtrados)
 
@@ -1336,10 +1340,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", ""),
+            "codigo_lote": lote.get("codigo_lote", ""),
             "extra": {
                 "lote_id": lote.get("lote_id"),
                 "producto_id": lote.get("producto_id"),
                 "cantidad": float(cantidad),
+                "codigo_lote": lote.get("codigo_lote"),
             },
         })
         self._actualizar_tabla()
@@ -1615,6 +1621,13 @@ class RegisterPurchaseDialog(QDialog):
         self.fecha_vencimiento_edit.setCalendarPopup(True)
         cantidad_layout.addWidget(self.fecha_vencimiento_edit)
         layout.addLayout(cantidad_layout)
+
+        lote_layout = QHBoxLayout()
+        lote_layout.addWidget(QLabel("Código de lote:"))
+        self.codigo_lote_edit = QLineEdit()
+        self.codigo_lote_edit.setPlaceholderText("Identificador del lote (opcional)")
+        lote_layout.addWidget(self.codigo_lote_edit)
+        layout.addLayout(lote_layout)
         descuento_layout = QHBoxLayout()
         descuento_layout.addWidget(QLabel("Descuento:"))
         self.descuento_spin = QDoubleSpinBox()
@@ -1686,7 +1699,7 @@ class RegisterPurchaseDialog(QDialog):
         layout.addWidget(self.btn_agregar)
 
         # En el __init__ de RegisterPurchaseDialog, donde creas la tabla:
-        self.table = QTableWidget(0, 10)
+        self.table = QTableWidget(0, 11)
         self.table.setHorizontalHeaderLabels([
             "Producto",
             "Cantidad",
@@ -1695,6 +1708,7 @@ class RegisterPurchaseDialog(QDialog):
             "IVA",
             "Comisión",
             "Total",
+            "Código lote",
             "Vencimiento",
             "Editar",
             "Eliminar",
@@ -1704,8 +1718,8 @@ class RegisterPurchaseDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.table)
-        self._edit_column = 8
-        self._delete_column = 9
+        self._edit_column = 9
+        self._delete_column = 10
 
         # Total general de la compra
         total_general_layout = QHBoxLayout()
@@ -2155,6 +2169,7 @@ class RegisterPurchaseDialog(QDialog):
                     "comision_tipo": comision_tipo,
                     "total": total,
                     "fecha_vencimiento": detalle.get("fecha_vencimiento", "") or "",
+                    "codigo_lote": detalle.get("codigo_lote", "") or "",
                 }
             )
 
@@ -2292,6 +2307,7 @@ class RegisterPurchaseDialog(QDialog):
             "comision_tipo": comision_tipo,
             "total": total_con_comision,
             "fecha_vencimiento": fecha_vencimiento,
+            "codigo_lote": self.codigo_lote_edit.text().strip(),
         }
 
         if self._editing_row is not None and 0 <= self._editing_row < len(self.compra_items):
@@ -2315,7 +2331,8 @@ class RegisterPurchaseDialog(QDialog):
             comision_text = f"{self._format_currency(item.get('comision_monto', 0))} ({item.get('comision_pct', 0):.2f}%)"
             self.table.setItem(i, 5, QTableWidgetItem(comision_text))
             self.table.setItem(i, 6, QTableWidgetItem(self._format_currency(item.get("total", 0))))
-            self.table.setItem(i, 7, QTableWidgetItem(item.get("fecha_vencimiento", "")))
+            self.table.setItem(i, 7, QTableWidgetItem(item.get("codigo_lote", "")))
+            self.table.setItem(i, 8, QTableWidgetItem(item.get("fecha_vencimiento", "")))
 
             size_style = (
                 "font-size:9px; min-width:70px; max-width:100px; "
@@ -2339,6 +2356,7 @@ class RegisterPurchaseDialog(QDialog):
         self._editing_row = None
         self.btn_agregar.setText("Agregar a compra")
         self.table.clearSelection()
+        self.codigo_lote_edit.clear()
 
     def _start_edit_item(self, row):
         if not (0 <= row < len(self.compra_items)):
@@ -2358,6 +2376,7 @@ class RegisterPurchaseDialog(QDialog):
         self.cantidad_spin.setValue(int(item.get("cantidad", 0)))
         self.precio_unitario_spin.setValue(float(item.get("precio", 0)))
         self.precio_total_spin.setValue(float(item.get("cantidad", 0)) * float(item.get("precio", 0)))
+        self.codigo_lote_edit.setText(item.get("codigo_lote", ""))
 
         descuento_tipo = item.get("descuento_tipo", "%")
         idx = self.descuento_tipo_combo.findText(descuento_tipo)
@@ -2506,6 +2525,7 @@ class RegisterPurchaseDialog(QDialog):
                 item.get("comision_pct", 0),
                 item.get("comision_monto", 0),
                 item.get("comision_tipo", ""),
+                codigo_lote=item.get("codigo_lote", ""),
             )
             self.parent().manager.aumentar_stock(producto_id, item.get("cantidad", 0))
 
@@ -3043,10 +3063,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "vendedor_id": lote.get("vendedor_id"),
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", ""),
+            "codigo_lote": lote.get("codigo_lote", ""),
             "extra": {
                 "lote_id": lote.get("lote_id"),
                 "producto_id": lote.get("producto_id"),
                 "cantidad": float(cantidad),
+                "codigo_lote": lote.get("codigo_lote"),
             },
         })
 
@@ -4384,6 +4406,7 @@ class CompraDetalleDialog(QDialog):
             "Comisión %",
             "Comisión $",
             "Tipo comisión",
+            "Código lote",
             "Vencimiento",
         ]
         table = QTableWidget(len(detalles), len(headers))
@@ -4407,7 +4430,8 @@ class CompraDetalleDialog(QDialog):
             table.setItem(i, 8, QTableWidgetItem(f"{d.get('comision_pct', 0) or 0:.2f}%"))
             table.setItem(i, 9, QTableWidgetItem(f"${d.get('comision_monto', 0) or 0:.2f}"))
             table.setItem(i, 10, QTableWidgetItem(str(d.get("comision_tipo", ""))))
-            table.setItem(i, 11, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
+            table.setItem(i, 11, QTableWidgetItem(str(d.get("codigo_lote", ""))))
+            table.setItem(i, 12, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
         table.resizeColumnsToContents()
         layout.addWidget(table)
 

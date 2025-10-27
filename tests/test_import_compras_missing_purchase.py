@@ -116,3 +116,4 @@ def test_import_recreates_missing_purchase(tmp_path):
     assert detalle["producto_id"] is not None
     assert detalle["cantidad"] == 2
     assert detalle.get("codigo_lote", "") == ""
+    assert detalle.get("registro_sanitario", "") == ""

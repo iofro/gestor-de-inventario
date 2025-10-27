@@ -1341,11 +1341,13 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "Distribuidor_id": lote["Distribuidor_id"],
             "fecha_vencimiento": lote.get("fecha_vencimiento", ""),
             "codigo_lote": lote.get("codigo_lote", ""),
+            "registro_sanitario": lote.get("registro_sanitario", ""),
             "extra": {
                 "lote_id": lote.get("lote_id"),
                 "producto_id": lote.get("producto_id"),
                 "cantidad": float(cantidad),
                 "codigo_lote": lote.get("codigo_lote"),
+                "registro_sanitario": lote.get("registro_sanitario"),
             },
         })
         self._actualizar_tabla()
@@ -1627,6 +1629,10 @@ class RegisterPurchaseDialog(QDialog):
         self.codigo_lote_edit = QLineEdit()
         self.codigo_lote_edit.setPlaceholderText("Identificador del lote (opcional)")
         lote_layout.addWidget(self.codigo_lote_edit)
+        lote_layout.addWidget(QLabel("Registro sanitario:"))
+        self.registro_sanitario_edit = QLineEdit()
+        self.registro_sanitario_edit.setPlaceholderText("Registro sanitario (opcional)")
+        lote_layout.addWidget(self.registro_sanitario_edit)
         layout.addLayout(lote_layout)
         descuento_layout = QHBoxLayout()
         descuento_layout.addWidget(QLabel("Descuento:"))
@@ -1699,7 +1705,7 @@ class RegisterPurchaseDialog(QDialog):
         layout.addWidget(self.btn_agregar)
 
         # En el __init__ de RegisterPurchaseDialog, donde creas la tabla:
-        self.table = QTableWidget(0, 11)
+        self.table = QTableWidget(0, 12)
         self.table.setHorizontalHeaderLabels([
             "Producto",
             "Cantidad",
@@ -1709,6 +1715,7 @@ class RegisterPurchaseDialog(QDialog):
             "Comisión",
             "Total",
             "Código lote",
+            "Registro sanitario",
             "Vencimiento",
             "Editar",
             "Eliminar",
@@ -1718,8 +1725,8 @@ class RegisterPurchaseDialog(QDialog):
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         layout.addWidget(self.table)
-        self._edit_column = 9
-        self._delete_column = 10
+        self._edit_column = 10
+        self._delete_column = 11
 
         # Total general de la compra
         total_general_layout = QHBoxLayout()
@@ -2170,6 +2177,7 @@ class RegisterPurchaseDialog(QDialog):
                     "total": total,
                     "fecha_vencimiento": detalle.get("fecha_vencimiento", "") or "",
                     "codigo_lote": detalle.get("codigo_lote", "") or "",
+                    "registro_sanitario": detalle.get("registro_sanitario", "") or "",
                 }
             )
 
@@ -2308,6 +2316,7 @@ class RegisterPurchaseDialog(QDialog):
             "total": total_con_comision,
             "fecha_vencimiento": fecha_vencimiento,
             "codigo_lote": self.codigo_lote_edit.text().strip(),
+            "registro_sanitario": self.registro_sanitario_edit.text().strip(),
         }
 
         if self._editing_row is not None and 0 <= self._editing_row < len(self.compra_items):
@@ -2332,7 +2341,8 @@ class RegisterPurchaseDialog(QDialog):
             self.table.setItem(i, 5, QTableWidgetItem(comision_text))
             self.table.setItem(i, 6, QTableWidgetItem(self._format_currency(item.get("total", 0))))
             self.table.setItem(i, 7, QTableWidgetItem(item.get("codigo_lote", "")))
-            self.table.setItem(i, 8, QTableWidgetItem(item.get("fecha_vencimiento", "")))
+            self.table.setItem(i, 8, QTableWidgetItem(item.get("registro_sanitario", "")))
+            self.table.setItem(i, 9, QTableWidgetItem(item.get("fecha_vencimiento", "")))
 
             size_style = (
                 "font-size:9px; min-width:70px; max-width:100px; "
@@ -2357,6 +2367,7 @@ class RegisterPurchaseDialog(QDialog):
         self.btn_agregar.setText("Agregar a compra")
         self.table.clearSelection()
         self.codigo_lote_edit.clear()
+        self.registro_sanitario_edit.clear()
 
     def _start_edit_item(self, row):
         if not (0 <= row < len(self.compra_items)):
@@ -2377,6 +2388,7 @@ class RegisterPurchaseDialog(QDialog):
         self.precio_unitario_spin.setValue(float(item.get("precio", 0)))
         self.precio_total_spin.setValue(float(item.get("cantidad", 0)) * float(item.get("precio", 0)))
         self.codigo_lote_edit.setText(item.get("codigo_lote", ""))
+        self.registro_sanitario_edit.setText(item.get("registro_sanitario", ""))
 
         descuento_tipo = item.get("descuento_tipo", "%")
         idx = self.descuento_tipo_combo.findText(descuento_tipo)
@@ -2526,6 +2538,7 @@ class RegisterPurchaseDialog(QDialog):
                 item.get("comision_monto", 0),
                 item.get("comision_tipo", ""),
                 codigo_lote=item.get("codigo_lote", ""),
+                registro_sanitario=item.get("registro_sanitario", ""),
             )
             self.parent().manager.aumentar_stock(producto_id, item.get("cantidad", 0))
 
@@ -4407,6 +4420,7 @@ class CompraDetalleDialog(QDialog):
             "Comisión $",
             "Tipo comisión",
             "Código lote",
+            "Registro sanitario",
             "Vencimiento",
         ]
         table = QTableWidget(len(detalles), len(headers))
@@ -4431,7 +4445,8 @@ class CompraDetalleDialog(QDialog):
             table.setItem(i, 9, QTableWidgetItem(f"${d.get('comision_monto', 0) or 0:.2f}"))
             table.setItem(i, 10, QTableWidgetItem(str(d.get("comision_tipo", ""))))
             table.setItem(i, 11, QTableWidgetItem(str(d.get("codigo_lote", ""))))
-            table.setItem(i, 12, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
+            table.setItem(i, 12, QTableWidgetItem(str(d.get("registro_sanitario", ""))))
+            table.setItem(i, 13, QTableWidgetItem(str(d.get("fecha_vencimiento", ""))))
         table.resizeColumnsToContents()
         layout.addWidget(table)
 

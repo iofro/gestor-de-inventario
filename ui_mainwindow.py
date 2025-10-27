@@ -116,6 +116,7 @@ class EditarLoteDialog(QDialog):
         codigo: str = "",
         cantidad: int = 0,
         codigo_lote: str = "",
+        registro_sanitario: str = "",
         fecha_vencimiento: str = "",
     ) -> None:
         super().__init__(parent)
@@ -137,6 +138,10 @@ class EditarLoteDialog(QDialog):
         self.codigo_lote_edit = QLineEdit(codigo_lote)
         self.codigo_lote_edit.setPlaceholderText("Código de lote")
         form.addRow("Código de lote:", self.codigo_lote_edit)
+
+        self.registro_sanitario_edit = QLineEdit(registro_sanitario)
+        self.registro_sanitario_edit.setPlaceholderText("Registro sanitario")
+        form.addRow("Registro sanitario:", self.registro_sanitario_edit)
 
         self.fecha_vencimiento_edit = QDateEdit()
         self.fecha_vencimiento_edit.setCalendarPopup(True)
@@ -172,13 +177,14 @@ class EditarLoteDialog(QDialog):
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)
 
-    def get_values(self) -> tuple[int, str, str]:
+    def get_values(self) -> tuple[int, str, str, str]:
         cantidad = self.cantidad_spin.value()
         codigo_lote = self.codigo_lote_edit.text().strip()
+        registro_sanitario = self.registro_sanitario_edit.text().strip()
         fecha_vencimiento = ""
         if not self.sin_fecha_checkbox.isChecked():
             fecha_vencimiento = self.fecha_vencimiento_edit.date().toString("yyyy-MM-dd")
-        return cantidad, codigo_lote, fecha_vencimiento
+        return cantidad, codigo_lote, registro_sanitario, fecha_vencimiento
 
 
 class MainWindow(QMainWindow):
@@ -566,13 +572,14 @@ class MainWindow(QMainWindow):
         inventario_actual_layout.addLayout(filtros_actual_layout)
 
         # Tabla de inventario actual (por lote)
-        self.inventario_actual_table = QTableWidget(0, 8)
+        self.inventario_actual_table = QTableWidget(0, 9)
         self.inventario_actual_table.setHorizontalHeaderLabels([
             "Producto",
             "Código",
             "Cantidad",
             "Precio compra",
             "Código lote",
+            "Registro sanitario",
             "Fecha compra",
             "Fecha vencimiento",
             "Distribuidor",  # <--- Cambia aquí
@@ -897,6 +904,7 @@ class MainWindow(QMainWindow):
                         "nombre": prod.get("nombre", ""),
                         "codigo": prod.get("codigo", ""),
                         "codigo_lote": d.get("codigo_lote", ""),
+                        "registro_sanitario": d.get("registro_sanitario", ""),
                         "stock": d.get("cantidad", 0),
                         "precio_unitario": d.get("precio_unitario", 0),
                         "vendedor_id": prod.get("vendedor_id"),
@@ -1027,6 +1035,7 @@ class MainWindow(QMainWindow):
                             "nombre": prod.get("nombre", ""),
                             "codigo": prod.get("codigo", ""),
                             "codigo_lote": d.get("codigo_lote", ""),
+                            "registro_sanitario": d.get("registro_sanitario", ""),
                             "stock": d.get("cantidad", 0),
                             "precio_unitario": d.get("precio_unitario", 0),
                             "Distribuidor_id": compra.get("Distribuidor_id"),
@@ -1847,6 +1856,7 @@ class MainWindow(QMainWindow):
                     "cantidad": d.get("cantidad", 0),
                     "precio_compra": d.get("precio_unitario", 0),
                     "codigo_lote": d.get("codigo_lote") or "",
+                    "registro_sanitario": d.get("registro_sanitario") or "",
                     "fecha_compra": compra.get("fecha", ""),
                     "fecha_vencimiento": fecha_vencimiento,
                     "Distribuidor": distribuidor_nombre,
@@ -1885,7 +1895,8 @@ class MainWindow(QMainWindow):
             self.inventario_actual_table.setItem(row, 2, item_cantidad)
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["codigo_lote"]))
-            self.inventario_actual_table.setItem(row, 5, QTableWidgetItem(d["fecha_compra"]))
+            self.inventario_actual_table.setItem(row, 5, QTableWidgetItem(d["registro_sanitario"]))
+            self.inventario_actual_table.setItem(row, 6, QTableWidgetItem(d["fecha_compra"]))
             # --- FECHA DE VENCIMIENTO CON COLOR ---
             item_venc = QTableWidgetItem(d["fecha_vencimiento"])
             fecha_str = d["fecha_vencimiento"]
@@ -1909,8 +1920,8 @@ class MainWindow(QMainWindow):
                         item_venc.setForeground(QColor("black"))
                 except Exception:
                     pass
-            self.inventario_actual_table.setItem(row, 6, item_venc)
-            self.inventario_actual_table.setItem(row, 7, QTableWidgetItem(d["Distribuidor"]))
+            self.inventario_actual_table.setItem(row, 7, item_venc)
+            self.inventario_actual_table.setItem(row, 8, QTableWidgetItem(d["Distribuidor"]))
 
     def _confirm_inventory_conflict(self, target: str) -> bool:
         message = (
@@ -1957,13 +1968,19 @@ class MainWindow(QMainWindow):
             codigo=codigo,
             cantidad=cantidad_actual,
             codigo_lote=data.get("codigo_lote") or "",
+            registro_sanitario=data.get("registro_sanitario") or "",
             fecha_vencimiento=data.get("fecha_vencimiento") or "",
         )
 
         if dialog.exec_() != QDialog.Accepted:
             return
 
-        nueva_cantidad, nuevo_codigo_lote, nueva_fecha_vencimiento = dialog.get_values()
+        (
+            nueva_cantidad,
+            nuevo_codigo_lote,
+            nuevo_registro_sanitario,
+            nueva_fecha_vencimiento,
+        ) = dialog.get_values()
 
         cambios: dict[str, object] = {}
         if nueva_cantidad != cantidad_actual:
@@ -1972,6 +1989,10 @@ class MainWindow(QMainWindow):
         codigo_lote_actual = data.get("codigo_lote") or ""
         if nuevo_codigo_lote != codigo_lote_actual:
             cambios["codigo_lote"] = nuevo_codigo_lote
+
+        registro_sanitario_actual = data.get("registro_sanitario") or ""
+        if nuevo_registro_sanitario != registro_sanitario_actual:
+            cambios["registro_sanitario"] = nuevo_registro_sanitario
 
         fecha_actual = data.get("fecha_vencimiento") or ""
         if nueva_fecha_vencimiento != fecha_actual:

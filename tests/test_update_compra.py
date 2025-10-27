@@ -164,6 +164,64 @@ def test_update_detalle_compra_cantidad_validates_input():
         db.update_detalle_compra_cantidad(None, 1)
 
 
+def test_update_detalle_compra_updates_lote_fields():
+    db = create_db()
+    db.add_Distribuidor("D1")
+    dist_id = db.cursor.lastrowid
+    db.add_vendedor("V1")
+    vend_id = db.cursor.lastrowid
+    db.add_producto("Prod", "P1", None, vend_id, dist_id, 0, 0, 0, 0)
+    prod_id = db.cursor.lastrowid
+
+    compra_id = db.add_compra_detallada(
+        {
+            "fecha": "2024-01-01",
+            "producto_id": None,
+            "cantidad": 0,
+            "precio_unitario": 0,
+            "total": 0,
+            "Distribuidor_id": dist_id,
+            "comision_pct": 0,
+            "comision_monto": 0,
+            "vendedor_id": vend_id,
+        }
+    )
+
+    db.add_detalle_compra(
+        compra_id,
+        prod_id,
+        10,
+        5,
+        "2024-05-01",
+        0,
+        "%",
+        0,
+        "ninguno",
+        0,
+        0,
+        "Añadida al total",
+        codigo_lote="L-001",
+    )
+    detalle_id = db.cursor.lastrowid
+
+    db.update_detalle_compra(
+        detalle_id,
+        codigo_lote="L-999",
+        fecha_vencimiento="2025-12-31",
+    )
+
+    detalle = db.get_detalles_compra(compra_id)[0]
+    assert detalle["codigo_lote"] == "L-999"
+    assert detalle["fecha_vencimiento"] == "2025-12-31"
+
+    db.update_detalle_compra(detalle_id, fecha_vencimiento="")
+    detalle = db.get_detalles_compra(compra_id)[0]
+    assert detalle["fecha_vencimiento"] is None
+
+    with pytest.raises(ValueError):
+        db.update_detalle_compra(detalle_id, fecha_vencimiento="2025-31-12")
+
+
 def test_delete_detalle_compra_updates_totals_and_stock():
     db = create_db()
     db.add_Distribuidor("D1")

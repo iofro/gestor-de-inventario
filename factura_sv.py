@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -601,7 +602,18 @@ def generar_factura_electronica_pdf(
         spaceAfter=0,
         spaceBefore=0,
     )
-    meta_fontsize = max(body_fontsize - 1, 6)
+    meta_fontsize = min(max(body_fontsize, 9), 10)
+    meta_text_color = colors.HexColor("#555555")
+    meta_paragraph_style = ParagraphStyle(
+        name="MetaItem",
+        fontName=body_fontname,
+        fontSize=meta_fontsize,
+        leading=meta_fontsize + 1,
+        textColor=meta_text_color,
+        leftIndent=2,
+        spaceBefore=0,
+        spaceAfter=0,
+    )
 
     def _normalize_text(value):
         if value is None:
@@ -633,25 +645,6 @@ def generar_factura_electronica_pdf(
                 return parsed
         return None
 
-    def _search_nested(data, key_candidates):
-        if isinstance(data, dict):
-            for key in key_candidates:
-                if key in data:
-                    value = data[key]
-                    normalized = _normalize_text(value)
-                    if normalized is not None:
-                        return value
-            for value in data.values():
-                found = _search_nested(value, key_candidates)
-                if found is not None:
-                    return found
-        elif isinstance(data, list):
-            for item in data:
-                found = _search_nested(item, key_candidates)
-                if found is not None:
-                    return found
-        return None
-
     def _format_fecha_vencimiento(value):
         text = _normalize_text(value)
         if not text:
@@ -671,7 +664,131 @@ def generar_factura_electronica_pdf(
                 return dt.strftime("%d/%m/%Y")
         return text
 
-    tabla_data = [tabla_columnas]
+    def _collect_item_metadata(*sources):
+        metadata: dict[str, str | None] = {
+            "lote": None,
+            "vencimiento": None,
+            "registro": None,
+        }
+
+        date_tokens = ("venc", "caduc", "expir", "vence")
+
+        def _assign(field: str, value: str, *, formatter=None):
+            text = _normalize_text(value)
+            if not text:
+                return
+            if formatter is not None:
+                formatted = formatter(text)
+                if formatted:
+                    text = formatted
+            existing = metadata[field]
+            if existing:
+                if existing == text:
+                    return
+                if existing.isdigit() and not text.isdigit():
+                    metadata[field] = text
+                    return
+                if len(text) > len(existing):
+                    metadata[field] = text
+            else:
+                metadata[field] = text
+
+        def _parse_pattern_text(text: str):
+            if not text:
+                return
+            lot_match = re.search(r"(?i)\blote\b\s*[:=]\s*([^|,;\n]+)", text)
+            if lot_match:
+                _assign("lote", lot_match.group(1).strip())
+            venc_match = re.search(
+                r"(?i)(?:venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?)\s*[:=]?\s*([0-9]{1,4}[/-][0-9]{1,2}[/-][0-9]{2,4})",
+                text,
+            )
+            if venc_match:
+                _assign("vencimiento", venc_match.group(1).strip(), formatter=_format_fecha_vencimiento)
+            reg_match = re.search(
+                r"(?i)registro(?:\s+sanitario)?\s*[:=]\s*([^|,;\n]+)",
+                text,
+            )
+            if reg_match:
+                _assign("registro", reg_match.group(1).strip())
+
+        def _traverse(obj, flags: frozenset[str] = frozenset()):
+            if obj is None:
+                return
+            if isinstance(obj, (bytes, bytearray)):
+                try:
+                    obj = obj.decode("utf-8")
+                except Exception:
+                    return
+
+            if isinstance(obj, str):
+                stripped = obj.strip()
+                if not stripped:
+                    return
+                parsed_json = _parse_json_value(stripped)
+                if parsed_json is not None and parsed_json is not obj:
+                    _traverse(parsed_json, flags)
+                    return
+                _parse_pattern_text(stripped)
+                return
+
+            if isinstance(obj, list):
+                for item in obj:
+                    _traverse(item, flags)
+                return
+
+            if not isinstance(obj, dict):
+                return
+
+            for key, value in obj.items():
+                key_lower = str(key).lower()
+                next_flags = set(flags)
+                is_lote_key = "lote" in key_lower and not key_lower.endswith("id") and key_lower not in {"idlote", "loteid"}
+                if is_lote_key:
+                    next_flags.add("lote")
+                if any(token in key_lower for token in date_tokens):
+                    next_flags.add("vencimiento")
+                if "registro" in key_lower and "san" in key_lower:
+                    next_flags.add("registro")
+
+                if isinstance(value, (dict, list)):
+                    _traverse(value, frozenset(next_flags))
+                    continue
+
+                if isinstance(value, (bytes, bytearray)):
+                    try:
+                        value = value.decode("utf-8")
+                    except Exception:
+                        continue
+
+                parsed_nested = _parse_json_value(value)
+                if parsed_nested is not None and parsed_nested is not value:
+                    _traverse(parsed_nested, frozenset(next_flags))
+                    continue
+
+                text = _normalize_text(value)
+                if not text:
+                    continue
+
+                assign_lote = is_lote_key or "lote" in next_flags
+                assign_venc = any(token in key_lower for token in date_tokens) or "vencimiento" in next_flags
+                assign_registro = ("registro" in key_lower and "san" in key_lower) or "registro" in next_flags
+
+                if assign_lote:
+                    _assign("lote", text)
+                if assign_venc:
+                    _assign("vencimiento", text, formatter=_format_fecha_vencimiento)
+                if assign_registro:
+                    _assign("registro", text)
+
+                _parse_pattern_text(text)
+
+        for source in sources:
+            _traverse(source)
+
+        return metadata
+
+    row_groups: list[list[tuple[list, bool]]] = []
     for d in detalles:
         cantidad = Decimal(str(d.get("cantidad") or 0))
         precio_unitario = Decimal(str(d.get("precio_unitario") or 0))
@@ -690,27 +807,10 @@ def generar_factura_electronica_pdf(
         extra_raw = d.get("extra")
         extra_data = _parse_json_value(extra_raw)
 
-        def _pick_value(key_candidates):
-            direct_value = _search_nested(d, key_candidates)
-            if direct_value not in (None, ""):
-                return direct_value
-            if extra_data is not None:
-                return _search_nested(extra_data, key_candidates)
-            return None
-
-        lote_val = _normalize_text(
-            _pick_value(["codigo_lote", "codigoLote", "lote", "loteCodigo"])
-        )
-        registro_val = _normalize_text(
-            _pick_value(["registro_sanitario", "registroSanitario"])
-        )
-        venc_raw = _pick_value([
-            "fecha_vencimiento",
-            "fechaVencimiento",
-            "vencimiento",
-            "fecha_vto",
-        ])
-        venc_val = _format_fecha_vencimiento(venc_raw)
+        metadata = _collect_item_metadata(d, extra_data, extra_raw)
+        lote_val = metadata.get("lote")
+        venc_val = metadata.get("vencimiento")
+        registro_val = metadata.get("registro")
 
         meta_segments = []
         if lote_val:
@@ -721,21 +821,8 @@ def generar_factura_electronica_pdf(
             meta_segments.append(f"Registro Sanitario: {registro_val}")
 
         meta_text = " ".join(meta_segments)
-        if meta_text:
-            meta_text = ellipsize_text(
-                meta_text,
-                body_fontname,
-                meta_fontsize,
-                descripcion_col_width,
-            )
-            paragraph_text = (
-                f"{escape(descripcion)}"  # description already ellipsized
-                f"<br/><font color='#555555' size='{meta_fontsize}'>{escape(meta_text)}</font>"
-            )
-        else:
-            paragraph_text = escape(descripcion)
 
-        descripcion_cell = Paragraph(paragraph_text, descripcion_style)
+        descripcion_cell = Paragraph(escape(descripcion), descripcion_style)
 
         fila = [
             str(d.get("cantidad", "")),
@@ -758,13 +845,19 @@ def generar_factura_electronica_pdf(
             ]
         )
 
-        tabla_data.append(fila)
+        group_rows: list[tuple[list, bool]] = [(fila, False)]
+
+        if meta_text:
+            meta_paragraph = Paragraph(escape(meta_text), meta_paragraph_style)
+            meta_row = [meta_paragraph] + [""] * (len(tabla_columnas) - 1)
+            group_rows.append((meta_row, True))
+
+        row_groups.append(group_rows)
 
 
-    header_row = tabla_data[0]
-    body_rows = tabla_data[1:]
+    header_row = tabla_columnas
 
-    table_style = TableStyle([
+    base_style_commands = [
         ('GRID', (0, 0), (-1, -1), 0.7, colors.black),
         ('BACKGROUND', (0, 0), (-1, 0), colors.lightgrey),
         ('ALIGN', (0, 0), (0, -1), 'CENTER'),
@@ -776,14 +869,11 @@ def generar_factura_electronica_pdf(
         ('FONTNAME', (0, 1), (-1, -1), body_fontname),
         ('LEFTPADDING', (0, 0), (-1, -1), table_padding),
         ('RIGHTPADDING', (0, 0), (-1, -1), table_padding),
-    ])
+    ]
 
-    if len(tabla_data) > 1:
-        table_style.add(
-            'VALIGN',
-            (descripcion_col_idx, 1),
-            (descripcion_col_idx, -1),
-            'TOP',
+    if row_groups:
+        base_style_commands.append(
+            ('VALIGN', (descripcion_col_idx, 1), (descripcion_col_idx, -1), 'TOP')
         )
 
     bloque_totales_x = 30
@@ -794,9 +884,25 @@ def generar_factura_electronica_pdf(
     x_linea = bloque_totales_x + columna_totales_w
 
     def build_table(rows_subset):
-        data = [header_row] + rows_subset
+        data_rows = [row for row, _ in rows_subset]
+        data = [header_row] + data_rows
         table = Table(data, colWidths=col_widths, repeatRows=1)
-        table.setStyle(table_style)
+        commands = list(base_style_commands)
+        for idx, (_, is_meta) in enumerate(rows_subset, start=1):
+            if is_meta:
+                commands.extend([
+                    ('SPAN', (0, idx), (-1, idx)),
+                    ('FONTNAME', (0, idx), (-1, idx), body_fontname),
+                    ('FONTSIZE', (0, idx), (-1, idx), meta_fontsize),
+                    ('TEXTCOLOR', (0, idx), (-1, idx), meta_text_color),
+                    ('ALIGN', (0, idx), (-1, idx), 'LEFT'),
+                    ('LEFTPADDING', (0, idx), (-1, idx), table_padding + 2),
+                    ('RIGHTPADDING', (0, idx), (-1, idx), table_padding),
+                    ('LINEABOVE', (0, idx), (-1, idx), 0.4, colors.HexColor("#d0d0d0")),
+                    ('TOPPADDING', (0, idx), (-1, idx), max(table_padding - 3, 2)),
+                    ('BOTTOMPADDING', (0, idx), (-1, idx), max(table_padding - 2, 2)),
+                ])
+        table.setStyle(TableStyle(commands))
         return table
 
     def table_height(rows_subset):
@@ -804,13 +910,15 @@ def generar_factura_electronica_pdf(
         _, height_used = table.wrap(0, 0)
         return height_used
 
-    def rows_that_fit(max_height, rows):
+    def groups_that_fit(max_height, groups):
         if max_height <= 0:
             return 0
+        included_rows: list[tuple[list, bool]] = []
         count = 0
-        while count < len(rows):
-            subset = rows[: count + 1]
-            if table_height(subset) <= max_height:
+        for group in groups:
+            test_rows = included_rows + group
+            if table_height(test_rows) <= max_height:
+                included_rows = test_rows
                 count += 1
             else:
                 break
@@ -821,26 +929,28 @@ def generar_factura_electronica_pdf(
     available_height_last = max(available_height_last, 0)
     available_height_standard = max(available_height_standard, 0)
 
-    remaining_rows = body_rows[:]
-    table_pages_rows = []
+    remaining_groups = [group[:] for group in row_groups]
+    table_pages_groups: list[list[tuple[list, bool]]] = []
 
-    while remaining_rows:
-        if table_height(remaining_rows) <= available_height_last:
-            table_pages_rows.append(remaining_rows[:])
-            remaining_rows = []
+    while remaining_groups:
+        flat_remaining = [row for group in remaining_groups for row in group]
+        if table_height(flat_remaining) <= available_height_last:
+            table_pages_groups.append(flat_remaining)
+            remaining_groups = []
         else:
-            count = rows_that_fit(available_height_standard, remaining_rows)
-            if count <= 0:
-                count = 1
-            table_pages_rows.append(remaining_rows[:count])
-            remaining_rows = remaining_rows[count:]
+            count_groups = groups_that_fit(available_height_standard, remaining_groups)
+            if count_groups <= 0:
+                count_groups = 1
+            chunk_groups = remaining_groups[:count_groups]
+            table_pages_groups.append([row for group in chunk_groups for row in group])
+            remaining_groups = remaining_groups[count_groups:]
 
-    if not table_pages_rows:
-        table_pages_rows.append([])
+    if not table_pages_groups:
+        table_pages_groups.append([])
 
-    total_pages = len(table_pages_rows)
+    total_pages = len(table_pages_groups)
 
-    for page_index, rows_chunk in enumerate(table_pages_rows):
+    for page_index, rows_chunk in enumerate(table_pages_groups):
         if page_index > 0:
             c.showPage()
             top = height - 45

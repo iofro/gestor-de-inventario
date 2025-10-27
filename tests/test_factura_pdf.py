@@ -135,6 +135,54 @@ def test_consumidor_final_pdf_omits_iva_column(tmp_path):
     assert '0.65' not in text
 
 
+@pytest.mark.parametrize('tipo_documento', ['Crédito Fiscal', 'Consumidor Final'])
+def test_factura_metadata_row_includes_lote_vencimiento_registro(tmp_path, tipo_documento):
+    venta = {
+        'sumas': 10,
+        'descuentos': 0,
+        'subtotal': 10,
+        'iva': 1.3,
+        'total': 11.3,
+        'ventas_exentas': 0,
+        'ventas_no_sujetas': 0,
+        'total_letras': '',
+    }
+    detalles = [
+        {
+            'cantidad': 1,
+            'descripcion': 'Medicamento con lote',
+            'precio_unitario': 10,
+            'ventas_no_sujetas': 0,
+            'ventas_exentas': 0,
+            'ventas_gravadas': 10,
+            'iva': 1.3,
+            'extra': 'Lote: L-001 | Vence: 2025-11-30 | Registro Sanitario: RS-009',
+        }
+    ]
+
+    salida = tmp_path / f'metadata_{tipo_documento.replace(" ", "_").lower()}.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        tipo_documento,
+        archivo=str(salida),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=uuid.uuid4().hex[:8].upper(),
+        fecha_generacion="01/01/2024",
+        sello_recepcion='0' * 40,
+    )
+
+    with fitz.open(salida) as doc:
+        texto = ''.join(pagina.get_text() for pagina in doc)
+
+    assert 'Lote: L-001' in texto
+    assert 'Vencimiento: 30/11/2025' in texto
+    assert 'Registro Sanitario: RS-009' in texto
+
+
 def test_credito_fiscal_pdf_shows_venta_a_cuenta(tmp_path):
     venta, detalles = _sample_data('Crédito Fiscal')
     venta['venta_a_cuenta_de'] = 'Tercero Ejemplo'

@@ -708,6 +708,7 @@ class DB:
                 producto_id INTEGER,
                 cantidad INTEGER,
                 precio_unitario REAL,
+                codigo_lote TEXT,
                 FOREIGN KEY (compra_id) REFERENCES compras(id),
                 FOREIGN KEY (producto_id) REFERENCES productos(id)
             )
@@ -880,6 +881,7 @@ class DB:
             ("detalles_compra", "comision_pct REAL DEFAULT 0"),
             ("detalles_compra", "comision_monto REAL DEFAULT 0"),
             ("detalles_compra", "comision_tipo TEXT"),
+            ("detalles_compra", "codigo_lote TEXT"),
             ("detalles_venta", "descuento REAL DEFAULT 0"),
             ("detalles_venta", "descuento_tipo TEXT"),
             ("detalles_venta", "iva REAL DEFAULT 0"),
@@ -2954,6 +2956,7 @@ class DB:
                     detalle.get("comision_pct", 0),
                     detalle.get("comision_monto", 0),
                     detalle.get("comision_tipo", ""),
+                    codigo_lote=detalle.get("codigo_lote", ""),
                     commit=False,
                 )
                 if producto_id:
@@ -2978,16 +2981,17 @@ class DB:
         comision_pct=0,
         comision_monto=0,
         comision_tipo="",
+        codigo_lote="",
         commit: bool = True,
     ):
         self.cursor.execute("""
             INSERT INTO detalles_compra (
                 compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
-                descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                codigo_lote, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             compra_id, producto_id, cantidad, precio_unitario, fecha_vencimiento,
-            descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
+            codigo_lote, descuento, descuento_tipo, iva, iva_tipo, comision_pct, comision_monto, comision_tipo
         ))
         if commit:
             self.conn.commit()

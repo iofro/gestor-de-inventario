@@ -43,6 +43,7 @@ def test_update_compra_detallada_updates_totals_and_stock():
         0,
         0,
         "Añadida al total",
+        codigo_lote="ABC123",
     )
     db.aumentar_stock(prod_id, 10)
 
@@ -72,6 +73,7 @@ def test_update_compra_detallada_updates_totals_and_stock():
                 "comision_pct": 0,
                 "comision_monto": 5,
                 "comision_tipo": "Añadida al total",
+                "codigo_lote": "XYZ789",
             }
         ],
     )
@@ -86,6 +88,7 @@ def test_update_compra_detallada_updates_totals_and_stock():
     assert detalle["cantidad"] == 5
     assert detalle["precio_unitario"] == 8
     assert detalle["comision_monto"] == 5
+    assert detalle["codigo_lote"] == "XYZ789"
 
     db.cursor.execute("SELECT stock FROM productos WHERE id=?", (prod_id,))
     stock = db.cursor.fetchone()["stock"]

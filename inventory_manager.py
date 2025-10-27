@@ -1102,6 +1102,7 @@ class InventoryManager:
                         "cantidad",
                         "precio_unitario",
                         "fecha_vencimiento",
+                        "codigo_lote",
                         "descuento",
                         "descuento_tipo",
                         "iva",
@@ -1116,6 +1117,7 @@ class InventoryManager:
                         d.get("cantidad", 0),
                         d.get("precio_unitario", 0),
                         d.get("fecha_vencimiento", ""),
+                        d.get("codigo_lote", ""),
                         d.get("descuento", 0),
                         d.get("descuento_tipo", ""),
                         d.get("iva", 0),
@@ -1671,7 +1673,16 @@ class ProductTableModel(QAbstractTableModel):
 class LoteTableModel(QAbstractTableModel):
     def __init__(self, detalles_compra, productos, Distribuidores, db=None):
         super().__init__()
-        self.headers = ["Producto", "Código", "Cantidad", "Precio compra", "Distribuidor", "Vencimiento", "Comisión"]
+        self.headers = [
+            "Producto",
+            "Código",
+            "Lote",
+            "Cantidad",
+            "Precio compra",
+            "Distribuidor",
+            "Vencimiento",
+            "Comisión",
+        ]
         self._data = detalles_compra
         self._productos = {p["id"]: p for p in productos}
         self._Distribuidores = {d["id"]: d["nombre"] for d in Distribuidores}
@@ -1710,16 +1721,20 @@ class LoteTableModel(QAbstractTableModel):
             elif col == 1:
                 return producto.get("codigo", "")
             elif col == 2:
-                return row.get("cantidad", 0)
+                return row.get("codigo_lote", "")
             elif col == 3:
-                return f"${row.get('precio_unitario', 0):.2f}"
+                return row.get("cantidad", 0)
             elif col == 4:
+                return f"${row.get('precio_unitario', 0):.2f}"
+            elif col == 5:
                 compra_id = row.get("compra_id")
                 return self._compra_distribuidores.get(
                     compra_id, "Desconocido"
                 )
-            elif col == 5:
+            elif col == 6:
                 return row.get("fecha_vencimiento", "")
+            elif col == 7:
+                return f"${row.get('comision_monto', 0) or 0:.2f}"
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):

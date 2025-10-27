@@ -183,6 +183,77 @@ def test_factura_metadata_row_includes_lote_vencimiento_registro(tmp_path, tipo_
     assert 'Registro Sanitario: RS-009' in texto
 
 
+@pytest.mark.parametrize(
+    'extra_value',
+    [
+        pytest.param(
+            {
+                'lote': 'L-001',
+                'fecha_vencimiento': '2025-11-30',
+                'registro_sanitario': 'RS-009',
+            },
+            id='dict',
+        ),
+        pytest.param(
+            '{"lote": "L-001", "fecha_vencimiento": "2025-11-30", "registro_sanitario": "RS-009"}',
+            id='json-string',
+        ),
+        pytest.param(
+            "{'lote': 'L-001', 'fecha_vencimiento': '2025-11-30T00:00:00', 'registro_sanitario': 'RS-009'}",
+            id='python-repr',
+        ),
+        pytest.param(
+            '{"lotes": [{"lote": "L-001", "codigo": "ALT-01", "fechaVencimiento": "2025/11/30", "registroSanitario": "RS-009"}]}',
+            id='nested',
+        ),
+    ],
+)
+def test_factura_metadata_row_detects_fecha_in_structured_extra(tmp_path, extra_value):
+    venta = {
+        'sumas': 10,
+        'descuentos': 0,
+        'subtotal': 10,
+        'iva': 1.3,
+        'total': 11.3,
+        'ventas_exentas': 0,
+        'ventas_no_sujetas': 0,
+        'total_letras': '',
+    }
+    detalles = [
+        {
+            'cantidad': 1,
+            'descripcion': 'Medicamento con lote',
+            'precio_unitario': 10,
+            'ventas_no_sujetas': 0,
+            'ventas_exentas': 0,
+            'ventas_gravadas': 10,
+            'iva': 1.3,
+            'extra': extra_value,
+        }
+    ]
+
+    salida = tmp_path / 'metadata_extra.pdf'
+    generar_factura_electronica_pdf(
+        venta,
+        detalles,
+        {},
+        {},
+        'Crédito Fiscal',
+        archivo=str(salida),
+        datos_negocio={},
+        codigo_generacion=str(uuid.uuid4()),
+        numero_control=uuid.uuid4().hex[:8].upper(),
+        fecha_generacion="01/01/2024",
+        sello_recepcion='0' * 40,
+    )
+
+    with fitz.open(salida) as doc:
+        texto = ''.join(pagina.get_text() for pagina in doc)
+
+    assert 'Vencimiento: 30/11/2025' in texto
+    assert 'Registro Sanitario: RS-009' in texto
+
+
 def test_credito_fiscal_pdf_shows_venta_a_cuenta(tmp_path):
     venta, detalles = _sample_data('Crédito Fiscal')
     venta['venta_a_cuenta_de'] = 'Tercero Ejemplo'

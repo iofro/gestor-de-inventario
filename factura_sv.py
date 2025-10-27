@@ -2,12 +2,13 @@ from pathlib import Path
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
-from reportlab.platypus import Table, TableStyle
+from reportlab.platypus import Paragraph, Table, TableStyle
 from reportlab.lib import colors
 from reportlab.graphics import renderPDF
 from reportlab.graphics.barcode import qr
 from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
+from reportlab.lib.styles import ParagraphStyle
 
 from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis, ellipsize_text
 import utils.catalogos as catalogos
@@ -18,6 +19,7 @@ import os
 from datetime import datetime
 from paths import DATOS_NEGOCIO_PATH
 from utils import resource_path
+from xml.sax.saxutils import escape
 
 
 def build_qr_url(dte: dict) -> str:
@@ -591,6 +593,84 @@ def generar_factura_electronica_pdf(
     descripcion_col_idx = tabla_columnas.index("Descripción")
     descripcion_col_width = max(col_widths[descripcion_col_idx] - 2 * table_padding, 0)
 
+    descripcion_style = ParagraphStyle(
+        name="DescripcionItem",
+        fontName=body_fontname,
+        fontSize=body_fontsize,
+        leading=body_fontsize + 2,
+        spaceAfter=0,
+        spaceBefore=0,
+    )
+    meta_fontsize = max(body_fontsize - 1, 6)
+
+    def _normalize_text(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        return str(value)
+
+    def _parse_json_value(raw_value):
+        if raw_value in (None, ""):
+            return None
+        if isinstance(raw_value, (dict, list)):
+            return raw_value
+        if isinstance(raw_value, (bytes, bytearray)):
+            try:
+                raw_value = raw_value.decode("utf-8")
+            except Exception:
+                return None
+        if isinstance(raw_value, str):
+            text = raw_value.strip()
+            if not text:
+                return None
+            try:
+                parsed = json.loads(text)
+            except Exception:
+                return None
+            if isinstance(parsed, (dict, list)):
+                return parsed
+        return None
+
+    def _search_nested(data, key_candidates):
+        if isinstance(data, dict):
+            for key in key_candidates:
+                if key in data:
+                    value = data[key]
+                    normalized = _normalize_text(value)
+                    if normalized is not None:
+                        return value
+            for value in data.values():
+                found = _search_nested(value, key_candidates)
+                if found is not None:
+                    return found
+        elif isinstance(data, list):
+            for item in data:
+                found = _search_nested(item, key_candidates)
+                if found is not None:
+                    return found
+        return None
+
+    def _format_fecha_vencimiento(value):
+        text = _normalize_text(value)
+        if not text:
+            return None
+        trimmed = text
+        if "T" in trimmed:
+            trimmed = trimmed.split("T", 1)[0]
+        trimmed = trimmed.strip()
+        if len(trimmed) > 10:
+            trimmed = trimmed[:10]
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y"):
+            try:
+                dt = datetime.strptime(trimmed, fmt)
+            except ValueError:
+                continue
+            else:
+                return dt.strftime("%d/%m/%Y")
+        return text
+
     tabla_data = [tabla_columnas]
     for d in detalles:
         cantidad = Decimal(str(d.get("cantidad") or 0))
@@ -607,9 +687,59 @@ def generar_factura_electronica_pdf(
             descripcion_col_width,
         )
 
+        extra_raw = d.get("extra")
+        extra_data = _parse_json_value(extra_raw)
+
+        def _pick_value(key_candidates):
+            direct_value = _search_nested(d, key_candidates)
+            if direct_value not in (None, ""):
+                return direct_value
+            if extra_data is not None:
+                return _search_nested(extra_data, key_candidates)
+            return None
+
+        lote_val = _normalize_text(
+            _pick_value(["codigo_lote", "codigoLote", "lote", "loteCodigo"])
+        )
+        registro_val = _normalize_text(
+            _pick_value(["registro_sanitario", "registroSanitario"])
+        )
+        venc_raw = _pick_value([
+            "fecha_vencimiento",
+            "fechaVencimiento",
+            "vencimiento",
+            "fecha_vto",
+        ])
+        venc_val = _format_fecha_vencimiento(venc_raw)
+
+        meta_segments = []
+        if lote_val:
+            meta_segments.append(f"Lote: {lote_val}")
+        if venc_val:
+            meta_segments.append(f"Vencimiento: {venc_val}")
+        if registro_val:
+            meta_segments.append(f"Registro Sanitario: {registro_val}")
+
+        meta_text = " ".join(meta_segments)
+        if meta_text:
+            meta_text = ellipsize_text(
+                meta_text,
+                body_fontname,
+                meta_fontsize,
+                descripcion_col_width,
+            )
+            paragraph_text = (
+                f"{escape(descripcion)}"  # description already ellipsized
+                f"<br/><font color='#555555' size='{meta_fontsize}'>{escape(meta_text)}</font>"
+            )
+        else:
+            paragraph_text = escape(descripcion)
+
+        descripcion_cell = Paragraph(paragraph_text, descripcion_style)
+
         fila = [
             str(d.get("cantidad", "")),
-            descripcion,
+            descripcion_cell,
             f"{float(precio_unitario):.4f}",
         ]
 
@@ -647,6 +777,14 @@ def generar_factura_electronica_pdf(
         ('LEFTPADDING', (0, 0), (-1, -1), table_padding),
         ('RIGHTPADDING', (0, 0), (-1, -1), table_padding),
     ])
+
+    if len(tabla_data) > 1:
+        table_style.add(
+            'VALIGN',
+            (descripcion_col_idx, 1),
+            (descripcion_col_idx, -1),
+            'TOP',
+        )
 
     bloque_totales_x = 30
     bloque_totales_w = 555

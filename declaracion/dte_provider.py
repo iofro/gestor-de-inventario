@@ -8,11 +8,14 @@ from dataclasses import dataclass, field
 from datetime import datetime, date
 import json
 import logging
+import os
+import re
 from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Callable
 
 from declaracion.anexo_contribuyentes import VentaContribuyente
 from declaracion.anexo_consumidor_final import VentaCF
+from utils.facturacion_records import infer_tipo_from_name, tipo_code_from_desc
 
 logger = logging.getLogger(__name__)
 
@@ -60,12 +63,19 @@ ALIASES = {
 
 _TIPO_HINT_ALIASES = {
     "ccf": "03",
+    "credito fiscal": "03",
     "nota de credito": "05",
+    "nota credito": "05",
     "nota de debito": "06",
+    "nota debito": "06",
     "nota de remision": "04",
+    "nota remision": "04",
     "factura": "01",
     "consumidor final": "01",
+    "ticket": "01",
 }
+
+_TIPO_TOKEN_PATTERN = re.compile(r"(?<!\d)(\d{1,2})(?!\d)")
 
 TIPOS_ANEXO_I = {"03", "05", "06"}
 TIPOS_ANEXO_II = {"01", "02", "10", "11"}
@@ -246,6 +256,48 @@ def _normalize_alias(texto: str | None) -> str | None:
     code = _TIPO_HINT_ALIASES.get(t)
     if code in CAT002_VALID:
         return code
+    return None
+
+
+def _infer_tipo_from_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        texto = str(value).strip()
+    except Exception:
+        return None
+    if not texto:
+        return None
+    for match in _TIPO_TOKEN_PATTERN.finditer(texto):
+        candidate = match.group(1).zfill(2)
+        if candidate in CAT002_VALID:
+            return candidate
+    return None
+
+
+def _infer_tipo_from_path(path: str | None) -> str | None:
+    if not path or not isinstance(path, str):
+        return None
+    base_name = os.path.basename(path)
+    tipo_label = infer_tipo_from_name(base_name)
+    if tipo_label:
+        code = tipo_code_from_desc(tipo_label)
+        if code in CAT002_VALID:
+            return code
+    segments = re.split(r"[\\/]+", path)
+    for segment in reversed(segments):
+        segment = segment.strip()
+        if not segment:
+            continue
+        alias_code = _normalize_alias(segment)
+        if alias_code:
+            return alias_code
+        label_code = tipo_code_from_desc(segment)
+        if label_code in CAT002_VALID:
+            return label_code
+        inferred = _infer_tipo_from_text(segment)
+        if inferred:
+            return inferred
     return None
 
 
@@ -504,16 +556,28 @@ def _tipo_dte(row: dict) -> str | None:
         return code
 
     if isinstance(code, str):
-        digits = "".join(ch for ch in code if ch.isdigit())
-        if digits:
-            candidate = digits[-2:].zfill(2)
-            if candidate in CAT002_VALID:
-                return candidate
+        inferred = _infer_tipo_from_text(code)
+        if inferred:
+            return inferred
+
+    numero_control = row.get("numero_control")
+    if numero_control:
+        inferred = _infer_tipo_from_text(numero_control)
+        if inferred:
+            return inferred
+
+    path = row.get("json_path") or (row.get("extra_data") or {}).get("jsonPath")
+    inferred = _infer_tipo_from_path(path)
+    if inferred:
+        return inferred
 
     for texto in _collect_type_hints(row):
         alias_code = _normalize_alias(texto)
         if alias_code:
             return alias_code
+        inferred = _infer_tipo_from_text(texto)
+        if inferred:
+            return inferred
 
     return None
 

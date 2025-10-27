@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -644,25 +645,6 @@ def generar_factura_electronica_pdf(
                 return parsed
         return None
 
-    def _search_nested(data, key_candidates):
-        if isinstance(data, dict):
-            for key in key_candidates:
-                if key in data:
-                    value = data[key]
-                    normalized = _normalize_text(value)
-                    if normalized is not None:
-                        return value
-            for value in data.values():
-                found = _search_nested(value, key_candidates)
-                if found is not None:
-                    return found
-        elif isinstance(data, list):
-            for item in data:
-                found = _search_nested(item, key_candidates)
-                if found is not None:
-                    return found
-        return None
-
     def _format_fecha_vencimiento(value):
         text = _normalize_text(value)
         if not text:
@@ -681,6 +663,130 @@ def generar_factura_electronica_pdf(
             else:
                 return dt.strftime("%d/%m/%Y")
         return text
+
+    def _collect_item_metadata(*sources):
+        metadata: dict[str, str | None] = {
+            "lote": None,
+            "vencimiento": None,
+            "registro": None,
+        }
+
+        date_tokens = ("venc", "caduc", "expir", "vence")
+
+        def _assign(field: str, value: str, *, formatter=None):
+            text = _normalize_text(value)
+            if not text:
+                return
+            if formatter is not None:
+                formatted = formatter(text)
+                if formatted:
+                    text = formatted
+            existing = metadata[field]
+            if existing:
+                if existing == text:
+                    return
+                if existing.isdigit() and not text.isdigit():
+                    metadata[field] = text
+                    return
+                if len(text) > len(existing):
+                    metadata[field] = text
+            else:
+                metadata[field] = text
+
+        def _parse_pattern_text(text: str):
+            if not text:
+                return
+            lot_match = re.search(r"(?i)\blote\b\s*[:=]\s*([^|,;\n]+)", text)
+            if lot_match:
+                _assign("lote", lot_match.group(1).strip())
+            venc_match = re.search(
+                r"(?i)(?:venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?)\s*[:=]?\s*([0-9]{1,4}[/-][0-9]{1,2}[/-][0-9]{2,4})",
+                text,
+            )
+            if venc_match:
+                _assign("vencimiento", venc_match.group(1).strip(), formatter=_format_fecha_vencimiento)
+            reg_match = re.search(
+                r"(?i)registro(?:\s+sanitario)?\s*[:=]\s*([^|,;\n]+)",
+                text,
+            )
+            if reg_match:
+                _assign("registro", reg_match.group(1).strip())
+
+        def _traverse(obj, flags: frozenset[str] = frozenset()):
+            if obj is None:
+                return
+            if isinstance(obj, (bytes, bytearray)):
+                try:
+                    obj = obj.decode("utf-8")
+                except Exception:
+                    return
+
+            if isinstance(obj, str):
+                stripped = obj.strip()
+                if not stripped:
+                    return
+                parsed_json = _parse_json_value(stripped)
+                if parsed_json is not None and parsed_json is not obj:
+                    _traverse(parsed_json, flags)
+                    return
+                _parse_pattern_text(stripped)
+                return
+
+            if isinstance(obj, list):
+                for item in obj:
+                    _traverse(item, flags)
+                return
+
+            if not isinstance(obj, dict):
+                return
+
+            for key, value in obj.items():
+                key_lower = str(key).lower()
+                next_flags = set(flags)
+                is_lote_key = "lote" in key_lower and not key_lower.endswith("id") and key_lower not in {"idlote", "loteid"}
+                if is_lote_key:
+                    next_flags.add("lote")
+                if any(token in key_lower for token in date_tokens):
+                    next_flags.add("vencimiento")
+                if "registro" in key_lower and "san" in key_lower:
+                    next_flags.add("registro")
+
+                if isinstance(value, (dict, list)):
+                    _traverse(value, frozenset(next_flags))
+                    continue
+
+                if isinstance(value, (bytes, bytearray)):
+                    try:
+                        value = value.decode("utf-8")
+                    except Exception:
+                        continue
+
+                parsed_nested = _parse_json_value(value)
+                if parsed_nested is not None and parsed_nested is not value:
+                    _traverse(parsed_nested, frozenset(next_flags))
+                    continue
+
+                text = _normalize_text(value)
+                if not text:
+                    continue
+
+                assign_lote = is_lote_key or "lote" in next_flags
+                assign_venc = any(token in key_lower for token in date_tokens) or "vencimiento" in next_flags
+                assign_registro = ("registro" in key_lower and "san" in key_lower) or "registro" in next_flags
+
+                if assign_lote:
+                    _assign("lote", text)
+                if assign_venc:
+                    _assign("vencimiento", text, formatter=_format_fecha_vencimiento)
+                if assign_registro:
+                    _assign("registro", text)
+
+                _parse_pattern_text(text)
+
+        for source in sources:
+            _traverse(source)
+
+        return metadata
 
     row_groups: list[list[tuple[list, bool]]] = []
     for d in detalles:
@@ -701,32 +807,10 @@ def generar_factura_electronica_pdf(
         extra_raw = d.get("extra")
         extra_data = _parse_json_value(extra_raw)
 
-        def _pick_value(key_candidates):
-            direct_value = _search_nested(d, key_candidates)
-            if direct_value not in (None, ""):
-                return direct_value
-            if extra_data is not None:
-                return _search_nested(extra_data, key_candidates)
-            return None
-
-        lote_val = _normalize_text(
-            _pick_value(["codigo_lote", "codigoLote", "lote", "loteCodigo"])
-        )
-        registro_val = _normalize_text(
-            _pick_value(["registro_sanitario", "registroSanitario"])
-        )
-        venc_raw = _pick_value([
-            "fecha_vencimiento",
-            "fechaVencimiento",
-            "vencimiento",
-            "fecha_vto",
-            "fecha_venc",
-            "fechaVenc",
-            "fecha_caducidad",
-            "fechaCaducidad",
-            "caducidad",
-        ])
-        venc_val = _format_fecha_vencimiento(venc_raw)
+        metadata = _collect_item_metadata(d, extra_data, extra_raw)
+        lote_val = metadata.get("lote")
+        venc_val = metadata.get("vencimiento")
+        registro_val = metadata.get("registro")
 
         meta_segments = []
         if lote_val:

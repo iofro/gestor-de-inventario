@@ -117,6 +117,8 @@ def generar_factura_electronica_pdf(
 ):
 
     if os.environ.get("PDF_META_DEBUG") == "1":
+        if not logging.getLogger().handlers:
+            logging.basicConfig(level=logging.DEBUG)
         logging.getLogger(__name__).setLevel(logging.DEBUG)
 
     if datos_negocio is None:
@@ -852,6 +854,8 @@ def generar_factura_electronica_pdf(
 
         for candidate in candidates:
             parsed = _try_patterns(candidate)
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("[meta] fecha candidato %r -> %r", candidate, parsed)
             if parsed:
                 return parsed
 
@@ -880,6 +884,56 @@ def generar_factura_electronica_pdf(
                     return datetime(y, m, d).strftime("%d/%m/%Y")
                 except Exception:
                     pass
+
+        m_ym = re.search(r"\b(\d{4})[\/-\.](\d{1,2})\b", cleaned)
+        if m_ym:
+            y, mo = int(m_ym.group(1)), int(m_ym.group(2))
+            if 1 <= mo <= 12:
+                try:
+                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+
+        digits_only = re.sub(r"\D", "", cleaned)
+
+        m_14 = re.fullmatch(r"\d{14}", digits_only)
+        if m_14:
+            raw = digits_only
+            try:
+                y, mo, d = int(raw[0:4]), int(raw[4:6]), int(raw[6:8])
+                return datetime(y, mo, d).strftime("%d/%m/%Y")
+            except Exception:
+                pass
+
+        m_yymm6 = re.fullmatch(r"\d{6}", digits_only)
+        if m_yymm6:
+            raw = digits_only
+            try:
+                y, mo = int(raw[0:4]), int(raw[4:6])
+                if 1 <= mo <= 12:
+                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
+            except Exception:
+                pass
+            try:
+                mo, y = int(raw[0:2]), int(raw[2:6])
+                if 1 <= mo <= 12:
+                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
+            except Exception:
+                pass
+
+        m_mmyy4 = re.fullmatch(r"\d{4}", digits_only)
+        if m_mmyy4:
+            raw = digits_only
+            try:
+                mo, yy = int(raw[0:2]), int(raw[2:4])
+                if 1 <= mo <= 12:
+                    y = 2000 + yy if yy < 100 else yy
+                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
+            except Exception:
+                pass
+
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug("[meta] no parse match, devuelvo crudo: %r", text)
 
         return text
 
@@ -979,6 +1033,16 @@ def generar_factura_electronica_pdf(
                 norm = _format_fecha_vencimiento(cand)
                 if norm:
                     _assign("vencimiento", norm)
+
+            if not metadata.get("vencimiento"):
+                m_compact = re.search(
+                    venc_label + r"\s*[:=\-]?\s*([0-9A-Za-z./_-]{2,20})",
+                    text,
+                )
+                if m_compact:
+                    norm = _format_fecha_vencimiento(m_compact.group(1))
+                    if norm:
+                        _assign("vencimiento", norm)
 
             if not metadata.get("vencimiento"):
                 m2 = re.search(venc_label + r".{0,10}\b(\d{6}|\d{8}|\d{10}|\d{13})\b", text)
@@ -1119,6 +1183,13 @@ def generar_factura_electronica_pdf(
         extra_data = _parse_json_value(extra_raw)
 
         metadata = _collect_item_metadata(d, extra_data, extra_raw)
+        if logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "[meta] detalle '%s' -> %s | extra=%r",
+                d.get("descripcion", ""),
+                metadata,
+                d.get("extra"),
+            )
         lote_val = metadata.get("lote")
         venc_val = metadata.get("vencimiento")
         registro_val = metadata.get("registro")

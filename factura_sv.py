@@ -1,5 +1,4 @@
 from pathlib import Path
-import re
 import logging
 
 from reportlab.lib.pagesizes import letter
@@ -22,27 +21,8 @@ import os
 from datetime import datetime
 from paths import DATOS_NEGOCIO_PATH
 from utils import resource_path
+from utils.inventario import obtener_info_lote, formatear_fecha_vencimiento_ui
 from xml.sax.saxutils import escape
-
-
-class _MetaTracer:
-    def __init__(self, enabled: bool):
-        self.enabled = enabled
-        self.rows = []
-
-    def add_row(self, row):
-        if not self.enabled:
-            return
-        self.rows.append(row)
-
-    def dump(self, path="./.debug/pdf_meta_items.json"):
-        if not self.enabled:
-            return
-        import os, json
-
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.rows, f, ensure_ascii=False, indent=2)
 
 
 def build_qr_url(dte: dict) -> str:
@@ -83,6 +63,130 @@ def format_direccion(direccion):
     nombre_municipio = catalogos.get_value("CAT-013", codigo_municipio) or ""
     parts = [p for p in (nombre_municipio, complemento) if p]
     return ", ".join(parts)
+
+
+def _metadata_desde_inventario(detalle: dict) -> dict[str, str | None]:
+    """Obtener información de lote, vencimiento y registro para un detalle."""
+
+    def _parse_extra(raw):
+        if raw in (None, ""):
+            return None
+        if isinstance(raw, dict):
+            return raw
+        if isinstance(raw, (bytes, bytearray)):
+            try:
+                raw = raw.decode("utf-8")
+            except Exception:
+                return None
+        if isinstance(raw, str):
+            text = raw.strip()
+            if not text:
+                return None
+            try:
+                return json.loads(text)
+            except Exception:
+                try:
+                    return ast.literal_eval(text)
+                except Exception:
+                    return None
+        return None
+
+    def _clean_text(value):
+        if value is None:
+            return None
+        if isinstance(value, str):
+            text = value.strip()
+            return text or None
+        text = str(value).strip()
+        return text or None
+
+    def _to_int(value):
+        if value in (None, ""):
+            return None
+        try:
+            return int(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    extra_data = _parse_extra(detalle.get("extra"))
+
+    nested_candidates: list[dict] = []
+    if isinstance(extra_data, dict):
+        nested_candidates.append(extra_data)
+        lotes_value = extra_data.get("lotes")
+        if isinstance(lotes_value, list):
+            for item in lotes_value:
+                if isinstance(item, dict):
+                    nested_candidates.append(item)
+                    break
+    if isinstance(detalle, dict):
+        nested_candidates.append(detalle)
+
+    def _first(keys: tuple[str, ...]):
+        for source in nested_candidates:
+            if not isinstance(source, dict):
+                continue
+            for key in keys:
+                if key in source and source[key] not in (None, ""):
+                    return source[key]
+        return None
+
+    lote_id = _to_int(_first(("lote_id", "loteId")))
+    producto_id = _to_int(_first(("producto_id", "productoId")))
+    codigo_lote = _clean_text(_first(("codigo_lote", "lote", "codigo")))
+    registro_extra = _clean_text(
+        _first(("registro_sanitario", "registroSanitario", "registro"))
+    )
+    vencimiento_extra = _first(("fecha_vencimiento", "fechaVencimiento", "vencimiento"))
+
+    proveedor_info: dict[str, object] | None = None
+    if any(value is not None for value in (lote_id, codigo_lote, producto_id)):
+        proveedor_info = obtener_info_lote(
+            lote_id=lote_id,
+            codigo_lote=codigo_lote,
+            producto_id=producto_id,
+        )
+
+    metadata: dict[str, str | None] = {"lote": None, "vencimiento": None, "registro": None}
+
+    if isinstance(proveedor_info, dict):
+        lote_val = _clean_text(
+            proveedor_info.get("lote")
+            if "lote" in proveedor_info
+            else proveedor_info.get("codigo_lote")
+        )
+        registro_val = _clean_text(
+            proveedor_info.get("registro")
+            if "registro" in proveedor_info
+            else proveedor_info.get("registro_sanitario")
+        )
+        vencimiento_val = proveedor_info.get("vencimiento")
+
+        if lote_val:
+            metadata["lote"] = lote_val
+        if registro_val:
+            metadata["registro"] = registro_val
+
+        vencimiento_formateado = formatear_fecha_vencimiento_ui(vencimiento_val)
+        if vencimiento_formateado:
+            metadata["vencimiento"] = vencimiento_formateado
+        else:
+            vencimiento_texto = _clean_text(vencimiento_val)
+            if vencimiento_texto:
+                metadata["vencimiento"] = vencimiento_texto
+
+    if metadata["lote"] is None:
+        metadata["lote"] = codigo_lote
+    if metadata["registro"] is None:
+        metadata["registro"] = registro_extra
+    if metadata["vencimiento"] is None:
+        vencimiento_formateado = formatear_fecha_vencimiento_ui(vencimiento_extra)
+        if vencimiento_formateado:
+            metadata["vencimiento"] = vencimiento_formateado
+        else:
+            metadata["vencimiento"] = _clean_text(vencimiento_extra)
+
+    return metadata
 
 
 def _resolve_logo_path(datos_negocio: dict) -> str | None:
@@ -135,15 +239,6 @@ def generar_factura_electronica_pdf(
     doc_relacionado: dict | None = None,
     motivo: str | None = None,
 ):
-
-    trace_enabled = os.environ.get("PDF_META_TRACE") == "1"
-    force_raw_venc = os.environ.get("PDF_META_FORCE_RAW_VENC") == "1"
-    tracer = _MetaTracer(enabled=os.environ.get("PDF_META_DUMP") == "1")
-
-    if os.environ.get("PDF_META_DEBUG") == "1":
-        if not logging.getLogger().handlers:
-            logging.basicConfig(level=logging.DEBUG)
-        logging.getLogger(__name__).setLevel(logging.DEBUG)
 
     if datos_negocio is None:
         datos_negocio = {}
@@ -624,6 +719,7 @@ def generar_factura_electronica_pdf(
 
     descripcion_col_idx = tabla_columnas.index("Descripción")
     descripcion_col_width = max(col_widths[descripcion_col_idx] - 2 * table_padding, 0)
+    descripcion_left_offset = sum(col_widths[:descripcion_col_idx]) if descripcion_col_idx > 0 else 0
 
     descripcion_style = ParagraphStyle(
         name="DescripcionItem",
@@ -647,715 +743,8 @@ def generar_factura_electronica_pdf(
 
     logger = logging.getLogger(__name__)
 
-    blob_tagged_pattern = re.compile(
-        r"(?i)\b(venc(?:e|imiento)?|caduc(?:a|idad)?|exp(?:iry|iraci[oó]n)?|fv|vto)\b\s*[:=\-]?\s*([0-9A-Za-z./_-]{2,20})"
-    )
-    blob_plain_date_pattern = re.compile(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b")
 
-    def _normalize_text(value):
-        if value is None:
-            return None
-        if isinstance(value, str):
-            text = value.strip()
-            return text or None
-        return str(value)
-
-    def _clean_venc_candidate_text(candidate: str | None) -> str | None:
-        if not candidate:
-            return candidate
-        cleaned = candidate.strip()
-        if not cleaned:
-            return cleaned
-        cleaned = re.sub(r"^[\s:=\-]+", "", cleaned)
-        cleaned = re.sub(r"^(?:[A-Za-z]{1,6})\s*[:=]\s*(?=[0-9])", "", cleaned)
-        leftover_tokens = ("iry", "ry", "y", "miento", "imiento", "cion", "ción")
-        for token in leftover_tokens:
-            cleaned = re.sub(
-                rf"^(?:{token})\s*[:=\-]?\s*(?=[0-9])",
-                "",
-                cleaned,
-                flags=re.IGNORECASE,
-            )
-        return cleaned.strip()
-
-    def _format_path(path: tuple[str, ...] | None) -> str:
-        if not path:
-            return "<root>"
-        return ".".join(path)
-
-    def _parse_json_value(raw_value):
-        if raw_value in (None, ""):
-            return None
-        if isinstance(raw_value, (dict, list)):
-            return raw_value
-        if isinstance(raw_value, (bytes, bytearray)):
-            try:
-                raw_value = raw_value.decode("utf-8")
-            except Exception:
-                return None
-        if isinstance(raw_value, str):
-            text = raw_value.strip()
-            if not text:
-                return None
-            parsed = None
-            try:
-                parsed = json.loads(text)
-            except Exception:
-                if text[:1] in "[{" and text[-1:] in "]}":
-                    try:
-                        parsed = ast.literal_eval(text)
-                    except Exception:
-                        parsed = None
-            if isinstance(parsed, (dict, list)):
-                return parsed
-        return None
-
-    def _format_fecha_vencimiento(value, *, path: tuple[str, ...] | None = None, value_type: str | None = None):
-        text = _normalize_text(value)
-        if not text:
-            if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "[meta:trace] normalize skip empty candidate path=%s type=%s",
-                    _format_path(path),
-                    value_type,
-                )
-            return None
-
-        base = text.strip()
-        if "T" in base:
-            base = base.split("T", 1)[0]
-        base = base.strip()
-
-        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "[meta:trace] normalize candidate path=%s type=%s raw=%r",
-                _format_path(path),
-                value_type,
-                base,
-            )
-
-        label_pattern = re.compile(
-            r"(?i)\b(?:fecha\s*(?:de)?\s*)?(?:venc(?:imiento)?|vence|vto|f\s*\.?\s*v\.?|fv|caduc(?:idad|a)?|expir(?:a|aci\u00f3n)?)\b"
-        )
-        cleaned = label_pattern.sub("", base)
-        cleaned = re.sub(r"(?i)\bde\b", " ", cleaned)
-        cleaned = cleaned.strip(" .:-\t")
-
-        def _normalize_year(year_str: str) -> int:
-            year_int = int(year_str)
-            if year_int < 100:
-                return 2000 + year_int
-            return year_int
-
-        month_map = {
-            "ene": 1,
-            "enero": 1,
-            "feb": 2,
-            "febrero": 2,
-            "mar": 3,
-            "marzo": 3,
-            "abr": 4,
-            "abril": 4,
-            "may": 5,
-            "mayo": 5,
-            "jun": 6,
-            "junio": 6,
-            "jul": 7,
-            "julio": 7,
-            "ago": 8,
-            "agosto": 8,
-            "sep": 9,
-            "sept": 9,
-            "set": 9,
-            "septiembre": 9,
-            "setiembre": 9,
-            "oct": 10,
-            "octubre": 10,
-            "nov": 11,
-            "noviembre": 11,
-            "dic": 12,
-            "diciembre": 12,
-        }
-
-        def _parse_spanish_month(candidate: str) -> str | None:
-            if not candidate:
-                return None
-
-            def _month_from_word(word: str) -> int | None:
-                normalized = (
-                    word.strip()
-                    .lower()
-                    .replace(".", "")
-                    .replace("á", "a")
-                    .replace("é", "e")
-                    .replace("í", "i")
-                    .replace("ó", "o")
-                    .replace("ú", "u")
-                )
-                return month_map.get(normalized) or month_map.get(normalized[:3])
-
-            pattern_day = re.compile(
-                r"(?i)\b(\d{1,2})(?:\s*(?:de|del)\s+|\s+)([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\.]+)(?:\s*(?:de)?\s+|\s+)(\d{2,4})\b"
-            )
-            match_day = pattern_day.search(candidate)
-            if match_day:
-                day = int(match_day.group(1))
-                month_word = match_day.group(2)
-                month = _month_from_word(month_word)
-                if not month:
-                    return None
-                year = _normalize_year(match_day.group(3))
-                try:
-                    dt = datetime(year, month, day)
-                except ValueError:
-                    return None
-                return dt.strftime("%d/%m/%Y")
-
-            pattern_month = re.compile(
-                r"(?i)\b([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\.]+)(?:\s*(?:de)?\s+|\s+)(\d{2,4})\b"
-            )
-            match_month = pattern_month.search(candidate)
-            if match_month:
-                month_word = match_month.group(1)
-                month = _month_from_word(month_word)
-                if not month:
-                    return None
-                year = _normalize_year(match_month.group(2))
-                try:
-                    dt = datetime(year, month, 1)
-                except ValueError:
-                    return None
-                return dt.strftime("%d/%m/%Y")
-
-            return None
-
-        def _try_patterns(candidate: str) -> str | None:
-            if not candidate:
-                return None
-            normalized_candidate = candidate.strip()
-            if not normalized_candidate:
-                return None
-
-            iso_match = re.search(r"(\d{4})[\\/\-.](\d{1,2})[\\/\-.](\d{1,2})", normalized_candidate)
-            if iso_match:
-                year, month, day = map(int, iso_match.groups())
-                try:
-                    dt = datetime(year, month, day)
-                except ValueError:
-                    pass
-                else:
-                    return dt.strftime("%d/%m/%Y")
-
-            dmy_match = re.search(r"(\d{1,2})[\\/\-.](\d{1,2})[\\/\-.](\d{2,4})", normalized_candidate)
-            if dmy_match:
-                day, month, year_raw = dmy_match.groups()
-                year = _normalize_year(year_raw)
-                try:
-                    dt = datetime(year, int(month), int(day))
-                except ValueError:
-                    pass
-                else:
-                    return dt.strftime("%d/%m/%Y")
-
-            month_year_match = re.search(r"\b(\d{1,2})[\\/\-.](\d{2,4})\b", normalized_candidate)
-            if month_year_match:
-                month_raw, year_raw = month_year_match.groups()
-                month = int(month_raw)
-                if 1 <= month <= 12:
-                    year = _normalize_year(year_raw)
-                    try:
-                        dt = datetime(year, month, 1)
-                    except ValueError:
-                        pass
-                    else:
-                        return dt.strftime("%d/%m/%Y")
-
-            spanish_formatted = _parse_spanish_month(normalized_candidate)
-            if spanish_formatted:
-                return spanish_formatted
-
-            digits_only = re.sub(r"[^0-9]", "", normalized_candidate)
-            if len(digits_only) == 8:
-                if digits_only.startswith("19") or digits_only.startswith("20"):
-                    year = int(digits_only[:4])
-                    month = int(digits_only[4:6])
-                    day = int(digits_only[6:])
-                else:
-                    day = int(digits_only[:2])
-                    month = int(digits_only[2:4])
-                    year = _normalize_year(digits_only[4:])
-                try:
-                    dt = datetime(year, month, day)
-                except ValueError:
-                    pass
-                else:
-                    return dt.strftime("%d/%m/%Y")
-
-            return None
-
-        candidates: list[str] = []
-        seen: set[str] = set()
-
-        def _add_candidate(value: str | None):
-            if not value:
-                return
-            candidate = value.strip()
-            if not candidate:
-                return
-            if candidate not in seen:
-                seen.add(candidate)
-                candidates.append(candidate)
-
-        _add_candidate(cleaned)
-        _add_candidate(base)
-        for chunk in (cleaned, base):
-            if not chunk:
-                continue
-            for part in re.split(r"[|,;\n]\s*", chunk):
-                _add_candidate(part)
-            if re.search(r"[a-zA-Z]", chunk):
-                _add_candidate(re.sub(r"[-_/]", " ", chunk))
-            normalized_chunk = chunk.replace("\\", "/").replace("-", "/").replace(".", "/")
-            _add_candidate(normalized_chunk)
-
-        for candidate in candidates:
-            parsed = _try_patterns(candidate)
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("[meta] fecha candidato %r -> %r", candidate, parsed)
-            if parsed:
-                return parsed
-
-        epoch_match = re.fullmatch(r"\d{10}|\d{13}", cleaned)
-        if epoch_match:
-            ts = int(epoch_match.group(0))
-            if len(epoch_match.group(0)) == 13:
-                ts = ts // 1000
-            try:
-                dt = datetime.utcfromtimestamp(ts)
-                return dt.strftime("%d/%m/%Y")
-            except Exception:
-                pass
-
-        six = re.fullmatch(r"(\d{6})", re.sub(r"\D", "", cleaned))
-        if six:
-            raw = six.group(1)
-            try:
-                d, m, y = int(raw[:2]), int(raw[2:4]), int(raw[4:])
-                y = 2000 + y if y < 100 else y
-                return datetime(y, m, d).strftime("%d/%m/%Y")
-            except Exception:
-                try:
-                    y, m, d = int(raw[:2]), int(raw[2:4]), int(raw[4:])
-                    y = 2000 + y if y < 100 else y
-                    return datetime(y, m, d).strftime("%d/%m/%Y")
-                except Exception:
-                    pass
-
-        m_ym = re.search(r"\b(\d{4})[\\/.-](\d{1,2})\b", cleaned)
-        if m_ym:
-            y, mo = int(m_ym.group(1)), int(m_ym.group(2))
-            if 1 <= mo <= 12:
-                try:
-                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
-                except Exception:
-                    pass
-
-        digits_only = re.sub(r"\D", "", cleaned)
-
-        m_14 = re.fullmatch(r"\d{14}", digits_only)
-        if m_14:
-            raw = digits_only
-            try:
-                y, mo, d = int(raw[0:4]), int(raw[4:6]), int(raw[6:8])
-                return datetime(y, mo, d).strftime("%d/%m/%Y")
-            except Exception:
-                pass
-
-        m_yymm6 = re.fullmatch(r"\d{6}", digits_only)
-        if m_yymm6:
-            raw = digits_only
-            try:
-                y, mo = int(raw[0:4]), int(raw[4:6])
-                if 1 <= mo <= 12:
-                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
-            except Exception:
-                pass
-            try:
-                mo, y = int(raw[0:2]), int(raw[2:6])
-                if 1 <= mo <= 12:
-                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
-            except Exception:
-                pass
-
-        m_mmyy4 = re.fullmatch(r"\d{4}", digits_only)
-        if m_mmyy4:
-            raw = digits_only
-            try:
-                mo, yy = int(raw[0:2]), int(raw[2:4])
-                if 1 <= mo <= 12:
-                    y = 2000 + yy if yy < 100 else yy
-                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
-            except Exception:
-                pass
-            try:
-                yy, mo = int(raw[0:2]), int(raw[2:4])
-                if 1 <= mo <= 12:
-                    y = 2000 + yy if yy < 100 else yy
-                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
-            except Exception:
-                pass
-
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug("[meta] no parse match, devuelvo crudo: %r", text)
-
-        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "[meta:trace] normalize result path=%s -> %r",
-                _format_path(path),
-                None,
-            )
-
-        return None
-
-    def _collect_item_metadata(*sources):
-        metadata: dict[str, str | None] = {
-            "lote": None,
-            "vencimiento": None,
-            "registro": None,
-        }
-
-        diag: dict[str, object] = {
-            "where_found": None,
-            "raw_value": None,
-            "normalized_value": None,
-            "all_candidates": [],
-            "blob_first_match": None,
-        }
-
-        date_tokens = ("venc", "caduc", "expir", "vence", "vto", "fv")
-
-        alias_map = {
-            "lote": {"lote", "batch", "lote_producto"},
-            "vencimiento": {
-                "vencimiento",
-                "fecha_vencimiento",
-                "fvto",
-                "f_venc",
-                "vto",
-                "fechavencimiento",
-                "fechavenc",
-                "fv",
-                "fvenc",
-                "vence",
-                "vence_el",
-                "venceel",
-                "caducidad",
-                "fecha_caducidad",
-                "fechacaducidad",
-                "expiry",
-                "expirationdate",
-                "expiration_date",
-                "exp_date",
-                "exp",
-            },
-            "registro": {"registro_sanitario", "reg_sanitario", "regsan", "registro"},
-        }
-        alias_lookup = {}
-        alias_compact_lookup = {}
-        for canonical, aliases in alias_map.items():
-            for alias in aliases:
-                alias_norm = alias.lower()
-                alias_lookup[alias_norm] = canonical
-                alias_compact_lookup[re.sub(r"[^a-z0-9]", "", alias_norm)] = canonical
-
-        def _register_venc_candidate(
-            path: tuple[str, ...] | None,
-            raw: str,
-            normalized: str | None,
-            value_type: str | None,
-        ):
-            if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "[meta:trace] venc candidate path=%s type=%s raw=%r normalized=%r",
-                    _format_path(path),
-                    value_type,
-                    raw,
-                    normalized,
-                )
-            candidates = diag.setdefault("all_candidates", [])
-            candidates.append(raw)
-            if not diag.get("where_found") and path:
-                diag["where_found"] = _format_path(path)
-            diag["raw_value"] = raw
-            if normalized:
-                diag["normalized_value"] = normalized
-
-        def _assign(
-            field: str,
-            value: str,
-            *,
-            formatter=None,
-            path: tuple[str, ...] | None = None,
-            value_type: str | None = None,
-            raw_value: str | None = None,
-        ):
-            text = _normalize_text(value)
-            if not text:
-                return
-            original_text = text
-            formatted = None
-            if formatter is not None:
-                formatted = formatter(text, path=path, value_type=value_type)
-                if formatted:
-                    text = formatted
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug(
-                    "[meta] assign %s <- %r (formatted=%r)",
-                    field,
-                    value,
-                    (formatted if formatter else None),
-                )
-            if field == "vencimiento":
-                raw_for_register = raw_value if raw_value is not None else original_text
-                _register_venc_candidate(path, raw_for_register, formatted, value_type)
-                if formatted:
-                    text = formatted
-                elif force_raw_venc:
-                    text = raw_for_register or text
-                else:
-                    text = formatted or text
-            existing = metadata[field]
-            if existing:
-                if existing == text:
-                    return
-                if existing.isdigit() and not text.isdigit():
-                    metadata[field] = text
-                    return
-                if len(text) > len(existing):
-                    metadata[field] = text
-            else:
-                metadata[field] = text
-
-        def _parse_pattern_text(text: str, *, path: tuple[str, ...] | None, value_type: str | None):
-            if not text:
-                return
-            if logger.isEnabledFor(logging.DEBUG):
-                logger.debug("[meta] pattern probe: %r", text)
-            venc_label_core = r"f\s*\.?\s*v\.?|fv|vto|venc(?:\.|imiento)?|vence(?:\s*el)?|exp(?:iry|ir(?:a|aci\u00f3n)?)|caduc(?:a|idad)?"
-            lot_match = re.search(r"(?i)\b(?:lote|batch)\b\s*[:=]\s*([^|,;\n]+)", text)
-            if lot_match:
-                lot_val = lot_match.group(1).strip()
-                lot_val = re.split(
-                    rf"(?i)\b(?:{venc_label_core}|reg(?:istro)?(?:\s*(?:san(?:itario)?|san\.?|sanit\.?))?)\b",
-                    lot_val,
-                    maxsplit=1,
-                )[0].strip(" :")
-                if lot_val:
-                    _assign("lote", lot_val, path=path, value_type=value_type)
-            venc_label = rf"(?i)\b(?:{venc_label_core})\b"
-
-            m = re.search(venc_label + r"\s*[:=\-]?\s*([^\|,;\n]+)", text)
-            if m:
-                cand = m.group(1).strip()
-                cand = re.split(r"(?i)\b(lote|reg(?:istro)?(?:\s*san(?:itario)?)?)\b", cand, maxsplit=1)[0].strip(" :.-")
-                raw_cand = cand
-                cand = _clean_venc_candidate_text(cand) or cand
-                _assign(
-                    "vencimiento",
-                    cand,
-                    formatter=_format_fecha_vencimiento,
-                    path=path,
-                    value_type=value_type,
-                    raw_value=raw_cand,
-                )
-
-            if not metadata.get("vencimiento"):
-                m_compact = re.search(
-                    venc_label + r"\s*[:=\-]?\s*([0-9A-Za-z./_-]{2,20})",
-                    text,
-                )
-                if m_compact:
-                    raw_cand = m_compact.group(1)
-                    cand = _clean_venc_candidate_text(raw_cand) or raw_cand
-                    _assign(
-                        "vencimiento",
-                        cand,
-                        formatter=_format_fecha_vencimiento,
-                        path=path,
-                        value_type=value_type,
-                        raw_value=raw_cand,
-                    )
-
-            if not metadata.get("vencimiento"):
-                m2 = re.search(venc_label + r".{0,10}\b(\d{6}|\d{8}|\d{10}|\d{13})\b", text)
-                if m2:
-                    raw_cand = m2.group(1)
-                    cand = _clean_venc_candidate_text(raw_cand) or raw_cand
-                    _assign(
-                        "vencimiento",
-                        cand,
-                        formatter=_format_fecha_vencimiento,
-                        path=path,
-                        value_type=value_type,
-                        raw_value=raw_cand,
-                    )
-            fecha_key_match = re.search(
-                r"(?i)fecha[\s_]*venc(?:imiento)?[\s\"']*[:=]\s*[\"']?([^\"'|,;\n]+)",
-                text,
-            )
-            if fecha_key_match:
-                raw_cand = fecha_key_match.group(1).strip()
-                cand = _clean_venc_candidate_text(raw_cand) or raw_cand
-                _assign(
-                    "vencimiento",
-                    cand,
-                    formatter=_format_fecha_vencimiento,
-                    path=path,
-                    value_type=value_type,
-                    raw_value=raw_cand,
-                )
-            reg_match = re.search(
-                r"(?i)reg(?:istro)?(?:\s*(?:san(?:itario)?|san\.?|sanit\.?))?\s*[:=]\s*([^|,;\n]+)",
-                text,
-            )
-            if reg_match:
-                _assign("registro", reg_match.group(1).strip(), path=path, value_type=value_type)
-
-            if not metadata.get("vencimiento"):
-                unlabeled = re.findall(r"\b(?:\d{4}[\\/.-]\d{1,2}|\d{1,2}[\\/.-]\d{1,2}[\\/.-]\d{2,4})\b", text)
-                for match_value in unlabeled:
-                    _assign(
-                        "vencimiento",
-                        match_value,
-                        formatter=_format_fecha_vencimiento,
-                        path=path,
-                        value_type=value_type,
-                    )
-
-        def _traverse(obj, flags: frozenset[str] = frozenset(), path: tuple[str, ...] = ()): 
-            if obj is None:
-                return
-            if isinstance(obj, (bytes, bytearray)):
-                try:
-                    obj = obj.decode("utf-8")
-                except Exception:
-                    return
-
-            if isinstance(obj, str):
-                stripped = obj.strip()
-                if not stripped:
-                    return
-                parsed_json = _parse_json_value(stripped)
-                if parsed_json is not None and parsed_json is not obj:
-                    _traverse(parsed_json, flags, path)
-                    return
-                _parse_pattern_text(stripped, path=path, value_type="str")
-                return
-
-            if isinstance(obj, list):
-                for idx, item in enumerate(obj):
-                    _traverse(item, flags, path + (f"[{idx}]",))
-                return
-
-            if not isinstance(obj, dict):
-                return
-
-            for key, value in obj.items():
-                key_lower = str(key).lower()
-                key_compact = re.sub(r"[^a-z0-9]", "", key_lower)
-                next_flags = set(flags)
-                canonical_key = alias_lookup.get(key_lower) or alias_compact_lookup.get(key_compact)
-
-                is_lote_key = bool(re.search(r"lote(?![a-z])", key_lower)) or canonical_key == "lote"
-                if is_lote_key:
-                    if key_compact.endswith("id") or key_compact in {"idlote", "loteid"}:
-                        is_lote_key = False
-                if is_lote_key:
-                    next_flags.add("lote")
-                if canonical_key == "vencimiento" or any(
-                    token in key_lower or token in key_compact for token in date_tokens
-                ):
-                    next_flags.add("vencimiento")
-                if canonical_key == "registro" or ("registro" in key_lower and "san" in key_lower):
-                    next_flags.add("registro")
-
-                if isinstance(value, dict) and "$date" in value:
-                    raw = value["$date"]
-                    parsed = _format_fecha_vencimiento(
-                        str(raw),
-                        path=path + (str(key), "$date"),
-                        value_type=type(raw).__name__,
-                    )
-                    if parsed:
-                        _assign(
-                            "vencimiento",
-                            str(raw),
-                            formatter=lambda *_args, **_kwargs: parsed,
-                            path=path + (str(key), "$date"),
-                            value_type=type(raw).__name__,
-                        )
-                    _traverse(value, frozenset(next_flags), path + (str(key),))
-                    continue
-
-                if isinstance(value, (dict, list)):
-                    _traverse(value, frozenset(next_flags), path + (str(key),))
-                    continue
-
-                if isinstance(value, (bytes, bytearray)):
-                    try:
-                        value = value.decode("utf-8")
-                    except Exception:
-                        continue
-
-                parsed_nested = _parse_json_value(value)
-                if parsed_nested is not None and parsed_nested is not value:
-                    _traverse(parsed_nested, frozenset(next_flags), path + (str(key),))
-                    continue
-
-                text = _normalize_text(value)
-                if not text:
-                    continue
-
-                assign_lote = is_lote_key or "lote" in next_flags or canonical_key == "lote"
-                assign_venc = (
-                    canonical_key == "vencimiento"
-                    or any(token in key_lower or token in key_compact for token in date_tokens)
-                    or "vencimiento" in next_flags
-                )
-                assign_registro = (
-                    canonical_key == "registro"
-                    or ("registro" in key_lower and "san" in key_lower)
-                    or "registro" in next_flags
-                )
-
-                if assign_lote:
-                    _assign("lote", text, path=path + (str(key),), value_type=type(value).__name__)
-                if assign_venc:
-                    _assign(
-                        "vencimiento",
-                        text,
-                        formatter=_format_fecha_vencimiento,
-                        path=path + (str(key),),
-                        value_type=type(value).__name__,
-                    )
-                if assign_registro:
-                    _assign("registro", text, path=path + (str(key),), value_type=type(value).__name__)
-
-                _parse_pattern_text(text, path=path + (str(key),), value_type=type(value).__name__)
-
-        for source in sources:
-            source_label = None
-            source_value = source
-            if isinstance(source, tuple) and len(source) == 2:
-                source_label, source_value = source
-            path_prefix: tuple[str, ...] = ()
-            if source_label:
-                path_prefix = (str(source_label),)
-            _traverse(source_value, frozenset(), path_prefix)
-
-        return metadata, diag
-
-    row_groups: list[list[tuple[list, bool, str | None]]] = []
+    row_groups: list[list[tuple[list, bool]]] = []
     for idx, d in enumerate(detalles):
         cantidad = Decimal(str(d.get("cantidad") or 0))
         precio_unitario = Decimal(str(d.get("precio_unitario") or 0))
@@ -1371,145 +760,11 @@ def generar_factura_electronica_pdf(
             descripcion_col_width,
         )
 
-        extra_raw = d.get("extra")
-        extra_data = _parse_json_value(extra_raw)
-
-        parsed_extra_preview = None
-        if extra_data is not None:
-            try:
-                parsed_extra_preview = json.dumps(extra_data, ensure_ascii=False)
-            except (TypeError, ValueError):
-                parsed_extra_preview = repr(extra_data)
-
-        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "[meta:trace] detalle %d extra raw type=%s preview=%s",
-                idx,
-                type(extra_raw).__name__,
-                (repr(extra_raw)[:200] if extra_raw is not None else "<none>"),
-            )
-            if parsed_extra_preview is not None:
-                logger.debug(
-                    "[meta:trace] detalle %d extra parsed type=%s preview=%s",
-                    idx,
-                    type(extra_data).__name__,
-                    parsed_extra_preview[:200],
-                )
-
-        metadata, metadata_diag = _collect_item_metadata(
-            (f"detalles[{idx}]", d),
-            (f"detalles[{idx}].extra_parsed", extra_data),
-            (f"detalles[{idx}].extra", extra_raw),
-        )
-        if logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "[meta] detalle '%s' -> %s | extra=%r",
-                d.get("descripcion", ""),
-                metadata,
-                d.get("extra"),
-            )
-        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-            logger.debug(
-                "[meta:trace] detalle %d diag=%s",
-                idx,
-                {
-                    "where": metadata_diag.get("where_found"),
-                    "raw": metadata_diag.get("raw_value"),
-                    "norm": metadata_diag.get("normalized_value"),
-                    "candidates": metadata_diag.get("all_candidates"),
-                },
-            )
-        where_found = metadata_diag.get("where_found")
-        raw_venc = metadata_diag.get("raw_value")
-        candidates_list = metadata_diag.setdefault("all_candidates", [])
-        blob_match = metadata_diag.get("blob_first_match")
-
-        if not metadata.get("vencimiento"):
-            blob_sources: list[str] = []
-            descripcion_src = d.get("descripcion")
-            if isinstance(descripcion_src, str) and descripcion_src.strip():
-                blob_sources.append(descripcion_src)
-            if isinstance(extra_raw, (bytes, bytearray)):
-                try:
-                    extra_text = extra_raw.decode("utf-8", errors="ignore")
-                except Exception:
-                    extra_text = ""
-                if extra_text:
-                    blob_sources.append(extra_text)
-            elif isinstance(extra_raw, str) and extra_raw.strip():
-                blob_sources.append(extra_raw)
-            if extra_data is not None:
-                try:
-                    blob_sources.append(json.dumps(extra_data, ensure_ascii=False))
-                except (TypeError, ValueError):
-                    blob_sources.append(str(extra_data))
-            blob_text = " | ".join(part for part in blob_sources if part)
-            if blob_text:
-                raw_candidate = None
-                raw_candidate_original = None
-                for match in blob_tagged_pattern.finditer(blob_text):
-                    candidate_val = match.group(2)
-                    cleaned_candidate = _clean_venc_candidate_text(candidate_val)
-                    if cleaned_candidate and any(ch.isdigit() for ch in cleaned_candidate):
-                        blob_match = match.group(0)
-                        raw_candidate = cleaned_candidate
-                        raw_candidate_original = candidate_val
-                        break
-                if raw_candidate is None:
-                    plain_match = blob_plain_date_pattern.search(blob_text)
-                    if plain_match:
-                        blob_match = plain_match.group(0)
-                        raw_candidate = plain_match.group(0)
-                        raw_candidate_original = plain_match.group(0)
-                if raw_candidate:
-                    candidates_list.append(raw_candidate)
-                    normalized_blob = _format_fecha_vencimiento(
-                        raw_candidate,
-                        path=("blob",),
-                        value_type="str",
-                    )
-                    if trace_enabled and logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(
-                            "[meta:trace] blob candidate detalle %d raw=%r normalized=%r",
-                            idx,
-                            raw_candidate,
-                            normalized_blob,
-                        )
-                    if normalized_blob:
-                        metadata["vencimiento"] = normalized_blob
-                        metadata_diag["normalized_value"] = normalized_blob
-                    elif force_raw_venc:
-                        metadata["vencimiento"] = raw_candidate_original or raw_candidate
-                    else:
-                        metadata["vencimiento"] = raw_candidate
-                    if raw_candidate:
-                        raw_venc = raw_candidate_original or raw_candidate
-                        metadata_diag["raw_value"] = raw_candidate_original or raw_candidate
-                    if not where_found:
-                        where_found = f"detalles[{idx}].blob"
-                        metadata_diag["where_found"] = where_found
-                    metadata_diag["blob_first_match"] = blob_match
+        metadata = _metadata_desde_inventario(d)
 
         lote_val = metadata.get("lote")
         venc_val = metadata.get("vencimiento")
         registro_val = metadata.get("registro")
-
-        if metadata_diag.get("normalized_value") is None and venc_val and re.fullmatch(r"\d{2}/\d{2}/\d{4}", str(venc_val)):
-            metadata_diag["normalized_value"] = venc_val
-
-        extra_raw_type = type(extra_raw).__name__
-        if isinstance(extra_raw, (bytes, bytearray)):
-            try:
-                extra_preview_text = extra_raw.decode("utf-8", errors="ignore")
-            except Exception:
-                extra_preview_text = repr(extra_raw)
-        elif isinstance(extra_raw, str):
-            extra_preview_text = extra_raw
-        elif extra_raw is None:
-            extra_preview_text = ""
-        else:
-            extra_preview_text = str(extra_raw)
-        extra_raw_preview = extra_preview_text[:200]
 
         meta_segments = []
         if lote_val:
@@ -1518,8 +773,6 @@ def generar_factura_electronica_pdf(
             meta_segments.append(f"Vencimiento: {venc_val}")
         if registro_val:
             meta_segments.append(f"Registro Sanitario: {registro_val}")
-
-        meta_text = "   ".join(meta_segments)
 
         descripcion_html = escape(descripcion)
         descripcion_cell = Paragraph(descripcion_html, descripcion_style)
@@ -1545,47 +798,21 @@ def generar_factura_electronica_pdf(
             ]
         )
 
-        overlay_text = None
-        if trace_enabled:
-            overlay_parts = [f"Lote={lote_val or '-'}"]
-            overlay_venc = venc_val or raw_venc or "-"
-            overlay_parts.append(f"Venc={overlay_venc}")
-            if where_found:
-                overlay_parts.append(f"path={where_found}")
-            if registro_val:
-                overlay_parts.append(f"Reg={registro_val}")
-            overlay_text = "TRACE: " + "  ".join(overlay_parts)
+        group_rows: list[tuple[list, bool]] = [(fila, False)]
 
-        group_rows: list[tuple[list, bool, str | None]] = [(fila, False, overlay_text)]
-
-        if meta_text:
+        if meta_segments:
             meta_html_segments = [escape(segment) for segment in meta_segments]
             meta_html = "&nbsp;&nbsp;&nbsp;".join(meta_html_segments)
             meta_cell = Paragraph(meta_html, meta_paragraph_style)
             meta_row = [""] * len(tabla_columnas)
-            meta_row[descripcion_col_idx] = meta_cell
-            group_rows.append((meta_row, True, None))
-
+            meta_row[0] = meta_cell
+            group_rows.append((meta_row, True))
             if logger.isEnabledFor(logging.DEBUG) and venc_val:
                 logger.debug(
                     "Detalle '%s' vencimiento detectado: %s",
                     descripcion,
                     venc_val,
                 )
-
-        tracer.add_row(
-            {
-                "index": idx,
-                "descripcion": d.get("descripcion"),
-                "extra_raw_type": extra_raw_type,
-                "extra_raw_preview": extra_raw_preview,
-                "where_found": where_found or None,
-                "raw_value": raw_venc or None,
-                "normalized_value": metadata_diag.get("normalized_value") or None,
-                "blob_first_match": blob_match or None,
-                "all_candidates": list(candidates_list),
-            }
-        )
 
         row_groups.append(group_rows)
 
@@ -1619,76 +846,76 @@ def generar_factura_electronica_pdf(
     x_linea = bloque_totales_x + columna_totales_w
 
     def build_table(rows_subset):
-        data_rows = [row for row, _, _ in rows_subset]
+        data_rows = [row for row, _ in rows_subset]
         data = [header_row] + data_rows
         table = Table(data, colWidths=col_widths, repeatRows=1)
         commands = list(base_style_commands)
-        for idx, (_, is_meta, _) in enumerate(rows_subset, start=1):
+        for idx, (_, is_meta) in enumerate(rows_subset, start=1):
             if is_meta:
                 commands.extend([
                     (
                         'SPAN',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                     ),
                     (
                         'FONTNAME',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         body_fontname,
                     ),
                     (
                         'FONTSIZE',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         meta_fontsize,
                     ),
                     (
                         'TEXTCOLOR',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         meta_text_color,
                     ),
                     (
                         'ALIGN',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         'LEFT',
                     ),
                     (
                         'LEFTPADDING',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
-                        table_padding + 2,
+                        table_padding + descripcion_left_offset + 2,
                     ),
                     (
                         'RIGHTPADDING',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         table_padding,
                     ),
                     (
                         'LINEABOVE',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         0.4,
                         colors.HexColor("#d0d0d0"),
                     ),
                     (
                         'TOPPADDING',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         max(table_padding - 3, 2),
                     ),
                     (
                         'BOTTOMPADDING',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         max(table_padding - 2, 2),
                     ),
                     (
                         'VALIGN',
-                        (descripcion_col_idx, idx),
+                        (0, idx),
                         (-1, idx),
                         'TOP',
                     ),
@@ -1704,7 +931,7 @@ def generar_factura_electronica_pdf(
     def groups_that_fit(max_height, groups):
         if max_height <= 0:
             return 0
-        included_rows: list[tuple[list, bool, str | None]] = []
+        included_rows: list[tuple[list, bool]] = []
         count = 0
         for group in groups:
             test_rows = included_rows + group
@@ -1754,23 +981,6 @@ def generar_factura_electronica_pdf(
         table = build_table(rows_chunk)
         _, table_height_used = table.wrapOn(c, width, height)
         table.drawOn(c, tabla_x, tabla_y - table_height_used)
-        if trace_enabled:
-            row_heights = getattr(table, "_rowHeights", None)
-            if row_heights:
-                y_cursor = tabla_y - row_heights[0]
-                x_right = tabla_x + sum(col_widths) - table_padding
-                for idx_table, (_, is_meta, overlay) in enumerate(rows_chunk, start=1):
-                    row_height = row_heights[idx_table]
-                    row_bottom = y_cursor - row_height
-                    y_cursor = row_bottom
-                    if not overlay or is_meta:
-                        continue
-                    c.saveState()
-                    c.setFillGray(0.5)
-                    c.setFont("Helvetica", 6)
-                    text_y = max(row_bottom + 2, row_bottom + row_height * 0.2)
-                    c.drawRightString(x_right, text_y, overlay)
-                    c.restoreState()
         current_bottom = tabla_y - table_height_used
 
         if page_index == total_pages - 1:
@@ -1873,8 +1083,6 @@ def generar_factura_electronica_pdf(
 
         c.setFont("Helvetica", 8)
         c.drawCentredString(width / 2, 20, f"Página {page_index + 1} de {total_pages}")
-
-    tracer.dump()
 
     c.save()
 

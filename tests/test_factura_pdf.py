@@ -135,8 +135,7 @@ def test_consumidor_final_pdf_omits_iva_column(tmp_path):
     assert '0.65' not in text
 
 
-@pytest.mark.parametrize('tipo_documento', ['Crédito Fiscal', 'Consumidor Final'])
-def test_factura_metadata_row_includes_lote_vencimiento_registro(tmp_path, tipo_documento):
+def test_factura_pdf_metadata_uses_inventory_provider(tmp_path, monkeypatch):
     venta = {
         'sumas': 10,
         'descuentos': 0,
@@ -156,101 +155,29 @@ def test_factura_metadata_row_includes_lote_vencimiento_registro(tmp_path, tipo_
             'ventas_exentas': 0,
             'ventas_gravadas': 10,
             'iva': 1.3,
-            'extra': 'Lote: L-001 | Vence: 2025-11-30 | Registro Sanitario: RS-009',
+            'extra': {
+                'lote_id': 4227,
+                'producto_id': 8584,
+                'codigo_lote': 'j89j989j8',
+                'registro_sanitario': 'nu898',
+            },
         }
     ]
 
-    salida = tmp_path / f'metadata_{tipo_documento.replace(" ", "_").lower()}.pdf'
-    generar_factura_electronica_pdf(
-        venta,
-        detalles,
-        {},
-        {},
-        tipo_documento,
-        archivo=str(salida),
-        datos_negocio={},
-        codigo_generacion=str(uuid.uuid4()),
-        numero_control=uuid.uuid4().hex[:8].upper(),
-        fecha_generacion="01/01/2024",
-        sello_recepcion='0' * 40,
-    )
+    captured_kwargs = {}
 
-    with fitz.open(salida) as doc:
-        texto = ''.join(pagina.get_text() for pagina in doc)
-
-    texto_normalizado = ' '.join(texto.split())
-    assert (
-        'Medicamento con lote Lote: L-001 Vencimiento: 30/11/2025 Registro Sanitario: RS-009'
-        in texto_normalizado
-    )
-
-
-@pytest.mark.parametrize(
-    'extra_value',
-    [
-        pytest.param(
-            {
-                'lote': 'L-001',
-                'fecha_vencimiento': '2025-11-30',
-                'registro_sanitario': 'RS-009',
-            },
-            id='dict',
-        ),
-        pytest.param(
-            '{"lote": "L-001", "fecha_vencimiento": "2025-11-30", "registro_sanitario": "RS-009"}',
-            id='json-string',
-        ),
-        pytest.param(
-            "{'lote': 'L-001', 'fecha_vencimiento': '2025-11-30T00:00:00', 'registro_sanitario': 'RS-009'}",
-            id='python-repr',
-        ),
-        pytest.param(
-            '{"lotes": [{"lote": "L-001", "codigo": "ALT-01", "fechaVencimiento": "2025/11/30", "registroSanitario": "RS-009"}]}',
-            id='nested',
-        ),
-        pytest.param(
-            'Lote: L-001 VTO: 30-11-2025 Registro Sanitario: RS-009',
-            id='vto-abbrev',
-        ),
-        pytest.param(
-            'Lote: L-001 F.V.: 30.11.2025 Registro Sanitario: RS-009',
-            id='fv-abbrev',
-        ),
-        pytest.param(
-            {
-                'lote': 'L-001',
-                'F.V.': '30/11/2025',
-                'registro_sanitario': 'RS-009',
-            },
-            id='fv-dict',
-        ),
-    ],
-)
-def test_factura_metadata_row_detects_fecha_in_structured_extra(tmp_path, extra_value):
-    venta = {
-        'sumas': 10,
-        'descuentos': 0,
-        'subtotal': 10,
-        'iva': 1.3,
-        'total': 11.3,
-        'ventas_exentas': 0,
-        'ventas_no_sujetas': 0,
-        'total_letras': '',
-    }
-    detalles = [
-        {
-            'cantidad': 1,
-            'descripcion': 'Medicamento con lote',
-            'precio_unitario': 10,
-            'ventas_no_sujetas': 0,
-            'ventas_exentas': 0,
-            'ventas_gravadas': 10,
-            'iva': 1.3,
-            'extra': extra_value,
+    def fake_obtener_info_lote(**kwargs):
+        captured_kwargs.update(kwargs)
+        return {
+            'lote': 'j89j989j8',
+            'vencimiento': '2025-12-31',
+            'registro': 'nu898',
         }
-    ]
 
-    salida = tmp_path / 'metadata_extra.pdf'
+    monkeypatch.setattr('factura_sv.obtener_info_lote', fake_obtener_info_lote)
+    monkeypatch.setattr('factura_sv.formatear_fecha_vencimiento_ui', lambda value: '31/12/2025')
+
+    salida = tmp_path / 'metadata_provider.pdf'
     generar_factura_electronica_pdf(
         venta,
         detalles,
@@ -269,10 +196,16 @@ def test_factura_metadata_row_detects_fecha_in_structured_extra(tmp_path, extra_
         texto = ''.join(pagina.get_text() for pagina in doc)
 
     texto_normalizado = ' '.join(texto.split())
+    assert 'TRACE:' not in texto
     assert (
-        'Medicamento con lote Lote: L-001 Vencimiento: 30/11/2025 Registro Sanitario: RS-009'
+        'Medicamento con lote Lote: j89j989j8 Vencimiento: 31/12/2025 Registro Sanitario: nu898'
         in texto_normalizado
     )
+    assert captured_kwargs == {
+        'lote_id': 4227,
+        'codigo_lote': 'j89j989j8',
+        'producto_id': 8584,
+    }
 
 
 def test_credito_fiscal_pdf_shows_venta_a_cuenta(tmp_path):

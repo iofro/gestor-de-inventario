@@ -25,6 +25,26 @@ from utils import resource_path
 from xml.sax.saxutils import escape
 
 
+class _MetaTracer:
+    def __init__(self, enabled: bool):
+        self.enabled = enabled
+        self.rows = []
+
+    def add_row(self, row):
+        if not self.enabled:
+            return
+        self.rows.append(row)
+
+    def dump(self, path="./.debug/pdf_meta_items.json"):
+        if not self.enabled:
+            return
+        import os, json
+
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(self.rows, f, ensure_ascii=False, indent=2)
+
+
 def build_qr_url(dte: dict) -> str:
     """Return the public consultation URL for a DTE."""
 
@@ -115,6 +135,10 @@ def generar_factura_electronica_pdf(
     doc_relacionado: dict | None = None,
     motivo: str | None = None,
 ):
+
+    trace_enabled = os.environ.get("PDF_META_TRACE") == "1"
+    force_raw_venc = os.environ.get("PDF_META_FORCE_RAW_VENC") == "1"
+    tracer = _MetaTracer(enabled=os.environ.get("PDF_META_DUMP") == "1")
 
     if os.environ.get("PDF_META_DEBUG") == "1":
         if not logging.getLogger().handlers:
@@ -623,6 +647,11 @@ def generar_factura_electronica_pdf(
 
     logger = logging.getLogger(__name__)
 
+    blob_tagged_pattern = re.compile(
+        r"(?i)\b(venc(?:e|imiento)?|caduc(?:a|idad)?|exp(?:iry|iraci[oó]n)?|fv|vto)\b\s*[:=\-]?\s*([0-9A-Za-z./_-]{2,20})"
+    )
+    blob_plain_date_pattern = re.compile(r"\b20\d{2}[-/]\d{1,2}[-/]\d{1,2}\b")
+
     def _normalize_text(value):
         if value is None:
             return None
@@ -630,6 +659,29 @@ def generar_factura_electronica_pdf(
             text = value.strip()
             return text or None
         return str(value)
+
+    def _clean_venc_candidate_text(candidate: str | None) -> str | None:
+        if not candidate:
+            return candidate
+        cleaned = candidate.strip()
+        if not cleaned:
+            return cleaned
+        cleaned = re.sub(r"^[\s:=\-]+", "", cleaned)
+        cleaned = re.sub(r"^(?:[A-Za-z]{1,6})\s*[:=]\s*(?=[0-9])", "", cleaned)
+        leftover_tokens = ("iry", "ry", "y", "miento", "imiento", "cion", "ción")
+        for token in leftover_tokens:
+            cleaned = re.sub(
+                rf"^(?:{token})\s*[:=\-]?\s*(?=[0-9])",
+                "",
+                cleaned,
+                flags=re.IGNORECASE,
+            )
+        return cleaned.strip()
+
+    def _format_path(path: tuple[str, ...] | None) -> str:
+        if not path:
+            return "<root>"
+        return ".".join(path)
 
     def _parse_json_value(raw_value):
         if raw_value in (None, ""):
@@ -658,15 +710,29 @@ def generar_factura_electronica_pdf(
                 return parsed
         return None
 
-    def _format_fecha_vencimiento(value):
+    def _format_fecha_vencimiento(value, *, path: tuple[str, ...] | None = None, value_type: str | None = None):
         text = _normalize_text(value)
         if not text:
+            if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "[meta:trace] normalize skip empty candidate path=%s type=%s",
+                    _format_path(path),
+                    value_type,
+                )
             return None
 
         base = text.strip()
         if "T" in base:
             base = base.split("T", 1)[0]
         base = base.strip()
+
+        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "[meta:trace] normalize candidate path=%s type=%s raw=%r",
+                _format_path(path),
+                value_type,
+                base,
+            )
 
         label_pattern = re.compile(
             r"(?i)\b(?:fecha\s*(?:de)?\s*)?(?:venc(?:imiento)?|vence|vto|f\s*\.?\s*v\.?|fv|caduc(?:idad|a)?|expir(?:a|aci\u00f3n)?)\b"
@@ -885,7 +951,7 @@ def generar_factura_electronica_pdf(
                 except Exception:
                     pass
 
-        m_ym = re.search(r"\b(\d{4})[\/-\.](\d{1,2})\b", cleaned)
+        m_ym = re.search(r"\b(\d{4})[\\/.-](\d{1,2})\b", cleaned)
         if m_ym:
             y, mo = int(m_ym.group(1)), int(m_ym.group(2))
             if 1 <= mo <= 12:
@@ -931,17 +997,39 @@ def generar_factura_electronica_pdf(
                     return datetime(y, mo, 1).strftime("%d/%m/%Y")
             except Exception:
                 pass
+            try:
+                yy, mo = int(raw[0:2]), int(raw[2:4])
+                if 1 <= mo <= 12:
+                    y = 2000 + yy if yy < 100 else yy
+                    return datetime(y, mo, 1).strftime("%d/%m/%Y")
+            except Exception:
+                pass
 
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug("[meta] no parse match, devuelvo crudo: %r", text)
 
-        return text
+        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "[meta:trace] normalize result path=%s -> %r",
+                _format_path(path),
+                None,
+            )
+
+        return None
 
     def _collect_item_metadata(*sources):
         metadata: dict[str, str | None] = {
             "lote": None,
             "vencimiento": None,
             "registro": None,
+        }
+
+        diag: dict[str, object] = {
+            "where_found": None,
+            "raw_value": None,
+            "normalized_value": None,
+            "all_candidates": [],
+            "blob_first_match": None,
         }
 
         date_tokens = ("venc", "caduc", "expir", "vence", "vto", "fv")
@@ -980,13 +1068,44 @@ def generar_factura_electronica_pdf(
                 alias_lookup[alias_norm] = canonical
                 alias_compact_lookup[re.sub(r"[^a-z0-9]", "", alias_norm)] = canonical
 
-        def _assign(field: str, value: str, *, formatter=None):
+        def _register_venc_candidate(
+            path: tuple[str, ...] | None,
+            raw: str,
+            normalized: str | None,
+            value_type: str | None,
+        ):
+            if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "[meta:trace] venc candidate path=%s type=%s raw=%r normalized=%r",
+                    _format_path(path),
+                    value_type,
+                    raw,
+                    normalized,
+                )
+            candidates = diag.setdefault("all_candidates", [])
+            candidates.append(raw)
+            if not diag.get("where_found") and path:
+                diag["where_found"] = _format_path(path)
+            diag["raw_value"] = raw
+            if normalized:
+                diag["normalized_value"] = normalized
+
+        def _assign(
+            field: str,
+            value: str,
+            *,
+            formatter=None,
+            path: tuple[str, ...] | None = None,
+            value_type: str | None = None,
+            raw_value: str | None = None,
+        ):
             text = _normalize_text(value)
             if not text:
                 return
+            original_text = text
             formatted = None
             if formatter is not None:
-                formatted = formatter(text)
+                formatted = formatter(text, path=path, value_type=value_type)
                 if formatted:
                     text = formatted
             if logger.isEnabledFor(logging.DEBUG):
@@ -996,6 +1115,15 @@ def generar_factura_electronica_pdf(
                     value,
                     (formatted if formatter else None),
                 )
+            if field == "vencimiento":
+                raw_for_register = raw_value if raw_value is not None else original_text
+                _register_venc_candidate(path, raw_for_register, formatted, value_type)
+                if formatted:
+                    text = formatted
+                elif force_raw_venc:
+                    text = raw_for_register or text
+                else:
+                    text = formatted or text
             existing = metadata[field]
             if existing:
                 if existing == text:
@@ -1008,12 +1136,12 @@ def generar_factura_electronica_pdf(
             else:
                 metadata[field] = text
 
-        def _parse_pattern_text(text: str):
+        def _parse_pattern_text(text: str, *, path: tuple[str, ...] | None, value_type: str | None):
             if not text:
                 return
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug("[meta] pattern probe: %r", text)
-            venc_label_core = r"f\s*\.?\s*v\.?|fv|vto|venc(?:\.|imiento)?|vence(?:\s*el)?|expir(?:a|aci\u00f3n)?|caduc(?:a|idad)?"
+            venc_label_core = r"f\s*\.?\s*v\.?|fv|vto|venc(?:\.|imiento)?|vence(?:\s*el)?|exp(?:iry|ir(?:a|aci\u00f3n)?)|caduc(?:a|idad)?"
             lot_match = re.search(r"(?i)\b(?:lote|batch)\b\s*[:=]\s*([^|,;\n]+)", text)
             if lot_match:
                 lot_val = lot_match.group(1).strip()
@@ -1023,16 +1151,23 @@ def generar_factura_electronica_pdf(
                     maxsplit=1,
                 )[0].strip(" :")
                 if lot_val:
-                    _assign("lote", lot_val)
-            venc_label = rf"(?i)(?:{venc_label_core})"
+                    _assign("lote", lot_val, path=path, value_type=value_type)
+            venc_label = rf"(?i)\b(?:{venc_label_core})\b"
 
             m = re.search(venc_label + r"\s*[:=\-]?\s*([^\|,;\n]+)", text)
             if m:
                 cand = m.group(1).strip()
                 cand = re.split(r"(?i)\b(lote|reg(?:istro)?(?:\s*san(?:itario)?)?)\b", cand, maxsplit=1)[0].strip(" :.-")
-                norm = _format_fecha_vencimiento(cand)
-                if norm:
-                    _assign("vencimiento", norm)
+                raw_cand = cand
+                cand = _clean_venc_candidate_text(cand) or cand
+                _assign(
+                    "vencimiento",
+                    cand,
+                    formatter=_format_fecha_vencimiento,
+                    path=path,
+                    value_type=value_type,
+                    raw_value=raw_cand,
+                )
 
             if not metadata.get("vencimiento"):
                 m_compact = re.search(
@@ -1040,30 +1175,64 @@ def generar_factura_electronica_pdf(
                     text,
                 )
                 if m_compact:
-                    norm = _format_fecha_vencimiento(m_compact.group(1))
-                    if norm:
-                        _assign("vencimiento", norm)
+                    raw_cand = m_compact.group(1)
+                    cand = _clean_venc_candidate_text(raw_cand) or raw_cand
+                    _assign(
+                        "vencimiento",
+                        cand,
+                        formatter=_format_fecha_vencimiento,
+                        path=path,
+                        value_type=value_type,
+                        raw_value=raw_cand,
+                    )
 
             if not metadata.get("vencimiento"):
                 m2 = re.search(venc_label + r".{0,10}\b(\d{6}|\d{8}|\d{10}|\d{13})\b", text)
                 if m2:
-                    norm = _format_fecha_vencimiento(m2.group(1))
-                    if norm:
-                        _assign("vencimiento", norm)
+                    raw_cand = m2.group(1)
+                    cand = _clean_venc_candidate_text(raw_cand) or raw_cand
+                    _assign(
+                        "vencimiento",
+                        cand,
+                        formatter=_format_fecha_vencimiento,
+                        path=path,
+                        value_type=value_type,
+                        raw_value=raw_cand,
+                    )
             fecha_key_match = re.search(
                 r"(?i)fecha[\s_]*venc(?:imiento)?[\s\"']*[:=]\s*[\"']?([^\"'|,;\n]+)",
                 text,
             )
             if fecha_key_match:
-                _assign("vencimiento", fecha_key_match.group(1).strip(), formatter=_format_fecha_vencimiento)
+                raw_cand = fecha_key_match.group(1).strip()
+                cand = _clean_venc_candidate_text(raw_cand) or raw_cand
+                _assign(
+                    "vencimiento",
+                    cand,
+                    formatter=_format_fecha_vencimiento,
+                    path=path,
+                    value_type=value_type,
+                    raw_value=raw_cand,
+                )
             reg_match = re.search(
                 r"(?i)reg(?:istro)?(?:\s*(?:san(?:itario)?|san\.?|sanit\.?))?\s*[:=]\s*([^|,;\n]+)",
                 text,
             )
             if reg_match:
-                _assign("registro", reg_match.group(1).strip())
+                _assign("registro", reg_match.group(1).strip(), path=path, value_type=value_type)
 
-        def _traverse(obj, flags: frozenset[str] = frozenset()):
+            if not metadata.get("vencimiento"):
+                unlabeled = re.findall(r"\b(?:\d{4}[\\/.-]\d{1,2}|\d{1,2}[\\/.-]\d{1,2}[\\/.-]\d{2,4})\b", text)
+                for match_value in unlabeled:
+                    _assign(
+                        "vencimiento",
+                        match_value,
+                        formatter=_format_fecha_vencimiento,
+                        path=path,
+                        value_type=value_type,
+                    )
+
+        def _traverse(obj, flags: frozenset[str] = frozenset(), path: tuple[str, ...] = ()): 
             if obj is None:
                 return
             if isinstance(obj, (bytes, bytearray)):
@@ -1078,14 +1247,14 @@ def generar_factura_electronica_pdf(
                     return
                 parsed_json = _parse_json_value(stripped)
                 if parsed_json is not None and parsed_json is not obj:
-                    _traverse(parsed_json, flags)
+                    _traverse(parsed_json, flags, path)
                     return
-                _parse_pattern_text(stripped)
+                _parse_pattern_text(stripped, path=path, value_type="str")
                 return
 
             if isinstance(obj, list):
-                for item in obj:
-                    _traverse(item, flags)
+                for idx, item in enumerate(obj):
+                    _traverse(item, flags, path + (f"[{idx}]",))
                 return
 
             if not isinstance(obj, dict):
@@ -1112,14 +1281,24 @@ def generar_factura_electronica_pdf(
 
                 if isinstance(value, dict) and "$date" in value:
                     raw = value["$date"]
-                    parsed = _format_fecha_vencimiento(str(raw))
+                    parsed = _format_fecha_vencimiento(
+                        str(raw),
+                        path=path + (str(key), "$date"),
+                        value_type=type(raw).__name__,
+                    )
                     if parsed:
-                        _assign("vencimiento", parsed)
-                    _traverse(value, frozenset(next_flags))
+                        _assign(
+                            "vencimiento",
+                            str(raw),
+                            formatter=lambda *_args, **_kwargs: parsed,
+                            path=path + (str(key), "$date"),
+                            value_type=type(raw).__name__,
+                        )
+                    _traverse(value, frozenset(next_flags), path + (str(key),))
                     continue
 
                 if isinstance(value, (dict, list)):
-                    _traverse(value, frozenset(next_flags))
+                    _traverse(value, frozenset(next_flags), path + (str(key),))
                     continue
 
                 if isinstance(value, (bytes, bytearray)):
@@ -1130,7 +1309,7 @@ def generar_factura_electronica_pdf(
 
                 parsed_nested = _parse_json_value(value)
                 if parsed_nested is not None and parsed_nested is not value:
-                    _traverse(parsed_nested, frozenset(next_flags))
+                    _traverse(parsed_nested, frozenset(next_flags), path + (str(key),))
                     continue
 
                 text = _normalize_text(value)
@@ -1150,21 +1329,34 @@ def generar_factura_electronica_pdf(
                 )
 
                 if assign_lote:
-                    _assign("lote", text)
+                    _assign("lote", text, path=path + (str(key),), value_type=type(value).__name__)
                 if assign_venc:
-                    _assign("vencimiento", text, formatter=_format_fecha_vencimiento)
+                    _assign(
+                        "vencimiento",
+                        text,
+                        formatter=_format_fecha_vencimiento,
+                        path=path + (str(key),),
+                        value_type=type(value).__name__,
+                    )
                 if assign_registro:
-                    _assign("registro", text)
+                    _assign("registro", text, path=path + (str(key),), value_type=type(value).__name__)
 
-                _parse_pattern_text(text)
+                _parse_pattern_text(text, path=path + (str(key),), value_type=type(value).__name__)
 
         for source in sources:
-            _traverse(source)
+            source_label = None
+            source_value = source
+            if isinstance(source, tuple) and len(source) == 2:
+                source_label, source_value = source
+            path_prefix: tuple[str, ...] = ()
+            if source_label:
+                path_prefix = (str(source_label),)
+            _traverse(source_value, frozenset(), path_prefix)
 
-        return metadata
+        return metadata, diag
 
-    row_groups: list[list[tuple[list, bool]]] = []
-    for d in detalles:
+    row_groups: list[list[tuple[list, bool, str | None]]] = []
+    for idx, d in enumerate(detalles):
         cantidad = Decimal(str(d.get("cantidad") or 0))
         precio_unitario = Decimal(str(d.get("precio_unitario") or 0))
         descuento = Decimal(str(d.get("descuento") or 0))
@@ -1182,7 +1374,33 @@ def generar_factura_electronica_pdf(
         extra_raw = d.get("extra")
         extra_data = _parse_json_value(extra_raw)
 
-        metadata = _collect_item_metadata(d, extra_data, extra_raw)
+        parsed_extra_preview = None
+        if extra_data is not None:
+            try:
+                parsed_extra_preview = json.dumps(extra_data, ensure_ascii=False)
+            except (TypeError, ValueError):
+                parsed_extra_preview = repr(extra_data)
+
+        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "[meta:trace] detalle %d extra raw type=%s preview=%s",
+                idx,
+                type(extra_raw).__name__,
+                (repr(extra_raw)[:200] if extra_raw is not None else "<none>"),
+            )
+            if parsed_extra_preview is not None:
+                logger.debug(
+                    "[meta:trace] detalle %d extra parsed type=%s preview=%s",
+                    idx,
+                    type(extra_data).__name__,
+                    parsed_extra_preview[:200],
+                )
+
+        metadata, metadata_diag = _collect_item_metadata(
+            (f"detalles[{idx}]", d),
+            (f"detalles[{idx}].extra_parsed", extra_data),
+            (f"detalles[{idx}].extra", extra_raw),
+        )
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(
                 "[meta] detalle '%s' -> %s | extra=%r",
@@ -1190,9 +1408,108 @@ def generar_factura_electronica_pdf(
                 metadata,
                 d.get("extra"),
             )
+        if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+            logger.debug(
+                "[meta:trace] detalle %d diag=%s",
+                idx,
+                {
+                    "where": metadata_diag.get("where_found"),
+                    "raw": metadata_diag.get("raw_value"),
+                    "norm": metadata_diag.get("normalized_value"),
+                    "candidates": metadata_diag.get("all_candidates"),
+                },
+            )
+        where_found = metadata_diag.get("where_found")
+        raw_venc = metadata_diag.get("raw_value")
+        candidates_list = metadata_diag.setdefault("all_candidates", [])
+        blob_match = metadata_diag.get("blob_first_match")
+
+        if not metadata.get("vencimiento"):
+            blob_sources: list[str] = []
+            descripcion_src = d.get("descripcion")
+            if isinstance(descripcion_src, str) and descripcion_src.strip():
+                blob_sources.append(descripcion_src)
+            if isinstance(extra_raw, (bytes, bytearray)):
+                try:
+                    extra_text = extra_raw.decode("utf-8", errors="ignore")
+                except Exception:
+                    extra_text = ""
+                if extra_text:
+                    blob_sources.append(extra_text)
+            elif isinstance(extra_raw, str) and extra_raw.strip():
+                blob_sources.append(extra_raw)
+            if extra_data is not None:
+                try:
+                    blob_sources.append(json.dumps(extra_data, ensure_ascii=False))
+                except (TypeError, ValueError):
+                    blob_sources.append(str(extra_data))
+            blob_text = " | ".join(part for part in blob_sources if part)
+            if blob_text:
+                raw_candidate = None
+                raw_candidate_original = None
+                for match in blob_tagged_pattern.finditer(blob_text):
+                    candidate_val = match.group(2)
+                    cleaned_candidate = _clean_venc_candidate_text(candidate_val)
+                    if cleaned_candidate and any(ch.isdigit() for ch in cleaned_candidate):
+                        blob_match = match.group(0)
+                        raw_candidate = cleaned_candidate
+                        raw_candidate_original = candidate_val
+                        break
+                if raw_candidate is None:
+                    plain_match = blob_plain_date_pattern.search(blob_text)
+                    if plain_match:
+                        blob_match = plain_match.group(0)
+                        raw_candidate = plain_match.group(0)
+                        raw_candidate_original = plain_match.group(0)
+                if raw_candidate:
+                    candidates_list.append(raw_candidate)
+                    normalized_blob = _format_fecha_vencimiento(
+                        raw_candidate,
+                        path=("blob",),
+                        value_type="str",
+                    )
+                    if trace_enabled and logger.isEnabledFor(logging.DEBUG):
+                        logger.debug(
+                            "[meta:trace] blob candidate detalle %d raw=%r normalized=%r",
+                            idx,
+                            raw_candidate,
+                            normalized_blob,
+                        )
+                    if normalized_blob:
+                        metadata["vencimiento"] = normalized_blob
+                        metadata_diag["normalized_value"] = normalized_blob
+                    elif force_raw_venc:
+                        metadata["vencimiento"] = raw_candidate_original or raw_candidate
+                    else:
+                        metadata["vencimiento"] = raw_candidate
+                    if raw_candidate:
+                        raw_venc = raw_candidate_original or raw_candidate
+                        metadata_diag["raw_value"] = raw_candidate_original or raw_candidate
+                    if not where_found:
+                        where_found = f"detalles[{idx}].blob"
+                        metadata_diag["where_found"] = where_found
+                    metadata_diag["blob_first_match"] = blob_match
+
         lote_val = metadata.get("lote")
         venc_val = metadata.get("vencimiento")
         registro_val = metadata.get("registro")
+
+        if metadata_diag.get("normalized_value") is None and venc_val and re.fullmatch(r"\d{2}/\d{2}/\d{4}", str(venc_val)):
+            metadata_diag["normalized_value"] = venc_val
+
+        extra_raw_type = type(extra_raw).__name__
+        if isinstance(extra_raw, (bytes, bytearray)):
+            try:
+                extra_preview_text = extra_raw.decode("utf-8", errors="ignore")
+            except Exception:
+                extra_preview_text = repr(extra_raw)
+        elif isinstance(extra_raw, str):
+            extra_preview_text = extra_raw
+        elif extra_raw is None:
+            extra_preview_text = ""
+        else:
+            extra_preview_text = str(extra_raw)
+        extra_raw_preview = extra_preview_text[:200]
 
         meta_segments = []
         if lote_val:
@@ -1228,14 +1545,25 @@ def generar_factura_electronica_pdf(
             ]
         )
 
-        group_rows: list[tuple[list, bool]] = [(fila, False)]
+        overlay_text = None
+        if trace_enabled:
+            overlay_parts = [f"Lote={lote_val or '-'}"]
+            overlay_venc = venc_val or raw_venc or "-"
+            overlay_parts.append(f"Venc={overlay_venc}")
+            if where_found:
+                overlay_parts.append(f"path={where_found}")
+            if registro_val:
+                overlay_parts.append(f"Reg={registro_val}")
+            overlay_text = "TRACE: " + "  ".join(overlay_parts)
+
+        group_rows: list[tuple[list, bool, str | None]] = [(fila, False, overlay_text)]
 
         if meta_text:
             meta_html_segments = [escape(segment) for segment in meta_segments]
             meta_html = "&nbsp;&nbsp;&nbsp;".join(meta_html_segments)
             meta_cell = Paragraph(meta_html, meta_paragraph_style)
             meta_row = [meta_cell] + [""] * (len(tabla_columnas) - 1)
-            group_rows.append((meta_row, True))
+            group_rows.append((meta_row, True, None))
 
             if logger.isEnabledFor(logging.DEBUG) and venc_val:
                 logger.debug(
@@ -1243,6 +1571,20 @@ def generar_factura_electronica_pdf(
                     descripcion,
                     venc_val,
                 )
+
+        tracer.add_row(
+            {
+                "index": idx,
+                "descripcion": d.get("descripcion"),
+                "extra_raw_type": extra_raw_type,
+                "extra_raw_preview": extra_raw_preview,
+                "where_found": where_found or None,
+                "raw_value": raw_venc or None,
+                "normalized_value": metadata_diag.get("normalized_value") or None,
+                "blob_first_match": blob_match or None,
+                "all_candidates": list(candidates_list),
+            }
+        )
 
         row_groups.append(group_rows)
 
@@ -1276,11 +1618,11 @@ def generar_factura_electronica_pdf(
     x_linea = bloque_totales_x + columna_totales_w
 
     def build_table(rows_subset):
-        data_rows = [row for row, _ in rows_subset]
+        data_rows = [row for row, _, _ in rows_subset]
         data = [header_row] + data_rows
         table = Table(data, colWidths=col_widths, repeatRows=1)
         commands = list(base_style_commands)
-        for idx, (_, is_meta) in enumerate(rows_subset, start=1):
+        for idx, (_, is_meta, _) in enumerate(rows_subset, start=1):
             if is_meta:
                 commands.extend([
                     ('SPAN', (0, idx), (-1, idx)),
@@ -1306,7 +1648,7 @@ def generar_factura_electronica_pdf(
     def groups_that_fit(max_height, groups):
         if max_height <= 0:
             return 0
-        included_rows: list[tuple[list, bool]] = []
+        included_rows: list[tuple[list, bool, str | None]] = []
         count = 0
         for group in groups:
             test_rows = included_rows + group
@@ -1323,7 +1665,7 @@ def generar_factura_electronica_pdf(
     available_height_standard = max(available_height_standard, 0)
 
     remaining_groups = [group[:] for group in row_groups]
-    table_pages_groups: list[list[tuple[list, bool]]] = []
+    table_pages_groups: list[list[tuple[list, bool, str | None]]] = []
 
     while remaining_groups:
         flat_remaining = [row for group in remaining_groups for row in group]
@@ -1356,6 +1698,23 @@ def generar_factura_electronica_pdf(
         table = build_table(rows_chunk)
         _, table_height_used = table.wrapOn(c, width, height)
         table.drawOn(c, tabla_x, tabla_y - table_height_used)
+        if trace_enabled:
+            row_heights = getattr(table, "_rowHeights", None)
+            if row_heights:
+                y_cursor = tabla_y - row_heights[0]
+                x_right = tabla_x + sum(col_widths) - table_padding
+                for idx_table, (_, is_meta, overlay) in enumerate(rows_chunk, start=1):
+                    row_height = row_heights[idx_table]
+                    row_bottom = y_cursor - row_height
+                    y_cursor = row_bottom
+                    if not overlay or is_meta:
+                        continue
+                    c.saveState()
+                    c.setFillGray(0.5)
+                    c.setFont("Helvetica", 6)
+                    text_y = max(row_bottom + 2, row_bottom + row_height * 0.2)
+                    c.drawRightString(x_right, text_y, overlay)
+                    c.restoreState()
         current_bottom = tabla_y - table_height_used
 
         if page_index == total_pages - 1:
@@ -1458,6 +1817,8 @@ def generar_factura_electronica_pdf(
 
         c.setFont("Helvetica", 8)
         c.drawCentredString(width / 2, 20, f"Página {page_index + 1} de {total_pages}")
+
+    tracer.dump()
 
     c.save()
 

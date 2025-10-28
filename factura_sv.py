@@ -116,6 +116,9 @@ def generar_factura_electronica_pdf(
     motivo: str | None = None,
 ):
 
+    if os.environ.get("PDF_META_DEBUG") == "1":
+        logging.getLogger(__name__).setLevel(logging.DEBUG)
+
     if datos_negocio is None:
         datos_negocio = {}
         if os.path.exists(DATOS_NEGOCIO_PATH):
@@ -852,6 +855,32 @@ def generar_factura_electronica_pdf(
             if parsed:
                 return parsed
 
+        epoch_match = re.fullmatch(r"\d{10}|\d{13}", cleaned)
+        if epoch_match:
+            ts = int(epoch_match.group(0))
+            if len(epoch_match.group(0)) == 13:
+                ts = ts // 1000
+            try:
+                dt = datetime.utcfromtimestamp(ts)
+                return dt.strftime("%d/%m/%Y")
+            except Exception:
+                pass
+
+        six = re.fullmatch(r"(\d{6})", re.sub(r"\D", "", cleaned))
+        if six:
+            raw = six.group(1)
+            try:
+                d, m, y = int(raw[:2]), int(raw[2:4]), int(raw[4:])
+                y = 2000 + y if y < 100 else y
+                return datetime(y, m, d).strftime("%d/%m/%Y")
+            except Exception:
+                try:
+                    y, m, d = int(raw[:2]), int(raw[2:4]), int(raw[4:])
+                    y = 2000 + y if y < 100 else y
+                    return datetime(y, m, d).strftime("%d/%m/%Y")
+                except Exception:
+                    pass
+
         return text
 
     def _collect_item_metadata(*sources):
@@ -865,7 +894,28 @@ def generar_factura_electronica_pdf(
 
         alias_map = {
             "lote": {"lote", "batch", "lote_producto"},
-            "vencimiento": {"vencimiento", "fecha_vencimiento", "fvto", "f_venc", "vto"},
+            "vencimiento": {
+                "vencimiento",
+                "fecha_vencimiento",
+                "fvto",
+                "f_venc",
+                "vto",
+                "fechavencimiento",
+                "fechavenc",
+                "fv",
+                "fvenc",
+                "vence",
+                "vence_el",
+                "venceel",
+                "caducidad",
+                "fecha_caducidad",
+                "fechacaducidad",
+                "expiry",
+                "expirationdate",
+                "expiration_date",
+                "exp_date",
+                "exp",
+            },
             "registro": {"registro_sanitario", "reg_sanitario", "regsan", "registro"},
         }
         alias_lookup = {}
@@ -880,10 +930,18 @@ def generar_factura_electronica_pdf(
             text = _normalize_text(value)
             if not text:
                 return
+            formatted = None
             if formatter is not None:
                 formatted = formatter(text)
                 if formatted:
                     text = formatted
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(
+                    "[meta] assign %s <- %r (formatted=%r)",
+                    field,
+                    value,
+                    (formatted if formatter else None),
+                )
             existing = metadata[field]
             if existing:
                 if existing == text:
@@ -899,7 +957,9 @@ def generar_factura_electronica_pdf(
         def _parse_pattern_text(text: str):
             if not text:
                 return
-            venc_label_core = r"f\s*\.?\s*v\.?|fv|vto|venc(?:\.|imiento)?|vence|expir(?:a|aci\u00f3n)?|caduc(?:a|idad)?"
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("[meta] pattern probe: %r", text)
+            venc_label_core = r"f\s*\.?\s*v\.?|fv|vto|venc(?:\.|imiento)?|vence(?:\s*el)?|expir(?:a|aci\u00f3n)?|caduc(?:a|idad)?"
             lot_match = re.search(r"(?i)\b(?:lote|batch)\b\s*[:=]\s*([^|,;\n]+)", text)
             if lot_match:
                 lot_val = lot_match.group(1).strip()
@@ -911,24 +971,21 @@ def generar_factura_electronica_pdf(
                 if lot_val:
                     _assign("lote", lot_val)
             venc_label = rf"(?i)(?:{venc_label_core})"
-            venc_match = re.search(
-                venc_label
-                + r"\s*[\s\"'\.:-]*[:=]?\s*[\"']?([0-9]{1,4}[/.\\-][0-9]{1,2}[/.\\-][0-9]{2,4}(?:[ T][^\"'|,;\n]*)?)",
-                text,
-            )
-            if venc_match:
-                _assign("vencimiento", venc_match.group(1).strip(), formatter=_format_fecha_vencimiento)
-            else:
-                fallback_venc_match = re.search(
-                    venc_label + r"\s*[\s\"'\.:-]*[:=]?\s*[\"']?([^\"'|,;\n]+)",
-                    text,
-                )
-                if fallback_venc_match:
-                    _assign(
-                        "vencimiento",
-                        fallback_venc_match.group(1).strip(),
-                        formatter=_format_fecha_vencimiento,
-                    )
+
+            m = re.search(venc_label + r"\s*[:=\-]?\s*([^\|,;\n]+)", text)
+            if m:
+                cand = m.group(1).strip()
+                cand = re.split(r"(?i)\b(lote|reg(?:istro)?(?:\s*san(?:itario)?)?)\b", cand, maxsplit=1)[0].strip(" :.-")
+                norm = _format_fecha_vencimiento(cand)
+                if norm:
+                    _assign("vencimiento", norm)
+
+            if not metadata.get("vencimiento"):
+                m2 = re.search(venc_label + r".{0,10}\b(\d{6}|\d{8}|\d{10}|\d{13})\b", text)
+                if m2:
+                    norm = _format_fecha_vencimiento(m2.group(1))
+                    if norm:
+                        _assign("vencimiento", norm)
             fecha_key_match = re.search(
                 r"(?i)fecha[\s_]*venc(?:imiento)?[\s\"']*[:=]\s*[\"']?([^\"'|,;\n]+)",
                 text,
@@ -988,6 +1045,14 @@ def generar_factura_electronica_pdf(
                     next_flags.add("vencimiento")
                 if canonical_key == "registro" or ("registro" in key_lower and "san" in key_lower):
                     next_flags.add("registro")
+
+                if isinstance(value, dict) and "$date" in value:
+                    raw = value["$date"]
+                    parsed = _format_fecha_vencimiento(str(raw))
+                    if parsed:
+                        _assign("vencimiento", parsed)
+                    _traverse(value, frozenset(next_flags))
+                    continue
 
                 if isinstance(value, (dict, list)):
                     _traverse(value, frozenset(next_flags))

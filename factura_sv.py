@@ -1,5 +1,6 @@
 from pathlib import Path
 import re
+import logging
 
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -605,6 +606,17 @@ def generar_factura_electronica_pdf(
     )
     meta_fontsize = min(max(body_fontsize, 9), 10)
     meta_text_color = colors.HexColor("#555555")
+    meta_paragraph_style = ParagraphStyle(
+        name="MetadataItem",
+        fontName=body_fontname,
+        fontSize=meta_fontsize,
+        leading=meta_fontsize + 2,
+        textColor=meta_text_color,
+        spaceAfter=0,
+        spaceBefore=0,
+    )
+
+    logger = logging.getLogger(__name__)
 
     def _normalize_text(value):
         if value is None:
@@ -645,60 +657,201 @@ def generar_factura_electronica_pdf(
         text = _normalize_text(value)
         if not text:
             return None
+
         base = text.strip()
         if "T" in base:
             base = base.split("T", 1)[0]
         base = base.strip()
-        base = re.split(r"[|,;]\s*", base)[0].strip()
-        candidates: list[str] = []
-        if base:
-            candidates.append(base)
-        if " " in base:
-            candidates.append(base.split(" ", 1)[0].strip())
-        normalized = base.replace("\\", "/").replace("-", "/").replace(".", "/")
-        if normalized:
-            candidates.append(normalized)
-        compact = re.sub(r"\s+", "", normalized)
-        if compact and compact not in candidates:
-            candidates.append(compact)
-        seen = set()
-        fmt_candidates = (
-            "%Y-%m-%d",
-            "%Y/%m/%d",
-            "%Y.%m.%d",
-            "%d/%m/%Y",
-            "%d-%m-%Y",
-            "%d.%m.%Y",
-            "%d %b %Y",
-            "%d %B %Y",
-            "%d/%m/%y",
-            "%d-%m-%y",
-            "%y/%m/%d",
-            "%m/%d/%Y",
+
+        label_pattern = re.compile(
+            r"(?i)\b(?:fecha\s*(?:de)?\s*)?(?:venc(?:imiento)?|vence|vto|f\s*\.?\s*v\.?|fv|caduc(?:idad|a)?|expir(?:a|aci\u00f3n)?)\b"
         )
-        for candidate in candidates:
-            if not candidate or candidate in seen:
-                continue
-            seen.add(candidate)
-            for fmt in fmt_candidates:
+        cleaned = label_pattern.sub("", base)
+        cleaned = re.sub(r"(?i)\bde\b", " ", cleaned)
+        cleaned = cleaned.strip(" .:-\t")
+
+        def _normalize_year(year_str: str) -> int:
+            year_int = int(year_str)
+            if year_int < 100:
+                return 2000 + year_int
+            return year_int
+
+        month_map = {
+            "ene": 1,
+            "enero": 1,
+            "feb": 2,
+            "febrero": 2,
+            "mar": 3,
+            "marzo": 3,
+            "abr": 4,
+            "abril": 4,
+            "may": 5,
+            "mayo": 5,
+            "jun": 6,
+            "junio": 6,
+            "jul": 7,
+            "julio": 7,
+            "ago": 8,
+            "agosto": 8,
+            "sep": 9,
+            "sept": 9,
+            "set": 9,
+            "septiembre": 9,
+            "setiembre": 9,
+            "oct": 10,
+            "octubre": 10,
+            "nov": 11,
+            "noviembre": 11,
+            "dic": 12,
+            "diciembre": 12,
+        }
+
+        def _parse_spanish_month(candidate: str) -> str | None:
+            if not candidate:
+                return None
+
+            def _month_from_word(word: str) -> int | None:
+                normalized = (
+                    word.strip()
+                    .lower()
+                    .replace(".", "")
+                    .replace("á", "a")
+                    .replace("é", "e")
+                    .replace("í", "i")
+                    .replace("ó", "o")
+                    .replace("ú", "u")
+                )
+                return month_map.get(normalized) or month_map.get(normalized[:3])
+
+            pattern_day = re.compile(
+                r"(?i)\b(\d{1,2})(?:\s*(?:de|del)\s+|\s+)([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\.]+)(?:\s*(?:de)?\s+|\s+)(\d{2,4})\b"
+            )
+            match_day = pattern_day.search(candidate)
+            if match_day:
+                day = int(match_day.group(1))
+                month_word = match_day.group(2)
+                month = _month_from_word(month_word)
+                if not month:
+                    return None
+                year = _normalize_year(match_day.group(3))
                 try:
-                    dt = datetime.strptime(candidate, fmt)
+                    dt = datetime(year, month, day)
                 except ValueError:
-                    continue
+                    return None
+                return dt.strftime("%d/%m/%Y")
+
+            pattern_month = re.compile(
+                r"(?i)\b([a-z\u00e1\u00e9\u00ed\u00f3\u00fa\u00f1\.]+)(?:\s*(?:de)?\s+|\s+)(\d{2,4})\b"
+            )
+            match_month = pattern_month.search(candidate)
+            if match_month:
+                month_word = match_month.group(1)
+                month = _month_from_word(month_word)
+                if not month:
+                    return None
+                year = _normalize_year(match_month.group(2))
+                try:
+                    dt = datetime(year, month, 1)
+                except ValueError:
+                    return None
+                return dt.strftime("%d/%m/%Y")
+
+            return None
+
+        def _try_patterns(candidate: str) -> str | None:
+            if not candidate:
+                return None
+            normalized_candidate = candidate.strip()
+            if not normalized_candidate:
+                return None
+
+            iso_match = re.search(r"(\d{4})[\\/\-.](\d{1,2})[\\/\-.](\d{1,2})", normalized_candidate)
+            if iso_match:
+                year, month, day = map(int, iso_match.groups())
+                try:
+                    dt = datetime(year, month, day)
+                except ValueError:
+                    pass
                 else:
                     return dt.strftime("%d/%m/%Y")
-        digits_only = re.sub(r"[^0-9]", "", base)
-        if len(digits_only) == 8:
-            if digits_only.startswith("19") or digits_only.startswith("20"):
-                year, month, day = digits_only[:4], digits_only[4:6], digits_only[6:]
-            else:
-                day, month, year = digits_only[:2], digits_only[2:4], digits_only[4:]
-            try:
-                dt = datetime.strptime(f"{day}/{month}/{year}", "%d/%m/%Y")
-            except ValueError:
-                pass
-            else:
-                return dt.strftime("%d/%m/%Y")
+
+            dmy_match = re.search(r"(\d{1,2})[\\/\-.](\d{1,2})[\\/\-.](\d{2,4})", normalized_candidate)
+            if dmy_match:
+                day, month, year_raw = dmy_match.groups()
+                year = _normalize_year(year_raw)
+                try:
+                    dt = datetime(year, int(month), int(day))
+                except ValueError:
+                    pass
+                else:
+                    return dt.strftime("%d/%m/%Y")
+
+            month_year_match = re.search(r"\b(\d{1,2})[\\/\-.](\d{2,4})\b", normalized_candidate)
+            if month_year_match:
+                month_raw, year_raw = month_year_match.groups()
+                month = int(month_raw)
+                if 1 <= month <= 12:
+                    year = _normalize_year(year_raw)
+                    try:
+                        dt = datetime(year, month, 1)
+                    except ValueError:
+                        pass
+                    else:
+                        return dt.strftime("%d/%m/%Y")
+
+            spanish_formatted = _parse_spanish_month(normalized_candidate)
+            if spanish_formatted:
+                return spanish_formatted
+
+            digits_only = re.sub(r"[^0-9]", "", normalized_candidate)
+            if len(digits_only) == 8:
+                if digits_only.startswith("19") or digits_only.startswith("20"):
+                    year = int(digits_only[:4])
+                    month = int(digits_only[4:6])
+                    day = int(digits_only[6:])
+                else:
+                    day = int(digits_only[:2])
+                    month = int(digits_only[2:4])
+                    year = _normalize_year(digits_only[4:])
+                try:
+                    dt = datetime(year, month, day)
+                except ValueError:
+                    pass
+                else:
+                    return dt.strftime("%d/%m/%Y")
+
+            return None
+
+        candidates: list[str] = []
+        seen: set[str] = set()
+
+        def _add_candidate(value: str | None):
+            if not value:
+                return
+            candidate = value.strip()
+            if not candidate:
+                return
+            if candidate not in seen:
+                seen.add(candidate)
+                candidates.append(candidate)
+
+        _add_candidate(cleaned)
+        _add_candidate(base)
+        for chunk in (cleaned, base):
+            if not chunk:
+                continue
+            for part in re.split(r"[|,;\n]\s*", chunk):
+                _add_candidate(part)
+            if re.search(r"[a-zA-Z]", chunk):
+                _add_candidate(re.sub(r"[-_/]", " ", chunk))
+            normalized_chunk = chunk.replace("\\", "/").replace("-", "/").replace(".", "/")
+            _add_candidate(normalized_chunk)
+
+        for candidate in candidates:
+            parsed = _try_patterns(candidate)
+            if parsed:
+                return parsed
+
         return text
 
     def _collect_item_metadata(*sources):
@@ -709,6 +862,19 @@ def generar_factura_electronica_pdf(
         }
 
         date_tokens = ("venc", "caduc", "expir", "vence", "vto", "fv")
+
+        alias_map = {
+            "lote": {"lote", "batch", "lote_producto"},
+            "vencimiento": {"vencimiento", "fecha_vencimiento", "fvto", "f_venc", "vto"},
+            "registro": {"registro_sanitario", "reg_sanitario", "regsan", "registro"},
+        }
+        alias_lookup = {}
+        alias_compact_lookup = {}
+        for canonical, aliases in alias_map.items():
+            for alias in aliases:
+                alias_norm = alias.lower()
+                alias_lookup[alias_norm] = canonical
+                alias_compact_lookup[re.sub(r"[^a-z0-9]", "", alias_norm)] = canonical
 
         def _assign(field: str, value: str, *, formatter=None):
             text = _normalize_text(value)
@@ -733,12 +899,12 @@ def generar_factura_electronica_pdf(
         def _parse_pattern_text(text: str):
             if not text:
                 return
-            venc_label_core = r"f\s*\.\s*v\.?|fv|vto|venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?"
-            lot_match = re.search(r"(?i)\blote\b\s*[:=]\s*([^|,;\n]+)", text)
+            venc_label_core = r"f\s*\.?\s*v\.?|fv|vto|venc(?:\.|imiento)?|vence|expir(?:a|aci\u00f3n)?|caduc(?:a|idad)?"
+            lot_match = re.search(r"(?i)\b(?:lote|batch)\b\s*[:=]\s*([^|,;\n]+)", text)
             if lot_match:
                 lot_val = lot_match.group(1).strip()
                 lot_val = re.split(
-                    rf"(?i)\b(?:{venc_label_core}|registro(?:\s+sanitario)?)\b",
+                    rf"(?i)\b(?:{venc_label_core}|reg(?:istro)?(?:\s*(?:san(?:itario)?|san\.?|sanit\.?))?)\b",
                     lot_val,
                     maxsplit=1,
                 )[0].strip(" :")
@@ -770,7 +936,7 @@ def generar_factura_electronica_pdf(
             if fecha_key_match:
                 _assign("vencimiento", fecha_key_match.group(1).strip(), formatter=_format_fecha_vencimiento)
             reg_match = re.search(
-                r"(?i)registro(?:\s+sanitario)?\s*[:=]\s*([^|,;\n]+)",
+                r"(?i)reg(?:istro)?(?:\s*(?:san(?:itario)?|san\.?|sanit\.?))?\s*[:=]\s*([^|,;\n]+)",
                 text,
             )
             if reg_match:
@@ -808,15 +974,19 @@ def generar_factura_electronica_pdf(
                 key_lower = str(key).lower()
                 key_compact = re.sub(r"[^a-z0-9]", "", key_lower)
                 next_flags = set(flags)
-                is_lote_key = bool(re.search(r"lote(?![a-z])", key_lower))
+                canonical_key = alias_lookup.get(key_lower) or alias_compact_lookup.get(key_compact)
+
+                is_lote_key = bool(re.search(r"lote(?![a-z])", key_lower)) or canonical_key == "lote"
                 if is_lote_key:
                     if key_compact.endswith("id") or key_compact in {"idlote", "loteid"}:
                         is_lote_key = False
                 if is_lote_key:
                     next_flags.add("lote")
-                if any(token in key_lower or token in key_compact for token in date_tokens):
+                if canonical_key == "vencimiento" or any(
+                    token in key_lower or token in key_compact for token in date_tokens
+                ):
                     next_flags.add("vencimiento")
-                if "registro" in key_lower and "san" in key_lower:
+                if canonical_key == "registro" or ("registro" in key_lower and "san" in key_lower):
                     next_flags.add("registro")
 
                 if isinstance(value, (dict, list)):
@@ -838,12 +1008,17 @@ def generar_factura_electronica_pdf(
                 if not text:
                     continue
 
-                assign_lote = is_lote_key or "lote" in next_flags
+                assign_lote = is_lote_key or "lote" in next_flags or canonical_key == "lote"
                 assign_venc = (
-                    any(token in key_lower or token in key_compact for token in date_tokens)
+                    canonical_key == "vencimiento"
+                    or any(token in key_lower or token in key_compact for token in date_tokens)
                     or "vencimiento" in next_flags
                 )
-                assign_registro = ("registro" in key_lower and "san" in key_lower) or "registro" in next_flags
+                assign_registro = (
+                    canonical_key == "registro"
+                    or ("registro" in key_lower and "san" in key_lower)
+                    or "registro" in next_flags
+                )
 
                 if assign_lote:
                     _assign("lote", text)
@@ -891,16 +1066,9 @@ def generar_factura_electronica_pdf(
         if registro_val:
             meta_segments.append(f"Registro Sanitario: {registro_val}")
 
-        meta_text = " ".join(meta_segments)
+        meta_text = "   ".join(meta_segments)
 
         descripcion_html = escape(descripcion)
-        if meta_text:
-            meta_color_hex = meta_text_color.hexval()
-            descripcion_html += (
-                f'<br/><font color="{meta_color_hex}" size="{meta_fontsize}">' +
-                escape(meta_text) +
-                "</font>"
-            )
         descripcion_cell = Paragraph(descripcion_html, descripcion_style)
 
         fila = [
@@ -925,6 +1093,20 @@ def generar_factura_electronica_pdf(
         )
 
         group_rows: list[tuple[list, bool]] = [(fila, False)]
+
+        if meta_text:
+            meta_html_segments = [escape(segment) for segment in meta_segments]
+            meta_html = "&nbsp;&nbsp;&nbsp;".join(meta_html_segments)
+            meta_cell = Paragraph(meta_html, meta_paragraph_style)
+            meta_row = [meta_cell] + [""] * (len(tabla_columnas) - 1)
+            group_rows.append((meta_row, True))
+
+            if logger.isEnabledFor(logging.DEBUG) and venc_val:
+                logger.debug(
+                    "Detalle '%s' vencimiento detectado: %s",
+                    descripcion,
+                    venc_val,
+                )
 
         row_groups.append(group_rows)
 
@@ -975,6 +1157,7 @@ def generar_factura_electronica_pdf(
                     ('LINEABOVE', (0, idx), (-1, idx), 0.4, colors.HexColor("#d0d0d0")),
                     ('TOPPADDING', (0, idx), (-1, idx), max(table_padding - 3, 2)),
                     ('BOTTOMPADDING', (0, idx), (-1, idx), max(table_padding - 2, 2)),
+                    ('VALIGN', (0, idx), (-1, idx), 'TOP'),
                 ])
         table.setStyle(TableStyle(commands))
         return table

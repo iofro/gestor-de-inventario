@@ -719,6 +719,7 @@ def generar_factura_electronica_pdf(
 
     descripcion_col_idx = tabla_columnas.index("Descripción")
     descripcion_col_width = max(col_widths[descripcion_col_idx] - 2 * table_padding, 0)
+    descripcion_left_offset = sum(col_widths[:descripcion_col_idx]) if descripcion_col_idx > 0 else 0
 
     descripcion_style = ParagraphStyle(
         name="DescripcionItem",
@@ -804,7 +805,7 @@ def generar_factura_electronica_pdf(
             meta_html = "&nbsp;&nbsp;&nbsp;".join(meta_html_segments)
             meta_cell = Paragraph(meta_html, meta_paragraph_style)
             meta_row = [""] * len(tabla_columnas)
-            meta_row[descripcion_col_idx] = meta_cell
+            meta_row[0] = meta_cell
             group_rows.append((meta_row, True))
             if logger.isEnabledFor(logging.DEBUG) and venc_val:
                 logger.debug(
@@ -853,64 +854,69 @@ def generar_factura_electronica_pdf(
             if is_meta:
                 commands.extend([
                     (
+                        'SPAN',
+                        (0, idx),
+                        (-1, idx),
+                    ),
+                    (
                         'FONTNAME',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         body_fontname,
                     ),
                     (
                         'FONTSIZE',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         meta_fontsize,
                     ),
                     (
                         'TEXTCOLOR',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         meta_text_color,
                     ),
                     (
                         'ALIGN',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         'LEFT',
                     ),
                     (
                         'LEFTPADDING',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
-                        table_padding + 2,
+                        (0, idx),
+                        (-1, idx),
+                        table_padding + descripcion_left_offset + 2,
                     ),
                     (
                         'RIGHTPADDING',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         table_padding,
                     ),
                     (
                         'LINEABOVE',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         0.4,
                         colors.HexColor("#d0d0d0"),
                     ),
                     (
                         'TOPPADDING',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         max(table_padding - 3, 2),
                     ),
                     (
                         'BOTTOMPADDING',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         max(table_padding - 2, 2),
                     ),
                     (
                         'VALIGN',
-                        (descripcion_col_idx, idx),
-                        (descripcion_col_idx, idx),
+                        (0, idx),
+                        (-1, idx),
                         'TOP',
                     ),
                 ])

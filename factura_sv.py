@@ -15,6 +15,7 @@ from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis, ellipsiz
 import utils.catalogos as catalogos
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
+import ast
 import json
 import os
 from datetime import datetime
@@ -604,16 +605,6 @@ def generar_factura_electronica_pdf(
     )
     meta_fontsize = min(max(body_fontsize, 9), 10)
     meta_text_color = colors.HexColor("#555555")
-    meta_paragraph_style = ParagraphStyle(
-        name="MetaItem",
-        fontName=body_fontname,
-        fontSize=meta_fontsize,
-        leading=meta_fontsize + 1,
-        textColor=meta_text_color,
-        leftIndent=2,
-        spaceBefore=0,
-        spaceAfter=0,
-    )
 
     def _normalize_text(value):
         if value is None:
@@ -637,10 +628,15 @@ def generar_factura_electronica_pdf(
             text = raw_value.strip()
             if not text:
                 return None
+            parsed = None
             try:
                 parsed = json.loads(text)
             except Exception:
-                return None
+                if text[:1] in "[{" and text[-1:] in "]}":
+                    try:
+                        parsed = ast.literal_eval(text)
+                    except Exception:
+                        parsed = None
             if isinstance(parsed, (dict, list)):
                 return parsed
         return None
@@ -649,17 +645,58 @@ def generar_factura_electronica_pdf(
         text = _normalize_text(value)
         if not text:
             return None
-        trimmed = text
-        if "T" in trimmed:
-            trimmed = trimmed.split("T", 1)[0]
-        trimmed = trimmed.strip()
-        if len(trimmed) > 10:
-            trimmed = trimmed[:10]
-        for fmt in ("%Y-%m-%d", "%Y/%m/%d", "%d/%m/%Y", "%d-%m-%Y"):
-            try:
-                dt = datetime.strptime(trimmed, fmt)
-            except ValueError:
+        base = text.strip()
+        if "T" in base:
+            base = base.split("T", 1)[0]
+        base = base.strip()
+        base = re.split(r"[|,;]\s*", base)[0].strip()
+        candidates: list[str] = []
+        if base:
+            candidates.append(base)
+        if " " in base:
+            candidates.append(base.split(" ", 1)[0].strip())
+        normalized = base.replace("\\", "/").replace("-", "/").replace(".", "/")
+        if normalized:
+            candidates.append(normalized)
+        compact = re.sub(r"\s+", "", normalized)
+        if compact and compact not in candidates:
+            candidates.append(compact)
+        seen = set()
+        fmt_candidates = (
+            "%Y-%m-%d",
+            "%Y/%m/%d",
+            "%Y.%m.%d",
+            "%d/%m/%Y",
+            "%d-%m-%Y",
+            "%d.%m.%Y",
+            "%d %b %Y",
+            "%d %B %Y",
+            "%d/%m/%y",
+            "%d-%m-%y",
+            "%y/%m/%d",
+            "%m/%d/%Y",
+        )
+        for candidate in candidates:
+            if not candidate or candidate in seen:
                 continue
+            seen.add(candidate)
+            for fmt in fmt_candidates:
+                try:
+                    dt = datetime.strptime(candidate, fmt)
+                except ValueError:
+                    continue
+                else:
+                    return dt.strftime("%d/%m/%Y")
+        digits_only = re.sub(r"[^0-9]", "", base)
+        if len(digits_only) == 8:
+            if digits_only.startswith("19") or digits_only.startswith("20"):
+                year, month, day = digits_only[:4], digits_only[4:6], digits_only[6:]
+            else:
+                day, month, year = digits_only[:2], digits_only[2:4], digits_only[4:]
+            try:
+                dt = datetime.strptime(f"{day}/{month}/{year}", "%d/%m/%Y")
+            except ValueError:
+                pass
             else:
                 return dt.strftime("%d/%m/%Y")
         return text
@@ -671,7 +708,7 @@ def generar_factura_electronica_pdf(
             "registro": None,
         }
 
-        date_tokens = ("venc", "caduc", "expir", "vence")
+        date_tokens = ("venc", "caduc", "expir", "vence", "vto", "fv")
 
         def _assign(field: str, value: str, *, formatter=None):
             text = _normalize_text(value)
@@ -696,15 +733,42 @@ def generar_factura_electronica_pdf(
         def _parse_pattern_text(text: str):
             if not text:
                 return
+            venc_label_core = r"f\s*\.\s*v\.?|fv|vto|venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?"
             lot_match = re.search(r"(?i)\blote\b\s*[:=]\s*([^|,;\n]+)", text)
             if lot_match:
-                _assign("lote", lot_match.group(1).strip())
+                lot_val = lot_match.group(1).strip()
+                lot_val = re.split(
+                    rf"(?i)\b(?:{venc_label_core}|registro(?:\s+sanitario)?)\b",
+                    lot_val,
+                    maxsplit=1,
+                )[0].strip(" :")
+                if lot_val:
+                    _assign("lote", lot_val)
+            venc_label = rf"(?i)(?:{venc_label_core})"
             venc_match = re.search(
-                r"(?i)(?:venc(?:imiento)?|vence|expir(?:a|aci\u00F3n)?|caduc(?:a|idad)?)\s*[:=]?\s*([0-9]{1,4}[/-][0-9]{1,2}[/-][0-9]{2,4})",
+                venc_label
+                + r"\s*[\s\"'\.:-]*[:=]?\s*[\"']?([0-9]{1,4}[/.\\-][0-9]{1,2}[/.\\-][0-9]{2,4}(?:[ T][^\"'|,;\n]*)?)",
                 text,
             )
             if venc_match:
                 _assign("vencimiento", venc_match.group(1).strip(), formatter=_format_fecha_vencimiento)
+            else:
+                fallback_venc_match = re.search(
+                    venc_label + r"\s*[\s\"'\.:-]*[:=]?\s*[\"']?([^\"'|,;\n]+)",
+                    text,
+                )
+                if fallback_venc_match:
+                    _assign(
+                        "vencimiento",
+                        fallback_venc_match.group(1).strip(),
+                        formatter=_format_fecha_vencimiento,
+                    )
+            fecha_key_match = re.search(
+                r"(?i)fecha[\s_]*venc(?:imiento)?[\s\"']*[:=]\s*[\"']?([^\"'|,;\n]+)",
+                text,
+            )
+            if fecha_key_match:
+                _assign("vencimiento", fecha_key_match.group(1).strip(), formatter=_format_fecha_vencimiento)
             reg_match = re.search(
                 r"(?i)registro(?:\s+sanitario)?\s*[:=]\s*([^|,;\n]+)",
                 text,
@@ -742,11 +806,15 @@ def generar_factura_electronica_pdf(
 
             for key, value in obj.items():
                 key_lower = str(key).lower()
+                key_compact = re.sub(r"[^a-z0-9]", "", key_lower)
                 next_flags = set(flags)
-                is_lote_key = "lote" in key_lower and not key_lower.endswith("id") and key_lower not in {"idlote", "loteid"}
+                is_lote_key = bool(re.search(r"lote(?![a-z])", key_lower))
+                if is_lote_key:
+                    if key_compact.endswith("id") or key_compact in {"idlote", "loteid"}:
+                        is_lote_key = False
                 if is_lote_key:
                     next_flags.add("lote")
-                if any(token in key_lower for token in date_tokens):
+                if any(token in key_lower or token in key_compact for token in date_tokens):
                     next_flags.add("vencimiento")
                 if "registro" in key_lower and "san" in key_lower:
                     next_flags.add("registro")
@@ -771,7 +839,10 @@ def generar_factura_electronica_pdf(
                     continue
 
                 assign_lote = is_lote_key or "lote" in next_flags
-                assign_venc = any(token in key_lower for token in date_tokens) or "vencimiento" in next_flags
+                assign_venc = (
+                    any(token in key_lower or token in key_compact for token in date_tokens)
+                    or "vencimiento" in next_flags
+                )
                 assign_registro = ("registro" in key_lower and "san" in key_lower) or "registro" in next_flags
 
                 if assign_lote:
@@ -822,7 +893,15 @@ def generar_factura_electronica_pdf(
 
         meta_text = " ".join(meta_segments)
 
-        descripcion_cell = Paragraph(escape(descripcion), descripcion_style)
+        descripcion_html = escape(descripcion)
+        if meta_text:
+            meta_color_hex = meta_text_color.hexval()
+            descripcion_html += (
+                f'<br/><font color="{meta_color_hex}" size="{meta_fontsize}">' +
+                escape(meta_text) +
+                "</font>"
+            )
+        descripcion_cell = Paragraph(descripcion_html, descripcion_style)
 
         fila = [
             str(d.get("cantidad", "")),
@@ -846,11 +925,6 @@ def generar_factura_electronica_pdf(
         )
 
         group_rows: list[tuple[list, bool]] = [(fila, False)]
-
-        if meta_text:
-            meta_paragraph = Paragraph(escape(meta_text), meta_paragraph_style)
-            meta_row = [meta_paragraph] + [""] * (len(tabla_columnas) - 1)
-            group_rows.append((meta_row, True))
 
         row_groups.append(group_rows)
 

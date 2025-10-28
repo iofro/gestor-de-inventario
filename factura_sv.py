@@ -1562,7 +1562,8 @@ def generar_factura_electronica_pdf(
             meta_html_segments = [escape(segment) for segment in meta_segments]
             meta_html = "&nbsp;&nbsp;&nbsp;".join(meta_html_segments)
             meta_cell = Paragraph(meta_html, meta_paragraph_style)
-            meta_row = [meta_cell] + [""] * (len(tabla_columnas) - 1)
+            meta_row = [""] * len(tabla_columnas)
+            meta_row[descripcion_col_idx] = meta_cell
             group_rows.append((meta_row, True, None))
 
             if logger.isEnabledFor(logging.DEBUG) and venc_val:
@@ -1625,17 +1626,72 @@ def generar_factura_electronica_pdf(
         for idx, (_, is_meta, _) in enumerate(rows_subset, start=1):
             if is_meta:
                 commands.extend([
-                    ('SPAN', (0, idx), (-1, idx)),
-                    ('FONTNAME', (0, idx), (-1, idx), body_fontname),
-                    ('FONTSIZE', (0, idx), (-1, idx), meta_fontsize),
-                    ('TEXTCOLOR', (0, idx), (-1, idx), meta_text_color),
-                    ('ALIGN', (0, idx), (-1, idx), 'LEFT'),
-                    ('LEFTPADDING', (0, idx), (-1, idx), table_padding + 2),
-                    ('RIGHTPADDING', (0, idx), (-1, idx), table_padding),
-                    ('LINEABOVE', (0, idx), (-1, idx), 0.4, colors.HexColor("#d0d0d0")),
-                    ('TOPPADDING', (0, idx), (-1, idx), max(table_padding - 3, 2)),
-                    ('BOTTOMPADDING', (0, idx), (-1, idx), max(table_padding - 2, 2)),
-                    ('VALIGN', (0, idx), (-1, idx), 'TOP'),
+                    (
+                        'SPAN',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                    ),
+                    (
+                        'FONTNAME',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        body_fontname,
+                    ),
+                    (
+                        'FONTSIZE',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        meta_fontsize,
+                    ),
+                    (
+                        'TEXTCOLOR',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        meta_text_color,
+                    ),
+                    (
+                        'ALIGN',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        'LEFT',
+                    ),
+                    (
+                        'LEFTPADDING',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        table_padding + 2,
+                    ),
+                    (
+                        'RIGHTPADDING',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        table_padding,
+                    ),
+                    (
+                        'LINEABOVE',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        0.4,
+                        colors.HexColor("#d0d0d0"),
+                    ),
+                    (
+                        'TOPPADDING',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        max(table_padding - 3, 2),
+                    ),
+                    (
+                        'BOTTOMPADDING',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        max(table_padding - 2, 2),
+                    ),
+                    (
+                        'VALIGN',
+                        (descripcion_col_idx, idx),
+                        (-1, idx),
+                        'TOP',
+                    ),
                 ])
         table.setStyle(TableStyle(commands))
         return table

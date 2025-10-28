@@ -605,16 +605,6 @@ def generar_factura_electronica_pdf(
     )
     meta_fontsize = min(max(body_fontsize, 9), 10)
     meta_text_color = colors.HexColor("#555555")
-    meta_paragraph_style = ParagraphStyle(
-        name="MetaItem",
-        fontName=body_fontname,
-        fontSize=meta_fontsize,
-        leading=meta_fontsize + 1,
-        textColor=meta_text_color,
-        leftIndent=2,
-        spaceBefore=0,
-        spaceAfter=0,
-    )
 
     def _normalize_text(value):
         if value is None:
@@ -755,7 +745,11 @@ def generar_factura_electronica_pdf(
             for key, value in obj.items():
                 key_lower = str(key).lower()
                 next_flags = set(flags)
-                is_lote_key = "lote" in key_lower and not key_lower.endswith("id") and key_lower not in {"idlote", "loteid"}
+                is_lote_key = (
+                    bool(re.search(r"lote(?![a-z])", key_lower))
+                    and not key_lower.endswith("id")
+                    and key_lower not in {"idlote", "loteid"}
+                )
                 if is_lote_key:
                     next_flags.add("lote")
                 if any(token in key_lower for token in date_tokens):
@@ -834,7 +828,15 @@ def generar_factura_electronica_pdf(
 
         meta_text = " ".join(meta_segments)
 
-        descripcion_cell = Paragraph(escape(descripcion), descripcion_style)
+        descripcion_html = escape(descripcion)
+        if meta_text:
+            meta_color_hex = meta_text_color.hexval()
+            descripcion_html += (
+                f'<br/><font color="{meta_color_hex}" size="{meta_fontsize}">' +
+                escape(meta_text) +
+                "</font>"
+            )
+        descripcion_cell = Paragraph(descripcion_html, descripcion_style)
 
         fila = [
             str(d.get("cantidad", "")),
@@ -858,11 +860,6 @@ def generar_factura_electronica_pdf(
         )
 
         group_rows: list[tuple[list, bool]] = [(fila, False)]
-
-        if meta_text:
-            meta_paragraph = Paragraph(escape(meta_text), meta_paragraph_style)
-            meta_row = [meta_paragraph] + [""] * (len(tabla_columnas) - 1)
-            group_rows.append((meta_row, True))
 
         row_groups.append(group_rows)
 

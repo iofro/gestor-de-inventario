@@ -892,6 +892,28 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             if codigo_hint:
                 codigo_generacion = codigo_hint
 
+        if not numero_control and isinstance(json_data, Mapping):
+            numero_hint = _first_non_empty(
+                json_data,
+                (
+                    "numeroControl",
+                    "numero_control",
+                    "numeroDocumento",
+                    "numeroFactura",
+                    "numero",
+                ),
+            )
+            if numero_hint:
+                numero_control = numero_hint
+
+        if not codigo_generacion and isinstance(json_data, Mapping):
+            codigo_hint = _first_non_empty(
+                json_data,
+                ("codigoGeneracion", "codigo_generacion", "codigo", "codigoDeGeneracion"),
+            )
+            if codigo_hint:
+                codigo_generacion = codigo_hint
+
         if isinstance(extra_data, Mapping):
             numero_control = numero_control or extra_data.get("numeroControl")
             codigo_generacion = codigo_generacion or extra_data.get("codigoGeneracion")

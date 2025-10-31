@@ -211,6 +211,8 @@ class MainWindow(QMainWindow):
         self.firmador_proc = None
         # Contador de cambios en la base de datos para detectar si hay datos sin guardar
         self._mark_saved()
+        self._auto_guardado_dialogo_mostrado = False
+        self._auto_guardado_aviso_mostrado = False
         self._setup_ui()
         self._apply_styles()
         QTimer.singleShot(0, self._verificar_firmador)
@@ -1102,6 +1104,7 @@ class MainWindow(QMainWindow):
                 # Notify other tabs that the underlying data changed so they
                 # can refresh immediately.
                 self.data_changed.emit()
+                self._auto_guardar_inventario_despues_de_venta()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta", str(e))
@@ -1275,9 +1278,40 @@ class MainWindow(QMainWindow):
                 self._actualizar_inventario_actual()
                 # Trigger refresh in other tabs immediately
                 self.data_changed.emit()
+                self._auto_guardar_inventario_despues_de_venta()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))
+
+    def _auto_guardar_inventario_despues_de_venta(self):
+        """Actualiza el respaldo JSON si ya se eligió una ruta de guardado."""
+        export_thread = getattr(self, "export_thread", None)
+        if export_thread is not None and export_thread.isRunning():
+            return
+
+        filename = getattr(self, "ultimo_archivo_json", "")
+        if filename:
+            self.guardar_rapido(asincrono=True, mostrar_mensajes=False)
+            return
+
+        if not self._auto_guardado_dialogo_mostrado:
+            self._auto_guardado_dialogo_mostrado = True
+            guardado = self.guardar_rapido(asincrono=True, mostrar_mensajes=False)
+            if guardado:
+                return
+
+        self._mostrar_aviso_guardado_automatico_pendiente()
+
+    def _mostrar_aviso_guardado_automatico_pendiente(self):
+        if self._auto_guardado_aviso_mostrado:
+            return
+        self._auto_guardado_aviso_mostrado = True
+        status_bar = self.statusBar()
+        if status_bar:
+            status_bar.showMessage(
+                "Selecciona una ruta de respaldo para habilitar el guardado automático.",
+                10000,
+            )
 
     def _post_guardado_exitoso(self, filename):
         self.ultimo_archivo_json = filename

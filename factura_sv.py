@@ -11,7 +11,12 @@ from reportlab.graphics.shapes import Drawing
 from reportlab.lib.units import mm
 from reportlab.lib.styles import ParagraphStyle
 
-from utils.pdf_utils import draw_wrapped_text, draw_text_with_ellipsis, ellipsize_text
+from utils.pdf_utils import (
+    draw_wrapped_text,
+    draw_text_with_ellipsis,
+    ellipsize_text,
+    wrap_text_lines,
+)
 import utils.catalogos as catalogos
 from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode
@@ -485,12 +490,36 @@ def generar_factura_electronica_pdf(
         or tipo_documento_normalizado in notas_tipo
     )
 
+    direccion_cliente = cliente.get("direccion")
+    if isinstance(direccion_cliente, dict):
+        cliente_dir = direccion_cliente
+    else:
+        cliente_dir = {
+            "departamento": cliente.get("departamento"),
+            "municipio": cliente.get("municipio"),
+            "complemento": direccion_cliente,
+        }
+    direccion = format_direccion(cliente_dir)
+
+    direccion_line_count = 1
+    direccion_extra_padding = 0.0
+    if tipo_documento in {"Consumidor Final", "Crédito Fiscal"}:
+        direccion_lines = wrap_text_lines(
+            f"Dirección: {direccion}",
+            "Helvetica",
+            8,
+            box_w - 10,
+        )
+        direccion_line_count = max(1, len(direccion_lines))
+        if direccion_line_count > 1:
+            direccion_extra_padding = 0.25
+
     receptor_line_count = 4  # encabezado + nombre + DUI + NIT
     receptor_extra = 1  # línea "Giro/Orden" o espaciado
     if mostrar_datos_receptor_completos:
         receptor_extra += 1  # línea "Condición pago"
     receptor_line_count += receptor_extra
-    receptor_line_count += 1  # Dirección
+    receptor_line_count += direccion_line_count + direccion_extra_padding
     if venta_a_cuenta_text or documento_venta_a_cuenta_text:
         receptor_line_count += 1
 
@@ -646,16 +675,6 @@ def generar_factura_electronica_pdf(
         text_y -= line_h
 
     text_y -= line_h
-    direccion_cliente = cliente.get("direccion")
-    if isinstance(direccion_cliente, dict):
-        cliente_dir = direccion_cliente
-    else:
-        cliente_dir = {
-            "departamento": cliente.get("departamento"),
-            "municipio": cliente.get("municipio"),
-            "complemento": direccion_cliente,
-        }
-    direccion = format_direccion(cliente_dir)
     text_y = draw_wrapped_text(
         c,
         f"Dirección: {direccion}",

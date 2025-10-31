@@ -129,6 +129,9 @@ from utils.facturacion_records import (
     get_facturacion_rows,
     infer_tipo_from_name,
     map_envio_state,
+    _extract_cliente_nombre as _facturacion_extract_cliente_nombre,
+    _extract_total_from_json as _facturacion_extract_total,
+    _coerce_total as _facturacion_coerce_total,
 )
 from evento_contingencia import (
     collect_contingencia_dtes,
@@ -3224,6 +3227,47 @@ class FacturacionTab(QWidget):
         trimmed = re.sub(r"^0+(?=\d)", "", digits)
         return trimmed or digits or "0"
 
+    @staticmethod
+    def _parse_factura_datetime(
+        fecha_value: Any | None, hora_value: Any | None
+    ) -> tuple[datetime | None, str]:
+        """Parse JSON emission date/time into a datetime and display string."""
+
+        fecha_text = str(fecha_value or "").strip()
+        hora_text = str(hora_value or "").strip()
+        if not fecha_text:
+            return None, ""
+
+        candidates: List[Tuple[str, Optional[str]]] = []
+        if hora_text:
+            # Common combinations emitted by Hacienda: ``HH:MM:SS`` and ``HH:MM``.
+            for time_fmt in ("%H:%M:%S", "%H:%M"):
+                candidates.append((f"{fecha_text} {hora_text}", f"%Y-%m-%d {time_fmt}"))
+            candidates.append((f"{fecha_text}T{hora_text}", None))
+        candidates.append((fecha_text, "%Y-%m-%d"))
+
+        for value, fmt in candidates:
+            try:
+                if fmt:
+                    parsed = datetime.strptime(value, fmt)
+                else:
+                    parsed = datetime.fromisoformat(value)
+            except Exception:
+                continue
+
+            if hora_text or parsed.time() != datetime.min.time():
+                return parsed, parsed.strftime("%Y-%m-%d %H:%M")
+            return parsed, parsed.strftime("%Y-%m-%d")
+
+        try:
+            parsed = datetime.fromisoformat(fecha_text)
+        except Exception:
+            return None, ""
+
+        if parsed.time() != datetime.min.time():
+            return parsed, parsed.strftime("%Y-%m-%d %H:%M")
+        return parsed, parsed.strftime("%Y-%m-%d")
+
     def _scan_documents(self):
         result = self._get_invoices_from_db()
         seen = {r.get("name") for r in result}
@@ -3320,10 +3364,44 @@ class FacturacionTab(QWidget):
             if js and os.path.exists(js):
                 try:
                     with open(js, "r", encoding="utf-8") as fh:
-                        data = json.load(fh)
-                    ident = data.get("identificacion", {})
-                    numero = ident.get("numeroControl", numero)
-                    codigo = ident.get("tipoDte")
+                        raw_data = json.load(fh)
+                    data = self._normalize_factura_payload(raw_data)
+
+                    ident_raw = {}
+                    if isinstance(data, Mapping):
+                        ident_candidate = data.get("identificacion") or data.get(
+                            "identificador"
+                        )
+                        if isinstance(ident_candidate, Mapping):
+                            ident_raw = ident_candidate
+
+                    numero_hint = None
+                    if ident_raw:
+                        numero_hint = (
+                            ident_raw.get("numeroControl")
+                            or ident_raw.get("numero_control")
+                        )
+                    if not numero_hint and isinstance(data, Mapping):
+                        numero_hint = (
+                            data.get("numeroControl")
+                            or data.get("numero_control")
+                            or data.get("numeroDocumento")
+                        )
+                    if numero_hint:
+                        numero = numero_hint
+
+                    codigo_value = None
+                    if ident_raw:
+                        codigo_value = ident_raw.get("tipoDte") or ident_raw.get(
+                            "tipoDocumento"
+                        )
+                    if codigo_value is None and isinstance(data, Mapping):
+                        codigo_value = (
+                            data.get("tipoDte")
+                            or data.get("tipoDocumento")
+                            or data.get("tipo")
+                        )
+                    codigo = codigo_value
                     if codigo is None:
                         codigo = _tipo_code_from_desc(tipo)
                     if codigo is not None:
@@ -3331,34 +3409,82 @@ class FacturacionTab(QWidget):
                             codigo = str(codigo).zfill(2)
                         except Exception:
                             codigo = None
-                    codigo_gen = ident.get("codigoGeneracion")
-                    fecha = ident.get("fecEmi", "")
-                    hora = ident.get("horEmi", "")
-                    cliente = data.get("receptor", {}).get("nombre", "")
 
-                    resumen = data.get("resumen", {})
-                    if tipo in ("Nota de crédito", "Nota de débito"):
-                        total = resumen.get("montoTotalOperacion")
-                        signo = -1 if tipo == "Nota de crédito" else 1
-                    else:
-                        total = resumen.get("totalPagar")
-                    try:
-                        total = abs(float(total))
-                    except (TypeError, ValueError):
-                        total = None
+                    codigo_gen_hint = None
+                    if ident_raw:
+                        codigo_gen_hint = ident_raw.get("codigoGeneracion") or ident_raw.get(
+                            "codigo_generacion"
+                        )
+                    if codigo_gen_hint is None and isinstance(data, Mapping):
+                        codigo_gen_hint = data.get("codigoGeneracion") or data.get(
+                            "codigo_generacion"
+                        )
+                    if codigo_gen_hint:
+                        codigo_gen = codigo_gen_hint
 
-                    if fecha:
-                        try:
-                            if hora:
-                                fdate = datetime.strptime(
-                                    f"{fecha} {hora}", "%Y-%m-%d %H:%M:%S"
-                                )
-                                fecha = fdate.strftime("%Y-%m-%d %H:%M")
+                    cliente_hint = None
+                    if isinstance(data, Mapping):
+                        cliente_hint = _facturacion_extract_cliente_nombre(data)
+                    if cliente_hint:
+                        cliente = str(cliente_hint)
+
+                    total_hint = None
+                    if isinstance(data, Mapping):
+                        total_hint = _facturacion_extract_total(data)
+                    total_value = None
+                    if total_hint not in (None, ""):
+                        coerced = _facturacion_coerce_total(total_hint)
+                        if coerced is not None:
+                            total_value = coerced
+                    if total_value is None and isinstance(data, Mapping):
+                        resumen = data.get("resumen")
+                        if isinstance(resumen, Mapping):
+                            if tipo in ("Nota de crédito", "Nota de débito"):
+                                total_value = resumen.get("montoTotalOperacion")
                             else:
-                                fdate = datetime.strptime(fecha, "%Y-%m-%d")
-                                fecha = fdate.strftime("%Y-%m-%d")
-                        except Exception:
-                            fdate = None
+                                total_value = resumen.get("totalPagar")
+                            coerced = _facturacion_coerce_total(total_value)
+                            if coerced is not None:
+                                total_value = coerced
+                            else:
+                                total_value = None
+                    if total_value is not None:
+                        total = total_value
+                        signo = -1 if tipo == "Nota de crédito" else 1
+
+                    fecha_val = None
+                    hora_val = None
+                    if ident_raw:
+                        fecha_val = (
+                            ident_raw.get("fecEmi")
+                            or ident_raw.get("fechaEmision")
+                            or ident_raw.get("fecha")
+                        )
+                        hora_val = (
+                            ident_raw.get("horEmi")
+                            or ident_raw.get("horaEmision")
+                            or ident_raw.get("hora")
+                        )
+                    if not fecha_val and isinstance(data, Mapping):
+                        fecha_val = (
+                            data.get("fecEmi")
+                            or data.get("fechaEmision")
+                            or data.get("fecha")
+                        )
+                    if not hora_val and isinstance(data, Mapping):
+                        hora_val = (
+                            data.get("horEmi")
+                            or data.get("horaEmision")
+                            or data.get("hora")
+                        )
+
+                    parsed_dt, display_fecha = self._parse_factura_datetime(
+                        fecha_val, hora_val
+                    )
+                    if display_fecha:
+                        fecha = display_fecha
+                    if parsed_dt:
+                        fdate = parsed_dt
 
                     estado, envio = self._detectar_estado_factura(
                         None,

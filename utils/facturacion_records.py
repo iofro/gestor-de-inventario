@@ -14,7 +14,7 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any, Dict, Iterable, Iterator, Mapping, Sequence
 
 from paths import resolve_user_visible_path
 
@@ -178,6 +178,160 @@ def _coerce_total(value: Any) -> float | None:
         return abs(float(text))
     except (TypeError, ValueError):
         return None
+
+
+def _normalize_factura_payload(payload):
+    """Mimic the JSON flattening used by the facturación detail dialog."""
+
+    if isinstance(payload, dict):
+        inner = payload.get("dteJson")
+        if isinstance(inner, Mapping):
+            merged = dict(inner)
+            merged.setdefault("dteJson", dict(inner))
+            for key, value in payload.items():
+                if key == "dteJson":
+                    continue
+                merged.setdefault(key, value)
+            payload.clear()
+            payload.update(merged)
+        return payload
+
+    if isinstance(payload, Mapping):
+        inner = payload.get("dteJson")
+        if isinstance(inner, Mapping):
+            merged = dict(inner)
+            merged.setdefault("dteJson", dict(inner))
+            for key, value in payload.items():
+                if key == "dteJson":
+                    continue
+                merged.setdefault(key, value)
+            return merged
+        return dict(payload)
+
+    return {} if payload is None else payload
+
+
+def _iter_tree_mappings(*values: Any) -> Iterator[Mapping[str, Any]]:
+    queue: list[Any] = list(values)
+    seen: set[int] = set()
+    while queue:
+        current = queue.pop(0)
+        if isinstance(current, Mapping):
+            obj_id = id(current)
+            if obj_id in seen:
+                continue
+            seen.add(obj_id)
+            yield current
+            queue.extend(current.values())
+        elif isinstance(current, (list, tuple, set)):
+            queue.extend(current)
+
+
+def _find_first_mapping(payload: Mapping[str, Any], keys: Sequence[str]) -> Mapping[str, Any] | None:
+    for mapping in _iter_tree_mappings(payload):
+        for key in keys:
+            section = mapping.get(key)
+            if isinstance(section, Mapping):
+                return section
+    return None
+
+
+def _first_non_empty(mapping: Mapping[str, Any], keys: Iterable[str]) -> Any:
+    for key in keys:
+        value = mapping.get(key)
+        if value is None:
+            continue
+        if isinstance(value, str):
+            if value.strip():
+                return value
+            continue
+        return value
+    return None
+
+
+def _find_first_non_empty(payload: Mapping[str, Any], keys: Sequence[str]) -> Any:
+    for mapping in _iter_tree_mappings(payload):
+        value = _first_non_empty(mapping, keys)
+        if value not in (None, ""):
+            return value
+    return None
+
+
+_TOTAL_FIELD_CANDIDATES = (
+    "totalPagar",
+    "totalAPagar",
+    "montoTotalOperacion",
+    "montoTotal",
+    "montoTotalComprobante",
+    "totalComprobante",
+    "total",
+    "totalGral",
+    "totalGeneral",
+    "totalVenta",
+    "ventaTotal",
+    "ventaGravada",
+    "montoTotalResumen",
+    "montoPagar",
+)
+
+
+_CLIENT_NAME_FIELDS = (
+    "nombre",
+    "nombreComercial",
+    "denominacionSocial",
+    "razonSocial",
+    "nombreRazonSocial",
+    "nombreCliente",
+    "nombreCompleto",
+)
+
+
+def _extract_cliente_nombre(payload: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(payload, Mapping):
+        return None
+
+    receptor = _find_first_mapping(
+        payload,
+        ("receptor", "cliente", "adquiriente", "contribuyente"),
+    )
+
+    search_spaces: list[Mapping[str, Any]] = []
+    if receptor:
+        search_spaces.append(receptor)
+        contacto = receptor.get("contactoReceptor")
+        if isinstance(contacto, Mapping):
+            search_spaces.append(contacto)
+    else:
+        search_spaces.append(payload)
+
+    for space in search_spaces:
+        name = _first_non_empty(space, _CLIENT_NAME_FIELDS)
+        if name:
+            return name
+        for mapping in _iter_tree_mappings(space):
+            if mapping is space:
+                continue
+            name = _first_non_empty(mapping, _CLIENT_NAME_FIELDS)
+            if name:
+                return name
+
+    return None
+
+
+def _extract_total_from_json(payload: Mapping[str, Any] | None) -> Any:
+    if not isinstance(payload, Mapping):
+        return None
+
+    resumen = _find_first_mapping(
+        payload,
+        ("resumen", "totales", "totalesFactura", "resumenFactura"),
+    )
+    if resumen:
+        total = _find_first_non_empty(resumen, _TOTAL_FIELD_CANDIDATES)
+        if total not in (None, ""):
+            return total
+
+    return _find_first_non_empty(payload, _TOTAL_FIELD_CANDIDATES)
 
 
 def map_envio_state(state: str | None) -> str:
@@ -439,17 +593,14 @@ def _load_json(path: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] 
             data = json.load(fh)
     except Exception:
         return None, None
-    payload = data
-    if isinstance(payload, Mapping):
-        for key in ("dteJson", "dte_json", "dte"):
-            nested = payload.get(key)
-            if isinstance(nested, Mapping):
-                payload = nested
-                break
+    if not isinstance(data, Mapping):
+        return None, None
+
+    payload = _normalize_factura_payload(dict(data))
     if not isinstance(payload, Mapping):
         return None, None
-    ident = payload.get("identificacion") or payload.get("identificador")
-    ident = ident if isinstance(ident, Mapping) else None
+
+    ident = _find_first_mapping(payload, ("identificacion", "identificador"))
     return payload, ident
 
 
@@ -637,6 +788,7 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         fecha_str = fdate.strftime("%Y-%m-%d %H:%M") if fdate else fecha_creacion
 
         row_type = "venta"
+        prefer_json_timestamp = False
         cliente_nombre = ""
         cliente_id = None
         vendedor_id = None
@@ -682,32 +834,78 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             if ident_data:
                 numero_control = ident_data.get("numeroControl")
                 codigo_generacion = ident_data.get("codigoGeneracion")
-        if not cliente_nombre and json_data:
-            try:
-                cliente_nombre = json_data.get("receptor", {}).get("nombre", "") or cliente_nombre
-            except Exception:
-                pass
+            prefer_json_timestamp = True
+        if not cliente_nombre and isinstance(json_data, Mapping):
+            nombre_hint = _extract_cliente_nombre(json_data)
+            if nombre_hint:
+                cliente_nombre = str(nombre_hint)
         if ident_data:
             numero_control = numero_control or ident_data.get("numeroControl")
             codigo_generacion = codigo_generacion or ident_data.get("codigoGeneracion")
 
-            if not fdate:
-                fecha_ident = (
-                    ident_data.get("fecEmi")
-                    or ident_data.get("fechaEmision")
-                    or ident_data.get("fecha")
+            fecha_ident = (
+                ident_data.get("fecEmi")
+                or ident_data.get("fechaEmision")
+                or ident_data.get("fecha")
+            )
+            hora_ident = ident_data.get("horEmi") or ident_data.get("horaEmision")
+            if fecha_ident:
+                try:
+                    parsed_fecha = None
+                    parsed_display = None
+                    if hora_ident:
+                        parsed_fecha = datetime.strptime(
+                            f"{fecha_ident} {hora_ident}", "%Y-%m-%d %H:%M:%S"
+                        )
+                        parsed_display = parsed_fecha.strftime("%Y-%m-%d %H:%M")
+                    else:
+                        parsed_fecha = datetime.strptime(str(fecha_ident), "%Y-%m-%d")
+                        parsed_display = parsed_fecha.strftime("%Y-%m-%d")
+                except Exception:
+                    parsed_fecha = None
+                    parsed_display = None
+                if parsed_fecha and (prefer_json_timestamp or not fdate):
+                    fdate = parsed_fecha
+                    fecha_str = parsed_display or fecha_str
+        elif isinstance(json_data, Mapping):
+            numero_hint = _find_first_non_empty(
+                json_data,
+                (
+                    "numeroControl",
+                    "numero_control",
+                    "numeroDocumento",
+                    "numeroFactura",
+                    "numero",
+                ),
+            )
+            if numero_hint:
+                numero_control = numero_hint
+            codigo_hint = _find_first_non_empty(
+                json_data,
+                ("codigoGeneracion", "codigo_generacion", "codigo", "codigoDeGeneracion"),
+            )
+            if codigo_hint:
+                codigo_generacion = codigo_hint
+            if prefer_json_timestamp or not fdate:
+                fecha_hint = _find_first_non_empty(
+                    json_data,
+                    ("fecEmi", "fechaEmision", "fecha"),
                 )
-                hora_ident = ident_data.get("horEmi") or ident_data.get("horaEmision")
-                if fecha_ident:
+                if fecha_hint:
+                    hora_hint = _find_first_non_empty(
+                        json_data,
+                        ("horEmi", "horaEmision", "hora"),
+                    )
                     try:
-                        if hora_ident:
-                            fdate = datetime.strptime(
-                                f"{fecha_ident} {hora_ident}", "%Y-%m-%d %H:%M:%S"
+                        if hora_hint:
+                            parsed_fecha = datetime.strptime(
+                                f"{fecha_hint} {hora_hint}", "%Y-%m-%d %H:%M:%S"
                             )
-                            fecha_str = fdate.strftime("%Y-%m-%d %H:%M")
+                            fecha_str = parsed_fecha.strftime("%Y-%m-%d %H:%M")
                         else:
-                            fdate = datetime.strptime(str(fecha_ident), "%Y-%m-%d")
-                            fecha_str = fdate.strftime("%Y-%m-%d")
+                            parsed_fecha = datetime.strptime(str(fecha_hint), "%Y-%m-%d")
+                            fecha_str = parsed_fecha.strftime("%Y-%m-%d")
+                        fdate = parsed_fecha
                     except Exception:
                         fdate = None
 
@@ -728,6 +926,11 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                         )
                     elif tipo_hint_str:
                         tipo_desc = tipo_hint_str
+
+        if total is None and isinstance(json_data, Mapping):
+            total_hint = _extract_total_from_json(json_data)
+            if total_hint not in (None, ""):
+                total = total_hint
 
         if tipo_codigo is None and ident_data:
             tipo_codigo = ident_data.get("tipoDte")

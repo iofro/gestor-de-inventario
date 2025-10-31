@@ -42,14 +42,17 @@ def test_ticket_records_merge_with_invoice_even_if_sale_missing(tmp_path):
     invoice_json = tmp_path / f"{base_name}.json"
     invoice_pdf.write_text("pdf", encoding="utf-8")
     payload = {
-        "identificacion": {
-            "numeroControl": base_name,
-            "codigoGeneracion": "ABCD1234",
-            "tipoDte": "01",
-            "fecEmi": "2024-03-01",
-        },
-        "receptor": {"nombre": "Cliente"},
-        "resumen": {"totalPagar": 75},
+        "documento": {
+            "identificacion": {
+                "numeroControl": base_name,
+                "codigoGeneracion": "ABCD1234",
+                "tipoDte": "01",
+                "fecEmi": "2024-03-01",
+                "horEmi": "08:15:00",
+            },
+            "receptor": {"nombre": "Cliente"},
+            "resumen": {"totalPagar": 75},
+        }
     }
     invoice_json.write_text(json.dumps(payload), encoding="utf-8")
 
@@ -68,6 +71,85 @@ def test_ticket_records_merge_with_invoice_even_if_sale_missing(tmp_path):
     row = rows[0]
     assert row.get("name") == base_name
     assert row.get("ticket_pdf") == str(ticket_pdf)
+    assert row.get("cliente") == "Cliente"
+    assert row.get("fecha") == "2024-03-01 08:15"
+    assert row.get("total") == 75.0
+
+
+def test_orphan_invoice_uses_documento_wrapper(tmp_path):
+    db = DB(":memory:")
+    base_name = "20240515_0005_CreditoFiscal"
+    invoice_pdf = tmp_path / f"{base_name}.pdf"
+    invoice_json = tmp_path / f"{base_name}.json"
+    invoice_pdf.write_text("pdf", encoding="utf-8")
+    payload = {
+        "selloRecibido": {"fechaRecibido": "2024-05-16"},
+        "respuesta": {
+            "documento": {
+                "identificacion": {
+                    "numeroControl": "DTE-03-S001P001-000000000000005",
+                    "codigoGeneracion": "XYZ123",
+                    "tipoDte": "03",
+                    "fecEmi": "2024-05-15",
+                    "horEmi": "09:30:00",
+                },
+                "receptor": {"nombre": "Luis Pérez"},
+                "resumen": {"totalPagar": "492.75"},
+            }
+        },
+    }
+    invoice_json.write_text(json.dumps(payload), encoding="utf-8")
+
+    db.add_factura_pdf(None, "Crédito fiscal", str(invoice_pdf))
+
+    rows = get_facturacion_rows(db)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.get("numero_control") == "DTE-03-S001P001-000000000000005"
+    assert row.get("codigo_generacion") == "XYZ123"
+    assert row.get("cliente") == "Luis Pérez"
+    assert row.get("fecha") == "2024-05-15 09:30"
+    assert row.get("total") == 492.75
+
+
+def test_orphan_invoice_with_informacion_block(tmp_path):
+    db = DB(":memory:")
+    base_name = "20240516_0006_CreditoFiscal"
+    invoice_pdf = tmp_path / f"{base_name}.pdf"
+    invoice_json = tmp_path / f"{base_name}.json"
+    invoice_pdf.write_text("pdf", encoding="utf-8")
+    payload = {
+        "informacion": {
+            "detalle": {
+                "identificacion": {
+                    "numeroControl": "DTE-03-S001P001-000000000000006",
+                    "codigoGeneracion": "XYZ124",
+                    "fecEmi": "2024-05-16",
+                    "horEmi": "10:45:00",
+                },
+                "cliente": {
+                    "nombreComercial": "Panadería La Espiga",
+                },
+                "resumenFactura": {
+                    "montoTotalOperacion": 123.45,
+                },
+            }
+        }
+    }
+    invoice_json.write_text(json.dumps(payload), encoding="utf-8")
+
+    db.add_factura_pdf(None, "Crédito fiscal", str(invoice_pdf))
+
+    rows = get_facturacion_rows(db)
+
+    assert len(rows) == 1
+    row = rows[0]
+    assert row.get("numero_control") == "DTE-03-S001P001-000000000000006"
+    assert row.get("codigo_generacion") == "XYZ124"
+    assert row.get("cliente") == "Panadería La Espiga"
+    assert row.get("fecha") == "2024-05-16 10:45"
+    assert row.get("total") == 123.45
 
 
 def test_remision_label_without_nota_still_shows_note_entry(tmp_path):

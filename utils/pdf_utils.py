@@ -1,13 +1,17 @@
 from reportlab.pdfbase import pdfmetrics
 
 
-def draw_wrapped_text(c, text, x, y, max_width, line_height):
-    """Draw text at ``x,y`` wrapping lines so they don't exceed ``max_width``.
+def wrap_text_lines(text, fontname, fontsize, max_width):
+    """Split ``text`` into wrapped lines constrained by ``max_width``."""
 
-    Returns the y position for the next line after drawing.
-    """
-    fontname = c._fontname
-    fontsize = c._fontsize
+    if text is None:
+        text = ""
+    else:
+        text = str(text)
+
+    if not text:
+        return []
+
     words = text.split()
     line = ""
     lines = []
@@ -44,7 +48,18 @@ def draw_wrapped_text(c, text, x, y, max_width, line_height):
     if line:
         lines.append(line)
 
-    for ln in lines:
+    return lines
+
+
+def draw_wrapped_text(c, text, x, y, max_width, line_height):
+    """Draw text at ``x,y`` wrapping lines so they don't exceed ``max_width``.
+
+    Returns the y position for the next line after drawing.
+    """
+
+    fontname = c._fontname
+    fontsize = c._fontsize
+    for ln in wrap_text_lines(text, fontname, fontsize, max_width):
         c.drawString(x, y, ln)
         y -= line_height
     return y

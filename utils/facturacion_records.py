@@ -16,6 +16,8 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Mapping
 
+from paths import resolve_user_visible_path
+
 
 DOC_SUFFIX_PATTERN = re.compile(
     r"^\d{8}_.+_(ConsumidorFinal|CreditoFiscal|Ticket|NotaDebito|NotaCredito|NotaRemision)$"
@@ -367,11 +369,73 @@ def is_ticket_sale(db, venta: Mapping[str, Any] | None) -> bool:
     return not nit and not dui
 
 
+def _resolve_existing_path(path: str | None) -> str | None:
+    """Return the first accessible version of ``path``.
+
+    Historical records may point to logical locations that differ from the
+    physical file exposed to the user (for example when Python is executed from
+    the Microsoft Store sandbox).  Additionally some users store documents on
+    file systems with case-insensitive semantics which results in records using
+    a different letter casing than what is reported when running the
+    application on Linux or macOS.  This helper tries the original path, its
+    user-visible counterpart and, when possible, performs a case-insensitive
+    lookup in the target directory.
+    """
+
+    if not path:
+        return None
+
+    candidates: list[str] = []
+    try:
+        canonical = os.fspath(path)
+    except TypeError:
+        canonical = path  # type: ignore[assignment]
+
+    if canonical:
+        candidates.append(canonical)
+
+    try:
+        visible = resolve_user_visible_path(canonical)
+    except Exception:
+        visible = None
+
+    if visible and visible not in candidates:
+        candidates.append(visible)
+
+    for candidate in candidates:
+        if candidate and os.path.exists(candidate):
+            return candidate
+
+    for candidate in candidates:
+        if not candidate:
+            continue
+        directory, base = os.path.split(candidate)
+        if not directory or not base:
+            continue
+        stem, _ext = os.path.splitext(base)
+        try:
+            entries = os.listdir(directory)
+        except Exception:
+            continue
+        for entry in entries:
+            entry_stem, _entry_ext = os.path.splitext(entry)
+            if entry_stem.lower() == stem.lower():
+                matched = os.path.join(directory, entry)
+                if os.path.exists(matched):
+                    return matched
+
+    return path
+
+
 def _load_json(path: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
-    if not path or not os.path.exists(path):
+    if not path:
+        return None, None
+
+    resolved_path = _resolve_existing_path(path)
+    if not resolved_path or not os.path.exists(resolved_path):
         return None, None
     try:
-        with open(path, "r", encoding="utf-8") as fh:
+        with open(resolved_path, "r", encoding="utf-8") as fh:
             data = json.load(fh)
     except Exception:
         return None, None
@@ -550,14 +614,16 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                 venta = db.get_venta_by_id(venta_id)
             except Exception:
                 venta = None
-        ruta = rec.get("ruta")
+        ruta = _resolve_existing_path(rec.get("ruta")) or rec.get("ruta")
         if not ruta and ticket_info:
-            ruta = ticket_info.get("ruta")
+            ruta = _resolve_existing_path(ticket_info.get("ruta")) or ticket_info.get("ruta")
         json_path = os.path.splitext(ruta)[0] + ".json" if ruta else None
+        json_path = _resolve_existing_path(json_path)
         if ticket_info and (not json_path or not os.path.exists(json_path)):
-            ticket_ruta = ticket_info.get("ruta")
+            ticket_ruta = _resolve_existing_path(ticket_info.get("ruta")) or ticket_info.get("ruta")
             if ticket_ruta:
                 ticket_json = os.path.splitext(ticket_ruta)[0] + ".json"
+                ticket_json = _resolve_existing_path(ticket_json)
                 if ticket_json and os.path.exists(ticket_json):
                     json_path = ticket_json
 
@@ -624,6 +690,26 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         if ident_data:
             numero_control = numero_control or ident_data.get("numeroControl")
             codigo_generacion = codigo_generacion or ident_data.get("codigoGeneracion")
+
+            if not fdate:
+                fecha_ident = (
+                    ident_data.get("fecEmi")
+                    or ident_data.get("fechaEmision")
+                    or ident_data.get("fecha")
+                )
+                hora_ident = ident_data.get("horEmi") or ident_data.get("horaEmision")
+                if fecha_ident:
+                    try:
+                        if hora_ident:
+                            fdate = datetime.strptime(
+                                f"{fecha_ident} {hora_ident}", "%Y-%m-%d %H:%M:%S"
+                            )
+                            fecha_str = fdate.strftime("%Y-%m-%d %H:%M")
+                        else:
+                            fdate = datetime.strptime(str(fecha_ident), "%Y-%m-%d")
+                            fecha_str = fdate.strftime("%Y-%m-%d")
+                    except Exception:
+                        fdate = None
 
         if isinstance(extra_data, Mapping):
             numero_control = numero_control or extra_data.get("numeroControl")

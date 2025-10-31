@@ -803,6 +803,11 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         if json_path and os.path.exists(json_path):
             json_data, ident_data = _load_json(json_path)
 
+        if ident_data is None and isinstance(json_data, Mapping):
+            maybe_ident = json_data.get("identificacion") or json_data.get("identificador")
+            if isinstance(maybe_ident, Mapping):
+                ident_data = maybe_ident
+
         extra_data = None
         if venta:
             getter = getattr(db, "get_cliente", None)

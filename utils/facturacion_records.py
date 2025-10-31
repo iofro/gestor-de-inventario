@@ -180,6 +180,84 @@ def _coerce_total(value: Any) -> float | None:
         return None
 
 
+def _first_non_empty(mapping: Mapping[str, Any], keys: Iterable[str]) -> str | None:
+    for key in keys:
+        value = mapping.get(key)
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
+def _extract_cliente_nombre(payload: Mapping[str, Any] | None) -> str | None:
+    if not isinstance(payload, Mapping):
+        return None
+
+    candidates: list[Mapping[str, Any]] = []
+
+    for key in ("receptor", "cliente", "adquiriente", "contribuyente"):
+        section = payload.get(key)
+        if isinstance(section, Mapping):
+            candidates.append(section)
+            contacto = section.get("contactoReceptor")
+            if isinstance(contacto, Mapping):
+                candidates.append(contacto)
+
+    for section in candidates:
+        nombre = _first_non_empty(
+            section,
+            (
+                "nombre",
+                "nombreComercial",
+                "denominacionSocial",
+                "razonSocial",
+                "nombreRazonSocial",
+                "nombreCliente",
+                "nombreCompleto",
+            ),
+        )
+        if nombre:
+            return nombre
+
+    return None
+
+
+def _extract_total_from_json(payload: Mapping[str, Any] | None) -> Any:
+    if not isinstance(payload, Mapping):
+        return None
+
+    sections: list[Mapping[str, Any]] = []
+    for key in ("resumen", "totales", "totalesFactura", "resumenFactura"):
+        section = payload.get(key)
+        if isinstance(section, Mapping):
+            sections.append(section)
+
+    for section in sections:
+        value = None
+        for field in (
+            "totalPagar",
+            "totalAPagar",
+            "montoTotalOperacion",
+            "montoTotal",
+            "montoTotalComprobante",
+            "totalComprobante",
+            "total",
+            "totalGral",
+            "totalGeneral",
+            "totalVenta",
+            "ventaTotal",
+        ):
+            value = section.get(field)
+            if value not in (None, ""):
+                break
+        if value not in (None, ""):
+            return value
+
+    return None
+
+
 def map_envio_state(state: str | None) -> str:
     est = str(state or "").strip().upper()
     if est == "ACEPTADO":
@@ -651,6 +729,11 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         if json_path and os.path.exists(json_path):
             json_data, ident_data = _load_json(json_path)
 
+        if ident_data is None and isinstance(json_data, Mapping):
+            maybe_ident = json_data.get("identificacion") or json_data.get("identificador")
+            if isinstance(maybe_ident, Mapping):
+                ident_data = maybe_ident
+
         extra_data = None
         if venta:
             getter = getattr(db, "get_cliente", None)
@@ -682,11 +765,10 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             if ident_data:
                 numero_control = ident_data.get("numeroControl")
                 codigo_generacion = ident_data.get("codigoGeneracion")
-        if not cliente_nombre and json_data:
-            try:
-                cliente_nombre = json_data.get("receptor", {}).get("nombre", "") or cliente_nombre
-            except Exception:
-                pass
+        if not cliente_nombre and isinstance(json_data, Mapping):
+            cliente_hint = _extract_cliente_nombre(json_data)
+            if cliente_hint:
+                cliente_nombre = cliente_hint
         if ident_data:
             numero_control = numero_control or ident_data.get("numeroControl")
             codigo_generacion = codigo_generacion or ident_data.get("codigoGeneracion")
@@ -711,6 +793,28 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                     except Exception:
                         fdate = None
 
+        if not numero_control and isinstance(json_data, Mapping):
+            numero_hint = _first_non_empty(
+                json_data,
+                (
+                    "numeroControl",
+                    "numero_control",
+                    "numeroDocumento",
+                    "numeroFactura",
+                    "numero",
+                ),
+            )
+            if numero_hint:
+                numero_control = numero_hint
+
+        if not codigo_generacion and isinstance(json_data, Mapping):
+            codigo_hint = _first_non_empty(
+                json_data,
+                ("codigoGeneracion", "codigo_generacion", "codigo", "codigoDeGeneracion"),
+            )
+            if codigo_hint:
+                codigo_generacion = codigo_hint
+
         if isinstance(extra_data, Mapping):
             numero_control = numero_control or extra_data.get("numeroControl")
             codigo_generacion = codigo_generacion or extra_data.get("codigoGeneracion")
@@ -728,6 +832,11 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                         )
                     elif tipo_hint_str:
                         tipo_desc = tipo_hint_str
+
+        if total is None and isinstance(json_data, Mapping):
+            total_hint = _extract_total_from_json(json_data)
+            if total_hint not in (None, ""):
+                total = total_hint
 
         if tipo_codigo is None and ident_data:
             tipo_codigo = ident_data.get("tipoDte")

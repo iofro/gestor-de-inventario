@@ -11,6 +11,7 @@ import os
 import json
 import sys
 import subprocess
+import unicodedata
 from typing import Mapping
 from inventory_manager import InventoryManager
 from db import DB
@@ -42,6 +43,11 @@ from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
 from mh_auth import invalidate_token_cache
 from utils.party_resolver import normalize_identifier, resolve_party_names
+from utils.facturacion_records import (
+    TIPO_DTE_DESC,
+    canonical_tipo_label,
+    get_facturacion_rows,
+)
 import logging
 
 logger = logging.getLogger(__name__)
@@ -268,6 +274,112 @@ class MainWindow(QMainWindow):
             )
             if resp == QMessageBox.Yes:
                 self.iniciar_firmador()
+
+    @staticmethod
+    def _parse_invoice_datetime(value):
+        if isinstance(value, datetime):
+            return value
+        if not value:
+            return None
+        if isinstance(value, str):
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y-%m-%d"):
+                try:
+                    return datetime.strptime(value, fmt)
+                except ValueError:
+                    continue
+        return None
+
+    @staticmethod
+    def _normalize_envio_text(value: str) -> str:
+        lowered = str(value or "").strip().lower()
+        if not lowered:
+            return ""
+        normalized = unicodedata.normalize("NFKD", lowered)
+        return "".join(ch for ch in normalized if not unicodedata.combining(ch))
+
+    def _get_latest_invoice_row(self):
+        manager = getattr(self, "manager", None)
+        if manager is None:
+            return None
+        try:
+            rows = get_facturacion_rows(manager.db)
+        except Exception:
+            logger.exception(
+                "Error al obtener registros de facturación para validar la última factura"
+            )
+            return None
+
+        latest_row = None
+        latest_key = None
+        for row in rows:
+            try:
+                tipo_label = canonical_tipo_label(row.get("tipo"))
+                if not tipo_label:
+                    code_value = row.get("codigo")
+                    code_str = str(code_value).zfill(2) if code_value is not None else ""
+                    if code_str:
+                        tipo_label = TIPO_DTE_DESC.get(code_str)
+                if tipo_label not in {"Consumidor final", "Crédito fiscal"}:
+                    continue
+                row_type = str(row.get("row_type") or "").strip().lower()
+                if row_type and row_type not in {"venta"}:
+                    continue
+                timestamp = row.get("_parsed_fecha")
+                if isinstance(timestamp, datetime) and timestamp.tzinfo is not None:
+                    timestamp = timestamp.replace(tzinfo=None)
+                if not isinstance(timestamp, datetime):
+                    timestamp = self._parse_invoice_datetime(row.get("fecha"))
+                if timestamp is None:
+                    timestamp = datetime.min
+                venta_id = row.get("venta_id")
+                try:
+                    venta_key = int(venta_id)
+                except (TypeError, ValueError):
+                    venta_key = 0
+                rec_id = row.get("id")
+                try:
+                    rec_key = int(rec_id)
+                except (TypeError, ValueError):
+                    rec_key = 0
+                key = (timestamp, venta_key, rec_key)
+            except Exception:
+                logger.exception(
+                    "Error al procesar un registro de facturación durante la validación"
+                )
+                continue
+
+            if latest_key is None or key > latest_key:
+                latest_key = key
+                latest_row = row
+
+        return latest_row
+
+    def _ensure_last_invoice_sent(self) -> bool:
+        try:
+            latest_row = self._get_latest_invoice_row()
+        except Exception:
+            logger.exception(
+                "Error inesperado al validar la última factura antes de registrar una venta"
+            )
+            return True
+
+        if not latest_row:
+            return True
+
+        envio_state = str(latest_row.get("envio") or "").strip()
+        normalized = self._normalize_envio_text(envio_state)
+        if not normalized:
+            normalized = "pendiente de envio"
+
+        if normalized.startswith("pendiente") or "no enviado" in normalized or "no enviada" in normalized:
+            QMessageBox.warning(
+                self,
+                "Factura pendiente",
+                "La última factura no ha sido enviada. Envía o elimina la última factura.",
+            )
+            return False
+
+        return True
 
     def generar_factura_pdf(self):
         """Función de generación de facturas no disponible."""
@@ -886,6 +998,8 @@ class MainWindow(QMainWindow):
         self.selected_row = None
 
     def registrar_venta(self):
+        if not self._ensure_last_invoice_sent():
+            return
         # Obtén los lotes con stock > 0 del inventario actual
         productos_lote = []
         compras = self.manager.db.get_compras()
@@ -1017,6 +1131,8 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error al registrar compra", str(e))
 
     def registrar_venta_credito_fiscal(self):
+        if not self._ensure_last_invoice_sent():
+            return
         try:
             # Arma la lista de productos disponibles para la venta (con stock > 0)
             productos_lote = []

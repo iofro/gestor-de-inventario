@@ -311,6 +311,7 @@ class MainWindow(QMainWindow):
 
         latest_row = None
         latest_key = None
+        allowed_tipo_labels = {"Consumidor final", "Crédito fiscal", "Ticket"}
         for row in rows:
             try:
                 tipo_label = canonical_tipo_label(row.get("tipo"))
@@ -319,10 +320,10 @@ class MainWindow(QMainWindow):
                     code_str = str(code_value).zfill(2) if code_value is not None else ""
                     if code_str:
                         tipo_label = TIPO_DTE_DESC.get(code_str)
-                if tipo_label not in {"Consumidor final", "Crédito fiscal"}:
+                if tipo_label not in allowed_tipo_labels:
                     continue
                 row_type = str(row.get("row_type") or "").strip().lower()
-                if row_type and row_type not in {"venta"}:
+                if row_type and row_type not in {"venta", "ticket"}:
                     continue
                 timestamp = row.get("_parsed_fecha")
                 if isinstance(timestamp, datetime) and timestamp.tzinfo is not None:
@@ -374,8 +375,8 @@ class MainWindow(QMainWindow):
         if normalized.startswith("pendiente") or "no enviado" in normalized or "no enviada" in normalized:
             QMessageBox.warning(
                 self,
-                "Factura pendiente",
-                "La última factura no ha sido enviada. Envía o elimina la última factura.",
+                "Documento pendiente",
+                "El último ticket o factura no ha sido enviado. Envía o elimina el último documento.",
             )
             return False
 

@@ -29,6 +29,7 @@ from PyQt5.QtWidgets import (
     QAction,
     QFormLayout,
     QTabWidget,
+    QSplitter,
 )
 from PyQt5.QtCore import QDate, QDateTime, QTime, Qt, QUrl, QTimer, QEvent, QSize
 from PyQt5.QtGui import QPixmap, QDesktopServices, QCursor, QImage, QColor, QBrush
@@ -1934,8 +1935,128 @@ class EventoContingenciaDialog(QDialog):
         )
 
 
+class _FacturacionPreviewSplitter(QSplitter):
+    """Splitter con límites de tamaño pensados para la vista de Facturación."""
+
+    def __init__(
+        self,
+        *,
+        min_list_width: int,
+        min_preview_ratio: float,
+        max_preview_ratio: float,
+        parent: Optional[QWidget] = None,
+    ) -> None:
+        super().__init__(Qt.Horizontal, parent)
+        self.setChildrenCollapsible(False)
+        # Handler width can be tweaked together with the stylesheet below.
+        self._handle_width = 6
+        self.setHandleWidth(self._handle_width)
+        self._min_list_width = min_list_width
+        self._min_preview_ratio = min_preview_ratio
+        self._max_preview_ratio = max_preview_ratio
+        # Threshold after which we fall back to a stacked (vertical) layout to
+        # avoid unusable columns on very small screens.
+        min_for_horizontal = int(
+            self._min_list_width / max(0.01, 1 - self._min_preview_ratio)
+        )
+        self._mobile_threshold = max(720, min_for_horizontal + 40)
+        self.splitterMoved.connect(self._enforce_limits)
+        self.setStyleSheet(
+            """
+            QSplitter::handle {
+                background-color: #c7c7c7;
+            }
+            QSplitter::handle:horizontal {
+                width: 6px;
+                cursor: col-resize;
+            }
+            QSplitter::handle:vertical {
+                height: 4px;
+            }
+            """
+        )
+
+    def resizeEvent(self, event):  # type: ignore[override]
+        super().resizeEvent(event)
+        self.update_orientation()
+
+    def update_orientation(self) -> None:
+        """Switch to a vertical layout when the container is too small."""
+
+        available_width = self.width()
+        if available_width <= self._mobile_threshold and self.orientation() != Qt.Vertical:
+            self.setOrientation(Qt.Vertical)
+            self.setHandleWidth(0)
+        elif available_width > self._mobile_threshold and self.orientation() != Qt.Horizontal:
+            self.setOrientation(Qt.Horizontal)
+            self.setHandleWidth(self._handle_width)
+            self._enforce_limits(0, 0)
+
+    def initialize_default_sizes(self, preview_ratio: float) -> None:
+        """Set an initial ratio after the widget is visible."""
+
+        if self.orientation() != Qt.Horizontal:
+            return
+        total = self.width()
+        if total <= 0:
+            return
+        preview_width = int(total * preview_ratio)
+        preview_width = max(0, min(preview_width, total))
+        self.setSizes([total - preview_width, preview_width])
+        self._enforce_limits(0, 0)
+
+    def _enforce_limits(self, pos: int, index: int) -> None:  # noqa: ARG002
+        """Clamp the splitter sizes to keep both panels legible."""
+
+        if self.orientation() != Qt.Horizontal:
+            return
+        sizes = self.sizes()
+        if len(sizes) != 2:
+            return
+        total = sum(sizes)
+        if total <= 0:
+            return
+
+        list_size, preview_size = sizes
+        min_preview = int(total * self._min_preview_ratio)
+        max_preview = int(total * self._max_preview_ratio)
+        max_preview_by_list = max(0, total - self._min_list_width)
+        # Clamp preview to ratio-based bounds first.
+        new_preview = max(preview_size, min_preview)
+        new_preview = min(new_preview, max_preview)
+        # Ensure the list keeps its minimum width.
+        new_preview = min(new_preview, max_preview_by_list)
+        new_list = total - new_preview
+        if new_list < self._min_list_width:
+            new_list = self._min_list_width
+            new_preview = total - new_list
+        # If the available width is not enough to satisfy both the ratio and
+        # the minimum list width we simply honour the minimum width and allow
+        # the preview to shrink a bit more. The layout switches to vertical on
+        # even smaller sizes to keep everything readable.
+        min_preview = min(min_preview, max(0, total - self._min_list_width))
+        if new_preview < min_preview:
+            new_preview = min_preview
+            new_list = total - new_preview
+
+        new_preview = max(0, new_preview)
+        new_list = max(0, new_list)
+        if [list_size, preview_size] == [new_list, new_preview]:
+            return
+
+        self.blockSignals(True)
+        self.setSizes([new_list, new_preview])
+        self.blockSignals(False)
+
+
 class FacturacionTab(QWidget):
     """Tab para gestionar facturas y notas."""
+
+    # Valores por defecto para los anchos. Modifíquelos según sus necesidades.
+    _MIN_TABLE_WIDTH = 350
+    _PREVIEW_MIN_RATIO = 0.3
+    _PREVIEW_MAX_RATIO = 0.7
+    _DEFAULT_PREVIEW_RATIO = 0.45
 
     def __init__(self, manager, parent=None):
         super().__init__(parent)
@@ -1974,9 +2095,17 @@ class FacturacionTab(QWidget):
         self.section_tabs.addTab(facturacion_container, "Facturación")
 
         main_layout = QHBoxLayout(facturacion_container)
+        self.preview_splitter = _FacturacionPreviewSplitter(
+            min_list_width=self._MIN_TABLE_WIDTH,
+            min_preview_ratio=self._PREVIEW_MIN_RATIO,
+            max_preview_ratio=self._PREVIEW_MAX_RATIO,
+            parent=facturacion_container,
+        )
 
-        left_layout = QVBoxLayout()
-
+        left_container = QWidget()
+        left_container.setMinimumWidth(self._MIN_TABLE_WIDTH)
+        left_layout = QVBoxLayout(left_container)
+        
         filter_layout = QHBoxLayout()
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Buscar número o cliente")
@@ -2064,9 +2193,8 @@ class FacturacionTab(QWidget):
         btns.addStretch(1)
         left_layout.addLayout(btns)
 
-        main_layout.addLayout(left_layout, 3)
-
-        preview_layout = QVBoxLayout()
+        preview_container = QWidget()
+        preview_layout = QVBoxLayout(preview_container)
         self.preview_label = QLabel("Previsualización del PDF")
         self.preview_label.setAlignment(Qt.AlignCenter)
         self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
@@ -2076,7 +2204,12 @@ class FacturacionTab(QWidget):
         preview_scroll.setWidgetResizable(True)
         preview_scroll.setWidget(self.preview_label)
         preview_layout.addWidget(preview_scroll)
-        main_layout.addLayout(preview_layout, 2)
+        self.preview_splitter.addWidget(left_container)
+        self.preview_splitter.addWidget(preview_container)
+        self.preview_splitter.setStretchFactor(0, 1)
+        self.preview_splitter.setStretchFactor(1, 1)
+        main_layout.addWidget(self.preview_splitter)
+        QTimer.singleShot(0, self._initialize_splitter_sizes)
 
         # Connect signals
         self.update_btn.clicked.connect(self.refresh_and_reload)
@@ -2097,6 +2230,13 @@ class FacturacionTab(QWidget):
         self.btn_eliminar.clicked.connect(self.delete_invoice)
 
         self._setup_declaracion_tab()
+
+    def _initialize_splitter_sizes(self) -> None:
+        """Ajusta el tamaño inicial del panel de previsualización."""
+
+        if hasattr(self, "preview_splitter"):
+            self.preview_splitter.update_orientation()
+            self.preview_splitter.initialize_default_sizes(self._DEFAULT_PREVIEW_RATIO)
 
     def _setup_declaracion_tab(self):
         declaracion_widget = QWidget()

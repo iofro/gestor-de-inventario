@@ -2111,12 +2111,6 @@ class FacturacionTab(QWidget):
         self.search_bar.setPlaceholderText("Buscar número o cliente")
         filter_layout.addWidget(self.search_bar)
 
-        self.client_filter = QComboBox()
-        self.client_filter.addItem("Todos", None)
-        for c in self.manager._clientes:
-            self.client_filter.addItem(c.get("nombre", ""), c.get("id"))
-        filter_layout.addWidget(self.client_filter)
-
         self.vendedor_filter = QComboBox()
         self.vendedor_filter.addItem("Todos", None)
         for v in self.manager.db.get_trabajadores(solo_vendedores=True):
@@ -2152,9 +2146,6 @@ class FacturacionTab(QWidget):
         self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.update_btn = QPushButton("Actualizar")
         filter_layout.addWidget(self.update_btn)
-        self.sent_filter_cb = QCheckBox("Ver solo DTE enviados")
-        filter_layout.addWidget(self.sent_filter_cb)
-        self.sent_filter_cb.toggled.connect(self.load_invoices)
         filter_layout.addStretch(1)
         left_layout.addLayout(filter_layout)
 
@@ -2214,7 +2205,6 @@ class FacturacionTab(QWidget):
         # Connect signals
         self.update_btn.clicked.connect(self.refresh_and_reload)
         self.search_bar.returnPressed.connect(self.load_invoices)
-        self.client_filter.currentIndexChanged.connect(self.load_invoices)
         self.vendedor_filter.currentIndexChanged.connect(self.load_invoices)
         self.tipo_filter.currentIndexChanged.connect(self.load_invoices)
         self.date_from.dateChanged.connect(self.load_invoices)
@@ -2831,17 +2821,10 @@ class FacturacionTab(QWidget):
         self.load_invoices()
 
     def refresh_filters(self):
-        """Update client and vendor filter combos with latest data."""
-        self.client_filter.blockSignals(True)
+        """Update vendor filter combos with latest data."""
         self.vendedor_filter.blockSignals(True)
 
-        current_client = self.client_filter.currentData()
         current_vend = self.vendedor_filter.currentData()
-
-        self.client_filter.clear()
-        self.client_filter.addItem("Todos", None)
-        for c in self.manager._clientes:
-            self.client_filter.addItem(c.get("nombre", ""), c.get("id"))
 
         self.vendedor_filter.clear()
         self.vendedor_filter.addItem("Todos", None)
@@ -2858,10 +2841,8 @@ class FacturacionTab(QWidget):
                     return
             combo.setCurrentIndex(0)
 
-        _restore(self.client_filter, current_client)
         _restore(self.vendedor_filter, current_vend)
 
-        self.client_filter.blockSignals(False)
         self.vendedor_filter.blockSignals(False)
 
     @staticmethod
@@ -3109,12 +3090,7 @@ class FacturacionTab(QWidget):
         else:
             d_from = d_to = None
         tipo = self.tipo_filter.currentText()
-        cliente_filter_value = None
         vendedor_filter_value = None
-        if hasattr(self, "client_filter"):
-            cliente_filter_value = self.client_filter.currentData()
-            if cliente_filter_value is not None:
-                cliente_filter_value = str(cliente_filter_value)
         if hasattr(self, "vendedor_filter"):
             vendedor_filter_value = self.vendedor_filter.currentData()
             if vendedor_filter_value is not None:
@@ -3134,10 +3110,6 @@ class FacturacionTab(QWidget):
             if tipo != "Todos" and r.get("tipo") != tipo:
                 rows.remove(r)
                 continue
-            if cliente_filter_value is not None:
-                if str(r.get("cliente_id")) != cliente_filter_value:
-                    rows.remove(r)
-                    continue
             if vendedor_filter_value is not None:
                 if str(r.get("vendedor_id")) != vendedor_filter_value:
                     rows.remove(r)
@@ -3146,15 +3118,6 @@ class FacturacionTab(QWidget):
             if search and search not in r.get("name", "").lower() and search not in cliente.lower():
                 rows.remove(r)
                 continue
-            envio = r.get("envio", "")
-            if (
-                getattr(self, "sent_filter_cb", None)
-                and self.sent_filter_cb.isChecked()
-                and envio not in {"Aceptado", "Rechazado", "Error"}
-            ):
-                rows.remove(r)
-                continue
-
         rows.sort(
             key=lambda r: (
                 r.get("_parsed_fecha") is None,

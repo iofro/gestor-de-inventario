@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from decimal import Decimal, getcontext, ROUND_HALF_UP
+from decimal import Decimal, getcontext, ROUND_HALF_UP, InvalidOperation
 from pathlib import Path
 import json
 import logging
@@ -1792,6 +1792,13 @@ class RegisterPurchaseDialog(QDialog):
             formatted = "0"
         return f"${formatted}"
 
+    def _quantize_money(self, value, exp: str = "0.01") -> Decimal:
+        try:
+            dec_value = Decimal(str(value if value is not None else 0))
+        except (InvalidOperation, ValueError, TypeError):
+            dec_value = Decimal("0")
+        return dec_value.quantize(Decimal(exp), rounding=ROUND_HALF_UP)
+
     def _init_summary_section(self, parent_layout):
         self._summary_group = QGroupBox("Información de la compra")
         form_layout = QFormLayout()
@@ -2030,10 +2037,22 @@ class RegisterPurchaseDialog(QDialog):
         self._calcular_preview_item()
 
     def _actualizar_total_general(self):
-        subtotal_general = sum(item.get("subtotal", item["cantidad"] * item["precio"]) for item in self.compra_items)
-        iva_general = sum(item.get("iva", 0) for item in self.compra_items)
-        comision_general = sum(item.get("comision_monto", 0) for item in self.compra_items)
-        total_general = sum(item.get("total", 0) for item in self.compra_items)
+        subtotal_general = sum(
+            (self._quantize_money(item.get("subtotal", item["cantidad"] * item["precio"])) for item in self.compra_items),
+            Decimal("0.00"),
+        )
+        iva_general = sum(
+            (self._quantize_money(item.get("iva", 0)) for item in self.compra_items),
+            Decimal("0.00"),
+        )
+        comision_general = sum(
+            (self._quantize_money(item.get("comision_monto", 0)) for item in self.compra_items),
+            Decimal("0.00"),
+        )
+        total_general = sum(
+            (self._quantize_money(item.get("total", 0)) for item in self.compra_items),
+            Decimal("0.00"),
+        )
 
         self.subtotal_label.setText(f"Subtotal: {self._format_currency(subtotal_general)}")
         self.iva_label.setText(f"IVA: {self._format_currency(iva_general)}")
@@ -2465,7 +2484,10 @@ class RegisterPurchaseDialog(QDialog):
             fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         else:
             fecha = self._existing_fecha
-        total_general = sum(float(item.get("total", 0)) for item in self.compra_items)
+        total_general = sum(
+            (self._quantize_money(item.get("total", 0)) for item in self.compra_items),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         vendedor_id = self.vendedor_combo.currentData()
         Distribuidor_id = (
             self.Distribuidor_combo.currentData()
@@ -2489,7 +2511,13 @@ class RegisterPurchaseDialog(QDialog):
             if respuesta != QMessageBox.Yes:
                 return
 
-        comision_total = sum(item.get("comision_monto", 0) for item in self.compra_items)
+        comision_total = sum(
+            (self._quantize_money(item.get("comision_monto", 0)) for item in self.compra_items),
+            Decimal("0.00"),
+        ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        total_general_value = float(total_general)
+        comision_total_value = float(comision_total)
 
         if self.edit_mode and self._compra_id is not None:
             self.parent().manager.db.update_compra_detallada(
@@ -2499,10 +2527,10 @@ class RegisterPurchaseDialog(QDialog):
                     "producto_id": None,
                     "cantidad": 0,
                     "precio_unitario": 0,
-                    "total": total_general,
+                    "total": total_general_value,
                     "Distribuidor_id": Distribuidor_id,
                     "comision_pct": 0,
-                    "comision_monto": comision_total,
+                    "comision_monto": comision_total_value,
                     "vendedor_id": vendedor_id,
                 },
                 self.compra_items,
@@ -2515,10 +2543,10 @@ class RegisterPurchaseDialog(QDialog):
             "producto_id": None,
             "cantidad": 0,
             "precio_unitario": 0,
-            "total": total_general,
+            "total": total_general_value,
             "Distribuidor_id": Distribuidor_id,
             "comision_pct": 0,
-            "comision_monto": comision_total,
+            "comision_monto": comision_total_value,
             "vendedor_id": vendedor_id,
         })
 

@@ -15,7 +15,12 @@ import unicodedata
 from typing import Mapping
 from inventory_manager import InventoryManager
 from db import DB
-from paths import DATOS_NEGOCIO_PATH, CONFIG_NEGOCIO_PATH, LAST_INVENTORY_PATH
+from paths import (
+    AUTO_BACKUP_DIR,
+    DATOS_NEGOCIO_PATH,
+    CONFIG_NEGOCIO_PATH,
+    LAST_INVENTORY_PATH,
+)
 from dialogs import (
     RegisterSaleDialog,
     ProductDialog,
@@ -102,7 +107,7 @@ class ExportThread(QThread):
         main application's connection.
         """
         try:
-            manager = InventoryManager(DB())
+            manager = InventoryManager(DB(), enable_auto_backup=False)
             manager.exportar_inventario_json(
                 self.filename, tab_order=self.tab_order
             )
@@ -205,7 +210,7 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Inventario Farmacia")
         self.resize(1200, 700)
         self.db = DB()
-        self.manager = InventoryManager(self.db)
+        self.manager = InventoryManager(self.db, enable_auto_backup=True)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
         self._load_last_inventory_path()
         self.firmador_proc = None
@@ -399,11 +404,14 @@ class MainWindow(QMainWindow):
         guardar_como_action.triggered.connect(self.guardar_como)
         cargar_inventario_action = QAction("Cargar inventario...", self)
         cargar_inventario_action.triggered.connect(self.cargar_inventario)
+        cargar_respaldo_action = QAction("Cargar copia de seguridad...", self)
+        cargar_respaldo_action.triggered.connect(self.cargar_copia_seguridad)
         firmar_dte_action = QAction("Firmar DTE...", self)
         firmar_dte_action.triggered.connect(self.firmar_dte_manual)
         archivo_menu.addAction(nuevo_inventario_action)
         archivo_menu.addAction(guardar_como_action)
         archivo_menu.addAction(cargar_inventario_action)
+        archivo_menu.addAction(cargar_respaldo_action)
 
         # --- CONFIGURACIÓN ---
         config_menu = menubar.addMenu("Configuración")
@@ -1322,7 +1330,7 @@ class MainWindow(QMainWindow):
             return thread
 
         try:
-            manager = InventoryManager(DB())
+            manager = InventoryManager(DB(), enable_auto_backup=False)
             manager.exportar_inventario_json(filename, tab_order=tab_order)
         except Exception as exc:
             if mostrar_mensajes:
@@ -1340,6 +1348,45 @@ class MainWindow(QMainWindow):
                 titulo_dialogo,
                 mensaje_exito,
             )
+        return True
+
+    def _cargar_inventario_desde_archivo(
+        self,
+        filename: str,
+        *,
+        titulo_dialogo: str,
+        mensaje_exito: str,
+    ) -> bool:
+        try:
+            data = self.manager.importar_inventario_json(filename)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{exc}")
+            self._actualizar_historial()
+            return False
+
+        if isinstance(data, dict) and data.get("tab_order"):
+            self.set_tab_order(data["tab_order"])
+        self.ultimo_archivo_json = filename
+        try:
+            with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as fh:
+                json.dump({"ultimo": filename}, fh)
+        except OSError as exc:
+            logger.exception("No se pudo actualizar la ruta del último inventario: %s", exc)
+        self.compras_tab.refresh_filters()
+        self.filter_products()
+        self.compras_tab.refresh_filters()
+        self.compras_tab.load_purchases()
+        self.sales_tab.load_sales()
+        self._actualizar_tabla_clientes()
+        self._mostrar_historial_general()
+        self._actualizar_arbol_vendedores()
+        self._actualizar_arbol_Distribuidores()
+        self._actualizar_tabla_trabajadores()
+        self._actualizar_inventario_actual()
+        self._actualizar_historial()
+        self._cargar_personas_estado()
+        self._mark_saved()
+        QMessageBox.information(self, titulo_dialogo, mensaje_exito)
         return True
 
     def guardar_como(self):
@@ -1360,33 +1407,33 @@ class MainWindow(QMainWindow):
         return True
 
     def cargar_inventario(self):
-        filename, _ = QFileDialog.getOpenFileName(self, "Cargar inventario", "", "Archivos JSON (*.json);;Todos los archivos (*)")
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Cargar inventario",
+            "",
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+        )
         if filename:
-            try:
-                data = self.manager.importar_inventario_json(filename)
-                if isinstance(data, dict) and data.get("tab_order"):
-                    self.set_tab_order(data["tab_order"])
-                self.ultimo_archivo_json = filename
-                with open(LAST_INVENTORY_PATH, "w", encoding="utf-8") as f:
-                    json.dump({"ultimo": filename}, f)
-                self.compras_tab.refresh_filters()
-                self.filter_products()
-                self.compras_tab.refresh_filters()
-                self.compras_tab.load_purchases()
-                self.sales_tab.load_sales()
-                self._actualizar_tabla_clientes()
-                self._mostrar_historial_general()
-                self._actualizar_arbol_vendedores()
-                self._actualizar_arbol_Distribuidores()
-                self._actualizar_tabla_trabajadores()
-                self._actualizar_inventario_actual()
-                self._actualizar_historial()
-                self._cargar_personas_estado()
-                self._mark_saved()
-                QMessageBox.information(self, "Cargar inventario", "Inventario cargado correctamente.")
-            except Exception as e:
-                QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{e}")
-                self._actualizar_historial()
+            self._cargar_inventario_desde_archivo(
+                filename,
+                titulo_dialogo="Cargar inventario",
+                mensaje_exito="Inventario cargado correctamente.",
+            )
+
+    def cargar_copia_seguridad(self):
+        initial_dir = AUTO_BACKUP_DIR if os.path.isdir(AUTO_BACKUP_DIR) else ""
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Cargar copia de seguridad",
+            initial_dir,
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+        )
+        if filename:
+            self._cargar_inventario_desde_archivo(
+                filename,
+                titulo_dialogo="Cargar copia de seguridad",
+                mensaje_exito="Copia de seguridad cargada correctamente.",
+            )
 
     def firmar_dte_manual(self):
         filename, _ = QFileDialog.getOpenFileName(

@@ -15,7 +15,11 @@ from typing import Any, Callable
 
 from declaracion.anexo_contribuyentes import VentaContribuyente
 from declaracion.anexo_consumidor_final import VentaCF
-from utils.facturacion_records import infer_tipo_from_name, tipo_code_from_desc
+from utils.facturacion_records import (
+    infer_tipo_from_name,
+    tipo_code_from_desc,
+    get_facturacion_rows as _facturacion_rows,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -670,118 +674,6 @@ def _log_summary(
         )
 
 
-def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
-    """Obtiene información cruda de facturación y los descartes del período."""
-
-    periodo = _validate_periodo(periodo_yyyymm)
-    db.ensure_column("ventas", "extra", "TEXT")
-    query = (
-        "SELECT v.id AS venta_id, v.fecha AS fecha_venta, v.total AS total_venta, v.extra, "
-        "v.cliente_id, c.nombre AS cliente_nombre, c.nit AS cliente_nit, "
-        "c.nrc AS cliente_nrc, c.dui AS cliente_dui "
-        "FROM ventas AS v "
-        "LEFT JOIN clientes AS c ON c.id = v.cliente_id"
-    )
-    filas = [dict(row) for row in db.cursor.execute(query)]
-    venta_ids = [fila["venta_id"] for fila in filas]
-
-    env_map: dict[int, dict[str, Any]] = {}
-    if venta_ids:
-        placeholders = ",".join(["?"] * len(venta_ids))
-        env_query = (
-            "SELECT id, venta_id, codigo_generacion, numero_control, estado_ui, "
-            "estado_ui_tag, estado_ui_manual, respuesta "
-            "FROM dte_envios WHERE venta_id IN ("
-            + placeholders
-            + ") ORDER BY id DESC"
-        )
-        for envio in db.cursor.execute(env_query, venta_ids):
-            venta_id = envio["venta_id"]
-            if venta_id in env_map:
-                continue
-            payload = dict(envio)
-            respuesta = payload.get("respuesta")
-            if respuesta:
-                data = _load_json(respuesta) or {}
-                if isinstance(data, dict):
-                    payload["respuesta_json"] = data
-                    payload.setdefault("codigo_generacion", data.get("codigoGeneracion"))
-                    payload.setdefault("numero_control", data.get("numeroControl"))
-                    if data.get("estado"):
-                        payload.setdefault("estado_ui", data.get("estado"))
-            env_map[venta_id] = payload
-
-    periodo_rows: list[dict] = []
-    descartes: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
-
-    for fila in filas:
-        extra = _load_json(fila.get("extra")) or {}
-        dte_json = _load_json(extra.get("dteJson")) or extra.get("dteJson")
-        if not isinstance(dte_json, dict):
-            dte_json = extra.get("dte_json")
-        if not isinstance(dte_json, dict):
-            dte_json = extra.get("dte_json_dict")
-
-        row_data = {
-            "venta_id": fila["venta_id"],
-            "fecha_venta": fila.get("fecha_venta"),
-            "extra_data": extra,
-            "dte_json": dte_json if isinstance(dte_json, dict) else {},
-            "envio": env_map.get(fila["venta_id"], {}),
-            "cliente_nombre": fila.get("cliente_nombre"),
-            "cliente_nit": fila.get("cliente_nit"),
-            "cliente_nrc": fila.get("cliente_nrc"),
-            "cliente_dui": fila.get("cliente_dui"),
-        }
-        json_path = extra.get("dteJsonPath") or extra.get("jsonPath")
-        if json_path:
-            row_data["json_path"] = json_path
-
-        if isinstance(row_data["envio"].get("respuesta_json"), dict) and "dteJson" in row_data["envio"]["respuesta_json"]:
-            row_data["dte_json"] = row_data["envio"]["respuesta_json"].get("dteJson") or row_data["dte_json"]
-
-        _ensure_field(row_data, "codigo_generacion", _codigo_generacion)
-        _ensure_field(row_data, "numero_control", _numero_control)
-        _ensure_field(row_data, "sello_recepcion", _sello_recepcion)
-
-        tipo = _tipo_dte(row_data)
-        if tipo:
-            row_data["tipo"] = tipo
-        else:
-            descartes["sin_tipo"].append(
-                _make_exclusion_entry(row_data, detalle=f"venta {fila['venta_id']}")
-            )
-
-        fec_texto, fecha_obj = _fecha_emision(row_data)
-        if fec_texto:
-            row_data["fecEmi"] = fec_texto
-        if not fecha_obj:
-            descartes["sin_fecha"].append(
-                _make_exclusion_entry(row_data, detalle="sin fecha", fecha=fec_texto)
-            )
-            continue
-
-        row_data["fecha_obj"] = fecha_obj
-        periodo_fila = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
-        if periodo_fila != periodo:
-            descartes["fuera_de_periodo"].append(
-                _make_exclusion_entry(row_data, detalle=periodo_fila, fecha=fec_texto)
-            )
-            continue
-
-        periodo_rows.append(row_data)
-
-    descartes_dict = {motivo: lista for motivo, lista in descartes.items()}
-    _log_summary(
-        f"Facturación {periodo}",
-        len(filas),
-        len(periodo_rows),
-        {},
-        descartes_dict,
-    )
-    return FacturacionDataset(periodo_rows, len(filas), descartes_dict)
-
-
 def get_facturacion_rows(db, periodo_yyyymm: str) -> list[dict]:
     """Compatibilidad: devuelve únicamente las filas de facturación."""
 
@@ -1289,3 +1181,290 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
 
     _log_summary("Anexo II", total_considerados, len(registros), stats, motivos)
     return registros
+
+def _load_facturacion_json(path: str | None) -> dict:
+    if not path or not isinstance(path, str):
+        return {}
+    resolved = path
+    if not os.path.exists(resolved):
+        return {}
+    try:
+        with open(resolved, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    if isinstance(data, dict):
+        inner = data.get("dteJson")
+        if isinstance(inner, dict):
+            merged = dict(inner)
+            merged.setdefault("dteJson", dict(inner))
+            for key, value in data.items():
+                if key == "dteJson":
+                    continue
+                merged.setdefault(key, value)
+            return merged
+        return data
+    return {}
+
+
+def _from_facturacion_row(raw: dict, db) -> dict:
+    row: dict[str, Any] = {
+        "venta_id": raw.get("venta_id"),
+        "row_type": raw.get("row_type"),
+        "total": raw.get("total"),
+        "cliente_nombre": raw.get("cliente") or "",
+        "cliente_id": raw.get("cliente_id"),
+        "vendedor_id": raw.get("vendedor_id"),
+        "estado": raw.get("estado"),
+        "estado_display": raw.get("estado"),
+        "fecha_display": raw.get("fecha"),
+    }
+
+    fecha_obj = raw.get("_parsed_fecha")
+    if isinstance(fecha_obj, datetime):
+        row["fecha_obj"] = fecha_obj
+        row["fecEmi"] = fecha_obj.strftime("%Y-%m-%d")
+    else:
+        row["fecha_obj"] = None
+        fecha_text = raw.get("fecha")
+        if isinstance(fecha_text, str) and fecha_text:
+            row["fecEmi"] = fecha_text.split(" ")[0]
+
+    numero_control = raw.get("numero_control")
+    if numero_control:
+        row["numero_control"] = numero_control
+
+    codigo_generacion = raw.get("codigo_generacion")
+    if codigo_generacion:
+        row["codigo_generacion"] = codigo_generacion
+
+    base_tipo_desc = infer_tipo_from_name(raw.get("name"), raw.get("tipo"))
+    tipo_desc = base_tipo_desc or raw.get("tipo")
+    tipo_code = raw.get("codigo")
+    if not tipo_code and tipo_desc:
+        tipo_code = tipo_code_from_desc(tipo_desc)
+    if tipo_code:
+        try:
+            tipo_code = str(tipo_code).zfill(2)
+        except Exception:
+            tipo_code = None
+    row["tipo"] = tipo_code
+    row["tipo_desc"] = tipo_desc
+
+    json_path = raw.get("json")
+    row["json_path"] = json_path if isinstance(json_path, str) else None
+    dte_json = _load_facturacion_json(row.get("json_path"))
+    row["dte_json"] = dte_json
+    row["extra_data"] = {}
+
+    ident = dte_json.get("identificacion") if isinstance(dte_json, dict) else {}
+    if isinstance(ident, dict):
+        row.setdefault("numero_control", ident.get("numeroControl"))
+        row.setdefault("codigo_generacion", ident.get("codigoGeneracion"))
+        if ident.get("fecEmi"):
+            row["fecEmi"] = ident.get("fecEmi")
+        if not row.get("tipo") and ident.get("tipoDte"):
+            try:
+                row["tipo"] = str(ident.get("tipoDte")).zfill(2)
+            except Exception:
+                row["tipo"] = ident.get("tipoDte")
+
+    sello = None
+    if isinstance(dte_json, dict):
+        for key in ("selloRecibido", "selloRecibidoDte", "selloRecibidoMH", "sello"):
+            if dte_json.get(key):
+                sello = dte_json.get(key)
+                break
+    row["sello_recepcion"] = sello
+
+    envio_text = raw.get("envio")
+    envio_info: dict[str, Any] = {}
+    if isinstance(envio_text, str) and envio_text.strip():
+        envio_info["estado_ui"] = envio_text
+        envio_info["estado"] = envio_text
+    if row.get("codigo_generacion"):
+        envio_info.setdefault("codigo_generacion", row["codigo_generacion"])
+    if row.get("numero_control"):
+        envio_info.setdefault("numero_control", row["numero_control"])
+    row["envio"] = envio_info
+    row["estado_manual"] = None
+    row["estado_fuente"] = "db" if row.get("venta_id") is not None else "extra"
+
+    row["cliente_nit"] = None
+    row["cliente_nrc"] = None
+    row["cliente_dui"] = None
+    cliente_id = row.get("cliente_id")
+    getter = getattr(db, "get_cliente", None)
+    if callable(getter) and cliente_id:
+        try:
+            cliente_info = getter(cliente_id)
+        except Exception:
+            cliente_info = None
+        if isinstance(cliente_info, dict):
+            row["cliente_nit"] = cliente_info.get("nit")
+            row["cliente_nrc"] = cliente_info.get("nrc")
+            row["cliente_dui"] = cliente_info.get("dui")
+            if not row["cliente_nombre"]:
+                row["cliente_nombre"] = cliente_info.get("nombre") or ""
+
+    _ensure_field(row, "codigo_generacion", _codigo_generacion)
+    _ensure_field(row, "numero_control", _numero_control)
+    _ensure_field(row, "sello_recepcion", _sello_recepcion)
+
+    return row
+
+
+def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
+    """Obtiene información cruda de facturación reutilizando la lógica de la tabla."""
+
+    periodo = _validate_periodo(periodo_yyyymm)
+    try:
+        raw_rows = _facturacion_rows(db)
+    except Exception:
+        raw_rows = []
+
+    if not raw_rows:
+        return _collect_facturacion_dataset_from_ventas(db, periodo)
+
+    total_leidos = len(raw_rows)
+    descartes: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
+    periodo_rows: list[dict] = []
+
+    for raw in raw_rows:
+        row_data = _from_facturacion_row(raw, db)
+        fecha_obj = row_data.get("fecha_obj") if isinstance(row_data.get("fecha_obj"), datetime) else None
+        fecha_texto = row_data.get("fecha_display") or row_data.get("fecEmi")
+        if not fecha_obj:
+            descartes["sin_fecha"].append(
+                _make_exclusion_entry(row_data, detalle="sin fecha", fecha=fecha_texto)
+            )
+            continue
+
+        periodo_fila = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
+        if periodo_fila != periodo:
+            descartes["fuera_de_periodo"].append(
+                _make_exclusion_entry(row_data, detalle=periodo_fila, fecha=fecha_texto)
+            )
+            continue
+
+        periodo_rows.append(row_data)
+
+    descartes_dict = {motivo: lista for motivo, lista in descartes.items()}
+    _log_summary(
+        f"Facturación {periodo}",
+        total_leidos,
+        len(periodo_rows),
+        {},
+        descartes_dict,
+    )
+    return FacturacionDataset(periodo_rows, total_leidos, descartes_dict)
+
+
+def _collect_facturacion_dataset_from_ventas(db, periodo: str) -> FacturacionDataset:
+    db.ensure_column("ventas", "extra", "TEXT")
+    query = (
+        "SELECT v.id AS venta_id, v.fecha AS fecha_venta, v.total AS total_venta, v.extra, "
+        "v.cliente_id, c.nombre AS cliente_nombre, c.nit AS cliente_nit, "
+        "c.nrc AS cliente_nrc, c.dui AS cliente_dui "
+        "FROM ventas AS v "
+        "LEFT JOIN clientes AS c ON c.id = v.cliente_id"
+    )
+    filas = [dict(row) for row in db.cursor.execute(query)]
+    venta_ids = [fila["venta_id"] for fila in filas]
+
+    env_map: dict[int, dict[str, Any]] = {}
+    if venta_ids:
+        placeholders = ",".join(["?"] * len(venta_ids))
+        env_query = (
+            "SELECT id, venta_id, codigo_generacion, numero_control, estado_ui, "
+            "estado_ui_tag, estado_ui_manual, respuesta "
+            "FROM dte_envios WHERE venta_id IN ("
+            + placeholders
+            + ") ORDER BY id DESC"
+        )
+        for envio in db.cursor.execute(env_query, venta_ids):
+            venta_id = envio["venta_id"]
+            if venta_id in env_map:
+                continue
+            payload = dict(envio)
+            respuesta = payload.get("respuesta")
+            if respuesta:
+                data = _load_json(respuesta) or {}
+                if isinstance(data, dict):
+                    payload["respuesta_json"] = data
+                    payload.setdefault("codigo_generacion", data.get("codigoGeneracion"))
+                    payload.setdefault("numero_control", data.get("numeroControl"))
+                    if data.get("estado"):
+                        payload.setdefault("estado_ui", data.get("estado"))
+            env_map[venta_id] = payload
+
+    periodo_rows: list[dict] = []
+    descartes: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
+
+    for fila in filas:
+        extra = _load_json(fila.get("extra")) or {}
+        dte_json = _load_json(extra.get("dteJson")) or extra.get("dteJson")
+        if not isinstance(dte_json, dict):
+            dte_json = extra.get("dte_json")
+        if not isinstance(dte_json, dict):
+            dte_json = extra.get("dte_json_dict")
+
+        row_data = {
+            "venta_id": fila["venta_id"],
+            "fecha_venta": fila.get("fecha_venta"),
+            "extra_data": extra,
+            "dte_json": dte_json if isinstance(dte_json, dict) else {},
+            "envio": env_map.get(fila["venta_id"], {}),
+            "cliente_nombre": fila.get("cliente_nombre"),
+            "cliente_nit": fila.get("cliente_nit"),
+            "cliente_nrc": fila.get("cliente_nrc"),
+            "cliente_dui": fila.get("cliente_dui"),
+        }
+        json_path = extra.get("dteJsonPath") or extra.get("jsonPath")
+        if json_path:
+            row_data["json_path"] = json_path
+
+        if isinstance(row_data["envio"].get("respuesta_json"), dict) and "dteJson" in row_data["envio"]["respuesta_json"]:
+            row_data["dte_json"] = row_data["envio"]["respuesta_json"].get("dteJson") or row_data["dte_json"]
+
+        _ensure_field(row_data, "codigo_generacion", _codigo_generacion)
+        _ensure_field(row_data, "numero_control", _numero_control)
+        _ensure_field(row_data, "sello_recepcion", _sello_recepcion)
+
+        tipo = _tipo_dte(row_data)
+        if tipo:
+            row_data["tipo"] = tipo
+        else:
+            descartes["sin_tipo"].append(
+                _make_exclusion_entry(row_data, detalle=f"venta {fila['venta_id']}")
+            )
+
+        fec_texto, fecha_obj = _fecha_emision(row_data)
+        if fec_texto:
+            row_data["fecEmi"] = fec_texto
+        if not fecha_obj:
+            descartes["sin_fecha"].append(
+                _make_exclusion_entry(row_data, detalle="sin fecha", fecha=fec_texto)
+            )
+            continue
+
+        row_data["fecha_obj"] = fecha_obj
+        periodo_fila = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
+        if periodo_fila != periodo:
+            descartes["fuera_de_periodo"].append(
+                _make_exclusion_entry(row_data, detalle=periodo_fila, fecha=fec_texto)
+            )
+            continue
+
+        periodo_rows.append(row_data)
+
+    descartes_dict = {motivo: lista for motivo, lista in descartes.items()}
+    _log_summary(
+        f"Facturación {periodo}",
+        len(filas),
+        len(periodo_rows),
+        {},
+        descartes_dict,
+    )
+    return FacturacionDataset(periodo_rows, len(filas), descartes_dict)
+

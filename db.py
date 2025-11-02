@@ -9,7 +9,7 @@ import threading
 import unicodedata
 from pathlib import Path
 from decimal import Decimal
-from typing import Any, Mapping, Optional
+from typing import Any, Callable, Mapping, Optional
 
 from utils import versioned_dte
 from utils.fiscal_extra import build_fiscal_extra, normalize_tipo_fiscal
@@ -126,18 +126,57 @@ def _apply_cliente_extras(cliente: Mapping[str, Any]) -> dict[str, Any]:
     data["razonSocial"] = razon
     return data
 
+class CommitAwareConnection(sqlite3.Connection):
+    """SQLite connection that notifies listeners after write commits."""
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._after_commit_callbacks: list[Callable[[], None]] = []
+        self._last_total_changes = self.total_changes
+
+    def add_after_commit_callback(self, callback: Callable[[], None]) -> None:
+        if callback in self._after_commit_callbacks:
+            return
+        self._after_commit_callbacks.append(callback)
+
+    def remove_after_commit_callback(self, callback: Callable[[], None]) -> None:
+        try:
+            self._after_commit_callbacks.remove(callback)
+        except ValueError:
+            pass
+
+    def commit(self) -> None:  # type: ignore[override]
+        super().commit()
+        current_changes = self.total_changes
+        changed = current_changes != self._last_total_changes
+        self._last_total_changes = current_changes
+        if not changed:
+            return
+        for callback in tuple(self._after_commit_callbacks):
+            try:
+                callback()
+            except Exception:
+                logger.exception("Error en callback posterior al commit")
+
+
 class DB:
     def __init__(self, db_name: str | Path | None = None):
         if db_name is None:
             db_path = user_data_path("inventario.db")
         else:
             db_path = Path(db_name)
-        db_path.parent.mkdir(parents=True, exist_ok=True)
+        self.is_memory_db = str(db_path) == ":memory:"
+        if not self.is_memory_db:
+            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         # ``check_same_thread=False`` allows the connection to be used from
         # multiple threads.  Each thread should ideally use its own connection
         # but this flag prevents SQLite from raising an exception if a
         # connection crosses thread boundaries.
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
+        self.conn: CommitAwareConnection = sqlite3.connect(
+            db_path,
+            check_same_thread=False,
+            factory=CommitAwareConnection,
+        )
         self.conn.execute("PRAGMA foreign_keys = ON")
         self.conn.row_factory = sqlite3.Row
         # Simple mutex to guard database operations when the same connection is
@@ -145,6 +184,11 @@ class DB:
         # ``DB`` instances to keep connections separate.
         self.lock = threading.Lock()
         self.cursor = self.conn.cursor()
+        self._after_commit_callbacks: list[Callable[[], None]] = []
+        try:
+            self.conn.add_after_commit_callback(self._run_after_commit_callbacks)
+        except AttributeError:
+            logger.debug("La conexión no soporta callbacks posteriores al commit")
         self.setup()
         # ``extra`` se introdujo como un JSON con información adicional de la
         # venta.  Garantizamos que la columna exista incluso en bases antiguas
@@ -161,6 +205,24 @@ class DB:
             logger.exception(
                 "No se pudo migrar las rutas de facturas a la ubicación canónica"
             )
+
+    def _run_after_commit_callbacks(self) -> None:
+        for callback in tuple(self._after_commit_callbacks):
+            try:
+                callback()
+            except Exception:
+                logger.exception("Error en callback posterior al commit (DB)")
+
+    def add_after_commit_callback(self, callback: Callable[[], None]) -> None:
+        if callback in self._after_commit_callbacks:
+            return
+        self._after_commit_callbacks.append(callback)
+
+    def remove_after_commit_callback(self, callback: Callable[[], None]) -> None:
+        try:
+            self._after_commit_callbacks.remove(callback)
+        except ValueError:
+            pass
 
     @staticmethod
     def _paths_equal(first: os.PathLike | str | None, second: os.PathLike | str | None) -> bool:

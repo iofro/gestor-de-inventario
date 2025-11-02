@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from copy import deepcopy
 from db import DB
 from PyQt5.QtCore import QAbstractTableModel, Qt
@@ -7,9 +9,11 @@ from datetime import datetime, timedelta
 import os
 import logging
 import sqlite3
+import threading
 from decimal import Decimal as D
 from typing import Mapping
-from paths import DATOS_NEGOCIO_PATH, user_logs_path
+from pathlib import Path
+from paths import AUTO_BACKUP_DIR, DATOS_NEGOCIO_PATH, user_logs_path
 from utils.stable_json import DecimalEncoder
 from utils.fiscal_extra import normalize_tipo_fiscal
 from utils.line_totals import compute_line_totals
@@ -65,10 +69,77 @@ class InventoryManagerError(Exception):
     """Errores de dominio del administrador de inventario."""
 
 
+class _AutoBackupScheduler:
+    def __init__(self, backup_dir: str, *, debounce_seconds: float = 5.0, max_backups: int = 20):
+        self.backup_dir = Path(backup_dir)
+        try:
+            self.backup_dir.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            logger.exception("No se pudo preparar la carpeta de respaldos automáticos")
+        self.debounce_seconds = max(0.5, float(debounce_seconds))
+        self.max_backups = max(1, int(max_backups))
+        self._lock = threading.Lock()
+        self._timer: threading.Timer | None = None
+
+    def schedule(self) -> None:
+        with self._lock:
+            if self._timer is not None:
+                self._timer.cancel()
+            self._timer = threading.Timer(self.debounce_seconds, self._run_backup)
+            self._timer.daemon = True
+            self._timer.start()
+
+    def _run_backup(self) -> None:
+        with self._lock:
+            self._timer = None
+        timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+        filename = self.backup_dir / f"inventario-{timestamp}.json"
+        manager: InventoryManager | None = None
+        try:
+            manager = InventoryManager(DB(), enable_auto_backup=False)
+            manager.exportar_inventario_json(str(filename))
+            self._prune_old_backups()
+        except Exception:
+            logger.exception("No se pudo crear la copia de seguridad automática")
+            try:
+                if filename.exists():
+                    filename.unlink()
+            except Exception:
+                logger.exception("No se pudo eliminar el respaldo automático incompleto")
+        finally:
+            if manager is not None:
+                try:
+                    manager.db.close()
+                except Exception:
+                    logger.exception("No se pudo cerrar la base de datos del respaldo automático")
+
+    def _prune_old_backups(self) -> None:
+        try:
+            backups = sorted(self.backup_dir.glob("*.json"))
+        except Exception:
+            logger.exception("No se pudo listar la carpeta de respaldos automáticos")
+            return
+        excess = len(backups) - self.max_backups
+        if excess <= 0:
+            return
+        for path in backups[:excess]:
+            try:
+                path.unlink()
+            except Exception:
+                logger.exception("No se pudo eliminar un respaldo automático antiguo")
+
+
+AUTO_BACKUP_SCHEDULER = _AutoBackupScheduler(AUTO_BACKUP_DIR)
 
 
 class InventoryManager:
-    def __init__(self, db: DB | None = None, page_size: int = 50):
+    def __init__(
+        self,
+        db: DB | None = None,
+        page_size: int = 50,
+        *,
+        enable_auto_backup: bool = False,
+    ):
         self.db = db or DB()
         self.page_size = page_size
         self.current_page = 0
@@ -78,6 +149,13 @@ class InventoryManager:
         self._model = None
         self._modo_transmision_actual: str | None = None
         self.catalogs: Catalogs = Catalogs(vendors={}, distributors={}, products={}, db=self.db)
+        self._auto_backup_enabled = enable_auto_backup and not getattr(self.db, "is_memory_db", False)
+        if self._auto_backup_enabled:
+            register_callback = getattr(self.db, "add_after_commit_callback", None)
+            if callable(register_callback):
+                register_callback(self._schedule_auto_backup)
+            else:
+                self._auto_backup_enabled = False
         self.refresh_data()
 
     def refresh_data(self):
@@ -122,6 +200,14 @@ class InventoryManager:
 
         self._clientes = self.db.get_clientes()
         self.load_page(self.current_page)
+
+    def _schedule_auto_backup(self) -> None:
+        if not self._auto_backup_enabled:
+            return
+        try:
+            AUTO_BACKUP_SCHEDULER.schedule()
+        except Exception:
+            logger.exception("No se pudo programar la copia de seguridad automática")
 
     def load_page(self, page: int):
         start = page * self.page_size

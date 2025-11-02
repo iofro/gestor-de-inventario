@@ -13,6 +13,7 @@ import sys
 import subprocess
 import unicodedata
 from typing import Mapping
+from pathlib import Path
 from inventory_manager import InventoryManager
 from db import DB
 from paths import (
@@ -1421,19 +1422,39 @@ class MainWindow(QMainWindow):
             )
 
     def cargar_copia_seguridad(self):
-        initial_dir = AUTO_BACKUP_DIR if os.path.isdir(AUTO_BACKUP_DIR) else ""
-        filename, _ = QFileDialog.getOpenFileName(
-            self,
-            "Cargar copia de seguridad",
-            initial_dir,
-            "Archivos JSON (*.json);;Todos los archivos (*)",
-        )
-        if filename:
-            self._cargar_inventario_desde_archivo(
-                filename,
-                titulo_dialogo="Cargar copia de seguridad",
-                mensaje_exito="Copia de seguridad cargada correctamente.",
+        backup_dir = Path(AUTO_BACKUP_DIR)
+        try:
+            entries = list(backup_dir.glob("*.json")) if backup_dir.is_dir() else []
+        except OSError as exc:
+            QMessageBox.critical(
+                self,
+                "Error",
+                f"No se pudo acceder a las copias de seguridad:\n{exc}",
             )
+            return
+
+        candidates = []
+        for entry in entries:
+            try:
+                if entry.is_file():
+                    candidates.append((entry.stat().st_mtime, entry))
+            except OSError:
+                logger.exception("No se pudo inspeccionar el respaldo %s", entry)
+        if not candidates:
+            QMessageBox.information(
+                self,
+                "Cargar copia de seguridad",
+                "No se encontraron copias de seguridad disponibles.",
+            )
+            return
+
+        candidates.sort(reverse=True)
+        latest_backup = str(candidates[0][1])
+        self._cargar_inventario_desde_archivo(
+            latest_backup,
+            titulo_dialogo="Cargar copia de seguridad",
+            mensaje_exito="Copia de seguridad cargada correctamente.",
+        )
 
     def firmar_dte_manual(self):
         filename, _ = QFileDialog.getOpenFileName(

@@ -105,6 +105,7 @@ def _copy_if_missing(filename: str) -> None:
 DATOS_NEGOCIO_PATH = str(user_data_path("datos_negocio.json"))
 CONFIG_NEGOCIO_PATH = str(user_data_path("config_negocio.json"))
 LAST_INVENTORY_PATH = str(user_data_path("ultimo_inventario.json"))
+AUTO_BACKUP_DIR = str(ensure_user_dir("respaldos", "inventario"))
 
 
 def _default_cert_upload_dir() -> Path:

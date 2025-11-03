@@ -107,13 +107,11 @@ from declaracion.anexo_consumidor_final import (
     on_click_generar_consumidor_final,
 )
 from declaracion.anexo_xix import DTEAnulado, on_click_generar_anulaciones
-from declaracion.dte_provider import get_declaracion_preview
 from db import DB
 from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
-from dialogs.anexos_preview_dialog import AnexosPreviewDialog
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from utils.monto import iva_item, monto_a_texto_sv
 from utils.snapshot import SnapshotNotFoundError
@@ -2064,13 +2062,6 @@ class FacturacionTab(QWidget):
     def __init__(self, manager, parent=None):
         super().__init__(parent)
         self.manager = manager
-        self._anexo_xix_registros_provider = getattr(manager, "get_anexo_xix_registros", None)
-        self._anexo_contribuyentes_registros_provider = getattr(
-            manager, "get_anexo_contribuyentes_registros", None
-        )
-        self._anexo_consumidor_final_registros_provider = getattr(
-            manager, "get_anexo_consumidor_final_registros", None
-        )
         self.email_thread = None
         self._email_loading_dialog = None
         self._setup_ui()
@@ -2311,10 +2302,6 @@ class FacturacionTab(QWidget):
         self.declaracion_cargar_xix_btn.clicked.connect(self._handle_cargar_xix)
         buttons_layout.addWidget(self.declaracion_cargar_xix_btn)
 
-        self.declaracion_preview_btn = QPushButton("Previsualizar anexos")
-        self.declaracion_preview_btn.clicked.connect(self._handle_previsualizar_anexos)
-        buttons_layout.addWidget(self.declaracion_preview_btn)
-
         buttons_layout.addStretch(1)
 
         self.declaracion_generar_planilla_btn = QPushButton("Generar planilla")
@@ -2362,47 +2349,6 @@ class FacturacionTab(QWidget):
         if directory:
             self.declaracion_output_dir_edit.setText(directory)
 
-    def _obtener_anexo_xix_registros(self, periodo: str) -> List[DTEAnulado]:
-        provider = self._anexo_xix_registros_provider
-        if callable(provider):
-            registros = provider(periodo)
-            return list(registros or [])
-
-        manager_provider = getattr(self.manager, "get_anexo_xix_registros", None)
-        if callable(manager_provider):
-            registros = manager_provider(periodo)
-            return list(registros or [])
-
-        return []
-
-    def _obtener_anexo_contribuyentes_registros(
-        self, periodo: str
-    ) -> List[VentaContribuyente]:
-        provider = getattr(self, "_anexo_contribuyentes_registros_provider", None)
-        if callable(provider):
-            registros = provider(periodo)
-            return list(registros or [])
-
-        manager_provider = getattr(self.manager, "get_anexo_contribuyentes_registros", None)
-        if callable(manager_provider):
-            registros = manager_provider(periodo)
-            return list(registros or [])
-
-        return []
-
-    def _obtener_anexo_consumidor_final_registros(self, periodo: str) -> List[VentaCF]:
-        provider = getattr(self, "_anexo_consumidor_final_registros_provider", None)
-        if callable(provider):
-            registros = provider(periodo)
-            return list(registros or [])
-
-        manager_provider = getattr(self.manager, "get_anexo_consumidor_final_registros", None)
-        if callable(manager_provider):
-            registros = manager_provider(periodo)
-            return list(registros or [])
-
-        return []
-
     def _obtener_periodo_declaracion(self, titulo: str) -> str | None:
         anio = self.declaracion_anio_input.text().strip()
         if not re.fullmatch(r"\d{4}", anio):
@@ -2448,6 +2394,15 @@ class FacturacionTab(QWidget):
         self.declaracion_table.setColumnCount(0)
         self._declaracion_context = None
         self.declaracion_generar_planilla_btn.setEnabled(False)
+
+    def _fetch_declaracion_registros(
+        self, provider_name: str, periodo: str
+    ) -> list[object]:
+        provider = getattr(self.manager, provider_name, None)
+        if not callable(provider):
+            return []
+        registros = provider(periodo)
+        return list(registros or [])
 
     def _estado_fuente_texto(self, registro: object) -> str:
         estado = getattr(registro, "estado_manual", None) or getattr(registro, "estado", None)
@@ -2623,33 +2578,15 @@ class FacturacionTab(QWidget):
                 registros.append(registro)
         return registros
 
-    def _handle_previsualizar_anexos(self) -> None:
-        periodo = self._obtener_periodo_declaracion("Previsualización")
-        if not periodo:
-            return
-
-        db = getattr(self.manager, "db", None)
-        if db is None:
-            QMessageBox.warning(self, "Previsualización", "No hay base de datos disponible.")
-            return
-
-        try:
-            preview = get_declaracion_preview(db, periodo)
-        except Exception as exc:  # pragma: no cover - errores inesperados
-            mensaje = f"No se pudo obtener la previsualización: {exc}"
-            QMessageBox.warning(self, "Previsualización", mensaje)
-            return
-
-        dialogo = AnexosPreviewDialog(preview, self)
-        dialogo.exec_()
-
     def _handle_cargar_contribuyentes(self):
         periodo = self._obtener_periodo_declaracion("Anexo I")
         if not periodo:
             return
 
         try:
-            registros = self._obtener_anexo_contribuyentes_registros(periodo)
+            registros = self._fetch_declaracion_registros(
+                "get_anexo_contribuyentes_registros", periodo
+            )
         except Exception as exc:  # pragma: no cover - errores del proveedor
             mensaje = f"No se pudo obtener la lista de contribuyentes: {exc}"
             self._clear_declaracion_table()
@@ -2675,7 +2612,9 @@ class FacturacionTab(QWidget):
             return
 
         try:
-            registros = self._obtener_anexo_consumidor_final_registros(periodo)
+            registros = self._fetch_declaracion_registros(
+                "get_anexo_consumidor_final_registros", periodo
+            )
         except Exception as exc:  # pragma: no cover - errores del proveedor
             mensaje = f"No se pudo obtener la lista de ventas: {exc}"
             self._clear_declaracion_table()
@@ -2698,30 +2637,10 @@ class FacturacionTab(QWidget):
         self.declaracion_result_box.setPlainText(mensaje)
 
     def _handle_cargar_xix(self):
-        periodo = self._obtener_periodo_declaracion("Anexo XIX")
-        if not periodo:
-            return
-
-        try:
-            registros = self._obtener_anexo_xix_registros(periodo)
-        except Exception as exc:  # pragma: no cover - errores del proveedor
-            mensaje = f"No se pudo obtener la lista de anulaciones: {exc}"
-            self._clear_declaracion_table()
-            self.declaracion_result_box.setPlainText(mensaje)
-            QMessageBox.warning(self, "Anexo XIX", mensaje)
-            return
-
-        if not registros:
-            self._clear_declaracion_table()
-            mensaje = "No hay DTE anulados/invalidados para este período."
-            self.declaracion_result_box.setPlainText(mensaje)
-            QMessageBox.information(self, "Anexo XIX", mensaje)
-            return
-
-        self._populate_table_xix(registros)
-        self.declaracion_result_box.setPlainText(
-            f"{len(registros)} DTE listos para generar el Anexo XIX."
-        )
+        self._clear_declaracion_table()
+        mensaje = "La previsualización de Anexo XIX está pendiente."
+        self.declaracion_result_box.setPlainText(mensaje)
+        QMessageBox.information(self, "Anexo XIX", mensaje)
 
     def _handle_generar_planilla(self):
         registros = self._selected_registros_from_table()

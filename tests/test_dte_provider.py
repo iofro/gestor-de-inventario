@@ -3,9 +3,125 @@ from __future__ import annotations
 import json
 import logging
 
+from datetime import datetime
+
 import pytest
 
 from declaracion import dte_provider
+from utils.facturacion_records import TIPO_DTE_DESC
+
+
+def _lookup_envio_state(db_conn, venta_id: int) -> str:
+    try:
+        row = db_conn.cursor.execute(
+            """
+            SELECT estado_ui, estado_ui_tag, estado
+            FROM dte_envios
+            WHERE venta_id=?
+            ORDER BY estado_ui_manual DESC, id DESC
+            LIMIT 1
+            """,
+            (venta_id,),
+        ).fetchone()
+    except Exception:
+        row = None
+
+    if not row:
+        return "Pendiente de envío"
+
+    for key in ("estado_ui", "estado_ui_tag", "estado"):
+        value = row[key]
+        if isinstance(value, str) and value.strip():
+            return value
+    return "Pendiente de envío"
+
+
+def _build_facturacion_rows(db_conn, venta_ids: list[int]) -> list[dict]:
+    rows: list[dict] = []
+    for venta_id in venta_ids:
+        try:
+            venta = db_conn.get_venta_by_id(venta_id)
+        except Exception:
+            venta = None
+        if not isinstance(venta, dict):
+            continue
+
+        extra_raw = venta.get("extra")
+        if isinstance(extra_raw, str) and extra_raw.strip():
+            try:
+                extra_data = json.loads(extra_raw)
+            except Exception:
+                extra_data = {}
+        elif isinstance(extra_raw, dict):
+            extra_data = dict(extra_raw)
+        else:
+            extra_data = {}
+
+        dte_json = (
+            extra_data.get("dteJson")
+            or extra_data.get("dte_json")
+            or extra_data.get("dte_json_dict")
+            or {}
+        )
+        if not isinstance(dte_json, dict):
+            dte_json = {}
+
+        ident = dte_json.get("identificacion") or {}
+        receptor = dte_json.get("receptor") or {}
+
+        fecha_val = ident.get("fecEmi") or venta.get("fecha") or ""
+        fecha_text = str(fecha_val).strip()
+        fecha_obj = None
+        if fecha_text:
+            for fmt in (
+                "%Y-%m-%d %H:%M:%S",
+                "%Y-%m-%d %H:%M",
+                "%Y-%m-%d",
+                "%Y/%m/%d %H:%M:%S",
+                "%Y/%m/%d %H:%M",
+                "%Y/%m/%d",
+                "%d/%m/%Y",
+                "%d-%m-%Y",
+            ):
+                try:
+                    fecha_obj = datetime.strptime(fecha_text, fmt)
+                    break
+                except ValueError:
+                    continue
+        fecha_norm = fecha_obj.strftime("%Y-%m-%d") if fecha_obj else fecha_text.replace("/", "-")
+
+        tipo_raw = ident.get("tipoDte")
+        tipo_code: str | None = None
+        if isinstance(tipo_raw, int):
+            tipo_code = f"{tipo_raw:02d}"
+        elif isinstance(tipo_raw, str):
+            tipo_clean = tipo_raw.strip()
+            if tipo_clean.isdigit():
+                tipo_code = tipo_clean.zfill(2)
+            elif tipo_clean:
+                tipo_code = tipo_clean
+
+        row = {
+            "row_type": "venta",
+            "venta_id": venta_id,
+            "name": ident.get("numeroControl")
+            or ident.get("codigoGeneracion")
+            or f"venta_{venta_id}",
+            "numero_control": ident.get("numeroControl"),
+            "codigo_generacion": ident.get("codigoGeneracion"),
+            "fecha": fecha_obj.strftime("%Y-%m-%d") if fecha_obj else fecha_norm,
+            "_parsed_fecha": fecha_obj,
+            "cliente": receptor.get("nombre") or venta.get("cliente_nombre") or "",
+            "cliente_id": venta.get("cliente_id"),
+            "vendedor_id": venta.get("vendedor_id"),
+            "total": venta.get("total"),
+            "estado": "Completa",
+            "envio": _lookup_envio_state(db_conn, venta_id),
+            "tipo": TIPO_DTE_DESC.get(tipo_code, tipo_code),
+            "codigo": tipo_code,
+        }
+        rows.append(row)
+    return rows
 
 
 def test_tipo_dte_detects_sources_and_aliases():
@@ -111,7 +227,7 @@ def _insert_envio(
 
 
 @pytest.mark.usefixtures("db_conn")
-def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
+def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
     caplog.set_level(logging.INFO, logger="declaracion.dte_provider")
 
     cliente_emp = db_conn.add_cliente(
@@ -126,6 +242,8 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         departamento="06",
         municipio="23",
     )
+
+    venta_ids: list[int] = []
     cliente_nat = db_conn.add_cliente(
         nombre="Persona Natural",
         nrc="",
@@ -161,6 +279,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
             resumen=resumen_cf,
         ),
     )
+    venta_ids.append(venta_cf)
     _insert_envio(
         db_conn,
         venta_cf,
@@ -193,6 +312,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_nd, codigo="ND-001", numero="DTE-05-0001", estado="Aceptada", tag="aceptada", manual=0)
+    venta_ids.append(venta_nd)
 
     resumen_nc = {
         "totalExenta": "0.00",
@@ -216,6 +336,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
             resumen=resumen_nc,
         ),
     )
+    venta_ids.append(venta_nc)
     _insert_envio(
         db_conn,
         venta_nc,
@@ -247,6 +368,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
             resumen=resumen_sin_ctrl,
         ),
     )
+    venta_ids.append(venta_sin_ctrl)
     _insert_envio(db_conn, venta_sin_ctrl, codigo="CF-002", numero=None, estado="Enviado", tag="enviado", manual=0)
 
     resumen_cf_consumidor = {
@@ -270,6 +392,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_cf_cons, codigo="CFII-001", numero="DTE-01-0001", estado="Procesado", tag="procesado", manual=0)
+    venta_ids.append(venta_cf_cons)
 
     resumen_cf_extra = {
         "totalExenta": "0.00",
@@ -292,6 +415,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_cf_extra, codigo="CFII-005", numero="DTE-01-0003", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_cf_extra)
 
     resumen_fc = {
         "totalExenta": "1.00",
@@ -314,6 +438,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_fc, codigo="CFII-002", numero="DTE-02-0001", estado="Pendiente", tag="pendiente", manual=0)
+    venta_ids.append(venta_fc)
 
     resumen_manual = {
         "totalExenta": "0.00",
@@ -344,6 +469,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         tag="rechazado",
         manual=1,
     )
+    venta_ids.append(venta_manual)
 
     resumen_no_cf = {
         "totalExenta": "0.00",
@@ -374,6 +500,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         tag="aceptado",
         manual=0,
     )
+    venta_ids.append(venta_no_cf)
 
     venta_cf_dup = db_conn.add_venta(
         "2024-01-26",
@@ -390,6 +517,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_cf_dup, codigo="CFII-001", numero="DTE-01-9999", estado="Aceptado", tag="aceptado", manual=0)
+    venta_ids.append(venta_cf_dup)
 
     venta_sin_codigo = db_conn.add_venta(
         "2024-01-25",
@@ -406,6 +534,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_sin_codigo, codigo=None, numero=None, estado="Enviado", tag="enviado", manual=0)
+    venta_ids.append(venta_sin_codigo)
 
     venta_otro_periodo = db_conn.add_venta(
         "2023-12-15",
@@ -422,6 +551,13 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
         ),
     )
     _insert_envio(db_conn, venta_otro_periodo, codigo="OLD-001", numero="DTE-03-OLD", estado="Enviado", tag="enviado", manual=0)
+    venta_ids.append(venta_otro_periodo)
+
+    monkeypatch.setattr(
+        dte_provider,
+        "_facturacion_rows",
+        lambda db: _build_facturacion_rows(db_conn, venta_ids),
+    )
 
     rows = dte_provider.get_facturacion_rows(db_conn, "202401")
     codigos_rows = {row.get("codigo_generacion") for row in rows if row.get("codigo_generacion")}
@@ -471,7 +607,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog):
 
 
 @pytest.mark.usefixtures("db_conn")
-def test_declaracion_preview_counts_and_exclusions(db_conn):
+def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
     cliente_emp = db_conn.add_cliente(
         nombre="Empresa Uno",
         nrc="123456-7",
@@ -505,6 +641,8 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         "totalPagar": "113.00",
     }
 
+    venta_ids: list[int] = []
+
     venta_cf = db_conn.add_venta(
         "2024-01-05",
         113,
@@ -520,6 +658,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_cf, codigo="CF-001", numero="03-0001", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_cf)
 
     venta_override = db_conn.add_venta(
         "2024-01-06",
@@ -536,6 +675,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_override, codigo="OVR-001", numero="03-0002", estado="Recibido", tag="pendiente", manual=1)
+    venta_ids.append(venta_override)
 
     venta_nd = db_conn.add_venta(
         "2024-01-07",
@@ -558,6 +698,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_nd, codigo="ND-001", numero="05-0001", estado="Aceptada", tag="aceptada", manual=0)
+    venta_ids.append(venta_nd)
 
     venta_nc = db_conn.add_venta(
         "2024-01-08",
@@ -581,6 +722,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_nc, codigo="NC-001", numero="06-0001", estado="Aceptada", tag="aceptada", manual=0)
+    venta_ids.append(venta_nc)
 
     venta_pending = db_conn.add_venta(
         "2024-01-09",
@@ -597,6 +739,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_pending, codigo="PEN-001", numero="03-0003", estado="Pendiente", tag="pendiente", manual=0)
+    venta_ids.append(venta_pending)
 
     venta_dup = db_conn.add_venta(
         "2024-01-10",
@@ -613,6 +756,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_dup, codigo="ND-001", numero="05-0002", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_dup)
 
     payload_sin_codigo = _dte_payload(
         tipo="03",
@@ -627,6 +771,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
     payload_sin_codigo["dteJson"]["identificacion"].pop("codigoGeneracion", None)
     venta_sin_codigo = db_conn.add_venta("2024-01-11", 30, cliente_id=cliente_emp, extra=payload_sin_codigo)
     _insert_envio(db_conn, venta_sin_codigo, codigo=None, numero="03-0004", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_sin_codigo)
 
     venta_fuera = db_conn.add_venta(
         "2024-01-12",
@@ -643,6 +788,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_fuera, codigo="OUT-001", numero="03-0005", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_fuera)
 
     payload_sin_fecha = _dte_payload(
         tipo="03",
@@ -657,6 +803,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
     venta_sin_fecha = db_conn.add_venta("2024-01-13", 35, cliente_id=cliente_emp, extra=payload_sin_fecha)
     db_conn.cursor.execute("UPDATE ventas SET fecha = '' WHERE id = ?", (venta_sin_fecha,))
     _insert_envio(db_conn, venta_sin_fecha, codigo="SF-001", numero="03-0006", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_sin_fecha)
 
     resumen_cf = {
         "totalExenta": "0.00",
@@ -679,6 +826,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_cf_consumidor, codigo="CFD-001", numero="01-0001", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_cf_consumidor)
 
     resumen_tipo02 = {
         "totalExenta": "0.00",
@@ -701,8 +849,15 @@ def test_declaracion_preview_counts_and_exclusions(db_conn):
         ),
     )
     _insert_envio(db_conn, venta_tipo02, codigo="CFD-002", numero="02-0001", estado="Recibido", tag="recibido", manual=0)
+    venta_ids.append(venta_tipo02)
 
     db_conn.conn.commit()
+
+    monkeypatch.setattr(
+        dte_provider,
+        "_facturacion_rows",
+        lambda db: _build_facturacion_rows(db_conn, venta_ids),
+    )
 
     preview = dte_provider.get_declaracion_preview(db_conn, "202401")
 

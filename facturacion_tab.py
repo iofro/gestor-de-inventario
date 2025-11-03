@@ -1969,7 +1969,6 @@ class _FacturacionPreviewSplitter(QSplitter):
             }
             QSplitter::handle:horizontal {
                 width: 6px;
-                cursor: col-resize;
             }
             QSplitter::handle:vertical {
                 height: 4px;

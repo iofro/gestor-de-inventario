@@ -908,6 +908,43 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
     assert not cf_preview.identificacion
 
 
+def test_collect_facturacion_dataset_includes_orphan_rows(db_conn, tmp_path):
+    base_name = "20240115_0005_CreditoFiscal"
+    pdf_path = tmp_path / f"{base_name}.pdf"
+    json_path = tmp_path / f"{base_name}.json"
+
+    pdf_path.write_text("pdf", encoding="utf-8")
+    payload = {
+        "respuesta": {
+            "documento": {
+                "identificacion": {
+                    "numeroControl": "DTE-03-S001P001-000000000000005",
+                    "codigoGeneracion": "XYZ123",
+                    "tipoDte": "03",
+                    "fecEmi": "2024-01-15",
+                    "horEmi": "08:45:00",
+                },
+                "receptor": {"nombre": "Cliente Orphan"},
+                "resumen": {"totalPagar": "100.50"},
+            }
+        }
+    }
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    db_conn.add_factura_pdf(None, "Crédito fiscal", str(pdf_path))
+
+    dataset = dte_provider.collect_facturacion_dataset(db_conn, "202401")
+
+    assert dataset.rows
+    assert dataset.descartes == {}
+
+    row = dataset.rows[0]
+    assert row.get("row_type") == "orphan"
+    assert row.get("codigo_generacion") == "XYZ123"
+    assert row.get("cliente_nombre") == "Cliente Orphan"
+    assert row.get("fecha_obj").strftime("%Y-%m-%d") == "2024-01-15"
+
+
 def test_estado_normalizacion_y_apto():
     assert dte_provider.normalize_estado("Procesamiento") == "recibido"
     assert dte_provider.estado_apto("Cancelada") is False

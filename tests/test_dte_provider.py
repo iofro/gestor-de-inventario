@@ -945,6 +945,47 @@ def test_collect_facturacion_dataset_includes_orphan_rows(db_conn, tmp_path):
     assert row.get("fecha_obj").strftime("%Y-%m-%d") == "2024-01-15"
 
 
+def test_collect_dataset_includes_credito_json_from_fs(db_conn, tmp_path, monkeypatch):
+    cf_dir = tmp_path / "credito_fiscal"
+    archive_dir = tmp_path / "archivo_cf"
+    dtes_dir = tmp_path / "dtes"
+    pendientes_dir = tmp_path / "pendientes"
+    for folder in (cf_dir, archive_dir, dtes_dir, pendientes_dir):
+        folder.mkdir(parents=True, exist_ok=True)
+
+    json_path = cf_dir / "20240110_credito.json"
+    payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "03",
+                "fecEmi": "2024-01-10",
+                "horEmi": "09:15:00",
+                "numeroControl": "DTE-03-S001P001-000000000000777",
+                "codigoGeneracion": "CF-ORPHAN-0001",
+            },
+            "receptor": {"nombre": "Cliente CF"},
+            "resumen": {"totalPagar": "50.00"},
+        },
+        "respuesta": {"estado": "Enviado"},
+    }
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(dte_provider, "FACTURAS_CREDITO_FISCAL_DIR", str(cf_dir))
+    monkeypatch.setattr(dte_provider, "FACTURAS_ARCHIVE_CREDITO_DIR", str(archive_dir))
+    monkeypatch.setattr(dte_provider, "DTES_DIR", str(dtes_dir))
+    monkeypatch.setattr(dte_provider, "DTES_PENDIENTES_DIR", str(pendientes_dir))
+
+    dataset = dte_provider.collect_facturacion_dataset(db_conn, "202401")
+
+    matching = [row for row in dataset.rows if row.get("json_path") == str(json_path)]
+    assert matching, dataset.rows
+    row = matching[0]
+    assert row.get("row_type") == "orphan"
+    assert row.get("codigo_generacion") == "CF-ORPHAN-0001"
+    assert row.get("cliente_nombre") == "Cliente CF"
+    assert row.get("fecha_obj").strftime("%Y-%m-%d") == "2024-01-10"
+
+
 def test_estado_normalizacion_y_apto():
     assert dte_provider.normalize_estado("Procesamiento") == "recibido"
     assert dte_provider.estado_apto("Cancelada") is False

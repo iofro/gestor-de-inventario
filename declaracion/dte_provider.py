@@ -4,6 +4,7 @@ from __future__ import annotations
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime, date
+from pathlib import Path
 import json
 import logging
 import os
@@ -17,6 +18,13 @@ from utils.facturacion_records import (
     infer_tipo_from_name,
     tipo_code_from_desc,
     get_facturacion_rows as _facturacion_rows,
+    TIPO_DTE_DESC,
+)
+from paths import (
+    FACTURAS_ARCHIVE_CREDITO_DIR,
+    FACTURAS_CREDITO_FISCAL_DIR,
+    DTES_DIR,
+    DTES_PENDIENTES_DIR,
 )
 
 logger = logging.getLogger(__name__)
@@ -1545,6 +1553,229 @@ def _enrich_rows_from_db(rows: list[dict], db) -> None:
         _ensure_field(row, "sello_recepcion", _sello_recepcion)
 
 
+def _iter_credito_fiscal_json_paths() -> list[Path]:
+    """Enumerar posibles rutas JSON de crédito fiscal en el sistema de archivos."""
+
+    bases: list[Path] = []
+    for raw in (
+        FACTURAS_CREDITO_FISCAL_DIR,
+        FACTURAS_ARCHIVE_CREDITO_DIR,
+    ):
+        if not raw:
+            continue
+        try:
+            bases.append(Path(raw))
+        except TypeError:
+            continue
+
+    for container in (DTES_DIR, DTES_PENDIENTES_DIR):
+        if not container:
+            continue
+        try:
+            base_path = Path(container)
+        except TypeError:
+            continue
+        bases.append(base_path)
+        for sub_name in ("ccf", "CreditoFiscal", "credito_fiscal"):
+            bases.append(base_path / sub_name)
+
+    seen: set[Path] = set()
+    results: list[Path] = []
+    for base in bases:
+        try:
+            resolved_base = base.resolve()
+        except Exception:
+            resolved_base = base
+        if not resolved_base.exists():
+            continue
+        try:
+            iterator = resolved_base.rglob("*.json")
+        except Exception:
+            continue
+        for entry in iterator:
+            if entry.suffix.lower() != ".json":
+                continue
+            if entry.name.lower().endswith(".meta.json"):
+                continue
+            try:
+                resolved = entry.resolve()
+            except Exception:
+                resolved = entry
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            results.append(resolved)
+    return results
+
+
+def _collect_credito_fiscal_orphans(
+    periodo: str, raw_rows: list[dict]
+) -> tuple[list[dict], dict[str, list[PreviewExclusionEntry]]]:
+    """Construir filas sintéticas para DTE de crédito fiscal huérfanos."""
+
+    extra_rows: list[dict] = []
+    descartes: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
+
+    existing_paths: set[str] = set()
+    existing_codigos: set[str] = set()
+    for row in raw_rows:
+        path_value = row.get("json") or row.get("json_path")
+        if path_value:
+            try:
+                existing_paths.add(os.path.abspath(os.fspath(path_value)))
+            except (TypeError, ValueError, OSError):
+                existing_paths.add(str(path_value))
+        codigo = row.get("codigo_generacion")
+        if codigo:
+            existing_codigos.add(str(codigo).strip().upper())
+
+    seen_paths: set[str] = set()
+    for path in _iter_credito_fiscal_json_paths():
+        try:
+            path_str = os.path.abspath(os.fspath(path))
+        except (TypeError, ValueError, OSError):
+            path_str = str(path)
+        if path_str in existing_paths or path_str in seen_paths:
+            continue
+
+        data = _load_facturacion_json(path_str)
+        if not data:
+            continue
+
+        identificacion = data.get("identificacion") or {}
+        tipo_raw = identificacion.get("tipoDte")
+        tipo_codigo: str | None = None
+        if isinstance(tipo_raw, int):
+            tipo_codigo = f"{tipo_raw:02d}"
+        elif isinstance(tipo_raw, str):
+            tipo_clean = tipo_raw.strip()
+            if tipo_clean.isdigit():
+                tipo_codigo = tipo_clean.zfill(2)
+            elif tipo_clean:
+                tipo_codigo = tipo_clean
+        if not tipo_codigo or tipo_codigo not in TIPOS_ANEXO_I:
+            continue
+
+        codigo_generacion = identificacion.get("codigoGeneracion")
+        codigo_norm = str(codigo_generacion).strip().upper() if codigo_generacion else None
+        if codigo_norm and codigo_norm in existing_codigos:
+            continue
+
+        fecha_texto = identificacion.get("fecEmi") or data.get("fecEmi")
+        hora_texto = identificacion.get("horEmi") or data.get("horEmi")
+        fecha_obj: datetime | None = None
+        if fecha_texto and hora_texto:
+            combinada = f"{_normalize_fecha_text(fecha_texto)} {hora_texto}".strip()
+            for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
+                try:
+                    fecha_obj = datetime.strptime(combinada, fmt)
+                    break
+                except ValueError:
+                    continue
+        if fecha_obj is None:
+            fecha_obj = _maybe_parse_fecha(fecha_texto)
+
+        if not fecha_obj:
+            info_row = {"codigo_generacion": codigo_generacion, "tipo": tipo_codigo, "fecEmi": fecha_texto}
+            descartes["sin_fecha"].append(
+                _make_exclusion_entry(info_row, detalle="sin fecha", fecha=fecha_texto)
+            )
+            continue
+
+        periodo_fila = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
+        if periodo_fila != periodo:
+            info_row = {"codigo_generacion": codigo_generacion, "tipo": tipo_codigo, "fecEmi": fecha_texto}
+            descartes["fuera_de_periodo"].append(
+                _make_exclusion_entry(info_row, detalle=periodo_fila, fecha=fecha_texto)
+            )
+            continue
+
+        receptor = data.get("receptor") or {}
+        if not isinstance(receptor, dict):
+            receptor = {}
+        cliente_nombre = receptor.get("nombre") or ""
+
+        resumen = data.get("resumen") or {}
+        if not isinstance(resumen, dict):
+            resumen = {}
+        total = (
+            resumen.get("montoTotalOperacion")
+            or resumen.get("totalPagar")
+            or resumen.get("totalVenta")
+            or resumen.get("total")
+        )
+
+        respuesta = data.get("respuesta") if isinstance(data, dict) else {}
+        if not isinstance(respuesta, dict):
+            respuesta = {}
+        estado_resp = respuesta.get("estado") or respuesta.get("estadoDesc")
+
+        estado_manual = None
+        meta_path = Path(path_str).with_suffix(".meta.json")
+        if meta_path.exists():
+            try:
+                with open(meta_path, "r", encoding="utf-8") as meta_file:
+                    meta_data = json.load(meta_file)
+            except Exception:
+                meta_data = {}
+            if isinstance(meta_data, dict):
+                estado_manual = meta_data.get("estadoManual") or meta_data.get("estado_manual")
+                if not estado_resp:
+                    estado_resp = meta_data.get("estado")
+                if meta_data.get("anulado") and not estado_manual:
+                    estado_manual = "Anulado"
+
+        envio_payload: dict[str, Any]
+        if estado_manual or estado_resp:
+            envio_payload = {}
+            if estado_resp:
+                envio_payload["estado_ui"] = estado_resp
+                envio_payload["estado_ui_tag"] = estado_resp
+                envio_payload["estado"] = estado_resp
+            if estado_manual:
+                envio_payload["estado_manual"] = estado_manual
+                envio_payload["estado_manual_text"] = estado_manual
+                envio_payload["estado_ui_manual"] = 1
+        else:
+            envio_payload = {"estado_ui": "Pendiente", "estado": "Pendiente"}
+
+        fecha_display = (
+            fecha_obj.strftime("%Y-%m-%d %H:%M:%S")
+            if fecha_obj.time() != datetime.min.time()
+            else fecha_obj.strftime("%Y-%m-%d")
+        )
+
+        raw = {
+            "row_type": "orphan",
+            "venta_id": None,
+            "name": Path(path_str).stem,
+            "numero_control": identificacion.get("numeroControl"),
+            "codigo_generacion": codigo_generacion,
+            "fecha": fecha_display,
+            "_parsed_fecha": fecha_obj,
+            "cliente": cliente_nombre,
+            "cliente_id": None,
+            "vendedor_id": None,
+            "total": total,
+            "estado": "Sin venta",
+            "envio": envio_payload,
+            "tipo": TIPO_DTE_DESC.get(tipo_codigo, tipo_codigo),
+            "codigo": tipo_codigo,
+            "json": path_str,
+            "sign": 1,
+        }
+
+        if estado_manual and not envio_payload.get("estado_manual"):
+            raw["estado_manual"] = estado_manual
+
+        extra_rows.append(raw)
+        seen_paths.add(path_str)
+        if codigo_norm:
+            existing_codigos.add(codigo_norm)
+
+    return extra_rows, descartes
+
+
 def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
     """Obtiene información cruda de facturación reutilizando la lógica de la tabla."""
 
@@ -1554,8 +1785,14 @@ def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
     except Exception:
         raw_rows = []
 
+    extra_rows, extra_discards = _collect_credito_fiscal_orphans(periodo, raw_rows)
+    if extra_rows:
+        raw_rows.extend(extra_rows)
+
     total_leidos = len(raw_rows)
     descartes: defaultdict[str, list[PreviewExclusionEntry]] = defaultdict(list)
+    for motivo, entradas in extra_discards.items():
+        descartes[motivo].extend(entradas)
     periodo_rows: list[dict] = []
 
     for raw in raw_rows:

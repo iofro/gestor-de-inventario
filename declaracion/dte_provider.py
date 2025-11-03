@@ -38,6 +38,7 @@ CAT002_VALID = {
 }
 
 APTOS = {"enviado", "aceptado", "recibido"}
+ENVIADO_ESTADOS = {"enviado"}
 ALIASES = {
     "procesado": "recibido",
     "procesada": "recibido",
@@ -193,7 +194,7 @@ class DeclaracionPreview:
 
 
 EXCLUSION_MOTIVOS = (
-    "estado_no_apto",
+    "no_enviado",
     "sin_codigo",
     "sin_fecha",
     "duplicado",
@@ -636,13 +637,26 @@ def _log_summary(
     motivos: dict[str, list[object]],
 ) -> None:
     excluidos = total - incluidos
-    logger.info(
-        "%s - total_leidos=%s incluidos=%s excluidos=%s",
-        context,
-        total,
-        incluidos,
-        excluidos,
+    motivos_resumen = ", ".join(
+        f"{motivo}={len(ejemplos)}" for motivo, ejemplos in motivos.items() if ejemplos
     )
+    if motivos_resumen:
+        logger.info(
+            "%s - total_leidos=%s incluidos=%s excluidos=%s motivos=[%s]",
+            context,
+            total,
+            incluidos,
+            excluidos,
+            motivos_resumen,
+        )
+    else:
+        logger.info(
+            "%s - total_leidos=%s incluidos=%s excluidos=%s",
+            context,
+            total,
+            incluidos,
+            excluidos,
+        )
     if stats:
         for tipo in sorted(stats):
             datos = stats[tipo]
@@ -696,6 +710,16 @@ def estado_apto(value: str | None, override_manual: str | None = None) -> bool:
         return True
     base = normalize_estado(value)
     if base and base in APTOS:
+        return True
+    return False
+
+
+def estado_enviado(base: str | None, override_manual: str | None = None) -> bool:
+    override = normalize_estado(override_manual)
+    if override and override in ENVIADO_ESTADOS:
+        return True
+    base_norm = normalize_estado(base)
+    if base_norm and base_norm in ENVIADO_ESTADOS:
         return True
     return False
 
@@ -927,10 +951,10 @@ def _build_preview(
             )
             continue
         base, manual = _estado_base(row)
-        if not estado_apto(base, manual):
+        if not estado_enviado(base, manual):
             stats[tipo]["excluidos"] += 1
-            descripcion = normalize_estado(manual) or normalize_estado(base) or "desconocido"
-            excluidos["estado_no_apto"].append(
+            descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
+            excluidos["no_enviado"].append(
                 _make_exclusion_entry(row, detalle=descripcion, fecha=_row_fecha_text(row))
             )
             continue
@@ -1016,11 +1040,11 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
             motivos["duplicado"].append(codigo)
             continue
         base, manual = _estado_base(row)
-        apto = estado_apto(base, manual)
-        if not apto:
+        enviado = estado_enviado(base, manual)
+        if not enviado:
             stats[tipo]["excluidos"] += 1
-            descripcion = normalize_estado(manual) or normalize_estado(base) or "desconocido"
-            motivos["estado_no_apto"].append(f"{codigo}:{descripcion}")
+            descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
+            motivos["no_enviado"].append(f"{codigo}:{descripcion}")
             continue
         _, fecha_obj = _fecha_emision(row)
         if not fecha_obj:
@@ -1037,7 +1061,7 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
             tipo=tipo,
             numero_control=numero_control,
             codigo_generacion=codigo,
-            sello_recepcion=row.get("sello_recepcion") if apto else None,
+            sello_recepcion=row.get("sello_recepcion") if enviado else None,
             identificacion=identificacion,
             nombre_cliente=nombre,
             dui=dui,
@@ -1081,11 +1105,11 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
             motivos["duplicado"].append(codigo)
             continue
         base, manual = _estado_base(row)
-        apto = estado_apto(base, manual)
-        if not apto:
+        enviado = estado_enviado(base, manual)
+        if not enviado:
             stats[tipo]["excluidos"] += 1
-            descripcion = normalize_estado(manual) or normalize_estado(base) or "desconocido"
-            motivos["estado_no_apto"].append(f"{codigo}:{descripcion}")
+            descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
+            motivos["no_enviado"].append(f"{codigo}:{descripcion}")
             continue
         _, fecha_obj = _fecha_emision(row)
         if not fecha_obj:

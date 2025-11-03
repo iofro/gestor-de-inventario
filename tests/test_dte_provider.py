@@ -285,8 +285,8 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
         venta_cf,
         codigo="CF-001",
         numero="DTE-03-0001",
-        estado="Recibido",
-        tag="recibido",
+        estado="Enviado",
+        tag="enviado",
         manual=0,
         respuesta_extra={"selloRecibido": "SELLO-RESP"},
     )
@@ -311,7 +311,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
             resumen=resumen_nd,
         ),
     )
-    _insert_envio(db_conn, venta_nd, codigo="ND-001", numero="DTE-05-0001", estado="Aceptada", tag="aceptada", manual=0)
+    _insert_envio(db_conn, venta_nd, codigo="ND-001", numero="DTE-05-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_nd)
 
     resumen_nc = {
@@ -342,7 +342,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
         venta_nc,
         codigo="NC-001",
         numero="DTE-06-0001",
-        estado="Aceptado",
+        estado="Enviado",
         tag="rechazado",
         manual=1,
     )
@@ -414,7 +414,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
             resumen=resumen_cf_extra,
         ),
     )
-    _insert_envio(db_conn, venta_cf_extra, codigo="CFII-005", numero="DTE-01-0003", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_cf_extra, codigo="CFII-005", numero="DTE-01-0003", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_cf_extra)
 
     resumen_fc = {
@@ -437,7 +437,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
             resumen=resumen_fc,
         ),
     )
-    _insert_envio(db_conn, venta_fc, codigo="CFII-002", numero="DTE-02-0001", estado="Pendiente", tag="pendiente", manual=0)
+    _insert_envio(db_conn, venta_fc, codigo="CFII-002", numero="DTE-02-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_fc)
 
     resumen_manual = {
@@ -465,7 +465,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
         venta_manual,
         codigo="CFII-003",
         numero="DTE-01-0002",
-        estado="Aceptado",
+        estado="Enviado",
         tag="rechazado",
         manual=1,
     )
@@ -496,8 +496,8 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
         venta_no_cf,
         codigo="CFII-004",
         numero="DTE-11-0001",
-        estado="Aceptado",
-        tag="aceptado",
+        estado="Enviado",
+        tag="enviado",
         manual=0,
     )
     venta_ids.append(venta_no_cf)
@@ -516,7 +516,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
             resumen=resumen_cf_consumidor,
         ),
     )
-    _insert_envio(db_conn, venta_cf_dup, codigo="CFII-001", numero="DTE-01-9999", estado="Aceptado", tag="aceptado", manual=0)
+    _insert_envio(db_conn, venta_cf_dup, codigo="CFII-001", numero="DTE-01-9999", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_cf_dup)
 
     venta_sin_codigo = db_conn.add_venta(
@@ -574,11 +574,11 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
 
     nc = next(r for r in contribuyentes if r.codigo_generacion == "NC-001")
     assert nc.debito_fiscal == "0.50"
-    assert nc.estado_manual == "Aceptado"
+    assert nc.estado_manual == "Enviado"
     assert nc.estado == "rechazado"
 
     cf_by_fecha = {r.fecha: r for r in cf}
-    assert set(cf_by_fecha) == {"22/01/2024", "24/01/2024", "27/01/2024"}
+    assert set(cf_by_fecha) == {"22/01/2024", "23/01/2024", "24/01/2024", "26/01/2024", "27/01/2024"}
 
     cf_tipo11 = cf_by_fecha["27/01/2024"]
     assert cf_tipo11.tipo == "11"
@@ -586,23 +586,32 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
     assert cf_tipo11.ventas_gravadas_locales == "12.00"
     assert cf_tipo11.total_ventas == "12.00"
     cf_manual = cf_by_fecha["24/01/2024"]
-    assert cf_manual.estado_manual == "Aceptado"
+    assert cf_manual.estado_manual == "Enviado"
     assert cf_manual.numero_control == "DTE-01-0002"
     assert cf_manual.clase == "4"
 
+    cf_dup = cf_by_fecha["26/01/2024"]
+    assert cf_dup.codigo_generacion == "CFII-001"
+    assert cf_dup.numero_control == "DTE-01-9999"
+
+    cf_tipo02 = cf_by_fecha["23/01/2024"]
+    assert cf_tipo02.tipo == "02"
+    assert cf_tipo02.codigo_generacion == "CFII-002"
+    assert cf_tipo02.total_ventas == "6.50"
+
     cf_total = cf_by_fecha["22/01/2024"]
-    assert cf_total.numero_doc_del == "CFII-001"
+    assert cf_total.numero_doc_del == "CFII-005"
     assert cf_total.numero_doc_al == "CFII-005"
-    assert cf_total.ctrl_interno_del == "DTE-01-0001"
+    assert cf_total.ctrl_interno_del == "DTE-01-0003"
     assert cf_total.ctrl_interno_al == "DTE-01-0003"
-    assert cf_total.ventas_gravadas_locales == "30.50"
-    assert cf_total.total_ventas == "30.50"
+    assert cf_total.ventas_gravadas_locales == "10.00"
+    assert cf_total.total_ventas == "10.00"
     assert cf_total.codigo_generacion == "CFII-005"
     assert cf_total.numero_control == "DTE-01-0003"
     assert cf_total.clase == "4"
 
     assert any("Anexo I - descartados_sin_codigo" in rec.message for rec in caplog.records)
-    assert any("Anexo II - descartados_duplicado" in rec.message for rec in caplog.records)
+    assert any("Anexo II - descartados_no_enviado" in rec.message for rec in caplog.records)
     assert any("Facturación 202401 - descartados_fuera_de_periodo" in rec.message for rec in caplog.records)
 
 
@@ -657,7 +666,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             resumen=resumen_base,
         ),
     )
-    _insert_envio(db_conn, venta_cf, codigo="CF-001", numero="03-0001", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_cf, codigo="CF-001", numero="03-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_cf)
 
     venta_override = db_conn.add_venta(
@@ -674,7 +683,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             resumen=resumen_base,
         ),
     )
-    _insert_envio(db_conn, venta_override, codigo="OVR-001", numero="03-0002", estado="Recibido", tag="pendiente", manual=1)
+    _insert_envio(db_conn, venta_override, codigo="OVR-001", numero="03-0002", estado="Enviado", tag="pendiente", manual=1)
     venta_ids.append(venta_override)
 
     venta_nd = db_conn.add_venta(
@@ -697,7 +706,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             },
         ),
     )
-    _insert_envio(db_conn, venta_nd, codigo="ND-001", numero="05-0001", estado="Aceptada", tag="aceptada", manual=0)
+    _insert_envio(db_conn, venta_nd, codigo="ND-001", numero="05-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_nd)
 
     venta_nc = db_conn.add_venta(
@@ -721,7 +730,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             },
         ),
     )
-    _insert_envio(db_conn, venta_nc, codigo="NC-001", numero="06-0001", estado="Aceptada", tag="aceptada", manual=0)
+    _insert_envio(db_conn, venta_nc, codigo="NC-001", numero="06-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_nc)
 
     venta_pending = db_conn.add_venta(
@@ -755,7 +764,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             resumen=resumen_base,
         ),
     )
-    _insert_envio(db_conn, venta_dup, codigo="ND-001", numero="05-0002", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_dup, codigo="ND-001", numero="05-0002", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_dup)
 
     payload_sin_codigo = _dte_payload(
@@ -770,7 +779,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
     payload_sin_codigo.pop("codigoGeneracion", None)
     payload_sin_codigo["dteJson"]["identificacion"].pop("codigoGeneracion", None)
     venta_sin_codigo = db_conn.add_venta("2024-01-11", 30, cliente_id=cliente_emp, extra=payload_sin_codigo)
-    _insert_envio(db_conn, venta_sin_codigo, codigo=None, numero="03-0004", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_sin_codigo, codigo=None, numero="03-0004", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_sin_codigo)
 
     venta_fuera = db_conn.add_venta(
@@ -787,7 +796,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             resumen=resumen_base,
         ),
     )
-    _insert_envio(db_conn, venta_fuera, codigo="OUT-001", numero="03-0005", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_fuera, codigo="OUT-001", numero="03-0005", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_fuera)
 
     payload_sin_fecha = _dte_payload(
@@ -802,7 +811,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
     payload_sin_fecha["dteJson"]["identificacion"].pop("fecEmi", None)
     venta_sin_fecha = db_conn.add_venta("2024-01-13", 35, cliente_id=cliente_emp, extra=payload_sin_fecha)
     db_conn.cursor.execute("UPDATE ventas SET fecha = '' WHERE id = ?", (venta_sin_fecha,))
-    _insert_envio(db_conn, venta_sin_fecha, codigo="SF-001", numero="03-0006", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_sin_fecha, codigo="SF-001", numero="03-0006", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_sin_fecha)
 
     resumen_cf = {
@@ -825,7 +834,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             resumen=resumen_cf,
         ),
     )
-    _insert_envio(db_conn, venta_cf_consumidor, codigo="CFD-001", numero="01-0001", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_cf_consumidor, codigo="CFD-001", numero="01-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_cf_consumidor)
 
     resumen_tipo02 = {
@@ -848,7 +857,7 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
             resumen=resumen_tipo02,
         ),
     )
-    _insert_envio(db_conn, venta_tipo02, codigo="CFD-002", numero="02-0001", estado="Recibido", tag="recibido", manual=0)
+    _insert_envio(db_conn, venta_tipo02, codigo="CFD-002", numero="02-0001", estado="Enviado", tag="enviado", manual=0)
     venta_ids.append(venta_tipo02)
 
     db_conn.conn.commit()
@@ -873,12 +882,12 @@ def test_declaracion_preview_counts_and_exclusions(db_conn, monkeypatch):
     override_row = next(row for row in anexo_i.incluidos if row.codigo_generacion == "OVR-001")
     assert override_row.estado_override
     assert override_row.estado_base == "pendiente"
-    assert override_row.estado_manual == "recibido"
+    assert override_row.estado_manual == "enviado"
 
     fechas_incluidos = [row.fecha for row in anexo_i.incluidos]
     assert fechas_incluidos == sorted(fechas_incluidos)
 
-    assert any(entry.detalle == "pendiente" for entry in anexo_i.excluidos["estado_no_apto"])
+    assert any(entry.detalle == "pendiente" for entry in anexo_i.excluidos["no_enviado"])
     assert any(entry.codigo == "ND-001" for entry in anexo_i.excluidos["duplicado"])
     assert any(entry.codigo is None for entry in anexo_i.excluidos["sin_codigo"])
     assert any(entry.detalle == "202312" for entry in anexo_i.excluidos["fuera_de_periodo"])
@@ -904,3 +913,5 @@ def test_estado_normalizacion_y_apto():
     assert dte_provider.estado_apto("Cancelada") is False
     assert dte_provider.estado_apto("rechazado", override_manual="Aceptada") is True
     assert dte_provider.estado_apto("Procesado") is True
+    assert dte_provider.estado_enviado("Pendiente", override_manual="Enviado") is True
+    assert dte_provider.estado_enviado("Procesado") is False

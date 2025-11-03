@@ -1333,6 +1333,17 @@ def _from_facturacion_row(raw: dict, db) -> dict:
     _ensure_field(row, "numero_control", _numero_control)
     _ensure_field(row, "sello_recepcion", _sello_recepcion)
 
+    if not isinstance(row.get("fecha_obj"), datetime):
+        fecha_candidata = row.get("fecEmi") or row.get("fecha_display")
+        fecha_normalizada = _normalize_fecha_text(fecha_candidata)
+        fecha_parseada = _maybe_parse_fecha(fecha_normalizada)
+        if fecha_parseada:
+            row["fecha_obj"] = fecha_parseada
+            if not row.get("fecEmi"):
+                row["fecEmi"] = fecha_parseada.strftime("%Y-%m-%d")
+            if not row.get("fecha_display"):
+                row["fecha_display"] = fecha_parseada.strftime("%Y-%m-%d")
+
     return row
 
 

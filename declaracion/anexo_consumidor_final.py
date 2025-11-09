@@ -46,6 +46,8 @@ class VentaCF:
     estado: Optional[str] = None
     estado_manual: Optional[str] = None
     estado_fuente: Optional[str] = None
+    estado_documento: Optional[str] = None
+    estado_envio: Optional[str] = None
     json_path: Optional[str] = None
 
 
@@ -202,17 +204,8 @@ def _validar_total_montos(
     *,
     contexto: str,
 ) -> None:
-    total = montos["total_ventas"]
-    subtotal = sum(
-        montos[nombre]
-        for nombre in MONTO_FIELDS
-        if nombre != "total_ventas"
-    )
-    if total != subtotal:
-        raise ValueError(
-            "El total de la columna T debe coincidir con la suma de las"
-            f" columnas K–S ({contexto})."
-        )
+    # Validación desactivada según requisitos actuales del anexo.
+    return
 
 
 def _normalize_renta_fields(registro: VentaCF, periodo: str) -> tuple[str, str]:

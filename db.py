@@ -20,8 +20,15 @@ from utils.fecha import fecha_ddmmaaaa, normalizar_fecha_iso
 from utils.stable_json import stable_stringify
 from paths import DTES_DIR, get_canonical_dte_dir, user_data_path
 
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+def _normalize_sku_value(value):
+    if isinstance(value, str):
+        trimmed = value.strip()
+        return trimmed or None
+    return value if value else None
+
 
 _CODE_TO_CANONICAL = {
     "01": "ConsumidorFinal",
@@ -977,8 +984,15 @@ class DB:
         # Create index for SKU only if the column exists
         self.cursor.execute("PRAGMA table_info(productos)")
         if any(row[1] == "sku" for row in self.cursor.fetchall()):
+            try:
+                self.cursor.execute("UPDATE productos SET sku=NULL WHERE sku=''")
+            except Exception:
+                logger.exception("No fue posible normalizar SKUs vacíos a NULL")
             self.cursor.execute(
                 "CREATE INDEX IF NOT EXISTS idx_productos_sku ON productos(sku)"
+            )
+            self.cursor.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_productos_sku_unico ON productos(sku) WHERE sku IS NOT NULL AND sku <> ''"
             )
         # Índices únicos para campos de texto
         self.cursor.execute(
@@ -1211,6 +1225,9 @@ class DB:
         """
 
         # Elimina fecha_vencimiento del método y de la consulta
+        sku = _normalize_sku_value(sku)
+        if isinstance(codigo, str):
+            codigo = codigo.strip()
         self.cursor.execute(
             "INSERT INTO productos (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
@@ -1249,6 +1266,9 @@ class DB:
 
     def edit_producto(self, producto_id, nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
         # Elimina fecha_vencimiento del método y de la consulta
+        sku = _normalize_sku_value(sku)
+        if isinstance(codigo, str):
+            codigo = codigo.strip()
         self.cursor.execute(
             "UPDATE productos SET nombre=?, codigo=?, sku=?, vendedor_id=?, Distribuidor_id=?, precio_compra=?, precio_venta_minorista=?, precio_venta_mayorista=?, stock=? WHERE id=?",
             (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, producto_id)

@@ -14,17 +14,20 @@ from typing import Any, Callable
 
 from declaracion.anexo_contribuyentes import VentaContribuyente
 from declaracion.anexo_consumidor_final import VentaCF
+from declaracion.anexo_xix import DTEAnulado
 from utils.facturacion_records import (
     infer_tipo_from_name,
     tipo_code_from_desc,
     get_facturacion_rows as _facturacion_rows,
     TIPO_DTE_DESC,
+    format_envio_state,
 )
 from paths import (
     FACTURAS_ARCHIVE_CREDITO_DIR,
     FACTURAS_CREDITO_FISCAL_DIR,
     DTES_DIR,
     DTES_PENDIENTES_DIR,
+    ensure_user_dir,
 )
 
 logger = logging.getLogger(__name__)
@@ -46,7 +49,8 @@ CAT002_VALID = {
 }
 
 APTOS = {"enviado", "aceptado", "recibido"}
-ENVIADO_ESTADOS = {"enviado"}
+ENVIADO_ESTADOS = {"enviado", "aceptado", "recibido"}
+ANULADO_ESTADOS = {"anulado", "invalidado"}
 ALIASES = {
     "procesado": "recibido",
     "procesada": "recibido",
@@ -70,6 +74,19 @@ ALIASES = {
     "invalidada": "invalidado",
     "cancelado": "anulado",
     "cancelada": "anulado",
+}
+
+_ESTADO_FIELD_KEYS = {
+    "estado",
+    "estado_desc",
+    "estadodesc",
+    "estadoenvio",
+    "estado_envio",
+    "estadorespuesta",
+    "estadodocumento",
+    "estadoactual",
+    "estado_ui",
+    "estado_ui_tag",
 }
 
 _TIPO_HINT_ALIASES = {
@@ -206,6 +223,8 @@ EXCLUSION_MOTIVOS = (
     "sin_codigo",
     "sin_fecha",
     "duplicado",
+    "anulado",
+    "correlativo_duplicado",
     "fuera_de_periodo",
 )
 
@@ -253,6 +272,90 @@ def _row_fecha_text(row: dict) -> str | None:
         return texto
     return None
 
+
+def _cliente_nombre(row: dict) -> str:
+    nombre = row.get("cliente_nombre") or row.get("cliente")
+    if not nombre:
+        return ""
+    return str(nombre).strip()
+
+
+def _dedup_priority(row: dict, order: int) -> tuple:
+    estado_envio_norm = normalize_estado(row.get("estado_envio"))
+    estado_manual_norm = normalize_estado(row.get("estado_manual"))
+    sello_flag = 1 if isinstance(row.get("sello_recepcion"), str) and row.get("sello_recepcion").strip() else 0
+    fuente_flag = 1 if str(row.get("estado_fuente") or "").strip().lower() == "db" else 0
+    json_flag = 1 if row.get("json_path") else 0
+    fecha_obj = row.get("fecha_obj")
+    fecha_ts = fecha_obj.timestamp() if isinstance(fecha_obj, datetime) else 0.0
+    return (
+        1 if estado_envio_norm in ENVIADO_ESTADOS else 0,
+        1 if estado_manual_norm in ENVIADO_ESTADOS else 0,
+        1 if estado_envio_norm in APTOS else 0,
+        sello_flag,
+        fuente_flag,
+        json_flag,
+        fecha_ts,
+        -order,
+    )
+
+
+def _deduplicate_rows(
+    rows: list[dict],
+    key_builder: Callable[[dict], tuple | None],
+) -> tuple[list[dict], list[dict]]:
+    if not rows:
+        return [], []
+
+    uniques: list[dict] = []
+    duplicates: list[dict] = []
+    selected: dict[tuple[str, str, str], tuple[int, tuple, dict]] = {}
+
+    for order, row in enumerate(rows):
+        key = key_builder(row)
+        if key is None:
+            uniques.append(row)
+            continue
+
+        priority = _dedup_priority(row, order)
+        existing = selected.get(key)
+        if existing is None:
+            selected[key] = (len(uniques), priority, row)
+            uniques.append(row)
+            continue
+
+        existing_index, existing_priority, existing_row = existing
+        if priority > existing_priority:
+            duplicates.append(existing_row)
+            selected[key] = (existing_index, priority, row)
+            uniques[existing_index] = row
+        else:
+            duplicates.append(row)
+
+    return uniques, duplicates
+
+
+def _deduplicate_facturacion_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    def _key(row: dict) -> tuple | None:
+        codigo = _ensure_field(row, "codigo_generacion", _codigo_generacion)
+        fecha = _row_fecha_text(row)
+        cliente = _cliente_nombre(row)
+        if not codigo or not fecha or not cliente:
+            return None
+        return (str(codigo).upper(), fecha, cliente.lower())
+
+    return _deduplicate_rows(rows, _key)
+
+
+def _deduplicate_correlativo_rows(rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    def _key(row: dict) -> tuple | None:
+        tipo = row.get("tipo")
+        numero = _ensure_field(row, "numero_control", _numero_control)
+        if not tipo or not numero:
+            return None
+        return (str(tipo).strip().lower(), str(numero).strip().upper())
+
+    return _deduplicate_rows(rows, _key)
 
 
 def _normalize_alias(texto: str | None) -> str | None:
@@ -732,6 +835,194 @@ def estado_enviado(base: str | None, override_manual: str | None = None) -> bool
     return False
 
 
+def _iter_estado_variants(value: str) -> tuple[str, ...]:
+    texto = str(value or "").strip()
+    if not texto:
+        return ()
+    segmentos = re.split(r"[|/]", texto)
+    candidatos: list[str] = []
+    vistos: set[str] = set()
+    for segmento in segmentos if segmentos else (texto,):
+        base = segmento.strip()
+        if not base:
+            continue
+        for separador in ("(", "-", "\u2014", ":", "["):
+            if separador in base:
+                base = base.split(separador, 1)[0].strip()
+        for candidato in (segmento.strip(), base):
+            if not candidato:
+                continue
+            normalizado = " ".join(candidato.split())
+            if normalizado and normalizado not in vistos:
+                vistos.add(normalizado)
+                candidatos.append(normalizado)
+    return tuple(candidatos)
+
+
+def _estado_en_estados(value: object, estados: set[str]) -> bool:
+    if not value:
+        return False
+    if isinstance(value, str):
+        for variante in _iter_estado_variants(value):
+            estado = normalize_estado(variante)
+            if estado and estado in estados:
+                return True
+    return False
+
+
+def _row_es_anulado(row: dict, base: str | None, manual: str | None) -> bool:
+    if _estado_en_estados(base, ANULADO_ESTADOS):
+        return True
+    if _estado_en_estados(manual, ANULADO_ESTADOS):
+        return True
+    candidatos = [
+        row.get("estado_documento"),
+        row.get("estado_display"),
+        row.get("estado"),
+        row.get("estado_envio"),
+        row.get("estado_manual"),
+        row.get("estado_manual_text"),
+    ]
+    for valor in candidatos:
+        if _estado_en_estados(valor, ANULADO_ESTADOS):
+            return True
+    envio_info = row.get("envio")
+    if isinstance(envio_info, dict):
+        for clave in ("estado", "estado_ui", "estado_ui_tag", "estado_manual", "estado_manual_text"):
+            if _estado_en_estados(envio_info.get(clave), ANULADO_ESTADOS):
+                return True
+        respuesta = envio_info.get("respuesta_json")
+        if isinstance(respuesta, dict):
+            for dato in respuesta.values():
+                if _estado_en_estados(dato, ANULADO_ESTADOS):
+                    return True
+    return False
+
+
+def _choose_envio_state(auto_state: str | None, manual_state: str | None) -> tuple[str | None, bool]:
+    auto_norm = normalize_estado(auto_state)
+    manual_norm = normalize_estado(manual_state)
+    if manual_norm and manual_norm in ENVIADO_ESTADOS:
+        return manual_state, True
+    return auto_state, False
+
+
+def _envio_display_apto(value: str | None) -> str | None:
+    if not value:
+        return None
+    texto = str(value)
+    segmentos = [segment.strip() for segment in texto.split("|") if segment.strip()]
+    if not segmentos:
+        segmentos = [texto.strip()]
+
+    def _normalize_segment(segment: str) -> str:
+        base = segment.strip()
+        if not base:
+            return ""
+        for sep in ("(", "-", "\u2014", ":", "["):
+            if sep in base:
+                base = base.split(sep, 1)[0].strip()
+        return base
+
+    for segmento in segmentos:
+        base = _normalize_segment(segmento)
+        base_norm = normalize_estado(base)
+        if base_norm and base_norm in ENVIADO_ESTADOS:
+            return segmento
+        lowered = base.lower()
+        if lowered.startswith(("enviado", "aceptado", "recibido")):
+            return segmento
+
+    texto_lower = texto.strip().lower()
+    if texto_lower.startswith(("enviado", "aceptado", "recibido")):
+        return texto.strip()
+    return None
+
+
+def _extract_envio_state_from_payload(payload: dict | None) -> str | None:
+    if not isinstance(payload, dict):
+        return None
+    stack: list[tuple[dict, str | None]] = [(payload, None)]
+    visited: set[int] = set()
+    while stack:
+        current, parent_key = stack.pop()
+        ident = id(current)
+        if ident in visited:
+            continue
+        visited.add(ident)
+        for key, value in current.items():
+            if isinstance(value, str):
+                lowered_key = key.lower()
+                texto = value.strip()
+                if not texto:
+                    continue
+                if lowered_key in _ESTADO_FIELD_KEYS:
+                    return texto
+                if lowered_key == "descripcion" and parent_key:
+                    parent_lower = parent_key.lower()
+                    if "respuesta" in parent_lower or "estado" in parent_lower:
+                        return texto
+                if lowered_key == "resultado" and parent_key and "respuesta" in parent_key.lower():
+                    return texto
+            elif isinstance(value, dict):
+                stack.append((value, key))
+    return None
+
+
+def _row_enviado(row: dict, base: str | None, manual: str | None) -> bool:
+    """Determina si un registro debe considerarse enviado/apto para anexos."""
+
+    override_info = row.get("_envio_override") or {}
+    if isinstance(override_info, dict) and override_info.get("manual"):
+        logger.info(
+            "row_enviado: override manual aplicado código=%s estado=%s",
+            row.get("codigo_generacion"),
+            row.get("estado_envio"),
+        )
+
+    envio_display = _envio_display_apto(row.get("estado_envio"))
+    if envio_display:
+        return True
+
+    sello = row.get("sello_recepcion")
+    if isinstance(sello, str) and sello.strip():
+        envio_text = str(row.get("estado_envio") or "").strip().lower()
+        estado_text = str(row.get("estado") or "").strip().lower()
+        if envio_text.startswith("pendiente") or estado_text.startswith("pendiente"):
+            return False
+        return True
+
+    return False
+
+
+def _safe_load_json(path: Path | str | None) -> dict | None:
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+_ANULACION_ESTADO_DETALLE = {
+    1: "D",  # Invalidado
+    2: "A",  # Anulado
+    3: "X",  # Extraviado
+}
+
+_ANULACION_ESTADOS_VALIDOS = {"aceptado", "recibido"}
+
+
+def _map_tipo_anulacion(raw: Any) -> str | None:
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return None
+    return _ANULACION_ESTADO_DETALLE.get(value)
+
+
 def _montos_anexo_i(row: dict) -> dict:
     resumen = _extract_resumen(row)
     exentas = _to_decimal(resumen.get("totalExenta"))
@@ -959,7 +1250,7 @@ def _build_preview(
             )
             continue
         base, manual = _estado_base(row)
-        if not estado_enviado(base, manual):
+        if not _row_enviado(row, base, manual):
             stats[tipo]["excluidos"] += 1
             descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
             excluidos["no_enviado"].append(
@@ -1025,7 +1316,7 @@ def get_declaracion_preview(db, periodo_yyyymm: str) -> DeclaracionPreview:
     )
 
 
-def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
+def build_anexo_i_contribuyentes(rows: list[dict], db) -> list[VentaContribuyente]:
     registros: list[VentaContribuyente] = []
     seen: set[str] = set()
     stats = defaultdict(lambda: {"incluidos": 0, "excluidos": 0})
@@ -1048,7 +1339,14 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
             motivos["duplicado"].append(codigo)
             continue
         base, manual = _estado_base(row)
-        enviado = estado_enviado(base, manual)
+        if _row_es_anulado(row, base, manual):
+            stats[tipo]["excluidos"] += 1
+            motivos["anulado"].append(
+                _make_exclusion_entry(row, detalle="estado anulado")
+            )
+            seen.add(codigo)
+            continue
+        enviado = _row_enviado(row, base, manual)
         if not enviado:
             stats[tipo]["excluidos"] += 1
             descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
@@ -1082,6 +1380,27 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
         )
         for clave, valor in montos.items():
             setattr(registro, clave, valor)
+        registro.estado_documento = (
+            row.get("estado_documento")
+            or row.get("estado_display")
+            or row.get("estado")
+        )
+        if isinstance(registro.estado_documento, str):
+            registro.estado_documento = registro.estado_documento.strip() or None
+        envio_info = row.get("envio") or {}
+        envio_display = (
+            row.get("estado_envio")
+            or format_envio_state(
+                (envio_info or {}).get("estado_ui"),
+                (envio_info or {}).get("estado_ui_tag"),
+                (envio_info or {}).get("estado"),
+            )
+        )
+        if isinstance(envio_display, str):
+            envio_display = envio_display.strip()
+        if not envio_display:
+            envio_display = "Pendiente de envío"
+        registro.estado_envio = envio_display
         registros.append(registro)
         seen.add(codigo)
         stats[tipo]["incluidos"] += 1
@@ -1090,7 +1409,7 @@ def build_anexo_i_records(rows: list[dict], db) -> list[VentaContribuyente]:
     return registros
 
 
-def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
+def build_anexo_i_consumidor(rows: list[dict], db) -> list[VentaCF]:
     seen: set[str] = set()
     stats = defaultdict(lambda: {"incluidos": 0, "excluidos": 0})
     motivos = defaultdict(list)
@@ -1113,7 +1432,14 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
             motivos["duplicado"].append(codigo)
             continue
         base, manual = _estado_base(row)
-        enviado = estado_enviado(base, manual)
+        if _row_es_anulado(row, base, manual):
+            stats[tipo]["excluidos"] += 1
+            motivos["anulado"].append(
+                _make_exclusion_entry(row, detalle="estado anulado")
+            )
+            seen.add(codigo)
+            continue
+        enviado = _row_enviado(row, base, manual)
         if not enviado:
             stats[tipo]["excluidos"] += 1
             descripcion = normalize_estado(manual) or normalize_estado(base) or "no_enviado"
@@ -1143,6 +1469,8 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
                 "json_path": row.get("json_path"),
                 "ultimo_control": None,
                 "ultimo_codigo": None,
+                "estado_documento": None,
+                "estado_envio_set": set(),
             }
         grupo = grupos[key]
         for campo, valor in montos.items():
@@ -1166,6 +1494,27 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
             grupo["estado"] = base
         elif not grupo["estado"]:
             grupo["estado"] = base
+        if not grupo.get("estado_documento"):
+            doc_estado = (
+                row.get("estado_documento")
+                or row.get("estado_display")
+                or row.get("estado")
+            )
+            if doc_estado:
+                grupo["estado_documento"] = doc_estado
+        envio_info = row.get("envio") or {}
+        envio_display = (
+            row.get("estado_envio")
+            or format_envio_state(
+                (envio_info or {}).get("estado_ui"),
+                (envio_info or {}).get("estado_ui_tag"),
+                (envio_info or {}).get("estado"),
+            )
+        )
+        if isinstance(envio_display, str):
+            envio_display = envio_display.strip()
+        if envio_display:
+            grupo.setdefault("estado_envio_set", set()).add(envio_display)
         seen.add(codigo)
 
     registros: list[VentaCF] = []
@@ -1173,6 +1522,18 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
         grupo = grupos[key]
         tipo = grupo["tipo"]
         totales = grupo["totales"]
+        subtotal = (
+            totales["ventas_exentas"]
+            + totales["internas_exentas_ns"]
+            + totales["ventas_no_sujetas"]
+            + totales["ventas_gravadas_locales"]
+            + totales["exp_ca"]
+            + totales["exp_fuera_ca"]
+            + totales["exp_servicios"]
+            + totales["zonas_francas_dpa"]
+            + totales["terceros_no_domic"]
+        )
+        totales["total_ventas"] = subtotal
         controles = grupo["controles"] or grupo["codigos"]
         documentos = grupo["codigos"] or grupo["controles"]
         ctrl_del = controles[0] if controles else None
@@ -1206,10 +1567,149 @@ def build_anexo_ii_records(rows: list[dict], db) -> list[VentaCF]:
             estado_fuente=grupo["estado_fuente"],
             json_path=grupo["json_path"],
         )
+        doc_estado = grupo.get("estado_documento")
+        if isinstance(doc_estado, str):
+            doc_estado = doc_estado.strip()
+        registro.estado_documento = doc_estado or None
+        estados_envio = grupo.get("estado_envio_set") or set()
+
+        def _envio_priority(value: str) -> tuple[int, str]:
+            base = value.strip().lower()
+            if "(" in base:
+                base = base.split("(", 1)[0].strip()
+            order = {
+                "aceptado": 0,
+                "recibido": 0,
+                "enviado": 1,
+                "procesado": 1,
+                "rechazado": 2,
+                "anulado": 3,
+                "pendiente de envío": 4,
+            }
+            priority = order.get(base, 5)
+            return (priority, value)
+
+        if estados_envio:
+            ordered = sorted({val.strip() for val in estados_envio if val.strip()}, key=_envio_priority)
+            envio_display = " | ".join(ordered) if ordered else "Pendiente de envío"
+        else:
+            envio_display = "Pendiente de envío"
+        registro.estado_envio = envio_display
         registros.append(registro)
         stats[tipo]["incluidos"] += 1
 
     _log_summary("Anexo II", total_considerados, len(registros), stats, motivos)
+    return registros
+
+
+def build_anexo_i_anulados(periodo_yyyymm: str, *, base_dir: str | Path | None = None) -> list[DTEAnulado]:
+    periodo = _validate_periodo(periodo_yyyymm)
+    if base_dir is None:
+        base_dir = ensure_user_dir("dtes", "actualizaciones", "anulacion")
+    try:
+        base_path = Path(base_dir)
+    except TypeError:
+        base_path = Path(str(base_dir))
+
+    if not base_path.exists():
+        return []
+
+    registros: list[DTEAnulado] = []
+    for entry in sorted(base_path.iterdir()):
+        if not entry.is_dir():
+            continue
+        payload = _safe_load_json(entry / "documento.json")
+        metadata = _safe_load_json(entry / "metadata.json")
+        if not isinstance(payload, dict):
+            continue
+
+        identificacion = payload.get("identificacion") or {}
+        if metadata and not isinstance(metadata, dict):
+            metadata = None
+
+        if not identificacion and metadata:
+            identificacion = metadata.get("identificacion") or {}
+
+        fecha_texto = identificacion.get("fecAnula") or identificacion.get("fechaAnulacion")
+        if not fecha_texto and metadata:
+            meta_ident = metadata.get("identificacion")
+            if isinstance(meta_ident, dict):
+                fecha_texto = meta_ident.get("fecAnula") or meta_ident.get("fechaAnulacion")
+
+        fecha_normalizada = _normalize_fecha_text(fecha_texto)
+        fecha_obj = _maybe_parse_fecha(fecha_normalizada)
+        if not fecha_obj:
+            continue
+        periodo_evento = f"{fecha_obj.year:04d}{fecha_obj.month:02d}"
+        if periodo_evento != periodo:
+            continue
+
+        respuesta = None
+        if metadata:
+            respuesta = metadata.get("respuesta")
+            if isinstance(respuesta, dict) and "estado" in respuesta:
+                estado_evento = normalize_estado(respuesta.get("estado"))
+            else:
+                estado_evento = None
+        else:
+            estado_evento = None
+
+        if not estado_evento and metadata:
+            estado_evento = normalize_estado(metadata.get("estado"))
+        if not estado_evento:
+            estado_evento = normalize_estado(payload.get("estado"))
+
+        if estado_evento not in _ANULACION_ESTADOS_VALIDOS:
+            continue
+
+        motivo_payload = payload.get("motivo") if isinstance(payload.get("motivo"), dict) else {}
+        tipo_anulacion = motivo_payload.get("tipoAnulacion")
+        if tipo_anulacion is None and isinstance(metadata, dict):
+            motivo_meta = metadata.get("motivo")
+            if isinstance(motivo_meta, dict):
+                tipo_anulacion = motivo_meta.get("tipoAnulacion")
+
+        detalle_estado = _map_tipo_anulacion(tipo_anulacion)
+        if not detalle_estado:
+            continue
+
+        doc_info: dict[str, Any] = {}
+        if isinstance(metadata, dict):
+            meta_doc = metadata.get("documento")
+            if isinstance(meta_doc, dict):
+                doc_info.update(meta_doc)
+
+        doc_payload = payload.get("documento")
+        if isinstance(doc_payload, dict):
+            for key, value in doc_payload.items():
+                doc_info.setdefault(key, value)
+
+        numero_control = doc_info.get("numeroControl")
+        codigo_generacion = doc_info.get("codigoGeneracion") or doc_info.get("codigo_generacion")
+        sello = doc_info.get("selloRecibido") or doc_info.get("sello")
+        tipo_documento = doc_info.get("tipoDte") or doc_info.get("tipoDocumento")
+
+        if not numero_control or not codigo_generacion or not sello or not tipo_documento:
+            continue
+
+        numero_control = str(numero_control).strip().upper()
+        codigo_generacion = str(codigo_generacion).strip().upper()
+        sello = str(sello).strip().upper()
+        tipo_documento = str(tipo_documento).strip()
+        if tipo_documento.isdigit():
+            tipo_documento = tipo_documento.zfill(2)
+
+        registros.append(
+            DTEAnulado(
+                numero_control=numero_control,
+                tipo_documento=tipo_documento,
+                sello_recepcion=sello,
+                codigo_generacion=codigo_generacion,
+                estado=detalle_estado,
+            )
+        )
+
+    registros.sort(key=lambda registro: (registro.numero_control or "", registro.codigo_generacion or ""))
     return registros
 
 def _load_facturacion_json(path: str | None) -> dict:
@@ -1247,6 +1747,8 @@ def _from_facturacion_row(raw: dict, db) -> dict:
         "vendedor_id": raw.get("vendedor_id"),
         "estado": raw.get("estado"),
         "estado_display": raw.get("estado"),
+        "estado_documento": raw.get("estado"),
+        "estado_envio": raw.get("envio"),
         "fecha_display": raw.get("fecha"),
     }
 
@@ -1307,17 +1809,98 @@ def _from_facturacion_row(raw: dict, db) -> dict:
                 break
     row["sello_recepcion"] = sello
 
-    envio_text = raw.get("envio")
-    envio_info: dict[str, Any] = {}
-    if isinstance(envio_text, str) and envio_text.strip():
-        envio_info["estado_ui"] = envio_text
-        envio_info["estado"] = envio_text
+    envio_raw = raw.get("envio_payload")
+    if envio_raw is None:
+        envio_raw = raw.get("envio")
+    if isinstance(envio_raw, dict):
+        envio_info = dict(envio_raw)
+    elif isinstance(envio_raw, str) and envio_raw.strip():
+        envio_info = {
+            "estado_ui": envio_raw,
+            "estado_ui_tag": envio_raw,
+            "estado": envio_raw,
+        }
+    else:
+        envio_info = {}
     if row.get("codigo_generacion"):
         envio_info.setdefault("codigo_generacion", row["codigo_generacion"])
     if row.get("numero_control"):
         envio_info.setdefault("numero_control", row["numero_control"])
     row["envio"] = envio_info
-    row["estado_manual"] = None
+    raw_envio_display = raw.get("envio")
+    raw_envio_clean: str | None = None
+    raw_envio_base: str | None = None
+    raw_envio_tag: str | None = None
+    if isinstance(raw_envio_display, str):
+        raw_envio_clean = raw_envio_display.strip()
+        if raw_envio_clean:
+            match = re.match(r"^(.*?)(?:\s*\(([^)]+)\))?$", raw_envio_clean)
+            if match:
+                raw_envio_base = match.group(1).strip() if match.group(1) else None
+                raw_envio_tag = match.group(2).strip().lower() if match.group(2) else None
+            else:
+                raw_envio_base = raw_envio_clean
+        if raw_envio_base:
+            for separator in ("-", "\u2014", ":", "["):
+                if separator in raw_envio_base:
+                    raw_envio_base = raw_envio_base.split(separator, 1)[0].strip()
+                    break
+
+    estado_manual_val = None
+    if isinstance(envio_info, dict):
+        estado_manual_val = envio_info.get("estado_manual") or envio_info.get("estado_manual_text")
+    if isinstance(estado_manual_val, str) and estado_manual_val.strip():
+        estado_manual_val = estado_manual_val.strip()
+        row["estado_manual"] = estado_manual_val
+    else:
+        estado_manual_val = None
+        row["estado_manual"] = None
+
+    manual_from_display = False
+    if not estado_manual_val and raw_envio_base:
+        base_norm = normalize_estado(raw_envio_base)
+        if base_norm and base_norm in ENVIADO_ESTADOS:
+            estado_manual_val = raw_envio_base
+            row["estado_manual"] = estado_manual_val
+            manual_from_display = True
+
+    auto_state_raw = (envio_info or {}).get("estado") or raw.get("envio")
+    auto_display = format_envio_state(
+        (envio_info or {}).get("estado_ui"),
+        (envio_info or {}).get("estado_ui_tag"),
+        auto_state_raw,
+    )
+    merged_state, manual_override = _choose_envio_state(auto_state_raw, estado_manual_val)
+    merged_display = format_envio_state(
+        (envio_info or {}).get("estado_ui"),
+        (envio_info or {}).get("estado_ui_tag"),
+        merged_state,
+    )
+    if manual_override and manual_from_display and raw_envio_clean:
+        merged_display = raw_envio_clean
+        envio_info = envio_info or {}
+        envio_info.setdefault("estado_manual", estado_manual_val)
+        envio_info.setdefault("estado_manual_text", raw_envio_clean)
+        envio_info.setdefault("estado_ui_manual", 1)
+        if raw_envio_base:
+            envio_info["estado_ui"] = raw_envio_base
+        if raw_envio_tag:
+            envio_info["estado_ui_tag"] = raw_envio_tag
+        envio_info["estado"] = merged_state
+        row["_envio_override"] = {"manual": True, "fuente": "facturacion_envio_display"}
+        row["envio"] = envio_info
+    else:
+        row["envio"] = envio_info
+    row["_estado_envio_raw"] = merged_state
+    row["estado_envio"] = merged_display
+    if manual_override:
+        logger.info(
+            "Override de estado: base=%s manual=%s codigo=%s",
+            normalize_estado(auto_state_raw),
+            normalize_estado(estado_manual_val),
+            row.get("codigo_generacion"),
+        )
+        envio_info.setdefault("estado_manual_override", estado_manual_val)
     row["estado_fuente"] = "db" if row.get("venta_id") is not None else "extra"
 
     row["cliente_nit"] = None
@@ -1397,6 +1980,61 @@ def _load_envios_for_ventas(db, venta_ids: set[int]) -> dict[int, dict[str, Any]
         env_map[venta_id] = payload
 
     return env_map
+
+
+def _lookup_envio_by_codigo(
+    db,
+    codigo_generacion: str | None,
+    numero_control: str | None,
+) -> dict[str, Any] | None:
+    cursor = getattr(db, "cursor", None)
+    if cursor is None:
+        return None
+    try:
+        if codigo_generacion:
+            row = cursor.execute(
+                """
+                SELECT id, estado_ui, estado_ui_tag, estado, estado_ui_manual, respuesta
+                FROM dte_envios
+                WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?)
+                ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                """,
+                (codigo_generacion,),
+            ).fetchone()
+            if row:
+                payload = dict(row)
+            else:
+                payload = None
+        else:
+            payload = None
+        if not payload and numero_control:
+            row = cursor.execute(
+                """
+                SELECT id, estado_ui, estado_ui_tag, estado, estado_ui_manual, respuesta
+                FROM dte_envios
+                WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?)
+                ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                """,
+                (numero_control,),
+            ).fetchone()
+            if row:
+                payload = dict(row)
+        if not payload:
+            return None
+    except Exception:
+        return None
+
+    respuesta_raw = payload.get("respuesta")
+    if isinstance(respuesta_raw, str):
+        try:
+            respuesta_json = json.loads(respuesta_raw)
+        except Exception:
+            respuesta_json = None
+    else:
+        respuesta_json = None
+    if isinstance(respuesta_json, dict):
+        payload["respuesta_json"] = respuesta_json
+    return payload
 
 
 def _normalize_fecha_text(value: Any) -> str | None:
@@ -1542,6 +2180,11 @@ def _enrich_rows_from_db(rows: list[dict], db) -> None:
 
             row["envio"] = envio_info
             row["estado_fuente"] = "db"
+            row["estado_envio"] = format_envio_state(
+                envio_info.get("estado_ui"),
+                envio_info.get("estado_ui_tag"),
+                envio_info.get("estado"),
+            )
 
         if not isinstance(row.get("fecha_obj"), datetime):
             fecha_obj = _maybe_parse_fecha(row.get("fecEmi"))
@@ -1557,27 +2200,11 @@ def _iter_credito_fiscal_json_paths() -> list[Path]:
     """Enumerar posibles rutas JSON de crédito fiscal en el sistema de archivos."""
 
     bases: list[Path] = []
-    for raw in (
-        FACTURAS_CREDITO_FISCAL_DIR,
-        FACTURAS_ARCHIVE_CREDITO_DIR,
-    ):
-        if not raw:
-            continue
+    if FACTURAS_CREDITO_FISCAL_DIR:
         try:
-            bases.append(Path(raw))
+            bases.append(Path(FACTURAS_CREDITO_FISCAL_DIR))
         except TypeError:
-            continue
-
-    for container in (DTES_DIR, DTES_PENDIENTES_DIR):
-        if not container:
-            continue
-        try:
-            base_path = Path(container)
-        except TypeError:
-            continue
-        bases.append(base_path)
-        for sub_name in ("ccf", "CreditoFiscal", "credito_fiscal"):
-            bases.append(base_path / sub_name)
+            bases = []
 
     seen: set[Path] = set()
     results: list[Path] = []
@@ -1609,7 +2236,9 @@ def _iter_credito_fiscal_json_paths() -> list[Path]:
 
 
 def _collect_credito_fiscal_orphans(
-    periodo: str, raw_rows: list[dict]
+    periodo: str,
+    raw_rows: list[dict],
+    db,
 ) -> tuple[list[dict], dict[str, list[PreviewExclusionEntry]]]:
     """Construir filas sintéticas para DTE de crédito fiscal huérfanos."""
 
@@ -1709,21 +2338,50 @@ def _collect_credito_fiscal_orphans(
         if not isinstance(respuesta, dict):
             respuesta = {}
         estado_resp = respuesta.get("estado") or respuesta.get("estadoDesc")
+        if not estado_resp:
+            estado_resp = _extract_envio_state_from_payload(respuesta) or _extract_envio_state_from_payload(data)
 
         estado_manual = None
+        meta_data: dict[str, Any] = {}
         meta_path = Path(path_str).with_suffix(".meta.json")
         if meta_path.exists():
             try:
                 with open(meta_path, "r", encoding="utf-8") as meta_file:
-                    meta_data = json.load(meta_file)
+                    loaded_meta = json.load(meta_file)
+                    if isinstance(loaded_meta, dict):
+                        meta_data = loaded_meta
             except Exception:
                 meta_data = {}
-            if isinstance(meta_data, dict):
-                estado_manual = meta_data.get("estadoManual") or meta_data.get("estado_manual")
-                if not estado_resp:
-                    estado_resp = meta_data.get("estado")
-                if meta_data.get("anulado") and not estado_manual:
-                    estado_manual = "Anulado"
+        if meta_data:
+            estado_manual = meta_data.get("estadoManual") or meta_data.get("estado_manual")
+            if not estado_resp:
+                estado_resp = (
+                    meta_data.get("estado")
+                    or meta_data.get("estadoEnvio")
+                    or meta_data.get("estado_envio")
+                )
+            if not estado_resp:
+                estado_resp = _extract_envio_state_from_payload(meta_data)
+            if meta_data.get("anulado") and not estado_manual:
+                estado_manual = "Anulado"
+
+        envio_db = _lookup_envio_by_codigo(
+            db,
+            codigo_generacion,
+            identificacion.get("numeroControl"),
+        )
+
+        if envio_db:
+            db_estado = envio_db.get("estado")
+            if isinstance(db_estado, str) and db_estado.strip():
+                estado_resp = db_estado
+            if envio_db.get("estado_ui_manual"):
+                estado_manual = (
+                    estado_manual
+                    or envio_db.get("estado_ui")
+                    or envio_db.get("estado_ui_tag")
+                    or envio_db.get("estado")
+                )
 
         envio_payload: dict[str, Any]
         if estado_manual or estado_resp:
@@ -1737,12 +2395,41 @@ def _collect_credito_fiscal_orphans(
                 envio_payload["estado_manual_text"] = estado_manual
                 envio_payload["estado_ui_manual"] = 1
         else:
-            envio_payload = {"estado_ui": "Pendiente", "estado": "Pendiente"}
+            envio_payload = {"estado_ui": "Pendiente", "estado_ui_tag": "Pendiente", "estado": "Pendiente"}
+
+        if envio_db:
+            for key in ("estado_ui", "estado_ui_tag", "estado_ui_manual", "estado"):
+                value = envio_db.get(key)
+                if value is not None:
+                    envio_payload[key] = value
+            respuesta_json = envio_db.get("respuesta_json")
+            if isinstance(respuesta_json, dict):
+                envio_payload.setdefault("respuesta_json", respuesta_json)
+
+        merged_estado, manual_override = _choose_envio_state(
+            envio_payload.get("estado"),
+            estado_manual,
+        )
+        envio_payload["estado"] = merged_estado
+        if manual_override:
+            envio_payload["estado_override"] = "manual"
+            logger.info(
+                "Override huérfano: base=%s manual=%s archivo=%s",
+                normalize_estado(estado_resp),
+                normalize_estado(estado_manual),
+                path_str,
+            )
 
         fecha_display = (
             fecha_obj.strftime("%Y-%m-%d %H:%M:%S")
             if fecha_obj.time() != datetime.min.time()
             else fecha_obj.strftime("%Y-%m-%d")
+        )
+
+        envio_display = format_envio_state(
+            envio_payload.get("estado_ui"),
+            envio_payload.get("estado_ui_tag"),
+            envio_payload.get("estado"),
         )
 
         raw = {
@@ -1758,7 +2445,8 @@ def _collect_credito_fiscal_orphans(
             "vendedor_id": None,
             "total": total,
             "estado": "Sin venta",
-            "envio": envio_payload,
+            "envio": envio_display,
+            "envio_payload": envio_payload,
             "tipo": TIPO_DTE_DESC.get(tipo_codigo, tipo_codigo),
             "codigo": tipo_codigo,
             "json": path_str,
@@ -1776,6 +2464,15 @@ def _collect_credito_fiscal_orphans(
     return extra_rows, descartes
 
 
+# Retrocompatibilidad con nombres previos
+def build_anexo_i_records(rows: list[dict], db):
+    return build_anexo_i_contribuyentes(rows, db)
+
+
+def build_anexo_ii_records(rows: list[dict], db):
+    return build_anexo_i_consumidor(rows, db)
+
+
 def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
     """Obtiene información cruda de facturación reutilizando la lógica de la tabla."""
 
@@ -1785,7 +2482,7 @@ def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
     except Exception:
         raw_rows = []
 
-    extra_rows, extra_discards = _collect_credito_fiscal_orphans(periodo, raw_rows)
+    extra_rows, extra_discards = _collect_credito_fiscal_orphans(periodo, raw_rows, db)
     if extra_rows:
         raw_rows.extend(extra_rows)
 
@@ -1815,6 +2512,22 @@ def collect_facturacion_dataset(db, periodo_yyyymm: str) -> FacturacionDataset:
         periodo_rows.append(row_data)
 
     _enrich_rows_from_db(periodo_rows, db)
+
+    periodo_rows, duplicados = _deduplicate_facturacion_rows(periodo_rows)
+    if duplicados:
+        for dup in duplicados:
+            descartes["duplicado"].append(
+                _make_exclusion_entry(dup, detalle="duplicado", fecha=_row_fecha_text(dup))
+            )
+
+    periodo_rows, duplicados_correl = _deduplicate_correlativo_rows(periodo_rows)
+    if duplicados_correl:
+        for dup in duplicados_correl:
+            numero = _ensure_field(dup, "numero_control", _numero_control)
+            detalle = f"{dup.get('tipo')}:{numero}" if numero else "duplicado"
+            descartes["correlativo_duplicado"].append(
+                _make_exclusion_entry(dup, detalle=detalle, fecha=_row_fecha_text(dup))
+            )
 
     descartes_dict = {motivo: lista for motivo, lista in descartes.items()}
     _log_summary(

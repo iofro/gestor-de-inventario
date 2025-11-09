@@ -65,6 +65,13 @@ def _sanitize_datos_negocio(datos_negocio: dict | None) -> dict:
     return sanitized
 
 
+def _normalize_sku_value(value):
+    if isinstance(value, str):
+        trimmed = value.strip()
+        return trimmed or None
+    return value if value else None
+
+
 class InventoryManagerError(Exception):
     """Errores de dominio del administrador de inventario."""
 
@@ -269,13 +276,18 @@ class InventoryManager:
         """Registros del Anexo I (ventas a contribuyentes) para la UI."""
 
         rows = dte_provider.get_facturacion_rows(self.db, periodo)
-        return dte_provider.build_anexo_i_records(rows, self.db)
+        return dte_provider.build_anexo_i_contribuyentes(rows, self.db)
 
     def get_anexo_consumidor_final_registros(self, periodo: str):
         """Registros del Anexo II (ventas a consumidor final) para la UI."""
 
         rows = dte_provider.get_facturacion_rows(self.db, periodo)
-        return dte_provider.build_anexo_ii_records(rows, self.db)
+        return dte_provider.build_anexo_i_consumidor(rows, self.db)
+
+    def get_anexo_xix_registros(self, periodo: str):
+        """Registros del Anexo XIX (anulaciones) para la UI."""
+
+        return dte_provider.build_anexo_i_anulados(periodo)
 
     def add_producto(
         self,
@@ -289,6 +301,7 @@ class InventoryManager:
         precio_venta_mayorista,
         stock,
     ):
+        sku = _normalize_sku_value(sku)
         self.db.add_producto(
             nombre,
             codigo,
@@ -315,6 +328,7 @@ class InventoryManager:
         precio_venta_mayorista,
         stock,
     ):
+        sku = _normalize_sku_value(sku)
         self.db.edit_producto(
             producto_id,
             nombre,
@@ -490,23 +504,92 @@ class InventoryManager:
                 write_kv("schemaVersion", 1)
                 write_kv("generatedAt", datetime.utcnow().isoformat())
                 write_kv("appVersion", APP_VERSION)
-                write_array("productos", self._products)
-                write_array("vendedores", (dict(v) for v in self._vendedores))
+                productos_export = []
+                for producto in self._products:
+                    prod = dict(producto)
+                    prod["sku"] = _normalize_sku_value(prod.get("sku"))
+                    productos_export.append(prod)
+                write_array("productos", productos_export)
+                self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
+                try:
+                    self.db.cursor.execute(
+                        "UPDATE ventas SET sincronizada=1 WHERE sincronizada IS NULL"
+                    )
+                except Exception:
+                    logger.exception(
+                        "No se pudo actualizar ventas.sincronizada para valores nulos"
+                    )
+                else:
+                    try:
+                        self.db.conn.commit()
+                    except Exception:
+                        logger.exception("No se pudo confirmar la normalización de ventas.sincronizada")
+                worker_vendedores = list(self.db.get_trabajadores(solo_vendedores=True))
+                ventas_rows = [
+                    dict(v)
+                    for v in self.db.cursor.execute(
+                        "SELECT * FROM ventas WHERE sincronizada=1"
+                    )
+                ]
+                vendedores_export = []
+                existing_vendor_ids: set[int] = set()
+
+                def _coerce_vendor_id(raw_id):
+                    try:
+                        return int(raw_id)
+                    except (TypeError, ValueError):
+                        return None
+
+                for vend in self._vendedores:
+                    vend_dict = dict(vend)
+                    vid = _coerce_vendor_id(vend_dict.get("id"))
+                    if vid is not None:
+                        existing_vendor_ids.add(vid)
+                    vendedores_export.append(vend_dict)
+                for trabajador in worker_vendedores:
+                    tid = trabajador.get("id")
+                    if tid is None or _coerce_vendor_id(tid) in existing_vendor_ids:
+                        continue
+                    logger.warning(
+                        "Se detectó trabajador marcado como vendedor sin registro en vendedores (id=%s). Se exportará automáticamente.",
+                        tid,
+                    )
+                    vendedores_export.append(
+                        {
+                            "id": tid,
+                            "codigo": trabajador.get("codigo"),
+                            "nombre": trabajador.get("nombre"),
+                            "dui": trabajador.get("dui", ""),
+                            "descripcion": trabajador.get("comentarios", "") or "",
+                            "Distribuidor_id": None,
+                        }
+                    )
+                    coerced_tid = _coerce_vendor_id(tid)
+                    if coerced_tid is not None:
+                        existing_vendor_ids.add(coerced_tid)
+                for venta in ventas_rows:
+                    vendedor_id = venta.get("vendedor_id")
+                    if vendedor_id is None:
+                        continue
+                    try:
+                        vendedor_id_int = int(vendedor_id)
+                    except (TypeError, ValueError):
+                        message = (
+                            f"La venta {venta.get('id')} tiene vendedor_id inválido ({vendedor_id!r})."
+                        )
+                        logger.error(message)
+                        raise InventoryManagerError(message)
+                    if vendedor_id_int not in existing_vendor_ids:
+                        message = (
+                            f"La venta {venta.get('id')} referencia un vendedor inexistente ({vendedor_id_int}). "
+                            f"Corrige la venta o crea el vendedor antes de exportar."
+                        )
+                        logger.error(message)
+                        raise InventoryManagerError(message)
+                write_array("vendedores", vendedores_export)
                 write_array("distribuidores", (dict(v) for v in self._Distribuidores))
                 write_array("clientes", (dict(c) for c in self._clientes))
-                # Export only synchronized sales.  Older installations might lack the
-                # ``sincronizada`` column, so ensure it exists with a sensible
-                # default before querying.
-                self.db.ensure_column("ventas", "sincronizada", "INTEGER DEFAULT 1")
-                write_array(
-                    "ventas",
-                    (
-                        dict(v)
-                        for v in self.db.cursor.execute(
-                            "SELECT * FROM ventas WHERE sincronizada=1"
-                        )
-                    ),
-                )
+                write_array("ventas", ventas_rows)
                 write_array(
                     "compras",
                     (dict(c) for c in self.db.cursor.execute("SELECT * FROM compras")),
@@ -896,10 +979,11 @@ class InventoryManager:
                     stock = float(stock) if stock is not None else 0
                 except (TypeError, ValueError):
                     stock = 0
+                sku = _normalize_sku_value(p.get("sku"))
                 self.db.add_producto(
                     p.get("nombre", ""),
                     p.get("codigo", ""),
-                    p.get("sku"),
+                    sku,
                     vend,
                     dist,
                     p.get("precio_compra", 0),
@@ -1162,10 +1246,11 @@ class InventoryManager:
                             stock = float(stock) if stock is not None else 0
                         except (TypeError, ValueError):
                             stock = 0
+                        sku = _normalize_sku_value(producto_info.get("sku"))
                         self.db.add_producto(
                             producto_info.get("nombre", f"Producto {old_producto_id}"),
                             producto_info.get("codigo", ""),
-                            producto_info.get("sku"),
+                            sku,
                             vend,
                             dist,
                             producto_info.get("precio_compra", 0),

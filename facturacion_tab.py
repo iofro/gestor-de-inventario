@@ -2319,7 +2319,8 @@ class FacturacionTab(QWidget):
         self.declaracion_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.declaracion_table.setAlternatingRowColors(True)
         self.declaracion_table.setFocusPolicy(Qt.StrongFocus)
-        layout.addWidget(self.declaracion_table)
+        self.declaracion_table.setMinimumHeight(260)
+        self.declaracion_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         header = self.declaracion_table.horizontalHeader()
         header.setStretchLastSection(True)
@@ -2332,9 +2333,18 @@ class FacturacionTab(QWidget):
             "Aquí se mostrará el resumen de los DTE cargados y el resultado de la generación."
         )
         self.declaracion_result_box.setMinimumHeight(120)
-        layout.addWidget(self.declaracion_result_box)
+        self.declaracion_result_box.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Preferred
+        )
 
-        layout.addStretch(1)
+        self.declaracion_splitter = QSplitter(Qt.Vertical)
+        self.declaracion_splitter.setChildrenCollapsible(False)
+        self.declaracion_splitter.addWidget(self.declaracion_table)
+        self.declaracion_splitter.addWidget(self.declaracion_result_box)
+        self.declaracion_splitter.setStretchFactor(0, 3)
+        self.declaracion_splitter.setStretchFactor(1, 1)
+
+        layout.addWidget(self.declaracion_splitter, 1)
 
         self.section_tabs.addTab(declaracion_widget, "Declaración")
 
@@ -2403,18 +2413,47 @@ class FacturacionTab(QWidget):
         registros = provider(periodo)
         return list(registros or [])
 
-    def _estado_fuente_texto(self, registro: object) -> str:
-        estado = getattr(registro, "estado_manual", None) or getattr(registro, "estado", None)
-        estado_text = str(estado).strip() if isinstance(estado, str) and estado.strip() else "—"
+    def _estado_documento_texto(self, registro: object) -> tuple[str, str | None]:
+        estado_doc = getattr(registro, "estado_documento", None)
+        if not estado_doc:
+            estado_doc = getattr(registro, "estado_display", None)
+        if not estado_doc:
+            estado_doc = getattr(registro, "estado", None)
+        estado_text = (
+            str(estado_doc).strip()
+            if isinstance(estado_doc, str) and str(estado_doc).strip()
+            else "—"
+        )
         fuente = getattr(registro, "estado_fuente", None)
         if not fuente:
             ruta = getattr(registro, "json_path", None)
             if ruta:
                 fuente = os.path.basename(str(ruta))
+        fuente_text = str(fuente).strip() if isinstance(fuente, str) and str(fuente).strip() else None
+        return estado_text, fuente_text
+
+    def _estado_envio_texto(self, registro: object) -> tuple[str, str | None]:
+        envio_display = getattr(registro, "estado_envio", None)
+        envio_text = str(envio_display).strip() if isinstance(envio_display, str) else ""
+        manual = getattr(registro, "estado_manual", None)
+        manual_text = str(manual).strip() if isinstance(manual, str) and str(manual).strip() else ""
+        if not envio_text and manual_text:
+            envio_text = manual_text
+        if not envio_text:
+            base_envio = getattr(registro, "estado", None)
+            envio_text = str(base_envio).strip() if isinstance(base_envio, str) and str(base_envio).strip() else ""
+        if not envio_text:
+            envio_text = "Pendiente de envío"
+        tooltip_parts: list[str] = []
+        if manual_text:
+            tooltip_parts.append(f"Manual: {manual_text}")
+        fuente = getattr(registro, "estado_fuente", None)
         if fuente:
-            fuente_text = str(fuente)
-            return f"{estado_text} · {fuente_text}" if estado_text != "—" else fuente_text
-        return estado_text
+            fuente_text = str(fuente).strip()
+            if fuente_text:
+                tooltip_parts.append(f"Fuente: {fuente_text}")
+        tooltip = "\n".join(tooltip_parts) if tooltip_parts else None
+        return envio_text, tooltip
 
     @staticmethod
     def _cf_tipo_resumen(registros: List[VentaCF]) -> str:
@@ -2432,7 +2471,8 @@ class FacturacionTab(QWidget):
             "Código (Generación)",
             "N° Control",
             "Total (T)",
-            "Estado / Fuente",
+            "Estado",
+            "Envio",
         ]
         self._configure_declaracion_table(headers)
         self.declaracion_table.setRowCount(len(registros))
@@ -2464,8 +2504,24 @@ class FacturacionTab(QWidget):
             total = getattr(registro, "total_ventas", "0.00") or "0.00"
             self.declaracion_table.setItem(row, 5, self._create_table_item(str(total)))
 
-            estado_texto = self._estado_fuente_texto(registro)
-            self.declaracion_table.setItem(row, 6, self._create_table_item(estado_texto))
+            estado_texto, estado_tip = self._estado_documento_texto(registro)
+            estado_item = self._create_table_item(estado_texto)
+            if estado_tip:
+                estado_item.setToolTip(f"Fuente: {estado_tip}")
+            self.declaracion_table.setItem(row, 6, estado_item)
+
+            envio_texto, envio_tip = self._estado_envio_texto(registro)
+            envio_item = self._create_table_item(envio_texto)
+            if envio_tip:
+                envio_item.setToolTip(envio_tip)
+            envio_color = self._get_envio_status_color(envio_texto)
+            if envio_color:
+                envio_item.setForeground(QBrush(envio_color))
+            if self._should_bold_envio_status(envio_texto):
+                envio_font = envio_item.font()
+                envio_font.setBold(True)
+                envio_item.setFont(envio_font)
+            self.declaracion_table.setItem(row, 7, envio_item)
 
         self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
         self.declaracion_table.resizeRowsToContents()
@@ -2481,7 +2537,8 @@ class FacturacionTab(QWidget):
             "N° Control",
             "Cliente",
             "Total (P)",
-            "Estado / Fuente",
+            "Estado",
+            "Envio",
             "Sello",
         ]
         self._configure_declaracion_table(headers)
@@ -2515,11 +2572,27 @@ class FacturacionTab(QWidget):
             total = getattr(registro, "total_ventas", "0") or "0"
             self.declaracion_table.setItem(row, 6, self._create_table_item(str(total)))
 
-            estado_texto = self._estado_fuente_texto(registro)
-            self.declaracion_table.setItem(row, 7, self._create_table_item(estado_texto))
+            estado_texto, estado_tip = self._estado_documento_texto(registro)
+            estado_item = self._create_table_item(estado_texto)
+            if estado_tip:
+                estado_item.setToolTip(f"Fuente: {estado_tip}")
+            self.declaracion_table.setItem(row, 7, estado_item)
+
+            envio_texto, envio_tip = self._estado_envio_texto(registro)
+            envio_item = self._create_table_item(envio_texto)
+            if envio_tip:
+                envio_item.setToolTip(envio_tip)
+            envio_color = self._get_envio_status_color(envio_texto)
+            if envio_color:
+                envio_item.setForeground(QBrush(envio_color))
+            if self._should_bold_envio_status(envio_texto):
+                envio_font = envio_item.font()
+                envio_font.setBold(True)
+                envio_item.setFont(envio_font)
+            self.declaracion_table.setItem(row, 8, envio_item)
 
             sello = getattr(registro, "sello_recepcion", "") or ""
-            self.declaracion_table.setItem(row, 8, self._create_table_item(str(sello)))
+            self.declaracion_table.setItem(row, 9, self._create_table_item(str(sello)))
 
         self.declaracion_generar_planilla_btn.setEnabled(bool(registros))
         self.declaracion_table.resizeRowsToContents()

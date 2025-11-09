@@ -564,13 +564,16 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
     assert "OLD-001" not in codigos_rows
     assert any(row.get("sello_recepcion") == "SELLO-RESP" for row in rows if row.get("codigo_generacion") == "CF-001")
 
-    contribuyentes = dte_provider.build_anexo_i_records(rows, db_conn)
-    cf = dte_provider.build_anexo_ii_records(rows, db_conn)
+    contribuyentes = dte_provider.build_anexo_i_contribuyentes(rows, db_conn)
+    cf = dte_provider.build_anexo_i_consumidor(rows, db_conn)
 
     codigos_contri = {r.codigo_generacion for r in contribuyentes}
     assert codigos_contri == {"CF-001", "ND-001", "NC-001", "CF-002"}
     sin_ctrl = next(r for r in contribuyentes if r.codigo_generacion == "CF-002")
     assert sin_ctrl.numero_control is None
+    cf_env = next(r for r in contribuyentes if r.codigo_generacion == "CF-001")
+    assert cf_env.estado_documento in {"Completa", "Contingencia"}
+    assert dte_provider._envio_display_apto(cf_env.estado_envio)
 
     nc = next(r for r in contribuyentes if r.codigo_generacion == "NC-001")
     assert nc.debito_fiscal == "0.50"
@@ -578,7 +581,7 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
     assert nc.estado == "rechazado"
 
     cf_by_fecha = {r.fecha: r for r in cf}
-    assert set(cf_by_fecha) == {"22/01/2024", "23/01/2024", "24/01/2024", "26/01/2024", "27/01/2024"}
+    assert set(cf_by_fecha) == {"22/01/2024", "23/01/2024", "24/01/2024", "27/01/2024"}
 
     cf_tipo11 = cf_by_fecha["27/01/2024"]
     assert cf_tipo11.tipo == "11"
@@ -589,29 +592,29 @@ def test_build_anexo_records_filters_and_dedup(db_conn, caplog, monkeypatch):
     assert cf_manual.estado_manual == "Enviado"
     assert cf_manual.numero_control == "DTE-01-0002"
     assert cf_manual.clase == "4"
+    assert dte_provider._envio_display_apto(cf_manual.estado_envio)
 
-    cf_dup = cf_by_fecha["26/01/2024"]
-    assert cf_dup.codigo_generacion == "CFII-001"
-    assert cf_dup.numero_control == "DTE-01-9999"
+    assert "26/01/2024" not in cf_by_fecha
 
     cf_tipo02 = cf_by_fecha["23/01/2024"]
     assert cf_tipo02.tipo == "02"
     assert cf_tipo02.codigo_generacion == "CFII-002"
     assert cf_tipo02.total_ventas == "6.50"
+    assert dte_provider._envio_display_apto(cf_tipo02.estado_envio)
 
     cf_total = cf_by_fecha["22/01/2024"]
-    assert cf_total.numero_doc_del == "CFII-005"
+    assert cf_total.numero_doc_del == "CFII-001"
     assert cf_total.numero_doc_al == "CFII-005"
-    assert cf_total.ctrl_interno_del == "DTE-01-0003"
+    assert cf_total.ctrl_interno_del == "DTE-01-0001"
     assert cf_total.ctrl_interno_al == "DTE-01-0003"
-    assert cf_total.ventas_gravadas_locales == "10.00"
-    assert cf_total.total_ventas == "10.00"
+    assert cf_total.ventas_gravadas_locales == "30.00"
+    assert cf_total.total_ventas == "30.50"
     assert cf_total.codigo_generacion == "CFII-005"
     assert cf_total.numero_control == "DTE-01-0003"
     assert cf_total.clase == "4"
 
     assert any("Anexo I - descartados_sin_codigo" in rec.message for rec in caplog.records)
-    assert any("Anexo II - descartados_no_enviado" in rec.message for rec in caplog.records)
+    assert any("Anexo II - descartados_duplicado" in rec.message for rec in caplog.records)
     assert any("Facturación 202401 - descartados_fuera_de_periodo" in rec.message for rec in caplog.records)
 
 
@@ -984,12 +987,120 @@ def test_collect_dataset_includes_credito_json_from_fs(db_conn, tmp_path, monkey
     assert row.get("codigo_generacion") == "CF-ORPHAN-0001"
     assert row.get("cliente_nombre") == "Cliente CF"
     assert row.get("fecha_obj").strftime("%Y-%m-%d") == "2024-01-10"
+    assert row.get("estado_documento") == "Sin venta"
+    assert row.get("estado_envio") == "Enviado"
 
 
+def test_anexo_includes_orphan_credito_with_procesado_state(db_conn, tmp_path, monkeypatch):
+    base_dir = tmp_path / "credito_fiscal"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    for child in ("arch", "dtes", "pendientes"):
+        (base_dir / child).mkdir(parents=True, exist_ok=True)
+
+    payload_procesado = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "03",
+                "fecEmi": "2024-01-12",
+                "horEmi": "10:00:00",
+                "numeroControl": "DTE-03-S001P001-000000000000888",
+                "codigoGeneracion": "CF-ORPHAN-PROC",
+            },
+            "receptor": {"nombre": "Cliente Procesado"},
+            "resumen": {"totalPagar": "75.00", "totalGravada": "75.00"},
+        },
+        "respuesta": {"estado": "Procesado"},
+    }
+    (base_dir / "20240112_credito.json").write_text(json.dumps(payload_procesado), encoding="utf-8")
+
+    payload_pendiente = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "03",
+                "fecEmi": "2024-01-13",
+                "horEmi": "11:30:00",
+                "numeroControl": "DTE-03-S001P001-000000000000889",
+                "codigoGeneracion": "CF-ORPHAN-PEND",
+            },
+            "receptor": {"nombre": "Cliente Pendiente"},
+            "resumen": {"totalPagar": "55.00", "totalGravada": "55.00"},
+        }
+    }
+    (base_dir / "20240113_credito.json").write_text(json.dumps(payload_pendiente), encoding="utf-8")
+
+    monkeypatch.setattr(dte_provider, "FACTURAS_CREDITO_FISCAL_DIR", str(base_dir))
+    monkeypatch.setattr(dte_provider, "FACTURAS_ARCHIVE_CREDITO_DIR", str(base_dir / "arch"))
+    monkeypatch.setattr(dte_provider, "DTES_DIR", str(base_dir / "dtes"))
+    monkeypatch.setattr(dte_provider, "DTES_PENDIENTES_DIR", str(base_dir / "pendientes"))
+    monkeypatch.setattr(dte_provider, "_facturacion_rows", lambda db: [])
+
+    dataset = dte_provider.collect_facturacion_dataset(db_conn, "202401")
+    codigos_dataset = {row.get("codigo_generacion") for row in dataset.rows}
+    assert codigos_dataset >= {"CF-ORPHAN-PROC", "CF-ORPHAN-PEND"}
+
+    dataset_map = {row.get("codigo_generacion"): row for row in dataset.rows}
+    assert dte_provider._envio_display_apto(dataset_map["CF-ORPHAN-PROC"].get("estado_envio"))
+    assert dte_provider._envio_display_apto(dataset_map["CF-ORPHAN-PEND"].get("estado_envio")) is None
+
+    preview = dte_provider.build_anexo_i_preview(dataset)
+    codigos_preview = {row.codigo_generacion for row in preview.incluidos}
+    assert "CF-ORPHAN-PROC" in codigos_preview
+    assert "CF-ORPHAN-PEND" not in codigos_preview
+
+    registros = dte_provider.build_anexo_i_contribuyentes(dataset.rows, db_conn)
+    codigos_registros = {reg.codigo_generacion for reg in registros}
+    assert "CF-ORPHAN-PROC" in codigos_registros
+    assert "CF-ORPHAN-PEND" not in codigos_registros
+    registro_proc = next(reg for reg in registros if reg.codigo_generacion == "CF-ORPHAN-PROC")
+    assert registro_proc.estado_documento in {"Sin venta", "Completa"}
+    assert dte_provider._envio_display_apto(registro_proc.estado_envio)
+
+
+def test_orphan_with_sello_is_considered_enviado(db_conn, tmp_path, monkeypatch):
+    base_dir = tmp_path / "credito_fiscal"
+    base_dir.mkdir(parents=True, exist_ok=True)
+
+    # Payload without explicit estado but with sello recibido
+    payload = {
+        "dteJson": {
+            "identificacion": {
+                "tipoDte": "03",
+                "fecEmi": "2024-02-05",
+                "numeroControl": "DTE-03-S001P001-000000000000990",
+                "codigoGeneracion": "CF-ORPHAN-SELLO",
+            },
+            "resumen": {"totalPagar": "40.00"},
+            "selloRecibido": "SELLO-123",
+        },
+        "meta": {"estadoEnvio": "Procesado"},
+    }
+    json_path = base_dir / "20240205_credito.json"
+    json_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    monkeypatch.setattr(dte_provider, "FACTURAS_CREDITO_FISCAL_DIR", str(base_dir))
+    monkeypatch.setattr(dte_provider, "FACTURAS_ARCHIVE_CREDITO_DIR", str(base_dir / "arch"))
+    monkeypatch.setattr(dte_provider, "DTES_DIR", str(base_dir / "dtes"))
+    monkeypatch.setattr(dte_provider, "DTES_PENDIENTES_DIR", str(base_dir / "pendientes"))
+    monkeypatch.setattr(dte_provider, "_facturacion_rows", lambda db: [])
+
+    dataset = dte_provider.collect_facturacion_dataset(db_conn, "202402")
+    codes = {row.get("codigo_generacion"): row for row in dataset.rows}
+    assert "CF-ORPHAN-SELLO" in codes
+    row = codes["CF-ORPHAN-SELLO"]
+    assert row.get("sello_recepcion") == "SELLO-123"
+    assert dte_provider._envio_display_apto(row.get("estado_envio"))
+
+    registros = dte_provider.build_anexo_i_contribuyentes(dataset.rows, db_conn)
+    codigos_registros = {reg.codigo_generacion for reg in registros}
+    assert "CF-ORPHAN-SELLO" in codigos_registros
 def test_estado_normalizacion_y_apto():
     assert dte_provider.normalize_estado("Procesamiento") == "recibido"
     assert dte_provider.estado_apto("Cancelada") is False
     assert dte_provider.estado_apto("rechazado", override_manual="Aceptada") is True
     assert dte_provider.estado_apto("Procesado") is True
     assert dte_provider.estado_enviado("Pendiente", override_manual="Enviado") is True
-    assert dte_provider.estado_enviado("Procesado") is False
+    assert dte_provider.estado_enviado("Procesado") is True
+    assert dte_provider._envio_display_apto("Enviado (manual)") == "Enviado (manual)"
+    assert dte_provider._envio_display_apto("Rechazado") == "Rechazado"
+    assert dte_provider._envio_display_apto("Enviado | Rechazado") == "Enviado"
+    assert dte_provider._envio_display_apto("Pendiente de envío") is None

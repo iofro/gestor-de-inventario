@@ -1474,7 +1474,7 @@ class ProductDialog(QDialog):
         if producto:
             self.nombre_edit.setText(producto.get("nombre", ""))
             self.codigo_edit.setText(producto.get("codigo", ""))
-            self.sku_edit.setText(producto.get("sku", ""))
+            self.sku_edit.setText(producto.get("sku") or "")
             self.precio_compra_spin.setValue(producto.get("precio_compra", 0))
             self.precio_venta_minorista_spin.setValue(producto.get("precio_venta_minorista", 0))
             self.precio_venta_mayorista_spin.setValue(producto.get("precio_venta_mayorista", 0))
@@ -1496,10 +1496,13 @@ class ProductDialog(QDialog):
         return super().eventFilter(obj, event)
 
     def get_data(self):
+        codigo = (self.codigo_edit.text() or "").strip()
+        sku_text = (self.sku_edit.text() or "").strip()
+        sku = sku_text or None
         return {
             "nombre": self.nombre_edit.text(),
-            "codigo": self.codigo_edit.text(),
-            "sku": self.sku_edit.text(),
+            "codigo": codigo,
+            "sku": sku,
             "precio_compra": self.precio_compra_spin.value(),
             "precio_venta_minorista": self.precio_venta_minorista_spin.value(),
             "precio_venta_mayorista": self.precio_venta_mayorista_spin.value()

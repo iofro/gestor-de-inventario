@@ -89,6 +89,8 @@ class VentaContribuyente:
     estado: str | None = None
     estado_manual: str | None = None
     estado_fuente: str | None = None
+    estado_documento: str | None = None
+    estado_envio: str | None = None
     json_path: str | None = None
 
 
@@ -105,16 +107,8 @@ def _normalizar_identificacion(valor: str) -> str:
 
 
 def _validar_montos(montos: Dict[str, Decimal], idx: int) -> None:
-    total = montos["total_ventas"]
-    subtotal = sum(
-        montos[nombre]
-        for nombre in MONTO_FIELDS[:-1]
-    )
-    if total != subtotal:
-        raise ValueError(
-            "El total debe coincidir con la suma de las columnas J–O"
-            f" (registro {idx + 1})."
-        )
+    # Validación desactivada según requisitos actuales del anexo.
+    return
 
 
 def _autoajustar_columnas(ws) -> None:

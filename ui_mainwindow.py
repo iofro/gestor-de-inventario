@@ -14,8 +14,7 @@ import subprocess
 import unicodedata
 from typing import Mapping
 from pathlib import Path
-from inventory_manager import InventoryManager
-from db import DB
+import inventory_manager as im
 from paths import (
     AUTO_BACKUP_DIR,
     DATOS_NEGOCIO_PATH,
@@ -182,7 +181,7 @@ class ExportThread(QThread):
         main application's connection.
         """
         try:
-            manager = InventoryManager(DB(), enable_auto_backup=False)
+            manager = im.InventoryManager(im.DB(), enable_auto_backup=False)
             manager.exportar_inventario_json(
                 self.filename, tab_order=self.tab_order
             )
@@ -284,8 +283,8 @@ class MainWindow(QMainWindow):
         self.user = user or {"username": "admin", "role": "admin"}
         self.setWindowTitle("Inventario Farmacia")
         self.resize(1200, 700)
-        self.db = DB()
-        self.manager = InventoryManager(self.db, enable_auto_backup=True)
+        self.db = im.DB()
+        self.manager = im.InventoryManager(self.db, enable_auto_backup=True)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
         self._load_last_inventory_path()
         self.firmador_proc = None
@@ -1446,7 +1445,7 @@ class MainWindow(QMainWindow):
             return thread
 
         try:
-            manager = InventoryManager(DB(), enable_auto_backup=False)
+            manager = im.InventoryManager(im.DB(), enable_auto_backup=False)
             manager.exportar_inventario_json(filename, tab_order=tab_order)
         except Exception as exc:
             if mostrar_mensajes:
@@ -1479,6 +1478,19 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"No se pudo cargar el inventario:\n{exc}")
             self._actualizar_historial()
             return False
+
+        ventas_importadas = self.manager.db.get_ventas()
+        if not ventas_importadas and isinstance(data, dict):
+            for venta in data.get("ventas", []):
+                self.manager.db.add_venta(
+                    venta.get("fecha"),
+                    venta.get("total", 0),
+                    cliente_id=venta.get("cliente_id"),
+                    Distribuidor_id=venta.get("Distribuidor_id"),
+                    vendedor_id=venta.get("vendedor_id"),
+                    extra=venta.get("extra"),
+                    estado=venta.get("estado", "Pagada"),
+                )
 
         if isinstance(data, dict) and data.get("tab_order"):
             self.set_tab_order(data["tab_order"])

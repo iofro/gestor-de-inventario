@@ -952,7 +952,7 @@ class SalesTab(QWidget):
             self.sales_table.setItem(row, 2, QTableWidgetItem(venta.get("fecha", "")))
             self.sales_table.setItem(row, 3, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
             estado = venta.get("estado", "Pendiente")
-        self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
+            self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
         self.sales_table.clearSelection()
         self.show_sale(clear=True)
         self._stats_dirty = True

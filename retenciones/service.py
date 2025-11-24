@@ -125,13 +125,19 @@ class RetencionCRService:
         record = self.db.get_retencion_cr(venta_id)
         if not record:
             raise ValueError(f"No existe CR registrado para la venta {venta_id}")
+        stored_json = record.get("payload_json")
+        if not stored_json:
+            raise ValueError("CR sin payload para firmar")
+
+        if payload is not None:
+            provided = payload if isinstance(payload, str) else serialize_cr(payload, indent=None)
+            if provided != stored_json:
+                raise ValueError("El payload entregado no coincide con el CR persistido")
+
         if record.get("jws"):
             return record["jws"]
 
-        source = payload if payload is not None else record.get("payload_json")
-        if not source:
-            raise ValueError("CR sin payload para firmar")
-        source_str = source if isinstance(source, str) else serialize_cr(source, indent=None)
+        source_str = stored_json
         try:
             payload_obj = json.loads(source_str)
         except Exception as exc:

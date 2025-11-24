@@ -37,7 +37,7 @@ def test_ccf_generates_cr_with_control_reference(monkeypatch, db_conn, tmp_path)
     assert result and result["status"] == "created"
     payload = result["payload"]
     rel = payload["cuerpoDocumento"][0]
-    assert rel["tipoDoc"] == 1
+    assert rel["tipoDoc"] == 2
     assert rel["numDocumento"] == factura["identificacion"]["numeroControl"]
     assert payload["resumen"]["totalSujetoRetencion"] == Decimal("100.00")
     assert payload["resumen"]["totalIVAretenido"] == Decimal("1.00")

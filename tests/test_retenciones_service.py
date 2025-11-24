@@ -50,6 +50,22 @@ def test_prepare_cr_rejects_non_ccf(db_conn) -> None:
         service.prepare_cr(2, factura=factura, identificacion_override=_fixed_ident())
 
 
+def test_sign_cr_uses_persisted_json(monkeypatch, db_conn) -> None:
+    _insert_sale(db_conn, venta_id=3)
+    service = RetencionCRService(db_conn, catalogos=CatalogosRetencion())
+    factura = load_ccf_sample()
+    payload = service.prepare_cr(3, factura=factura, identificacion_override=_fixed_ident())
+
+    stored_json = db_conn.get_retencion_cr(3)["payload_json"]
+    monkeypatch.setattr("retenciones.service.sign_cr_payload", lambda payload, **_: "JWS-TOKEN")
+
+    token = service.sign_cr(3, payload=payload)
+    assert token == "JWS-TOKEN"
+
+    with pytest.raises(ValueError, match="no coincide con el CR persistido"):
+        service.sign_cr(3, payload="{}")
+
+
 def test_sign_and_send_cr_updates_db(monkeypatch, db_conn) -> None:
     _insert_sale(db_conn, venta_id=10)
     service = RetencionCRService(db_conn, catalogos=CatalogosRetencion())

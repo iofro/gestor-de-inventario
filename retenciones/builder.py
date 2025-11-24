@@ -110,7 +110,13 @@ def build_cr_payload(
     descripcion_item = descripcion_item[:1000]
 
     tipo_doc_rel = 2  # Para CCF usar siempre número de control como referencia
-    num_documento_rel = _validate_numero_control_ccf(numero_doc_origen, "cuerpoDocumento[0].numDocumento")
+    num_documento_rel = _validate_numero_control_ccf(
+        numero_doc_origen, "cuerpoDocumento[0].numDocumento"
+    )
+    if num_documento_rel.upper() != numero_doc_origen.upper():
+        raise ValueError(
+            "cuerpoDocumento[0].numDocumento debe coincidir con identificacion.numeroControl (origen)"
+        )
 
     documento_relacionado = {
         "numItem": 1,

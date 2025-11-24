@@ -412,7 +412,8 @@ def auth_headers(extra: dict | None = None, *, ambiente: str | None = None) -> d
             min_ttl = 300
 
     warmup_enabled = env_flag("DTE_AUTH_WARMUP", default=True)
-    needs_warmup = warmup_enabled and env not in _WARMUP_DONE
+    has_manual_token = bool(manual_token)
+    needs_warmup = warmup_enabled and env not in _WARMUP_DONE and not has_manual_token
     initial_normalized = _normalize_bearer_value(current) if current else None
 
     try:

@@ -3,6 +3,7 @@ import json
 import base64
 import requests
 import logging
+import hashlib
 from pathlib import Path
 from urllib.parse import urljoin
 
@@ -34,6 +35,21 @@ SEND_DTEJSON_AS_OBJECT = os.getenv("SEND_DTEJSON_AS_OBJECT", "1") == "1"
 # Directory where the signing service expects certificate files (.crt)
 # Allow overriding via environment variable and strip any hidden characters.
 CERT_UPLOAD_DIR = os.getenv("CERT_UPLOAD_DIR", _DEFAULT_CERT_DIR).strip()
+DEBUG_JWS = os.getenv("DTE_DEBUG_JWS", "1") != "0"
+
+
+def _b64url_decode(seg: str) -> bytes:
+    pad = "=" * (-len(seg) % 4)
+    return base64.urlsafe_b64decode(seg + pad)
+
+
+def _canon_json(obj) -> str:
+    """Serialize using the same canonical form employed during signing."""
+    return stable_stringify(obj)
+
+
+def _sha256(text: str) -> str:
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
 def set_cert_upload_dir(path: str) -> None:
@@ -163,6 +179,7 @@ def sign_json(
     url: str | None = None,
     version: str | None = None,
     tipo_dte: str | None = None,
+    preserve_str: bool = False,
 ) -> str:
     """Sign ``payload`` using the external ``svfe-api-firmador`` service."""
     print("SIGN: START")
@@ -207,7 +224,7 @@ def sign_json(
     if isinstance(payload, str):
         payload_str = payload
         try:
-            payload_obj = json.loads(payload_str)
+            payload_obj = json.loads(payload_str) if not preserve_str else None
         except Exception as exc:
             raise ValueError("payload_str no es JSON válido") from exc
     else:
@@ -221,7 +238,10 @@ def sign_json(
         if tipo_dte is None:
             tipo_dte = ident.get("tipoDte")
 
-    dte_json = json.loads(payload_str) if SEND_DTEJSON_AS_OBJECT else payload_str
+    if preserve_str:
+        dte_json = json.loads(payload_str) if SEND_DTEJSON_AS_OBJECT else payload_str
+    else:
+        dte_json = json.loads(payload_str) if SEND_DTEJSON_AS_OBJECT else payload_str
     body = {
         "nit": nit,
         "activo": activo,
@@ -325,6 +345,7 @@ def sign_and_save(
     json_pretty = stable_stringify(payload, indent=2)
     payload_compact = stable_stringify(payload)
     save_file(json_path, json_pretty)
+    print("SIGN: JSON_PRETTY", json_path, json_pretty)
     if os.getenv("STABLE_JSON_CHECK") == "1":
         validar_montos(payload)
         assert_same_payload(payload)

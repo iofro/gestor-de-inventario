@@ -136,7 +136,6 @@ from evento_contingencia import (
     make_event_filename,
     save_evento_contingencia_json,
 )
-
 logger = logging.getLogger(__name__)
 
 SNAPSHOT_MISSING_MESSAGE = (
@@ -201,6 +200,9 @@ TIPO_DTE_SHORT_DESC = {
     "nota de debito": "not debito",
     "nota de remisión": "not remisión",
     "nota de remision": "not remisión",
+    "cr-07": "CR-07",
+    "comp. retención": "comp reten",
+    "comp. retencion": "comp reten",
 }
 
 # Fallback mapping used when ``tipoDte`` is not available but the
@@ -2119,6 +2121,7 @@ class FacturacionTab(QWidget):
             "Nota de débito",
             "Nota de crédito",
             "Nota de remisión",
+            "Comp. retención",
         ])
         filter_layout.addWidget(self.tipo_filter)
 
@@ -2160,7 +2163,6 @@ class FacturacionTab(QWidget):
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_evento_contingencia = QPushButton("Evento de contingencia…")
-
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
@@ -3621,6 +3623,16 @@ class FacturacionTab(QWidget):
                 "pdf": pdf_path,
                 "control": data.get("name"),
             }
+        if rtype == "retencion":
+            json_path = data.get("json")
+            if not json_path or not os.path.exists(json_path):
+                return None
+            return {
+                "venta_id": data.get("venta_id"),
+                "json": json_path,
+                "pdf": None,
+                "control": data.get("numero_control") or data.get("name"),
+            }
         return None
 
     def _update_send_btn(self):
@@ -3628,7 +3640,7 @@ class FacturacionTab(QWidget):
         enabled = False
         if entry:
             rtype = entry.get("row_type")
-            if rtype in ("venta", "ticket"):
+            if rtype in ("venta", "ticket", "retencion"):
                 enabled = True
             elif rtype == "orphan" and entry.get("json") and entry.get("estado") != "Incompleta":
                 enabled = True
@@ -3648,6 +3660,8 @@ class FacturacionTab(QWidget):
             return "01"
 
         row_type = entry.get("row_type")
+        if row_type == "retencion":
+            return "CR"
         if row_type == "ticket":
             return "01"
 
@@ -4111,7 +4125,12 @@ class FacturacionTab(QWidget):
         dialog.setModal(True)
         layout = QVBoxLayout(dialog)
 
-        summary_text = (summary or "").strip() or "Ocurrió un error al enviar la factura."
+        if isinstance(summary, (dict, list)):
+            try:
+                summary = json.dumps(summary, ensure_ascii=False, indent=2)
+            except Exception:
+                summary = str(summary)
+        summary_text = (str(summary or "")).strip() or "Ocurrió un error al enviar la factura."
         summary_label = QLabel(summary_text)
         summary_label.setWordWrap(True)
         layout.addWidget(summary_label)
@@ -4197,6 +4216,24 @@ class FacturacionTab(QWidget):
 
     def _document_already_sent(self, entry: dict | None, factura: dict | None) -> bool:
         if not entry:
+            return False
+        if entry.get("row_type") == "retencion":
+            db = getattr(self.manager, "db", None)
+            if db is None:
+                return False
+            venta_id = entry.get("venta_id")
+            if venta_id is None and factura and factura.get("venta_id"):
+                venta_id = factura.get("venta_id")
+            if venta_id is None:
+                return False
+            try:
+                record = db.get_retencion_cr(venta_id)
+            except Exception:
+                record = None
+            if record:
+                estado_val = record.get("estado")
+                if self._has_successful_envio_status(self._map_envio_state(estado_val)):
+                    return True
             return False
 
         envio_val = entry.get("envio")
@@ -4287,14 +4324,14 @@ class FacturacionTab(QWidget):
 
         factura = None
         rtype = entry.get("row_type")
-        if rtype in ("venta", "orphan"):
+        if rtype in ("venta", "orphan", "retencion"):
             factura = self._selected_factura()
             if not factura:
                 QMessageBox.warning(self, "Enviar", "Seleccione una factura válida")
                 return
 
         dialog = SendOptionsDialog(self)
-        dialog.email_cb.setChecked(True)
+        dialog.email_cb.setChecked(rtype not in {"retencion"})
         dialog.hacienda_cb.setChecked(True)
         if dialog.exec_() != QDialog.Accepted:
             return
@@ -4316,7 +4353,50 @@ class FacturacionTab(QWidget):
                 )
                 if answer != QMessageBox.Yes:
                     return
-            if rtype == "orphan" and factura:
+            if rtype == "retencion" and factura:
+                venta_id = entry.get("venta_id")
+                if not venta_id:
+                    QMessageBox.warning(self, "Enviar a Hacienda", "No se encontró la venta asociada")
+                    return
+                try:
+                    from retenciones.service import RetencionCRService
+
+                    service = RetencionCRService(self.manager.db)
+                    print("UI: CALL_ENVIAR_CR")
+                    with loading_dialog(self, "Enviando comprobante de retención…"):
+                        resp = service.send_cr(venta_id)
+                    estado = str(resp.get("estado") or "").strip().upper()
+                    sello_val = (
+                        resp.get("sello")
+                        or resp.get("selloRecibido")
+                        or resp.get("selloRecepcion")
+                        or ""
+                    )
+                    sello_norm = str(sello_val).strip()
+                    if estado in {"ACEPTADO", "PROCESADO"} and sello_norm:
+                        mh_success = True
+                        mh_response = resp
+                        QMessageBox.information(
+                            self,
+                            "Enviar a Hacienda",
+                            "Comprobante de retención enviado correctamente",
+                        )
+                    else:
+                        detalle = resp.get("detalle") or resp.get("descripcionMsg") or resp.get("observaciones")
+                        msg = detalle or "Fallo al enviar comprobante de retención"
+                        self._show_send_error_dialog(
+                            msg,
+                            "Enviar a Hacienda",
+                            resp,
+                        )
+                except Exception as exc:
+                    logger.exception("Error al enviar CR-07", exc_info=exc)
+                    QMessageBox.critical(
+                        self,
+                        "Enviar a Hacienda",
+                        GENERIC_SEND_ERROR,
+                    )
+            elif rtype == "orphan" and factura:
                 json_path = factura.get("json")
                 try:
                     print("UI: CALL_ENVIAR_DOCUMENTO")

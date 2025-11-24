@@ -49,6 +49,7 @@ from utils.jws import sign_json
 from utils.firmador import iniciar_firmador, detener_firmador, firmador_activo
 from mh_auth import invalidate_token_cache
 from utils.party_resolver import normalize_identifier, resolve_party_names
+from utils.sanitize import solo_digitos
 from utils.facturacion_records import (
     TIPO_DTE_DESC,
     canonical_tipo_label,
@@ -57,6 +58,79 @@ from utils.facturacion_records import (
 import logging
 
 logger = logging.getLogger(__name__)
+
+
+def _nit_digits(value: object) -> str:
+    return solo_digitos(value) if value else ""
+
+
+def _normalize_env_code(value: object) -> str:
+    text = (str(value or "")).strip().lower()
+    if text in {"01", "1", "produccion", "producción", "production", "prod"}:
+        return "01"
+    return "00"
+
+
+def _clear_manual_tokens(dte_api: dict) -> bool:
+    cleared = False
+    for key in ("token_pruebas", "token_produccion"):
+        if dte_api.get(key):
+            dte_api[key] = ""
+            cleared = True
+    return cleared
+
+
+def _update_env_nits(config: dict, nit: str) -> bool:
+    if not nit:
+        return False
+    changed = False
+    for key, value in config.items():
+        if not isinstance(value, dict):
+            continue
+        fe_conf = value.get("firma_electronica")
+        if isinstance(fe_conf, dict):
+            if _nit_digits(fe_conf.get("nit")) != nit:
+                fe_conf["nit"] = nit
+                changed = True
+        else:
+            value["firma_electronica"] = {"nit": nit}
+            changed = True
+    return changed
+
+
+def _sync_configs(datos: dict, config: dict, *, nit_hint: str | None = None, ambiente_hint: str | None = None) -> tuple[bool, bool, bool]:
+    """Align negocio/config data returning (datos_changed, config_changed, tokens_reset)."""
+    dte_api = datos.setdefault("dte_api", {})
+    current_nit = _nit_digits(nit_hint or datos.get("nit"))
+    prev_nit = _nit_digits(datos.get("nit"))
+    prev_env = _normalize_env_code(dte_api.get("ambiente"))
+    env_code = _normalize_env_code(ambiente_hint or dte_api.get("ambiente") or config.get("ambiente"))
+
+    datos_changed = False
+    config_changed = False
+    tokens_reset = False
+
+    if current_nit and prev_nit != current_nit:
+        datos["nit"] = current_nit
+        datos_changed = True
+    if current_nit and _nit_digits(dte_api.get("nit")) != current_nit:
+        dte_api["nit"] = current_nit
+        datos_changed = True
+    if env_code and prev_env != env_code:
+        dte_api["ambiente"] = env_code
+        datos_changed = True
+    if env_code and config.get("ambiente") != env_code:
+        config["ambiente"] = env_code
+        config_changed = True
+    if current_nit:
+        config_changed |= _update_env_nits(config, current_nit)
+
+    if current_nit and prev_nit != current_nit:
+        tokens_reset = _clear_manual_tokens(dte_api)
+    if env_code and prev_env != env_code:
+        tokens_reset = _clear_manual_tokens(dte_api) or tokens_reset
+
+    return datos_changed, config_changed, tokens_reset
 
 def redondear(valor):
     return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -1055,6 +1129,9 @@ class MainWindow(QMainWindow):
                 vendedor_id = data.get("vendedor_id")
                 estado = data.get("estado", "Pagada")
                 extra = build_fiscal_extra(data)
+                ret_block = data.get("_ui_retencion") if isinstance(data.get("_ui_retencion"), dict) else None
+                if ret_block:
+                    extra["_ui_retencion"] = ret_block
                 payment_extra = build_payment_condition_extra(data)
                 if payment_extra:
                     extra.update(payment_extra)
@@ -1062,6 +1139,8 @@ class MainWindow(QMainWindow):
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
+
+                self._log_retencion_state("SAVE", "01", ret_block, total)
 
                 venta_id = self.manager.db.add_venta(
                     fecha,
@@ -1207,6 +1286,9 @@ class MainWindow(QMainWindow):
                 vendedor_id = data.get("vendedor_id")
 
                 extra = build_fiscal_extra(data)
+                ret_block = data.get("_ui_retencion") if isinstance(data.get("_ui_retencion"), dict) else None
+                if ret_block:
+                    extra["_ui_retencion"] = ret_block
                 payment_extra = build_payment_condition_extra(data)
                 if payment_extra:
                     extra.update(payment_extra)
@@ -1214,6 +1296,8 @@ class MainWindow(QMainWindow):
                 if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
+
+                self._log_retencion_state("SAVE", "03", ret_block, venta_total)
 
                 venta_id = self.manager.db.add_venta_credito_fiscal(
                     cliente_id=data["cliente"]["id"],
@@ -1287,6 +1371,37 @@ class MainWindow(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))
+
+    def _log_retencion_state(self, stage: str, tipo_dte: str, block: dict | None, total: float | int | Decimal | None) -> None:
+        block = block or {}
+        enabled = bool(block.get("enabled"))
+        base = block.get("base")
+        if base in (None, ""):
+            base = block.get("baseSujeta", 0)
+        retenido = block.get("montoRetenido")
+        if retenido in (None, ""):
+            retenido = block.get("ivaRetenido", 0)
+        try:
+            base_val = float(base or 0)
+        except Exception:
+            base_val = 0.0
+        try:
+            reten_val = float(retenido or 0)
+        except Exception:
+            reten_val = 0.0
+        try:
+            total_val = float(total or 0)
+        except Exception:
+            total_val = 0.0
+        logger.info(
+            "RETENCION.%s enabled=%s base=%.2f retenido=%.2f tipo=%s total=%.2f",
+            stage,
+            enabled,
+            base_val,
+            reten_val,
+            tipo_dte,
+            total_val,
+        )
 
     def _post_guardado_exitoso(self, filename):
         self.ultimo_archivo_json = filename
@@ -2363,7 +2478,9 @@ class MainWindow(QMainWindow):
         # Puedes guardar/cargar los datos en un archivo JSON local, por ejemplo:
         import os, json
         datos_path = DATOS_NEGOCIO_PATH
+        config_path = CONFIG_NEGOCIO_PATH
         datos = {}
+        config = {}
         if os.path.exists(datos_path):
             try:
                 with open(datos_path, "r", encoding="utf-8") as f:
@@ -2374,6 +2491,12 @@ class MainWindow(QMainWindow):
                     datos["direccion"] = dir_info
             except Exception:
                 datos = {}
+        if os.path.exists(config_path):
+            try:
+                with open(config_path, "r", encoding="utf-8") as f:
+                    config = json.load(f)
+            except Exception:
+                config = {}
         from dialogs import DatosNegocioDialog
         dlg = DatosNegocioDialog(datos, self)
         if dlg.exec_():
@@ -2383,8 +2506,26 @@ class MainWindow(QMainWindow):
             dir_info.setdefault("departamento", "")
             dir_info.setdefault("municipio", "")
             datos["direccion"] = dir_info
+            datos_changed, config_changed, tokens_reset = _sync_configs(
+                datos,
+                config,
+                nit_hint=datos_nuevos.get("nit"),
+                ambiente_hint=(datos.get("dte_api") or {}).get("ambiente"),
+            )
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
+            if config_changed:
+                with open(config_path, "w", encoding="utf-8") as f:
+                    json.dump(config, f, ensure_ascii=False, indent=2)
+            if config_changed or datos_changed or tokens_reset:
+                invalidate_token_cache()
+            if tokens_reset:
+                QMessageBox.information(
+                    self,
+                    "Tokens reiniciados",
+                    "Los tokens almacenados se limpiaron porque cambiaste el NIT o el ambiente. "
+                    "Vuelve a obtener un token en Configuración > Facturación Electrónica.",
+                )
             QMessageBox.information(self, "Datos del negocio", "Datos guardados correctamente.")
 
     def _abrir_config_correo(self):
@@ -2461,11 +2602,24 @@ class MainWindow(QMainWindow):
             config[ambiente]["recepcion_url"] = new_urls.get("recepcion_url", "")
             if "auth" in new_urls:
                 config[ambiente]["auth"] = new_urls["auth"]
+            datos_changed, config_changed_extra, tokens_reset = _sync_configs(
+                datos,
+                config,
+                nit_hint=new_fe.get("nit"),
+                ambiente_hint=new_dte_api.get("ambiente"),
+            )
             with open(datos_path, "w", encoding="utf-8") as f:
                 json.dump(datos, f, ensure_ascii=False, indent=2)
             with open(config_path, "w", encoding="utf-8") as f:
                 json.dump(config, f, ensure_ascii=False, indent=2)
             invalidate_token_cache()
+            if tokens_reset:
+                QMessageBox.information(
+                    self,
+                    "Tokens reiniciados",
+                    "Los tokens almacenados se limpiaron porque cambiaste el NIT o el ambiente. "
+                    "Obtén un token nuevo antes de volver a enviar DTE.",
+                )
             QMessageBox.information(self, "Facturación electrónica", "Datos guardados correctamente.")
 
     def _abrir_config_usuarios(self):

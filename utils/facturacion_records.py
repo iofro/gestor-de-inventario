@@ -16,7 +16,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any, Dict, Iterable, Iterator, Mapping, Sequence
 
-from paths import resolve_user_visible_path
+from paths import RETENCIONES_DIR, ensure_user_dir, resolve_user_visible_path
 
 
 DOC_SUFFIX_PATTERN = re.compile(
@@ -604,6 +604,36 @@ def _load_json(path: str | None) -> tuple[dict[str, Any] | None, dict[str, Any] 
     return payload, ident
 
 
+def _cr_json_path(
+    payload: Mapping[str, Any] | None,
+    *,
+    numero_control: str | None = None,
+    fecha: str | None = None,
+) -> str | None:
+    ident = payload.get("identificacion") if isinstance(payload, Mapping) else {}
+    numero = (
+        (ident or {}).get("numeroControl")
+        or (ident or {}).get("numero_control")
+        or numero_control
+        or "CR"
+    )
+    numero = str(numero or "").replace("-", "")
+    fec = (ident or {}).get("fecEmi") or fecha or ""
+    fec = str(fec or "").replace("-", "")
+    name = f"CR_{fec or '0000'}_{numero or 'retencion'}.json"
+    legacy_dir = ensure_user_dir("dtes", "retenciones")
+    candidates = [
+        os.path.join(RETENCIONES_DIR, name),
+        os.path.join(legacy_dir, name),
+    ]
+    for candidate in candidates:
+        resolved = _resolve_existing_path(candidate)
+        if resolved and os.path.exists(resolved):
+            return resolve_user_visible_path(resolved)
+    fallback = _resolve_existing_path(candidates[0])
+    return resolve_user_visible_path(fallback) if fallback else fallback
+
+
 def get_facturacion_rows(db) -> list[Dict[str, Any]]:
     cur = getattr(db, "cursor", None)
     if cur is None:
@@ -1026,6 +1056,7 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                 row["nota_id"] = nota_id
 
         sign_value = 1
+        coerced_note_total = None
         if note_kind:
             sign_value = -1 if note_kind == "credito" else 1
             note_total_value = None
@@ -1053,10 +1084,157 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                         except Exception:
                             note_total_value = None
             coerced_note_total = _coerce_total(note_total_value)
-            if coerced_note_total is not None:
-                row["total"] = coerced_note_total
+        if coerced_note_total is not None:
+            row["total"] = coerced_note_total
 
         row["sign"] = sign_value
         rows.append(row)
+
+    # ---- Retenciones CR-07 -------------------------------------------------
+    ret_rows: list[dict[str, Any]] = []
+    try:
+        ensure_retenciones = getattr(db, "_ensure_retenciones_cr_table", None)
+        if callable(ensure_retenciones):
+            try:
+                ensure_retenciones()
+            except Exception:
+                pass
+        cur.execute("SELECT * FROM retenciones_cr")
+        ret_rows = [dict(row) for row in cur.fetchall()]
+    except Exception:
+        ret_rows = []
+
+    seen_ret_keys: set[tuple[str | None, str | None]] = set()
+
+    def _append_retencion_row(payload: Mapping[str, Any], rec: Mapping[str, Any] | None, venta_id: Any) -> None:
+        ident = payload.get("identificacion") or {}
+        resumen = payload.get("resumen") or {}
+        cuerpo = (payload.get("cuerpoDocumento") or [{}])[0]
+        fecha_emision = (
+            ident.get("fecEmi")
+            or ident.get("fechaEmision")
+            or ident.get("fecha")
+        )
+        hora_emision = ident.get("horEmi") or ident.get("horEmision") or ident.get("hora")
+        fdate = None
+        fecha_str = ""
+        if fecha_emision:
+            try:
+                if hora_emision:
+                    fdate = datetime.strptime(f"{fecha_emision} {hora_emision}", "%Y-%m-%d %H:%M:%S")
+                    fecha_str = fdate.strftime("%Y-%m-%d %H:%M")
+                else:
+                    fdate = datetime.strptime(str(fecha_emision), "%Y-%m-%d")
+                    fecha_str = fdate.strftime("%Y-%m-%d")
+            except Exception:
+                fdate = None
+                fecha_str = str(fecha_emision)
+        if not fecha_str:
+            created_at = rec.get("created_at") if rec else None
+            try:
+                fdate = datetime.fromisoformat(str(created_at))
+                fecha_str = fdate.strftime("%Y-%m-%d %H:%M")
+            except Exception:
+                fecha_str = str(created_at or "")
+        numero_control = ident.get("numeroControl") or (rec.get("numero_control") if rec else None)
+        codigo_generacion = ident.get("codigoGeneracion") or (rec.get("codigo_generacion") if rec else None)
+        seen_ret_keys.add((numero_control, codigo_generacion))
+
+        cliente_nombre = ""
+        cliente_id = None
+        if venta_id is not None:
+            try:
+                venta = db.get_venta_by_id(venta_id)
+            except Exception:
+                venta = None
+            if venta:
+                cliente_id = venta.get("cliente_id")
+                getter = getattr(db, "get_cliente", None)
+                if getter and cliente_id:
+                    try:
+                        cliente = getter(cliente_id)
+                        cliente_nombre = cliente.get("nombre", "") if cliente else ""
+                    except Exception:
+                        cliente_nombre = ""
+        if not cliente_nombre and isinstance(payload, Mapping):
+            nombre_hint = _extract_cliente_nombre(payload)
+            if nombre_hint:
+                cliente_nombre = str(nombre_hint)
+        base_retencion = (
+            resumen.get("totalSujetoRetencion")
+            if isinstance(resumen, Mapping)
+            else None
+        )
+        if base_retencion in (None, ""):
+            base_retencion = cuerpo.get("montoSujetoGrav")
+        total = _coerce_total(base_retencion)
+        estado_raw = rec.get("estado") if rec else None
+        estado_display = format_envio_state(None, None, estado_raw)
+        cr_json_path = _cr_json_path(
+            payload,
+            numero_control=numero_control,
+            fecha=str(fecha_emision or ""),
+        )
+        rows.append(
+            {
+                "row_type": "retencion",
+                "id": f"CR-{(rec.get('id') if rec and rec.get('id') is not None else numero_control or codigo_generacion or 'file')}",
+                "venta_id": venta_id,
+                "name": numero_control or codigo_generacion or "CR-07",
+                "numero_control": numero_control,
+                "codigo_generacion": codigo_generacion,
+                "fecha": fecha_str,
+                "_parsed_fecha": fdate,
+                "cliente": cliente_nombre,
+                "cliente_id": cliente_id,
+                "vendedor_id": None,
+                "total": total,
+                "estado": estado_display,
+                "envio": estado_display,
+                "tipo": "Comp. retención",
+                "codigo": "CR-07",
+                "json": cr_json_path,
+                "sign": 1,
+            }
+        )
+
+    for rec in ret_rows:
+        try:
+            payload_json = rec.get("payload_json")
+            try:
+                payload = json.loads(payload_json) if payload_json else {}
+            except Exception:
+                payload = {}
+            _append_retencion_row(payload, rec, rec.get("venta_id"))
+        except Exception:
+            continue
+
+    # Fallback: agregar CR encontrados en disco aunque no haya fila en DB
+    legacy_dir = ensure_user_dir("dtes", "retenciones")
+    ret_dirs = [RETENCIONES_DIR, os.fspath(legacy_dir)]
+    for base_dir in ret_dirs:
+        try:
+            entries = os.listdir(base_dir)
+        except Exception:
+            continue
+        for entry in entries:
+            if not entry.lower().endswith(".json"):
+                continue
+            if not entry.upper().startswith("CR_"):
+                continue
+            path = os.path.join(base_dir, entry)
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    payload = json.load(fh)
+            except Exception:
+                continue
+            ident = payload.get("identificacion") or {}
+            key = (ident.get("numeroControl"), ident.get("codigoGeneracion"))
+            if key in seen_ret_keys:
+                continue
+            try:
+                _append_retencion_row(payload, None, None)
+            except Exception:
+                continue
     return rows
 

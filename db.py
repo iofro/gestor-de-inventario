@@ -191,6 +191,7 @@ class DB:
         # ``DB`` instances to keep connections separate.
         self.lock = threading.Lock()
         self.cursor = self.conn.cursor()
+        self._retenciones_cr_initialized = False
         self._after_commit_callbacks: list[Callable[[], None]] = []
         try:
             self.conn.add_after_commit_callback(self._run_after_commit_callbacks)
@@ -425,6 +426,50 @@ class DB:
                 )
                 return False
         return True
+
+    def _ensure_retenciones_cr_table(self) -> None:
+        """Create storage for Comprobantes de Retención if missing."""
+
+        if getattr(self, "_retenciones_cr_initialized", False):
+            return
+        self.cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS retenciones_cr (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                venta_id INTEGER NOT NULL,
+                payload_json TEXT NOT NULL,
+                jws TEXT,
+                estado TEXT,
+                sello TEXT,
+                respuesta TEXT,
+                codigo_generacion TEXT NOT NULL,
+                numero_control TEXT NOT NULL,
+                codigo_generacion_origen TEXT NOT NULL,
+                numero_control_origen TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                enviado_en TEXT,
+                FOREIGN KEY (venta_id) REFERENCES ventas(id) ON DELETE CASCADE
+            )
+            """
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_retenciones_cr_venta ON retenciones_cr(venta_id)"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_retenciones_cr_cod ON retenciones_cr(UPPER(codigo_generacion))"
+        )
+        self.cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_retenciones_cr_ctrl ON retenciones_cr(UPPER(numero_control))"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_retenciones_cr_cod_origen ON retenciones_cr(UPPER(codigo_generacion_origen))"
+        )
+        self.cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_retenciones_cr_ctrl_origen ON retenciones_cr(UPPER(numero_control_origen))"
+        )
+        self.conn.commit()
+        self._retenciones_cr_initialized = True
 
     def _has_table(self, table: str) -> bool:
         """Return ``True`` if ``table`` exists in the current database."""
@@ -905,6 +950,7 @@ class DB:
             """
         )
         self.conn.commit()
+        self._ensure_retenciones_cr_table()
 
         # Tabla de usuarios y cuentas por defecto
         self.cursor.execute(
@@ -4194,6 +4240,126 @@ class DB:
         query += " ORDER BY fecha_hora"
         self.cursor.execute(query, params)
         return [dict(row) for row in self.cursor.fetchall()]
+
+    # ---- Retenciones (CR) -------------------------------------------------
+
+    def insert_retencion_cr(
+        self,
+        venta_id: int,
+        *,
+        payload_json: str,
+        codigo_generacion: str,
+        numero_control: str,
+        codigo_generacion_origen: str,
+        numero_control_origen: str,
+    ) -> int:
+        """Insert a new CR row linked to ``venta_id`` returning the new row ID."""
+
+        self._ensure_retenciones_cr_table()
+        if self.get_retencion_cr(venta_id):
+            raise ValueError(f"Ya existe un CR-07 para la venta {venta_id}")
+
+        def _norm(value: str | None) -> str:
+            text = (value or "").strip()
+            if not text:
+                raise ValueError("Valor requerido para CR")
+            return text.upper()
+
+        now = datetime.now(timezone.utc).isoformat()
+        with self.lock:
+            self.cursor.execute(
+                """
+                INSERT INTO retenciones_cr (
+                    venta_id, payload_json, codigo_generacion, numero_control,
+                    codigo_generacion_origen, numero_control_origen,
+                    created_at, updated_at, estado
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    venta_id,
+                    payload_json,
+                    _norm(codigo_generacion),
+                    _norm(numero_control),
+                    _norm(codigo_generacion_origen),
+                    _norm(numero_control_origen),
+                    now,
+                    now,
+                    "PENDIENTE",
+                ),
+            )
+            self.conn.commit()
+            return int(self.cursor.lastrowid)
+
+    def get_retencion_cr(self, venta_id: int) -> dict | None:
+        """Return CR record for ``venta_id`` if present."""
+
+        self._ensure_retenciones_cr_table()
+        row = self.cursor.execute(
+            "SELECT * FROM retenciones_cr WHERE venta_id=?", (venta_id,)
+        ).fetchone()
+        if not row:
+            return None
+        return dict(row)
+
+    def update_retencion_cr_signature(self, venta_id: int, jws: str) -> None:
+        """Persist the signed JWS for ``venta_id``."""
+
+        self._ensure_retenciones_cr_table()
+        now = datetime.now(timezone.utc).isoformat()
+        with self.lock:
+            self.cursor.execute(
+                "UPDATE retenciones_cr SET jws=?, updated_at=? WHERE venta_id=?",
+                (jws, now, venta_id),
+            )
+            if self.cursor.rowcount == 0:
+                raise ValueError(f"No existe CR para la venta {venta_id}")
+            self.conn.commit()
+
+    def update_retencion_cr_response(
+        self,
+        venta_id: int,
+        *,
+        estado: str | None,
+        sello: str | None,
+        respuesta: str | None,
+        enviado_en: str | None = None,
+    ) -> None:
+        """Update CR response metadata after transmission."""
+
+        self._ensure_retenciones_cr_table()
+
+        def _norm_state(value: str | None) -> str | None:
+            if not value:
+                return None
+            return value.strip().upper() or None
+
+        def _norm_sello(value: str | None) -> str | None:
+            if not value:
+                return None
+            return value.strip().upper() or None
+
+        now = datetime.now(timezone.utc).isoformat()
+        envio_ts = enviado_en or now
+        with self.lock:
+            self.cursor.execute(
+                """
+                UPDATE retenciones_cr
+                SET estado=?, sello=?, respuesta=?, enviado_en=?, updated_at=?
+                WHERE venta_id=?
+                """,
+                (
+                    _norm_state(estado),
+                    _norm_sello(sello),
+                    respuesta,
+                    envio_ts,
+                    now,
+                    venta_id,
+                ),
+            )
+            if self.cursor.rowcount == 0:
+                raise ValueError(f"No existe CR para la venta {venta_id}")
+            self.conn.commit()
 
     def update_venta_extra(self, venta_id, extra_dict):
         """Actualiza el campo ``extra`` de la venta, fusionando los datos."""

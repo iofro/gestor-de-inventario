@@ -143,7 +143,7 @@ if __name__ == "__main__":
         window.setWindowIcon(QIcon(str(icon_path)))
     window.show()
 
-    # Cargar automáticamente el último inventario usado
+    # Cargar automáticamente el último inventario usadow
     ultimo_archivo = cargar_ultimo_archivo()
     if ultimo_archivo and os.path.exists(ultimo_archivo):
         try:

@@ -35,6 +35,7 @@ from utils import jws
 from utils.certificates import copy_certificate_to_signer_dir, resolve_signer_cert_dir
 from utils.catalogos import CONTINGENCIA
 from utils.sanitize import solo_digitos
+from utils.fiscal_extra import normalize_retencion_payload
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
 from dte import peek_next_correlativo
 from utils.party_resolver import Catalogs, normalize_identifier, resolve_party_names
@@ -670,6 +671,9 @@ class ProductDialogBase:
                     widget = getattr(self, attr, None)
                     if widget is not None:
                         widget.setText(get_field(cli, key, ""))
+                updater = getattr(self, "_update_retencion_group_state", None)
+                if callable(updater):
+                    updater()
 
     def _sync_credit_term_payload(self):
         """Mantiene los códigos de plazo y periodo en el formato requerido."""
@@ -881,6 +885,44 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         right_layout.addWidget(self.subtotal_label)
         right_layout.addWidget(self.total_label)
 
+        self.retencion_group = QGroupBox("Retención de IVA")
+        retencion_layout = QVBoxLayout(self.retencion_group)
+        retencion_layout.setContentsMargins(9, 9, 9, 9)
+        self.retencion_checkbox = QCheckBox("Aplicar retención de IVA")
+        retencion_layout.addWidget(self.retencion_checkbox)
+        self._retencion_catalog_ok = False
+
+        self.retencion_codigo_combo = QComboBox()
+        self.retencion_tasa_spin = QDoubleSpinBox()
+        self.retencion_tasa_spin.setRange(0, 100)
+        self.retencion_tasa_spin.setDecimals(3)
+        self.retencion_tasa_spin.setSingleStep(0.1)
+        self.retencion_tasa_spin.setValue(1.0)
+        self.retencion_geo_emisor_combo = QComboBox()
+        self.retencion_geo_receptor_combo = QComboBox()
+        for code in [f"{i:02d}" for i in range(1, 23)]:
+            self.retencion_geo_emisor_combo.addItem(code, code)
+            self.retencion_geo_receptor_combo.addItem(code, code)
+
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        form.addRow("Código MH (CAT-006)", self.retencion_codigo_combo)
+        form.addRow("Tasa (%)", self.retencion_tasa_spin)
+        form.addRow("Geo emisor (01-22)", self.retencion_geo_emisor_combo)
+        form.addRow("Geo receptor (01-22)", self.retencion_geo_receptor_combo)
+        retencion_layout.addLayout(form)
+
+        self.retencion_base_label = QLabel("Base sujeta: $0.00")
+        self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
+        retencion_layout.addWidget(self.retencion_base_label)
+        retencion_layout.addWidget(self.retencion_iva_label)
+        right_layout.addWidget(self.retencion_group)
+        self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
+        self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
+        self.retencion_codigo_combo.currentIndexChanged.connect(self._update_retencion_summary)
+        self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
+        self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
+
         right_layout.addWidget(QLabel("Condición de pago:"))
         self.condicion_pago_combo = QComboBox()
         self.condicion_pago_combo.addItem("Contado", 1)
@@ -994,7 +1036,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         # Ajusta el máximo del descuento según el tipo seleccionado
         self._on_descuento_tipo_changed()
         self._update_condicion_pago_fields()
+        self._retencion_allowed_flag = False  # Solo aplica para CCF (03)
+        self._retencion_warning_shown = False
+        self._apply_retencion_visibility()
+        self._load_retencion_catalog()
         self.load_payment_data(venta_extra)
+        self._update_retencion_group_state()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -1162,7 +1209,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self.referencia_edit.text().strip() if condicion_operacion == 2 else ""
         )
 
-        return {
+        data = {
             "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
             "tipo_venta": (
@@ -1195,6 +1242,25 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "pago_referencia": referencia,
             "condicion_pago": self.condicion_pago_combo.currentText(),
         }
+        ret_allowed = self._retencion_permitida_para_tipo()
+        if ret_allowed:
+            base, iva_retenido = self._compute_retencion_values()
+            geo_emisor = self.retencion_geo_emisor_combo.currentData() if hasattr(self, "retencion_geo_emisor_combo") else None
+            geo_receptor = self.retencion_geo_receptor_combo.currentData() if hasattr(self, "retencion_geo_receptor_combo") else None
+            data["_ui_retencion"] = normalize_retencion_payload(
+                {
+                    "enabled": self.retencion_checkbox.isChecked(),
+                    "base": float(base),
+                    "montoRetenido": float(iva_retenido),
+                    "codigoRetencionMH": self._retencion_codigo_value(),
+                    "tasa": float(self._retencion_rate_pct()),
+                    "geoEmisor": geo_emisor,
+                    "geoReceptor": geo_receptor,
+                }
+            )
+        elif self.retencion_checkbox.isChecked():
+            self._warn_retencion_solo_ccf()
+        return data
 
     def _update_condicion_pago_fields(self):
         is_credit = self.condicion_pago_combo.currentData() == 2
@@ -1257,6 +1323,64 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             if referencia:
                 self.referencia_edit.setText(str(referencia))
         self._update_condicion_pago_fields()
+        self._load_retencion_state(data)
+
+    def _load_retencion_state(self, extra: Mapping[str, Any]) -> None:
+        if not hasattr(self, "retencion_checkbox"):
+            return
+        ret_block = None
+        if isinstance(extra, Mapping):
+            ret_block = extra.get("_ui_retencion") or extra.get("retencion_iva")
+        elif isinstance(extra, str):
+            try:
+                parsed = json.loads(extra)
+            except (TypeError, ValueError):
+                parsed = {}
+            if isinstance(parsed, Mapping):
+                ret_block = parsed.get("_ui_retencion") or parsed.get("retencion_iva")
+        normalized = normalize_retencion_payload(ret_block) if ret_block else None
+        if not self._retencion_permitida_para_tipo():
+            if normalized and normalized.get("enabled"):
+                self._warn_retencion_solo_ccf()
+            with QSignalBlocker(self.retencion_checkbox):
+                self.retencion_checkbox.setChecked(False)
+            self._apply_retencion_visibility()
+            return
+        with QSignalBlocker(self.retencion_checkbox):
+            self.retencion_checkbox.setChecked(bool(normalized and normalized.get("enabled")))
+        if normalized:
+            base = normalized.get("base") or normalized.get("baseSujeta") or 0.0
+            reten = normalized.get("montoRetenido") or normalized.get("ivaRetenido") or 0.0
+            tasa = normalized.get("tasa")
+            if tasa not in (None, ""):
+                try:
+                    self.retencion_tasa_spin.setValue(float(tasa))
+                except Exception:
+                    pass
+            codigo = normalized.get("codigoRetencionMH")
+            if codigo:
+                idx = self.retencion_codigo_combo.findData(str(codigo))
+                if idx >= 0:
+                    self.retencion_codigo_combo.setCurrentIndex(idx)
+            geo_emisor = normalized.get("geoEmisor")
+            geo_receptor = normalized.get("geoReceptor")
+            if geo_emisor:
+                idx = self.retencion_geo_emisor_combo.findData(str(geo_emisor))
+                if idx >= 0:
+                    self.retencion_geo_emisor_combo.setCurrentIndex(idx)
+            if geo_receptor:
+                idx = self.retencion_geo_receptor_combo.findData(str(geo_receptor))
+                if idx >= 0:
+                    self.retencion_geo_receptor_combo.setCurrentIndex(idx)
+            self.retencion_base_label.setText(f"Base sujeta: ${float(base):.2f}")
+            self.retencion_iva_label.setText(
+                f"IVA retenido ({float(self._retencion_rate_pct()):.3f}%): ${float(reten):.2f}"
+            )
+        else:
+            self.retencion_base_label.setText("Base sujeta: $0.00")
+            self.retencion_iva_label.setText(
+                f"IVA retenido ({float(self._retencion_rate_pct()):.3f}%): $0.00"
+            )
 
     def _agregar_a_venta(self):
         idx = self.product_list.currentRow()
@@ -1379,7 +1503,150 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         self.sumas_label.setText(f"Sumas: ${sumas:.2f}")
         self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
-        self.total_label.setText(f"Venta total: ${total:.2f}")
+        base_ret, iva_ret = self._compute_retencion_values()
+        if self.retencion_checkbox.isChecked() and iva_ret > 0:
+            tasa = float(self._retencion_rate_pct())
+            self.total_label.setText(
+                f"Venta total: ${total:.2f} (Retención {tasa:.3f}%: ${iva_ret:.2f})"
+            )
+        else:
+            self.total_label.setText(f"Venta total: ${total:.2f}")
+        self._update_retencion_summary()
+
+    def _retencion_rate_pct(self) -> Decimal:
+        if hasattr(self, "retencion_tasa_spin"):
+            try:
+                return Decimal(str(self.retencion_tasa_spin.value()))
+            except Exception:
+                return Decimal("0")
+        return Decimal("0")
+
+    def _retencion_codigo_value(self) -> str:
+        if hasattr(self, "retencion_codigo_combo"):
+            data = self.retencion_codigo_combo.currentData()
+            if data not in (None, ""):
+                return str(data)
+        return "22"
+
+    def _valid_geo_code(self, value: str | None) -> bool:
+        if not value:
+            return False
+        digits = "".join(ch for ch in str(value) if ch.isdigit())
+        if not digits:
+            return False
+        try:
+            numero = int(digits)
+        except ValueError:
+            return False
+        return 1 <= numero <= 22
+
+    def _load_retencion_catalog(self) -> None:
+        self._retencion_catalog_ok = False
+        if not self._retencion_permitida_para_tipo():
+            self._apply_retencion_visibility()
+            return
+        try:
+            from retenciones.catalogos_retencion import CatalogosRetencion
+
+            catalogos = CatalogosRetencion()
+            entries = catalogos.entries("CAT-006")
+            self.retencion_codigo_combo.clear()
+            for entry in entries:
+                label = f"{entry.code} – {entry.label}" if entry.label else entry.code
+                self.retencion_codigo_combo.addItem(label, entry.code)
+            idx = self.retencion_codigo_combo.findData("22")
+            if idx >= 0:
+                self.retencion_codigo_combo.setCurrentIndex(idx)
+            self._retencion_catalog_ok = True
+            self.retencion_group.setEnabled(True)
+        except Exception as exc:
+            logger.warning("No se pudo cargar catálogo CAT-006: %s", exc, exc_info=True)
+            self.retencion_codigo_combo.clear()
+            self.retencion_codigo_combo.addItem("Catálogo no disponible", "")
+            self.retencion_checkbox.setChecked(False)
+            self.retencion_group.setEnabled(False)
+            QMessageBox.warning(
+                self,
+                "Catálogo de retención",
+                "No se pudo cargar el catálogo CAT-006. "
+                "La retención de IVA se desactivará para esta venta.\n\n"
+                f"Detalle: {exc}",
+            )
+        self._apply_retencion_visibility()
+
+    def _compute_retencion_values(self) -> tuple[Decimal, Decimal]:
+        """Return the taxable base and retained VAT for gravada items."""
+
+        sumas = Decimal("0")
+        descuentos = Decimal("0")
+        for item in self.venta_items:
+            tipo_fiscal = (item.get("tipo_fiscal") or "").lower()
+            if tipo_fiscal != "venta gravada":
+                continue
+            sumas += Decimal(str(item.get("subtotal", 0)))
+            descuentos += Decimal(str(item.get("descuento_monto", 0)))
+
+        base = sumas - descuentos
+        if base < 0:
+            base = Decimal("0")
+        base = base.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        tasa_pct = self._retencion_rate_pct()
+        tasa = tasa_pct / Decimal("100")
+        iva_retenido = (base * tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return base, iva_retenido
+
+    def _update_retencion_summary(self) -> None:
+        if not hasattr(self, "retencion_base_label"):
+            return
+        base, iva_retenido = self._compute_retencion_values()
+        self.retencion_base_label.setText(f"Base sujeta: ${base:.2f}")
+        self.retencion_iva_label.setText(
+            f"IVA retenido ({float(self._retencion_rate_pct()):.3f}%): ${iva_retenido:.2f}"
+        )
+
+    def _retencion_permitida_para_tipo(self) -> bool:
+        return bool(getattr(self, "_retencion_allowed_flag", True))
+
+    def _apply_retencion_visibility(self) -> None:
+        if not hasattr(self, "retencion_group"):
+            return
+        allowed = self._retencion_permitida_para_tipo()
+        self.retencion_group.setVisible(allowed)
+        self.retencion_group.setEnabled(allowed and getattr(self, "_retencion_catalog_ok", True))
+        with QSignalBlocker(self.retencion_checkbox):
+            if not allowed:
+                self.retencion_checkbox.setChecked(False)
+        self._update_retencion_summary()
+
+    def _warn_retencion_solo_ccf(self) -> None:
+        if getattr(self, "_retencion_warning_shown", False):
+            return
+        QMessageBox.information(self, "Retención de IVA", "La retención de IVA solo aplica a CCF (03)")
+        self._retencion_warning_shown = True
+
+    def _update_retencion_group_state(self) -> None:
+        if not hasattr(self, "retencion_checkbox"):
+            return
+        if not self._retencion_permitida_para_tipo():
+            self._apply_retencion_visibility()
+            return
+        if not getattr(self, "_retencion_catalog_ok", True):
+            self.retencion_checkbox.setEnabled(False)
+            self.retencion_checkbox.setChecked(False)
+            self._update_retencion_summary()
+            return
+        cliente = self.selected_cliente or {}
+        nit_cliente = solo_digitos(str(get_field(cliente, "nit", "") or ""))
+        nrc_cliente = solo_digitos(str(get_field(cliente, "nrc", "") or ""))
+        tipo_contribuyente = (
+            str(get_field(cliente, "tipoContribuyente", "") or "")
+            or str(get_field(cliente, "tipo_contribuyente", "") or "")
+        )
+        should_enable = bool(nit_cliente or nrc_cliente or tipo_contribuyente)
+        self.retencion_checkbox.setEnabled(should_enable)
+        if not should_enable:
+            self.retencion_checkbox.setChecked(False)
+        self._update_retencion_summary()
 
     def _eliminar_fila(self, row, col):
         if col == 5:
@@ -1421,6 +1688,44 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                     QMessageBox.No,
                 )
                 if respuesta != QMessageBox.Yes:
+                    return
+
+        if self.retencion_checkbox.isChecked():
+            if not self._retencion_permitida_para_tipo():
+                self._warn_retencion_solo_ccf()
+                self.retencion_checkbox.setChecked(False)
+            else:
+                if not getattr(self, "_retencion_catalog_ok", False):
+                    QMessageBox.warning(
+                        self,
+                        "Retención",
+                        "No se pudo cargar el catálogo de retenciones (CAT-006).",
+                    )
+                    return
+                base, reten = self._compute_retencion_values()
+                tasa = self._retencion_rate_pct()
+                if tasa <= 0:
+                    QMessageBox.warning(self, "Retención", "La tasa de retención debe ser mayor a 0%.")
+                    return
+                if base <= 0 or reten <= 0:
+                    QMessageBox.warning(
+                        self,
+                        "Retención",
+                        "Para aplicar retención, la base sujeta y el monto retenido deben ser mayores a 0.",
+                    )
+                    return
+                codigo = self._retencion_codigo_value().strip()
+                if not codigo:
+                    QMessageBox.warning(self, "Retención", "Seleccione un código de retención válido (CAT-006).")
+                    return
+                geo_emisor = self.retencion_geo_emisor_combo.currentData()
+                geo_receptor = self.retencion_geo_receptor_combo.currentData()
+                if not (self._valid_geo_code(geo_emisor) and self._valid_geo_code(geo_receptor)):
+                    QMessageBox.warning(
+                        self,
+                        "Retención",
+                        "Debe definir geocódigos emisor y receptor en el rango 01–22.",
+                    )
                     return
 
         self.accept()
@@ -2802,6 +3107,45 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.email_edit = QLineEdit()
         self.email_edit.setPlaceholderText("Correo electrónico")
         right_layout.addWidget(self.email_edit)
+
+        self.retencion_group = QGroupBox("Retención de IVA")
+        retencion_layout = QVBoxLayout(self.retencion_group)
+        retencion_layout.setContentsMargins(9, 9, 9, 9)
+        self.retencion_checkbox = QCheckBox("Aplicar retención de IVA")
+        retencion_layout.addWidget(self.retencion_checkbox)
+        self._retencion_catalog_ok = False
+
+        self.retencion_codigo_combo = QComboBox()
+        self.retencion_tasa_spin = QDoubleSpinBox()
+        self.retencion_tasa_spin.setRange(0, 100)
+        self.retencion_tasa_spin.setDecimals(3)
+        self.retencion_tasa_spin.setSingleStep(0.1)
+        self.retencion_tasa_spin.setValue(1.0)
+        self.retencion_geo_emisor_combo = QComboBox()
+        self.retencion_geo_receptor_combo = QComboBox()
+        for code in [f"{i:02d}" for i in range(1, 23)]:
+            self.retencion_geo_emisor_combo.addItem(code, code)
+            self.retencion_geo_receptor_combo.addItem(code, code)
+
+        ret_form = QFormLayout()
+        ret_form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        ret_form.addRow("Código MH (CAT-006)", self.retencion_codigo_combo)
+        ret_form.addRow("Tasa (%)", self.retencion_tasa_spin)
+        ret_form.addRow("Geo emisor (01-22)", self.retencion_geo_emisor_combo)
+        ret_form.addRow("Geo receptor (01-22)", self.retencion_geo_receptor_combo)
+        retencion_layout.addLayout(ret_form)
+
+        self.retencion_base_label = QLabel("Base sujeta: $0.00")
+        self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
+        retencion_layout.addWidget(self.retencion_base_label)
+        retencion_layout.addWidget(self.retencion_iva_label)
+        right_layout.addWidget(self.retencion_group)
+        self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
+        self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
+        self.retencion_codigo_combo.currentIndexChanged.connect(self._update_retencion_summary)
+        self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
+        self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
+
         right_layout.addStretch(1)
 
         right_layout.addWidget(QLabel("No. Remisión:"))
@@ -2906,8 +3250,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._actualizar_resumen()
         self._on_descuento_tipo_changed()
         self._update_condicion_pago_fields()
+        self._load_retencion_catalog()
         self.load_payment_data(venta_extra)
         self._autofill_remision_fields(venta_extra)
+        self._update_retencion_summary()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -3139,7 +3485,105 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
     def _actualizar_resumen(self):
         total = sum(item.get("total", 0) for item in self.venta_items)
-        self.total_label.setText(f"Total venta (con IVA): ${total:.2f}")
+        base_ret, iva_ret = self._compute_retencion_values()
+        if self.retencion_checkbox.isChecked() and iva_ret > 0:
+            neto = max(total - float(iva_ret), 0.0)
+            tasa = float(self._retencion_rate_pct())
+            self.total_label.setText(
+                f"Total venta (con IVA): ${total:.2f}  Retención {tasa:.3f}%: ${iva_ret:.2f}  Neto: ${neto:.2f}"
+            )
+        else:
+            self.total_label.setText(f"Total venta (con IVA): ${total:.2f}")
+        self._update_retencion_summary()
+
+    def _retencion_rate_pct(self) -> Decimal:
+        if hasattr(self, "retencion_tasa_spin"):
+            try:
+                return Decimal(str(self.retencion_tasa_spin.value()))
+            except Exception:
+                return Decimal("0")
+        return Decimal("0")
+
+    def _retencion_codigo_value(self) -> str:
+        if hasattr(self, "retencion_codigo_combo"):
+            data = self.retencion_codigo_combo.currentData()
+            if data not in (None, ""):
+                return str(data)
+        return "22"
+
+    def _valid_geo_code(self, value: str | None) -> bool:
+        if not value:
+            return False
+        digits = "".join(ch for ch in str(value) if ch.isdigit())
+        if not digits:
+            return False
+        try:
+            numero = int(digits)
+        except ValueError:
+            return False
+        return 1 <= numero <= 22
+
+    def _load_retencion_catalog(self) -> None:
+        self._retencion_catalog_ok = False
+        try:
+            from retenciones.catalogos_retencion import CatalogosRetencion
+
+            catalogos = CatalogosRetencion()
+            entries = catalogos.entries("CAT-006")
+            self.retencion_codigo_combo.clear()
+            for entry in entries:
+                label = f"{entry.code} – {entry.label}" if entry.label else entry.code
+                self.retencion_codigo_combo.addItem(label, entry.code)
+            idx = self.retencion_codigo_combo.findData("22")
+            if idx >= 0:
+                self.retencion_codigo_combo.setCurrentIndex(idx)
+            self._retencion_catalog_ok = True
+            self.retencion_group.setEnabled(True)
+        except Exception as exc:
+            logger.warning("No se pudo cargar catálogo CAT-006: %s", exc, exc_info=True)
+            self.retencion_codigo_combo.clear()
+            self.retencion_codigo_combo.addItem("Catálogo no disponible", "")
+            self.retencion_checkbox.setChecked(False)
+            self.retencion_group.setEnabled(False)
+            QMessageBox.warning(
+                self,
+                "Catálogo de retención",
+                "No se pudo cargar el catálogo CAT-006. "
+                "La retención de IVA se desactivará para esta venta.\n\n"
+                f"Detalle: {exc}",
+            )
+
+    def _compute_retencion_values(self) -> tuple[Decimal, Decimal]:
+        """Return the taxable base and retained VAT for gravada items."""
+
+        sumas = Decimal("0")
+        descuentos = Decimal("0")
+        q8 = Decimal("0.00000001")
+        for item in self.venta_items:
+            tipo_fiscal = (item.get("tipo_fiscal") or "").lower()
+            if tipo_fiscal != "venta gravada":
+                continue
+            sumas += Decimal(str(item.get("subtotal", 0)))
+            descuento_monto = Decimal(str(item.get("descuento_monto", 0)))
+            descuentos += (descuento_monto / IVA_FACTOR).quantize(q8)
+
+        base = sumas - descuentos
+        if base < 0:
+            base = Decimal("0")
+        base = base.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        tasa_pct = self._retencion_rate_pct()
+        tasa = tasa_pct / Decimal("100")
+        iva_retenido = (base * tasa).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        return base, iva_retenido
+
+    def _update_retencion_summary(self) -> None:
+        if not hasattr(self, "retencion_base_label"):
+            return
+        base, iva_retenido = self._compute_retencion_values()
+        self.retencion_base_label.setText(f"Base sujeta: ${base:.2f}")
+        self.retencion_iva_label.setText(
+            f"IVA retenido ({float(self._retencion_rate_pct()):.3f}%): ${iva_retenido:.2f}"
+        )
 
     def _eliminar_fila(self, row, col):
         if col == 5:
@@ -3197,6 +3641,39 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 )
                 if respuesta != QMessageBox.Yes:
                     return
+        if self.retencion_checkbox.isChecked():
+            if not getattr(self, "_retencion_catalog_ok", False):
+                QMessageBox.warning(
+                    self,
+                    "Retención",
+                    "No se pudo cargar el catálogo de retenciones (CAT-006).",
+                )
+                return
+            base, reten = self._compute_retencion_values()
+            tasa = self._retencion_rate_pct()
+            if tasa <= 0:
+                QMessageBox.warning(self, "Retención", "La tasa de retención debe ser mayor a 0%.")
+                return
+            if base <= 0 or reten <= 0:
+                QMessageBox.warning(
+                    self,
+                    "Retención",
+                    "Para aplicar retención, la base sujeta y el monto retenido deben ser mayores a 0.",
+                )
+                return
+            codigo = self._retencion_codigo_value().strip()
+            if not codigo:
+                QMessageBox.warning(self, "Retención", "Seleccione un código de retención válido (CAT-006).")
+                return
+            geo_emisor = self.retencion_geo_emisor_combo.currentData()
+            geo_receptor = self.retencion_geo_receptor_combo.currentData()
+            if not (self._valid_geo_code(geo_emisor) and self._valid_geo_code(geo_receptor)):
+                QMessageBox.warning(
+                    self,
+                    "Retención",
+                    "Debe definir geocódigos emisor y receptor en el rango 01–22.",
+                )
+                return
         self.accept()
 
     def get_data(self):
@@ -3248,7 +3725,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             self.referencia_edit.text().strip() if condicion_operacion == 2 else ""
         )
 
-        return {
+        data = {
             "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
             "tipo_venta": (
@@ -3287,6 +3764,21 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "pago_periodo": periodo_codigo,
             "pago_referencia": referencia,
         }
+        base, iva_retenido = self._compute_retencion_values()
+        geo_emisor = self.retencion_geo_emisor_combo.currentData() if hasattr(self, "retencion_geo_emisor_combo") else None
+        geo_receptor = self.retencion_geo_receptor_combo.currentData() if hasattr(self, "retencion_geo_receptor_combo") else None
+        data["_ui_retencion"] = normalize_retencion_payload(
+            {
+                "enabled": self.retencion_checkbox.isChecked(),
+                "base": float(base),
+                "montoRetenido": float(iva_retenido),
+                "codigoRetencionMH": self._retencion_codigo_value(),
+                "tasa": float(self._retencion_rate_pct()),
+                "geoEmisor": geo_emisor,
+                "geoReceptor": geo_receptor,
+            }
+        ) or {"enabled": False, "base": 0.0, "montoRetenido": 0.0, "codigoRetencionMH": "22", "tasa": 1.0}
+        return data
 
     def _update_condicion_pago_fields(self):
         is_credit = self.condicion_pago_combo.currentData() == 2
@@ -3349,6 +3841,57 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             if referencia:
                 self.referencia_edit.setText(str(referencia))
         self._update_condicion_pago_fields()
+        self._load_retencion_state(data)
+
+    def _load_retencion_state(self, extra: Mapping[str, Any]) -> None:
+        if not hasattr(self, "retencion_checkbox"):
+            return
+        ret_block = None
+        if isinstance(extra, Mapping):
+            ret_block = extra.get("_ui_retencion") or extra.get("retencion_iva")
+        elif isinstance(extra, str):
+            try:
+                parsed = json.loads(extra)
+            except (TypeError, ValueError):
+                parsed = {}
+            if isinstance(parsed, Mapping):
+                ret_block = parsed.get("_ui_retencion") or parsed.get("retencion_iva")
+        normalized = normalize_retencion_payload(ret_block) if ret_block else None
+        with QSignalBlocker(self.retencion_checkbox):
+            self.retencion_checkbox.setChecked(bool(normalized and normalized.get("enabled")))
+        if normalized:
+            base = normalized.get("base") or normalized.get("baseSujeta") or 0.0
+            reten = normalized.get("montoRetenido") or normalized.get("ivaRetenido") or 0.0
+            tasa = normalized.get("tasa")
+            if tasa not in (None, ""):
+                try:
+                    self.retencion_tasa_spin.setValue(float(tasa))
+                except Exception:
+                    pass
+            codigo = normalized.get("codigoRetencionMH")
+            if codigo:
+                idx = self.retencion_codigo_combo.findData(str(codigo))
+                if idx >= 0:
+                    self.retencion_codigo_combo.setCurrentIndex(idx)
+            geo_emisor = normalized.get("geoEmisor")
+            geo_receptor = normalized.get("geoReceptor")
+            if geo_emisor:
+                idx = self.retencion_geo_emisor_combo.findData(str(geo_emisor))
+                if idx >= 0:
+                    self.retencion_geo_emisor_combo.setCurrentIndex(idx)
+            if geo_receptor:
+                idx = self.retencion_geo_receptor_combo.findData(str(geo_receptor))
+                if idx >= 0:
+                    self.retencion_geo_receptor_combo.setCurrentIndex(idx)
+            self.retencion_base_label.setText(f"Base sujeta: ${float(base):.2f}")
+            self.retencion_iva_label.setText(
+                f"IVA retenido ({float(self._retencion_rate_pct()):.3f}%): ${float(reten):.2f}"
+            )
+        else:
+            self.retencion_base_label.setText("Base sujeta: $0.00")
+            self.retencion_iva_label.setText(
+                f"IVA retenido ({float(self._retencion_rate_pct()):.3f}%): $0.00"
+            )
 
     def _autofill_remision_fields(self, venta_extra):
         data = {}
@@ -4987,6 +5530,7 @@ class DTECorrelativoConfigDialog(QDialog):
         "04": "Nota de remisión",
         "05": "Nota de crédito",
         "06": "Nota de débito",
+        "07": "Comprobante de retención",
     }
 
     def __init__(self, db=None, prefijo="DTE-01-S001P001", parent=None):
@@ -5035,7 +5579,7 @@ class DTECorrelativoConfigDialog(QDialog):
         self.correlativos_table.setRowCount(0)
         self._correlativo_spins = {}
         self._original_correlativos = {}
-        for tipo in ["01", "03", "04", "05", "06"]:
+        for tipo in ["01", "03", "04", "05", "06", "07"]:
             row = self.correlativos_table.rowCount()
             self.correlativos_table.insertRow(row)
             tipo_desc = self._TIPO_DTE_DESC.get(tipo, tipo)
@@ -5984,5 +6528,3 @@ class UserConfigDialog(QDialog):
             )
             return False
         return True
-
-

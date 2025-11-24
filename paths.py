@@ -145,6 +145,7 @@ DTES_DIR = str(ensure_user_dir("dtes"))
 DTE_FALLIDOS_DIR = str(ensure_user_dir("dte_fallidos"))
 DTE_FIRMADO_DIR = str(ensure_user_dir("dte firmado"))
 DTES_PENDIENTES_DIR = str(ensure_user_dir("dtes_pendientes"))
+RETENCIONES_DIR = str(ensure_user_dir("retenciones"))
 FACTURAS_ARCHIVE_CF_DIR = str(ensure_user_dir("facturas", "consumidor_final"))
 FACTURAS_ARCHIVE_CREDITO_DIR = str(ensure_user_dir("facturas", "credito_fiscal"))
 

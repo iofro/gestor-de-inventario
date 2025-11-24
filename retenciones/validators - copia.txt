@@ -1,0 +1,76 @@
+from __future__ import annotations
+
+import json
+import logging
+from pathlib import Path
+from typing import Any, Mapping
+
+from jsonschema import Draft7Validator
+
+from utils import resource_path
+
+from .catalogos_retencion import CatalogosRetencion
+
+logger = logging.getLogger(__name__)
+
+SCHEMA_PATH = resource_path("svfe-json-schemas", "fe-cr-v1.json")
+
+
+def _load_validator() -> Draft7Validator:
+    schema_path = Path(SCHEMA_PATH)
+    with open(schema_path, "r", encoding="utf-8") as handle:
+        schema = json.load(handle)
+    return Draft7Validator(schema)
+
+
+_VALIDATOR = _load_validator()
+
+
+def validate_schema(payload: Mapping[str, Any]) -> None:
+    _VALIDATOR.validate(payload)
+
+
+def validate_catalogs(payload: Mapping[str, Any], catalogos: CatalogosRetencion | None = None) -> None:
+    catalogos = catalogos or CatalogosRetencion()
+
+    ident = payload.get("identificacion") or {}
+    catalogos.ensure("CAT-001", ident.get("ambiente"), field="identificacion.ambiente")
+    catalogos.ensure("CAT-002", ident.get("tipoDte"), field="identificacion.tipoDte")
+    catalogos.ensure("CAT-003", str(ident.get("tipoModelo")), field="identificacion.tipoModelo")
+    catalogos.ensure("CAT-004", str(ident.get("tipoOperacion")), field="identificacion.tipoOperacion")
+
+    emisor = payload.get("emisor") or {}
+    if emisor.get("tipoEstablecimiento"):
+        catalogos.ensure("CAT-009", emisor["tipoEstablecimiento"], field="emisor.tipoEstablecimiento")
+
+    receptor = payload.get("receptor") or {}
+    if receptor.get("tipoDocumento"):
+        catalogos.ensure("CAT-022", receptor["tipoDocumento"], field="receptor.tipoDocumento")
+
+    for idx, item in enumerate(payload.get("cuerpoDocumento") or [], start=1):
+        catalogos.ensure("CAT-002", item.get("tipoDte"), field=f"cuerpoDocumento[{idx - 1}].tipoDte")
+        catalogos.ensure(
+            "CAT-006",
+            item.get("codigoRetencionMH"),
+            field=f"cuerpoDocumento[{idx - 1}].codigoRetencionMH",
+        )
+
+
+def validate_cr(payload: Mapping[str, Any], catalogos: CatalogosRetencion | None = None) -> None:
+    validate_schema(payload)
+    validate_catalogs(payload, catalogos=catalogos)
+    ident = payload.get("identificacion") or {}
+    cuerpo = (payload.get("cuerpoDocumento") or [{}])[0]
+    codigo_origen = cuerpo.get("codGeneracion") or cuerpo.get("numDocumento")
+    base = cuerpo.get("montoSujetoGrav") or 0
+    retenido = cuerpo.get("ivaRetenido") or 0
+    logger.info(
+        "CR.VALIDATE codigoGeneracion=%s codigoGeneracionOrigen=%s base=%.2f retenido=%.2f",
+        ident.get("codigoGeneracion"),
+        codigo_origen,
+        float(base),
+        float(retenido),
+    )
+
+
+__all__ = ["validate_schema", "validate_catalogs", "validate_cr", "SCHEMA_PATH"]

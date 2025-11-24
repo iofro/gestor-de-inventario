@@ -41,7 +41,7 @@ from utils.catalogos import (
 )
 import warnings
 import xml.etree.ElementTree as ET
-from utils.fiscal_extra import normalize_tipo_fiscal
+from utils.fiscal_extra import normalize_tipo_fiscal, normalize_retencion_payload, parse_retencion_values
 from utils.monto import monto_a_texto_sv, iva_item, to_base_iva, d2, d4, d8, money
 from utils.line_totals import compute_line_totals
 from utils.sanitize import limpiar_documentos, limpiar_doc, solo_digitos
@@ -52,6 +52,8 @@ from utils.fecha import fecha_emision_hoy_str, TZ_EL_SALVADOR
 from svfe import config as svfe_config
 from utils import resource_path
 from utils.env import env_flag
+from utils.certificates import verify_certificate_setup
+import base64
 
 FISCAL_TOTAL_FIELDS = {
     "sumas",
@@ -66,6 +68,7 @@ FISCAL_TOTAL_FIELDS = {
     "descu_exenta",
     "descu_gravada",
     "sub_total_ventas",
+    "iva_rete1",
 }
 from pathlib import Path
 import jsonpatch
@@ -83,6 +86,7 @@ from paths import (
     NOTAS_DEBITO_DIR,
     FACTURAS_ARCHIVE_CF_DIR,
     FACTURAS_ARCHIVE_CREDITO_DIR,
+    CERT_UPLOAD_DIR,
 )
 from xml.etree.ElementTree import Element, SubElement
 
@@ -1390,6 +1394,136 @@ def _load_datos_negocio():
         except Exception:
             return {}
     return {}
+
+
+def _load_config_negocio() -> dict[str, Any]:
+    if os.path.exists(CONFIG_NEGOCIO_PATH):
+        try:
+            with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                data = json.load(fh)
+                return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+    return {}
+
+
+def _normalize_env_code(value: Any) -> str:
+    text = (str(value or "")).strip().lower()
+    if text in {"01", "1", "produccion", "producción", "production", "prod"}:
+        return "01"
+    return "00"
+
+
+def _resolve_env_config_data(config: Mapping[str, Any], ambiente: str) -> dict[str, Any]:
+    if not isinstance(config, Mapping):
+        return {}
+    candidates = []
+    if ambiente == "01":
+        candidates = ["01", "produccion", "production", "prod"]
+    else:
+        candidates = ["00", "pruebas", "apitest"]
+    for key in candidates:
+        value = config.get(key)
+        if isinstance(value, dict):
+            return value
+    return {}
+
+
+def _decode_secret(raw: Any) -> str:
+    if not isinstance(raw, str):
+        return ""
+    text = raw.strip()
+    if not text:
+        return ""
+    try:
+        decoded = base64.b64decode(text.encode("utf-8"), validate=True)
+        return decoded.decode("utf-8")
+    except Exception:
+        return text
+
+
+def _collect_identity_snapshot(data: dict) -> dict[str, Any]:
+    datos = _load_datos_negocio()
+    config = _load_config_negocio()
+    ident = data.get("identificacion") or data.get("identificador") or {}
+    ambiente_code = _normalize_env_code(
+        ident.get("ambiente")
+        or ((datos.get("dte_api") or {}).get("ambiente"))
+        or config.get("ambiente")
+    )
+    env_conf = _resolve_env_config_data(config, ambiente_code)
+    fe_conf = env_conf.get("firma_electronica") if isinstance(env_conf, dict) else {}
+    nit_emisor = solo_digitos((data.get("emisor") or {}).get("nit") or "")
+    nit_negocio = solo_digitos(datos.get("nit") or "")
+    nit_config = solo_digitos((fe_conf or {}).get("nit") or "")
+    password = _decode_secret((fe_conf or {}).get("passwordPri"))
+    try:
+        diag = verify_certificate_setup(
+            nit_config or nit_negocio or nit_emisor,
+            password,
+            CERT_UPLOAD_DIR,
+        )
+        nit_cert = solo_digitos(diag.nit_crt or "")
+    except Exception:
+        nit_cert = ""
+    values = [nit_emisor, nit_negocio, nit_config, nit_cert]
+    expected = next((v for v in values if v), "")
+    mismatch = len({v for v in values if v}) > 1
+    msg = (
+        "IDENTIDAD: emisor={emisor} negocio={negocio} firma={firma} cert={cert} estado={estado}"
+    ).format(
+        emisor=nit_emisor or "-",
+        negocio=nit_negocio or "-",
+        firma=nit_config or "-",
+        cert=nit_cert or "-",
+        estado="MISMATCH" if mismatch else "OK",
+    )
+    logger.info(msg)
+    print(msg)
+    if mismatch:
+        raise RuntimeError(
+            "Los NIT configurados no coinciden (emisor={emisor}, negocio={negocio}, firma={firma}, certificado={certificado}). "
+            "Revisa Configuración > Negocio y > Facturación Electrónica.".format(
+                emisor=nit_emisor or "?", negocio=nit_negocio or "?",
+                firma=nit_config or "?", certificado=nit_cert or "?"
+            )
+        )
+    return {
+        "nit_emisor": nit_emisor,
+        "nit_negocio": nit_negocio,
+        "nit_config": nit_config,
+        "nit_cert": nit_cert,
+        "expected_nit": expected,
+        "ambiente": ambiente_code,
+    }
+
+
+def _validate_token_identity(auth_header: str | None, snapshot: dict[str, Any] | None) -> None:
+    if snapshot is None:
+        return
+    claims = decode_jwt_claims(auth_header or "")
+    token_nit = solo_digitos(
+        claims.get("c_nit")
+        or claims.get("nit")
+        or claims.get("nitUsuario")
+        or claims.get("sub")
+        or ""
+    )
+    expected = snapshot.get("expected_nit") or ""
+    status = "OK" if not token_nit or not expected or token_nit == expected else "MISMATCH"
+    msg = (
+        "IDENTIDAD.TOKEN: token={token} esperado={esperado} estado={estado}"
+    ).format(token=token_nit or "-", esperado=expected or "-", estado=status)
+    logger.info(msg)
+    print(msg)
+    if status == "MISMATCH":
+        raise RuntimeError(
+            "El token obtenido de Hacienda pertenece al NIT {token} pero se esperaba {esperado}. "
+            "Vuelve a autenticarse en Configuración > Facturación Electrónica.".format(
+                token=token_nit or "desconocido", esperado=expected or "desconocido"
+            )
+        )
+    snapshot["nit_token"] = token_nit
 
 
 def get_default_modo_transmision() -> str:
@@ -3237,6 +3371,73 @@ def generar_dte_json(
         filtered = {k: v for k, v in fiscal.items() if k in FISCAL_TOTAL_FIELDS}
         _merge_fiscal_source(filtered)
 
+    def _extract_ui_retencion(*sources: Any) -> dict | None:
+        for src in sources:
+            current = src
+            if isinstance(current, str):
+                try:
+                    current = json.loads(current)
+                except Exception:
+                    current = None
+            if not isinstance(current, dict):
+                continue
+            raw = current.get("_ui_retencion") or current.get("retencion_iva")
+            block = normalize_retencion_payload(raw)
+            if block is not None:
+                return block
+        return None
+
+    def _retencion_amounts(block: dict | None) -> tuple[bool, Decimal, Decimal, dict[str, Any]]:
+        if not block:
+            return False, D("0"), D("0"), {}
+        enabled, base_dec, reten_dec, codigo, tasa_pct, geo_emisor, geo_receptor = parse_retencion_values(block)
+        meta = {
+            "codigo": codigo,
+            "tasa": tasa_pct,
+            "geoEmisor": geo_emisor,
+            "geoReceptor": geo_receptor,
+        }
+        return enabled, base_dec, reten_dec, meta
+
+    def _log_retencion_diag(stage: str, tipo_dte: str, resumen: Mapping[str, Any], block: dict | None, codigo: str | None) -> None:
+        enabled, base_dec, reten_dec, meta = _retencion_amounts(block)
+        total_raw = resumen.get("totalPagar") or resumen.get("montoTotalOperacion") or 0
+        try:
+            total_dec = D(str(total_raw))
+        except Exception:
+            total_dec = D("0")
+        logger.info(
+            "RETENCION.%s enabled=%s base=%.2f retenido=%.2f tipo=%s total=%.2f codigo=%s tasa=%.3f geo=%s/%s",
+            stage,
+            enabled,
+            float(base_dec),
+            float(reten_dec),
+            tipo_dte,
+            float(total_dec),
+            codigo or "-",
+            float(meta.get("tasa") or 0),
+            meta.get("geoEmisor") or "-",
+            meta.get("geoReceptor") or "-",
+        )
+
+    retencion_block = None
+    if tipo_dte == "03":
+        retencion_block = _extract_ui_retencion(
+            extra,
+            credit_extra if isinstance(credit_extra, dict) else None,
+            venta if isinstance(venta, dict) else None,
+        )
+    ret_enabled, ret_base_dec, ret_monto_dec, ret_meta = _retencion_amounts(retencion_block)
+    if ret_enabled:
+        fiscal_totals["iva_rete1"] = money(ret_monto_dec)
+        fiscal_totals["_retencion_base"] = money(ret_base_dec)
+    elif "iva_rete1" not in fiscal_totals:
+        fiscal_totals["iva_rete1"] = D("0")
+    fiscal_totals["_retencion_enabled"] = ret_enabled
+    if retencion_block:
+        fiscal_totals["_ui_retencion"] = retencion_block
+        fiscal_totals["_retencion_meta"] = ret_meta
+
     if extra.get("es_ticket"):
         tipo_dte = "01"
 
@@ -3927,6 +4128,18 @@ def generar_dte_json(
         cuerpo=cuerpo,
     )
 
+    resumen_rete = money(D(str(resumen.get("ivaRete1", 0))))
+    if ret_enabled:
+        expected_rete = money(ret_monto_dec)
+        if expected_rete != resumen_rete:
+            logger.warning(
+                "RETENCION.MISMATCH tipo=%s codigo=%s esperado=%.2f resumen=%.2f",
+                tipo_dte,
+                codigo_generacion,
+                float(expected_rete),
+                float(resumen_rete),
+            )
+
     commission_total = money(commission_total)
 
     descu_no_suj = money(D(str(resumen.get("descuNoSuj", 0))))
@@ -4282,6 +4495,8 @@ def generar_dte_json(
         # del DTE final y se eliminará después de la validación.
         "extra": extra,
     }
+
+    _log_retencion_diag("SEND", tipo_dte, resumen, retencion_block, identificacion.get("codigoGeneracion"))
 
     try:
         validate_dte_json(
@@ -6093,7 +6308,12 @@ def _save_hacienda_payload(sobre: Mapping[str, Any], serialized: str | bytes | N
 
 
 def _post_dte_with_config(
-    url: str, documento: str, dte_data: dict | None, config: Mapping[str, Any] | None
+    url: str,
+    documento: str,
+    dte_data: dict | None,
+    config: Mapping[str, Any] | None,
+    *,
+    identity_snapshot: dict | None = None,
 ) -> dict:
     """Wrapper de :func:`_post_dte` que omite ``ambiente_config`` cuando no existe."""
 
@@ -6124,9 +6344,18 @@ def _post_dte_with_config(
         elif isinstance(config, AbcMapping):
             ambiente_cfg = config.get("ambiente")
 
+    # Prefer the ambiente used to assemble the payload over stale config.
+    snapshot_env = None
+    if identity_snapshot:
+        snapshot_env = identity_snapshot.get("ambiente")
+    effective_env = snapshot_env if snapshot_env else ambiente_cfg
+
     kwargs = {}
-    if ambiente_cfg is not None:
-        kwargs["ambiente_config"] = ambiente_cfg
+    if effective_env is not None:
+        kwargs["ambiente_config"] = effective_env
+
+    if identity_snapshot is not None:
+        kwargs["identity_snapshot"] = identity_snapshot
 
     if len(required_positional) >= 4:
         return func(url, documento, documento, dte_data, **kwargs)
@@ -6411,6 +6640,7 @@ def _post_dte(
     dui: str | None = None,
     client_id: str | None = None,
     ambiente_config: str | None = None,
+    identity_snapshot: dict | None = None,
 ) -> dict:
     pu = urlparse(url)
     assert pu.netloc in {
@@ -6450,6 +6680,7 @@ def _post_dte(
         },
         ambiente=ambiente_config,
     ).copy()
+    _validate_token_identity(headers.get("Authorization"), identity_snapshot)
     if client_id:
         headers.setdefault("cliente-id", str(client_id))
 
@@ -7036,6 +7267,48 @@ def _resumen_allows_condicion_operacion(tipo: str | None) -> bool:
     return _contains(resumen_schema)
 
 
+def _log_jws_before_post(data: dict, token: str) -> None:
+    debug_jws = env_flag("DTE_DEBUG_JWS", True)
+    if not debug_jws:
+        return
+    try:
+        header_b64, payload_b64, sig_b64 = token.split(".")
+        pad = "=" * (-len(payload_b64) % 4)
+        payload_bytes = base64.urlsafe_b64decode(payload_b64 + pad)
+        post_payload_sha = hashlib.sha256(payload_bytes).hexdigest()
+        token_sha = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        canon_now = jws._canon_json(data)
+        print("POST: JSON_CANON", canon_now)
+        pre_sha_post = jws._sha256(canon_now)
+        head = token[:16]
+        tail = token[-16:] if len(token) >= 16 else token
+        msg = (
+            f"POST: TOKEN_SHA={token_sha} TOKEN_LEN={len(token)} "
+            f"PAYLOAD_SHA={post_payload_sha} PRE_SHA_POST={pre_sha_post} "
+            f"HEAD={head} TAIL={tail}"
+        )
+        logger.info(msg)
+        print(msg)
+        if post_payload_sha != pre_sha_post:
+            logger.warning(
+                "POST: JWS_MISMATCH payload hash differs from canon(data) antes del POST"
+            )
+            if env_flag("DTE_STRICT_JWS", False):
+                raise RuntimeError(
+                    "JWS_MISMATCH: el documento cambió después de firmarlo. "
+                    "Genera nuevamente el DTE antes de enviarlo."
+                )
+            print(
+                "POST: WARNING mismatch entre payload firmado y payload en memoria; "
+                "continúa con el token firmado."
+            )
+            return
+    except RuntimeError:
+        raise
+    except Exception:
+        logger.exception("POST: no se pudo verificar el token JWS")
+
+
 def _enviar_documento(
     db: DB, doc_id: int, data: dict, modo: str | None = "normal", jws_token: str | None = None
 ) -> dict:
@@ -7192,6 +7465,7 @@ def _enviar_documento(
                     doc_ref,
                     payload_subset,
                 )
+    identity_snapshot = _collect_identity_snapshot(data)
     print("DTE: BEFORE_SIGN")
     signed = jws_token or jws.sign_json(data)
     print("DTE: SIGNED_OK")
@@ -7224,7 +7498,14 @@ def _enviar_documento(
 
     try:
         print("DTE: BEFORE_POST")
-        respuesta = _post_dte_with_config(url, signed, meta, config)
+        _log_jws_before_post(data, signed)
+        respuesta = _post_dte_with_config(
+            url,
+            signed,
+            meta,
+            config,
+            identity_snapshot=identity_snapshot,
+        )
         sello = (
             respuesta.get("sello")
             or respuesta.get("selloRecepcion")

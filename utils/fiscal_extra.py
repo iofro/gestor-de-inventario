@@ -1,8 +1,9 @@
 """Utilities for fiscal totals stored alongside sales."""
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any, Mapping, Sequence
+import json
 
 from utils.monto import d8
 
@@ -22,6 +23,8 @@ _ALLOWED_FISCAL_KEYS = {
     "descu_gravada",
     "sub_total_ventas",
 }
+_RETENCION_RATE = D("0.01")
+_CENT = D("0.01")
 
 
 def normalize_tipo_fiscal(value: Any) -> str:
@@ -197,4 +200,99 @@ def build_fiscal_extra(data: Mapping[str, Any]) -> dict[str, Any]:
                     break
     result["precios_incluyen_iva"] = precios_flag
 
+    retencion_block = normalize_retencion_payload(data.get("_ui_retencion"))
+    if retencion_block is not None:
+        result["_ui_retencion"] = retencion_block
+        result["iva_rete1"] = retencion_block.get("montoRetenido", 0.0)
+    elif "iva_rete1" not in result:
+        result["iva_rete1"] = 0.0
+
     return result
+
+
+def _retencion_sources(raw: Any) -> Mapping[str, Any] | None:
+    if isinstance(raw, Mapping):
+        return raw
+    if isinstance(raw, str):
+        try:
+            parsed = json.loads(raw)
+        except (TypeError, ValueError):
+            return None
+        if isinstance(parsed, Mapping):
+            return parsed
+    return None
+
+
+def _round_cent(value: Decimal) -> Decimal:
+    return value.quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def _normalize_geo(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    digits = "".join(ch for ch in str(value) if ch.isdigit())
+    if not digits:
+        return None
+    try:
+        numero = int(digits)
+    except ValueError:
+        return None
+    if 1 <= numero <= 22:
+        return f"{numero:02d}"
+    return None
+
+
+def parse_retencion_values(raw: Any) -> tuple[bool, Decimal, Decimal, str, Decimal, str | None, str | None]:
+    """Return (enabled, base, retenido, codigoMH, tasa_pct, geoEmisor, geoReceptor)."""
+
+    source = _retencion_sources(raw) or {}
+    enabled = bool(source.get("enabled"))
+    base_raw = source.get("base")
+    if base_raw in (None, "", 0) and source.get("baseSujeta") not in (None, ""):
+        base_raw = source.get("baseSujeta")
+    base = _round_cent(_to_decimal(base_raw or 0))
+
+    tasa_raw = source.get("tasa")
+    tasa_pct = _to_decimal(tasa_raw if tasa_raw not in (None, "") else _RETENCION_RATE * 100)
+    if tasa_pct <= 0:
+        tasa_pct = _RETENCION_RATE * 100
+    tasa_decimal = tasa_pct / D("100")
+    # Aceptar tanto porcentaje (1 => 1%) como fracción explícita (0.01 => 1%)
+    if tasa_pct <= D("0.5"):
+        tasa_decimal = tasa_pct
+
+    reten_raw = source.get("montoRetenido")
+    if reten_raw in (None, "", 0):
+        reten_raw = source.get("ivaRetenido")
+    reten = _round_cent(_to_decimal(reten_raw or (base * tasa_decimal if enabled else 0)))
+    codigo = str(source.get("codigoRetencionMH") or "22")
+    geo_emisor = _normalize_geo(source.get("geoEmisor"))
+    geo_receptor = _normalize_geo(source.get("geoReceptor"))
+
+    if not enabled:
+        base = D("0")
+        reten = D("0")
+    return enabled, base, reten, codigo, tasa_pct, geo_emisor, geo_receptor
+
+
+def normalize_retencion_payload(raw: Any) -> dict[str, Any] | None:
+    """Return a JSON-friendly retention summary preserving enabled/base/monto."""
+
+    enabled, base, reten, codigo, tasa_pct, geo_emisor, geo_receptor = parse_retencion_values(raw)
+    # When nothing was provided and the checkbox was never touched, avoid storing noise.
+    if not enabled and base == D("0") and reten == D("0") and raw in (None, {}):
+        return None
+    payload = {
+        "enabled": enabled,
+        "codigoRetencionMH": codigo,
+        "tasa": float(tasa_pct),
+        "base": float(base),
+        "baseSujeta": float(base),
+        "montoRetenido": float(reten),
+        "ivaRetenido": float(reten),
+    }
+    if geo_emisor:
+        payload["geoEmisor"] = geo_emisor
+    if geo_receptor:
+        payload["geoReceptor"] = geo_receptor
+    return payload

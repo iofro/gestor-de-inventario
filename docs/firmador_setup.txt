@@ -1,0 +1,43 @@
+Pasos para dejar funcionando el firmador local (svfe-api-firmador)
+
+0) Prerrequisitos
+   - Estar en la carpeta del repositorio.
+   - Tener el .jar del firmador ya compilado (lo encuentras en svfe-api-firmador/target/svfe-api-firmador-0.1.1.jar).
+   - Contar con Java. Puedes usar el JDK incluido en svfe-api-firmador/vendor/jdk (no necesitas instalar nada en el sistema) o cualquier JDK/JRE 8+ que tengas instalado.
+
+1) Copiar el certificado
+   - Coloca el archivo .crt del NIT que usarás en svfe-api-firmador/uploads/<NIT>.crt.
+   - Si prefieres otra carpeta, define la variable de entorno CERT_UPLOAD_DIR con la ruta completa. La app y el servicio leerán de ahí.
+
+2) Definir la URL del firmador para la app
+   - Si lo correrás en tu máquina y puerto 8080, no cambies nada: la URL por defecto es http://127.0.0.1:8080/firma/firmardocumento/.
+   - Si usarás otro puerto u otra máquina, exporta SIGN_URL con la URL completa o configura sign_url en config_negocio.json.
+
+3) Levantar el servicio del firmador
+   - En PowerShell (Windows):
+       .\svfe-api-firmador\vendor\jdk\bin\java.exe -jar .\svfe-api-firmador\target\svfe-api-firmador-0.1.1.jar --server.port=8080
+   - En bash (Linux/macOS):
+       svfe-api-firmador/vendor/jdk/bin/java -jar svfe-api-firmador/target/svfe-api-firmador-0.1.1.jar --server.port=8080
+   - Ajusta --server.port si necesitas otro puerto.
+   - Deja esta terminal abierta mientras uses la aplicación; el servicio expone http://127.0.0.1:<puerto>/firma/firmardocumento/.
+
+4) Configurar credenciales y ambiente en config_negocio.json
+   - Llena el bloque firma_electronica de cada ambiente que uses (pruebas/produccion) con nit y passwordPri (Base64 opcional).
+   - Asegúrate de que el campo ambiente apunte al bloque correcto.
+
+5) Probar
+   - Ejecuta la app (python main.py) y genera/firma un DTE; debería contactarse con el servicio en http://127.0.0.1:8080/ por defecto.
+   - Si falla, revisa que el proceso Java siga activo y que el puerto no esté bloqueado o en uso.
+
+Opcional: recompilar el firmador
+   - Solo si necesitas reconstruir el .jar: instala Maven y un JDK, entra en svfe-api-firmador y ejecuta mvn clean package. El nuevo .jar quedará en target/.
+
+Solución rápida a “[WinError 2] El sistema no puede encontrar el archivo especificado”
+   - Causa más común: Windows no encuentra el ejecutable que se intenta lanzar (java.exe o el .jar).
+   - La app usa estas rutas por defecto (relativas al repositorio):
+       - binario Java: svfe-api-firmador/vendor/jdk/bin/java.exe
+       - jar del firmador: svfe-api-firmador/target/svfe-api-firmador-0.1.1.jar
+   - Verifica que ambos existen. Si falta el .jar, compila con mvn clean package dentro de svfe-api-firmador.
+   - Lanza el servicio manualmente desde la raíz del repo para probar:
+       .\svfe-api-firmador\vendor\jdk\bin\java.exe -jar .\svfe-api-firmador\target\svfe-api-firmador-0.1.1.jar --server.port=8080
+   - Si ese comando funciona, la app debería poder conectarse en http://127.0.0.1:8080/firma/firmardocumento/; si no, revisa que estés ejecutando desde el directorio del repo o ajusta SIGN_URL.

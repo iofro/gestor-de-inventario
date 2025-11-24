@@ -12,6 +12,11 @@ from pathlib import Path
 from factura_sv import generar_factura_electronica_pdf
 from ticket_pdf import generar_ticket_personalizado, generar_ticket_fe_pdf
 from dte import generar_ticket_json, generar_dte_json, d4, generar_cabecera_dte_data
+from paths import RETENCIONES_DIR, resolve_user_visible_path
+from retenciones.builder import serialize_cr
+from retenciones.catalogos_retencion import CatalogosRetencion
+from retenciones.service import RetencionCRService
+from retenciones.validators import validate_cr
 from utils.monto import D, d2, monto_a_texto_sv, iva_item, to_base_iva
 from utils.docs import (
     get_document_paths,
@@ -26,11 +31,21 @@ from utils.resumen import (
     sync_condicion_operacion_flags,
     validate_pagos_basico,
 )
+from utils.fiscal_extra import normalize_retencion_payload, parse_retencion_values
 from utils.sanitize import limpiar_documentos
 from utils.stable_json import save_file, stable_stringify
 
 
 logger = logging.getLogger(__name__)
+
+
+def _set_last_cr_result(manager, result: Mapping[str, Any] | None) -> None:
+    """Persist the latest CR outcome on the manager for UI consumption."""
+
+    try:
+        setattr(manager, "last_cr_result", result)
+    except Exception:
+        pass
 
 
 def normalize_payment_condition(data: dict) -> dict:
@@ -139,6 +154,234 @@ def _ensure_invoice_copies(
         folder_contents,
     )
 
+
+_RET_CATALOGOS: CatalogosRetencion | None | bool = None
+
+
+def _get_retencion_catalogos() -> CatalogosRetencion | None:
+    global _RET_CATALOGOS
+    if _RET_CATALOGOS is False:
+        return None
+    if _RET_CATALOGOS is None:
+        try:
+            _RET_CATALOGOS = CatalogosRetencion()
+        except Exception as exc:
+            logger.warning("CAT-006 (retención) no disponible: %s", exc)
+            _RET_CATALOGOS = False
+            return None
+    return _RET_CATALOGOS if isinstance(_RET_CATALOGOS, CatalogosRetencion) else None
+
+
+def _valid_geo_code(value: Any) -> bool:
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if not digits:
+        return False
+    try:
+        number = int(digits)
+    except ValueError:
+        return False
+    return 1 <= number <= 22
+
+
+def _normalize_geo_code(value: Any) -> str | None:
+    """Return two-digit geo code if valid, otherwise None."""
+
+    digits = "".join(ch for ch in str(value or "") if ch.isdigit())
+    if not digits:
+        return None
+    try:
+        number = int(digits)
+    except ValueError:
+        return None
+    if 1 <= number <= 22:
+        return f"{number:02d}"
+    return None
+
+
+def _append_retencion_apendice(doc: Mapping[str, Any], retencion_block: Mapping[str, Any]) -> None:
+    try:
+        enabled, base_dec, reten_dec, codigo, tasa_pct, geo_emisor, geo_receptor = parse_retencion_values(retencion_block)
+    except Exception:
+        return
+    if not enabled:
+        return
+    apendice_list = []
+    existing = doc.get("apendice")
+    if isinstance(existing, list):
+        apendice_list = list(existing)
+        apendice_list = [
+            item
+            for item in apendice_list
+            if not (isinstance(item, dict) and str(item.get("campo") or "").upper().startswith("RET_"))
+        ]
+    base_text = f"{base_dec:.2f}"
+    tasa_text = f"{tasa_pct:.3f}%"
+    entries = [
+        {"campo": "RET_COD", "etiqueta": "Código retención IVA", "valor": str(codigo)},
+        {"campo": "RET_TASA", "etiqueta": "Tasa retención IVA", "valor": tasa_text[:150]},
+        {"campo": "RET_BASE", "etiqueta": "Base sujeta retención", "valor": base_text[:150]},
+        {"campo": "RET_MONTO", "etiqueta": "IVA retenido", "valor": f"{reten_dec:.2f}"},
+    ]
+    if geo_emisor:
+        entries.append({"campo": "RET_GEOE", "etiqueta": "Geo emisor", "valor": str(geo_emisor)})
+    if geo_receptor:
+        entries.append({"campo": "RET_GEORE", "etiqueta": "Geo receptor", "valor": str(geo_receptor)})
+    apendice_list.extend(entries)
+    doc["apendice"] = apendice_list
+
+
+def _cr_output_path(payload: Mapping[str, Any]) -> Path:
+    ident = payload.get("identificacion") or {}
+    numero = str(ident.get("numeroControl") or ident.get("numero_control") or "CR").replace("-", "")
+    fecha = str(ident.get("fecEmi") or "").replace("-", "")
+    name = f"CR_{fecha or '0000'}_{numero or 'retencion'}.json"
+    base = Path(RETENCIONES_DIR)
+    base.mkdir(parents=True, exist_ok=True)
+    return base / name
+
+
+def _persist_cr_json(payload: Mapping[str, Any]) -> Path:
+    path = _cr_output_path(payload)
+    content = serialize_cr(payload, indent=2)
+    save_file(str(path), content)
+    visible = resolve_user_visible_path(str(path))
+    try:
+        import hashlib
+
+        sha = hashlib.sha256(content.encode("utf-8")).hexdigest()
+    except Exception:
+        sha = None
+    logger.info("CR guardado en %s sha256=%s", visible, sha)
+    return Path(visible)
+
+
+def _maybe_generate_cr(
+    manager,
+    venta_id: int,
+    factura_json: Mapping[str, Any],
+    retencion_block: Mapping[str, Any] | None,
+    ambiente: str,
+) -> Mapping[str, Any] | None:
+    def _skipped(reason: str, **extra: Any) -> Mapping[str, Any]:
+        result: dict[str, Any] = {"status": "skipped", "venta_id": venta_id, "reason": reason}
+        for key, value in extra.items():
+            if value is not None:
+                result[key] = value
+        return result
+
+    if not retencion_block:
+        return None
+    tipo_origen = str((factura_json.get("identificacion") or {}).get("tipoDte") or "").zfill(2)
+    if tipo_origen != "03":
+        logger.info("CR omitido: tipoDte origen %s no admite retención", tipo_origen)
+        return _skipped("CR-07 solo para DTE 03", tipo_dte=tipo_origen)
+    if not hasattr(manager, "db") or not all(
+        hasattr(manager.db, attr)
+        for attr in ("insert_retencion_cr", "get_retencion_cr", "update_retencion_cr_response")
+    ):
+        logger.debug("DB sin soporte de retenciones; se omite CR para venta %s", venta_id)
+        return _skipped("CR omitido: DB sin soporte de retención")
+    try:
+        enabled, base_dec, reten_dec, codigo, tasa_pct, geo_emisor, geo_receptor = parse_retencion_values(retencion_block)
+    except Exception as exc:
+        raise ValueError(f"Retención de IVA inválida: {exc}") from exc
+    if not enabled or base_dec <= D("0") or tasa_pct <= D("0"):
+        logger.info("Retención desactivada: enabled=%s base=%s tasa=%s", enabled, base_dec, tasa_pct)
+        return _skipped("CR omitido: retención desactivada", enabled=enabled)
+    catalogos = _get_retencion_catalogos()
+    if catalogos is None:
+        raise ValueError("Catálogo CAT-006 no disponible para retención")
+    try:
+        codigo_mh = catalogos.ensure("CAT-006", codigo, field="retencion.codigoRetencionMH")
+    except Exception as exc:
+        raise ValueError(f"Código de retención fuera de catálogo CAT-006: {exc}") from exc
+    geo_emisor_norm = _normalize_geo_code(geo_emisor)
+    geo_receptor_norm = _normalize_geo_code(geo_receptor)
+    tasa_dec = tasa_pct / D("100")
+    if tasa_pct <= D("0.5"):
+        tasa_dec = tasa_pct
+    emisor_override = None
+    receptor_override = None
+    emisor_dir = dict((factura_json.get("emisor") or {}).get("direccion") or {})
+    receptor_dir = dict((factura_json.get("receptor") or {}).get("direccion") or {})
+    if geo_emisor_norm is None:
+        geo_emisor_norm = _normalize_geo_code(emisor_dir.get("departamento")) or _normalize_geo_code(emisor_dir.get("municipio"))
+    if geo_receptor_norm is None:
+        geo_receptor_norm = _normalize_geo_code(receptor_dir.get("departamento")) or _normalize_geo_code(receptor_dir.get("municipio"))
+    if geo_emisor_norm:
+        emisor_dir["departamento"] = geo_emisor_norm
+        emisor_dir["municipio"] = geo_emisor_norm
+        emisor_override = {"direccion": emisor_dir}
+    if geo_receptor_norm:
+        receptor_dir["departamento"] = geo_receptor_norm
+        receptor_dir["municipio"] = geo_receptor_norm
+        receptor_override = {"direccion": receptor_dir}
+    try:
+        service = RetencionCRService(manager.db, catalogos=catalogos)
+        payload = service.prepare_cr(
+            venta_id,
+            factura=factura_json,
+            tasa=tasa_dec,
+            codigo_retencion=codigo_mh,
+            base_sujeta=base_dec,
+            ambiente=ambiente,
+            emisor_override=emisor_override,
+            receptor_override=receptor_override,
+        )
+        validate_cr(payload, catalogos=catalogos)
+        path = _persist_cr_json(payload)
+        record = manager.db.get_retencion_cr(venta_id) or {}
+        estado = str(record.get("estado") or "PENDIENTE").upper()
+        logger.info(
+            "CR.SAVE venta_id=%s db_id=%s path=%s",
+            venta_id,
+            record.get("id"),
+            path,
+        )
+        return {
+            "status": "created",
+            "venta_id": venta_id,
+            "payload": payload,
+            "path": str(path),
+            "db_id": record.get("id"),
+            "estado": estado,
+        }
+    except ValueError as exc:
+        existing = None
+        try:
+            existing = manager.db.get_retencion_cr(venta_id)
+        except Exception:
+            existing = None
+        message = str(exc)
+        if message.startswith("Ya existe un CR-07") or "Ya existe un CR" in message:
+            path = None
+            estado_dup = None
+            if existing:
+                try:
+                    stored_payload = json.loads(existing.get("payload_json") or "{}")
+                except Exception:
+                    stored_payload = {}
+                try:
+                    path = _cr_output_path(stored_payload)
+                except Exception:
+                    path = None
+                estado_dup = existing.get("estado")
+            logger.info("CR duplicado omitido: %s", message)
+            return {
+                "status": "duplicate",
+                "venta_id": venta_id,
+                "message": message,
+                "path": str(path) if path else None,
+                "db_id": existing.get("id") if existing else None,
+                "estado": estado_dup or "PENDIENTE",
+            }
+        if "CR-07 solo para DTE 03" in message:
+            logger.info("CR omitido: %s", message)
+            return _skipped(message, tipo_dte=tipo_origen)
+        raise
+    except Exception as exc:
+        logger.exception("No se pudo generar CR para venta %s", venta_id)
+        raise ValueError("No se pudo generar comprobante de retención") from exc
 
 
 def log_venta_vs_dte(manager, venta_id):
@@ -292,11 +535,14 @@ def generate_invoice_pdf(manager, venta_id):
     if not venta:
         return None
 
+    _set_last_cr_result(manager, None)
+
     credito_info = manager.db.get_venta_credito_fiscal(venta_id)
     detalles = manager.db.get_detalles_venta(venta_id)
 
     venta_data = dict(venta)
     credit_extra: dict[str, Any] = {}
+    is_credito_fiscal = bool(credito_info)
     if credito_info:
         credito_payload = dict(credito_info)
         raw_credit_extra = credito_payload.pop("extra", None)
@@ -327,6 +573,11 @@ def generate_invoice_pdf(manager, venta_id):
         extra = merged_extra
 
     venta_data["extra"] = extra
+    retencion_block = normalize_retencion_payload(extra.get("_ui_retencion")) if extra else None
+    if not is_credito_fiscal:
+        retencion_block = None
+    if retencion_block:
+        extra["_ui_retencion"] = retencion_block
     precios_incluyen_iva = bool(extra.get("precios_incluyen_iva"))
 
     condicion_operacion = (
@@ -638,6 +889,15 @@ def generate_invoice_pdf(manager, venta_id):
                 respuesta["selloRecibido"] = sello_upper
                 json_data["respuesta"] = respuesta
 
+    if retencion_block:
+        try:
+            _, _, reten_dec, _, _, _, _ = parse_retencion_values(retencion_block)
+            if reten_dec > D("0"):
+                resumen["ivaRete1"] = float(D(str(resumen.get("ivaRete1", reten_dec)))) if resumen else float(reten_dec)
+        except Exception:
+            logger.debug("No se pudo sincronizar ivaRete1 con retención", exc_info=True)
+        _append_retencion_apendice(json_data, retencion_block)
+
 
     def _resumen_value(*keys):
         for key in keys:
@@ -850,6 +1110,9 @@ def generate_invoice_pdf(manager, venta_id):
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
+    if retencion_block:
+        cr_result = _maybe_generate_cr(manager, venta_id, json_data, retencion_block, ambiente)
+        _set_last_cr_result(manager, cr_result)
     jws_token = None
     try:
         _, jws_token = sign_and_save(json_data, str(json_path), return_token=True)

@@ -7,7 +7,6 @@ from .builder import (
 )
 from .catalogos_retencion import CatalogEntry, CatalogosRetencion, DEFAULT_CATALOG_PATH
 from .validators import validate_cr
-from .service import RetencionCRService
 
 __all__ = [
     "build_cr_payload",
@@ -17,5 +16,4 @@ __all__ = [
     "CatalogosRetencion",
     "DEFAULT_CATALOG_PATH",
     "validate_cr",
-    "RetencionCRService",
 ]

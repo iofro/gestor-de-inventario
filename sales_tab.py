@@ -1365,6 +1365,29 @@ class SalesTab(QWidget):
             "Guardar factura",
             f"{doc_type} guardado en {display_path}",
         )
+        cr_result = getattr(self.manager, "last_cr_result", None)
+        if isinstance(cr_result, dict):
+            status = cr_result.get("status")
+            if status == "created":
+                cr_path = cr_result.get("path")
+                estado = str(cr_result.get("estado") or "PENDIENTE").capitalize()
+                path_hint = resolve_user_visible_path(str(cr_path)) if cr_path else None
+                path_display = path_hint or (str(cr_path) if cr_path else "N/D")
+                QMessageBox.information(
+                    self,
+                    "Retención IVA",
+                    f"CR-07 guardado (venta {venta_id}) – archivo: {path_display} – estado: {estado}",
+                )
+            elif status == "duplicate":
+                dup_msg = cr_result.get("message") or f"Ya existe un CR-07 para la venta {venta_id}"
+                QMessageBox.warning(self, "Retención IVA", dup_msg)
+            elif status == "skipped":
+                reason = cr_result.get("reason") or "CR omitido"
+                QMessageBox.information(
+                    self,
+                    "Retención IVA",
+                    f"CR-07 omitido: {reason}",
+                )
 
     def save_ticket(self):
         """Generate a simple ticket PDF for the selected sale."""

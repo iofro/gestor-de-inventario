@@ -78,6 +78,10 @@ def build_cr_payload(
     )
     if base_sujeta <= D("0"):
         raise ValueError("La base sujeta debe ser mayor a 0 para generar una retención")
+
+    if base_sujeta < D("1.00"):
+        base_sujeta = D("1.00")
+
     iva_retenido = money(base_sujeta * rate)
     if iva_retenido <= D("0"):
         raise ValueError("El IVA retenido debe ser mayor a 0")
@@ -109,7 +113,7 @@ def build_cr_payload(
     descripcion_item = descripcion or f"Retención IVA {rate * 100:.2f}% del documento {numero_doc_origen}"
     descripcion_item = descripcion_item[:1000]
 
-    tipo_doc_rel = 2  # Para CCF usar siempre número de control como referencia
+    tipo_doc_rel = 1  # Para CCF usar siempre número de control como referencia
     num_documento_rel = _validate_numero_control_ccf(
         numero_doc_origen, "cuerpoDocumento[0].numDocumento"
     )
@@ -390,19 +394,19 @@ def _resolve_referencia_origen(
 
     use_num_control = numero_control.upper().startswith(_DTE_NUMCONTROL_PREFIX)
     if use_num_control:
-        tipo_doc = 2
-        num_doc = numero_control
+        tipo_doc = 1
+        num_doc = numero_control.upper()
     else:
-        tipo_doc = 3
+        tipo_doc = 2
         num_doc = codigo_generacion.upper()
 
     allowed_catalog = {code.strip() for code in catalogos.allowed_values("CAT-007").keys()}
     allowed = {code for code in allowed_catalog if code and code[0].isdigit()}
-    allowed.update({"2", "3"})  # asegurar pareo permitido
+    allowed.update({"1", "2"})  # asegurar pareo permitido
     if str(tipo_doc) not in allowed:
         raise ValueError(f"cuerpoDocumento[0].tipoDoc '{tipo_doc}' fuera de catálogo permitido {sorted(allowed)}")
-    if tipo_doc == 3 and num_doc.upper().startswith(_DTE_NUMCONTROL_PREFIX):
-        raise ValueError("tipoDoc=3 no puede usar numDocumento con formato de numeroControl")
+    if tipo_doc == 2 and num_doc.upper().startswith(_DTE_NUMCONTROL_PREFIX):
+        raise ValueError("tipoDoc=2 no puede usar numDocumento con formato de numeroControl")
     return tipo_doc, num_doc
 
 
@@ -441,8 +445,8 @@ def _ensure_referencia_requerida(item: Mapping[str, Any], catalogos: CatalogosRe
     if item.get("numDocumento") in (None, ""):
         raise ValueError("cuerpoDocumento[0].numDocumento requerido para CR")
     tipo_doc = item.get("tipoDoc")
-    if str(tipo_doc) != "2":
-        raise ValueError(f"cuerpoDocumento[0].tipoDoc inválido: {tipo_doc} (esperado 2)")
+    if str(tipo_doc) != "1":
+        raise ValueError(f"cuerpoDocumento[0].tipoDoc inválido: {tipo_doc} (esperado 1)")
 
 
 def _validate_numero_control_ccf(value: Any, field: str) -> str:

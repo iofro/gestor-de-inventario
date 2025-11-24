@@ -17,7 +17,7 @@ from .validators import validate_ccf, validate_cr
 
 logger = logging.getLogger(__name__)
 
-_ALLOWED_TIPO_DOC_CR = {"2", "3"}
+_ALLOWED_TIPO_DOC_CR = {"1", "2"}
 
 
 class RetencionCRService:

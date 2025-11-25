@@ -2911,6 +2911,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         super().__init__(parent)
         self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta a Crédito Fiscal")
+        self.resize(1250, 740)
+        self.setMinimumSize(1150, 620)
         main_layout = QHBoxLayout()
 
         # --- LADO IZQUIERDO ---
@@ -2938,6 +2940,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.product_list = QListWidget()
         self._productos_original = list(productos)
         self._mostrar_productos(productos)
+        self.product_list.setMaximumHeight(220)
         left_layout.addWidget(self.product_list)
 
         # Tipo de venta
@@ -3034,7 +3037,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        self.table.setMaximumHeight(260)
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
 
@@ -3048,18 +3052,22 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         left_layout.addWidget(self.btn_ok)
 
         # --- LADO DERECHO: datos del cliente ---
-        right_layout = QVBoxLayout()
+        right_layout = QHBoxLayout()
+        right_col1 = QVBoxLayout()
+        right_col2 = QVBoxLayout()
+        right_layout.addLayout(right_col1, 1)
+        right_layout.addLayout(right_col2, 1)
 
-        right_layout.addWidget(QLabel("Vendedor (trabajador):"))
+        right_col1.addWidget(QLabel("Vendedor (trabajador):"))
         self.vendedor_combo = QComboBox()
         self.vendedor_combo.addItem("Sin vendedor")
         for v in vendedores_trabajadores:
             self.vendedor_combo.addItem(v["nombre"])
         self.vendedores_trabajadores = vendedores_trabajadores
-        right_layout.addWidget(self.vendedor_combo)
+        right_col1.addWidget(self.vendedor_combo)
 
         self.comision_chk = QCheckBox("Aplicar comisión")
-        right_layout.addWidget(self.comision_chk)
+        right_col1.addWidget(self.comision_chk)
         com_layout = QHBoxLayout()
         com_layout.addWidget(QLabel("%:"))
         self.comision_pct_spin = QDoubleSpinBox()
@@ -3071,42 +3079,42 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
         self.comision_tipo_combo.setEnabled(False)
         com_layout.addWidget(self.comision_tipo_combo)
-        right_layout.addLayout(com_layout)
+        right_col1.addLayout(com_layout)
         self.comision_label = QLabel("Comisión: $0.00")
-        right_layout.addWidget(self.comision_label)
+        right_col1.addWidget(self.comision_label)
         self.comision_chk.stateChanged.connect(self._toggle_comision_inputs)
         self.comision_pct_spin.valueChanged.connect(self._recalcular_totales)
         self.comision_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
 
-        right_layout.addWidget(QLabel("Cliente:"))
+        right_col2.addWidget(QLabel("Cliente:"))
         self.cliente_btn = QPushButton("Seleccionar Cliente")
         self.cliente_label = QLabel("(Ningún cliente seleccionado)")
-        right_layout.addWidget(self.cliente_btn)
-        right_layout.addWidget(self.cliente_label)
+        right_col2.addWidget(self.cliente_btn)
+        right_col2.addWidget(self.cliente_label)
         self.selected_cliente = None
 
-        right_layout.addWidget(QLabel("NRC:"))
+        right_col2.addWidget(QLabel("NRC:"))
         self.nrc_edit = QLineEdit()
         self.nrc_edit.setPlaceholderText("NRC del cliente")
-        right_layout.addWidget(self.nrc_edit)
+        right_col2.addWidget(self.nrc_edit)
 
-        right_layout.addWidget(QLabel("NIT:"))
+        right_col2.addWidget(QLabel("NIT:"))
         self.nit_edit = QLineEdit()
         nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
         self.nit_edit.setValidator(nit_validator)
         self.nit_edit.setMaxLength(14)
         self.nit_edit.setPlaceholderText("NIT del cliente")
-        right_layout.addWidget(self.nit_edit)
+        right_col2.addWidget(self.nit_edit)
 
-        right_layout.addWidget(QLabel("Giro:"))
+        right_col2.addWidget(QLabel("Giro:"))
         self.giro_edit = QLineEdit()
         self.giro_edit.setPlaceholderText("Giro del cliente")
-        right_layout.addWidget(self.giro_edit)
+        right_col2.addWidget(self.giro_edit)
 
-        right_layout.addWidget(QLabel("Correo electrónico:"))
+        right_col2.addWidget(QLabel("Correo electrónico:"))
         self.email_edit = QLineEdit()
         self.email_edit.setPlaceholderText("Correo electrónico")
-        right_layout.addWidget(self.email_edit)
+        right_col2.addWidget(self.email_edit)
 
         self.retencion_group = QGroupBox("Retención de IVA")
         retencion_layout = QVBoxLayout(self.retencion_group)
@@ -3139,31 +3147,31 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
         retencion_layout.addWidget(self.retencion_base_label)
         retencion_layout.addWidget(self.retencion_iva_label)
-        right_layout.addWidget(self.retencion_group)
+        right_col1.addWidget(self.retencion_group)
         self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
         self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
         self.retencion_codigo_combo.currentIndexChanged.connect(self._update_retencion_summary)
         self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
         self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
 
-        right_layout.addStretch(1)
+        right_col1.addStretch(1)
 
-        right_layout.addWidget(QLabel("No. Remisión:"))
+        right_col2.addWidget(QLabel("No. Remisión:"))
         self.no_remision_edit = QLineEdit()
         self.no_remision_edit.setPlaceholderText("Número de remisión")
-        right_layout.addWidget(self.no_remision_edit)
+        right_col2.addWidget(self.no_remision_edit)
 
-        right_layout.addWidget(QLabel("Orden No.:"))
+        right_col2.addWidget(QLabel("Orden No.:"))
         self.orden_no_edit = QLineEdit()
         self.orden_no_edit.setPlaceholderText("Número de orden")
-        right_layout.addWidget(self.orden_no_edit)
+        right_col2.addWidget(self.orden_no_edit)
 
-        right_layout.addWidget(QLabel("Condición de pago:"))
+        right_col1.addWidget(QLabel("Condición de pago:"))
         self.condicion_pago_combo = QComboBox()
         self.condicion_pago_combo.addItem("Contado", 1)
         self.condicion_pago_combo.addItem("Crédito", 2)
         self.condicion_pago_combo.addItem("Otros", 3)
-        right_layout.addWidget(self.condicion_pago_combo)
+        right_col1.addWidget(self.condicion_pago_combo)
 
         self.condicion_pago_combo.currentIndexChanged.connect(
             self._update_condicion_pago_fields
@@ -3200,26 +3208,37 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.referencia_edit.setPlaceholderText("Referencia (opcional)")
         credit_layout.addRow("Referencia:", self.referencia_edit)
 
-        right_layout.addWidget(self.credit_fields_widget)
+        right_col1.addWidget(self.credit_fields_widget)
 
-        right_layout.addWidget(QLabel("Venta a cuenta de:"))
+        right_col1.addWidget(QLabel("Estado:"))
+        self.estado_combo = QComboBox()
+        self.estado_combo.addItems(["Pagada", "Pendiente"])
+        right_col1.addWidget(self.estado_combo)
+
+        right_col2.addWidget(QLabel("Venta a cuenta de:"))
         self.venta_a_cuenta_de_edit = QLineEdit()
         self.venta_a_cuenta_de_edit.setPlaceholderText("Venta a cuenta de")
-        right_layout.addWidget(self.venta_a_cuenta_de_edit)
-        right_layout.addWidget(QLabel("DUI/NIT:"))
+        right_col2.addWidget(self.venta_a_cuenta_de_edit)
+        right_col2.addWidget(QLabel("DUI/NIT:"))
         self.venta_documento_edit = QLineEdit()
         self.venta_documento_edit.setPlaceholderText("Documento")
-        right_layout.addWidget(self.venta_documento_edit)
+        right_col2.addWidget(self.venta_documento_edit)
 
-        right_layout.addWidget(QLabel("Fecha nota de remisión anterior:"))
+        right_col2.addWidget(QLabel("Fecha nota de remisión anterior:"))
         self.fecha_remision_anterior = QDateEdit(QDate.currentDate())
         self.fecha_remision_anterior.setCalendarPopup(True)
-        right_layout.addWidget(self.fecha_remision_anterior)
+        right_col2.addWidget(self.fecha_remision_anterior)
 
-        right_layout.addWidget(QLabel("Fecha de remisión:"))
+        right_col2.addWidget(QLabel("Fecha de remisión:"))
         self.fecha_remision = QDateEdit(QDate.currentDate())
         self.fecha_remision.setCalendarPopup(True)
-        right_layout.addWidget(self.fecha_remision)
+        right_col2.addWidget(self.fecha_remision)
+
+        # Notas/observaciones
+        right_col2.addWidget(QLabel("Notas/observaciones:"))
+        self.notas_edit = QTextEdit()
+        self.notas_edit.setMaximumHeight(100)
+        right_col2.addWidget(self.notas_edit)
 
         # --- Agrega ambos layouts al principal ---
         main_layout.addLayout(left_layout, 2)

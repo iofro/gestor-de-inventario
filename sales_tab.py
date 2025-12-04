@@ -19,15 +19,15 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QSizePolicy,
     QScrollArea,
-
     QDialog,
     QCheckBox,
     QComboBox,
     QTabWidget,
     QGridLayout,
+    QStyledItemDelegate,
 )
-from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker
-from PyQt5.QtGui import QPixmap
+from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker, QRectF
+from PyQt5.QtGui import QPixmap, QColor, QPainter, QPainterPath, QPen
 from datetime import datetime, date, timedelta
 import importlib.util
 
@@ -41,7 +41,7 @@ else:
     mdates = None
     mticker = None
     FigureCanvas = None
-    Figure = None
+Figure = None
 from utils.email_sender import EmailSender
 from utils.email_builder import build_email
 from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
@@ -69,6 +69,46 @@ TICKETS_DIR = TICKETS_OUTPUT_DIR
 logger = logging.getLogger(__name__)
 
 
+def _adjust_font(font, *, delta=0, bold=False, min_size=8):
+    point = font.pointSize()
+    if point <= 0:
+        point = 12
+    point = max(point + delta, min_size)
+    font.setPointSize(point)
+    if bold:
+        font.setBold(True)
+    return font
+
+
+class StatusDelegate(QStyledItemDelegate):
+    """Delegate para resaltar estados de venta en la tabla."""
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        text = str(index.data() or "").strip().lower()
+        bg_color = QColor("#E5F6ED")
+        fg_color = QColor("#047857")
+        if "anul" in text:
+            bg_color = QColor("#FEE2E2")
+            fg_color = QColor("#B91C1C")
+        rect = QRectF(option.rect.adjusted(6, 10, -6, -10))
+        path = QPainterPath()
+        path.addRoundedRect(rect, 8, 8)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg_color)
+        painter.drawPath(path)
+        painter.setPen(fg_color)
+        font = painter.font()
+        font = _adjust_font(font, delta=1, bold=True)
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignCenter, index.data())
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        return QSize(option.rect.width(), 50)
+
+
 class _StatsKpiCard(QFrame):
     """Small helper widget to display prominent KPI values."""
 
@@ -90,17 +130,12 @@ class _StatsKpiCard(QFrame):
         layout.addWidget(title_label)
 
         self.value_label = QLabel("—")
-        value_font = self.value_label.font()
-        value_font.setPointSize(value_font.pointSize() + 6)
-        value_font.setBold(True)
-        self.value_label.setFont(value_font)
+        self.value_label.setFont(_adjust_font(self.value_label.font(), delta=6, bold=True))
         self.value_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.value_label)
 
         self.detail_label = QLabel("")
-        detail_font = self.detail_label.font()
-        detail_font.setPointSize(detail_font.pointSize() - 1)
-        self.detail_label.setFont(detail_font)
+        self.detail_label.setFont(_adjust_font(self.detail_label.font(), delta=-1))
         self.detail_label.setStyleSheet("color: #5f6b7a;")
         self.detail_label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
         layout.addWidget(self.detail_label)
@@ -128,10 +163,7 @@ class _StatsSectionFrame(QFrame):
         header.setSpacing(8)
 
         title_label = QLabel(title)
-        title_font = title_label.font()
-        title_font.setBold(True)
-        title_font.setPointSize(title_font.pointSize() + 1)
-        title_label.setFont(title_font)
+        title_label.setFont(_adjust_font(title_label.font(), delta=1, bold=True))
         header.addWidget(title_label)
         header.addStretch(1)
 
@@ -197,6 +229,7 @@ class SalesTab(QWidget):
     def __init__(self, manager, parent=None, check_smtp=True):
         super().__init__(parent)
         self.manager = manager
+        self.main_window = parent
         self.current_credito_fiscal = None
         self.preview_pdf_file = None
         self.preview_image_file = None
@@ -217,19 +250,33 @@ class SalesTab(QWidget):
         self.sales_tabs = QTabWidget()
         container_layout.addWidget(self.sales_tabs)
 
-        listado_tab = QWidget()
-        listado_layout = QHBoxLayout()
-        listado_layout.setContentsMargins(0, 0, 0, 0)
-        listado_tab.setLayout(listado_layout)
+        main_tab = QWidget()
+        main_layout = QHBoxLayout(main_tab)
+        main_layout.setContentsMargins(24, 24, 24, 24)
+        main_layout.setSpacing(20)
 
-        # Left panel
-        left_layout = QVBoxLayout()
+        # Panel izquierdo: Historial
+        left_card = QFrame()
+        left_card.setObjectName("ModernCard")
+        left_layout = QVBoxLayout(left_card)
+        left_layout.setContentsMargins(16, 16, 16, 16)
+        left_layout.setSpacing(12)
+
+        title_left = QLabel("Historial de Ventas")
+        title_left.setFont(_adjust_font(title_left.font(), delta=3, bold=True))
+        left_layout.addWidget(title_left)
+
+        filters_layout = QVBoxLayout()
+        filters_layout.setSpacing(8)
+
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Buscar número o cliente")
+        self.search_bar.setMinimumHeight(38)
         self.search_bar.textChanged.connect(self.load_sales)
-        left_layout.addWidget(self.search_bar)
+        filters_layout.addWidget(self.search_bar)
 
-        filter_layout = QHBoxLayout()
+        date_row = QHBoxLayout()
+        date_row.setSpacing(8)
         self.date_filter_cb = QCheckBox("Filtrar por fecha")
         self.quick_range = QComboBox()
         self.quick_range.addItems(["Personalizado", "Esta semana", "Este mes", "Este año"])
@@ -244,21 +291,17 @@ class SalesTab(QWidget):
         self.quick_range.currentIndexChanged.connect(self._apply_quick_range)
         self.date_from.dateChanged.connect(self.load_sales)
         self.date_to.dateChanged.connect(self.load_sales)
-        for w in [
-            self.date_filter_cb,
-            self.quick_range,
-            QLabel("Desde"),
-            self.date_from,
-            QLabel("Hasta"),
-            self.date_to,
-        ]:
-            filter_layout.addWidget(w)
-        left_layout.addLayout(filter_layout)
+        for w in [self.date_filter_cb, self.quick_range, QLabel("Desde"), self.date_from, QLabel("Hasta"), self.date_to]:
+            date_row.addWidget(w)
+        filters_layout.addLayout(date_row)
 
         self.client_filter = QLineEdit()
         self.client_filter.setPlaceholderText("Cliente")
+        self.client_filter.setMinimumHeight(36)
         self.client_filter.textChanged.connect(self.load_sales)
-        left_layout.addWidget(self.client_filter)
+        filters_layout.addWidget(self.client_filter)
+
+        left_layout.addLayout(filters_layout)
 
         self.sales_table = QTableWidget(0, 5)
         self.sales_table.setHorizontalHeaderLabels([
@@ -270,50 +313,54 @@ class SalesTab(QWidget):
         ])
         self.sales_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.sales_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.sales_table.setSelectionMode(QAbstractItemView.SingleSelection)
         self.sales_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.sales_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.sales_table.setFrameShape(QFrame.NoFrame)
+        self.sales_table.setShowGrid(False)
+        self.sales_table.setAlternatingRowColors(False)
+        self.sales_table.verticalHeader().hide()
+        self.sales_table.verticalHeader().setDefaultSectionSize(50)
+        header = self.sales_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setFixedHeight(44)
+        self.status_delegate = StatusDelegate(self.sales_table)
+        self.sales_table.setItemDelegateForColumn(4, self.status_delegate)
         self.sales_table.itemSelectionChanged.connect(self.show_sale)
         left_layout.addWidget(self.sales_table)
 
-        self.btn_estado = QPushButton("Estado")
-        self.btn_estado.clicked.connect(self.show_sale_details)
-        left_layout.addWidget(self.btn_estado)
+        main_layout.addWidget(left_card, 3)
 
-        self.btn_delete_sale = QPushButton("Eliminar venta")
-        self.btn_delete_sale.setStyleSheet("background-color: #b71c1c; color: #fff;")
-        self.btn_delete_sale.clicked.connect(self.delete_sale)
-        left_layout.addWidget(self.btn_delete_sale)
+        # Panel derecho: Accesos a flujo de venta existente
+        right_card = QFrame()
+        right_card.setObjectName("ModernCard")
+        right_layout = QVBoxLayout(right_card)
+        right_layout.setContentsMargins(16, 16, 16, 16)
+        right_layout.setSpacing(12)
 
-        left_widget = QWidget()
-        left_widget.setLayout(left_layout)
+        title_right = QLabel("Registrar Venta")
+        title_right.setFont(_adjust_font(title_right.font(), delta=3, bold=True))
+        right_layout.addWidget(title_right)
 
-        # Right panel
-        splitter = QSplitter(Qt.Vertical)
+        btn_cf = QPushButton("Venta Consumidor Final")
+        btn_cf.setObjectName("PrimaryActionButton")
+        btn_cf.setMinimumHeight(46)
+        btn_cf.clicked.connect(self._abrir_venta_cf)
 
-        preview_layout = QVBoxLayout()
+        btn_cfiscal = QPushButton("Venta Crédito Fiscal")
+        btn_cfiscal.setObjectName("SecondaryActionButton")
+        btn_cfiscal.setMinimumHeight(46)
+        btn_cfiscal.clicked.connect(self._abrir_venta_cfiscal)
+
+        right_layout.addWidget(btn_cf)
+        right_layout.addWidget(btn_cfiscal)
+        right_layout.addStretch(1)
+
+        # Widgets necesarios para la funcionalidad existente (no visibles aquí)
         self.preview_label = QLabel("Previsualización del PDF")
-        self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setStyleSheet("background:#DDD; padding:20px;")
-        self.preview_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.preview_label.setScaledContents(True)
-        preview_scroll = QScrollArea()
-        preview_scroll.setWidgetResizable(True)
-        preview_scroll.setWidget(self.preview_label)
-        preview_layout.addWidget(preview_scroll)
-
+        self.preview_label.setVisible(False)
         self.info_label = QLabel()
-        preview_layout.addWidget(self.info_label)
-
-        btn_layout = QHBoxLayout()
-        self.btn_guardar = QPushButton("Guardar factura")
-        btn_layout.addWidget(self.btn_guardar)
-        self.btn_guardar.clicked.connect(self.save_invoice)
-        preview_layout.addLayout(btn_layout)
-
-        preview_widget = QWidget()
-        preview_widget.setLayout(preview_layout)
-
-        status_layout = QVBoxLayout()
         self.status_label = QLabel("Estado actual: ")
         self.gen_label = QLabel("Generado: ")
         self.sent_label = QLabel("Último envío: ")
@@ -321,39 +368,40 @@ class SalesTab(QWidget):
         self.email_subject_edit = QLineEdit()
         self.email_body_edit = QTextEdit()
         self.config_email_btn = QPushButton("Configurar correo")
-        self.email_subject_edit.textChanged.connect(lambda t: setattr(self, "email_subject", t))
-        self.email_body_edit.textChanged.connect(
-            lambda: setattr(self, "email_body", self.email_body_edit.toPlainText())
-        )
-        self.config_email_btn.clicked.connect(self.configure_email)
-        status_layout.addWidget(self.status_label)
-        status_layout.addWidget(self.gen_label)
-        status_layout.addWidget(self.sent_label)
-        status_layout.addWidget(self.email_label)
-        status_layout.addWidget(QLabel("Asunto:"))
-        status_layout.addWidget(self.email_subject_edit)
-        status_layout.addWidget(QLabel("Mensaje:"))
-        status_layout.addWidget(self.email_body_edit)
-        status_layout.addWidget(self.config_email_btn)
-        status_widget = QWidget()
-        status_widget.setLayout(status_layout)
+        for w in (
+            self.info_label,
+            self.status_label,
+            self.gen_label,
+            self.sent_label,
+            self.email_label,
+            self.email_subject_edit,
+            self.email_body_edit,
+            self.config_email_btn,
+        ):
+            w.setVisible(False)
 
-        splitter.addWidget(preview_widget)
-        splitter.addWidget(status_widget)
-        splitter.setStretchFactor(0, 3)
-        splitter.setStretchFactor(1, 1)
+        main_layout.addWidget(right_card, 2)
 
-        listado_layout.addWidget(left_widget)
-        listado_layout.addWidget(splitter)
-        listado_layout.setStretch(0, 2)
-        listado_layout.setStretch(1, 3)
-
-        self.sales_tabs.addTab(listado_tab, "Listado")
+        self.sales_tabs.addTab(main_tab, "Listado")
 
         self.stats_tab = QWidget()
         self._setup_stats_tab()
         self.sales_tabs.addTab(self.stats_tab, "Estadística")
         self.sales_tabs.currentChanged.connect(self._on_inner_tab_changed)
+
+    def _abrir_venta_cf(self):
+        target = self.main_window or self.window() or self.parent()
+        if target is not None and hasattr(target, "registrar_venta"):
+            target.registrar_venta()
+        else:
+            QMessageBox.information(self, "Venta", "Función de venta no disponible.")
+
+    def _abrir_venta_cfiscal(self):
+        target = self.main_window or self.window() or self.parent()
+        if target is not None and hasattr(target, "registrar_venta_credito_fiscal"):
+            target.registrar_venta_credito_fiscal()
+        else:
+            QMessageBox.information(self, "Venta", "Función de crédito fiscal no disponible.")
 
     def _setup_stats_tab(self):
         main_layout = QVBoxLayout(self.stats_tab)
@@ -432,10 +480,7 @@ class SalesTab(QWidget):
         header_layout.setSpacing(12)
 
         self.stats_period_label = QLabel("Período seleccionado: —")
-        period_font = self.stats_period_label.font()
-        period_font.setBold(True)
-        period_font.setPointSize(period_font.pointSize() + 1)
-        self.stats_period_label.setFont(period_font)
+        self.stats_period_label.setFont(_adjust_font(self.stats_period_label.font(), delta=1, bold=True))
         header_layout.addWidget(self.stats_period_label)
         header_layout.addStretch(1)
 
@@ -1605,6 +1650,38 @@ class SalesTab(QWidget):
         self._show_email_loading()
         self.email_thread.start()
 
+    def print_invoice(self):
+        """Abre el PDF de la venta seleccionada (lo genera si falta)."""
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Imprimir", "Seleccione una venta.")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = int(self.sales_table.item(row, 0).text())
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        if not venta:
+            QMessageBox.warning(self, "Imprimir", "No se encontró la venta seleccionada.")
+            return
+        if self._is_ticket_sale(venta):
+            pdf_path = self.manager.db.get_ticket_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._safe_generate(
+                    self._generate_ticket_pdf,
+                    venta_id,
+                    "Imprimir",
+                    "No se pudo generar el ticket.",
+                )
+        else:
+            pdf_path = self.manager.db.get_factura_pdf(venta_id)
+            if not pdf_path or not os.path.exists(pdf_path):
+                pdf_path = self._safe_generate(
+                    self._generate_invoice_pdf,
+                    venta_id,
+                    "Imprimir",
+                    "No se pudo generar la factura.",
+                )
+        if pdf_path and os.path.exists(pdf_path):
+            open_pdf_file(os.path.abspath(pdf_path))
+
     def _on_email_sent(self, success, message):
         self._hide_email_loading()
         if success:
@@ -1615,6 +1692,3 @@ class SalesTab(QWidget):
             self.status_label.setText("Estado actual: Error")
             QMessageBox.critical(self, "Enviar por correo", message)
         self.email_thread = None
-
-
-

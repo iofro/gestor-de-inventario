@@ -7,6 +7,14 @@ from pathlib import Path
 
 import pytest
 
+# If PyQt5 está disponible, no necesitamos stubs y evitamos contaminar sys.modules.
+try:
+    import PyQt5  # type: ignore
+except ImportError:
+    PyQt5 = None  # type: ignore
+else:  # pragma: no cover - solo evita parchar PyQt5 real
+    pytest.skip("PyQt5 disponible; se omiten stubs de Qt para estas pruebas de rutas.", allow_module_level=True)
+
 
 qt_module = types.ModuleType("PyQt5")
 qtwidgets = types.ModuleType("PyQt5.QtWidgets")

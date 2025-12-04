@@ -622,6 +622,15 @@ class InventoryManager:
                     "tickets_pdf",
                     (dict(t) for t in self.db.cursor.execute("SELECT * FROM tickets_pdf")),
                 )
+                # Retenciones CR (opcional)
+                try:
+                    self.db._ensure_retenciones_cr_table()
+                    write_array(
+                        "retenciones_cr",
+                        (dict(r) for r in self.db.cursor.execute("SELECT * FROM retenciones_cr")),
+                    )
+                except Exception:
+                    logger.exception("No se pudo exportar retenciones_cr")
                 sanitized_negocio = _sanitize_datos_negocio(datos_negocio)
                 if sanitized_negocio:
                     f.write(",\n\"datos_negocio\":")
@@ -723,6 +732,7 @@ class InventoryManager:
             self.db.cursor.execute("DELETE FROM notas")
             self.db.cursor.execute("DELETE FROM facturas_pdf")
             self.db.cursor.execute("DELETE FROM tickets_pdf")
+            self.db.cursor.execute("DELETE FROM retenciones_cr")
             self.db.cursor.execute("DELETE FROM detalles_compra")
             self.db.cursor.execute("DELETE FROM ventas")
             self.db.cursor.execute("DELETE FROM compras")
@@ -738,6 +748,7 @@ class InventoryManager:
                 "notas",
                 "facturas_pdf",
                 "tickets_pdf",
+                "retenciones_cr",
                 "detalles_compra",
                 "ventas",
                 "compras",
@@ -797,6 +808,15 @@ class InventoryManager:
         self.db.ensure_column("dte_envios", "estado_ui", "TEXT")
         self.db.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
         self.db.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+        self.db.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        self.db.ensure_column("vendedores", "nit", "TEXT")
+        self.db.ensure_column("compras", "is_subject_excluded_purchase", "INTEGER DEFAULT 0")
+        self.db.ensure_column("compras", "subject_excluded_dte_status", "TEXT DEFAULT 'NO_APLICA'")
+        self.db._ensure_retenciones_cr_table()
+        self.db.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        self.db.ensure_column("vendedores", "nit", "TEXT")
+        self.db.ensure_column("compras", "is_subject_excluded_purchase", "INTEGER DEFAULT 0")
+        self.db.ensure_column("compras", "subject_excluded_dte_status", "TEXT DEFAULT 'NO_APLICA'")
 
         self.db.conn.execute("BEGIN")
         try:
@@ -889,25 +909,29 @@ class InventoryManager:
                     )
                     if not self.db.cursor.fetchone():
                         self.db.cursor.execute(
-                            "INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id) VALUES (?, ?, ?, ?, ?, ?)",
+                            "INSERT INTO vendedores (id, codigo, nombre, dui, nit, descripcion, Distribuidor_id, is_subject_excluded) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                             (
                                 tid,
                                 vendedor_codigo,
                                 t.get("nombre"),
                                 t.get("dui"),
+                                t.get("nit"),
                                 descripcion,
                                 new_dist_id,
+                                1 if empleado_vendor.get("is_subject_excluded") else 0,
                             ),
                         )
                     else:
                         self.db.cursor.execute(
-                            "UPDATE vendedores SET codigo=?, nombre=?, dui=?, descripcion=?, Distribuidor_id=? WHERE id=?",
+                            "UPDATE vendedores SET codigo=?, nombre=?, dui=?, nit=?, descripcion=?, Distribuidor_id=?, is_subject_excluded=? WHERE id=?",
                             (
                                 vendedor_codigo,
                                 t.get("nombre"),
                                 t.get("dui"),
+                                t.get("nit"),
                                 descripcion,
                                 new_dist_id,
+                                1 if empleado_vendor.get("is_subject_excluded") else 0,
                                 tid,
                             ),
                         )
@@ -934,7 +958,7 @@ class InventoryManager:
                     self.db.cursor.execute(
                         """
                         UPDATE vendedores
-                        SET nombre=?, descripcion=?, Distribuidor_id=?, codigo=?, dui=?
+                        SET nombre=?, descripcion=?, Distribuidor_id=?, codigo=?, dui=?, nit=?, is_subject_excluded=?
                         WHERE id=?
                         """,
                         (
@@ -943,6 +967,8 @@ class InventoryManager:
                             new_dist_id,
                             codigo,
                             vend.get("dui"),
+                            vend.get("nit"),
+                            1 if vend.get("is_subject_excluded") else 0,
                             existing_id,
                         ),
                     )
@@ -954,6 +980,8 @@ class InventoryManager:
                         new_dist_id,
                         codigo,
                         vend.get("dui"),
+                        vend.get("nit"),
+                        vend.get("is_subject_excluded"),
                         commit=False,
                     )
                     self.db.cursor.execute(
@@ -1188,6 +1216,12 @@ class InventoryManager:
                 comision_monto = compra_info.get("comision_monto")
                 if comision_monto is None:
                     comision_monto = float(total_comision)
+                is_subject_excluded_purchase = (
+                    1 if (compra_info.get("is_subject_excluded_purchase") if compra_info else False) else 0
+                )
+                subject_excluded_dte_status = (
+                    compra_info.get("subject_excluded_dte_status") if compra_info else "NO_APLICA"
+                ) or "NO_APLICA"
 
                 old_id = _coerce_int(compra_key)
                 columns = [
@@ -1200,6 +1234,8 @@ class InventoryManager:
                     "comision_pct",
                     "comision_monto",
                     "vendedor_id",
+                    "is_subject_excluded_purchase",
+                    "subject_excluded_dte_status",
                 ]
                 values = [
                     (compra_info.get("fecha") if compra_info else "") or "",
@@ -1211,6 +1247,8 @@ class InventoryManager:
                     comision_pct,
                     comision_monto,
                     mapped_vendor,
+                    is_subject_excluded_purchase,
+                    subject_excluded_dte_status,
                 ]
                 if old_id is not None:
                     columns.insert(0, "id")
@@ -1225,6 +1263,55 @@ class InventoryManager:
                 compra_id_map[str(compra_key)] = new_id
                 if old_id is not None:
                     compra_id_map[old_id] = new_id
+
+            # Retenciones CR (relacionadas a ventas)
+            try:
+                self.db._ensure_retenciones_cr_table()
+                for ret in data.get("retenciones_cr", []):
+                    venta_old_id = ret.get("venta_id")
+                    venta_new_id = venta_id_map.get(venta_old_id)
+                    if venta_new_id is None:
+                        continue
+                    columns = [
+                        "venta_id",
+                        "payload_json",
+                        "jws",
+                        "estado",
+                        "sello",
+                        "respuesta",
+                        "codigo_generacion",
+                        "numero_control",
+                        "codigo_generacion_origen",
+                        "numero_control_origen",
+                        "created_at",
+                        "updated_at",
+                        "enviado_en",
+                    ]
+                    values = [
+                        venta_new_id,
+                        ret.get("payload_json"),
+                        ret.get("jws"),
+                        ret.get("estado"),
+                        ret.get("sello"),
+                        ret.get("respuesta"),
+                        ret.get("codigo_generacion"),
+                        ret.get("numero_control"),
+                        ret.get("codigo_generacion_origen"),
+                        ret.get("numero_control_origen"),
+                        ret.get("created_at"),
+                        ret.get("updated_at"),
+                        ret.get("enviado_en"),
+                    ]
+                    placeholders = ", ".join(["?"] * len(values))
+                    try:
+                        self.db.cursor.execute(
+                            f"INSERT INTO retenciones_cr ({', '.join(columns)}) VALUES ({placeholders})",
+                            values,
+                        )
+                    except Exception:
+                        logger.exception("No se pudo restaurar retencion CR para venta %s", venta_old_id)
+            except Exception:
+                logger.exception("Error al restaurar retenciones CR")
 
             for compra_key, detalles_list in detalles_por_compra.items():
                 _maybe_create_missing_purchase(compra_key, detalles_list)
@@ -1634,7 +1721,7 @@ class InventoryManager:
         self.db.add_Distribuidor(nombre)
         self.refresh_data()
 
-    def add_vendedor(self, nombre, Distribuidor_id=None, codigo=None, dui=None):
+    def add_vendedor(self, nombre, Distribuidor_id=None, codigo=None, dui=None, nit=None, is_subject_excluded: bool | int | None = False):
         try:
             self.db.add_vendedor(
                 nombre,
@@ -1642,6 +1729,8 @@ class InventoryManager:
                 Distribuidor_id=Distribuidor_id,
                 codigo=codigo,
                 dui=dui,
+                nit=nit,
+                is_subject_excluded=is_subject_excluded,
             )
         except sqlite3.IntegrityError as exc:
             logger.exception("Error de integridad al agregar vendedor %s", nombre)
@@ -1841,20 +1930,9 @@ class ProductTableModel(QAbstractTableModel):
             # Si agregas comisión:
             # elif col == 4:
             #     return f"{row.get('comision_base', 0)}%"  # O el campo que corresponda
+        # Color de fondo neutralizado para que la hoja de estilos global controle la apariencia.
         elif role == Qt.BackgroundRole and col == 3:
-            stock = row.get("stock")
-            try:
-                stock = float(stock) if stock is not None else 0
-            except (TypeError, ValueError):
-                stock = 0
-            if stock < 5:
-                return QColor("red")
-            elif stock < 10:
-                return QColor("orange")
-            elif stock < 25:
-                return QColor("yellow")
-            else:
-                return QColor("lightgreen")
+            return None
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):

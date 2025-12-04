@@ -42,6 +42,9 @@ class RetencionCRService:
         descripcion: str | None = None,
         fecha_emision: datetime | None = None,
         identificacion_override: Mapping[str, Any] | None = None,
+        modo_contingencia: bool = False,
+        tipo_contingencia: int | None = None,
+        motivo_contingencia: str | None = None,
     ) -> dict[str, Any]:
         """Build and persist a CR linked to ``venta_id`` raising on duplicates."""
 
@@ -73,6 +76,9 @@ class RetencionCRService:
             descripcion=descripcion,
             fecha_emision=fecha_emision,
             identificacion_override=identificacion_override,
+            modo_contingencia=modo_contingencia,
+            tipo_contingencia=tipo_contingencia,
+            motivo_contingencia=motivo_contingencia,
         )
         _assert_cr_required_fields(payload)
         validate_cr(payload, catalogos=self.catalogos)
@@ -226,6 +232,19 @@ class RetencionCRService:
             sello=normalized.get("sello"),
             respuesta=respuesta_text,
         )
+        try:
+            self.db.registrar_envio_dte(
+                venta_id,
+                "normal",
+                normalized.get("estado"),
+                normalized.get("sello"),
+                respuesta_text,
+                codigo_generacion=ident.get("codigoGeneracion"),
+                numero_control=ident.get("numeroControl"),
+                ambiente=ident.get("ambiente"),
+            )
+        except Exception:
+            logger.exception("No se pudo registrar el envío del CR en dte_envios")
         return normalized
 
     @staticmethod

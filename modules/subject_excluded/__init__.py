@@ -1,8 +1,8 @@
 """
-Helpers y stub para compras a sujeto excluido.
+Módulo opcional para lógica de compras a sujetos excluidos.
 
-Al eliminar esta carpeta, el módulo queda desactivado (las llamadas están
-protegidas con try/except para no romper la app).
+Si se elimina esta carpeta, el resto del sistema sigue operando;
+la lógica extra simplemente no se ejecutará.
 """
 
 ENABLED = True

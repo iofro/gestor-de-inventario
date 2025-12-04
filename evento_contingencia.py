@@ -17,14 +17,16 @@ import unicodedata
 from typing import Any, Iterable, Mapping, Sequence
 from uuid import uuid4
 
-from paths import DTES_PENDIENTES_DIR
+from paths import DTES_PENDIENTES_DIR, RETENCIONES_DIR, ensure_user_dir
 from utils.fecha import TZ_EL_SALVADOR
 from utils.stable_json import save_file, stable_stringify
+from utils.facturacion_records import get_facturacion_rows
 
 import dte
 
 
-_ALLOWED_DOC_TYPES = {"01", "03", "04", "05", "06", "11", "14", "15"}
+# Tipos permitidos en eventos de contingencia (incluye CRE=07 y FSE=14)
+_ALLOWED_DOC_TYPES = {"01", "03", "04", "05", "06", "07", "08", "11", "14", "15"}
 
 
 @dataclass(slots=True)
@@ -223,6 +225,64 @@ def _iter_dtes_from_fs() -> Iterable[Mapping[str, Any]]:
     return matches
 
 
+def _iter_retenciones_from_fs() -> Iterable[Mapping[str, Any]]:
+    """Busca comprobantes de retención guardados como JSON en disco."""
+
+    base = Path(RETENCIONES_DIR)
+    if not base.exists():
+        return []
+    matches: list[Mapping[str, Any]] = []
+    try:
+        json_paths = list(base.glob("*.json"))
+    except Exception:
+        return []
+    for path in json_paths:
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                matches.append(json.load(fh, parse_float=Decimal))
+        except Exception:
+            continue
+    return matches
+
+
+def _iter_sujeto_excluido_from_fs() -> Iterable[Mapping[str, Any]]:
+    """Busca DTE sujeto excluido generados en contingencia desde disco."""
+
+    base = ensure_user_dir("dtes_sujeto_excluido")
+    try:
+        paths = list(Path(base).glob("*.json"))
+    except Exception:
+        return []
+    records: list[Mapping[str, Any]] = []
+    for path in paths:
+        try:
+            with path.open("r", encoding="utf-8") as fh:
+                records.append(json.load(fh, parse_float=Decimal))
+        except Exception:
+            continue
+    return records
+
+
+def _facturacion_codigos(db: Any) -> set[str] | None:
+    """Return DTE generation codes present in the Facturación tab."""
+
+    if db is None:
+        return None
+    try:
+        rows = get_facturacion_rows(db)
+    except Exception:
+        return None
+
+    codigos: set[str] = set()
+    for row in rows or []:
+        codigo = row.get("codigo_generacion") or row.get("codigoGeneracion")
+        if codigo:
+            normalized = str(codigo).strip().upper()
+            if normalized:
+                codigos.add(normalized)
+    return codigos
+
+
 _PROD_KEYWORDS = {"prod", "produccion", "production"}
 _TEST_KEYWORDS = {"pruebas", "test", "sandbox"}
 
@@ -375,14 +435,24 @@ def collect_contingencia_dtes(
     if fin < inicio:
         inicio, fin = fin, inicio
 
+    facturacion_codigos = _facturacion_codigos(db)
+    filter_with_facturacion = facturacion_codigos is not None
+
     registros: dict[str, _ContingenciaEntry] = {}
 
-    for source in (_iter_dtes_from_db(db), _iter_dtes_from_fs()):
+    for source in (
+        _iter_dtes_from_db(db),
+        _iter_dtes_from_fs(),
+        _iter_retenciones_from_fs(),
+        _iter_sujeto_excluido_from_fs(),
+    ):
         for dte_data in source:
             if not isinstance(dte_data, Mapping):
                 continue
             entry = _build_entry(dte_data)
             if entry is None:
+                continue
+            if filter_with_facturacion and entry.codigo_generacion not in facturacion_codigos:
                 continue
             timestamp = _coerce_datetime(entry.timestamp)
             if timestamp < inicio or timestamp > fin:

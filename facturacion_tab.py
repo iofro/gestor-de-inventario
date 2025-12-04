@@ -112,6 +112,7 @@ from dialogs.nota_detalle_dialog import NotaDetalleDialog
 from dialogs.invoice_detail_dialog import InvoiceDetailDialog
 from dialogs.anular_factura_dialog import AnularFacturaDialog
 from dialogs.seleccionar_dte_dialog import SeleccionarDteDialog
+from dialogs.dialogs import RetencionIVADialog
 from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
 from utils.monto import iva_item, monto_a_texto_sv
 from utils.snapshot import SnapshotNotFoundError
@@ -203,6 +204,9 @@ TIPO_DTE_SHORT_DESC = {
     "cr-07": "CR-07",
     "comp. retención": "comp reten",
     "comp. retencion": "comp reten",
+    "factura sujeto excluido": "suj exclu",
+    "sujeto excluido": "suj exclu",
+    "suj exclu": "suj exclu",
 }
 
 # Fallback mapping used when ``tipoDte`` is not available but the
@@ -1031,7 +1035,8 @@ class EventoContingenciaDialog(QDialog):
         layout.setSpacing(12)
 
         now = datetime.now(TZ_EL_SALVADOR).replace(tzinfo=None)
-        start_default = now - timedelta(hours=1)
+        start_default = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        end_default = now.replace(hour=23, minute=59, second=59, microsecond=0)
 
         # 1. Rango de la contingencia
         rango_title = QLabel("1. Rango de la contingencia", self)
@@ -1054,7 +1059,7 @@ class EventoContingenciaDialog(QDialog):
         self.fin_edit = QDateTimeEdit(self)
         self.fin_edit.setCalendarPopup(True)
         self.fin_edit.setDisplayFormat("yyyy-MM-dd HH:mm:ss")
-        self.fin_edit.setDateTime(self._to_qdatetime(now))
+        self.fin_edit.setDateTime(self._to_qdatetime(end_default))
         fin_widget, self.fin_error_label = self._wrap_with_error(self.fin_edit)
         rango_form.addRow("Fecha/hora fin:", fin_widget)
 
@@ -1887,12 +1892,19 @@ class EventoContingenciaDialog(QDialog):
             return
 
         estado = str(resp.get("estado") or "").strip()
-        sello = str(resp.get("sello") or "").strip()
+        sello = (
+            str(
+                resp.get("sello")
+                or resp.get("selloRecibido")
+                or resp.get("sello_recibido")
+                or ""
+            ).strip()
+        )
         obs_text = self._format_observaciones_text(resp)
 
         estado_ok = estado.lower() in {"recibido", "aceptado", "procesado"}
 
-        if estado_ok and sello:
+        if estado_ok:
             partes = [f"Estado: {estado}"]
             if sello:
                 partes.append(f"Sello: {sello}")
@@ -2163,16 +2175,49 @@ class FacturacionTab(QWidget):
         self.btn_enviar = QPushButton("Enviar")
         self.btn_enviar.setEnabled(False)
         self.btn_evento_contingencia = QPushButton("Evento de contingencia…")
+        self.btn_retencion = QPushButton("Retención de IVA")
         self.btn_imprimir = QPushButton("Imprimir")
         self.btn_abrir_pdf = QPushButton("Abrir PDF")
         self.btn_eliminar = QPushButton("Eliminar")
         self.btn_eliminar.setStyleSheet(
             "background-color: #b71c1c; color: #fff; border-radius: 6px;",
         )
+        button_lineup = [
+            self.btn_nota,
+            self.btn_remision,
+            self.btn_enviar,
+            self.btn_evento_contingencia,
+            self.btn_retencion,
+            self.btn_imprimir,
+            self.btn_abrir_pdf,
+            self.btn_eliminar,
+        ]
+        custom_widths = {
+            self.btn_evento_contingencia: 160,
+            self.btn_retencion: 140,
+            self.btn_nota: 140,
+            self.btn_remision: 130,
+            self.btn_enviar: 110,
+            self.btn_imprimir: 110,
+            self.btn_abrir_pdf: 110,
+            self.btn_eliminar: 120,
+        }
+        for b in button_lineup:
+            # Botones más angostos y estilo local para sobreescribir el QSS global.
+            width = custom_widths.get(b, 130)
+            base_style = (
+                f"min-width:{width}px; max-width:{width}px; padding:8px 8px; font-size:13px;"
+            )
+            if b is self.btn_eliminar:
+                base_style += " background-color:#b71c1c; color:#fff;"
+            b.setStyleSheet(base_style)
+            b.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Preferred)
+        self.btn_retencion.clicked.connect(self._abrir_retencion_manual)
         btns.addWidget(self.btn_nota)
         btns.addWidget(self.btn_remision)
         btns.addWidget(self.btn_enviar)
         btns.addWidget(self.btn_evento_contingencia)
+        btns.addWidget(self.btn_retencion)
         btns.addWidget(self.btn_imprimir)
         btns.addWidget(self.btn_abrir_pdf)
         btns.addWidget(self.btn_eliminar)
@@ -2222,6 +2267,19 @@ class FacturacionTab(QWidget):
         if hasattr(self, "preview_splitter"):
             self.preview_splitter.update_orientation()
             self.preview_splitter.initialize_default_sizes(self._DEFAULT_PREVIEW_RATIO)
+
+    def _abrir_retencion_manual(self):
+        """Flujo manual para crear un CRE (DTE-07) a partir de un JSON."""
+        dlg = RetencionIVADialog(self.manager, self)
+        if dlg.exec_() == QDialog.Accepted:
+            parent = self.parent()
+            try:
+                if parent and hasattr(parent, "actualizar_estado_global"):
+                    parent.actualizar_estado_global()
+                else:
+                    self.refresh_and_reload()
+            except Exception:
+                logger.exception("No se pudo refrescar después de crear CRE manual")
 
     def _setup_declaracion_tab(self):
         declaracion_widget = QWidget()
@@ -3047,6 +3105,27 @@ class FacturacionTab(QWidget):
             estado_ui_tag=stored_tag or None,
         )
         if not updated:
+            try:
+                db.registrar_envio_dte(
+                    venta_id,
+                    "orphan",
+                    stored_base,
+                    "",
+                    respuesta_json={"estado": stored_base},
+                    codigo_lote=None,
+                    codigo_generacion=codigo_generacion,
+                    numero_control=numero_control,
+                )
+                updated = db.update_envio_estado_ui(
+                    venta_id=venta_id,
+                    numero_control=numero_control,
+                    codigo_generacion=codigo_generacion,
+                    estado_ui=stored_base,
+                    estado_ui_tag=stored_tag or None,
+                )
+            except Exception:
+                updated = False
+        if not updated:
             raise ValueError("No se encontró un registro de envío para esta factura")
 
         return self._format_envio_state(stored_base, stored_tag, None)
@@ -3615,13 +3694,20 @@ class FacturacionTab(QWidget):
             pdf_path = data.get("pdf")
             if not json_path or not os.path.exists(json_path):
                 return None
-            if not pdf_path or not os.path.exists(pdf_path):
-                return None
+            control = data.get("name")
+            if not control:
+                try:
+                    with open(json_path, "r", encoding="utf-8") as fh:
+                        jdata = json.load(fh)
+                    jdata = self._normalize_factura_payload(jdata)
+                    control = jdata.get("identificacion", {}).get("numeroControl") or control
+                except Exception:
+                    control = data.get("name")
             return {
                 "venta_id": data.get("venta_id"),
                 "json": json_path,
-                "pdf": pdf_path,
-                "control": data.get("name"),
+                "pdf": pdf_path if pdf_path and os.path.exists(pdf_path) else None,
+                "control": control,
             }
         if rtype == "retencion":
             json_path = data.get("json")
@@ -4398,6 +4484,13 @@ class FacturacionTab(QWidget):
                     )
             elif rtype == "orphan" and factura:
                 json_path = factura.get("json")
+                ident_data = {}
+                try:
+                    with open(json_path, "r", encoding="utf-8") as fh:
+                        raw_json = json.load(fh)
+                    ident_data = raw_json.get("identificacion") or raw_json.get("identificador") or {}
+                except Exception:
+                    ident_data = {}
                 try:
                     print("UI: CALL_ENVIAR_DOCUMENTO")
                     with loading_dialog(self, "Enviando a Hacienda…"):
@@ -4472,6 +4565,21 @@ class FacturacionTab(QWidget):
                             "Enviar a Hacienda",
                             resp,
                         )
+                    try:
+                        codigo_gen_resp = resp.get("codigoGeneracion") or (resp.get("identificacion") or {}).get("codigoGeneracion")
+                        num_ctrl_resp = resp.get("numeroControl") or (resp.get("identificacion") or {}).get("numeroControl")
+                        self.manager.db.registrar_envio_dte(
+                            None,
+                            "orphan",
+                            resp.get("estado"),
+                            resp.get("sello"),
+                            respuesta_json=resp,
+                            codigo_lote=resp.get("codigoLote"),
+                            codigo_generacion=codigo_gen_resp or ident_data.get("codigoGeneracion"),
+                            numero_control=num_ctrl_resp or ident_data.get("numeroControl"),
+                        )
+                    except Exception:
+                        logger.exception("No se pudo registrar el estado de envío para el FSE")
                 except dte.DTEValidationError as exc:
                     print("UI: EXC_CAUGHT", type(exc).__name__, str(exc)[:200])
                     QMessageBox.critical(
@@ -5784,6 +5892,9 @@ class FacturacionTab(QWidget):
                     extra = json.loads(extra_raw)
                 except Exception:
                     extra = {}
+        ident = data.get("identificacion", {})
+        numero_control_ident = ident.get("numeroControl")
+        codigo_gen_ident = ident.get("codigoGeneracion")
         sello = data.get("selloRecibido") or extra.get("selloRecibido")
         if not sello and venta_id:
             row = self.manager.db.cursor.execute(
@@ -5795,6 +5906,29 @@ class FacturacionTab(QWidget):
                     "SELECT sello, respuesta FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
                     (venta_id,),
                 ).fetchone()
+            if row:
+                sello = row["sello"]
+                if not sello:
+                    resp = row["respuesta"]
+                    if resp:
+                        try:
+                            resp_json = json.loads(resp)
+                            sello = resp_json.get("selloRecibido") or resp_json.get("sello")
+                        except Exception:
+                            pass
+        if not sello:
+            try:
+                row = self.manager.db.cursor.execute(
+                    """
+                    SELECT sello, respuesta FROM dte_envios
+                    WHERE (numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?))
+                       OR (codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?))
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (numero_control_ident or "", codigo_gen_ident or ""),
+                ).fetchone()
+            except Exception:
+                row = None
             if row:
                 sello = row["sello"]
                 if not sello:
@@ -8457,4 +8591,3 @@ class FacturacionTab(QWidget):
         self.email_thread.finished.connect(self._on_email_sent)
         self._show_email_loading()
         self.email_thread.start()
-

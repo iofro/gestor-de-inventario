@@ -5,6 +5,7 @@ from pathlib import Path
 import json
 import logging
 import base64
+import shutil
 import requests
 from datetime import date, timedelta, datetime
 from typing import Any, Mapping, MutableMapping, Optional
@@ -15,15 +16,28 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout
+    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout,
+    QStyledItemDelegate, QStyleOptionViewItem
 )
-from PyQt5.QtCore import Qt, QDate, QUrl, QRegularExpression, QSignalBlocker, QEvent, QSize
+from PyQt5.QtCore import (
+    Qt,
+    QDate,
+    QUrl,
+    QRegularExpression,
+    QSignalBlocker,
+    QEvent,
+    QSize,
+    QTimer,
+    QRectF,
+)
 from PyQt5.QtGui import (
-    QColor,
     QDesktopServices,
     QIntValidator,
     QRegularExpressionValidator,
     QPixmap,
+    QPainter,
+    QColor,
+    QPainterPath,
 )
 
 import os
@@ -39,6 +53,24 @@ from utils.fiscal_extra import normalize_retencion_payload
 from svfe.config import CAT012_DEPARTAMENTOS, CAT013_MUNICIPIOS
 from dte import peek_next_correlativo
 from utils.party_resolver import Catalogs, normalize_identifier, resolve_party_names
+from utils.loading import loading_dialog
+from retenciones.service import RetencionCRService
+from paths import (
+    FACTURAS_CONSUMIDOR_FINAL_DIR,
+    FACTURAS_CREDITO_FISCAL_DIR,
+    FACTURAS_ARCHIVE_CF_DIR,
+    FACTURAS_ARCHIVE_CREDITO_DIR,
+    TICKETS_OUTPUT_DIR,
+    NOTAS_DEBITO_DIR,
+    NOTAS_CREDITO_DIR,
+    NOTAS_REMISION_DIR,
+    DTES_DIR,
+    DTE_FALLIDOS_DIR,
+    DTE_FIRMADO_DIR,
+    DTES_PENDIENTES_DIR,
+    RETENCIONES_DIR,
+    ensure_user_dir,
+)
 getcontext().prec = 28
 getcontext().rounding = ROUND_HALF_UP
 IVA_RATE = Decimal("0.13")
@@ -788,6 +820,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         descuento_layout.addWidget(self.descuento_spin)
         self.descuento_tipo_combo = QComboBox()
         self.descuento_tipo_combo.addItems(["%", "$"])
+        self.descuento_tipo_combo.setCurrentText("$")
         descuento_layout.addWidget(self.descuento_tipo_combo)
         left_layout.addLayout(descuento_layout)
 
@@ -1839,6 +1872,9 @@ class RegisterPurchaseDialog(QDialog):
         self._existing_fecha = self._compra_data.get("fecha") if self._compra_data else None
         self._compra_id = self._compra_data.get("id") if self._compra_data else None
         self.edit_mode = self._compra_id is not None
+        self.is_subject_excluded_purchase = bool(self._compra_data.get("is_subject_excluded_purchase"))
+        self._user_selected_vendor = False
+        self._suppress_vendor_signal = False
         self.setWindowTitle("Editar Compra" if self.edit_mode else "Registrar Compra")
 
         layout = QVBoxLayout()
@@ -1846,6 +1882,14 @@ class RegisterPurchaseDialog(QDialog):
         self._summary_group = None
         if self.edit_mode:
             self._init_summary_section(layout)
+
+        # Banner sujeto excluido (solo UI)
+        self.subject_excluded_banner = QLabel(
+            "El vendedor es un sujeto excluido: se generará comprobante de sujeto excluido (DTE 14) y el IVA queda deshabilitado."
+        )
+        self.subject_excluded_banner.setStyleSheet("font-weight: bold; background-color: #fff3cd; padding: 6px; border: 1px solid #ffeeba;")
+        self.subject_excluded_banner.setVisible(False)
+        layout.addWidget(self.subject_excluded_banner)
 
         # Mapeo producto -> vendedor y vendedor -> Distribuidor
         self._producto_vendedor_map = {}
@@ -1953,6 +1997,7 @@ class RegisterPurchaseDialog(QDialog):
 
         self.descuento_tipo_combo = QComboBox()
         self.descuento_tipo_combo.addItems(["%", "$"])
+        self.descuento_tipo_combo.setCurrentText("$")
         descuento_layout.addWidget(self.descuento_tipo_combo)
 
         layout.addLayout(descuento_layout)
@@ -2062,8 +2107,10 @@ class RegisterPurchaseDialog(QDialog):
         self.table.cellClicked.connect(self._eliminar_fila)
         self.product_search_edit.textChanged.connect(self._filtrar_lista_productos)
         self.product_list.currentRowChanged.connect(self._actualizar_vendedor_y_Distribuidor)
+        self.vendedor_combo.currentIndexChanged.connect(self._mark_vendor_user_selected)
         self.vendedor_combo.currentIndexChanged.connect(self._actualizar_Distribuidor)
         self.vendedor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
+        self.vendedor_combo.currentIndexChanged.connect(self._on_proveedor_changed)
         self.Distribuidor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
         self.comision_pct_spin.valueChanged.connect(self._actualizar_total_general)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_unitario_por_producto)
@@ -2078,6 +2125,10 @@ class RegisterPurchaseDialog(QDialog):
 
         if self.edit_mode:
             self._cargar_compra_existente(detalles)
+        # Aplica estado inicial de sujeto excluido si aplica
+        self._apply_subject_excluded_ui_state(self.is_subject_excluded_purchase)
+        # Solo marcar como elección del usuario cuando intervenga manualmente
+        self._user_selected_vendor = False
 
         # Conexiones para cálculo en tiempo real
         self.cantidad_spin.valueChanged.connect(self._calcular_preview_item)
@@ -2312,7 +2363,7 @@ class RegisterPurchaseDialog(QDialog):
         # IVA
         iva = 0
         total = subtotal_con_descuento
-        if self.iva_checkbox.isChecked():
+        if not self.is_subject_excluded_purchase and self.iva_checkbox.isChecked():
             if self.iva_desglosado_radio.isChecked():
                 iva = base_iva * 13 / 113
                 total = subtotal_con_descuento
@@ -2330,7 +2381,7 @@ class RegisterPurchaseDialog(QDialog):
         self.iva_label.setText(f"IVA: {self._format_currency(iva)}")
         self.comision_label_resumen.setText(f"Comisión: {self._format_currency(comision_monto)}")
         self.total_label.setText(f"TOTAL: {self._format_currency(total_final)}")
-        
+
     def _toggle_iva_radios(self, state):
         checked = self.iva_checkbox.isChecked()
         self.iva_desglosado_radio.setEnabled(checked)
@@ -2518,14 +2569,18 @@ class RegisterPurchaseDialog(QDialog):
         if not producto:
             return
         vendedor_id = producto.get("vendedor_id")
-        # Selecciona el vendedor correspondiente
+        # Solo auto-seleccionar si el usuario no ha elegido manualmente o no hay selección válida
+        if self._user_selected_vendor and self.vendedor_combo.currentData() is not None:
+            return
         combo_idx = self.vendedor_combo.findData(vendedor_id)
+        self._suppress_vendor_signal = True
         self.vendedor_combo.blockSignals(True)
         if combo_idx >= 0:
             self.vendedor_combo.setCurrentIndex(combo_idx)
-        else:
+        elif not self._user_selected_vendor:
             self.vendedor_combo.setCurrentIndex(0)
         self.vendedor_combo.blockSignals(False)
+        self._suppress_vendor_signal = False
         self._actualizar_Distribuidor()
 
     def _actualizar_Distribuidor(self):
@@ -2562,6 +2617,56 @@ class RegisterPurchaseDialog(QDialog):
         self.comision_label_resumen.setText(f"Comisión vendedor: {comision_val}%")
         self.comision_pct_spin.setValue(comision_val)
         self._update_summary_vendor_info()
+
+    def _on_proveedor_changed(self):
+        """Solo UI: muestra/oculta banner y aplica modo sujeto excluido."""
+
+        if self._suppress_vendor_signal:
+            return
+        vendor_id = self.vendedor_combo.currentData()
+        vendor = self._vendedores_map.get(vendor_id) if vendor_id is not None else None
+        enabled = bool(vendor.get("is_subject_excluded")) if vendor else False
+        self.is_subject_excluded_purchase = enabled
+        self.subject_excluded_banner.setVisible(enabled)
+        self._apply_subject_excluded_ui_state(enabled)
+        self._user_selected_vendor = True
+
+    def _mark_vendor_user_selected(self, *args, **kwargs):
+        """Marca que el usuario cambió el vendedor manualmente."""
+
+        if self._suppress_vendor_signal:
+            return
+        self._user_selected_vendor = True
+
+    def _apply_subject_excluded_ui_state(self, enabled: bool) -> None:
+        """Solo UI: deshabilita/rehabilita IVA cuando la compra es a sujeto excluido."""
+
+        if enabled:
+            self.iva_checkbox.blockSignals(True)
+            self.iva_checkbox.setChecked(False)
+            self.iva_checkbox.blockSignals(False)
+            self.iva_desglosado_radio.setChecked(False)
+            self.iva_añadido_radio.setChecked(False)
+            self.descuento_spin.blockSignals(True)
+            self.iva_desglosado_radio.setEnabled(False)
+            self.iva_añadido_radio.setEnabled(False)
+            self.iva_checkbox.setEnabled(False)
+            self.descuento_spin.blockSignals(False)
+            # Normaliza IVA de ítems existentes solo para la vista
+            if self.compra_items:
+                updated = False
+                for item in self.compra_items:
+                    if item.get("iva", 0) or item.get("iva_tipo") not in (None, "", "ninguno"):
+                        item["iva"] = 0
+                        item["iva_tipo"] = "ninguno"
+                        updated = True
+                if updated:
+                    self._actualizar_tabla()
+                    self._actualizar_total_general()
+        else:
+            self.iva_checkbox.setEnabled(True)
+            self.iva_desglosado_radio.setEnabled(True)
+            self.iva_añadido_radio.setEnabled(True)
 
     def _agregar_a_compra(self):
         producto_info = self._get_current_producto()
@@ -2600,7 +2705,11 @@ class RegisterPurchaseDialog(QDialog):
         iva = 0
         iva_tipo = "ninguno"
         total = subtotal_con_descuento
-        if self.iva_checkbox.isChecked():
+        if self.is_subject_excluded_purchase:
+            iva = 0
+            iva_tipo = "ninguno"
+            total = subtotal_con_descuento
+        elif self.iva_checkbox.isChecked():
             if self.iva_desglosado_radio.isChecked():
                 iva = base_iva * 13 / 113
                 iva_tipo = "desglosado"
@@ -2826,6 +2935,15 @@ class RegisterPurchaseDialog(QDialog):
 
         total_general_value = float(total_general)
         comision_total_value = float(comision_total)
+        vendor_info = self._vendedores_map.get(vendedor_id) if vendedor_id is not None else {}
+        is_subject_excluded_purchase = bool(
+            self.is_subject_excluded_purchase or (vendor_info.get("is_subject_excluded") if vendor_info else False)
+        )
+        prev_dte_status = self._compra_data.get("subject_excluded_dte_status") if self.edit_mode else None
+        if is_subject_excluded_purchase:
+            dte_status = prev_dte_status or "PENDIENTE"
+        else:
+            dte_status = "NO_APLICA"
 
         if self.edit_mode and self._compra_id is not None:
             self.parent().manager.db.update_compra_detallada(
@@ -2840,6 +2958,8 @@ class RegisterPurchaseDialog(QDialog):
                     "comision_pct": 0,
                     "comision_monto": comision_total_value,
                     "vendedor_id": vendedor_id,
+                    "is_subject_excluded_purchase": is_subject_excluded_purchase,
+                    "subject_excluded_dte_status": dte_status,
                 },
                 self.compra_items,
             )
@@ -2856,6 +2976,8 @@ class RegisterPurchaseDialog(QDialog):
             "comision_pct": 0,
             "comision_monto": comision_total_value,
             "vendedor_id": vendedor_id,
+            "is_subject_excluded_purchase": is_subject_excluded_purchase,
+            "subject_excluded_dte_status": dte_status,
         })
 
         for item in self.compra_items:
@@ -2997,6 +3119,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         descuento_layout.addWidget(self.descuento_spin)
         self.descuento_tipo_combo = QComboBox()
         self.descuento_tipo_combo.addItems(["%", "$"])
+        self.descuento_tipo_combo.setCurrentText("$")
         descuento_layout.addWidget(self.descuento_tipo_combo)
         left_layout.addLayout(descuento_layout)
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
@@ -4392,8 +4515,11 @@ class VendedorDialog(QDialog):
         self.codigo_edit = QLineEdit()
         self.nombre_edit = QLineEdit()
         self.dui_edit = QLineEdit()
-        self.dui_edit.setValidator(QIntValidator(0, 999999999))
-        self.dui_edit.setMaxLength(9)
+        self.dui_edit.setValidator(QRegularExpressionValidator(QRegularExpression(r"[0-9-]*")))
+        self.dui_edit.setMaxLength(12)
+        self.nit_edit = QLineEdit()
+        self.nit_edit.setValidator(QRegularExpressionValidator(QRegularExpression(r"[0-9-]*")))
+        self.nit_edit.setMaxLength(20)
         self.descripcion_edit = QLineEdit()
         self.Distribuidor_combo = QComboBox()
         self.Distribuidor_combo.setEditable(True)
@@ -4425,10 +4551,14 @@ class VendedorDialog(QDialog):
         layout.addWidget(self.nombre_edit)
         layout.addWidget(QLabel("DUI:"))
         layout.addWidget(self.dui_edit)
+        layout.addWidget(QLabel("NIT:"))
+        layout.addWidget(self.nit_edit)
         layout.addWidget(QLabel("Descripción:"))
         layout.addWidget(self.descripcion_edit)
         layout.addWidget(QLabel("Distribuidor:"))
         layout.addWidget(self.Distribuidor_combo)
+        self.subject_excluded_chk = QCheckBox("Sujeto excluido (no emite CCF ni factura, sin IVA)")
+        layout.addWidget(self.subject_excluded_chk)
 
         btns = QHBoxLayout()
         self.btn_ok = QPushButton("Guardar")
@@ -4448,26 +4578,47 @@ class VendedorDialog(QDialog):
             self.codigo_edit.setText(vendedor.get("codigo", ""))
             self.nombre_edit.setText(vendedor.get("nombre", ""))
             self.dui_edit.setText(vendedor.get("dui", ""))
+            self.nit_edit.setText(vendedor.get("nit", ""))
             self.descripcion_edit.setText(vendedor.get("descripcion", ""))
             Distribuidor_id = vendedor.get("Distribuidor_id")
             if Distribuidor_id:
                 idx = self.Distribuidor_combo.findData(Distribuidor_id)
                 if idx >= 0:
                     self.Distribuidor_combo.setCurrentIndex(idx)
+            self.subject_excluded_chk.setChecked(bool(vendedor.get("is_subject_excluded")))
 
     def _validar_y_aceptar(self):
         nombre = self.nombre_edit.text().strip()
         if not nombre:
             QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
             return
+        dui_clean = "".join(ch for ch in self.dui_edit.text() if ch.isdigit())
+        nit_clean = "".join(ch for ch in self.nit_edit.text() if ch.isdigit())
+        if dui_clean and len(dui_clean) != 9:
+            QMessageBox.warning(self, "Datos inválidos", "El DUI debe tener 9 dígitos (puede ingresar guion, se limpia automáticamente).")
+            return
+        if nit_clean and len(nit_clean) not in (0, 9, 14):
+            QMessageBox.warning(self, "Datos inválidos", "El NIT debe tener 9 o 14 dígitos (puede ingresar guiones, se limpian automáticamente).")
+            return
+        if self.subject_excluded_chk.isChecked():
+            nit_ok = len(nit_clean) in (9, 14)
+            dui_ok = len(dui_clean) == 9
+            if not (nit_ok or dui_ok):
+                QMessageBox.warning(
+                    self,
+                    "Datos inválidos",
+                    "Para sujetos excluidos debe registrar un NIT (9 o 14 dígitos) o un DUI (9 dígitos).",
+                )
+                return
+        # Validaciones opcionales si existen los campos
         if hasattr(self, 'telefono_edit'):
             telefono = self.telefono_edit.text().strip()
-            if not telefono:
-                QMessageBox.warning(self, "Datos inválidos", "El teléfono no puede estar vacío.")
+            if telefono and not telefono.isdigit():
+                QMessageBox.warning(self, "Datos inválidos", "El teléfono solo debe contener números.")
                 return
         if hasattr(self, 'nit_edit'):
             nit = self.nit_edit.text().strip()
-            if not nit or not validar_nit(nit):
+            if nit and not validar_nit(nit):
                 QMessageBox.warning(
                     self,
                     "Datos inválidos",
@@ -4476,7 +4627,7 @@ class VendedorDialog(QDialog):
                 return
         if hasattr(self, 'email_edit'):
             email = self.email_edit.text().strip()
-            if not email or not validar_email(email):
+            if email and not validar_email(email):
                 QMessageBox.warning(self, "Datos inválidos", "Debe ingresar un email válido.")
                 return
         self.accept()
@@ -4485,8 +4636,10 @@ class VendedorDialog(QDialog):
             "codigo": self.codigo_edit.text(),
             "nombre": self.nombre_edit.text(),
             "dui": self.dui_edit.text(),
+            "nit": self.nit_edit.text(),
             "descripcion": self.descripcion_edit.text(),
             "Distribuidor_id": self.Distribuidor_combo.currentData(),
+            "is_subject_excluded": 1 if self.subject_excluded_chk.isChecked() else 0,
         }
 
     def accept(self):
@@ -4962,6 +5115,11 @@ class CompraDetalleDialog(QDialog):
         row += 1
         info_grid.addWidget(QLabel(f"Distribuidor: {distribuidor_nombre}"), row, 0)
         info_grid.addWidget(QLabel(f"Vendedor: {vendedor_nombre}"), row, 1)
+        row += 1
+        is_subject_excluded = bool(compra.get("is_subject_excluded_purchase"))
+        dte_status = compra.get("subject_excluded_dte_status", "NO_APLICA") or "NO_APLICA"
+        info_grid.addWidget(QLabel(f"Sujeto excluido: {'Sí' if is_subject_excluded else 'No'}"), row, 0)
+        info_grid.addWidget(QLabel(f"Estado DTE sujeto excluido: {dte_status}"), row, 1)
         row += 1
         info_grid.addWidget(QLabel(f"Total general: ${compra.get('total', 0):.2f}"), row, 0)
         info_grid.addWidget(
@@ -5764,7 +5922,12 @@ class DTEConfigDialog(QDialog):
         layout.addLayout(form)
 
         self.correlativos_btn = QPushButton("Configuración de correlativo")
+        self.limpiar_facturas_btn = QPushButton("Limpiar facturas")
+        self.limpiar_facturas_btn.setToolTip(
+            "Borra todas las ventas, registros DTE y archivos generados."
+        )
         layout.addWidget(self.correlativos_btn)
+        layout.addWidget(self.limpiar_facturas_btn)
 
         btns = QHBoxLayout()
         guardar = QPushButton("Guardar")
@@ -5787,6 +5950,7 @@ class DTEConfigDialog(QDialog):
         self.ambiente_hacienda.currentTextChanged.connect(self._set_default_urls)
         self.endpoint_hacienda.textChanged.connect(self._set_default_urls)
         self.correlativos_btn.clicked.connect(self._open_correlativos)
+        self.limpiar_facturas_btn.clicked.connect(self._confirm_clear_invoices)
         self.modo_transmision.currentIndexChanged.connect(
             self._update_contingencia_visibility
         )
@@ -5798,6 +5962,101 @@ class DTEConfigDialog(QDialog):
             self._update_contingencia_visibility()
             self._apply_negocio_defaults()
         self._update_razon_social_state()
+
+    def _confirm_clear_invoices(self):
+        reply = QMessageBox.question(
+            self,
+            "Limpiar facturas",
+            (
+                "Esta acción elimina todas las ventas y sus facturas del inventario, "
+                "incluyendo los DTE guardados (PDF/JSON). No afectará productos, "
+                "clientes ni configuraciones. ¿Deseas continuar?"
+            ),
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            self._clear_sales_and_invoices()
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Error al limpiar",
+                f"No se pudieron limpiar las facturas: {exc}",
+            )
+            return
+        QMessageBox.information(
+            self,
+            "Inventario limpio",
+            "Se eliminaron las ventas, facturas y archivos DTE almacenados.",
+        )
+        self._refresh_parent_views()
+
+    def _clear_sales_and_invoices(self):
+        self.db.limpiar_ventas_y_dtes()
+        invoice_dirs = [
+            FACTURAS_CONSUMIDOR_FINAL_DIR,
+            FACTURAS_CREDITO_FISCAL_DIR,
+            TICKETS_OUTPUT_DIR,
+            NOTAS_DEBITO_DIR,
+            NOTAS_CREDITO_DIR,
+            NOTAS_REMISION_DIR,
+            FACTURAS_ARCHIVE_CF_DIR,
+            FACTURAS_ARCHIVE_CREDITO_DIR,
+            DTES_DIR,
+            DTE_FALLIDOS_DIR,
+            DTES_PENDIENTES_DIR,
+            DTE_FIRMADO_DIR,
+            RETENCIONES_DIR,
+            ensure_user_dir("dtes", "retenciones"),
+            ensure_user_dir("dtes_sujeto_excluido"),
+        ]
+        for path in invoice_dirs:
+            self._empty_directory(path)
+
+    def _empty_directory(self, path: str | os.PathLike) -> None:
+        folder = Path(path)
+        folder.mkdir(parents=True, exist_ok=True)
+        try:
+            for child in folder.iterdir():
+                if child.is_dir():
+                    shutil.rmtree(child)
+                else:
+                    child.unlink()
+        except FileNotFoundError:
+            return
+        except Exception:
+            logger.exception("No se pudo limpiar el directorio %s", path)
+            raise
+
+    def _refresh_parent_views(self) -> None:
+        parent = self.parent()
+        if parent is None:
+            return
+        try:
+            def _do_refresh():
+                try:
+                    if hasattr(parent, "actualizar_estado_global"):
+                        parent.actualizar_estado_global()
+                        return
+                    if hasattr(parent, "manager"):
+                        parent.manager.refresh_data()
+                        if hasattr(parent, "filter_products"):
+                            parent.filter_products()
+                    fact_tab = getattr(parent, "facturacion_tab", None)
+                    if fact_tab is not None and hasattr(fact_tab, "refresh_and_reload"):
+                        fact_tab.refresh_and_reload()
+                    sales_tab = getattr(parent, "sales_tab", None)
+                    if sales_tab is not None and hasattr(sales_tab, "load_sales"):
+                        sales_tab.load_sales()
+                    if hasattr(parent, "_actualizar_inventario_actual"):
+                        parent._actualizar_inventario_actual()
+                except Exception:
+                    logger.exception("No se pudo refrescar vistas tras limpiar facturas")
+
+            QTimer.singleShot(1000, _do_refresh)
+        except Exception:
+            logger.exception("No se pudo programar refresco tras limpiar facturas")
 
     def _open_correlativos(self):
         dlg = DTECorrelativoConfigDialog(
@@ -6263,6 +6522,214 @@ class ContingenciaConfigDialog(QDialog):
     def get_config(self) -> dict[str, object]:
         return self._config or {"tipo": None, "motivo": ""}
 
+
+# Nuevo flujo manual para creación de CRE desde botón "Retención de IVA"
+class RetencionIVADialog(QDialog):
+    def __init__(self, manager, parent=None):
+        super().__init__(parent)
+        self.manager = manager
+        self.db = manager.db if manager else None
+        self.setWindowTitle("Retención de IVA (CRE)")
+        self.resize(520, 360)
+        layout = QVBoxLayout(self)
+
+        file_row = QHBoxLayout()
+        self.path_edit = QLineEdit()
+        self.path_edit.setReadOnly(True)
+        select_btn = QPushButton("Seleccionar JSON…")
+        select_btn.clicked.connect(self._seleccionar_json)
+        file_row.addWidget(self.path_edit)
+        file_row.addWidget(select_btn)
+        layout.addLayout(file_row)
+
+        self.info_labels: dict[str, QLabel] = {}
+
+        def add_info(label: str) -> QLabel:
+            row = QHBoxLayout()
+            row.addWidget(QLabel(label))
+            value_lbl = QLabel("-")
+            value_lbl.setWordWrap(True)
+            row.addWidget(value_lbl, 1)
+            layout.addLayout(row)
+            self.info_labels[label] = value_lbl
+            return value_lbl
+
+        add_info("Número control origen:")
+        add_info("Código generación origen:")
+        add_info("Emisor:")
+        add_info("Receptor:")
+        add_info("Monto sujeto retención:")
+        add_info("IVA retenido:")
+        add_info("Fecha emisión:")
+
+        btn_box = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel, parent=self)
+        btn_box.accepted.connect(self._handle_accept)
+        btn_box.rejected.connect(self.reject)
+        layout.addWidget(btn_box)
+
+        self._payload: dict[str, Any] | None = None
+        self._file_path: str | None = None
+
+    def _seleccionar_json(self):
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar DTE (JSON)",
+            "",
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "r", encoding="utf-8") as fh:
+                raw = json.load(fh)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo leer el JSON:\n{exc}")
+            return
+        # Soporta JSON plano y JSON envuelto en {"dteJson": {...}}
+        if isinstance(raw, dict) and "dteJson" in raw:
+            data = raw.get("dteJson")
+        else:
+            data = raw
+        ident = data.get("identificacion") or data.get("identificador") or {}
+        tipo = str(ident.get("tipoDte") or "").zfill(2)
+        if tipo != "03":
+            QMessageBox.warning(
+                self,
+                "DTE inválido",
+                "El archivo seleccionado no es un Crédito Fiscal (tipo DTE 03).",
+            )
+            return
+        self._payload = data
+        self._file_path = path
+        self.path_edit.setText(path)
+        self._poblar_info(data)
+
+    def _poblar_info(self, data: Mapping[str, Any]) -> None:
+        ident = data.get("identificacion") or {}
+        emisor = data.get("emisor") or {}
+        receptor = data.get("receptor") or {}
+        resumen = data.get("resumen") or {}
+        numero_control = ident.get("numeroControl") or ""
+        codigo_generacion = ident.get("codigoGeneracion") or ""
+        fec = ident.get("fecEmi") or ident.get("fechaEmision") or ""
+        base = resumen.get("totalSujetoRetencion") or resumen.get("totalGravada") or 0
+        retenido = resumen.get("totalIVAretenido") or resumen.get("ivaRete1") or 0
+
+        def _fmt(val):
+            try:
+                return f"{float(val):.2f}"
+            except Exception:
+                return str(val or "")
+
+        def _fmt_party(info: Mapping[str, Any]) -> str:
+            nombre = info.get("nombre") or info.get("nombreComercial") or ""
+            nit = info.get("nit") or info.get("numDocumento") or ""
+            return f"{nombre} (NIT: {nit})" if nombre or nit else "-"
+
+        setters = {
+            "Número control origen:": numero_control or "-",
+            "Código generación origen:": codigo_generacion or "-",
+            "Emisor:": _fmt_party(emisor),
+            "Receptor:": _fmt_party(receptor),
+            "Monto sujeto retención:": _fmt(base),
+            "IVA retenido:": _fmt(retenido),
+            "Fecha emisión:": str(fec or "-"),
+        }
+        for label, text in setters.items():
+            if label in self.info_labels:
+                self.info_labels[label].setText(text)
+
+    def _handle_accept(self):
+        if not self._payload or not self.db:
+            QMessageBox.warning(self, "Retención de IVA", "Seleccione primero un DTE válido.")
+            return
+        ident = self._payload.get("identificacion") or {}
+        resumen = self._payload.get("resumen") or {}
+        fecha_emision = str(ident.get("fecEmi") or date.today().isoformat())
+        total = resumen.get("totalPagar") or resumen.get("montoTotalOperacion") or 0
+        try:
+            total_val = float(total)
+        except Exception:
+            total_val = 0.0
+        modo_raw = None
+        getter = getattr(getattr(self, "manager", None), "get_modo_transmision_actual", None)
+        if callable(getter):
+            try:
+                modo_raw = getter()
+            except Exception:
+                modo_raw = None
+        modo_str = str(modo_raw or "").strip().lower()
+        modo_contingencia = modo_str in {"contingencia", "2", "02"}
+
+        if modo_contingencia:
+            QMessageBox.warning(
+                self,
+                "Retención de IVA",
+                "No se pueden emitir comprobantes de retención en modo contingencia. "
+                "Cambia el modo de transmisión a Normal e inténtalo de nuevo (Hacienda no lo permite).",
+            )
+            return
+
+        extra = {
+            "retencion_manual": True,
+            "origen": "RETENCION_IVA_MANUAL",
+            "cr_origen": {
+                "codigo_generacion": ident.get("codigoGeneracion"),
+                "numero_control": ident.get("numeroControl"),
+            },
+        }
+        try:
+            # Venta “soporte” marcada para identificarla en reportes si se requiere excluir.
+            venta_id = self.db.add_venta(
+                fecha_emision,
+                total_val,
+                estado="Pagada",
+                extra=extra,
+            )
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Retención de IVA",
+                f"No se pudo registrar la venta asociada al CRE:\n{exc}",
+            )
+            return
+
+        try:
+            service = RetencionCRService(self.db)
+            with loading_dialog(self, "Generando comprobante de retención…"):
+                payload = service.prepare_cr(
+                    venta_id,
+                    factura=self._payload,
+                    modo_contingencia=modo_contingencia,
+                )
+            with loading_dialog(self, "Enviando comprobante de retención…"):
+                resp = service.send_cr(venta_id)
+        except Exception as exc:
+            logger.exception("Error en flujo manual de CRE", exc_info=exc)
+            QMessageBox.critical(
+                self,
+                "Retención de IVA",
+                f"No se pudo generar o enviar el CRE:\n{exc}",
+            )
+            return
+
+        estado = str(resp.get("estado") or "").strip()
+        sello = (
+            resp.get("sello")
+            or resp.get("selloRecibido")
+            or resp.get("selloRecepcion")
+            or ""
+        )
+        partes = [f"Estado: {estado or 'Desconocido'}"]
+        if sello:
+            partes.append(f"Sello: {sello}")
+        QMessageBox.information(
+            self,
+            "Retención de IVA",
+            "\n".join(partes),
+        )
+        self.accept()
+
 class TrabajadorDialog(QDialog):
     def __init__(self, trabajador=None, parent=None):
         super().__init__(parent)
@@ -6455,29 +6922,119 @@ class UserEditDialog(QDialog):
         )
 
 
+class RoleDelegate(QStyledItemDelegate):
+    """Pinta badges de rol en la tabla de usuarios."""
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        text = str(index.data() or "").strip().lower()
+        bg = QColor("#F3F4F6")
+        fg = QColor("#4B5563")
+        if text == "admin":
+            bg = QColor("#F3E8FF")
+            fg = QColor("#7E22CE")
+        elif text == "user":
+            bg = QColor("#E0F2FE")
+            fg = QColor("#0369A1")
+        rect = QRectF(option.rect.adjusted(10, 12, -10, -12))
+        path = QPainterPath()
+        path.addRoundedRect(rect, 10, 10)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(bg)
+        painter.drawPath(path)
+        painter.setPen(fg)
+        font = painter.font()
+        font.setBold(True)
+        base_size = font.pointSize()
+        if base_size <= 0:
+            base_size = 12
+        font.setPointSize(base_size)
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignCenter, index.data())
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        return QSize(option.rect.width(), 48)
+
+
 class UserConfigDialog(QDialog):
     def __init__(self, db, parent=None):
         super().__init__(parent)
         self.db = db
         self.setWindowTitle("Configuración de usuarios")
-        layout = QVBoxLayout(self)
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 20, 20, 20)
+        main_layout.setSpacing(16)
+
+        card = QFrame()
+        card.setObjectName("ModernCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(16, 16, 16, 16)
+        card_layout.setSpacing(12)
+
+        title = QLabel("Usuarios y Permisos")
+        title_font = title.font()
+        base_size = title_font.pointSize()
+        if base_size <= 0:
+            base_size = 12
+        title_font.setPointSize(base_size + 4)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        subtitle = QLabel("Gestione los usuarios del sistema y sus niveles de acceso.")
+        subtitle.setStyleSheet("color: #6b7280;")
+        card_layout.addWidget(title)
+        card_layout.addWidget(subtitle)
+
         self.table = QTableWidget()
-        self.table.setColumnCount(3)
-        self.table.setHorizontalHeaderLabels(["ID", "Usuario", "Rol"])
+        self.table.setColumnCount(4)
+        self.table.setHorizontalHeaderLabels(["ID", "USUARIO", "ROL", "ACCIONES"])
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        layout.addWidget(self.table)
-        btns = QHBoxLayout()
-        add_btn = QPushButton("Agregar")
+        self.table.setFrameShape(QFrame.NoFrame)
+        self.table.setShowGrid(False)
+        self.table.setAlternatingRowColors(True)
+        self.table.verticalHeader().setDefaultSectionSize(68)
+        self.table.verticalHeader().hide()
+        header = self.table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setSectionResizeMode(1, QHeaderView.Stretch)
+        header.setSectionResizeMode(2, QHeaderView.Stretch)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        header.setDefaultAlignment(Qt.AlignCenter)
+        header.setFixedHeight(54)
+        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setStyleSheet(self.table.styleSheet() + "font-size: 15px;")
+        self.role_delegate = RoleDelegate(self.table)
+        self.table.setItemDelegateForColumn(2, self.role_delegate)
+        card_layout.addWidget(self.table)
+        self.table.setColumnHidden(0, True)
+
+        footer = QHBoxLayout()
+        footer.setSpacing(10)
+        add_btn = QPushButton("Nuevo Usuario")
+        add_btn.setObjectName("PrimaryActionButton")
+        add_btn.setMinimumHeight(50)
+        add_btn.setStyleSheet(add_btn.styleSheet() + "font-size: 15px;")
         edit_btn = QPushButton("Editar")
+        edit_btn.setObjectName("SecondaryActionButton")
+        edit_btn.setMinimumHeight(50)
+        edit_btn.setStyleSheet(edit_btn.styleSheet() + "font-size: 15px;")
         del_btn = QPushButton("Eliminar")
-        btns.addWidget(add_btn)
-        btns.addWidget(edit_btn)
-        btns.addWidget(del_btn)
-        layout.addLayout(btns)
+        del_btn.setObjectName("DangerActionButton")
+        del_btn.setMinimumHeight(50)
+        del_btn.setStyleSheet(del_btn.styleSheet() + "font-size: 15px;")
+        footer.addWidget(add_btn)
+        footer.addStretch(1)
+        footer.addWidget(edit_btn)
+        footer.addWidget(del_btn)
+        card_layout.addLayout(footer)
+
         add_btn.clicked.connect(self._add_user)
         edit_btn.clicked.connect(self._edit_user)
         del_btn.clicked.connect(self._delete_user)
+
+        main_layout.addWidget(card)
         self.refresh()
 
     def refresh(self):
@@ -6485,8 +7042,52 @@ class UserConfigDialog(QDialog):
         self.table.setRowCount(len(users))
         for row, u in enumerate(users):
             self.table.setItem(row, 0, QTableWidgetItem(str(u["id"])))
-            self.table.setItem(row, 1, QTableWidgetItem(u["username"]))
-            self.table.setItem(row, 2, QTableWidgetItem(u["role"]))
+            user_item = QTableWidgetItem(u["username"])
+            user_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 1, user_item)
+            role_item = QTableWidgetItem(u["role"])
+            role_item.setTextAlignment(Qt.AlignCenter)
+            self.table.setItem(row, 2, role_item)
+            self._set_action_cell(row)
+        self.table.resizeRowsToContents()
+
+    def _set_action_cell(self, row):
+        container = QWidget()
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(4, 0, 8, 0)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignCenter)
+        edit_btn = QPushButton("✏️")
+        edit_btn.setProperty("class", "table-icon-btn")
+        edit_btn.setFixedSize(80, 46)
+        edit_btn_font = edit_btn.font()
+        edit_btn_font.setPointSize(24)
+        edit_btn_font.setFamily(edit_btn_font.defaultFamily())
+        edit_btn.setFont(edit_btn_font)
+        edit_btn.setStyleSheet("text-align: center; color: #0ea5e9; font-size: 26px;")
+        edit_btn.clicked.connect(lambda _, r=row: self._select_and_edit(r))
+        del_btn = QPushButton("🗑")
+        del_btn.setProperty("class", "table-icon-btn")
+        del_btn.setFixedSize(80, 46)
+        del_btn_font = del_btn.font()
+        del_btn_font.setPointSize(24)
+        del_btn_font.setFamily("Segoe UI Symbol")
+        del_btn.setFont(del_btn_font)
+        del_btn.setStyleSheet("text-align: center; color: #dc2626; font-size: 26px;")
+        del_btn.clicked.connect(lambda _, r=row: self._select_and_delete(r))
+        layout.addWidget(edit_btn)
+        layout.addWidget(del_btn)
+        self.table.setCellWidget(row, 3, container)
+
+    def _select_and_edit(self, row: int):
+        if row >= 0:
+            self.table.selectRow(row)
+            self._edit_user()
+
+    def _select_and_delete(self, row: int):
+        if row >= 0:
+            self.table.selectRow(row)
+            self._delete_user()
 
     def _add_user(self):
         dlg = UserEditDialog(parent=self)

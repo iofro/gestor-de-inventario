@@ -42,7 +42,8 @@ logger = logging.getLogger(__name__)
 
 UUID36_RE = re.compile(r"^[A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12}$")
 SELLO40_RE = re.compile(r"^[0-9A-Z]{40}$")
-NUM_CONTROL_RE = re.compile(r"^DTE-(0[0-9]|1[0-2])-[A-Z0-9]{8}-[0-9]{15}$")
+# Acepta cualquier tipoDte de 2 dígitos y el bloque SxxxPxxx seguido de 15 dígitos.
+NUM_CONTROL_RE = re.compile(r"^DTE-[0-9]{2}-S[A-Z0-9]{3}P[A-Z0-9]{3}-[0-9]{15}$")
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 TEL_EMISOR_RE = re.compile(r"^[0-9+;]{8,26}$")
 TEL_RECEPTOR_RE = re.compile(r"^[0-9+;]{8,50}$")
@@ -775,6 +776,10 @@ def _quick_invalidacion_checks(
     if not isinstance(ident, dict):
         raise ValueError("Evento de invalidación sin identificación")
 
+    if _is_fse_anulacion_payload(evento):
+        _validate_fse_anulacion(evento, ambiente_raiz=ambiente_raiz)
+        return
+
     version = ident.get("version")
     if str(version) != "2":
         raise ValueError("La invalidación debe usar identificacion.version = 2")
@@ -869,6 +874,7 @@ def _post_invalidacion(
         raise ValueError("Evento de invalidación inválido")
 
     ident = evento_data.get("identificacion") if isinstance(evento_data, dict) else None
+    is_fse = _is_fse_anulacion_payload(evento_data)
     ambiente_evento = normalize_ambiente((ident or {}).get("ambiente"))
     ambiente_cfg = normalize_ambiente(ambiente_config)
     ambiente_raiz = ambiente_evento or ambiente_cfg
@@ -888,9 +894,13 @@ def _post_invalidacion(
         try:
             version_envio = int(str(version_raw))
         except (TypeError, ValueError) as exc:
-            raise ValueError("Versión de la invalidación inválida") from exc
-    if version_envio != 2:
+            if not is_fse:
+                raise ValueError("Versión de la invalidación inválida") from exc
+            version_envio = 2
+    if not is_fse and version_envio != 2:
         raise ValueError("La invalidación debe usar identificacion.version = 2")
+    if is_fse and version_envio <= 0:
+        version_envio = 2
 
     id_envio_raw = evento_data.get("idEnvio")
     if id_envio_raw in (None, ""):
@@ -901,6 +911,35 @@ def _post_invalidacion(
         id_envio = 1
     if id_envio <= 0:
         id_envio = 1
+
+    try:
+        doc_rel_tipo = None
+        doc_rel = evento_data.get("documentoRelacionado")
+        if isinstance(doc_rel, list) and doc_rel:
+            first_rel = doc_rel[0]
+            if isinstance(first_rel, dict):
+                doc_rel_tipo = str(
+                    first_rel.get("tipoDte") or first_rel.get("tipoDTE") or ""
+                ).zfill(2)
+        tipo_envio = ident.get("tipoDte") or documento_evento.get("tipoDte")
+        logger.info(
+            "Enviando DTE de invalidación",
+            extra={
+                "tipoDte": tipo_envio,
+                "version": ident.get("version"),
+                "codigoGeneracion": ident.get("codigoGeneracion"),
+                "tipoDte_relacionado": doc_rel_tipo,
+            },
+        )
+        try:
+            debug_dir = ensure_user_dir("debug_anulaciones")
+            ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+            fname = debug_dir / f"anulacion_{ident.get('tipoDte', 'XX')}_{ts}.json"
+            fname.write_text(stable_json.stable_stringify(evento_data), encoding="utf-8")
+        except Exception:
+            logger.exception("No se pudo guardar JSON de depuración para anulacion")
+    except Exception:
+        logger.exception("No se pudo registrar log de envío de invalidación")
 
     firmado = str(sign_json(evento_data)).strip()
     if firmado.count(".") != 2:
@@ -1012,33 +1051,8 @@ def _post_invalidacion(
     print(json.dumps(result, ensure_ascii=False))
     return result
 
-def build_invalidacion_json(
-    factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
-) -> dict:
-    ident = factura.get("identificacion") or {}
-    codigo_gen_raw = ident.get("codigoGeneracion")
-    numero_control_raw = ident.get("numeroControl")
-    fec_emi = ident.get("fecEmi")
-    sello_raw = factura.get("selloRecibido")
-    if not all([codigo_gen_raw, numero_control_raw, fec_emi, sello_raw]):
-        raise ValueError("Factura incompleta para invalidación")
 
-    codigo_gen = str(codigo_gen_raw).strip().upper()
-    if not UUID36_RE.fullmatch(codigo_gen):
-        raise ValueError("codigoGeneracion de la factura inválido")
-    numero_control = str(numero_control_raw).strip().upper()
-    if not NUM_CONTROL_RE.fullmatch(numero_control):
-        raise ValueError("numeroControl de la factura inválido")
-    try:
-        datetime.strptime(str(fec_emi), "%Y-%m-%d")
-    except (TypeError, ValueError) as exc:
-        raise ValueError("Fecha de emisión del DTE inválida") from exc
-    sello = str(sello_raw).strip().upper()
-    if not SELLO40_RE.fullmatch(sello):
-        raise ValueError(
-            "selloRecibido inválido; debe coincidir con el sello alfanumérico de 40 caracteres emitido por MH"
-        )
-
+def _build_emisor_for_anulacion() -> dict:
     negocio = _load_datos_negocio() or {}
     nit = solo_digitos(negocio.get("nit", ""))
     if len(nit) not in (9, 14):
@@ -1109,6 +1123,307 @@ def build_invalidacion_json(
         emisor["codEstableMH"] = cod_estable_mh
     if cod_punto_venta_mh is not None:
         emisor["codPuntoVentaMH"] = cod_punto_venta_mh
+    return emisor
+
+
+def _fetch_sello_fse(db: DB | None, codigo: str, numero_control: str) -> str:
+    if db is None:
+        raise ValueError("Base de datos requerida para obtener sello de recepción del FSE")
+    db.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+    db.ensure_column("dte_envios", "numero_control", "TEXT")
+    db.ensure_column("dte_envios", "respuesta", "TEXT")
+    row = None
+    codigo = (codigo or "").strip().upper()
+    numero_control = (numero_control or "").strip().upper()
+    try:
+        row = db.cursor.execute(
+            """
+            SELECT TRIM(sello) AS sello, respuesta
+              FROM dte_envios
+             WHERE UPPER(codigo_generacion)=?
+             ORDER BY id DESC LIMIT 1
+            """,
+            (codigo,),
+        ).fetchone()
+    except Exception:
+        row = None
+    if row is None and numero_control:
+        try:
+            row = db.cursor.execute(
+                """
+                SELECT TRIM(sello) AS sello, respuesta
+                  FROM dte_envios
+                 WHERE UPPER(numero_control)=?
+                 ORDER BY id DESC LIMIT 1
+                """,
+                (numero_control,),
+            ).fetchone()
+        except Exception:
+            row = None
+    if row is None:
+        raise ValueError("No se encontró sello de recepción para el FSE")
+    if isinstance(row, dict):
+        sello_raw = row.get("sello")
+        resp_raw = row.get("respuesta")
+    else:
+        try:
+            sello_raw = row["sello"]
+            resp_raw = row["respuesta"]
+        except Exception:
+            sello_raw = row[0]
+            resp_raw = row[1] if len(row) > 1 else None
+    sello = str(sello_raw or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        if isinstance(resp_raw, str):
+            try:
+                resp_json = json.loads(resp_raw)
+            except Exception:
+                resp_json = None
+            if isinstance(resp_json, dict):
+                sello_resp = (
+                    resp_json.get("selloRecibido")
+                    or resp_json.get("selloRecepcion")
+                    or resp_json.get("sello")
+                )
+                sello = str(sello_resp or "").strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError("No se encontró un sello de recepción válido para el FSE")
+    return sello
+
+
+def _build_fse_anulacion_json(
+    factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
+) -> dict:
+    ident_orig = factura.get("identificacion") or {}
+    codigo_gen_raw = ident_orig.get("codigoGeneracion")
+    numero_control_raw = ident_orig.get("numeroControl")
+    fec_emi_raw = ident_orig.get("fecEmi") or ident_orig.get("fechaEmision") or ident_orig.get("fecha")
+    if not all([codigo_gen_raw, numero_control_raw, fec_emi_raw]):
+        raise ValueError("Factura FSE incompleta para anulación")
+    codigo_gen = str(codigo_gen_raw).strip().upper()
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion del FSE inválido")
+    numero_control = str(numero_control_raw).strip().upper()
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl del FSE inválido")
+    try:
+        fec_emi = datetime.strptime(str(fec_emi_raw)[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
+    except Exception as exc:
+        raise ValueError("Fecha de emisión del FSE inválida") from exc
+
+    resumen = factura.get("resumen") or {}
+    monto_iva_raw = resumen.get("montoIva")
+    if monto_iva_raw is None:
+        monto_iva_raw = resumen.get("ivaRete1")
+    monto_iva_val = Decimal("0")
+    if monto_iva_raw is not None:
+        try:
+            monto_iva_val = Decimal(str(monto_iva_raw))
+        except (InvalidOperation, TypeError, ValueError) as exc:
+            raise ValueError("montoIva inválido en FSE") from exc
+        if monto_iva_val < 0:
+            raise ValueError("montoIva de FSE no puede ser negativo")
+    try:
+        monto_iva_val = monto_iva_val.quantize(Decimal("0.01"))
+    except InvalidOperation as exc:
+        raise ValueError("montoIva inválido en FSE") from exc
+    monto_iva = float(monto_iva_val)
+
+    receptor = factura.get("sujetoExcluido") if factura.get("sujetoExcluido") else factura.get("receptor") or {}
+    if not isinstance(receptor, dict):
+        receptor = {}
+    nombre_rec = normalize_nombre(
+        receptor.get("nombre") or receptor.get("nombreComercial"),
+        max_length=200,
+    )
+    tip_doc_rec_raw = receptor.get("tipoDocumento") or receptor.get("tipoDocumentoIdentidad")
+    tip_doc_rec = str(tip_doc_rec_raw).zfill(2) if tip_doc_rec_raw not in (None, "") else None
+    if tip_doc_rec is None and receptor.get("nit"):
+        tip_doc_rec = "36"
+    num_doc_rec_raw = receptor.get("numDocumento") or receptor.get("nit")
+    if isinstance(num_doc_rec_raw, str):
+        num_doc_rec = num_doc_rec_raw.strip()
+    elif num_doc_rec_raw is None:
+        num_doc_rec = ""
+    else:
+        num_doc_rec = str(num_doc_rec_raw)
+    if not nombre_rec:
+        nombre_rec = normalize_nombre("Consumidor final", max_length=200)
+    if tip_doc_rec is None or tip_doc_rec not in TIPO_DOC_CAT22:
+        tip_doc_rec = "37"
+    if not (3 <= len(num_doc_rec) <= 20):
+        num_doc_rec = "CF"
+
+    def _val_persona(nombre, tip, num, *, sujeto: str):
+        nombre_val = (nombre or "").strip()
+        if not (5 <= len(nombre_val) <= 100):
+            raise ValueError(f"Nombre de {sujeto} inválido")
+
+        tip_val = str(tip or "").strip()
+        if tip_val:
+            tip_val = tip_val.zfill(2)
+            if tip_val == "00":
+                tip_val = None
+            elif tip_val not in TIPO_DOC_CAT22:
+                raise ValueError(f"Tipo de documento de {sujeto} inválido")
+        else:
+            tip_val = None
+
+        num_val = (num or "").strip()
+        if num_val:
+            if not (3 <= len(num_val) <= 20):
+                raise ValueError(f"Número de documento de {sujeto} inválido")
+        else:
+            num_val = None
+        if num_val is not None and tip_val is None:
+            raise ValueError(
+                f"Tipo de documento de {sujeto} requerido cuando se indica número"
+            )
+        return nombre_val, tip_val, num_val
+
+    tipo_raw = ui_motivo.get("tipoAnulacion")
+    try:
+        motivo_tipo = int(str(tipo_raw))
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Tipo de anulación de FSE inválido") from exc
+    if motivo_tipo not in TIPO_ANULACION_VALIDOS:
+        raise ValueError("Tipo de anulación de FSE inválido")
+    motivo_desc = str(ui_motivo.get("motivoAnulacion") or "").strip()
+    if not motivo_desc or len(motivo_desc) < 5 or len(motivo_desc) > 300:
+        raise ValueError("Motivo de anulación de FSE inválido")
+
+    nombre_resp, tip_resp, num_resp = _val_persona(
+        ui_motivo.get("nombreResponsable"),
+        ui_motivo.get("tipDocResponsable"),
+        ui_motivo.get("numDocResponsable"),
+        sujeto="responsable",
+    )
+    nombre_sol, tip_sol, num_sol = _val_persona(
+        ui_motivo.get("nombreSolicita"),
+        ui_motivo.get("tipDocSolicita"),
+        ui_motivo.get("numDocSolicita"),
+        sujeto="solicitante",
+    )
+
+    codigo_generacion_r = None
+    if motivo_tipo != 2:
+        codigo_generacion_r_raw = ui_motivo.get("codigoGeneracionR")
+        if not isinstance(codigo_generacion_r_raw, str) or not codigo_generacion_r_raw.strip():
+            raise ValueError(
+                "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                "Ingresa ese código en 'Documento que reemplaza'."
+            )
+        codigo_generacion_r = codigo_generacion_r_raw.strip().upper()
+        if not UUID36_RE.fullmatch(codigo_generacion_r):
+            raise ValueError(
+                "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones."
+            )
+        if codigo_generacion_r == codigo_gen:
+            raise ValueError(ERROR_REEMPLAZO_DISTINTO)
+        if db is not None:
+            metadata_reemplazo = _ensure_replacement_document(db, codigo_generacion_r)
+            tipo_reemplazo = metadata_reemplazo.get("tipo_dte")
+            if tipo_reemplazo and tipo_reemplazo != "14":
+                raise ValueError(ERROR_REEMPLAZO_TIPO)
+
+    sello_recibido = _fetch_sello_fse(db, codigo_gen, numero_control)
+
+    ambiente_val = normalize_ambiente(ambiente) or "00"
+    now = datetime.now(TZ_EL_SALVADOR)
+    identificacion = {
+        "version": 2,
+        "ambiente": ambiente_val,
+        "codigoGeneracion": codigo_gen,
+        "fecAnula": now.strftime("%Y-%m-%d"),
+        "horAnula": now.strftime("%H:%M:%S"),
+    }
+    documento = {
+        "tipoDte": "14",
+        "codigoGeneracion": codigo_gen,
+        "selloRecibido": sello_recibido,
+        "numeroControl": numero_control,
+        "fecEmi": fec_emi,
+        "montoIva": monto_iva,
+        "tipoDocumento": tip_doc_rec,
+        "numDocumento": num_doc_rec,
+        "nombre": nombre_rec,
+        "codigoGeneracionR": codigo_generacion_r,
+    }
+    tel_rec = receptor.get("telefono")
+    if tel_rec not in (None, ""):
+        documento["telefono"] = str(tel_rec).strip()
+    cor_rec = receptor.get("correo")
+    if cor_rec not in (None, ""):
+        documento["correo"] = str(cor_rec).strip()
+
+    emisor = _build_emisor_for_anulacion()
+    motivo = {
+        "tipoAnulacion": motivo_tipo,
+        "motivoAnulacion": motivo_desc,
+        "nombreResponsable": nombre_resp,
+        "tipDocResponsable": tip_resp,
+        "numDocResponsable": num_resp,
+        "nombreSolicita": nombre_sol,
+        "tipDocSolicita": tip_sol,
+        "numDocSolicita": num_sol,
+    }
+    payload = {
+        "identificacion": identificacion,
+        "documento": documento,
+        "emisor": emisor,
+        "motivo": motivo,
+    }
+    try:
+        logger.info(
+            "FSE anulacion – payload generado",
+            extra={
+                "tipo_dte_original": ident_orig.get("tipoDte"),
+                "codigo_generacion_original": ident_orig.get("codigoGeneracion"),
+                "anulacion_tipoDte": payload.get("documento", {}).get("tipoDte"),
+                "anulacion_version": payload.get("identificacion", {}).get("version"),
+                "anulacion_codigoGeneracion": payload.get("identificacion", {}).get("codigoGeneracion"),
+            },
+        )
+        logger.debug(
+            "FSE anulacion – JSON completo: %s",
+            stable_json.stable_stringify(payload),
+        )
+    except Exception:
+        logger.exception("FSE anulacion – fallo al registrar payload")
+    return payload
+
+def build_invalidacion_json(
+    factura: dict, ui_motivo: dict, *, ambiente: str, db: DB | None = None
+) -> dict:
+    ident = factura.get("identificacion") or {}
+    tipo_dte_raw = ident.get("tipoDte")
+    tipo_dte_str = str(tipo_dte_raw).zfill(2) if tipo_dte_raw is not None else ""
+    if tipo_dte_str == "14":
+        return _build_fse_anulacion_json(factura, ui_motivo, ambiente=ambiente, db=db)
+    codigo_gen_raw = ident.get("codigoGeneracion")
+    numero_control_raw = ident.get("numeroControl")
+    fec_emi = ident.get("fecEmi")
+    sello_raw = factura.get("selloRecibido")
+    if not all([codigo_gen_raw, numero_control_raw, fec_emi, sello_raw]):
+        raise ValueError("Factura incompleta para invalidación")
+
+    codigo_gen = str(codigo_gen_raw).strip().upper()
+    if not UUID36_RE.fullmatch(codigo_gen):
+        raise ValueError("codigoGeneracion de la factura inválido")
+    numero_control = str(numero_control_raw).strip().upper()
+    if not NUM_CONTROL_RE.fullmatch(numero_control):
+        raise ValueError("numeroControl de la factura inválido")
+    try:
+        datetime.strptime(str(fec_emi), "%Y-%m-%d")
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Fecha de emisión del DTE inválida") from exc
+    sello = str(sello_raw).strip().upper()
+    if not SELLO40_RE.fullmatch(sello):
+        raise ValueError(
+            "selloRecibido inválido; debe coincidir con el sello alfanumérico de 40 caracteres emitido por MH"
+        )
+
+    emisor = _build_emisor_for_anulacion()
 
     receptor = factura.get("receptor") or {}
     nombre_rec = normalize_nombre(receptor.get("nombre"), max_length=200)
@@ -1206,8 +1521,6 @@ def build_invalidacion_json(
             raise ValueError("montoIva inválido") from exc
         monto_iva_val = float(monto_iva_decimal)
 
-    tipo_dte_raw = ident.get("tipoDte")
-    tipo_dte_str = str(tipo_dte_raw).zfill(2) if tipo_dte_raw is not None else ""
     if tipo_dte_str not in TIPO_DTE_VALIDOS:
         raise ValueError("tipoDte inválido")
 
@@ -1474,3 +1787,65 @@ def enviar_invalidacion(db: DB, data: dict) -> dict:
             )
     return res
 
+
+def _is_fse_anulacion_payload(evento: dict | None) -> bool:
+    """Detecta el esquema especial de anulación para FSE."""
+    if not isinstance(evento, dict):
+        return False
+    documento = evento.get("documento")
+    if isinstance(documento, dict):
+        tipo_doc = str(documento.get("tipoDte") or documento.get("tipoDTE") or "").zfill(2)
+        if tipo_doc == "14":
+            return True
+    ident = evento.get("identificacion") or {}
+    if isinstance(ident, dict):
+        tipo_ident = str(ident.get("tipoDte") or ident.get("tipoDTE") or "").zfill(2)
+        if tipo_ident == "14":
+            return True
+    return False
+
+
+def _validate_fse_anulacion(evento: dict, *, ambiente_raiz: str | None = None) -> None:
+    if not isinstance(evento, dict):
+        raise ValueError("Evento de anulación inválido")
+    ident = evento.get("identificacion") or {}
+    if not isinstance(ident, dict):
+        raise ValueError("Evento de anulación sin identificación")
+    version = ident.get("version")
+    if str(version) != "2":
+        raise ValueError("La invalidación debe usar identificacion.version = 2")
+    ambiente_evento = normalize_ambiente(ident.get("ambiente"))
+    if ambiente_evento is None:
+        raise ValueError("Ambiente de la anulación no determinado")
+    if ambiente_raiz is not None:
+        ambiente_raiz_norm = normalize_ambiente(ambiente_raiz)
+        if ambiente_raiz_norm and ambiente_evento != ambiente_raiz_norm:
+            raise ValueError("El ambiente del evento no coincide con el del envío")
+    for key in ("codigoGeneracion", "fecAnula", "horAnula"):
+        val = ident.get(key)
+        if val in (None, ""):
+            raise ValueError(f"{key} de identificacion requerido para FSE")
+    documento = evento.get("documento")
+    if not isinstance(documento, dict):
+        raise ValueError("documento requerido para anulación de FSE")
+    if evento.get("documentoRelacionado") not in (None, [], {}):
+        raise ValueError("documentoRelacionado no permitido para anulación de FSE")
+    tipo_dte = str(documento.get("tipoDte") or "").zfill(2)
+    if tipo_dte != "14":
+        raise ValueError("documento.tipoDte=14 requerido para anulación de FSE")
+    for key in ("codigoGeneracion", "selloRecibido", "numeroControl", "fecEmi"):
+        val = documento.get(key)
+        if val in (None, ""):
+            raise ValueError(f"{key} de documento requerido para FSE")
+    motivo = evento.get("motivo")
+    if not isinstance(motivo, dict):
+        raise ValueError("Motivo de anulación de FSE requerido")
+    for field in (
+        "tipoAnulacion",
+        "motivoAnulacion",
+        "nombreResponsable",
+        "tipDocResponsable",
+        "numDocResponsable",
+    ):
+        if motivo.get(field) in (None, ""):
+            raise ValueError(f"{field} requerido para FSE")

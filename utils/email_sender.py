@@ -6,6 +6,7 @@ from email.mime.base import MIMEBase
 from email import encoders
 import os
 import base64
+import ssl
 
 
 class EmailSender(QThread):
@@ -71,4 +72,16 @@ class EmailSender(QThread):
             error_msg = e.smtp_error.decode() if isinstance(e.smtp_error, bytes) else str(e.smtp_error)
             self.finished.emit(False, f"Error de autenticación: {error_msg}")
         except Exception as e:
-            self.finished.emit(False, str(e))
+            error_text = str(e)
+            if (
+                isinstance(e, ssl.SSLError)
+                or "UNEXPECTED_EOF_WHILE_READING" in error_text.upper()
+            ):
+                error_text = (
+                    "No se pudo enviar el correo porque el servidor cerró la conexión segura.\n"
+                    "Intenta de nuevo y revisa que:\n"
+                    "- Tu internet esté funcionando.\n"
+                    "- El correo/contraseña y el puerto configurado sean correctos (prueba 465 con SSL o 587 con STARTTLS).\n"
+                    "- Si tienes antivirus o firewall, prueba desactivarlo unos minutos o agregar una excepción para el envío de correo."
+                )
+            self.finished.emit(False, error_text)

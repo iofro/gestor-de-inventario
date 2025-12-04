@@ -1,12 +1,14 @@
 from PyQt5.QtWidgets import (
     QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QTableView, QLineEdit,
     QPushButton, QTabWidget, QMessageBox, QSplitter, QMenuBar, QAction, QFileDialog,
-    QListWidget, QLabel, QComboBox, QTreeWidget, QTreeWidgetItem, QTableWidget, QTableWidgetItem, QDialog,
+    QListWidget, QListWidgetItem, QLabel, QComboBox, QTableWidget, QTableWidgetItem, QDialog,
     QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy,
-    QInputDialog, QFormLayout, QDialogButtonBox, QSpinBox
+    QInputDialog, QFormLayout, QDialogButtonBox, QSpinBox, QFrame, QButtonGroup, QRadioButton,
+    QStyledItemDelegate, QStyleOptionViewItem, QStyle, QStackedWidget, QApplication,
+    QProgressBar, QScrollArea, QGridLayout
 )
-from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QTimer
-from PyQt5.QtGui import QColor
+from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QTimer, QRectF, QSize, QEvent, QModelIndex
+from PyQt5.QtGui import QColor, QPainter, QBrush, QPainterPath, QPen
 import os
 import json
 import sys
@@ -130,6 +132,798 @@ def _sync_configs(datos: dict, config: dict, *, nit_hint: str | None = None, amb
         tokens_reset = _clear_manual_tokens(dte_api) or tokens_reset
 
     return datos_changed, config_changed, tokens_reset
+
+
+class StockDelegate(QStyledItemDelegate):
+    """Delegate para mostrar badges de stock en la tabla de productos."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        try:
+            stock_value = float(index.data(Qt.DisplayRole))
+        except (ValueError, TypeError):
+            stock_value = 0
+
+        if stock_value <= 5:
+            bg_color = QColor("#FEF2F2")
+            text_color = QColor("#B91C1C")
+            text = f"Crítico ({int(stock_value)})"
+        elif stock_value <= 15:
+            bg_color = QColor("#FFFBEB")
+            text_color = QColor("#B45309")
+            text = f"Bajo ({int(stock_value)})"
+        else:
+            bg_color = QColor("#ECFDF5")
+            text_color = QColor("#047857")
+            text = f"En Stock ({int(stock_value)})"
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Fondo base
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(option.rect, QColor("#F0F9FF"))
+        else:
+            painter.fillRect(option.rect, QColor("white"))
+
+        # Badge
+        badge_rect = QRectF(option.rect)
+        badge_rect.adjust(15, 10, -15, -10)
+        path = QPainterPath()
+        path.addRoundedRect(badge_rect, 6, 6)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg_color))
+        painter.drawPath(path)
+
+        painter.setPen(text_color)
+        font = painter.font()
+        font.setBold(True)
+        font.setPointSize(9)
+        painter.setFont(font)
+        painter.drawText(badge_rect, Qt.AlignCenter, text)
+        painter.restore()
+
+
+class BatchQuantityDelegate(QStyledItemDelegate):
+    """Badge de cantidad exacta para lotes."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        try:
+            amount = int(index.data(Qt.DisplayRole))
+        except (ValueError, TypeError):
+            amount = 0
+
+        # Fondo tipo tarjeta
+        card_rect = QRectF(option.rect)
+        card_rect.adjust(0, 4, 0, -4)
+        base_color = QColor("#FFFFFF") if index.row() % 2 == 0 else QColor("#F8FAFC")
+        border_color = QColor("#E2E8F0")
+        if option.state & QStyle.State_Selected:
+            base_color = QColor("#E0F2FE")
+            border_color = QColor("#BAE6FD")
+
+        if amount <= 0:
+            bg_color = QColor("#E5E7EB")
+            text_color = QColor("#6B7280")
+        elif amount <= 10:
+            bg_color = QColor("#FEE2E2")
+            text_color = QColor("#991B1B")
+        else:
+            bg_color = QColor("#ECFDF3")
+            text_color = QColor("#166534")
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        card_path = QPainterPath()
+        card_path.addRoundedRect(card_rect, 8, 8)
+        painter.setPen(QPen(border_color))
+        painter.setBrush(QBrush(base_color))
+        painter.drawPath(card_path)
+
+        badge_rect = QRectF(option.rect)
+        badge_rect.adjust(10, 8, -10, -8)
+        radius = min(badge_rect.height() / 2, 12)
+
+        path = QPainterPath()
+        path.addRoundedRect(badge_rect, radius, radius)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg_color))
+        painter.fillPath(path, QBrush(bg_color))
+
+        painter.setPen(QPen(text_color))
+        font = option.font
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(badge_rect, Qt.AlignCenter, str(amount))
+        painter.restore()
+
+
+class ExpirationDelegate(QStyledItemDelegate):
+    """Badge de vencimiento con semáforo temporal."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        text = str(index.data(Qt.DisplayRole) or "").strip()
+        parsed_date = None
+        for fmt in ("%Y-%m-%d", "%Y/%m/%d"):
+            try:
+                parsed_date = datetime.strptime(text, fmt).date()
+                break
+            except ValueError:
+                continue
+
+        today = date.today()
+        if parsed_date:
+            delta_days = (parsed_date - today).days
+            display = parsed_date.isoformat()
+            if delta_days < 0:
+                bg_color, text_color = QColor("#111827"), QColor("#F8FAFC")
+            elif delta_days < 90:
+                bg_color, text_color = QColor("#FEE2E2"), QColor("#991B1B")
+            elif delta_days < 180:
+                bg_color, text_color = QColor("#FFF7ED"), QColor("#9A3412")
+            else:
+                bg_color, text_color = QColor("#ECFDF3"), QColor("#166534")
+        else:
+            display = text or "—"
+            bg_color, text_color = QColor("#E5E7EB"), QColor("#475569")
+
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        card_rect = QRectF(option.rect)
+        card_rect.adjust(0, 4, 0, -4)
+        base_color = QColor("#FFFFFF") if index.row() % 2 == 0 else QColor("#F8FAFC")
+        border_color = QColor("#E2E8F0")
+        if option.state & QStyle.State_Selected:
+            base_color = QColor("#E0F2FE")
+            border_color = QColor("#BAE6FD")
+
+        card_path = QPainterPath()
+        card_path.addRoundedRect(card_rect, 8, 8)
+        painter.setPen(QPen(border_color))
+        painter.setBrush(QBrush(base_color))
+        painter.drawPath(card_path)
+
+        badge_rect = QRectF(option.rect)
+        badge_rect.adjust(10, 8, -10, -8)
+        radius = min(badge_rect.height() / 2, 12)
+
+        path = QPainterPath()
+        path.addRoundedRect(badge_rect, radius, radius)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg_color))
+        painter.fillPath(path, QBrush(bg_color))
+
+        painter.setPen(QPen(text_color))
+        font = option.font
+        font.setBold(True)
+        painter.setFont(font)
+        painter.drawText(badge_rect, Qt.AlignCenter, display)
+        painter.restore()
+
+
+class CardRowDelegate(QStyledItemDelegate):
+    """Crea fondo tipo tarjeta con márgenes para filas de tabla."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        card_rect_f = QRectF(option.rect)
+        card_rect_f.adjust(0, 4, 0, -4)
+        radius = 8
+
+        if option.state & QStyle.State_Selected:
+            bg_color = QColor("#E0F2FE")
+            border_color = QColor("#BAE6FD")
+        else:
+            bg_color = QColor("#FFFFFF") if index.row() % 2 == 0 else QColor("#F8FAFC")
+            border_color = QColor("#E2E8F0")
+
+        path = QPainterPath()
+        path.addRoundedRect(card_rect_f, radius, radius)
+
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QBrush(bg_color))
+        painter.fillPath(path, painter.brush())
+
+        painter.setPen(QPen(border_color))
+        painter.drawPath(path)
+
+        # Pintar contenido sobre el fondo personalizado
+        content_option = QStyleOptionViewItem(option)
+        content_option.rect = card_rect_f.toRect().adjusted(10, 0, -10, 0)
+        content_option.backgroundBrush = QBrush(Qt.NoBrush)
+        super().paint(painter, content_option, index)
+        painter.restore()
+
+
+class CardBackgroundDelegate(QStyledItemDelegate):
+    """Fondo de tarjeta para columnas estándar de la tabla de inventario actual."""
+
+    def paint(self, painter: QPainter, option: QStyleOptionViewItem, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = QRectF(option.rect).adjusted(-1, 4, 1, -4)
+        radius = 10
+        col = index.column()
+        last_col = index.model().columnCount() - 1
+
+        if option.state & QStyle.State_Selected:
+            bg_color = QColor("#E0F2FE")
+            border_color = QColor("#BAE6FD")
+            text_color = option.palette.highlightedText().color()
+        else:
+            bg_color = QColor("#FFFFFF") if index.row() % 2 == 0 else QColor("#F8FAFC")
+            border_color = QColor("#E2E8F0")
+            text_color = option.palette.text().color()
+
+        path = QPainterPath()
+        if col == 0:
+            path.moveTo(rect.right(), rect.top())
+            path.lineTo(rect.left() + radius, rect.top())
+            path.quadTo(rect.left(), rect.top(), rect.left(), rect.top() + radius)
+            path.lineTo(rect.left(), rect.bottom() - radius)
+            path.quadTo(rect.left(), rect.bottom(), rect.left() + radius, rect.bottom())
+            path.lineTo(rect.right(), rect.bottom())
+            path.lineTo(rect.right(), rect.top())
+        elif col == last_col:
+            path.moveTo(rect.left(), rect.top())
+            path.lineTo(rect.right() - radius, rect.top())
+            path.quadTo(rect.right(), rect.top(), rect.right(), rect.top() + radius)
+            path.lineTo(rect.right(), rect.bottom() - radius)
+            path.quadTo(rect.right(), rect.bottom(), rect.right() - radius, rect.bottom())
+            path.lineTo(rect.left(), rect.bottom())
+            path.lineTo(rect.left(), rect.top())
+        else:
+            path.addRect(rect)
+
+        painter.setPen(QPen(border_color))
+        painter.setBrush(QBrush(bg_color))
+        painter.fillPath(path, painter.brush())
+        painter.drawPath(path)
+
+        text_rect = QRectF(option.rect).adjusted(12, 0, -12, 0)
+        painter.setPen(text_color)
+        painter.setFont(option.font)
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, str(index.data() or ""))
+        painter.restore()
+
+
+class ModernListDelegate(QStyledItemDelegate):
+    """Pinta elementos de lista modernos con iconos de acción a la derecha."""
+
+    editClicked = pyqtSignal(QModelIndex)
+    deleteClicked = pyqtSignal(QModelIndex)
+
+    def paint(self, painter, option: QStyleOptionViewItem, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        if option.state & QStyle.State_Selected:
+            painter.fillRect(option.rect, QColor("#E0F2FE"))
+        elif option.state & QStyle.State_MouseOver:
+            painter.fillRect(option.rect, QColor("#F8FAFC"))
+        else:
+            painter.fillRect(option.rect, QColor("white"))
+
+        painter.setPen(QPen(QColor("#F1F5F9"), 1))
+        painter.drawLine(option.rect.bottomLeft(), option.rect.bottomRight())
+
+        text_rect = QRectF(option.rect).adjusted(15, 0, -180, 0)
+        painter.setPen(QColor("#1E293B"))
+        font = painter.font()
+        font.setPointSize(14)
+        painter.setFont(font)
+        painter.drawText(text_rect, Qt.AlignVCenter | Qt.AlignLeft, str(index.data()))
+
+        icon_size = 48
+        del_btn_rect = QRectF(
+            option.rect.right() - icon_size - 10,
+            option.rect.center().y() - icon_size / 2,
+            icon_size,
+            icon_size,
+        )
+        edit_btn_rect = QRectF(
+            del_btn_rect.left() - icon_size - 8,
+            del_btn_rect.top(),
+            icon_size,
+            icon_size,
+        )
+
+        delete_path = QPainterPath()
+        delete_path.addRoundedRect(del_btn_rect, 6, 6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor("#FEE2E2"))
+        painter.drawPath(delete_path)
+
+        edit_path = QPainterPath()
+        edit_path.addRoundedRect(edit_btn_rect, 6, 6)
+        painter.setBrush(QColor("#E0F2FE"))
+        painter.drawPath(edit_path)
+
+        icon_font = painter.font()
+        icon_font.setPointSize(22)
+        painter.setFont(icon_font)
+
+        painter.setPen(QColor("#DC2626"))
+        painter.drawText(del_btn_rect, Qt.AlignCenter, "🗑️")
+
+        painter.setPen(QColor("#0284C7"))
+        painter.drawText(edit_btn_rect, Qt.AlignCenter, "✏️")
+
+        painter.restore()
+
+    def editorEvent(self, event, model, option, index):
+        if event.type() == QEvent.MouseButtonRelease:
+            icon_size = 48
+            del_btn_rect = QRectF(
+                option.rect.right() - icon_size - 10,
+                option.rect.center().y() - icon_size / 2,
+                icon_size,
+                icon_size,
+            )
+            edit_btn_rect = QRectF(
+                del_btn_rect.left() - icon_size - 8,
+                del_btn_rect.top(),
+                icon_size,
+                icon_size,
+            )
+            click_pos = event.pos()
+            if del_btn_rect.contains(click_pos):
+                self.deleteClicked.emit(index)
+                return True
+            if edit_btn_rect.contains(click_pos):
+                self.editClicked.emit(index)
+                return True
+        return False
+
+    def sizeHint(self, option, index):
+        return QSize(option.rect.width(), 82)
+
+
+class ModernSidebar(QFrame):
+    """Barra lateral moderna con botones superiores e items de sistema en el footer."""
+
+    def __init__(
+        self,
+        nav_items: list[tuple[str, str, int]],
+        bottom_items: list[tuple[str, str, int]],
+        parent: QWidget | None = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setObjectName("ModernSidebar")
+        self.setFixedWidth(260)
+        self._buttons: dict[int, QPushButton] = {}
+        self._buttons_by_name: dict[str, QPushButton] = {}
+        self._button_group = QButtonGroup(self)
+        self._button_group.setExclusive(True)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 20, 10, 20)
+        layout.setSpacing(12)
+
+        self._main_sale_button = QPushButton("🛒 NUEVA VENTA", self)
+        self._main_sale_button.setObjectName("MainSaleButton")
+        self._main_sale_button.setCursor(Qt.PointingHandCursor)
+        self._main_sale_button.setMinimumHeight(46)
+        if parent is not None and hasattr(parent, "show_sales_dialog"):
+            self._main_sale_button.clicked.connect(parent.show_sales_dialog)
+        layout.addWidget(self._main_sale_button)
+
+        for label, object_name, index in nav_items:
+            self._create_btn(layout, label, object_name, index)
+
+        layout.addStretch(1)
+
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setFrameShadow(QFrame.Sunken)
+        line.setStyleSheet("background-color: #E5E7EB; border: none; max-height: 1px;")
+        layout.addWidget(line)
+
+        for label, object_name, index in bottom_items:
+            self._create_btn(layout, label, object_name, index, is_bottom=True)
+
+        self.setStyleSheet(
+            """
+            #ModernSidebar {
+                background-color: #f8fafc;
+                border-right: 1px solid #e5e7eb;
+            }
+            #ModernSidebar QPushButton {
+                background: transparent;
+                border: none;
+                color: #1f2937;
+                padding: 12px 20px;
+                min-width: 0px;
+                text-align: left;
+                border-radius: 10px;
+                font-weight: 700;
+                font-size: 15px;
+            }
+            #ModernSidebar QPushButton:hover {
+                background-color: #d1fae5;
+                color: #0f766e;
+            }
+            #ModernSidebar QPushButton:checked {
+                background-color: #99f6e4;
+                color: #0f766e;
+            }
+            #btn_nav_config {
+                color: #6B7280;
+            }
+            #btn_nav_logout {
+                color: #b91c1c;
+            }
+        """
+        )
+
+    def _create_btn(self, layout: QVBoxLayout, label: str, obj_name: str, idx: int, is_bottom: bool = False) -> None:
+        btn = QPushButton(label, self)
+        btn.setObjectName(obj_name)
+        btn.setCheckable(not is_bottom)
+        btn.setCursor(Qt.PointingHandCursor)
+        btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        btn.setMinimumWidth(0)
+        if is_bottom:
+            btn.setStyleSheet("text-align: left; padding: 12px 15px; color: #6B7280;")
+        layout.addWidget(btn)
+        self._buttons[idx] = btn
+        self._buttons_by_name[obj_name] = btn
+        if not is_bottom:
+            self._button_group.addButton(btn, idx)
+
+    def connect_to_index_change(self, handler):
+        self._button_group.buttonClicked[int].connect(handler)
+
+    def set_active_index(self, index: int) -> None:
+        btn = self._button_group.button(index)
+        if btn:
+            btn.setChecked(True)
+
+    def get_button(self, obj_name: str) -> QPushButton | None:
+        return self._buttons_by_name.get(obj_name)
+
+
+class SettingsDialog(QDialog):
+    """Contenedor de configuración con sidebar y contenido apilado."""
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        self.setWindowTitle("Configuración del Sistema")
+        self.resize(900, 600)
+        self.setModal(True)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.category_list = QListWidget()
+        self.category_list.setFixedWidth(220)
+        self.category_list.setObjectName("SettingsSidebar")
+
+        items = [
+            ("🏢 Datos del Negocio", "negocio"),
+            ("🧾 Facturación Electrónica", "facturacion"),
+            ("📧 Configuración de Correo", "correo"),
+            ("👥 Usuarios y Permisos", "usuarios"),
+            ("🧰 Herramientas del Sistema", "page_tools"),
+        ]
+        is_admin = getattr(parent, "user", {}).get("role", "admin") == "admin" if parent else True
+        for label, key in items:
+            if not is_admin and key in {"negocio", "facturacion", "correo", "usuarios"}:
+                continue
+            item = QListWidgetItem(label)
+            item.setData(Qt.UserRole, key)
+            self.category_list.addItem(item)
+
+        self.content_stack = QStackedWidget()
+        self.content_stack.setObjectName("SettingsContent")
+
+        parent_ref = parent if isinstance(parent, QWidget) else None
+        is_admin = getattr(parent, "user", {}).get("role", "admin") == "admin" if parent else True
+        # Página 0: Datos del negocio (contenido embebido)
+        if is_admin:
+            negocio_widget = None
+            try:
+                from dialogs import DatosNegocioDialog
+
+                datos = {}
+                import os, json
+
+                if os.path.exists(DATOS_NEGOCIO_PATH):
+                    try:
+                        with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                            datos = json.load(fh)
+                    except Exception:
+                        datos = {}
+                negocio_widget = DatosNegocioDialog(datos, self)
+                negocio_widget.setWindowFlags(Qt.Widget)
+            except Exception:
+                negocio_widget = QWidget()
+            self.content_stack.addWidget(negocio_widget)
+
+            # Página 1: Facturación Electrónica (contenido embebido)
+            facturacion_widget = None
+            try:
+                from dialogs import DTEConfigDialog
+
+                import os, json
+
+                datos = {}
+                config = {}
+                if os.path.exists(DATOS_NEGOCIO_PATH):
+                    try:
+                        with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                            datos = json.load(fh)
+                    except Exception:
+                        datos = {}
+                if os.path.exists(CONFIG_NEGOCIO_PATH):
+                    try:
+                        with open(CONFIG_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                            config = json.load(fh)
+                    except Exception:
+                        config = {}
+                dte_api = datos.get("dte_api", {})
+                ambiente = config.get("ambiente", "pruebas")
+                env_conf = config.get(ambiente, {})
+                fe_config = env_conf.get("firma_electronica", {})
+                dialog_kwargs = {}
+                try:
+                    import inspect
+
+                    params = inspect.signature(DTEConfigDialog.__init__).parameters
+                    if "db" in params:
+                        dialog_kwargs["db"] = getattr(parent_ref, "manager", None).db if parent_ref and hasattr(parent_ref, "manager") else None
+                except Exception:
+                    dialog_kwargs = {}
+                facturacion_widget = DTEConfigDialog(
+                    dte_api,
+                    fe_config,
+                    env_conf,
+                    self,
+                    datos_negocio=datos,
+                    **dialog_kwargs,
+                )
+                facturacion_widget.setWindowFlags(Qt.Widget)
+            except Exception:
+                facturacion_widget = QWidget()
+            facturacion_scroll = QScrollArea()
+            facturacion_scroll.setWidgetResizable(True)
+            facturacion_scroll.setFrameShape(QFrame.NoFrame)
+            facturacion_scroll.setWidget(facturacion_widget)
+            self.content_stack.addWidget(facturacion_scroll)
+
+            # Página 2: Configuración de Correo (contenido embebido)
+            correo_widget = None
+            try:
+                from dialogs import EmailConfigDialog
+
+                import os, json
+
+                datos = {}
+                if os.path.exists(DATOS_NEGOCIO_PATH):
+                    try:
+                        with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
+                            datos = json.load(fh)
+                    except Exception:
+                        datos = {}
+                correo_widget = EmailConfigDialog(datos, self)
+                correo_widget.setWindowFlags(Qt.Widget)
+            except Exception:
+                correo_widget = QWidget()
+            self.content_stack.addWidget(correo_widget)
+
+            # Página 3: Usuarios y Permisos (contenido embebido)
+            usuarios_widget = None
+            try:
+                from dialogs import UserConfigDialog
+
+                db_ref = None
+                if parent_ref and hasattr(parent_ref, "manager"):
+                    db_ref = getattr(parent_ref.manager, "db", None)
+                usuarios_widget = UserConfigDialog(db=db_ref, parent=self)
+                usuarios_widget.setWindowFlags(Qt.Widget)
+            except Exception:
+                usuarios_widget = QWidget()
+            self.content_stack.addWidget(usuarios_widget)
+
+        # Página 4: Herramientas del Sistema
+        tools_widget = QWidget()
+        tools_layout = QVBoxLayout(tools_widget)
+        tools_layout.setContentsMargins(24, 24, 24, 24)
+        tools_layout.setSpacing(12)
+
+        tools_title = QLabel("Herramientas Administrativas")
+        title_font = tools_title.font()
+        base_size = title_font.pointSize() or 12
+        title_font.setPointSize(base_size + 2)
+        title_font.setBold(True)
+        tools_title.setFont(title_font)
+        tools_layout.addWidget(tools_title)
+
+        desc = QLabel("Accesos directos para mantenimiento y depuración del sistema.")
+        desc.setStyleSheet("color: #475569;")
+        tools_layout.addWidget(desc)
+
+        def _create_tool_btn(text, handler):
+            btn = QPushButton(text)
+            btn.setObjectName("SecondaryActionButton")
+            btn.setMinimumHeight(46)
+            if handler:
+                btn.clicked.connect(handler)
+            return btn
+
+        grid = QGridLayout()
+        grid.setSpacing(12)
+        parent_ref = parent if isinstance(parent, QWidget) else None
+
+        btn_update = _create_tool_btn(
+            "Actualizar Estado de DTEs",
+            getattr(parent_ref, "actualizar_estado_global", None),
+        )
+        btn_firmador = _create_tool_btn(
+            "Iniciar Firmador Local",
+            getattr(parent_ref, "iniciar_firmador", None),
+        )
+        btn_firmar_manual = _create_tool_btn(
+            "Firmar DTE Manualmente...",
+            getattr(parent_ref, "firmar_dte_manual", None),
+        )
+        btn_debug = _create_tool_btn(
+            "Debug: Venta vs DTE",
+            getattr(parent_ref, "_debug_venta_vs_dte", None),
+        )
+
+        grid.addWidget(btn_update, 0, 0)
+        grid.addWidget(btn_firmador, 0, 1)
+        grid.addWidget(btn_firmar_manual, 1, 0)
+        grid.addWidget(btn_debug, 1, 1)
+
+        tools_layout.addLayout(grid)
+        tools_layout.addStretch(1)
+
+        self.content_stack.addWidget(tools_widget)
+
+        layout.addWidget(self.category_list)
+        layout.addWidget(self.content_stack)
+
+        self.category_list.currentRowChanged.connect(self.content_stack.setCurrentIndex)
+        self.category_list.setCurrentRow(0)
+
+        self._apply_styles()
+
+    def _make_launcher_page(self, title: str, handler) -> QWidget:
+        page = QWidget()
+        vbox = QVBoxLayout(page)
+        vbox.setContentsMargins(24, 24, 24, 24)
+        vbox.setSpacing(12)
+        lbl = QLabel(title)
+        font = lbl.font()
+        base_size = font.pointSize()
+        if base_size <= 0:
+            base_size = 12
+        font.setPointSize(base_size + 2)
+        font.setBold(True)
+        lbl.setFont(font)
+        vbox.addWidget(lbl)
+        desc = QLabel("Abre el formulario existente en una ventana separada.")
+        desc.setStyleSheet("color:#6b7280;")
+        vbox.addWidget(desc)
+        btn = QPushButton(f"Abrir {title}")
+        btn.setObjectName("PrimaryActionButton")
+        btn.setMinimumHeight(42)
+        if handler:
+            btn.clicked.connect(handler)
+        else:
+            btn.setEnabled(False)
+        vbox.addWidget(btn)
+        vbox.addStretch(1)
+        return page
+
+    def _apply_styles(self):
+        self.setStyleSheet(
+            """
+            QDialog { background-color: #f3f4f6; }
+            QListWidget#SettingsSidebar {
+                background-color: #1e293b;
+                color: #e2e8f0;
+                border: none;
+                font-size: 14px;
+                outline: none;
+            }
+            QListWidget#SettingsSidebar::item {
+                padding: 15px 20px;
+                border-bottom: 1px solid #334155;
+            }
+            QListWidget#SettingsSidebar::item:selected {
+                background-color: #3b82f6;
+                color: white;
+                font-weight: bold;
+            }
+            QStackedWidget#SettingsContent {
+                background-color: white;
+            }
+            /* Estilos para formularios de configuración */
+            QStackedWidget#SettingsContent QLineEdit,
+            QStackedWidget#SettingsContent QComboBox {
+                background-color: #FFFFFF;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 8px 10px;
+                font-size: 13px;
+                color: #1E293B;
+            }
+            QStackedWidget#SettingsContent QLineEdit:focus,
+            QStackedWidget#SettingsContent QComboBox:focus {
+                border: 2px solid #3B82F6;
+            }
+            QStackedWidget#SettingsContent QLabel {
+                color: #475569;
+                font-weight: 600;
+                margin-top: 5px;
+            }
+            QStackedWidget#SettingsContent QCheckBox {
+                spacing: 8px;
+                font-size: 13px;
+                color: #334155;
+                margin: 4px 0;
+            }
+            QStackedWidget#SettingsContent QPushButton {
+                background-color: #F1F5F9;
+                border: 1px solid #CBD5E1;
+                border-radius: 6px;
+                padding: 6px 12px;
+                font-weight: 600;
+                color: #475569;
+            }
+            QStackedWidget#SettingsContent QPushButton:hover {
+                background-color: #E2E8F0;
+                color: #1E293B;
+            }
+            /* Tabla Limpia Estilo Steam */
+            QTableWidget {
+                background-color: white;
+                alternate-background-color: #F3F4F6;
+                gridline-color: transparent;
+                border: none;
+            }
+            QHeaderView::section {
+                background-color: white;
+                border: none;
+                border-bottom: 2px solid #E5E7EB;
+                font-weight: bold;
+                color: #4B5563;
+                padding: 8px;
+            }
+            QPushButton[class="table-icon-btn"] {
+                background-color: transparent;
+                border: none;
+                padding: 6px;
+                border-radius: 8px;
+                min-width: 32px;
+                min-height: 32px;
+            }
+            QPushButton[class="table-icon-btn"]:hover {
+                background-color: #F3F4F6;
+            }
+            QPushButton[class="table-icon-btn"][role="view"]:hover {
+                background-color: #F1F5F9;
+            }
+            QPushButton[class="table-icon-btn"][role="edit"]:hover {
+                background-color: #EBF5FF;
+            }
+            QPushButton[class="table-icon-btn"][role="delete"]:hover {
+                background-color: #FEF2F2;
+            }
+            """
+        )
+
 
 def redondear(valor):
     return float(Decimal(str(valor)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
@@ -278,7 +1072,7 @@ class MainWindow(QMainWindow):
     # immediately instead of waiting for the periodic timers.
     data_changed = pyqtSignal()
 
-    def __init__(self, user=None):
+    def __init__(self, user=None, *, skip_firmador_check: bool = False):
         super().__init__()
         self.user = user or {"username": "admin", "role": "admin"}
         self.setWindowTitle("Inventario Farmacia")
@@ -292,7 +1086,8 @@ class MainWindow(QMainWindow):
         self._mark_saved()
         self._setup_ui()
         self._apply_styles()
-        QTimer.singleShot(0, self._verificar_firmador)
+        if not skip_firmador_check:
+            QTimer.singleShot(0, self._verificar_firmador)
 
         # Timer to periodically refresh the "Estados de cuenta" table so it
         # stays synchronized with new sales or payments made from any tab.
@@ -339,20 +1134,45 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"No se pudo iniciar el firmador:\n{exc}")
 
     def _verificar_firmador(self):
+        if firmador_activo() or (self.firmador_proc and self.firmador_proc.poll() is None):
+            return
+
+        loader = QDialog(self)
+        loader.setWindowTitle("Iniciando servicios")
+        loader.setModal(True)
+        loader.setWindowFlags(loader.windowFlags() & ~Qt.WindowCloseButtonHint)
+        vbox = QVBoxLayout(loader)
+        vbox.setContentsMargins(20, 20, 20, 20)
+        vbox.setSpacing(12)
+        lbl = QLabel("Iniciando servicios...")
+        lbl.setAlignment(Qt.AlignCenter)
+        vbox.addWidget(lbl)
+        progress = QProgressBar()
+        progress.setRange(0, 0)
+        vbox.addWidget(progress)
+        loader.resize(320, 120)
+        loader.show()
+        QApplication.processEvents()
+
+        ok, err = self._iniciar_firmador_silencioso()
+        loader.accept()
+        if not ok and err:
+            QMessageBox.critical(self, "Firmador", err)
+
+    def _iniciar_firmador_silencioso(self) -> tuple[bool, str | None]:
+        if self.firmador_proc and self.firmador_proc.poll() is None:
+            return True, None
         if firmador_activo():
-            QMessageBox.information(
-                self,
-                "Firmador",
-                "El firmador ya está corriendo, no es necesario volver a ejecutarlo.",
-            )
-        else:
-            resp = QMessageBox.question(
-                self,
-                "Firmador",
-                "El firmador no está corriendo y es necesario para generar facturas. ¿Desea iniciarlo?",
-            )
-            if resp == QMessageBox.Yes:
-                self.iniciar_firmador()
+            return True, None
+        try:
+            self.firmador_proc = iniciar_firmador()
+            return True, None
+        except FileNotFoundError as exc:
+            return False, f"No se encontró el firmador:\n{exc}"
+        except RuntimeError:
+            return True, None
+        except Exception as exc:
+            return False, f"No se pudo iniciar el firmador:\n{exc}"
 
     @staticmethod
     def _parse_invoice_datetime(value):
@@ -480,43 +1300,17 @@ class MainWindow(QMainWindow):
         cargar_inventario_action.triggered.connect(self.cargar_inventario)
         cargar_respaldo_action = QAction("Cargar copia de seguridad...", self)
         cargar_respaldo_action.triggered.connect(self.cargar_copia_seguridad)
+        cargar_respaldo_manual_action = QAction("Cargar copia de seguridad (seleccionar)...", self)
+        cargar_respaldo_manual_action.triggered.connect(self.cargar_copia_seguridad_manual)
         firmar_dte_action = QAction("Firmar DTE...", self)
         firmar_dte_action.triggered.connect(self.firmar_dte_manual)
         archivo_menu.addAction(nuevo_inventario_action)
         archivo_menu.addAction(guardar_como_action)
         archivo_menu.addAction(cargar_inventario_action)
         archivo_menu.addAction(cargar_respaldo_action)
+        archivo_menu.addAction(cargar_respaldo_manual_action)
 
-        # --- CONFIGURACIÓN ---
-        config_menu = menubar.addMenu("Configuración")
-        datos_negocio_action = QAction("Datos del negocio", self)
-        datos_negocio_action.triggered.connect(self._abrir_datos_negocio)
-        config_menu.addAction(datos_negocio_action)
-        correo_action = QAction("Configuración de correo", self)
-        correo_action.triggered.connect(self._abrir_config_correo)
-        config_menu.addAction(correo_action)
-        dte_action = QAction("Facturación electrónica", self)
-        dte_action.triggered.connect(self._abrir_config_facturacion)
-        config_menu.addAction(dte_action)
-        if self.user["role"] == "admin":
-            user_action = QAction("Configuración de usuarios", self)
-            user_action.triggered.connect(self._abrir_config_usuarios)
-            config_menu.addAction(user_action)
-        else:
-            config_menu.menuAction().setVisible(False)
-        abrir_firmador_action = QAction("Iniciar firmador", self)
-        abrir_firmador_action.triggered.connect(self.iniciar_firmador)
-        config_menu.addAction(abrir_firmador_action)
-        config_menu.addAction(firmar_dte_action)
-
-        # DEBUG: Acción temporal para depurar Venta vs DTE
-        debug_venta_dte_action = QAction("Debug Venta vs DTE", self)
-        debug_venta_dte_action.triggered.connect(self._debug_venta_vs_dte)
-        config_menu.addAction(debug_venta_dte_action)
-
-        logout_action = QAction("Cerrar sesión", self)
-        logout_action.triggered.connect(self.cerrar_sesion)
-        menubar.addAction(logout_action)
+        # Menú superior reducido: sólo ayuda/otros si aplica (configuración movida a SettingsDialog)
 
         # --- BOTONES LATERALES ---
         self.btn_add_product = QPushButton("Agregar Producto")
@@ -529,17 +1323,17 @@ class MainWindow(QMainWindow):
         self.btn_guardar_rapido = QPushButton("Guardar\nRápido")
         self.btn_cargar_inventario = QPushButton("Cargar Inventario")
 
-        # Botones más pequeños
+        # Ajustes de tamaño y estilo inicial para acciones principales
         for btn in [
-            self.btn_add_product, self.btn_edit_product, self.btn_register_sale,
-            self.btn_register_credito_fiscal, self.btn_register_purchase,
-            self.btn_guardar_rapido, self.btn_cargar_inventario, self.btn_delete_product
+            self.btn_add_product,
+            self.btn_edit_product,
+            self.btn_delete_product,
+            self.btn_guardar_rapido,
+            self.btn_cargar_inventario,
         ]:
-            btn.setMinimumHeight(24)
-            btn.setMaximumHeight(28)
-            btn.setMinimumWidth(140)
-            btn.setMaximumWidth(200)
-            btn.setStyleSheet("font-size:11px; padding:4px 0;")
+            btn.setMinimumHeight(46)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(btn.styleSheet() + "font-size: 15px;")
 
         if self.user["role"] == "guest":
             for btn in [
@@ -553,68 +1347,117 @@ class MainWindow(QMainWindow):
                 self.btn_cargar_inventario,
             ]:
                 btn.setEnabled(False)
+        # Preferimos un diseño limpio: ocultar acciones redundantes en esta vista
+        for btn in [self.btn_register_sale, self.btn_register_credito_fiscal, self.btn_register_purchase]:
+            btn.hide()
 
-        # Botones verdes más pequeños y debajo de los celestes pero encima del rojo
-        self.btn_guardar_rapido.setStyleSheet(
-            "background-color: #27ae60; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
-        self.btn_cargar_inventario.setStyleSheet(
-            "background-color: #27ae60; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
+        # --- Pestaña de inventario con distribución vertical ---
+        # 1) Botones principales
+        self.btn_add_product.setText("Nuevo producto")
+        self.btn_add_product.setObjectName("PrimaryActionButton")
+        self.btn_add_product.setCursor(Qt.PointingHandCursor)
 
-        self.btn_delete_product.setStyleSheet(
-            "background-color: #b71c1c; color: #fff; font-weight: bold; font-size:11px; border-radius: 8px; min-width: 140px; min-height: 24px; max-width: 200px;")
+        self.btn_edit_product.setText("Editar")
+        self.btn_edit_product.setObjectName("SecondaryActionButton")
+        self.btn_edit_product.setCursor(Qt.PointingHandCursor)
 
-        btn_layout = QVBoxLayout()
-        btn_layout.addWidget(self.btn_add_product)
-        btn_layout.addWidget(self.btn_edit_product)
-        btn_layout.addWidget(self.btn_register_sale)
-        btn_layout.addWidget(self.btn_register_credito_fiscal)
-        btn_layout.addWidget(self.btn_register_purchase)
-        # Botones verdes debajo de los celestes pero encima del rojo
-        btn_layout.addWidget(self.btn_guardar_rapido)
-        btn_layout.addWidget(self.btn_cargar_inventario)
-        btn_layout.addStretch(1)
-        btn_layout.addWidget(self.btn_delete_product)
+        self.btn_delete_product.setText("Eliminar")
+        self.btn_delete_product.setObjectName("DangerActionButton")
+        self.btn_delete_product.setCursor(Qt.PointingHandCursor)
 
-        btn_widget = QWidget()
-        btn_widget.setLayout(btn_layout)
-        btn_widget.setMaximumWidth(220)  # Puedes ajustar el ancho máximo si lo deseas
+        self.btn_guardar_rapido.setText("Guardar rápido")
+        self.btn_guardar_rapido.setObjectName("SecondaryActionButton")
+        self.btn_guardar_rapido.setCursor(Qt.PointingHandCursor)
 
-        # --- Splitter y pestaña de inventario ---
-        main_layout = QVBoxLayout()
+        self.btn_cargar_inventario.setText("Recargar")
+        self.btn_cargar_inventario.setObjectName("SecondaryActionButton")
+        self.btn_cargar_inventario.setCursor(Qt.PointingHandCursor)
+
+        for btn in [self.btn_register_sale, self.btn_register_credito_fiscal, self.btn_register_purchase]:
+            btn.hide()
+
+        # 2) Encabezado con más aire y alineación central
+        header_layout = QHBoxLayout()
+        header_layout.setAlignment(Qt.AlignVCenter)
+
+        title_label = QLabel("Inventario de Productos")
+        title_font = title_label.font()
+        title_font.setPointSize(26)
+        title_font.setBold(True)
+        title_label.setFont(title_font)
+        title_label.setStyleSheet("color: #111827;")
+        header_layout.addWidget(title_label)
+        header_layout.addStretch(1)
+
+        actions_layout = QHBoxLayout()
+        actions_layout.setSpacing(15)
+        actions_layout.setAlignment(Qt.AlignVCenter)
+        actions_layout.addWidget(self.btn_guardar_rapido)
+        actions_layout.addWidget(self.btn_cargar_inventario)
+        actions_layout.addWidget(self.btn_edit_product)
+        actions_layout.addWidget(self.btn_delete_product)
+        actions_layout.addWidget(self.btn_add_product)
+        header_layout.addLayout(actions_layout)
+
+        # 3) Tarjeta de filtros espaciosa
+        filter_card = QFrame()
+        filter_card.setObjectName("InventoryFilterCard")
+        filter_layout = QVBoxLayout(filter_card)
+        filter_layout.setContentsMargins(20, 20, 20, 20)
+        filter_layout.setSpacing(15)
+
+        search_row = QHBoxLayout()
         self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("Buscar por nombre o código...")
+        self.search_bar.setPlaceholderText("\ud83d\udd0d Buscar por nombre, código o sustancia...")
+        self.search_bar.setMinimumHeight(42)
+        self.search_bar.setStyleSheet("font-size: 15px;")
         self.search_bar.textChanged.connect(self.filter_products)
-        main_layout.addWidget(self.search_bar)
+        search_row.addWidget(self.search_bar)
 
-        # --- Filtros en una sola fila ---
-        filtros_layout = QHBoxLayout()
+        filters_row = QHBoxLayout()
+        lbl_style = "color: #4B5563; font-weight: 600;"
+
+        lbl_vend = QLabel("Vendedor:")
+        lbl_vend.setStyleSheet(lbl_style)
+        filters_row.addWidget(lbl_vend)
         self.vendedor_combo_filtro = QComboBox()
+        self.vendedor_combo_filtro.setMinimumHeight(40)
+        self.vendedor_combo_filtro.setStyleSheet("font-size: 14px;")
         self.vendedor_combo_filtro.addItem("Todos", None)
         for v in self.manager.get_vendedores_compra():
             self.vendedor_combo_filtro.addItem(v["nombre"], v["id"])
-
         self.vendedor_combo_filtro.currentIndexChanged.connect(self.filter_products)
-        filtros_layout.addWidget(QLabel("Vendedor:"))
-        filtros_layout.addWidget(self.vendedor_combo_filtro)
+        filters_row.addWidget(self.vendedor_combo_filtro)
+        filters_row.addSpacing(20)
 
+        lbl_dist = QLabel("Distribuidor:")
+        lbl_dist.setStyleSheet(lbl_style)
+        filters_row.addWidget(lbl_dist)
         self.distribuidor_combo_filtro = QComboBox()
+        self.distribuidor_combo_filtro.setMinimumHeight(40)
+        self.distribuidor_combo_filtro.setStyleSheet("font-size: 14px;")
         self.distribuidor_combo_filtro.addItem("Todos", None)
         for d in self.manager._Distribuidores:
             self.distribuidor_combo_filtro.addItem(d["nombre"], d["id"])
-
         self.distribuidor_combo_filtro.currentIndexChanged.connect(self.filter_products)
-        filtros_layout.addWidget(QLabel("Distribuidor:"))
-        filtros_layout.addWidget(self.distribuidor_combo_filtro)
+        filters_row.addWidget(self.distribuidor_combo_filtro)
+        filters_row.addSpacing(20)
 
+        lbl_stock = QLabel("Ordenar:")
+        lbl_stock.setStyleSheet(lbl_style)
+        filters_row.addWidget(lbl_stock)
         self.stock_sort_combo = QComboBox()
+        self.stock_sort_combo.setMinimumHeight(40)
+        self.stock_sort_combo.setStyleSheet("font-size: 14px;")
         self.stock_sort_combo.addItems(["Ordenar por stock", "Más stock a menos", "Menos stock a más"])
         self.stock_sort_combo.currentIndexChanged.connect(self.filter_products)
-        filtros_layout.addWidget(QLabel("Stock:"))
-        filtros_layout.addWidget(self.stock_sort_combo)
+        filters_row.addWidget(self.stock_sort_combo)
+        filters_row.addStretch(1)
 
-        filtros_layout.addStretch(1)
-        main_layout.addLayout(filtros_layout)
+        filter_layout.addLayout(search_row)
+        filter_layout.addLayout(filters_row)
 
+        # Tabla principal
         self.product_table = QTableView()
         self.product_table.setModel(self.manager.get_products_model())
         self.product_table.setSelectionBehavior(QTableView.SelectRows)
@@ -623,130 +1466,48 @@ class MainWindow(QMainWindow):
         self.product_table.clicked.connect(self._on_table_clicked)
         self.product_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.product_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self.selected_row = None
-        main_layout.addWidget(self.product_table)
+        self.product_table.setShowGrid(False)
+        self.product_table.setFrameShape(QFrame.NoFrame)
+        self.product_table.setAlternatingRowColors(False)
+        self.product_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.product_table.setSelectionMode(QTableView.SingleSelection)
+        self.product_table.setStyleSheet(self.product_table.styleSheet() + "font-size: 14px;")
 
-        main_widget = QWidget()
-        main_widget.setLayout(main_layout)
-        splitter = QSplitter(Qt.Horizontal)
-        splitter.addWidget(btn_widget)
-        splitter.addWidget(main_widget)
-        splitter.setStretchFactor(0, 1)
-        splitter.setStretchFactor(1, 4)
-        splitter.setChildrenCollapsible(False)
+        self.product_table.verticalHeader().hide()
+        self.product_table.verticalHeader().setDefaultSectionSize(64)
+
+        header = self.product_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setFixedHeight(50)
+
+        self.stock_delegate = StockDelegate(self.product_table)
+        self.product_table.setItemDelegateForColumn(3, self.stock_delegate)
+        self.selected_row = None
+
+        # 4) Layout principal con márgenes amplios
+        inventory_layout = QVBoxLayout()
+        inventory_layout.setContentsMargins(40, 40, 40, 30)
+        inventory_layout.setSpacing(25)
+        inventory_layout.addLayout(header_layout)
+        inventory_layout.addSpacing(25)
+        inventory_layout.addWidget(filter_card)
+        inventory_layout.addWidget(self.product_table)
+
         tab_widget = QWidget()
         tab_layout = QVBoxLayout()
-        tab_layout.addWidget(splitter)
+        tab_layout.setContentsMargins(0, 0, 0, 0)
+        tab_layout.addLayout(inventory_layout)
         tab_widget.setLayout(tab_layout)
 
         # --- PESTAÑA DE vendEGORÍAS Y DistribuidorES ---
         vend_dist_tab = QWidget()
-        vend_dist_layout = QHBoxLayout()
-
-        # Vendedores
-        vend_layout = QVBoxLayout()
-        vend_layout.addWidget(QLabel("Vendedores"))
-        self.vendedores_tree = QTreeWidget()
-        self.vendedores_tree.setHeaderHidden(True)
-        vend_layout.addWidget(self.vendedores_tree)
-        btn_add_vend = QPushButton("Añadir Vendedor")
-        btn_add_vend.setMinimumHeight(24)
-        btn_add_vend.setMaximumHeight(28)
-        btn_add_vend.setStyleSheet("font-size:11px;")
-        btn_add_vend.clicked.connect(self._agregar_vendedor)
-        vend_layout.addWidget(btn_add_vend)
-
-        btn_edit_vend = QPushButton("Editar Vendedor")
-        btn_edit_vend.setMinimumHeight(24)
-        btn_edit_vend.setMaximumHeight(28)
-        btn_edit_vend.setStyleSheet("font-size:11px;")
-        btn_edit_vend.clicked.connect(self._editar_vendedor)
-        vend_layout.addWidget(btn_edit_vend)
-
-        btn_delete_vend = QPushButton("Eliminar Vendedor")
-        btn_delete_vend.setMinimumHeight(24)
-        btn_delete_vend.setMaximumHeight(28)
-        btn_delete_vend.setStyleSheet("font-size:11px;")
-        btn_delete_vend.clicked.connect(self._eliminar_vendedor)
-        vend_layout.addWidget(btn_delete_vend)
-
-        vend_dist_layout.addLayout(vend_layout)
-
-        # Distribuidores -> Distribuidores
-        dist_layout = QVBoxLayout()
-        dist_layout.addWidget(QLabel("Distribuidores"))  # <--- Cambia aquí
-        self.Distribuidores_tree = QTreeWidget()         # <--- Cambia el nombre de la variable también (opcional, pero recomendado)
-        self.Distribuidores_tree.setHeaderHidden(True)
-        dist_layout.addWidget(self.Distribuidores_tree)
-
-        btns_h_layout = QHBoxLayout()
-        btn_add_dist = QPushButton("Añadir Distribuidor")
-        btn_add_dist.setMinimumHeight(24)
-        btn_add_dist.setMaximumHeight(28)
-        btn_add_dist.setStyleSheet("font-size:11px;")
-        btn_add_dist.clicked.connect(self._agregar_Distribuidor)
-        btns_h_layout.addWidget(btn_add_dist, alignment=Qt.AlignLeft)
-
-        btn_info_dist = QPushButton("Info de Distribuidor")
-        btn_info_dist.setFixedHeight(24)
-        btn_info_dist.setFixedWidth(110)
-        btn_info_dist.setStyleSheet(
-            "background-color: #f1c40f; color: #222; font-size:10px; font-weight:bold; border-radius: 8px;"
-        )
-        btn_info_dist.clicked.connect(self._mostrar_info_Distribuidor)
-        btns_h_layout.addWidget(btn_info_dist, alignment=Qt.AlignRight)
-
-        dist_layout.addLayout(btns_h_layout)
-
-        btn_edit_dist = QPushButton("Editar Distribuidor")
-        btn_edit_dist.setMinimumHeight(24)
-        btn_edit_dist.setMaximumHeight(28)
-        btn_edit_dist.setStyleSheet("font-size:11px;")
-        btn_edit_dist.clicked.connect(self._editar_Distribuidor)
-        dist_layout.addWidget(btn_edit_dist)
-
-        btn_delete_dist = QPushButton("Eliminar Distribuidor")
-        btn_delete_dist.setMinimumHeight(24)
-        btn_delete_dist.setMaximumHeight(28)
-        btn_delete_dist.setStyleSheet("font-size:11px;")
-        btn_delete_dist.clicked.connect(self._eliminar_Distribuidor)
-        dist_layout.addWidget(btn_delete_dist)
-
-        vend_dist_layout.addLayout(dist_layout)
-
-        vend_dist_tab.setLayout(vend_dist_layout)
+        self.vendedores_tab = vend_dist_tab
+        self.setup_vendedores_distribuidores_ui()
 
         # --- PESTAÑA DE CLIENTES ---
-        clientes_tab = QWidget()
-        clientes_layout = QVBoxLayout()
-
-        # Barra de búsqueda
-        self.cliente_search = QLineEdit()
-        self.cliente_search.setPlaceholderText("Buscar cliente por nombre, código, NIT, etc.")
-        clientes_layout.addWidget(self.cliente_search)
-
-        # Tabla de clientes
-        self.clientes_table = QTableWidget(0, 10)
-        self.clientes_table.setHorizontalHeaderLabels([
-            "Código", "Nombre", "NRC", "NIT", "DUI", "Giro", "Teléfono", "Correo", "Departamento", "Municipio"
-        ])
-        self.clientes_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.clientes_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.clientes_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.clientes_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        clientes_layout.addWidget(self.clientes_table)
-
-        # Botones
-        btns = QHBoxLayout()
-        self.btn_add_cliente = QPushButton("Agregar Cliente")
-        self.btn_edit_cliente = QPushButton("Editar Cliente")
-        self.btn_delete_cliente = QPushButton("Eliminar Cliente")
-        btns.addWidget(self.btn_add_cliente)
-        btns.addWidget(self.btn_edit_cliente)
-        btns.addWidget(self.btn_delete_cliente)
-        clientes_layout.addLayout(btns)
-
-        clientes_tab.setLayout(clientes_layout)
+        self.clientes_tab = QWidget()
+        self.setup_clientes_ui()
 
         # --- PESTAÑA DE VENTAS ---
         self.sales_tab = SalesTab(self.manager, self)
@@ -757,17 +1518,48 @@ class MainWindow(QMainWindow):
 
         # --- PESTAÑA DE INVENTARIO ACTUAL ---
         inventario_actual_tab = QWidget()
-        inventario_actual_layout = QVBoxLayout()
+        inventario_actual_layout = QVBoxLayout(inventario_actual_tab)
+        inventario_actual_layout.setContentsMargins(30, 30, 30, 30)
+        inventario_actual_layout.setSpacing(20)
 
-        # Filtros (opcional, puedes agregar por vendedor, categoría, Distribuidor, búsqueda, etc.)
+        inventario_card = QFrame()
+        inventario_card.setObjectName("ModernCard")
+        inventario_card_layout = QVBoxLayout(inventario_card)
+        inventario_card_layout.setContentsMargins(16, 16, 16, 16)
+        inventario_card_layout.setSpacing(12)
+
         filtros_actual_layout = QHBoxLayout()
-        self.actual_search_bar = QLineEdit()
-        self.actual_search_bar.setPlaceholderText("Buscar por nombre o código...")
-        filtros_actual_layout.addWidget(self.actual_search_bar)
-        inventario_actual_layout.addLayout(filtros_actual_layout)
+        filtros_actual_layout.setSpacing(10)
+        self.search_inventario_actual = QLineEdit()
+        self.search_inventario_actual.setPlaceholderText("Buscar lote por producto o código...")
+        self.search_inventario_actual.setMinimumHeight(46)
+        self.search_inventario_actual.setStyleSheet("font-size: 14px;")
+        self.actual_search_bar = self.search_inventario_actual  # Compatibilidad con filtros previos
+        filtros_actual_layout.addWidget(self.search_inventario_actual, 2)
 
-        # Tabla de inventario actual (por lote)
-        self.inventario_actual_table = QTableWidget(0, 9)
+        self.actual_stock_only_cb = QCheckBox("Solo con existencia")
+        self.actual_stock_only_cb.setChecked(True)
+        self.actual_stock_only_cb.setStyleSheet("font-size: 13px;")
+        filtros_actual_layout.addWidget(self.actual_stock_only_cb)
+
+        self.inventario_view_combo = QComboBox()
+        self.inventario_view_combo.addItems(["Lotes", "Inventario general"])
+        self.inventario_view_combo.setMinimumHeight(42)
+        self.inventario_view_combo.setStyleSheet("font-size: 13px;")
+        filtros_actual_layout.addWidget(self.inventario_view_combo)
+
+        filtros_actual_layout.addStretch(1)
+
+        self.btn_refresh_inventario = QPushButton("🔄 Recargar")
+        self.btn_refresh_inventario.setObjectName("SecondaryActionButton")
+        self.btn_refresh_inventario.setCursor(Qt.PointingHandCursor)
+        self.btn_refresh_inventario.setMinimumHeight(42)
+        self.btn_refresh_inventario.setStyleSheet("font-size: 13px; padding: 10px 14px;")
+        filtros_actual_layout.addWidget(self.btn_refresh_inventario, 0, Qt.AlignRight)
+
+        inventario_card_layout.addLayout(filtros_actual_layout)
+
+        self.inventario_actual_table = QTableWidget(0, 10)
         self.inventario_actual_table.setHorizontalHeaderLabels([
             "Producto",
             "Código",
@@ -777,26 +1569,67 @@ class MainWindow(QMainWindow):
             "Registro sanitario",
             "Fecha compra",
             "Fecha vencimiento",
-            "Distribuidor",  # <--- Cambia aquí
+            "Distribuidor",
+            "Acciones",
         ])
+        self.inventario_actual_table.verticalHeader().hide()
+        self.inventario_actual_table.setFrameShape(QFrame.NoFrame)
+        self.inventario_actual_table.setShowGrid(False)
+        self.inventario_actual_table.setAlternatingRowColors(False)
         self.inventario_actual_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.inventario_actual_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.inventario_actual_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.inventario_actual_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        inventario_actual_layout.addWidget(self.inventario_actual_table)
+        self.inventario_actual_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.inventario_actual_table.verticalHeader().setDefaultSectionSize(60)
+        header = self.inventario_actual_table.horizontalHeader()
+        header.setStretchLastSection(False)
+        header.setDefaultAlignment(Qt.AlignCenter)
+        header.setSectionResizeMode(0, QHeaderView.Stretch)           # Producto (principal)
+        header.resizeSection(0, 300)
+        header.setSectionResizeMode(1, QHeaderView.ResizeToContents)  # Código
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)  # Cantidad
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Precio compra
+        header.setSectionResizeMode(4, QHeaderView.Stretch)           # Código lote (flex)
+        header.resizeSection(4, 160)
+        header.setSectionResizeMode(5, QHeaderView.Stretch)           # Registro sanitario (flex)
+        header.resizeSection(5, 160)
+        header.setSectionResizeMode(6, QHeaderView.ResizeToContents)  # Fecha compra
+        header.setSectionResizeMode(7, QHeaderView.ResizeToContents)  # Fecha vencimiento
+        header.setSectionResizeMode(8, QHeaderView.Stretch)           # Distribuidor (flex)
+        header.resizeSection(8, 180)
+        header.setSectionResizeMode(9, QHeaderView.ResizeToContents)  # Acciones
+        card_delegate = CardBackgroundDelegate(self.inventario_actual_table)
+        self.inventario_actual_table.setItemDelegate(card_delegate)
+        self.inventario_actual_table.setItemDelegateForColumn(2, BatchQuantityDelegate(self.inventario_actual_table))
+        self.inventario_actual_table.setItemDelegateForColumn(7, ExpirationDelegate(self.inventario_actual_table))
+        self.inventario_actual_table.setWordWrap(False)
+        inventario_card_layout.addWidget(self.inventario_actual_table)
 
-        inventario_actual_buttons = QHBoxLayout()
-        inventario_actual_buttons.addStretch()
-        self.btn_refresh_inventario = QPushButton("Actualizar")
-        self.btn_view_lote = QPushButton("Ver información")
-        self.btn_edit_lote = QPushButton("Editar lote")
-        self.btn_delete_lote = QPushButton("Eliminar lote")
-        inventario_actual_buttons.addWidget(self.btn_refresh_inventario)
-        inventario_actual_buttons.addWidget(self.btn_view_lote)
-        inventario_actual_buttons.addWidget(self.btn_edit_lote)
-        inventario_actual_buttons.addWidget(self.btn_delete_lote)
-        inventario_actual_layout.addLayout(inventario_actual_buttons)
+        self.inventario_general_table = QTableWidget(0, 4)
+        self.inventario_general_table.setHorizontalHeaderLabels([
+            "Producto",
+            "Código",
+            "Precio",
+            "Stock",
+        ])
+        self.inventario_general_table.verticalHeader().hide()
+        self.inventario_general_table.setFrameShape(QFrame.NoFrame)
+        self.inventario_general_table.setShowGrid(False)
+        self.inventario_general_table.setAlternatingRowColors(False)
+        self.inventario_general_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.inventario_general_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.inventario_general_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.inventario_general_table.verticalHeader().setDefaultSectionSize(60)
+        general_header = self.inventario_general_table.horizontalHeader()
+        general_header.setStretchLastSection(True)
+        general_header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        general_header.setSectionResizeMode(QHeaderView.Stretch)
+        general_delegate = CardBackgroundDelegate(self.inventario_general_table)
+        self.inventario_general_table.setItemDelegate(general_delegate)
+        self.inventario_general_table.setItemDelegateForColumn(3, StockDelegate(self.inventario_general_table))
+        self.inventario_general_table.setVisible(False)
+        inventario_card_layout.addWidget(self.inventario_general_table)
 
+        inventario_actual_layout.addWidget(inventario_card)
         inventario_actual_tab.setLayout(inventario_actual_layout)
 
         # --- AGREGA LAS CUATRO PESTAÑAS AL QTabWidget ---
@@ -804,28 +1637,44 @@ class MainWindow(QMainWindow):
         self.tabs.setMovable(True)
         tab_widget.setObjectName("Inventario")
         vend_dist_tab.setObjectName("Vendedores y Distribuidores")
-        clientes_tab.setObjectName("Clientes")
+        self.clientes_tab.setObjectName("Clientes")
         self.sales_tab.setObjectName("Ventas")
         self.compras_tab.setObjectName("Compras")
-        inventario_actual_tab.setObjectName("Inventario actual")
+        inventario_actual_tab.setObjectName("Inventario")
         self.facturacion_tab = FacturacionTab(self.manager, self)
         self.facturacion_tab.setObjectName("Facturacion")
 
         self.tabs.addTab(tab_widget, "Inventario")
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")
-        self.tabs.addTab(clientes_tab, "Clientes")
+        self.tabs.addTab(self.clientes_tab, "Clientes")
         self.tabs.addTab(self.sales_tab, "Ventas")
         self.tabs.addTab(self.compras_tab, "Compras")
-        self.tabs.addTab(inventario_actual_tab, "Inventario actual")
+        self.tabs.addTab(inventario_actual_tab, "Inventario")
         self.tabs.addTab(self.facturacion_tab, "Facturacion")
-        self.setCentralWidget(self.tabs)
 
         # --- PESTAÑA DE TRABAJADORES ---
         trabajadores_tab = QWidget()
         trabajadores_tab.setObjectName("Trabajadores")
-        trabajadores_layout = QVBoxLayout()
+        trabajadores_layout = QVBoxLayout(trabajadores_tab)
+        trabajadores_layout.setContentsMargins(30, 30, 30, 30)
+        trabajadores_layout.setSpacing(20)
 
-        # Filtros
+        trabajadores_card = QFrame()
+        trabajadores_card.setObjectName("ModernCard")
+        trab_card_layout = QVBoxLayout(trabajadores_card)
+        trab_card_layout.setContentsMargins(20, 25, 20, 20)
+        trab_card_layout.setSpacing(15)
+
+        trab_title = QLabel("Trabajadores")
+        trab_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #1a1a1a;")
+        trab_card_layout.addWidget(trab_title)
+
+        self.trabajadores_search = QLineEdit()
+        self.trabajadores_search.setPlaceholderText("🔍 Buscar trabajador...")
+        self.trabajadores_search.setMinimumHeight(40)
+        self.trabajadores_search.textChanged.connect(self._actualizar_tabla_trabajadores)
+        trab_card_layout.addWidget(self.trabajadores_search)
+
         filtro_layout = QHBoxLayout()
         self.trabajadores_filtro_vendedor = QCheckBox("Solo vendedores")
         self.trabajadores_filtro_vendedor.stateChanged.connect(self._actualizar_tabla_trabajadores)
@@ -834,106 +1683,87 @@ class MainWindow(QMainWindow):
         self.trabajadores_filtro_area.textChanged.connect(self._actualizar_tabla_trabajadores)
         filtro_layout.addWidget(self.trabajadores_filtro_vendedor)
         filtro_layout.addWidget(self.trabajadores_filtro_area)
-        trabajadores_layout.addLayout(filtro_layout)
+        filtro_layout.addStretch(1)
+        trab_card_layout.addLayout(filtro_layout)
 
-        # Tabla
-        self.trabajadores_table = QTableWidget(0, 10)
-        self.trabajadores_table.setHorizontalHeaderLabels([
-            "Código", "Nombre", "DUI", "NIT", "Nacimiento", "Cargo", "Área", "Teléfono", "Email", "¿Vendedor?"
-        ])
-        self.trabajadores_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.trabajadores_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.trabajadores_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.trabajadores_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        trabajadores_layout.addWidget(self.trabajadores_table)
+        self.trabajadores_list = QListWidget()
+        self.trabajadores_list.setFrameShape(QFrame.NoFrame)
+        self.trabajadores_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.trabajadores_list.setMouseTracking(True)
+        self.trab_delegate = ModernListDelegate(self.trabajadores_list)
+        self.trabajadores_list.setItemDelegate(self.trab_delegate)
+        self.trab_delegate.editClicked.connect(self._on_trabajador_edit_clicked)
+        self.trab_delegate.deleteClicked.connect(self._on_trabajador_delete_clicked)
+        trab_card_layout.addWidget(self.trabajadores_list)
 
-        # Botones
         btns = QHBoxLayout()
-        self.btn_add_trabajador = QPushButton("Agregar")
-        self.btn_edit_trabajador = QPushButton("Editar")
-        self.btn_delete_trabajador = QPushButton("Eliminar")
-        btns.addWidget(self.btn_add_trabajador)
-        btns.addWidget(self.btn_edit_trabajador)
-        btns.addWidget(self.btn_delete_trabajador)
-        trabajadores_layout.addLayout(btns)
+        self.btn_add_trabajador = QPushButton("Nuevo Trabajador")
+        self.btn_add_trabajador.setObjectName("PrimaryActionButton")
+        self.btn_add_trabajador.setCursor(Qt.PointingHandCursor)
+        btn_edit_trabajador = QPushButton("Editar")
+        btn_edit_trabajador.setObjectName("SecondaryActionButton")
+        btn_delete_trabajador = QPushButton("Eliminar")
+        btn_delete_trabajador.setObjectName("DangerActionButton")
+        self.btn_edit_trabajador = btn_edit_trabajador
+        self.btn_delete_trabajador = btn_delete_trabajador
+        for btn in (self.btn_add_trabajador, btn_edit_trabajador, btn_delete_trabajador):
+            btn.setMinimumHeight(52)
+            btn.setStyleSheet(btn.styleSheet() + "font-size: 16px;")
 
+        btns.addWidget(self.btn_add_trabajador)
+        btns.addStretch(1)
+        btns.addWidget(btn_edit_trabajador)
+        btns.addWidget(btn_delete_trabajador)
+        trab_card_layout.addLayout(btns)
+
+        trabajadores_layout.addWidget(trabajadores_card)
         trabajadores_tab.setLayout(trabajadores_layout)
         self.tabs.addTab(trabajadores_tab, "Trabajadores")
 
-        # --- PESTAÑA DE ESTADOS DE CUENTA ---
-        estado_tab = QWidget()
-        estado_tab.setObjectName("Estados de cuenta")
-        estado_layout = QVBoxLayout()
+        # --- PESTAÑA DE ESTADOS DE CUENTA (REPORTES) ---
+        self.estados_cuenta_tab = self.setup_estados_cuenta_ui()
+        self.tabs.addTab(self.estados_cuenta_tab, "Estados de cuenta")
 
-        controles = QHBoxLayout()
-        self.estado_tipo_combo = QComboBox()
-        self.estado_tipo_combo.addItems(["Cliente", "Vendedor"])
-        # Mostrar por defecto los vendedores al abrir la pestaña
-        self.estado_tipo_combo.setCurrentIndex(1)
-        self.estado_search_bar = QLineEdit()
-        self.estado_search_bar.setPlaceholderText("Buscar por código o nombre...")
-        self.estado_filtrar_fechas = QCheckBox("Filtrar por fechas")
-        self.estado_quick_range = QComboBox()
-        self.estado_quick_range.addItems(
-            ["Personalizado", "Hoy", "Esta semana", "Este mes", "Este año"]
-        )
-        self.estado_fecha_inicio = QDateEdit(QDate.currentDate())
-        self.estado_fecha_inicio.setCalendarPopup(True)
-        self.estado_fecha_fin = QDateEdit(QDate.currentDate())
-        self.estado_fecha_fin.setCalendarPopup(True)
-        self.btn_generar_estado = QPushButton("Generar")
-        controles.addWidget(self.estado_tipo_combo)
-        controles.addWidget(self.estado_search_bar)
-        controles.addWidget(self.estado_filtrar_fechas)
-        controles.addWidget(self.estado_quick_range)
-        controles.addWidget(QLabel("Desde"))
-        controles.addWidget(self.estado_fecha_inicio)
-        controles.addWidget(QLabel("Hasta"))
-        controles.addWidget(self.estado_fecha_fin)
-        controles.addWidget(self.btn_generar_estado)
-        estado_layout.addLayout(controles)
+        nav_items = [
+            ("Inicio", "btn_nav_inventario", 0),
+            ("Vendedores y\nDistribuidores", "btn_nav_vendedores", 1),
+            ("Clientes", "btn_nav_clientes", 2),
+            ("Ventas", "btn_nav_ventas", 3),
+            ("Compras", "btn_nav_compras", 4),
+            ("Inventario", "btn_nav_inventario_actual", 5),
+            ("Facturación", "btn_nav_facturacion", 6),
+            ("Trabajadores", "btn_nav_trabajadores", 7),
+            ("Estados de cuenta", "btn_nav_estado_cuenta", 8),
+        ]
+        bottom_items = [
+            ("Configuración", "btn_nav_config", 9),
+            ("Cerrar Sesión", "btn_nav_logout", 10),
+        ]
+        self.sidebar = ModernSidebar(nav_items, bottom_items, self)
+        self.sidebar.connect_to_index_change(self.tabs.setCurrentIndex)
+        self.tabs.currentChanged.connect(self.sidebar.set_active_index)
+        self.sidebar.set_active_index(self.tabs.currentIndex())
+        config_btn = self.sidebar.get_button("btn_nav_config")
+        if config_btn:
+            config_btn.clicked.connect(self._abrir_settings_dialog)
+        logout_btn = self.sidebar.get_button("btn_nav_logout")
+        if logout_btn:
+            logout_btn.clicked.connect(self.cerrar_sesion)
 
-        self.estado_table = QTableWidget(0, 6)
-        self.estado_table.setHorizontalHeaderLabels([
-            "Fecha",
-            "Factura",
-            "Tipo",
-            "Cliente",
-            "Vendedor",
-            "Monto",
-        ])
-        self.estado_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        self.estado_table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.estado_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        self.estado_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-
-
-        estado_layout.addWidget(self.estado_table)
-
-        estado_tab.setLayout(estado_layout)
-        self.tabs.addTab(estado_tab, "Estados de cuenta")
+        container = QWidget()
+        root_layout = QHBoxLayout(container)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.setSpacing(0)
+        root_layout.addWidget(self.sidebar)
+        root_layout.addWidget(self.tabs)
+        self.tabs.tabBar().hide()
+        self.setCentralWidget(container)
 
         # Conexiones
         self.btn_add_trabajador.clicked.connect(self._agregar_trabajador)
         self.btn_edit_trabajador.clicked.connect(self._editar_trabajador)
         self.btn_delete_trabajador.clicked.connect(self._eliminar_trabajador)
-        self.estado_tipo_combo.currentIndexChanged.connect(self._mostrar_historial_general)
-        self.estado_search_bar.textChanged.connect(self._mostrar_historial_general)
-        self.btn_generar_estado.clicked.connect(self._abrir_generar_estado_dialog)
-        self.estado_filtrar_fechas.toggled.connect(self._toggle_estado_filtro_fechas)
-        self.estado_filtrar_fechas.toggled.connect(self._mostrar_historial_general)
-        self.estado_quick_range.currentIndexChanged.connect(
-            self._apply_estado_quick_range
-        )
-        self.estado_quick_range.currentIndexChanged.connect(
-            self._mostrar_historial_general
-        )
-        self.estado_fecha_inicio.dateChanged.connect(self._mostrar_historial_general)
-        self.estado_fecha_fin.dateChanged.connect(self._mostrar_historial_general)
-
         self._actualizar_tabla_trabajadores()
-        self._toggle_estado_filtro_fechas(False)
-        self._mostrar_historial_general()
 
         # Conexiones
         self.btn_guardar_rapido.clicked.connect(self.guardar_rapido)
@@ -949,44 +1779,52 @@ class MainWindow(QMainWindow):
         self.btn_delete_cliente.clicked.connect(self._eliminar_cliente)
         self.cliente_search.textChanged.connect(self._actualizar_tabla_clientes)
         self.actual_search_bar.textChanged.connect(self._actualizar_inventario_actual)
+        self.actual_stock_only_cb.toggled.connect(self._actualizar_inventario_actual)
+        self.inventario_view_combo.currentIndexChanged.connect(self._actualizar_inventario_actual)
         self.btn_refresh_inventario.clicked.connect(self._actualizar_inventario_actual)
-        self.btn_view_lote.clicked.connect(self._ver_informacion_lote)
-        self.btn_edit_lote.clicked.connect(self._editar_lote_inventario_actual)
-        self.btn_delete_lote.clicked.connect(self._eliminar_lote_inventario_actual)
         self._actualizar_tabla_clientes()  # <-- SOLO AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
+        self.selected_row = None
+        if hasattr(self, "inventario_view_combo"):
+            self.inventario_view_combo.setCurrentIndex(1)  # Inventario general por defecto
         self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
 
-        self.selected_row = None
-        self._actualizar_inventario_actual()
+    def _abrir_settings_dialog(self):
+        dlg = SettingsDialog(self)
+        dlg.exec_()
 
     def _apply_styles(self):
-        self.setStyleSheet("""
-            QPushButton {
-                background-color: #0097e6;
-                color: #fff;
-                border-radius: 8px;
-                padding: 8px 0px;
-                font-size: 12px;
-                font-weight: bold;
-                margin: 4px 0;
-                min-width: 180px;
-                min-height: 26px;
-                max-width: 220px;
+        self.setStyleSheet(
+            """
+            QFrame#InventoryFilterCard {
+                background-color: #ffffff;
+                border: 1px solid #e5e7eb;
+                border-radius: 12px;
             }
-            QPushButton:hover {
-                background-color: #00a8ff;
+            QFrame#ModernCard {
+                background-color: #ffffff;
+                border: 1px solid #E2E8F0;
+                border-radius: 16px;
+                border-bottom: 3px solid #F1F5F9;
             }
-            QPushButton#btn_delete_product {
-                background-color: #b71c1c;
-                color: #fff;
+            QListWidget {
+                background-color: transparent;
+                border: none;
+                outline: none;
             }
-            QPushButton#btn_delete_product:hover {
-                background-color: #d32f2f;
+            QListWidget::item {
+                border-bottom: 1px solid #F1F5F9;
+                padding: 10px;
+            }
+            QListWidget::item:selected {
+                background-color: transparent;
+            }
+            QListWidget::item:hover {
+                background-color: transparent;
             }
             QLineEdit {
                 border: 1px solid #dcdde1;
-                border-radius: 6px;
-                padding: 7px;
+                border-radius: 8px;
+                padding: 8px 10px;
                 font-size: 14px;
             }
             QTableView {
@@ -994,10 +1832,78 @@ class MainWindow(QMainWindow):
                 border-radius: 8px;
                 font-size: 13px;
             }
-        """)
-        # Si tienes el objectName para el botón de crédito fiscal, puedes agregarlo así:
-        self.btn_register_credito_fiscal.setStyleSheet(
-            "font-size:11px; min-width:200px; max-width:240px; min-height:26px; padding:6px 0;"
+            /* TABLA MODERNA */
+            QTableView {
+                background-color: white;
+                border: 1px solid #F3F4F6;
+                border-radius: 8px;
+                gridline-color: transparent;
+            }
+            QTableView::item {
+                border-bottom: 1px solid #F3F4F6;
+                padding-left: 10px;
+            }
+            QTableView::item:selected {
+                background-color: #F0F9FF;
+                color: #0369A1;
+                border-bottom: 1px solid #E0F2FE;
+            }
+            QHeaderView::section {
+                background-color: white;
+                color: #6B7280;
+                font-weight: bold;
+                text-transform: uppercase;
+                border: none;
+                border-bottom: 2px solid #E5E7EB;
+                padding-left: 10px;
+            }
+            QPushButton#PrimaryActionButton {
+                background-color: #0ea5e9;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-weight: 600;
+            }
+            QPushButton#PrimaryActionButton:hover {
+                background-color: #0284c7;
+            }
+            QPushButton#SecondaryActionButton {
+                background-color: #ffffff;
+                color: #1f2937;
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-weight: 600;
+            }
+            QPushButton#SecondaryActionButton:hover {
+                background-color: #f8fafc;
+                border-color: #cbd5e1;
+            }
+            QPushButton#DangerActionButton {
+                background-color: #ef4444;
+                color: #ffffff;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 14px;
+                font-weight: 600;
+            }
+            QPushButton#DangerActionButton:hover {
+                background-color: #dc2626;
+            }
+            QPushButton#MainSaleButton {
+                background-color: #059669;
+                color: #ffffff;
+                border: none;
+                border-radius: 10px;
+                padding: 12px 14px;
+                font-weight: 700;
+                font-size: 15px;
+            }
+            QPushButton#MainSaleButton:hover {
+                background-color: #047857;
+            }
+        """
         )
 
     def filter_products(self):
@@ -1028,6 +1934,407 @@ class MainWindow(QMainWindow):
 
         self.manager._model.update_data(productos)
         self.product_table.setModel(self.manager.get_products_model())
+
+    def setup_vendedores_distribuidores_ui(self):
+        main_layout = QHBoxLayout()
+        main_layout.setContentsMargins(30, 30, 30, 30)
+        main_layout.setSpacing(25)
+
+        vendedores_card = QFrame()
+        vendedores_card.setObjectName("ModernCard")
+        card_layout = QVBoxLayout(vendedores_card)
+        card_layout.setContentsMargins(20, 25, 20, 20)
+        card_layout.setSpacing(15)
+
+        vendedores_title = QLabel("Vendedores")
+        vendedores_title.setStyleSheet("font-size: 20px; font-weight: bold; color: #1a1a1a;")
+        card_layout.addWidget(vendedores_title)
+
+        self.vendedores_search = QLineEdit()
+        self.vendedores_search.setPlaceholderText("\ud83d\udd0d Buscar vendedor...")
+        self.vendedores_search.setMinimumHeight(40)
+        self.vendedores_search.textChanged.connect(self._actualizar_arbol_vendedores)
+        card_layout.addWidget(self.vendedores_search)
+
+        self.vendedores_list = QListWidget()
+        self.vendedores_list.setFrameShape(QFrame.NoFrame)
+        self.vendedores_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.vend_delegate = ModernListDelegate(self.vendedores_list)
+        self.vendedores_list.setItemDelegate(self.vend_delegate)
+        self.vendedores_list.setMouseTracking(True)
+        self.vend_delegate.editClicked.connect(self._on_vendedor_edit_clicked)
+        self.vend_delegate.deleteClicked.connect(self._on_vendedor_delete_clicked)
+        card_layout.addWidget(self.vendedores_list)
+
+        vend_btns_layout = QHBoxLayout()
+        self.btn_add_vendedor = QPushButton("Nuevo Vendedor")
+        self.btn_add_vendedor.setObjectName("PrimaryActionButton")
+        self.btn_add_vendedor.setCursor(Qt.PointingHandCursor)
+        btn_edit_vendedor = QPushButton("Editar")
+        btn_edit_vendedor.setObjectName("SecondaryActionButton")
+        btn_delete_vendedor = QPushButton("Eliminar")
+        btn_delete_vendedor.setObjectName("DangerActionButton")
+        for btn in (self.btn_add_vendedor, btn_edit_vendedor, btn_delete_vendedor):
+            btn.setMinimumHeight(52)
+            btn.setStyleSheet(btn.styleSheet() + "font-size: 16px;")
+
+        self.btn_add_vendedor.clicked.connect(self._agregar_vendedor)
+        btn_edit_vendedor.clicked.connect(self._editar_vendedor)
+        btn_delete_vendedor.clicked.connect(self._eliminar_vendedor)
+
+        vend_btns_layout.addWidget(self.btn_add_vendedor)
+        vend_btns_layout.addStretch(1)
+        vend_btns_layout.addWidget(btn_edit_vendedor)
+        vend_btns_layout.addWidget(btn_delete_vendedor)
+        card_layout.addLayout(vend_btns_layout)
+
+        main_layout.addWidget(vendedores_card)
+
+        distribuidores_card = QFrame()
+        distribuidores_card.setObjectName("ModernCard")
+        card_layout_d = QVBoxLayout(distribuidores_card)
+        card_layout_d.setContentsMargins(20, 25, 20, 20)
+        card_layout_d.setSpacing(15)
+
+        title_d = QLabel("Distribuidores")
+        title_d.setStyleSheet("font-size: 20px; font-weight: bold; color: #1a1a1a;")
+        card_layout_d.addWidget(title_d)
+
+        self.distribuidores_search = QLineEdit()
+        self.distribuidores_search.setPlaceholderText("\ud83d\udd0d Buscar distribuidor...")
+        self.distribuidores_search.setMinimumHeight(40)
+        self.distribuidores_search.textChanged.connect(self._actualizar_arbol_Distribuidores)
+        card_layout_d.addWidget(self.distribuidores_search)
+
+        self.distribuidores_list = QListWidget()
+        self.distribuidores_list.setFrameShape(QFrame.NoFrame)
+        self.distribuidores_list.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.distrib_delegate = ModernListDelegate(self.distribuidores_list)
+        self.distribuidores_list.setItemDelegate(self.distrib_delegate)
+        self.distribuidores_list.setMouseTracking(True)
+        self.distrib_delegate.editClicked.connect(self._on_distribuidor_edit_clicked)
+        self.distrib_delegate.deleteClicked.connect(self._on_distribuidor_delete_clicked)
+        card_layout_d.addWidget(self.distribuidores_list)
+
+        btns_layout_d = QHBoxLayout()
+        self.btn_add_distribuidor = QPushButton("Nuevo Distribuidor")
+        self.btn_add_distribuidor.setObjectName("PrimaryActionButton")
+        self.btn_add_distribuidor.setCursor(Qt.PointingHandCursor)
+        btn_info = QPushButton("Ver Información")
+        btn_info.setObjectName("SecondaryActionButton")
+        btn_edit_d = QPushButton("Editar")
+        btn_edit_d.setObjectName("SecondaryActionButton")
+        btn_delete_d = QPushButton("Eliminar")
+        btn_delete_d.setObjectName("DangerActionButton")
+        for btn in (self.btn_add_distribuidor, btn_info, btn_edit_d, btn_delete_d):
+            btn.setMinimumHeight(52)
+            btn.setStyleSheet(btn.styleSheet() + "font-size: 16px;")
+
+        self.btn_add_distribuidor.clicked.connect(self._agregar_Distribuidor)
+        btn_info.clicked.connect(self._mostrar_info_Distribuidor)
+        btn_edit_d.clicked.connect(self._editar_Distribuidor)
+        btn_delete_d.clicked.connect(self._eliminar_Distribuidor)
+
+        btns_layout_d.addWidget(self.btn_add_distribuidor)
+        btns_layout_d.addStretch(1)
+        btns_layout_d.addWidget(btn_info)
+        btns_layout_d.addWidget(btn_edit_d)
+        btns_layout_d.addWidget(btn_delete_d)
+        card_layout_d.addLayout(btns_layout_d)
+
+        main_layout.addWidget(distribuidores_card)
+
+        if self.vendedores_tab.layout():
+            QWidget().setLayout(self.vendedores_tab.layout())
+        self.vendedores_tab.setLayout(main_layout)
+        self._actualizar_arbol_vendedores()
+        self._actualizar_arbol_Distribuidores()
+
+    def setup_estados_cuenta_ui(self):
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        title = QLabel("Reportes de Estados de Cuenta")
+        title.setStyleSheet("font-size: 24px; font-weight: bold; color: #1E293B;")
+        layout.addWidget(title)
+
+        cards_layout = QHBoxLayout()
+        cards_layout.setSpacing(20)
+
+        label_style = "color: #334155; font-weight: 600; font-size: 13px;"
+        input_style = (
+            "QComboBox, QDateEdit, QLineEdit {"
+            "  min-height: 38px;"
+            "  font-size: 13px;"
+            "  padding: 6px 10px;"
+            "  border: 1px solid #E2E8F0;"
+            "  border-radius: 8px;"
+            "}"
+        )
+        radio_style = "QRadioButton { font-size: 13px; color: #1F2937; }"
+
+        today = QDate.currentDate()
+        start_month = QDate(today.year(), today.month(), 1)
+        end_month = start_month.addMonths(1).addDays(-1)
+
+        def build_reporte_card(icon_text, title_text, combo_placeholder, radio_labels, default_idx, button_text, button_color):
+            card = QFrame()
+            card.setObjectName("ModernCard")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(20, 20, 20, 20)
+            card_layout.setSpacing(14)
+
+            header = QHBoxLayout()
+            icon = QLabel(icon_text)
+            icon_font = icon.font()
+            icon_font.setPointSize(18)
+            icon.setFont(icon_font)
+            title_lbl = QLabel(title_text)
+            title_lbl.setStyleSheet("font-size: 18px; font-weight: 700; color: #0F172A;")
+            header.addWidget(icon)
+            header.addSpacing(6)
+            header.addWidget(title_lbl)
+            header.addStretch(1)
+            card_layout.addLayout(header)
+
+            combo_label = QLabel("Seleccionar " + combo_placeholder)
+            combo_label.setStyleSheet(label_style)
+            combo = QComboBox()
+            combo.addItem("Todos")
+            combo.setStyleSheet(input_style)
+            card_layout.addWidget(combo_label)
+            card_layout.addWidget(combo)
+
+            rango_lbl = QLabel("Rango de Fechas")
+            rango_lbl.setStyleSheet(label_style)
+            card_layout.addWidget(rango_lbl)
+            filtro_fecha_chk = QCheckBox("Filtrar por fechas")
+            filtro_fecha_chk.setStyleSheet("font-size: 13px; color: #0F172A;")
+            rango_layout = QHBoxLayout()
+            desde_lbl = QLabel("Desde")
+            desde_lbl.setStyleSheet(label_style)
+            hasta_lbl = QLabel("Hasta")
+            hasta_lbl.setStyleSheet(label_style)
+            desde_edit = QDateEdit(start_month)
+            desde_edit.setCalendarPopup(True)
+            desde_edit.setStyleSheet(input_style)
+            hasta_edit = QDateEdit(end_month)
+            hasta_edit.setCalendarPopup(True)
+            hasta_edit.setStyleSheet(input_style)
+            dash = QLabel("—")
+            dash.setStyleSheet("color: #94A3B8; font-size: 16px;")
+            rango_layout.addWidget(desde_lbl)
+            rango_layout.addWidget(desde_edit)
+            rango_layout.addWidget(dash)
+            rango_layout.addWidget(hasta_lbl)
+            rango_layout.addWidget(hasta_edit)
+            card_layout.addWidget(filtro_fecha_chk)
+            card_layout.addLayout(rango_layout)
+            desde_edit.setEnabled(False)
+            hasta_edit.setEnabled(False)
+
+            def _toggle_dates(checked: bool):
+                desde_edit.setEnabled(checked)
+                hasta_edit.setEnabled(checked)
+
+            filtro_fecha_chk.toggled.connect(_toggle_dates)
+
+            tipo_lbl = QLabel("Tipo de Reporte")
+            tipo_lbl.setStyleSheet(label_style)
+            card_layout.addWidget(tipo_lbl)
+            radios_layout = QVBoxLayout()
+            radio_group = QButtonGroup(card)
+            radio_widgets = []
+            for idx, text in enumerate(radio_labels):
+                rb = QRadioButton(text)
+                rb.setStyleSheet(radio_style)
+                rb.setChecked(idx == default_idx)
+                radio_group.addButton(rb, idx)
+                radio_widgets.append(rb)
+                radios_layout.addWidget(rb)
+            card_layout.addLayout(radios_layout)
+
+            btn = QPushButton(button_text)
+            btn.setMinimumHeight(46)
+            btn.setCursor(Qt.PointingHandCursor)
+            btn.setStyleSheet(
+                f"background-color: {button_color}; color: white; font-weight: 700; "
+                "border: none; border-radius: 10px; font-size: 15px; padding: 12px;"
+            )
+            card_layout.addWidget(btn)
+
+            return card, combo, filtro_fecha_chk, desde_edit, hasta_edit, radio_group, radio_widgets, btn
+
+        cliente_card, self.reportes_cliente_combo, self.reportes_cliente_filtro_fecha, self.reportes_cliente_desde, self.reportes_cliente_hasta, self.reportes_cliente_tipo_group, self.reportes_cliente_radios, self.reportes_cliente_btn = build_reporte_card(
+            "👤",
+            "Reportes de Clientes (Compras y Saldos)",
+            "Cliente",
+            ["Historial de Compras"],
+            0,
+            "Generar Reporte Cliente",
+            "#2563EB",
+        )
+
+        vendedor_card, self.reportes_vendedor_combo, self.reportes_vendedor_filtro_fecha, self.reportes_vendedor_desde, self.reportes_vendedor_hasta, self.reportes_vendedor_tipo_group, self.reportes_vendedor_radios, self.reportes_vendedor_btn = build_reporte_card(
+            "💼",
+            "Reportes de Vendedores (Ventas y Desempeño)",
+            "Vendedor",
+            ["Total Ventas"],
+            0,
+            "Generar Reporte Vendedor",
+            "#0F766E",
+        )
+
+        cards_layout.addWidget(cliente_card)
+        cards_layout.addWidget(vendedor_card)
+        layout.addLayout(cards_layout)
+
+        self.reportes_cliente_btn.clicked.connect(self._generar_reporte_cliente)
+        self.reportes_vendedor_btn.clicked.connect(self._generar_reporte_vendedor)
+
+        preview_title = QLabel("Previsualización de Reporte Reciente")
+        preview_title.setStyleSheet("font-size: 16px; font-weight: 600; color: #1F2937;")
+        layout.addWidget(preview_title)
+
+        preview_frame = QFrame()
+        preview_frame.setObjectName("PreviewPlaceholder")
+        preview_frame.setStyleSheet("background-color: #F1F5F9; border: 1px dashed #CBD5E1; border-radius: 12px;")
+        preview_layout = QVBoxLayout(preview_frame)
+        preview_layout.setContentsMargins(24, 32, 24, 32)
+        preview_label = QLabel("Aquí se mostrará la previsualización del reporte generado.")
+        preview_label.setAlignment(Qt.AlignCenter)
+        preview_label.setStyleSheet("color: #475569; font-size: 14px;")
+        preview_layout.addWidget(preview_label)
+        layout.addWidget(preview_frame)
+
+        layout.addStretch(1)
+        self._populate_estados_reportes_data()
+        return tab
+
+    def _on_vendedor_edit_clicked(self, index: QModelIndex):
+        self.vendedores_list.setCurrentIndex(index)
+        self._editar_vendedor()
+
+    def _on_vendedor_delete_clicked(self, index: QModelIndex):
+        self.vendedores_list.setCurrentIndex(index)
+        self._eliminar_vendedor()
+
+    def _on_distribuidor_edit_clicked(self, index: QModelIndex):
+        self.distribuidores_list.setCurrentIndex(index)
+        self._editar_Distribuidor()
+
+    def _on_distribuidor_delete_clicked(self, index: QModelIndex):
+        self.distribuidores_list.setCurrentIndex(index)
+        self._eliminar_Distribuidor()
+
+    def _on_trabajador_edit_clicked(self, index: QModelIndex):
+        if hasattr(self, "trabajadores_list"):
+            self.trabajadores_list.setCurrentIndex(index)
+        self._editar_trabajador()
+
+    def _on_trabajador_delete_clicked(self, index: QModelIndex):
+        if hasattr(self, "trabajadores_list"):
+            self.trabajadores_list.setCurrentIndex(index)
+        self._eliminar_trabajador()
+
+    def show_sales_dialog(self):
+        """Atajo desde el sidebar para abrir el flujo de venta."""
+        self.registrar_venta()
+
+    def setup_clientes_ui(self):
+        layout = QVBoxLayout(self.clientes_tab)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        title = QLabel("Gestión de Clientes")
+        title_font = title.font()
+        title_font.setPointSize(24)
+        title_font.setBold(True)
+        title.setFont(title_font)
+        layout.addWidget(title)
+
+        card = QFrame()
+        card.setObjectName("ModernCard")
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(20, 20, 20, 20)
+        card_layout.setSpacing(16)
+
+        header_row = QHBoxLayout()
+        header_row.setSpacing(12)
+
+        self.search_bar_clientes = QLineEdit()
+        self.search_bar_clientes.setPlaceholderText("Buscar cliente por nombre, código, NIT, etc.")
+        self.search_bar_clientes.setMinimumHeight(46)
+        self.search_bar_clientes.setStyleSheet("font-size: 15px;")
+        self.search_bar_clientes.textChanged.connect(self._actualizar_tabla_clientes)
+        header_row.addWidget(self.search_bar_clientes, 1)
+
+        lbl_style = "color: #4B5563; font-weight: 600;"
+        lbl_vend = QLabel("Vendedor:")
+        lbl_vend.setStyleSheet(lbl_style)
+        header_row.addWidget(lbl_vend)
+        self.cliente_vendedor_filtro = QComboBox()
+        self.cliente_vendedor_filtro.setMinimumHeight(42)
+        self.cliente_vendedor_filtro.setStyleSheet("font-size: 14px;")
+        self.cliente_vendedor_filtro.addItem("Todos")
+        header_row.addWidget(self.cliente_vendedor_filtro)
+
+        lbl_dep = QLabel("Departamento:")
+        lbl_dep.setStyleSheet(lbl_style)
+        header_row.addWidget(lbl_dep)
+        self.cliente_departamento_filtro = QComboBox()
+        self.cliente_departamento_filtro.setMinimumHeight(42)
+        self.cliente_departamento_filtro.setStyleSheet("font-size: 14px;")
+        self.cliente_departamento_filtro.addItem("Todos")
+        header_row.addWidget(self.cliente_departamento_filtro)
+
+        header_row.addStretch(1)
+        card_layout.addLayout(header_row)
+
+        self.clientes_table = QTableWidget(0, 10)
+        self.clientes_table.setHorizontalHeaderLabels([
+            "Código", "Nombre", "NRC", "NIT", "DUI", "Giro", "Teléfono", "Correo", "Departamento", "Municipio"
+        ])
+        self.clientes_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.clientes_table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.clientes_table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.clientes_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.clientes_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.clientes_table.setFrameShape(QFrame.NoFrame)
+        self.clientes_table.setShowGrid(False)
+        self.clientes_table.setAlternatingRowColors(False)
+        self.clientes_table.setStyleSheet(self.clientes_table.styleSheet() + "font-size: 14px;")
+        self.clientes_table.verticalHeader().hide()
+        self.clientes_table.verticalHeader().setDefaultSectionSize(60)
+        header = self.clientes_table.horizontalHeader()
+        header.setStretchLastSection(True)
+        header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header.setFixedHeight(50)
+        card_layout.addWidget(self.clientes_table)
+
+        footer = QHBoxLayout()
+        self.btn_add_cliente = QPushButton("Nuevo Cliente")
+        self.btn_add_cliente.setObjectName("PrimaryActionButton")
+        self.btn_add_cliente.setMinimumHeight(50)
+        self.btn_add_cliente.setStyleSheet(self.btn_add_cliente.styleSheet() + "font-size: 15px;")
+        footer.addWidget(self.btn_add_cliente)
+        footer.addStretch(1)
+        self.btn_edit_cliente = QPushButton("Editar Cliente")
+        self.btn_edit_cliente.setObjectName("SecondaryActionButton")
+        self.btn_edit_cliente.setMinimumHeight(50)
+        self.btn_edit_cliente.setStyleSheet(self.btn_edit_cliente.styleSheet() + "font-size: 15px;")
+        self.btn_delete_cliente = QPushButton("Eliminar Cliente")
+        self.btn_delete_cliente.setObjectName("DangerActionButton")
+        self.btn_delete_cliente.setMinimumHeight(50)
+        self.btn_delete_cliente.setStyleSheet(self.btn_delete_cliente.styleSheet() + "font-size: 15px;")
+        footer.addWidget(self.btn_edit_cliente)
+        footer.addWidget(self.btn_delete_cliente)
+        card_layout.addLayout(footer)
+
+        layout.addWidget(card)
+        self.cliente_search = self.search_bar_clientes
 
     def agregar_producto(self):
         dialog = ProductDialog(self.manager._vendedores, self.manager._Distribuidores, self)
@@ -1207,7 +2514,11 @@ class MainWindow(QMainWindow):
         try:
             result = dialog.exec_()
             if result == QDialog.Accepted:
-                QMessageBox.information(self, "Compra", "Compra registrada correctamente.")
+                msg = "Compra registrada correctamente."
+                # Nota: si el proveedor es sujeto excluido, el hook genera y guarda el DTE 14 localmente.
+                if getattr(dialog, "is_subject_excluded_purchase", False):
+                    msg += "\nSe generó el DTE de sujeto excluido (pendiente de envío)."
+                QMessageBox.information(self, "Compra", msg)
                 self.manager.refresh_data()
                 self.compras_tab.refresh_filters()
                 self.compras_tab.load_purchases()
@@ -1583,6 +2894,41 @@ class MainWindow(QMainWindow):
             mensaje_exito="Copia de seguridad cargada correctamente.",
         )
 
+    def cargar_copia_seguridad_manual(self):
+        """Permite elegir manualmente qué respaldo cargar."""
+        start_dir = str(Path(AUTO_BACKUP_DIR))
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "Seleccionar copia de seguridad",
+            start_dir if os.path.isdir(start_dir) else "",
+            "Archivos JSON (*.json);;Todos los archivos (*)",
+        )
+        if not filename:
+            return
+        self._cargar_inventario_desde_archivo(
+            filename,
+            titulo_dialogo="Cargar copia de seguridad",
+            mensaje_exito="Copia de seguridad cargada correctamente.",
+        )
+
+    def actualizar_estado_global(self):
+        """Recarga datos, listas e inventario para evitar desincronizaciones."""
+        try:
+            if hasattr(self, "manager"):
+                self.manager.refresh_data()
+                if hasattr(self, "filter_products"):
+                    self.filter_products()
+            if hasattr(self, "facturacion_tab") and hasattr(
+                self.facturacion_tab, "refresh_and_reload"
+            ):
+                self.facturacion_tab.refresh_and_reload()
+            if hasattr(self, "sales_tab") and hasattr(self.sales_tab, "load_sales"):
+                self.sales_tab.load_sales()
+            if hasattr(self, "_actualizar_inventario_actual"):
+                self._actualizar_inventario_actual()
+        except Exception:
+            logger.exception("No se pudo actualizar el estado global")
+
     def firmar_dte_manual(self):
         filename, _ = QFileDialog.getOpenFileName(
             self,
@@ -1783,31 +3129,45 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Nuevo inventario", "Inventario limpio y listo para usar.")
 
     def _actualizar_arbol_vendedores(self):
-        self.vendedores_tree.clear()
+        search = ""
+        if hasattr(self, "vendedores_search"):
+            search = (self.vendedores_search.text() or "").strip().lower()
+        self.vendedores_list.clear()
         for vend in self.manager.get_vendedores_compra():
             text = f"{vend.get('codigo', '')} - {vend['nombre']}"
-            vend_item = QTreeWidgetItem([text])
-            vend_item.setData(0, Qt.UserRole, vend.get("id"))
-            self.vendedores_tree.addTopLevelItem(vend_item)
-            vend_item.setExpanded(False)
+            haystack = " ".join(
+                [
+                    vend.get("codigo", "") or "",
+                    vend.get("nombre", "") or "",
+                    vend.get("descripcion", "") or "",
+                ]
+            ).lower()
+            if search and search not in haystack:
+                continue
+            vend_item = QListWidgetItem(text)
+            vend_item.setData(Qt.UserRole, vend.get("id"))
+            self.vendedores_list.addItem(vend_item)
 
     def _actualizar_arbol_Distribuidores(self):
-        self.Distribuidores_tree.clear()
+        search = ""
+        if hasattr(self, "distribuidores_search"):
+            search = (self.distribuidores_search.text() or "").strip().lower()
+        self.distribuidores_list.clear()
         for dist in self.manager._Distribuidores:
-            dist_item = QTreeWidgetItem([dist["nombre"]])
-            dist_item.setData(0, Qt.UserRole, dist.get("id"))
-            vendedores = [
-                v
-                for v in self.manager.get_vendedores_compra()
-                if v.get("Distribuidor_id") == dist["id"]
-            ]
-            for vend in vendedores:
-                text = f"{vend.get('codigo', '')} - {vend['nombre']}"
-                vend_item = QTreeWidgetItem([text])
-                vend_item.setData(0, Qt.UserRole, vend.get("id"))
-                dist_item.addChild(vend_item)
-            self.Distribuidores_tree.addTopLevelItem(dist_item)
-            dist_item.setExpanded(False)
+            text = dist.get("nombre", "")
+            haystack = " ".join(
+                [
+                    dist.get("codigo", "") or "",
+                    dist.get("nombre", "") or "",
+                    dist.get("telefono", "") or "",
+                    dist.get("email", "") or "",
+                ]
+            ).lower()
+            if search and search not in haystack:
+                continue
+            dist_item = QListWidgetItem(text)
+            dist_item.setData(Qt.UserRole, dist.get("id"))
+            self.distribuidores_list.addItem(dist_item)
 
     def _actualizar_lista_Distribuidores(self):
         self.Distribuidores_list.clear()
@@ -1826,6 +3186,8 @@ class MainWindow(QMainWindow):
                 Distribuidor_id=data["Distribuidor_id"],
                 codigo=data["codigo"],
                 dui=data["dui"],
+                nit=data.get("nit"),
+                is_subject_excluded=data.get("is_subject_excluded", 0),
 
             )
             self.manager.refresh_data()
@@ -1835,12 +3197,13 @@ class MainWindow(QMainWindow):
 
     def _editar_vendedor(self):
         from dialogs import VendedorDialog
-        selected_items = self.vendedores_tree.selectedItems()
-        if not selected_items:
+        item = self.vendedores_list.currentItem()
+        if item is None and self.vendedores_list.selectedItems():
+            item = self.vendedores_list.selectedItems()[0]
+        if item is None:
             QMessageBox.warning(self, "Editar vendedor", "Seleccione una vendedor para editar.")
             return
-        item = selected_items[0]
-        vendedor_id = item.data(0, Qt.UserRole)
+        vendedor_id = item.data(Qt.UserRole)
         vendedor = next(
             (
                 c
@@ -1862,6 +3225,8 @@ class MainWindow(QMainWindow):
                 data["descripcion"],
                 data["Distribuidor_id"],
                 dui=data["dui"],
+                nit=data.get("nit"),
+                is_subject_excluded=data.get("is_subject_excluded", 0),
 
             )
             self.manager.refresh_data()
@@ -1870,16 +3235,17 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Vendedor", "Vendedor editado correctamente.")
 
     def _eliminar_vendedor(self):
-        selected_items = self.vendedores_tree.selectedItems()
-        if not selected_items:
+        item = self.vendedores_list.currentItem()
+        if item is None and self.vendedores_list.selectedItems():
+            item = self.vendedores_list.selectedItems()[0]
+        if item is None:
             QMessageBox.warning(self, "Eliminar vendedor", "Seleccione un vendedor para eliminar.")
             return
-        item = selected_items[0]
-        vendedor_id = item.data(0, Qt.UserRole)
+        vendedor_id = item.data(Qt.UserRole)
         confirm = QMessageBox.question(
             self,
             "Eliminar",
-            f"¿Eliminar vendedor '{item.text(0)}'?",
+            f"¿Eliminar vendedor '{item.text()}'?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if confirm == QMessageBox.Yes:
@@ -1899,7 +3265,7 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Vendedor eliminado",
-                f"El vendedor '{item.text(0)}' ha sido eliminado.",
+                f"El vendedor '{item.text()}' ha sido eliminado.",
             )
 
     def _agregar_Distribuidor(self):
@@ -1913,16 +3279,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Distribuidor", "Distribuidor agregado correctamente.")
 
     def _editar_Distribuidor(self):
-        selected_items = self.Distribuidores_tree.selectedItems()
-        if not selected_items:
+        item = self.distribuidores_list.currentItem()
+        if item is None and self.distribuidores_list.selectedItems():
+            item = self.distribuidores_list.selectedItems()[0]
+        if item is None:
             QMessageBox.warning(self, "Editar Distribuidor", "Seleccione un Distribuidor para editar.")
             return
-        item = selected_items[0]
-        # Asegurarse de que sea un Distribuidor (no un vendedor hijo)
-        if item.parent() is not None:
-            QMessageBox.warning(self, "Editar Distribuidor", "Seleccione un Distribuidor para editar.")
-            return
-        dist_id = item.data(0, Qt.UserRole)
+        dist_id = item.data(Qt.UserRole)
         # Busca el Distribuidor en la base de datos
         Distribuidor = next((v for v in self.manager._Distribuidores if v["id"] == dist_id), None)
         if not Distribuidor:
@@ -1967,15 +3330,13 @@ class MainWindow(QMainWindow):
         self.selected_row = None
 
     def _mostrar_info_Distribuidor(self):
-        selected_items = self.Distribuidores_tree.selectedItems()
-        if not selected_items:
+        item = self.distribuidores_list.currentItem()
+        if item is None and self.distribuidores_list.selectedItems():
+            item = self.distribuidores_list.selectedItems()[0]
+        if item is None:
             QMessageBox.information(self, "Información de Distribuidor", "Seleccione un Distribuidor para ver su información.")
             return
-        item = selected_items[0]
-        if item.parent() is not None:
-            QMessageBox.information(self, "Información de Distribuidor", "Seleccione un Distribuidor para ver su información.")
-            return
-        dist_id = item.data(0, Qt.UserRole)
+        dist_id = item.data(Qt.UserRole)
         Distribuidor = next((v for v in self.manager._Distribuidores if v["id"] == dist_id), None)
         if not Distribuidor:
             QMessageBox.warning(self, "Información de Distribuidor", "No se encontró el Distribuidor seleccionado.")
@@ -1985,23 +3346,19 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def _eliminar_Distribuidor(self):
-        selected_items = self.Distribuidores_tree.selectedItems()
-        if not selected_items:
+        item = self.distribuidores_list.currentItem()
+        if item is None and self.distribuidores_list.selectedItems():
+            item = self.distribuidores_list.selectedItems()[0]
+        if item is None:
             QMessageBox.warning(
                 self, "Eliminar Distribuidor", "Seleccione un Distribuidor para eliminar."
             )
             return
-        item = selected_items[0]
-        if item.parent() is not None:
-            QMessageBox.warning(
-                self, "Eliminar Distribuidor", "Seleccione un Distribuidor para eliminar."
-            )
-            return
-        dist_id = item.data(0, Qt.UserRole)
+        dist_id = item.data(Qt.UserRole)
         confirm = QMessageBox.question(
             self,
             "Eliminar Distribuidor",
-            f"¿Eliminar Distribuidor '{item.text(0)}'?",
+            f"¿Eliminar Distribuidor '{item.text()}'?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if confirm != QMessageBox.Yes:
@@ -2136,52 +3493,72 @@ class MainWindow(QMainWindow):
         return super().eventFilter(obj, event)
 
     def _actualizar_inventario_actual(self):
-        search = self.actual_search_bar.text()
-        # Aquí puedes aplicar el filtro por búsqueda en la tabla de inventario actual
-        for row in range(self.inventario_actual_table.rowCount()):
-            item = self.inventario_actual_table.item(row, 0)  # Suponiendo que el nombre del producto está en la columna 0
-            if item and search.lower() in item.text().lower():
-                self.inventario_actual_table.showRow(row)
-            else:
-                self.inventario_actual_table.hideRow(row)
-        # Obtén todos los detalles de compra (lotes)
-        detalles = []
+        search_raw = self.actual_search_bar.text() or ""
+        search = search_raw.lower()
+        stock_only = self.actual_stock_only_cb.isChecked() if hasattr(self, "actual_stock_only_cb") else True
+        view_combo = getattr(self, "inventario_view_combo", None)
+        general_view = view_combo is not None and view_combo.currentText().lower().startswith("inventario")
+        if hasattr(self, "inventario_general_table"):
+            self.inventario_general_table.setVisible(general_view)
+        self.inventario_actual_table.setVisible(not general_view)
+
+        if general_view and hasattr(self, "inventario_general_table"):
+            productos = self.manager.db.get_productos(search=search_raw)
+            filtered = []
+            for prod in productos:
+                try:
+                    stock_val = float(prod.get("stock", 0) or 0)
+                except (TypeError, ValueError):
+                    stock_val = 0
+                if stock_only and stock_val <= 0:
+                    continue
+                filtered.append((prod, stock_val))
+
+            self.inventario_general_table.setRowCount(len(filtered))
+            for row, (prod, stock_val) in enumerate(filtered):
+                self.inventario_general_table.setItem(row, 0, QTableWidgetItem(prod.get("nombre", "")))
+                self.inventario_general_table.setItem(row, 1, QTableWidgetItem(prod.get("codigo", "")))
+                precio_minorista = prod.get("precio_venta_minorista", 0) or 0
+                self.inventario_general_table.setItem(row, 2, QTableWidgetItem(f"${precio_minorista:.2f}"))
+                stock_display = int(stock_val) if float(stock_val).is_integer() else stock_val
+                self.inventario_general_table.setItem(row, 3, QTableWidgetItem(str(stock_display)))
+                self.inventario_general_table.setRowHeight(row, 64)
+            return
+
         catalogs = getattr(self.manager, "catalogs", None)
         compras = self.manager.db.get_compras()
         if catalogs and catalogs.products:
             productos_dict = catalogs.products
         else:
             productos_dict = {p["id"]: p for p in self.manager.db.get_productos()}
+
+        detalles: list[dict] = []
         for compra in compras:
-            compra_id = compra["id"]
+            compra_id = compra.get("id")
             detalles_compra = self.manager.db.get_detalles_compra(compra_id)
             _, distribuidor_nombre = resolve_party_names(compra, catalogs)
             for d in detalles_compra:
                 prod = productos_dict.get(d["producto_id"])
                 if not prod:
                     continue
-                # Busca la fecha de vencimiento en el detalle si la tienes (ajusta si la guardas en la tabla)
-                fecha_vencimiento = d.get("fecha_vencimiento", "")
+                cantidad = int(d.get("cantidad", 0) or 0)
+                if stock_only and cantidad <= 0:
+                    continue
                 detalles.append({
                     "producto": prod.get("nombre", ""),
                     "codigo": prod.get("codigo", ""),
-                    "cantidad": d.get("cantidad", 0),
+                    "cantidad": cantidad,
                     "precio_compra": d.get("precio_unitario", 0),
                     "codigo_lote": d.get("codigo_lote") or "",
                     "registro_sanitario": d.get("registro_sanitario") or "",
                     "fecha_compra": compra.get("fecha", ""),
-                    "fecha_vencimiento": fecha_vencimiento,
+                    "fecha_vencimiento": d.get("fecha_vencimiento", ""),
                     "Distribuidor": distribuidor_nombre,
                     "detalle_id": d.get("id"),
                     "producto_id": d.get("producto_id"),
                     "compra_id": compra_id,
                 })
 
-        # Filtra solo los lotes con stock > 0
-        detalles = [d for d in detalles if d["cantidad"] > 0]
-
-        # Aplica búsqueda
-        search = self.actual_search_bar.text().lower()
         if search:
             detalles = [
                 d for d in detalles
@@ -2194,46 +3571,55 @@ class MainWindow(QMainWindow):
             item_producto.setData(Qt.UserRole, d)
             self.inventario_actual_table.setItem(row, 0, item_producto)
             self.inventario_actual_table.setItem(row, 1, QTableWidgetItem(d["codigo"]))
-            item_cantidad = QTableWidgetItem(str(d["cantidad"]))
-            stock = d.get("cantidad", 0)
-            if stock < 5:
-                item_cantidad.setBackground(QColor("red"))
-            elif stock < 10:
-                item_cantidad.setBackground(QColor("orange"))
-            elif stock < 25:
-                item_cantidad.setBackground(QColor("yellow"))
-            else:
-                item_cantidad.setBackground(QColor("lightgreen"))
-            self.inventario_actual_table.setItem(row, 2, item_cantidad)
+            self.inventario_actual_table.setItem(row, 2, QTableWidgetItem(str(d["cantidad"])))
             self.inventario_actual_table.setItem(row, 3, QTableWidgetItem(f"${d['precio_compra']:.2f}"))
             self.inventario_actual_table.setItem(row, 4, QTableWidgetItem(d["codigo_lote"]))
             self.inventario_actual_table.setItem(row, 5, QTableWidgetItem(d["registro_sanitario"]))
             self.inventario_actual_table.setItem(row, 6, QTableWidgetItem(d["fecha_compra"]))
-            # --- FECHA DE VENCIMIENTO CON COLOR ---
-            item_venc = QTableWidgetItem(d["fecha_vencimiento"])
-            fecha_str = d["fecha_vencimiento"]
-            if fecha_str:
-                try:
-                    from datetime import datetime
-                    fecha_venc = datetime.strptime(fecha_str, "%Y-%m-%d")
-                    hoy = datetime.today()
-                    meses = (fecha_venc.year - hoy.year) * 12 + (fecha_venc.month - hoy.month)
-                    if fecha_venc < hoy:
-                        item_venc.setBackground(QColor("black"))
-                        item_venc.setForeground(QColor("white"))
-                    elif meses <= 3:
-                        item_venc.setBackground(QColor("red"))
-                        item_venc.setForeground(QColor("white"))
-                    elif meses <= 6:
-                        item_venc.setBackground(QColor("orange"))
-                        item_venc.setForeground(QColor("black"))
-                    elif meses > 6:
-                        item_venc.setBackground(QColor("lightgreen"))
-                        item_venc.setForeground(QColor("black"))
-                except Exception:
-                    pass
-            self.inventario_actual_table.setItem(row, 7, item_venc)
+            self.inventario_actual_table.setItem(row, 7, QTableWidgetItem(d["fecha_vencimiento"]))
             self.inventario_actual_table.setItem(row, 8, QTableWidgetItem(d["Distribuidor"]))
+            self._set_inventario_action_cell(row)
+            self.inventario_actual_table.setRowHeight(row, 64)
+
+    def _trigger_inventory_action(self, row: int, handler):
+        if row >= 0:
+            self.inventario_actual_table.selectRow(row)
+            handler()
+
+    def _set_inventario_action_cell(self, row: int):
+        container = QWidget()
+        container.setAttribute(Qt.WA_TranslucentBackground, True)
+        container.setStyleSheet("background: transparent;")
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(6)
+        layout.setAlignment(Qt.AlignCenter)
+
+        btn_view = QPushButton("📄", container)
+        btn_view.setProperty("class", "table-icon-btn")
+        btn_view.setStyleSheet("color: #475569; font-size: 18px;")
+        btn_view.setFixedSize(46, 42)
+        btn_view.setToolTip("Ver información del lote")
+        btn_view.clicked.connect(lambda _, r=row: self._trigger_inventory_action(r, self._ver_informacion_lote))
+
+        btn_edit = QPushButton("✏️", container)
+        btn_edit.setProperty("class", "table-icon-btn")
+        btn_edit.setStyleSheet("color: #2563EB; font-size: 18px;")
+        btn_edit.setFixedSize(46, 42)
+        btn_edit.setToolTip("Editar lote")
+        btn_edit.clicked.connect(lambda _, r=row: self._trigger_inventory_action(r, self._editar_lote_inventario_actual))
+
+        btn_delete = QPushButton("🗑️", container)
+        btn_delete.setProperty("class", "table-icon-btn")
+        btn_delete.setStyleSheet("color: #DC2626; font-size: 18px;")
+        btn_delete.setFixedSize(46, 42)
+        btn_delete.setToolTip("Eliminar lote")
+        btn_delete.clicked.connect(lambda _, r=row: self._trigger_inventory_action(r, self._eliminar_lote_inventario_actual))
+
+        layout.addWidget(btn_view)
+        layout.addWidget(btn_edit)
+        layout.addWidget(btn_delete)
+        self.inventario_actual_table.setCellWidget(row, 9, container)
 
     def _confirm_inventory_conflict(self, target: str) -> bool:
         message = (
@@ -2638,30 +4024,163 @@ class MainWindow(QMainWindow):
         dlg = UserConfigDialog(self.manager.db, self)
         dlg.exec_()
 
+    def _populate_estados_reportes_data(self):
+        if not hasattr(self, "manager") or self.manager is None:
+            return
+        clientes = self.manager.db.get_clientes()
+        vendedores = self.manager.db.get_trabajadores(solo_vendedores=True)
+        self._clientes_estado = clientes
+        self._vendedores_estado = vendedores
+
+        if hasattr(self, "reportes_cliente_combo"):
+            combo = self.reportes_cliente_combo
+            current_id = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("Todos", None)
+            for cli in clientes:
+                display = f"{cli.get('codigo', '')} — {cli.get('nombre', '')}".strip(" —")
+                combo.addItem(display, cli.get("id"))
+            if current_id:
+                idx = combo.findData(current_id)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
+
+        if hasattr(self, "reportes_vendedor_combo"):
+            combo = self.reportes_vendedor_combo
+            current_id = combo.currentData()
+            combo.blockSignals(True)
+            combo.clear()
+            combo.addItem("Todos", None)
+            for vend in vendedores:
+                display = f"{vend.get('codigo', '')} — {vend.get('nombre', '')}".strip(" —")
+                combo.addItem(display, vend.get("id"))
+            if current_id:
+                idx = combo.findData(current_id)
+                if idx >= 0:
+                    combo.setCurrentIndex(idx)
+            combo.blockSignals(False)
+
+    def _collect_report_params(self, mode: str):
+        start_edit = self.reportes_cliente_desde if mode == "cliente" else self.reportes_vendedor_desde
+        end_edit = self.reportes_cliente_hasta if mode == "cliente" else self.reportes_vendedor_hasta
+        combo = self.reportes_cliente_combo if mode == "cliente" else self.reportes_vendedor_combo
+        filtro_chk = self.reportes_cliente_filtro_fecha if mode == "cliente" else self.reportes_vendedor_filtro_fecha
+
+        params = {
+            "fecha_inicio": start_edit.date().toString("yyyy-MM-dd") if filtro_chk.isChecked() else "",
+            "fecha_fin": end_edit.date().toString("yyyy-MM-dd") if filtro_chk.isChecked() else "",
+        }
+        selected_id = combo.currentData()
+        if selected_id:
+            if mode == "cliente":
+                params["cliente_id"] = selected_id
+            else:
+                params["vendedor_id"] = selected_id
+        return params
+
+    def _generar_reporte_cliente(self):
+        if not hasattr(self, "manager") or self.manager is None:
+            return
+        params = self._collect_report_params("cliente")
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar estado de cuenta (cliente)",
+            "estado_cuenta_cliente.pdf",
+            "PDF Files (*.pdf)",
+        )
+        if not filename:
+            return
+        from estado_cuenta_pdf import generar_estado_cuenta_pdf
+        try:
+            generar_estado_cuenta_pdf(self.manager.db, modo="cliente", archivo=filename, **params)
+            QMessageBox.information(self, "Estado de cuenta", f"Archivo generado en {filename}")
+        except Exception as e:
+            QMessageBox.warning(self, "Estado de cuenta", f"Error: {e}")
+
+    def _generar_reporte_vendedor(self):
+        if not hasattr(self, "manager") or self.manager is None:
+            return
+        params = self._collect_report_params("vendedor")
+        filename, _ = QFileDialog.getSaveFileName(
+            self,
+            "Guardar estado de cuenta (vendedor)",
+            "estado_cuenta_vendedor.pdf",
+            "PDF Files (*.pdf)",
+        )
+        if not filename:
+            return
+        from estado_cuenta_pdf import generar_estado_cuenta_pdf
+        try:
+            mode = "vendedor"
+            if "vendedor_id" not in params:
+                mode = "todos"
+            generar_estado_cuenta_pdf(self.manager.db, modo=mode, archivo=filename, **params)
+            QMessageBox.information(self, "Estado de cuenta", f"Archivo generado en {filename}")
+        except Exception as e:
+            QMessageBox.warning(self, "Estado de cuenta", f"Error: {e}")
+
     def _actualizar_tabla_trabajadores(self):
-        solo_vendedores = self.trabajadores_filtro_vendedor.isChecked()
-        area = self.trabajadores_filtro_area.text()
+        solo_vendedores = self.trabajadores_filtro_vendedor.isChecked() if hasattr(self, "trabajadores_filtro_vendedor") else False
+        area = self.trabajadores_filtro_area.text() if hasattr(self, "trabajadores_filtro_area") else ""
+        search = (self.trabajadores_search.text() or "").strip().lower() if hasattr(self, "trabajadores_search") else ""
         trabajadores = self.manager.db.get_trabajadores(
             solo_vendedores=solo_vendedores, area=area
         )
-        self.trabajadores_table.setRowCount(len(trabajadores))
-        for row, t in enumerate(trabajadores):
-            self.trabajadores_table.setItem(row, 0, QTableWidgetItem(t.get("codigo", "")))
-            self.trabajadores_table.setItem(row, 1, QTableWidgetItem(t.get("nombre", "")))
-            self.trabajadores_table.setItem(row, 2, QTableWidgetItem(t.get("dui", "")))
-            self.trabajadores_table.setItem(row, 3, QTableWidgetItem(t.get("nit", "")))
-            self.trabajadores_table.setItem(row, 4, QTableWidgetItem(t.get("fecha_nacimiento", "")))
-            self.trabajadores_table.setItem(row, 5, QTableWidgetItem(t.get("cargo", "")))
-            self.trabajadores_table.setItem(row, 6, QTableWidgetItem(t.get("area", "")))
-            self.trabajadores_table.setItem(row, 7, QTableWidgetItem(t.get("telefono", "")))
-            self.trabajadores_table.setItem(row, 8, QTableWidgetItem(t.get("email", "")))
-            self.trabajadores_table.setItem(row, 9, QTableWidgetItem("Sí" if t.get("es_vendedor") else "No"))
+        filtered = []
+        for t in trabajadores:
+            haystack = " ".join(
+                [
+                    t.get("codigo", "") or "",
+                    t.get("nombre", "") or "",
+                    t.get("area", "") or "",
+                    t.get("cargo", "") or "",
+                    t.get("telefono", "") or "",
+                    t.get("email", "") or "",
+                ]
+            ).lower()
+            if search and search not in haystack:
+                continue
+            filtered.append(t)
+
+        if hasattr(self, "trabajadores_list"):
+            self.trabajadores_list.clear()
+            for t in filtered:
+                text = f"{t.get('codigo', '')} - {t.get('nombre', '')}".strip(" -")
+                item = QListWidgetItem(text)
+                item.setData(Qt.UserRole, t)
+                self.trabajadores_list.addItem(item)
+
+        table = getattr(self, "trabajadores_table", None)
+        if table is not None:
+            table.setRowCount(len(filtered))
+            for row, t in enumerate(filtered):
+                table.setItem(row, 0, QTableWidgetItem(t.get("codigo", "")))
+                table.setItem(row, 1, QTableWidgetItem(t.get("nombre", "")))
+                table.setItem(row, 2, QTableWidgetItem(t.get("dui", "")))
+                table.setItem(row, 3, QTableWidgetItem(t.get("nit", "")))
+                table.setItem(row, 4, QTableWidgetItem(t.get("fecha_nacimiento", "")))
+                table.setItem(row, 5, QTableWidgetItem(t.get("cargo", "")))
+                table.setItem(row, 6, QTableWidgetItem(t.get("area", "")))
+                table.setItem(row, 7, QTableWidgetItem(t.get("telefono", "")))
+                table.setItem(row, 8, QTableWidgetItem(t.get("email", "")))
+                table.setItem(row, 9, QTableWidgetItem("Sí" if t.get("es_vendedor") else "No"))
 
     def _get_selected_trabajador(self):
-        row = self.trabajadores_table.currentRow()
+        if hasattr(self, "trabajadores_list"):
+            current = self.trabajadores_list.currentItem()
+            if current:
+                data = current.data(Qt.UserRole)
+                if isinstance(data, dict):
+                    return data
+        table = getattr(self, "trabajadores_table", None)
+        if table is None:
+            return None
+        row = table.currentRow()
         if row < 0:
             return None
-        codigo = self.trabajadores_table.item(row, 0).text()
+        codigo = table.item(row, 0).text()
         trabajadores = self.manager.db.get_trabajadores()
         for t in trabajadores:
             if t.get("codigo", "") == codigo:
@@ -2733,6 +4252,8 @@ class MainWindow(QMainWindow):
 
 
     def _toggle_estado_filtro_fechas(self, checked: bool):
+        if not all(hasattr(self, attr) for attr in ("estado_quick_range", "estado_fecha_inicio", "estado_fecha_fin", "estado_filtrar_fechas")):
+            return
         self.estado_quick_range.setEnabled(checked)
         custom = self.estado_quick_range.currentIndex() == 0
         self.estado_fecha_inicio.setEnabled(checked and custom)
@@ -2741,6 +4262,8 @@ class MainWindow(QMainWindow):
             self._apply_estado_quick_range()
 
     def _apply_estado_quick_range(self):
+        if not all(hasattr(self, attr) for attr in ("estado_filtrar_fechas", "estado_quick_range", "estado_fecha_inicio", "estado_fecha_fin")):
+            return
         if not self.estado_filtrar_fechas.isChecked():
             return
         option = self.estado_quick_range.currentText()
@@ -2780,6 +4303,8 @@ class MainWindow(QMainWindow):
 
     def _abrir_generar_estado_dialog(self):
         """Abre la ventana de generación de estados de cuenta."""
+        if not all(hasattr(self, attr) for attr in ("estado_tipo_combo", "estado_filtrar_fechas", "estado_fecha_inicio", "estado_fecha_fin")):
+            return
         dialog = EstadoCuentaDialog(self.manager.db, self)
         tipo_idx = 0 if self.estado_tipo_combo.currentText() == "Cliente" else 1
         dialog.modo_combo.setCurrentIndex(tipo_idx)
@@ -2817,6 +4342,16 @@ class MainWindow(QMainWindow):
 
     def _mostrar_historial_general(self):
         """Muestra el historial completo filtrando por cliente o vendedor."""
+        required_attrs = [
+            "estado_tipo_combo",
+            "estado_filtrar_fechas",
+            "estado_fecha_inicio",
+            "estado_fecha_fin",
+            "estado_search_bar",
+            "estado_table",
+        ]
+        if any(not hasattr(self, attr) for attr in required_attrs):
+            return
         tipo = "cliente" if self.estado_tipo_combo.currentText() == "Cliente" else "vendedor"
 
         if self.estado_filtrar_fechas.isChecked():
@@ -2889,10 +4424,13 @@ class MainWindow(QMainWindow):
 
     def _cargar_personas_estado(self):
         """Carga datos para la pestaña de estados de cuenta."""
-        self._clientes_estado = self.manager.db.get_clientes()
-        self._vendedores_estado = self.manager.db.get_trabajadores(solo_vendedores=True)
-        self.estado_search_bar.clear()
-        self._mostrar_historial_general()
+        if hasattr(self, "reportes_cliente_combo") or hasattr(self, "reportes_vendedor_combo"):
+            self._populate_estados_reportes_data()
+        if hasattr(self, "estado_search_bar"):
+            self._clientes_estado = self.manager.db.get_clientes()
+            self._vendedores_estado = self.manager.db.get_trabajadores(solo_vendedores=True)
+            self.estado_search_bar.clear()
+            self._mostrar_historial_general()
 
     def get_tab_order(self):
         return [self.tabs.tabText(i) for i in range(self.tabs.count())]
@@ -3011,4 +4549,3 @@ class MainWindow(QMainWindow):
             event.accept()
         else:
             event.ignore()
-

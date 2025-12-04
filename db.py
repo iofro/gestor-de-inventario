@@ -673,11 +673,14 @@ class DB:
                 codigo TEXT UNIQUE,
                 nombre TEXT NOT NULL,
                 dui TEXT,
+                nit TEXT,
                 descripcion TEXT,
                 Distribuidor_id INTEGER,
                 FOREIGN KEY (Distribuidor_id) REFERENCES Distribuidores(id) ON DELETE SET NULL
             )
         """)
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        self.ensure_column("vendedores", "nit", "TEXT")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS productos (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -815,6 +818,8 @@ class DB:
                 FOREIGN KEY (vendedor_id) REFERENCES vendedores(id) ON DELETE RESTRICT
             )
         """)
+        self.ensure_column("compras", "is_subject_excluded_purchase", "INTEGER DEFAULT 0")
+        self.ensure_column("compras", "subject_excluded_dte_status", "TEXT DEFAULT 'NO_APLICA'")
         self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS detalles_compra (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -949,6 +954,14 @@ class DB:
             )
             """
         )
+        # Migrar columnas adicionales para compatibilidad con versiones anteriores.
+        self.ensure_column("dte_envios", "codigo_lote", "TEXT")
+        self.ensure_column("dte_envios", "codigo_generacion", "TEXT")
+        self.ensure_column("dte_envios", "numero_control", "TEXT")
+        self.ensure_column("dte_envios", "ambiente", "TEXT")
+        self.ensure_column("dte_envios", "estado_ui", "TEXT")
+        self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+        self.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
         self.conn.commit()
         self._ensure_retenciones_cr_table()
 
@@ -1132,6 +1145,8 @@ class DB:
         Distribuidor_id=None,
         codigo=None,
         dui=None,
+        nit=None,
+        is_subject_excluded: bool | int | None = False,
         commit: bool = True,
     ):
         """Insert a new vendor.
@@ -1142,6 +1157,9 @@ class DB:
         When ``Distribuidor_id`` is provided the vendor is treated as a
         supplier and no entry is created in ``trabajadores``.
         """
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        self.ensure_column("vendedores", "nit", "TEXT")
+        is_subject_excluded_val = 1 if is_subject_excluded else 0
         if codigo is None:
             codigo = self.get_next_vendedor_codigo()
 
@@ -1164,51 +1182,57 @@ class DB:
 
             self.cursor.execute(
                 """
-                INSERT INTO vendedores (id, codigo, nombre, dui, descripcion, Distribuidor_id)
-                VALUES (?, ?, ?, ?, ?, NULL)
+                INSERT INTO vendedores (id, codigo, nombre, dui, nit, descripcion, Distribuidor_id, is_subject_excluded)
+                VALUES (?, ?, ?, ?, ?, ?, NULL, ?)
                 """,
-                (trabajador_id, codigo, nombre, dui, descripcion),
+                (trabajador_id, codigo, nombre, dui, nit, descripcion, is_subject_excluded_val),
             )
         else:
             self.cursor.execute(
                 """
-                INSERT INTO vendedores (codigo, nombre, dui, descripcion, Distribuidor_id)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO vendedores (codigo, nombre, dui, nit, descripcion, Distribuidor_id, is_subject_excluded)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
                 """,
-                (codigo, nombre, dui, descripcion, Distribuidor_id),
+                (codigo, nombre, dui, nit, descripcion, Distribuidor_id, is_subject_excluded_val),
             )
         if commit:
             self.conn.commit()
 
     def get_vendedores(self):
+        # Asegura columnas opcionales para instalaciones antiguas.
+        self.ensure_column("vendedores", "nit", "TEXT")
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
         self.cursor.execute("SELECT * FROM vendedores")
         return [dict(row) for row in self.cursor.fetchall()]
 
     def get_vendedores_distribuidores(self):
+        # Asegura columnas opcionales para instalaciones antiguas.
+        self.ensure_column("vendedores", "nit", "TEXT")
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
         self.cursor.execute(
             "SELECT * FROM vendedores WHERE Distribuidor_id IS NOT NULL"
         )
         return [dict(row) for row in self.cursor.fetchall()]
 
-    def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id, dui=None):
-        try:
-            self.cursor.execute(
-                "UPDATE vendedores SET codigo=?, nombre=?, dui=?, descripcion=?, Distribuidor_id=? WHERE id=?",
-                (codigo, nombre, dui, descripcion, Distribuidor_id, id),
+    def update_vendedor(self, id, codigo, nombre, descripcion, Distribuidor_id, dui=None, nit=None, is_subject_excluded: bool | int | None = False):
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        self.ensure_column("vendedores", "nit", "TEXT")
+        is_subject_excluded_val = 1 if is_subject_excluded else 0
+        self.cursor.execute(
+            "UPDATE vendedores SET codigo=?, nombre=?, dui=?, nit=?, descripcion=?, Distribuidor_id=?, is_subject_excluded=? WHERE id=?",
+            (codigo, nombre, dui, nit, descripcion, Distribuidor_id, is_subject_excluded_val, id),
 
-            )
+        )
+        self.cursor.execute(
+            "SELECT 1 FROM trabajadores WHERE id=?",
+            (id,),
+        )
+        if self.cursor.fetchone():
             self.cursor.execute(
-                "SELECT 1 FROM trabajadores WHERE id=?",
-                (id,),
+                "UPDATE trabajadores SET codigo=?, nombre=?, dui=? WHERE id=?",
+                (codigo, nombre, dui, id),
             )
-            if self.cursor.fetchone():
-                self.cursor.execute(
-                    "UPDATE trabajadores SET codigo=?, nombre=?, dui=? WHERE id=?",
-                    (codigo, nombre, dui, id),
-                )
-            self.conn.commit()
-        except Exception as e:
-            logger.exception("Error al actualizar vendedor: %s", e)
+        self.conn.commit()
 
     def delete_vendedor(self, id, reassign_to=...):
         tables = {
@@ -2073,6 +2097,7 @@ class DB:
 
         try:
             with self.lock:
+                logger.info("Restaurando inventario para venta %s", id)
                 self.cursor.execute(
                     "SELECT producto_id, cantidad, extra FROM detalles_venta WHERE venta_id=?",
                     (id,),
@@ -2141,6 +2166,9 @@ class DB:
                     if cantidad is None or cantidad <= 0:
                         continue
                     producto_id = data.get("producto_id")
+                    logger.info(
+                        "Restaurando lote %s (+%s) para producto %s", lote_id, cantidad, producto_id
+                    )
                     self.cursor.execute(
                         "UPDATE detalles_compra SET cantidad = COALESCE(cantidad, 0) + ? WHERE id=?",
                         (float(cantidad), lote_id),
@@ -2155,6 +2183,7 @@ class DB:
                 for producto_id, cantidad in productos_directos.items():
                     if not producto_id or cantidad is None or cantidad <= 0:
                         continue
+                    logger.info("Restaurando stock directo producto %s +%s", producto_id, cantidad)
                     self.cursor.execute(
                         "UPDATE productos SET stock = COALESCE(stock, 0) + ? WHERE id=?",
                         (float(cantidad), producto_id),
@@ -2916,6 +2945,36 @@ class DB:
                 self.conn.rollback()
                 raise
 
+    def limpiar_ventas_y_dtes(self):
+        """Elimina todas las ventas y sus registros DTE asociados."""
+
+        # Restaurar inventario por cada venta eliminada
+        with self.lock:
+            venta_rows = self.cursor.execute("SELECT id FROM ventas").fetchall()
+        for row in venta_rows:
+            venta_id = row["id"] if isinstance(row, dict) else row[0]
+            ok = False
+            try:
+                ok = bool(self.delete_venta(venta_id))
+            except Exception:
+                logger.exception("Error al eliminar venta %s durante limpieza", venta_id)
+            if not ok:
+                raise RuntimeError(f"No se pudo eliminar la venta {venta_id}")
+            else:
+                logger.info("Venta %s eliminada y stock restaurado", venta_id)
+
+        # Limpieza defensiva de tablas no cubiertas por delete_venta
+        with self.lock:
+            try:
+                self.cursor.execute("BEGIN")
+                for table in ("dte_pendientes", "retenciones_cr", "ventas"):
+                    if self._has_table(table):
+                        self.cursor.execute(f"DELETE FROM {table}")
+                self.conn.commit()
+            except Exception:
+                self.conn.rollback()
+                raise
+
     def limpiar_productos(self):
         """Remove all products and their dependent records.
 
@@ -3015,9 +3074,32 @@ class DB:
             self.conn.commit()
 
     def add_compra_detallada(self, data, commit: bool = True):
+        self.ensure_column("compras", "is_subject_excluded_purchase", "INTEGER DEFAULT 0")
+        self.ensure_column("compras", "subject_excluded_dte_status", "TEXT DEFAULT 'NO_APLICA'")
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        is_subject_excluded_purchase = 1 if data.get("is_subject_excluded_purchase") else 0
+        if not is_subject_excluded_purchase and data.get("vendedor_id") is not None:
+            try:
+                row = self.cursor.execute(
+                    "SELECT is_subject_excluded FROM vendedores WHERE id=?",
+                    (data.get("vendedor_id"),),
+                ).fetchone()
+                if row:
+                    is_subject_excluded_purchase = 1 if (row["is_subject_excluded"] if isinstance(row, sqlite3.Row) else row[0]) else 0
+            except Exception:
+                logger.exception(
+                    "No se pudo verificar si el vendedor %s es sujeto excluido",
+                    data.get("vendedor_id"),
+                )
+
+        dte_status_raw = data.get("subject_excluded_dte_status")
+        if dte_status_raw:
+            dte_status = dte_status_raw
+        else:
+            dte_status = "PENDIENTE" if is_subject_excluded_purchase else "NO_APLICA"
         self.cursor.execute("""
-            INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO compras (fecha, producto_id, cantidad, precio_unitario, total, Distribuidor_id, comision_pct, comision_monto, vendedor_id, is_subject_excluded_purchase, subject_excluded_dte_status)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             data.get("fecha", ""),
             data.get("producto_id", None),
@@ -3027,11 +3109,29 @@ class DB:
             data.get("Distribuidor_id", None),
             data.get("comision_pct", 0),
             data.get("comision_monto", 0),
-            data.get("vendedor_id", None)
+            data.get("vendedor_id", None),
+            is_subject_excluded_purchase,
+            dte_status,
         ))
         if commit:
             self.conn.commit()
-        return self.cursor.lastrowid  # <-- RETORNA EL ID
+        compra_id = self.cursor.lastrowid  # <-- RETORNA EL ID
+        if is_subject_excluded_purchase:
+            try:
+                from modules.subject_excluded import ENABLED as SUBJECT_EXCLUDED_ENABLED
+            except ImportError:
+                SUBJECT_EXCLUDED_ENABLED = False
+            if SUBJECT_EXCLUDED_ENABLED:
+                try:
+                    from modules.subject_excluded.hooks import on_subject_excluded_purchase
+                except ImportError:
+                    on_subject_excluded_purchase = None
+                if callable(on_subject_excluded_purchase):
+                    try:
+                        on_subject_excluded_purchase(compra_id, dte_status, db=self)
+                    except Exception:
+                        logger.exception("Error en hook de compra sujeto excluido")
+        return compra_id
 
     def update_compra_detallada(self, compra_id, data, detalles):
         with self.lock:
@@ -3051,10 +3151,14 @@ class DB:
 
             self.cursor.execute("DELETE FROM detalles_compra WHERE compra_id=?", (compra_id,))
 
+            self.ensure_column("compras", "is_subject_excluded_purchase", "INTEGER DEFAULT 0")
+            self.ensure_column("compras", "subject_excluded_dte_status", "TEXT DEFAULT 'NO_APLICA'")
+            is_subject_excluded_purchase = 1 if data.get("is_subject_excluded_purchase") else 0
+            dte_status = data.get("subject_excluded_dte_status") or ("PENDIENTE" if is_subject_excluded_purchase else "NO_APLICA")
             self.cursor.execute(
                 """
                 UPDATE compras
-                SET fecha=?, producto_id=?, cantidad=?, precio_unitario=?, total=?, Distribuidor_id=?, comision_pct=?, comision_monto=?, vendedor_id=?
+                SET fecha=?, producto_id=?, cantidad=?, precio_unitario=?, total=?, Distribuidor_id=?, comision_pct=?, comision_monto=?, vendedor_id=?, is_subject_excluded_purchase=?, subject_excluded_dte_status=?
                 WHERE id=?
                 """,
                 (
@@ -3067,6 +3171,8 @@ class DB:
                     data.get("comision_pct", 0),
                     data.get("comision_monto", 0),
                     data.get("vendedor_id"),
+                    is_subject_excluded_purchase,
+                    dte_status,
                     compra_id,
                 ),
             )
@@ -3814,6 +3920,7 @@ class DB:
         codigo_lote=None,
         codigo_generacion=None,
         numero_control=None,
+        ambiente: str | None = None,
     ):
         """Guarda un registro del estado de transmisión de un DTE.
 
@@ -4019,13 +4126,14 @@ class DB:
         manual_flag = 1 if manual_override else 0
 
         fecha_hora = datetime.now(timezone.utc).isoformat()
+        ambiente_norm = (ambiente or "").strip() or None
         self.cursor.execute(
             """
             INSERT INTO dte_envios (
                 venta_id, modo, estado, sello, fecha_hora,
-                respuesta, codigo_lote, codigo_generacion, numero_control, estado_ui, estado_ui_tag, estado_ui_manual
+                respuesta, codigo_lote, codigo_generacion, numero_control, ambiente, estado_ui, estado_ui_tag, estado_ui_manual
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 venta_id,
@@ -4037,6 +4145,7 @@ class DB:
                 codigo_lote,
                 codigo_generacion_upper,
                 numero_control_upper,
+                ambiente_norm,
                 merged_ui,
                 merged_tag,
                 manual_flag,

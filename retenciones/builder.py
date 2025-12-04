@@ -40,6 +40,9 @@ def build_cr_payload(
     descripcion: str | None = None,
     fecha_emision: datetime | None = None,
     identificacion_override: Mapping[str, Any] | None = None,
+    modo_contingencia: bool = False,
+    tipo_contingencia: int | None = None,
+    motivo_contingencia: str | None = None,
 ) -> dict[str, Any]:
     """Construye el payload base del Comprobante de Retención."""
 
@@ -95,6 +98,9 @@ def build_cr_payload(
         tipo_moneda=tipo_moneda,
         override=identificacion_override,
         fecha_emision=fecha_emision,
+        modo_contingencia=modo_contingencia,
+        tipo_contingencia=tipo_contingencia,
+        motivo_contingencia=motivo_contingencia,
     )
 
     catalogos.ensure("CAT-001", ident.get("ambiente"), field="identificacion.ambiente")
@@ -188,6 +194,9 @@ def _build_identificacion(
     tipo_moneda: str,
     override: Mapping[str, Any] | None,
     fecha_emision: datetime | None,
+    modo_contingencia: bool = False,
+    tipo_contingencia: int | None = None,
+    motivo_contingencia: str | None = None,
 ) -> dict[str, Any]:
     now = (fecha_emision or datetime.now(TZ_EL_SALVADOR)).astimezone(TZ_EL_SALVADOR)
     ident = dict(override or {})
@@ -208,9 +217,9 @@ def _build_identificacion(
             "ambiente": resolved_env,
             "tipoDte": CR_TIPO_DTE,
             "tipoModelo": 1,
-            "tipoOperacion": 1,
-            "tipoContingencia": None,
-            "motivoContin": None,
+            "tipoOperacion": 2 if modo_contingencia else 1,
+            "tipoContingencia": tipo_contingencia if modo_contingencia else None,
+            "motivoContin": motivo_contingencia if modo_contingencia else None,
             "fecEmi": now.date().isoformat(),
             "horEmi": now.strftime("%H:%M:%S"),
             "tipoMoneda": tipo_moneda,

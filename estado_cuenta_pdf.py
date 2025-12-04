@@ -345,6 +345,35 @@ def generar_estado_cuenta_pdf(
 
     elif modo == "cliente":
         cid = kwargs.get("cliente_id")
+        if not cid:
+            elementos = db.get_estado_cuenta_clientes(
+                cliente_id=None,
+                fecha_inicio=fecha_inicio,
+                fecha_fin=fecha_fin,
+            )
+            data = [["Cliente", "Total Compras"]]
+            for item in elementos:
+                cid_item = item.get("cliente_id")
+                cli = db.get_cliente(cid_item) if cid_item else None
+                nombre = cli.get("nombre", "") if cli else str(cid_item or "")
+                data.append([nombre, f"{item.get('total_compras', 0):.2f}"])
+            if len(data) == 1:
+                data.append(["", ""])
+            table = Table(data, colWidths=[220, 100])
+            table.setStyle(
+                TableStyle(
+                    [
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.black),
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+                        ("ALIGN", (1, 1), (-1, -1), "RIGHT"),
+                        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ]
+                )
+            )
+            elements.append(table)
+            elements.append(Spacer(1, 10))
+            # Continúa para que doc.build procese el documento completo.
         cliente = (db.get_cliente(cid) or {}) if cid else {}
         elements.append(
             Paragraph(

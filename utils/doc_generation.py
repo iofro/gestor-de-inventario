@@ -1110,9 +1110,8 @@ def generate_invoice_pdf(manager, venta_id):
     except ValueError as exc:
         logger.error("ERROR: DTE inválido: %s", exc)
         raise ValueError(f"DTE inválido: {exc}") from exc
-    if retencion_block:
-        cr_result = _maybe_generate_cr(manager, venta_id, json_data, retencion_block, ambiente)
-        _set_last_cr_result(manager, cr_result)
+    # Se desactiva la generación automática de CRE ligados a la venta.
+    # El flujo manual desde “Retención de IVA” es ahora el camino soportado.
     jws_token = None
     try:
         _, jws_token = sign_and_save(json_data, str(json_path), return_token=True)

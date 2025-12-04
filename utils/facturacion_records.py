@@ -14,6 +14,7 @@ import re
 from collections import defaultdict
 from datetime import datetime
 from decimal import Decimal
+from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, Mapping, Sequence
 
 from paths import RETENCIONES_DIR, ensure_user_dir, resolve_user_visible_path
@@ -61,14 +62,14 @@ TIPO_DTE_DESC = {
     "04": "Nota de remisión",
     "05": "Nota de crédito",
     "06": "Nota de débito",
-    "07": "Comprobante de donación",
+    "07": "Comprobante de retención",
     "08": "Comprobante de retención",
     "09": "Liquidación",
     "10": "Comprobante de liquidación",
     "11": "Factura de exportación",
     "12": "Comprobante de percepción",
     "13": "Liquidación de compra",
-    "14": "Despacho aduanero",
+    "14": "Factura sujeto excluido",
     "15": "Mandamiento judicial",
     "16": "Nota de remisión de exportación",
 }
@@ -103,6 +104,9 @@ TIPO_DTE_CODE_BY_DESC = {
     "ticket": "01",
     "factura de exportacion": "11",
     "factura de exportación": "11",
+    "factura sujeto excluido": "14",
+    "sujeto excluido": "14",
+    "fse": "14",
 }
 
 
@@ -634,6 +638,108 @@ def _cr_json_path(
     return resolve_user_visible_path(fallback) if fallback else fallback
 
 
+def _collect_subject_excluded_rows(db) -> list[dict[str, Any]]:
+    """Lista archivos JSON generados para compras a sujetos excluidos (DTE 14)."""
+
+    base_dir = ensure_user_dir("dtes_sujeto_excluido")
+    rows: list[dict[str, Any]] = []
+    try:
+        base_path = Path(base_dir)
+        files = list(base_path.glob("*.json"))
+    except Exception:
+        files = []
+
+    cur = getattr(db, "cursor", None)
+
+    for fpath in files:
+        try:
+            with open(fpath, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+        except Exception:
+            continue
+
+        ident = payload.get("identificacion") or {}
+        sujeto_excluido = payload.get("sujetoExcluido") or {}
+        resumen = payload.get("resumen") or {}
+        apendice = payload.get("apendice") or []
+
+        compra_id = None
+        try:
+            for entry in apendice:
+                if isinstance(entry, Mapping) and str(entry.get("campo", "")).upper() == "ID_COMPRA":
+                    compra_id = entry.get("valor")
+                    break
+        except Exception:
+            compra_id = None
+
+        numero_control = ident.get("numeroControl") or ident.get("numero_control")
+        codigo_generacion = ident.get("codigoGeneracion") or ident.get("codigo_generacion")
+        fecha_emision = ident.get("fecEmi") or ident.get("fechaEmision") or ident.get("fecha")
+        hora_emision = ident.get("horEmi") or ident.get("horaEmision") or ident.get("hora")
+        parsed_date = None
+        fecha_str = ""
+        if fecha_emision:
+            try:
+                if hora_emision:
+                    parsed_date = datetime.strptime(f"{fecha_emision} {hora_emision}", "%Y-%m-%d %H:%M:%S")
+                    fecha_str = parsed_date.strftime("%Y-%m-%d %H:%M")
+                else:
+                    parsed_date = datetime.strptime(str(fecha_emision), "%Y-%m-%d")
+                    fecha_str = parsed_date.strftime("%Y-%m-%d")
+            except Exception:
+                fecha_str = str(fecha_emision)
+
+        total = resumen.get("totalPagar")
+        try:
+            total = _coerce_total(total)
+        except Exception:
+            total = None
+
+        envio_estado = "Pendiente"
+        if cur is not None:
+            try:
+                db.ensure_column("dte_envios", "estado_ui", "TEXT")
+                db.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
+                db.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+                env_row = cur.execute(
+                    """
+                    SELECT estado_ui, estado_ui_tag, estado
+                    FROM dte_envios
+                    WHERE (numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?))
+                       OR (codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?))
+                    ORDER BY estado_ui_manual DESC, id DESC LIMIT 1
+                    """,
+                    (numero_control or "", codigo_generacion or ""),
+                ).fetchone()
+            except Exception:
+                env_row = None
+            envio_estado = _map_row_estado(env_row)
+
+        rows.append(
+            {
+                "row_type": "orphan",
+                "id": compra_id,
+                "venta_id": None,
+                "name": "suj exclu",
+                "numero_control": numero_control,
+                "codigo_generacion": codigo_generacion,
+                "fecha": fecha_str,
+                "_parsed_fecha": parsed_date,
+                "cliente": sujeto_excluido.get("nombre") or "",
+                "cliente_id": None,
+                "vendedor_id": None,
+                "total": total,
+                "estado": envio_estado,
+                "envio": envio_estado,
+                "tipo": "Factura sujeto excluido",
+                "codigo": "14",
+                "json": resolve_user_visible_path(str(fpath)),
+                "sign": 1,
+            }
+        )
+    return rows
+
+
 def get_facturacion_rows(db) -> list[Dict[str, Any]]:
     cur = getattr(db, "cursor", None)
     if cur is None:
@@ -1090,6 +1196,8 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
         row["sign"] = sign_value
         rows.append(row)
 
+    rows.extend(_collect_subject_excluded_rows(db))
+
     # ---- Retenciones CR-07 -------------------------------------------------
     ret_rows: list[dict[str, Any]] = []
     try:
@@ -1169,7 +1277,23 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             base_retencion = cuerpo.get("montoSujetoGrav")
         total = _coerce_total(base_retencion)
         estado_raw = rec.get("estado") if rec else None
-        estado_display = format_envio_state(None, None, estado_raw)
+        envio_estado = format_envio_state(None, None, estado_raw)
+        contingencia_pendiente = False
+        if cur is not None and venta_id is not None:
+            try:
+                cur.execute(
+                    """
+                    SELECT 1
+                    FROM dte_pendientes
+                    WHERE venta_id=? AND transmitido=0
+                    LIMIT 1
+                    """,
+                    (venta_id,),
+                )
+                contingencia_pendiente = cur.fetchone() is not None
+            except Exception:
+                contingencia_pendiente = False
+        estado_display = "Contingencia" if contingencia_pendiente else envio_estado
         cr_json_path = _cr_json_path(
             payload,
             numero_control=numero_control,
@@ -1190,7 +1314,7 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
                 "vendedor_id": None,
                 "total": total,
                 "estado": estado_display,
-                "envio": estado_display,
+                "envio": envio_estado,
                 "tipo": "Comp. retención",
                 "codigo": "CR-07",
                 "json": cr_json_path,
@@ -1237,4 +1361,3 @@ def get_facturacion_rows(db) -> list[Dict[str, Any]]:
             except Exception:
                 continue
     return rows
-

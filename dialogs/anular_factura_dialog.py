@@ -39,6 +39,7 @@ class AnularFacturaDialog(QDialog):
         ident = self._factura.get("identificacion") or {}
         tipo_val = ident.get("tipoDte")
         self._original_tipo = str(tipo_val).zfill(2) if tipo_val is not None else None
+        self._is_fse = self._original_tipo == "14"
         codigo_val = ident.get("codigoGeneracion")
         self._original_uuid = str(codigo_val or "").strip().upper() or None
         self._original_ambiente = anulacion.normalize_ambiente(ident.get("ambiente"))
@@ -103,7 +104,8 @@ class AnularFacturaDialog(QDialog):
         layout.addWidget(self.codigo_hint)
 
         # Responsable
-        layout.addWidget(QLabel("Responsable"))
+        self.resp_label = QLabel("Responsable")
+        layout.addWidget(self.resp_label)
         self.emp_search = QLineEdit()
         self.emp_search.setPlaceholderText(
             "Buscar trabajador por nombre, DUI o NIT"
@@ -116,23 +118,27 @@ class AnularFacturaDialog(QDialog):
         self.negocio_btn = QPushButton("Usar datos del negocio")
         layout.addWidget(self.negocio_btn)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Nombre:"))
+        self.nom_resp_label = QLabel("Nombre:")
+        row.addWidget(self.nom_resp_label)
         self.nom_resp = QLineEdit()
         row.addWidget(self.nom_resp)
         layout.addLayout(row)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Tipo doc:"))
+        self.tdoc_resp_label = QLabel("Tipo doc:")
+        row.addWidget(self.tdoc_resp_label)
         self.tdoc_resp = QComboBox()
         for code, desc in sorted(TIPO_DOC_REC.items()):
             self.tdoc_resp.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tdoc_resp)
-        row.addWidget(QLabel("Número:"))
+        self.ndoc_resp_label = QLabel("Número:")
+        row.addWidget(self.ndoc_resp_label)
         self.ndoc_resp = QLineEdit()
         row.addWidget(self.ndoc_resp)
         layout.addLayout(row)
 
         # Solicitante
-        layout.addWidget(QLabel("Solicitante"))
+        self.sol_label = QLabel("Solicitante")
+        layout.addWidget(self.sol_label)
         self.cli_search = QLineEdit()
         self.cli_search.setPlaceholderText(
             "Buscar cliente por nombre, DUI o NIT"
@@ -143,17 +149,20 @@ class AnularFacturaDialog(QDialog):
         self.cli_results.item(0).setFlags(Qt.NoItemFlags)
         layout.addWidget(self.cli_results)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Nombre:"))
+        self.nom_sol_label = QLabel("Nombre:")
+        row.addWidget(self.nom_sol_label)
         self.nom_sol = QLineEdit()
         row.addWidget(self.nom_sol)
         layout.addLayout(row)
         row = QHBoxLayout()
-        row.addWidget(QLabel("Tipo doc:"))
+        self.tdoc_sol_label = QLabel("Tipo doc:")
+        row.addWidget(self.tdoc_sol_label)
         self.tdoc_sol = QComboBox()
         for code, desc in sorted(TIPO_DOC_REC.items()):
             self.tdoc_sol.addItem(f"{code} - {desc}", str(code))
         row.addWidget(self.tdoc_sol)
-        row.addWidget(QLabel("Número:"))
+        self.ndoc_sol_label = QLabel("Número:")
+        row.addWidget(self.ndoc_sol_label)
         self.ndoc_sol = QLineEdit()
         row.addWidget(self.ndoc_sol)
         layout.addLayout(row)
@@ -203,33 +212,30 @@ class AnularFacturaDialog(QDialog):
             name_edit.setText(data.get("nombre", ""))
             dui = data.get("dui")
             nit = data.get("nit")
+            tip_doc = data.get("tipDoc")
+            num_doc = data.get("numDoc")
+            if num_doc:
+                doc_edit.setText(str(num_doc))
+            else:
+                doc = dui or nit or ""
+                if doc:
+                    doc_edit.setText(doc)
             self._update_doc_store(doc_store, dui=dui, nit=nit)
-            doc = dui or nit or ""
-            doc_type = "13" if dui else "36" if nit else None
+            doc_type = tip_doc or ("13" if dui else "36" if nit else None)
             if doc_type:
-                idx = combo.findData(doc_type)
+                idx = combo.findData(str(doc_type))
                 if idx >= 0:
                     combo.blockSignals(True)
                     combo.setCurrentIndex(idx)
                     combo.blockSignals(False)
-            if doc:
-                doc_edit.setText(doc)
 
-        _prefill(
-            responsable,
-            self.nom_resp,
-            self.tdoc_resp,
-            self.ndoc_resp,
-            self._resp_docs,
-        )
-        _prefill(
-            solicitante,
-            self.nom_sol,
-            self.tdoc_sol,
-            self.ndoc_sol,
-            self._sol_docs,
-        )
+        auto_resp = self._build_auto_responsable()
+        auto_sol = self._build_auto_solicitante()
+        _prefill(auto_resp or responsable, self.nom_resp, self.tdoc_resp, self.ndoc_resp, self._resp_docs)
+        _prefill(auto_sol or solicitante, self.nom_sol, self.tdoc_sol, self.ndoc_sol, self._sol_docs)
 
+        if self._is_fse:
+            self._configure_fse_ui()
         self._on_tipo_changed(self.tipo_cb.currentIndex())
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
@@ -245,6 +251,59 @@ class AnularFacturaDialog(QDialog):
     def _validate(self) -> bool:
         tipo = self.tipo_cb.currentData()
         motivo = self.motivo_edit.text().strip()
+        if self._is_fse:
+            if tipo not in {"1", "2", "3"}:
+                QMessageBox.warning(self, "Anulación", "Seleccione un tipo de anulación")
+                return False
+            if not (5 <= len(motivo) <= 300):
+                QMessageBox.warning(self, "Anulación", "Motivo inválido")
+                return False
+            codigo = self.codigo_edit.text().strip()
+            if tipo in {"1", "3"}:
+                if not codigo:
+                    QMessageBox.warning(
+                        self,
+                        "Anulación",
+                        "Primero emite el DTE corregido y captura su código de generación (con sello). "
+                        "Ingresa ese código en 'Documento que reemplaza'.",
+                    )
+                    return False
+                codigo_upper = codigo.upper()
+                if not anulacion.UUID36_RE.fullmatch(codigo_upper):
+                    QMessageBox.warning(
+                        self,
+                        "Anulación",
+                        "El código de generación debe ser un UUID de 36 caracteres en mayúsculas con guiones.",
+                    )
+                    return False
+            for name, line in [("Responsable", self.nom_resp)]:
+                val = line.text().strip()
+                if len(val) < 5 or len(val) > 100:
+                    QMessageBox.warning(self, "Anulación", f"Nombre de {name} inválido")
+                    return False
+            doc_type = self.tdoc_resp.currentData()
+            if not doc_type or doc_type not in TIPO_DOC_REC:
+                QMessageBox.warning(self, "Anulación", "Tipo de documento de responsable inválido")
+                return False
+            doc_num = self.ndoc_resp.text().strip()
+            if not (3 <= len(doc_num) <= 20):
+                QMessageBox.warning(self, "Anulación", "Número de documento de responsable inválido")
+                return False
+            # No se valida receptor en FSE; se usa el del DTE original.
+            for name, line in [("Solicitante", self.nom_sol)]:
+                val = line.text().strip()
+                if len(val) < 5 or len(val) > 100:
+                    QMessageBox.warning(self, "Anulación", f"Nombre de {name} inválido")
+                    return False
+            doc_type_sol = self.tdoc_sol.currentData()
+            if not doc_type_sol or doc_type_sol not in TIPO_DOC_REC:
+                QMessageBox.warning(self, "Anulación", "Tipo de documento de solicitante inválido")
+                return False
+            doc_num_sol = self.ndoc_sol.text().strip()
+            if not (3 <= len(doc_num_sol) <= 20):
+                QMessageBox.warning(self, "Anulación", "Número de documento de solicitante inválido")
+                return False
+            return True
         if tipo == "3":
             if len(motivo) < 5 or len(motivo) > 250:
                 QMessageBox.warning(self, "Anulación", "Motivo inválido")
@@ -437,6 +496,43 @@ class AnularFacturaDialog(QDialog):
 
     def _buscar_cliente(self):
         text = self.cli_search.text().strip()
+        if self._is_fse:
+            try:
+                db = self.db or DB()
+                vendedores = db.get_vendedores()
+                if self.db is None:
+                    db.conn.close()
+            except Exception:
+                vendedores = []
+            solo_excluidos = [v for v in vendedores if v.get("is_subject_excluded")]
+            if text:
+                term = text.lower()
+                solo_excluidos = [
+                    v
+                    for v in solo_excluidos
+                    if term in (v.get("nombre") or "").lower()
+                    or term in (v.get("codigo") or "").lower()
+                    or term in str(v.get("dui") or "").lower()
+                    or term in str(v.get("nit") or "").lower()
+                ]
+            results = []
+            for v in solo_excluidos:
+                doc = v.get("dui") or v.get("nit") or v.get("codigo") or ""
+                results.append(
+                    {
+                        "nombre": v.get("nombre", ""),
+                        "dui": v.get("dui", ""),
+                        "nit": v.get("nit", ""),
+                        "doc": doc,
+                    }
+                )
+            self._populate_results(
+                [
+                    {"nombre": r["nombre"], "dui": r["dui"], "nit": r["nit"], "doc": r["doc"]}
+                    for r in results
+                ]
+            )
+            return
         if not text:
             self.cli_results.clear()
             self.cli_results.addItem("Escribe para buscar…")
@@ -531,7 +627,7 @@ class AnularFacturaDialog(QDialog):
         codigo = self.codigo_edit.text().strip().upper()
         if tipo not in {"1", "3"}:
             codigo = None
-        return {
+        data = {
             "tipoAnulacion": self.tipo_cb.currentData(),
             "motivoAnulacion": self.motivo_edit.text().strip(),
             "nombreResponsable": self.nom_resp.text().strip(),
@@ -541,4 +637,54 @@ class AnularFacturaDialog(QDialog):
             "tipDocSolicita": self.tdoc_sol.currentData(),
             "numDocSolicita": self.ndoc_sol.text().strip(),
             "codigoGeneracionR": codigo if codigo else None,
+        }
+        if self._is_fse:
+            return data
+        return data
+
+    def _configure_fse_ui(self) -> None:
+        """Reduce la UI a los campos permitidos para anulación de FSE."""
+        hide_widgets = [
+            self.codigo_label,
+            self.codigo_edit,
+            self.codigo_status,
+            self.codigo_hint,
+            self.buscar_btn,
+            self.emp_search,
+            self.emp_results,
+        ]
+        for widget in hide_widgets:
+            widget.setVisible(False)
+            widget.setEnabled(False)
+
+    def _build_auto_responsable(self) -> dict | None:
+        try:
+            datos = anulacion._build_emisor_for_anulacion()
+        except Exception:
+            return None
+        nombre = datos.get("nombre")
+        nit = datos.get("nit")
+        dui = datos.get("dui")
+        tip_doc = "36" if nit else "13" if dui else None
+        num_doc = nit or dui
+        return {"nombre": nombre, "nit": nit, "dui": dui, "tipDoc": tip_doc, "numDoc": num_doc}
+
+    def _build_auto_solicitante(self) -> dict | None:
+        factura = self._factura or {}
+        if self._is_fse:
+            solicitante = factura.get("sujetoExcluido") or {}
+        else:
+            solicitante = factura.get("receptor") or {}
+        if not isinstance(solicitante, dict):
+            return None
+        nombre = solicitante.get("nombre") or solicitante.get("nombreComercial")
+        tip_doc_raw = solicitante.get("tipoDocumento") or solicitante.get("tipoDocumentoIdentidad")
+        tip_doc = str(tip_doc_raw).zfill(2) if tip_doc_raw not in (None, "") else None
+        num_doc = solicitante.get("numDocumento") or solicitante.get("nit") or solicitante.get("dui")
+        return {
+            "nombre": nombre,
+            "nit": solicitante.get("nit"),
+            "dui": solicitante.get("dui"),
+            "tipDoc": tip_doc,
+            "numDoc": num_doc,
         }

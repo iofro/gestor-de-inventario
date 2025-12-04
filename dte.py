@@ -6985,7 +6985,20 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         )
     try:
         respuesta = _post_dte_with_config(url, jws_token, meta, config)
-        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+        sello = (
+            respuesta.get("sello")
+            or respuesta.get("selloRecepcion")
+            or respuesta.get("selloRecibido")
+            or ""
+        )
+        if not sello:
+            detalle_resp = respuesta.get("detalle")
+            if isinstance(detalle_resp, Mapping):
+                sello = (
+                    detalle_resp.get("selloRecibido")
+                    or detalle_resp.get("sello")
+                    or ""
+                )
         estado = (
             respuesta.get("estado")
             or respuesta.get("estadoDte")
@@ -7001,6 +7014,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
             "",
             codigo_generacion=ident.get("codigoGeneracion"),
             numero_control=ident.get("numeroControl"),
+            ambiente=ident.get("ambiente"),
         )
         raise
 
@@ -7012,6 +7026,7 @@ def transmitir_dte_orphan(db: DB, json_path: str) -> dict:
         json.dumps(respuesta, ensure_ascii=False),
         codigo_generacion=ident.get("codigoGeneracion"),
         numero_control=ident.get("numeroControl"),
+        ambiente=ident.get("ambiente"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)
@@ -7527,6 +7542,7 @@ def _enviar_documento(
             "",
             codigo_generacion=p_cod,
             numero_control=pident.get("numeroControl"),
+            ambiente=ident.get("ambiente"),
         )
         raise
 
@@ -7538,6 +7554,7 @@ def _enviar_documento(
         json.dumps(respuesta, ensure_ascii=False),
         codigo_generacion=p_cod,
         numero_control=pident.get("numeroControl"),
+        ambiente=ident.get("ambiente"),
     )
     try:
         _save_signed_dte(data, signed, fallido=(estado == "Rechazado"))
@@ -8597,7 +8614,20 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
             data,
             ambiente_config=config.get("ambiente"),
         )
-        sello = respuesta.get("sello") or respuesta.get("selloRecepcion") or ""
+        sello = (
+            respuesta.get("sello")
+            or respuesta.get("selloRecepcion")
+            or respuesta.get("selloRecibido")
+            or ""
+        )
+        if not sello:
+            detalle_resp = respuesta.get("detalle")
+            if isinstance(detalle_resp, Mapping):
+                sello = (
+                    detalle_resp.get("selloRecibido")
+                    or detalle_resp.get("sello")
+                    or ""
+                )
         estado = (
             respuesta.get("estado")
             or respuesta.get("estadoEvento")
@@ -8613,6 +8643,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
             "",
             codigo_generacion=ident.get("codigoGeneracion"),
             numero_control=ident.get("numeroControl"),
+            ambiente=ident.get("ambiente"),
         )
         raise
 
@@ -8624,6 +8655,7 @@ def _enviar_evento(db: DB, evento_id: int, data: dict) -> dict:
         json.dumps(respuesta, ensure_ascii=False),
         codigo_generacion=ident.get("codigoGeneracion"),
         numero_control=ident.get("numeroControl"),
+        ambiente=ident.get("ambiente"),
     )
     if estado == "Rechazado":
         respuesta["errores"] = _parse_error_response(respuesta)

@@ -20,18 +20,22 @@ from PyQt5.QtWidgets import (
     QApplication,
     QMessageBox,
     QDialog,
-    QInputDialog,
-    QLineEdit,
+    QVBoxLayout,
+    QLabel,
+    QProgressBar,
 )
+from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QIcon
 from ui_mainwindow import MainWindow
-from user_picker_dialog import UserPickerDialog
+from login_dialog import LoginDialog
 from db import DB
 from utils import resource_path
 from paths import LAST_INVENTORY_PATH, migrate_datos_negocio, user_data_path
 from dte import APP_VERSION
+from utils.firmador import firmador_activo, iniciar_firmador
 
 LAST_FILE_PATH = Path(LAST_INVENTORY_PATH)
+LAST_USER_PATH = Path(user_data_path("last_user.txt"))
 DEFAULT_INVENTORY = resource_path("inventario.json")
 
 logger = logging.getLogger(__name__)
@@ -75,6 +79,56 @@ def cargar_ultimo_archivo():
         return str(DEFAULT_INVENTORY)
     return ""
 
+
+def iniciar_servicios(parent=None):
+    """Muestra un loader y arranca el firmador antes de abrir la ventana principal."""
+    if firmador_activo():
+        return
+
+    loader = QDialog(parent)
+    loader.setWindowTitle("Iniciando servicios")
+    loader.setModal(True)
+    loader.setWindowFlags(loader.windowFlags() & ~Qt.WindowCloseButtonHint)
+    layout = QVBoxLayout(loader)
+    layout.setContentsMargins(20, 20, 20, 20)
+    layout.setSpacing(12)
+    lbl = QLabel("Iniciando servicios...")
+    lbl.setAlignment(Qt.AlignCenter)
+    layout.addWidget(lbl)
+    progress = QProgressBar()
+    progress.setRange(0, 0)
+    layout.addWidget(progress)
+    loader.resize(320, 140)
+    loader.show()
+    QApplication.processEvents()
+    try:
+        iniciar_firmador()
+    except FileNotFoundError as exc:
+        loader.accept()
+        QMessageBox.critical(parent, "Error", f"No se encontró el firmador:\n{exc}")
+    except Exception as exc:
+        loader.accept()
+        QMessageBox.critical(parent, "Error", f"No se pudo iniciar el firmador:\n{exc}")
+    else:
+        loader.accept()
+
+
+def _load_last_user() -> str:
+    try:
+        if LAST_USER_PATH.is_file():
+            return LAST_USER_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        return ""
+    return ""
+
+
+def _save_last_user(username: str) -> None:
+    try:
+        LAST_USER_PATH.parent.mkdir(parents=True, exist_ok=True)
+        LAST_USER_PATH.write_text(username.strip(), encoding="utf-8")
+    except OSError:
+        startup_logger.debug("No se pudo guardar el último usuario utilizado")
+
 if __name__ == "__main__":
     migrate_datos_negocio()
     if getattr(sys, "frozen", False):
@@ -109,36 +163,59 @@ if __name__ == "__main__":
         app.setWindowIcon(QIcon(str(icon_path)))
 
     db = DB()
-    users = [
-        {"id": u["id"], "name": u["username"], "subtitle": u.get("role", "")}
-        for u in db.get_users()
-    ]
-    dlg = UserPickerDialog(users, multi_select=False, parent=None)
-    if dlg.exec_() != QDialog.Accepted:
-        sys.exit(0)
-    selected = dlg.selected_user_ids()
-    if not selected:
-        sys.exit(0)
-    user_id = selected if not isinstance(selected, list) else selected[0]
-    user = db.get_user(user_id)
+    users = db.get_users()
+    if not any(u["username"].lower() == "invitado" for u in users):
+        db.add_user("invitado", "", "Invitado")
+        users = db.get_users()
+
+    # Login centrado y moderno. Usamos el mismo flujo para autenticar o permitir invitado.
+    user = None
+    last_user = _load_last_user()
+    sorted_users = sorted(
+        users,
+        key=lambda u: (u["username"].lower() != "invitado", u["username"].lower()),
+    )
+    while True:
+        login_dialog = LoginDialog()
+        login_dialog.user_combo.clear()
+        for u in sorted_users:
+            login_dialog.user_combo.addItem(u["username"])
+        if last_user:
+            idx = login_dialog.user_combo.findText(last_user, Qt.MatchFixedString)
+            if idx >= 0:
+                login_dialog.user_combo.setCurrentIndex(idx)
+        if login_dialog.exec_() != QDialog.Accepted:
+            sys.exit(0)
+
+        username = login_dialog.user_combo.currentText().strip()
+        password = login_dialog.password_input.text()
+        if not username:
+            QMessageBox.warning(None, "Error", "Seleccione un usuario.")
+            continue
+
+        if username.lower() == "invitado":
+            invitado = next((u for u in sorted_users if u["username"].lower() == "invitado"), None)
+            if not invitado:
+                QMessageBox.warning(None, "Error", "No se encontró el usuario invitado.")
+                continue
+            user = db.get_user(invitado["id"])
+            _save_last_user(username)
+            break
+
+        authenticated = db.authenticate(username, password)
+        if not authenticated:
+            QMessageBox.warning(None, "Error", "Usuario o contraseña incorrectos.")
+            continue
+        user = db.get_user(authenticated["id"])
+        _save_last_user(username)
+        break
+
     if not user:
         sys.exit(0)
 
-    if user["username"] != "invitado":
-        while True:
-            password, ok = QInputDialog.getText(
-                None,
-                "Contraseña",
-                f"Ingrese la contraseña para {user['username']}:",
-                QLineEdit.Password,
-            )
-            if not ok:
-                sys.exit(0)
-            if db.authenticate(user["username"], password):
-                break
-            QMessageBox.warning(None, "Error", "Contraseña incorrecta")
+    iniciar_servicios()
 
-    window = MainWindow(user)
+    window = MainWindow(user, skip_firmador_check=True)
     if icon_path.is_file():
         window.setWindowIcon(QIcon(str(icon_path)))
     window.show()

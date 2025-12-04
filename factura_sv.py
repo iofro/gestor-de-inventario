@@ -404,12 +404,6 @@ def generar_factura_electronica_pdf(
             line_height,
         )
 
-    if tipo_operacion == 2:
-        c.setFont("Helvetica-Bold", 12)
-        c.setFillColor(colors.red)
-        c.drawCentredString(width / 2, header_y - 18, "TRANSMISIÓN DIFERIDA")
-        c.setFillColor(colors.black)
-
     # Información del documento relacionado y motivo
     doc_y = header_y - 12
     if doc_relacionado or motivo:

@@ -33,6 +33,7 @@ from dialogs import (
     EstadoCuentaDialog,
     UserConfigDialog,
     CompraDetalleDialog,
+    SaleConfirmationDialog,
 )
 
 from sales_tab import SalesTab
@@ -56,6 +57,8 @@ from utils.facturacion_records import (
     canonical_tipo_label,
     get_facturacion_rows,
 )
+import dte
+from utils.doc_generation import generate_invoice_pdf
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1076,7 +1079,8 @@ class MainWindow(QMainWindow):
         super().__init__()
         self.user = user or {"username": "admin", "role": "admin"}
         self.setWindowTitle("Inventario Farmacia")
-        self.resize(1200, 700)
+        self.setWindowState(self.windowState() | Qt.WindowMaximized)
+        self.setMinimumSize(1024, 720)
         self.db = im.DB()
         self.manager = im.InventoryManager(self.db, enable_auto_backup=True)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
@@ -1086,6 +1090,7 @@ class MainWindow(QMainWindow):
         self._mark_saved()
         self._setup_ui()
         self._apply_styles()
+        QTimer.singleShot(0, self.showMaximized)
         if not skip_firmador_check:
             QTimer.singleShot(0, self._verificar_firmador)
 
@@ -1635,22 +1640,25 @@ class MainWindow(QMainWindow):
         # --- AGREGA LAS CUATRO PESTAÑAS AL QTabWidget ---
         self.tabs = QTabWidget()
         self.tabs.setMovable(True)
-        tab_widget.setObjectName("Inventario")
+        tab_widget.setObjectName("Inicio")
         vend_dist_tab.setObjectName("Vendedores y Distribuidores")
         self.clientes_tab.setObjectName("Clientes")
         self.sales_tab.setObjectName("Ventas")
         self.compras_tab.setObjectName("Compras")
-        inventario_actual_tab.setObjectName("Inventario")
+        inventario_actual_tab.setObjectName("InventarioActual")
         self.facturacion_tab = FacturacionTab(self.manager, self)
         self.facturacion_tab.setObjectName("Facturacion")
 
-        self.tabs.addTab(tab_widget, "Inventario")
+        self.tabs.addTab(tab_widget, "Inicio")
         self.tabs.addTab(vend_dist_tab, "Vendedores y Distribuidores")
         self.tabs.addTab(self.clientes_tab, "Clientes")
         self.tabs.addTab(self.sales_tab, "Ventas")
         self.tabs.addTab(self.compras_tab, "Compras")
         self.tabs.addTab(inventario_actual_tab, "Inventario")
         self.tabs.addTab(self.facturacion_tab, "Facturacion")
+        inicio_index = self._find_tab_index("Inventario")
+        if inicio_index != -1:
+            self.tabs.setCurrentIndex(inicio_index)
 
         # --- PESTAÑA DE TRABAJADORES ---
         trabajadores_tab = QWidget()
@@ -1724,6 +1732,12 @@ class MainWindow(QMainWindow):
         self.estados_cuenta_tab = self.setup_estados_cuenta_ui()
         self.tabs.addTab(self.estados_cuenta_tab, "Estados de cuenta")
 
+        # Siempre iniciar en la pestaña de inicio (Inventario)
+        self._reset_tabs_to_default_order()
+        inicio_index = self._find_tab_index("Inicio")
+        if inicio_index != -1:
+            self.tabs.setCurrentIndex(inicio_index)
+
         nav_items = [
             ("Inicio", "btn_nav_inventario", 0),
             ("Vendedores y\nDistribuidores", "btn_nav_vendedores", 1),
@@ -1731,7 +1745,7 @@ class MainWindow(QMainWindow):
             ("Ventas", "btn_nav_ventas", 3),
             ("Compras", "btn_nav_compras", 4),
             ("Inventario", "btn_nav_inventario_actual", 5),
-            ("Facturación", "btn_nav_facturacion", 6),
+            ("Facturacion", "btn_nav_facturacion", 6),
             ("Trabajadores", "btn_nav_trabajadores", 7),
             ("Estados de cuenta", "btn_nav_estado_cuenta", 8),
         ]
@@ -1754,8 +1768,11 @@ class MainWindow(QMainWindow):
         root_layout = QHBoxLayout(container)
         root_layout.setContentsMargins(0, 0, 0, 0)
         root_layout.setSpacing(0)
+        self.tabs.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         root_layout.addWidget(self.sidebar)
-        root_layout.addWidget(self.tabs)
+        root_layout.addWidget(self.tabs, 1)
+        root_layout.setStretch(0, 0)
+        root_layout.setStretch(1, 1)
         self.tabs.tabBar().hide()
         self.setCentralWidget(container)
 
@@ -2387,6 +2404,61 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Producto eliminado", f"El producto '{prod['nombre']}' ha sido eliminado.")
         self.selected_row = None
 
+    def _auto_enviar_factura(self, venta_id: int, tipo_dte: str | None = None) -> tuple[bool, str]:
+        """Envía la factura asociada a la venta y devuelve (ok, detalle)."""
+        try:
+            resp = dte.enviar_factura(self.manager.db, venta_id, tipo_dte=tipo_dte)
+            estado = (
+                resp.get("estado")
+                or resp.get("estadoDte")
+                or resp.get("descripcionEstado")
+                or resp.get("descripcionEstadoDte")
+                or "Enviado"
+            )
+            return True, str(estado)
+        except Exception as exc:  # pragma: no cover - se informa al usuario
+            logger.exception("Error al enviar factura automáticamente (venta_id=%s)", venta_id, exc_info=exc)
+            return False, str(exc)
+
+    def _mostrar_confirmacion_venta(self) -> int:
+        dialog = SaleConfirmationDialog(self)
+        return dialog.exec_()
+
+    def _generar_dte_sin_enviar(self, venta_id: int, tipo_dte: str) -> tuple[bool, str]:
+        """Genera y firma el DTE pero no lo envía a Hacienda."""
+        try:
+            data = dte.generar_dte_json(self.manager.db, venta_id, tipo_dte=tipo_dte)
+            try:
+                dte.recalcular_totales(data, incluir_iva=True)
+            except Exception:
+                pass
+            try:
+                data = dte.apply_schema_patch(data)
+            except Exception:
+                pass
+            signed = sign_json(data)
+            try:
+                dte._save_signed_dte(data, signed, fallido=False)
+            except Exception:
+                pass
+            ident = data.get("identificacion") or {}
+            try:
+                self.manager.db.registrar_envio_dte(
+                    venta_id,
+                    "manual",
+                    "Pendiente",
+                    "",
+                    codigo_generacion=ident.get("codigoGeneracion"),
+                    numero_control=ident.get("numeroControl"),
+                    ambiente=ident.get("ambiente"),
+                )
+            except Exception:
+                pass
+            return True, "DTE generado y guardado (pendiente de envío)."
+        except Exception as exc:  # pragma: no cover - se informa al usuario
+            logger.exception("Error al generar DTE sin enviar (venta_id=%s)", venta_id, exc_info=exc)
+            return False, str(exc)
+
     def registrar_venta(self):
         if not self._ensure_last_invoice_sent():
             return
@@ -2446,6 +2518,16 @@ class MainWindow(QMainWindow):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
 
+                choice = self._mostrar_confirmacion_venta()
+                if choice == QDialog.Rejected:
+                    return
+
+                estado = data.get("estado", "Pagada")
+                if choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+                    estado = "Pendiente de Envío"
+                elif choice == SaleConfirmationDialog.RESULT_SAVE_LOCAL:
+                    estado = "Venta Interna"
+
                 self._log_retencion_state("SAVE", "01", ret_block, total)
 
                 venta_id = self.manager.db.add_venta(
@@ -2490,7 +2572,34 @@ class MainWindow(QMainWindow):
                 self.manager.refresh_data()
                 self.filter_products()
                 self.sales_tab.load_sales()
-                QMessageBox.information(self, "Venta", f"Venta registrada correctamente.\nTotal: ${total:.2f}")
+                texto_base = f"Venta registrada correctamente.\nTotal: ${total:.2f}"
+                if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
+                    envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="01")
+                    try:
+                        generate_invoice_pdf(self.manager, venta_id)
+                    except Exception:
+                        logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
+                    if envio_ok:
+                        texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
+                        QMessageBox.information(self, "Venta", texto_base)
+                    else:
+                        texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
+                        QMessageBox.warning(self, "Venta", texto_base)
+                elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+                    gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="01")
+                    if gen_ok:
+                        try:
+                            generate_invoice_pdf(self.manager, venta_id)
+                        except Exception:
+                            logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
+                        texto_base += f"\n{gen_msg}"
+                        QMessageBox.information(self, "Venta", texto_base)
+                    else:
+                        texto_base += f"\nNo se pudo generar el DTE: {gen_msg}"
+                        QMessageBox.warning(self, "Venta", texto_base)
+                else:
+                    texto_base += "\nVenta registrada localmente (sin DTE)."
+                    QMessageBox.information(self, "Venta", texto_base)
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AQUÍ
                 # Notify other tabs that the underlying data changed so they
@@ -2607,6 +2716,16 @@ class MainWindow(QMainWindow):
                     extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
                     extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
 
+                choice = self._mostrar_confirmacion_venta()
+                if choice == QDialog.Rejected:
+                    return
+
+                estado = data.get("estado", "Pagada")
+                if choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+                    estado = "Pendiente de Envío"
+                elif choice == SaleConfirmationDialog.RESULT_SAVE_LOCAL:
+                    estado = "Venta Interna"
+
                 self._log_retencion_state("SAVE", "03", ret_block, venta_total)
 
                 venta_id = self.manager.db.add_venta_credito_fiscal(
@@ -2633,6 +2752,7 @@ class MainWindow(QMainWindow):
                     ventas_no_sujetas=data.get("ventas_no_sujetas", 0),
                     total_letras=total_letras,
                     extra=extra or None,
+                    estado=estado,
                 )
                 if not venta_id:
                     raise ValueError(
@@ -2673,7 +2793,34 @@ class MainWindow(QMainWindow):
                 self.manager.refresh_data()
                 self.filter_products()
                 self.sales_tab.load_sales()
-                QMessageBox.information(self, "Venta a Crédito Fiscal", f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}")
+                texto_base = f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}"
+                if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
+                    envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="03")
+                    try:
+                        generate_invoice_pdf(self.manager, venta_id)
+                    except Exception:
+                        logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
+                    if envio_ok:
+                        texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
+                        QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
+                    else:
+                        texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
+                        QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
+                elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+                    gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="03")
+                    if gen_ok:
+                        try:
+                            generate_invoice_pdf(self.manager, venta_id)
+                        except Exception:
+                            logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
+                        texto_base += f"\n{gen_msg}"
+                        QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
+                    else:
+                        texto_base += f"\nNo se pudo generar el DTE: {gen_msg}"
+                        QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
+                else:
+                    texto_base += "\nVenta registrada localmente (sin DTE)."
+                    QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
                 # Trigger refresh in other tabs immediately
@@ -4436,6 +4583,9 @@ class MainWindow(QMainWindow):
         return [self.tabs.tabText(i) for i in range(self.tabs.count())]
 
     def set_tab_order(self, order):
+        if not self._is_valid_tab_order(order):
+            logger.info("Orden de pestañas ignorado por ser inválido: %s", order)
+            return
         for desired_index, title in enumerate(order):
             index = self._find_tab_index(title)
             if index != -1 and index != desired_index:
@@ -4446,6 +4596,31 @@ class MainWindow(QMainWindow):
             if self.tabs.tabText(i) == title:
                 return i
         return -1
+
+    def _is_valid_tab_order(self, order):
+        if not isinstance(order, (list, tuple)):
+            return False
+        current = [self.tabs.tabText(i) for i in range(self.tabs.count())]
+        if len(order) != len(current):
+            return False
+        return set(order) == set(current)
+
+    def _reset_tabs_to_default_order(self):
+        canonical = [
+            "Inicio",
+            "Vendedores y Distribuidores",
+            "Clientes",
+            "Ventas",
+            "Compras",
+            "Inventario",
+            "Facturacion",
+            "Trabajadores",
+            "Estados de cuenta",
+        ]
+        for desired_index, title in enumerate(canonical):
+            idx = self._find_tab_index(title)
+            if idx != -1 and idx != desired_index:
+                self.tabs.tabBar().moveTab(idx, desired_index)
 
     # DEBUG: Método temporal para pruebas de Venta vs DTE
     def _debug_venta_vs_dte(self):  # pragma: no cover - debug helper

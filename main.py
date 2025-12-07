@@ -218,7 +218,7 @@ if __name__ == "__main__":
     window = MainWindow(user, skip_firmador_check=True)
     if icon_path.is_file():
         window.setWindowIcon(QIcon(str(icon_path)))
-    window.show()
+    window.showMaximized()
 
     # Cargar automáticamente el último inventario usadow
     ultimo_archivo = cargar_ultimo_archivo()

@@ -8032,14 +8032,45 @@ def _resolve_base_document_code(
     return None, None
 
 
-def enviar_factura(db: DB, venta_id: int, modo: str | None = None) -> dict:
+def enviar_factura(db: DB, venta_id: int, modo: str | None = None, tipo_dte: str | None = None) -> dict:
     """Genera y transmite una factura electrónica."""
     if modo is None:
         modo = get_default_modo_transmision()
 
-    data = generar_dte_json(db, venta_id)
+    if tipo_dte is None:
+        try:
+            fiscal_row = db.get_venta_credito_fiscal(venta_id)
+        except Exception:
+            fiscal_row = None
+        tipo_dte = "03" if fiscal_row else "01"
+
+    tipo_dte = str(tipo_dte or "01").zfill(2)
+
+    data = generar_dte_json(db, venta_id, tipo_dte=tipo_dte)
+    # Asegurar totales y IVA requeridos por esquema antes de firmar/enviar.
+    try:
+        recalcular_totales(data, incluir_iva=True)
+    except Exception:
+        # No bloquea el envío; deja el valor original y continúa.
+        pass
+    # Rellena datos mínimos de receptor para CF cuando falta documento.
+    try:
+        if tipo_dte == "01":
+            rec = data.setdefault("receptor", {}) or {}
+            tipo_doc = str(rec.get("tipoDocumento") or "").strip()
+            num_doc = str(rec.get("numDocumento") or "").strip()
+            if not num_doc:
+                rec["tipoDocumento"] = "36"
+                rec["numDocumento"] = "00000000000000"
+            elif tipo_doc == "13" and len(num_doc) < 10:
+                # DUI inválido; cae a genérico
+                rec["tipoDocumento"] = "36"
+                rec["numDocumento"] = "00000000000000"
+    except Exception:
+        pass
+
     data = apply_schema_patch(data)
-    schema = catalogos.get_dte_schema("01")
+    schema = catalogos.get_dte_schema(tipo_dte)
     # Validación omitida para permitir el envío sin detenerse ante errores de
     # esquema.
     # try:

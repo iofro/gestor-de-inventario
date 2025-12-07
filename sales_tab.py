@@ -19,6 +19,7 @@ from PyQt5.QtWidgets import (
     QHeaderView,
     QSizePolicy,
     QScrollArea,
+    QStackedWidget,
     QDialog,
     QCheckBox,
     QComboBox,
@@ -28,8 +29,11 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import Qt, QDate, QSize, QSignalBlocker, QRectF
 from PyQt5.QtGui import QPixmap, QColor, QPainter, QPainterPath, QPen
+from dialogs import RegisterCreditoFiscalDialog, RegisterSaleDialog
 from datetime import datetime, date, timedelta
 import importlib.util
+import dte
+from utils.jws import sign_json
 
 _MATPLOTLIB_AVAILABLE = importlib.util.find_spec("matplotlib") is not None
 
@@ -107,6 +111,38 @@ class StatusDelegate(QStyledItemDelegate):
 
     def sizeHint(self, option, index):
         return QSize(option.rect.width(), 50)
+
+
+class DteStatusDelegate(QStyledItemDelegate):
+    """Delegate para mostrar estado DTE con pildoras de color."""
+
+    COLORS = {
+        "falta": ("#FEE2E2", "#B91C1C"),     # rojo suave
+        "guardado": ("#DBEAFE", "#1D4ED8"),  # azul suave
+        "enviado": ("#DCFCE7", "#15803D"),   # verde suave
+    }
+
+    def paint(self, painter, option, index):
+        painter.save()
+        painter.setRenderHint(QPainter.Antialiasing)
+        text = str(index.data() or "").strip()
+        key = text.lower()
+        bg_hex, fg_hex = self.COLORS.get(key, ("#E5E7EB", "#374151"))
+        rect = QRectF(option.rect.adjusted(6, 12, -6, -12))
+        path = QPainterPath()
+        path.addRoundedRect(rect, 10, 10)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(bg_hex))
+        painter.drawPath(path)
+        painter.setPen(QColor(fg_hex))
+        font = painter.font()
+        font = _adjust_font(font, delta=0, bold=True)
+        painter.setFont(font)
+        painter.drawText(rect, Qt.AlignCenter, text)
+        painter.restore()
+
+    def sizeHint(self, option, index):
+        return QSize(option.rect.width(), 44)
 
 
 class _StatsKpiCard(QFrame):
@@ -305,7 +341,7 @@ class SalesTab(QWidget):
 
         self.sales_table = QTableWidget(0, 5)
         self.sales_table.setHorizontalHeaderLabels([
-            "Nº Factura",
+            "DTE",
             "Cliente",
             "Fecha",
             "Total",
@@ -325,17 +361,31 @@ class SalesTab(QWidget):
         header.setStretchLastSection(True)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header.setFixedHeight(44)
+        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
+        self.sales_table.setColumnWidth(2, 90)
+        self.sales_table.setColumnWidth(3, 90)
+        self.dte_delegate = DteStatusDelegate(self.sales_table)
         self.status_delegate = StatusDelegate(self.sales_table)
+        self.sales_table.setItemDelegateForColumn(0, self.dte_delegate)
         self.sales_table.setItemDelegateForColumn(4, self.status_delegate)
         self.sales_table.itemSelectionChanged.connect(self.show_sale)
         left_layout.addWidget(self.sales_table)
 
+        actions_row = QHBoxLayout()
+        actions_row.addStretch(1)
+        self.btn_guardar_dte_manual = QPushButton("Guardar DTE manualmente")
+        self.btn_guardar_dte_manual.setMinimumHeight(34)
+        self.btn_guardar_dte_manual.clicked.connect(self._guardar_dte_manual)
+        actions_row.addWidget(self.btn_guardar_dte_manual)
+        left_layout.addLayout(actions_row)
+
         main_layout.addWidget(left_card, 3)
 
         # Panel derecho: Accesos a flujo de venta existente
-        right_card = QFrame()
-        right_card.setObjectName("ModernCard")
-        right_layout = QVBoxLayout(right_card)
+        self.pos_card = QFrame()
+        self.pos_card.setObjectName("ModernCard")
+        right_layout = QVBoxLayout(self.pos_card)
         right_layout.setContentsMargins(16, 16, 16, 16)
         right_layout.setSpacing(12)
 
@@ -343,19 +393,24 @@ class SalesTab(QWidget):
         title_right.setFont(_adjust_font(title_right.font(), delta=3, bold=True))
         right_layout.addWidget(title_right)
 
-        btn_cf = QPushButton("Venta Consumidor Final")
-        btn_cf.setObjectName("PrimaryActionButton")
-        btn_cf.setMinimumHeight(46)
-        btn_cf.clicked.connect(self._abrir_venta_cf)
+        self.btn_cf = QPushButton("Venta Consumidor Final")
+        self.btn_cf.setObjectName("PrimaryActionButton")
+        self.btn_cf.setMinimumHeight(46)
+        self.btn_cf.clicked.connect(lambda: self._show_pos_page(1))
 
-        btn_cfiscal = QPushButton("Venta Crédito Fiscal")
-        btn_cfiscal.setObjectName("SecondaryActionButton")
-        btn_cfiscal.setMinimumHeight(46)
-        btn_cfiscal.clicked.connect(self._abrir_venta_cfiscal)
+        self.btn_cfiscal = QPushButton("Venta Crédito Fiscal")
+        self.btn_cfiscal.setObjectName("SecondaryActionButton")
+        self.btn_cfiscal.setMinimumHeight(46)
+        self.btn_cfiscal.clicked.connect(lambda: self._show_pos_page(2))
 
-        right_layout.addWidget(btn_cf)
-        right_layout.addWidget(btn_cfiscal)
-        right_layout.addStretch(1)
+        right_layout.addWidget(self.btn_cf)
+        right_layout.addWidget(self.btn_cfiscal)
+
+        self.pos_content_layout = QVBoxLayout()
+        self.pos_content_layout.setContentsMargins(0, 8, 0, 0)
+        self.pos_content_layout.setSpacing(0)
+        right_layout.addLayout(self.pos_content_layout, 1)
+        self._setup_pos_card()
 
         # Widgets necesarios para la funcionalidad existente (no visibles aquí)
         self.preview_label = QLabel("Previsualización del PDF")
@@ -380,7 +435,7 @@ class SalesTab(QWidget):
         ):
             w.setVisible(False)
 
-        main_layout.addWidget(right_card, 2)
+        main_layout.addWidget(self.pos_card, 2)
 
         self.sales_tabs.addTab(main_tab, "Listado")
 
@@ -389,19 +444,133 @@ class SalesTab(QWidget):
         self.sales_tabs.addTab(self.stats_tab, "Estadística")
         self.sales_tabs.currentChanged.connect(self._on_inner_tab_changed)
 
-    def _abrir_venta_cf(self):
-        target = self.main_window or self.window() or self.parent()
-        if target is not None and hasattr(target, "registrar_venta"):
-            target.registrar_venta()
+    def _setup_pos_card(self):
+        if not hasattr(self, "pos_content_layout"):
+            return
+        while self.pos_content_layout.count():
+            item = self.pos_content_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                continue
+            inner_layout = item.layout()
+            if inner_layout is not None:
+                self._clear_layout(inner_layout)
+
+        self.pos_scroll = QScrollArea()
+        self.pos_scroll.setWidgetResizable(True)
+        self.pos_scroll.setFrameShape(QFrame.NoFrame)
+        self.pos_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.pos_scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+
+        self.pos_stack = QStackedWidget()
+        self.pos_stack.setMaximumWidth(585)
+        self.pos_scroll.setWidget(self.pos_stack)
+        self.pos_content_layout.addWidget(self.pos_scroll)
+
+        placeholder = QWidget()
+        placeholder_layout = QVBoxLayout(placeholder)
+        placeholder_layout.setContentsMargins(24, 24, 24, 24)
+        placeholder_layout.addStretch(1)
+        placeholder_label = QLabel("Seleccione el tipo de venta para comenzar.")
+        placeholder_label.setAlignment(Qt.AlignCenter)
+        placeholder_layout.addWidget(placeholder_label)
+        placeholder_layout.addStretch(1)
+        self.pos_stack.addWidget(placeholder)
+
+        productos_lote = self._build_productos_lote()
+        distribuidores_cf = [v.get("nombre", "") for v in getattr(self.manager, "_Distribuidores", [])]
+        vendedores_trabajadores = self.manager.db.get_trabajadores(solo_vendedores=True)
+
+        self.widget_cf = RegisterSaleDialog(productos_lote, distribuidores_cf, vendedores_trabajadores, self)
+        self.widget_cf.setWindowFlags(Qt.Widget)
+        self.widget_cf.setMaximumWidth(585)
+        self._connect_pos_cancel(self.widget_cf)
+        self.pos_stack.addWidget(self.widget_cf)
+
+        distribuidores_cfiscal = [dict(v) for v in getattr(self.manager, "_Distribuidores", [])]
+        self.widget_cfiscal = RegisterCreditoFiscalDialog(
+            productos_lote,
+            distribuidores_cfiscal,
+            vendedores_trabajadores,
+            self,
+        )
+        self.widget_cfiscal.set_productos_data(productos_lote)
+        self.widget_cfiscal.setWindowFlags(Qt.Widget)
+        self.widget_cfiscal.setMaximumWidth(585)
+        self._connect_pos_cancel(self.widget_cfiscal)
+        self.pos_stack.addWidget(self.widget_cfiscal)
+
+        self.pos_stack.setCurrentIndex(0)
+
+    def _build_productos_lote(self):
+        productos_lote = []
+        compras = self.manager.db.get_compras()
+        productos_dict = {p["id"]: p for p in getattr(self.manager, "_products", [])}
+        for compra in compras:
+            detalles = self.manager.db.get_detalles_compra(compra["id"])
+            for detalle in detalles:
+                prod = productos_dict.get(detalle["producto_id"])
+                if not prod:
+                    continue
+                if detalle.get("cantidad", 0) > 0:
+                    productos_lote.append(
+                        {
+                            "lote_id": detalle.get("id"),
+                            "producto_id": detalle.get("producto_id"),
+                            "nombre": prod.get("nombre", ""),
+                            "codigo": prod.get("codigo", ""),
+                            "codigo_lote": detalle.get("codigo_lote", ""),
+                            "registro_sanitario": detalle.get("registro_sanitario", ""),
+                            "stock": detalle.get("cantidad", 0),
+                            "precio_unitario": detalle.get("precio_unitario", 0),
+                            "vendedor_id": prod.get("vendedor_id"),
+                            "Distribuidor_id": compra.get("Distribuidor_id"),
+                            "fecha_vencimiento": detalle.get("fecha_vencimiento", ""),
+                            "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
+                            "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                        }
+                    )
+        return productos_lote
+
+    def _connect_pos_cancel(self, dialog: QDialog):
+        if not hasattr(self, "pos_stack"):
+            return
+        for attr in ("cancel_button", "btn_cancel", "btn_cancelar"):
+            btn = getattr(dialog, attr, None)
+            if btn is not None:
+                btn.clicked.connect(lambda _: self.pos_stack.setCurrentIndex(0))
+                break
+        if hasattr(dialog, "rejected"):
+            dialog.rejected.connect(lambda: self.pos_stack.setCurrentIndex(0))
+
+    def _show_pos_page(self, index: int):
+        if not hasattr(self, "pos_stack"):
+            return
+        target = {1: getattr(self, "widget_cf", None), 2: getattr(self, "widget_cfiscal", None)}.get(index)
+        if target is not None:
+            target.show()
+        if 0 <= index < self.pos_stack.count():
+            self.pos_stack.setCurrentIndex(index)
         else:
-            QMessageBox.information(self, "Venta", "Función de venta no disponible.")
+            self.pos_stack.setCurrentIndex(0)
+
+    def _clear_layout(self, layout):
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.setParent(None)
+                continue
+            child_layout = item.layout()
+            if child_layout is not None:
+                self._clear_layout(child_layout)
+
+    def _abrir_venta_cf(self):
+        self._show_pos_page(1)
 
     def _abrir_venta_cfiscal(self):
-        target = self.main_window or self.window() or self.parent()
-        if target is not None and hasattr(target, "registrar_venta_credito_fiscal"):
-            target.registrar_venta_credito_fiscal()
-        else:
-            QMessageBox.information(self, "Venta", "Función de crédito fiscal no disponible.")
+        self._show_pos_page(2)
 
     def _setup_stats_tab(self):
         main_layout = QVBoxLayout(self.stats_tab)
@@ -992,7 +1161,11 @@ class SalesTab(QWidget):
 
         self.sales_table.setRowCount(len(rows))
         for row, (venta, cli, _) in enumerate(rows):
-            self.sales_table.setItem(row, 0, QTableWidgetItem(str(venta.get("id"))))
+            dte_estado = self._dte_status_for_sale(venta)
+            dte_item = QTableWidgetItem(dte_estado)
+            dte_item.setData(Qt.UserRole, venta.get("id"))
+            dte_item.setTextAlignment(Qt.AlignCenter)
+            self.sales_table.setItem(row, 0, dte_item)
             self.sales_table.setItem(row, 1, QTableWidgetItem(cli))
             self.sales_table.setItem(row, 2, QTableWidgetItem(venta.get("fecha", "")))
             self.sales_table.setItem(row, 3, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
@@ -1006,6 +1179,65 @@ class SalesTab(QWidget):
             and self.sales_tabs.currentWidget() is self.stats_tab
         ):
             self.refresh_statistics()
+
+    def _venta_id_from_row(self, row: int) -> int | None:
+        if row < 0:
+            return None
+        item = self.sales_table.item(row, 0)
+        if item is None:
+            return None
+        vid = item.data(Qt.UserRole)
+        if vid is None:
+            try:
+                vid = int(item.text())
+            except Exception:
+                vid = None
+        try:
+            return int(vid)
+        except Exception:
+            return None
+
+    def _dte_status_for_sale(self, venta: dict) -> str:
+        """Devuelve estado DTE normalizado: Falta / Guardado / Enviado."""
+        estado_venta = str(venta.get("estado") or "").strip()
+        venta_id = venta.get("id")
+        estado_ui = None
+        estado_base = None
+        tag = None
+        cursor = getattr(self.manager.db, "cursor", None)
+        if cursor is not None:
+            try:
+                row = cursor.execute(
+                    "SELECT estado_ui, estado, estado_ui_tag FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1",
+                    (venta_id,),
+                ).fetchone()
+            except Exception:
+                row = None
+        else:
+            row = None
+        if row:
+            try:
+                estado_ui = row["estado_ui"] if hasattr(row, "__getitem__") else row[0]
+                estado_base = row["estado"] if hasattr(row, "__getitem__") else row[1]
+                tag = row["estado_ui_tag"] if hasattr(row, "__getitem__") else row[2]
+            except Exception:
+                pass
+
+        def norm(val):
+            return str(val or "").strip().lower()
+
+        ui = norm(estado_ui)
+        base = norm(estado_base)
+        tag = norm(tag)
+        sent_states = {"enviado", "aceptado", "procesado", "recibido", "transmitido"}
+        pending_states = {"pendiente"}
+        if ui in sent_states or tag in sent_states or base in sent_states:
+            return "Enviado"
+        if ui in pending_states or base in pending_states:
+            return "Guardado"
+        if estado_venta.lower() == "pendiente de envío":
+            return "Guardado"
+        return "Falta"
 
     def show_sale(self, clear=False):
         if clear or self.sales_table.currentRow() < 0:
@@ -1023,7 +1255,15 @@ class SalesTab(QWidget):
             return
 
         row = self.sales_table.currentRow()
-        venta_id = int(self.sales_table.item(row, 0).text())
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(
+                self,
+                "Venta no encontrada",
+                "No se pudo identificar la venta seleccionada.",
+            )
+            self.show_sale(clear=True)
+            return
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
             QMessageBox.warning(
@@ -1061,7 +1301,10 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Estado", "Seleccione una venta")
             return
         row = self.sales_table.currentRow()
-        venta_id = int(self.sales_table.item(row, 0).text())
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(self, "Estado", "No se encontró la venta seleccionada")
+            return
         venta = next((v for v in self.manager.db.get_ventas() if v["id"] == venta_id), None)
         if not venta:
             QMessageBox.warning(self, "Estado", "No se encontró la venta seleccionada")
@@ -1076,7 +1319,10 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Eliminar venta", "Seleccione una venta")
             return
         row = self.sales_table.currentRow()
-        venta_id = int(self.sales_table.item(row, 0).text())
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(self, "Eliminar venta", "No se pudo identificar la venta seleccionada.")
+            return
         confirm = QMessageBox.question(
             self,
             "Eliminar venta",
@@ -1106,6 +1352,72 @@ class SalesTab(QWidget):
             "Eliminar venta",
             "La venta se eliminó y el inventario fue restaurado.",
         )
+
+    def _guardar_dte_manual(self):
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Guardar DTE", "Seleccione una venta del historial.")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(self, "Guardar DTE", "No se pudo identificar la venta seleccionada.")
+            return
+
+        tipo_dte = "03" if self.manager.db.get_venta_credito_fiscal(venta_id) else "01"
+        ok = False
+        msg = ""
+        target = self.main_window or self.window() or self.parent()
+        if target is not None and hasattr(target, "_generar_dte_sin_enviar"):
+            ok, msg = target._generar_dte_sin_enviar(venta_id, tipo_dte)
+        else:
+            try:
+                data = dte.generar_dte_json(self.manager.db, venta_id, tipo_dte=tipo_dte)
+                try:
+                    dte.recalcular_totales(data, incluir_iva=True)
+                except Exception:
+                    pass
+                try:
+                    data = dte.apply_schema_patch(data)
+                except Exception:
+                    pass
+                signed = sign_json(data)
+                try:
+                    dte._save_signed_dte(data, signed, fallido=False)
+                except Exception:
+                    pass
+                ident = data.get("identificacion") or {}
+                try:
+                    self.manager.db.registrar_envio_dte(
+                        venta_id,
+                        "manual",
+                        "Pendiente",
+                        "",
+                        codigo_generacion=ident.get("codigoGeneracion"),
+                        numero_control=ident.get("numeroControl"),
+                        ambiente=ident.get("ambiente"),
+                    )
+                except Exception:
+                    pass
+                ok = True
+                msg = "DTE generado y guardado (pendiente de envío)."
+            except Exception as exc:
+                msg = str(exc)
+
+        if ok:
+            try:
+                self.manager.db.update_venta_estado(venta_id, "Pendiente de Envío")
+            except Exception:
+                pass
+            try:
+                generate_invoice_pdf(self.manager, venta_id)
+            except Exception:
+                logger.exception("No se pudo generar PDF para venta_id=%s", venta_id)
+            else:
+                msg += "\nPDF guardado."
+            QMessageBox.information(self, "Guardar DTE", msg)
+        else:
+            QMessageBox.warning(self, "Guardar DTE", f"No se pudo generar el DTE: {msg}")
+        self.load_sales()
 
     def _clear_preview_files(self):
         """Remove temporary preview image without deleting stored PDFs."""

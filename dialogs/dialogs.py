@@ -21,6 +21,7 @@ from PyQt5.QtWidgets import (
 )
 from PyQt5.QtCore import (
     Qt,
+    QObject,
     QDate,
     QUrl,
     QRegularExpression,
@@ -97,6 +98,16 @@ def _normalize_tipo_contribuyente(value: str | None) -> str:
         if option.lower() == normalized:
             return option
     return TIPO_CONTRIBUYENTE_OPCIONES[0]
+
+
+class _NoWheelFilter(QObject):
+    """Evita que la rueda del ratón cambie valores de inputs."""
+
+    def eventFilter(self, obj, event):
+        if event.type() == QEvent.Wheel:
+            event.ignore()
+            return True
+        return super().eventFilter(obj, event)
 
 
 class LoginDialog(QDialog):
@@ -670,6 +681,16 @@ class ProductDialogBase:
         if hasattr(self, "_recalcular_totales"):
             self._recalcular_totales()
 
+    def _install_no_wheel_filter(self):
+        """Bloquea cambios con la rueda en combos y spin para permitir solo scroll."""
+        blocker = getattr(self, "_wheel_event_filter", None)
+        if blocker is None:
+            blocker = _NoWheelFilter(self)
+            self._wheel_event_filter = blocker
+        for cls in (QComboBox, QSpinBox, QDoubleSpinBox, QDateEdit):
+            for widget in self.findChildren(cls):
+                widget.installEventFilter(blocker)
+
     def _actualizar_Distribuidor_por_producto(self):
         idx = self.product_list.currentRow()
         if idx < 0 or idx >= len(self.productos):
@@ -750,9 +771,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         super().__init__(parent)
         self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta")
+        self.setMinimumSize(0, 0)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
 
-
-        main_layout = QHBoxLayout()
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(16)
 
         self.productos = productos
         self.vendedores_trabajadores = vendedores_trabajadores
@@ -760,6 +784,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
 
         left_layout = QVBoxLayout()
+        left_layout.setSpacing(10)
+        left_layout.setContentsMargins(0, 0, 0, 0)
 
         # Barra de búsqueda de productos
         self.product_search = QLineEdit()
@@ -770,73 +796,83 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.product_list = QListWidget()
         self._productos_original = list(productos)
         self._mostrar_productos(productos)
+        self.product_list.setMinimumHeight(110)
+        self.product_list.setMaximumHeight(180)
+        self.product_list.setSpacing(2)
+        self.product_list.setStyleSheet(
+            "QListWidget { border: 1px solid #d4d4d8; border-radius: 6px; }"
+            "QListWidget::item { padding: 6px 8px; margin: 2px 4px; border-radius: 4px; }"
+            "QListWidget::item:selected { background: #e5f1ff; color: #0f172a; }"
+        )
         left_layout.addWidget(self.product_list)
 
-        # Tipo de venta
-        left_layout.addWidget(QLabel("Tipo de venta:"))
-        self.tipo_minorista = QRadioButton("Minorista")
-        self.tipo_mayorista_unit = QRadioButton("Mayorista (unitario)")
-        self.tipo_mayorista_total = QRadioButton("Mayorista (total personalizado)")
-        self.tipo_minorista.setChecked(True)
-        tipo_layout = QHBoxLayout()
-        tipo_layout.addWidget(self.tipo_minorista)
-        tipo_layout.addWidget(self.tipo_mayorista_unit)
-        tipo_layout.addWidget(self.tipo_mayorista_total)
-        left_layout.addLayout(tipo_layout)
+        # Grid compacto de captura
+        captura_layout = QHBoxLayout()
+        captura_layout.setContentsMargins(0, 0, 0, 0)
+        captura_layout.setSpacing(6)
 
-        # Cantidad
-        left_layout.addWidget(QLabel("Cantidad:"))
         self.cantidad_spin = QSpinBox()
         self.cantidad_spin.setMinimum(1)
         self.cantidad_spin.setMaximum(100000)
-        left_layout.addWidget(self.cantidad_spin)
+        self.cantidad_spin.setFixedWidth(70)
+        captura_layout.addWidget(QLabel("Cantidad:"))
+        captura_layout.addWidget(self.cantidad_spin)
 
-        # Precio unitario y total
-        precio_layout = QHBoxLayout()
+        captura_layout.addWidget(QLabel("Tipo fiscal:"))
+        self.tipo_fiscal_combo = QComboBox()
+        self.tipo_fiscal_combo.addItems(["Venta gravada", "Venta exenta", "Venta no sujeta"])
+        self.tipo_fiscal_combo.setFixedWidth(120)
+        captura_layout.addWidget(self.tipo_fiscal_combo)
+
+        captura_layout.addWidget(QLabel("Precio Unitario $:"))
         self.precio_spin = QDoubleSpinBox()
         self.precio_spin.setMinimum(0)
         self.precio_spin.setMaximum(1000000)
         self.precio_spin.setDecimals(2)
         self.precio_spin.setPrefix("$")
-        precio_layout.addWidget(QLabel("Precio unitario:"))
-        precio_layout.addWidget(self.precio_spin)
+        self.precio_spin.setMaximumWidth(110)
+        captura_layout.addWidget(self.precio_spin)
+
+        captura_layout.addWidget(QLabel("Precio Total $:"))
         self.precio_total_spin = QDoubleSpinBox()
         self.precio_total_spin.setMinimum(0)
         self.precio_total_spin.setMaximum(100000000)
         self.precio_total_spin.setDecimals(2)
         self.precio_total_spin.setPrefix("$")
-        precio_layout.addWidget(QLabel("Precio total:"))
-        precio_layout.addWidget(self.precio_total_spin)
-        left_layout.addLayout(precio_layout)
+        self.precio_total_spin.setMaximumWidth(120)
+        captura_layout.addWidget(self.precio_total_spin)
 
-        # Descuento
-        descuento_layout = QHBoxLayout()
-        descuento_layout.addWidget(QLabel("Descuento:"))
         self.descuento_spin = QDoubleSpinBox()
         self.descuento_spin.setMinimum(0)
         self.descuento_spin.setMaximum(1000000)
         self.descuento_spin.setDecimals(2)
         self.descuento_spin.setValue(0)
-        descuento_layout.addWidget(self.descuento_spin)
+        self.descuento_spin.setMaximumWidth(80)
         self.descuento_tipo_combo = QComboBox()
         self.descuento_tipo_combo.addItems(["%", "$"])
         self.descuento_tipo_combo.setCurrentText("$")
+        self.descuento_tipo_combo.setFixedWidth(56)
+
+        descuento_layout = QHBoxLayout()
+        descuento_layout.setContentsMargins(0, 0, 0, 0)
+        descuento_layout.setSpacing(3)
+        descuento_layout.addWidget(QLabel("Desc.:"))
+        descuento_layout.addWidget(self.descuento_spin)
         descuento_layout.addWidget(self.descuento_tipo_combo)
-        left_layout.addLayout(descuento_layout)
+        captura_layout.addLayout(descuento_layout)
+        captura_layout.addStretch(1)
+
+        left_layout.addLayout(captura_layout)
+
+        self.compact_summary_label = QLabel("Sumas: $0.00 | IVA inc.: $0.00 | Desc.: -$0.00 | Subtotal: $0.00")
+        self.compact_summary_label.setStyleSheet(
+            "background-color: #e3f2ff; color: #0f172a; padding: 8px 10px; "
+            "border: 1px solid #c7ddf6; border-radius: 8px; font-weight: 600;"
+        )
+        left_layout.addWidget(self.compact_summary_label)
 
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
         self.descuento_tipo_combo.currentIndexChanged.connect(self._on_descuento_tipo_changed)
-
-        # IVA eliminado: ya no se muestran opciones para aplicar IVA
-
-
-        # --- Clasificación fiscal individual por producto ---
-        fiscal_layout = QHBoxLayout()
-        fiscal_layout.addWidget(QLabel("Tipo fiscal:"))
-        self.tipo_fiscal_combo = QComboBox()
-        self.tipo_fiscal_combo.addItems(["Venta gravada", "Venta exenta", "Venta no sujeta"])
-        fiscal_layout.addWidget(self.tipo_fiscal_combo)
-        left_layout.addLayout(fiscal_layout)
 
         # Botón agregar a venta
         self.btn_agregar = QPushButton("Agregar a venta")
@@ -847,13 +883,26 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        header_cf = self.table.horizontalHeader()
+        header_cf.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header_cf.setSectionResizeMode(0, QHeaderView.Interactive)  # Producto
+        self.table.setColumnWidth(0, 190)
+        for col, width in [(1, 60), (2, 80), (3, 80), (4, 100)]:
+            header_cf.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+            self.table.setColumnWidth(col, width)
+        self.table.setColumnWidth(5, 140)
+        header_cf.setSectionResizeMode(5, QHeaderView.ResizeToContents)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.table.setMinimumHeight(320)
+        self.table.setMaximumHeight(440)
         left_layout.addWidget(self.table)
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
         self.table.cellClicked.connect(self._eliminar_fila)
 
         right_layout = QVBoxLayout()
+        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(0, 0, 0, 0)
         
         # Combo de vendedor trabajador
         right_layout.addWidget(QLabel("Vendedor (trabajador):"))
@@ -1000,6 +1049,16 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         right_layout.addWidget(self.credit_fields_widget)
 
+        right_layout.addWidget(QLabel("No. Remisión:"))
+        self.no_remision_edit = QLineEdit()
+        self.no_remision_edit.setPlaceholderText("Número de remisión")
+        right_layout.addWidget(self.no_remision_edit)
+
+        right_layout.addWidget(QLabel("Orden No.:"))
+        self.orden_no_edit = QLineEdit()
+        self.orden_no_edit.setPlaceholderText("Número de orden")
+        right_layout.addWidget(self.orden_no_edit)
+
         right_layout.addWidget(QLabel("Estado:"))
         self.estado_combo = QComboBox()
         self.estado_combo.addItems(["Pagada", "Pendiente"])
@@ -1010,9 +1069,27 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         right_layout.addWidget(self.btn_ok)
         self.btn_ok.clicked.connect(self._validar_y_accept)  
 
-        # --- AGREGA LOS DOS LAYOUTS AL PRINCIPAL ---
-        main_layout.addLayout(left_layout, 2)
-        main_layout.addLayout(right_layout, 1)
+        # --- AGREGA LOS DOS LAYOUTS COMO TARJETAS ---
+        card_top = QFrame()
+        card_top.setObjectName("PosCardTop")
+        card_top.setFrameShape(QFrame.StyledPanel)
+        card_top_layout = QVBoxLayout(card_top)
+        card_top_layout.setContentsMargins(16, 16, 16, 16)
+        card_top_layout.setSpacing(10)
+        card_top_layout.addWidget(QLabel("Nueva Venta / Carrito"))
+        card_top_layout.addLayout(left_layout)
+
+        card_bottom = QFrame()
+        card_bottom.setObjectName("PosCardBottom")
+        card_bottom.setFrameShape(QFrame.StyledPanel)
+        card_bottom_layout = QVBoxLayout(card_bottom)
+        card_bottom_layout.setContentsMargins(16, 16, 16, 16)
+        card_bottom_layout.setSpacing(6)
+        card_bottom_layout.addWidget(QLabel("Resumen y Pago"))
+        card_bottom_layout.addLayout(right_layout)
+
+        main_layout.addWidget(card_bottom)
+        main_layout.addWidget(card_top)
         self.setLayout(main_layout)
 
         # Creamos un diccionario que mapea nombre de producto a nombre de Distribuidor
@@ -1036,31 +1113,16 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 Distribuidor_nombre = Distribuidores_dict[Distribuidor_id]
             self._producto_Distribuidor_map[nombre_prod] = Distribuidor_nombre
 
-        # Agrupa tipo de venta en su propio grupo
-        self.tipo_venta_group = QButtonGroup(self)
-        self.tipo_venta_group.setExclusive(True)
-        self.tipo_venta_group.addButton(self.tipo_minorista)
-        self.tipo_venta_group.addButton(self.tipo_mayorista_unit)
-        self.tipo_venta_group.addButton(self.tipo_mayorista_total)
-
         # Estado
         self.productos_data = productos
 
         # Conexiones
         self.cliente_btn.clicked.connect(self._abrir_selector_cliente)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_defecto)
-        self.tipo_minorista.toggled.connect(self._actualizar_precio_defecto)
-        self.tipo_mayorista_unit.toggled.connect(self._actualizar_precio_defecto)
-        self.tipo_mayorista_total.toggled.connect(self._actualizar_precio_defecto)
         self.cantidad_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_total_spin.valueChanged.connect(self._recalcular_totales)
         self.product_search.textChanged.connect(self._filtrar_productos)
-
-        # Permitir edición según tipo de venta
-        self.tipo_minorista.toggled.connect(self._toggle_precio_edicion)
-        self.tipo_mayorista_unit.toggled.connect(self._toggle_precio_edicion)
-        self.tipo_mayorista_total.toggled.connect(self._toggle_precio_edicion)
 
         # --- INICIO BLOQUE NUEVO: Actualizar combo de Distribuidor en tiempo real según producto seleccionado ---
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
@@ -1075,6 +1137,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self._load_retencion_catalog()
         self.load_payment_data(venta_extra)
         self._update_retencion_group_state()
+        self._install_no_wheel_filter()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -1098,31 +1161,21 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                     break
         precio = 0
         if prod:
-            if self.tipo_minorista.isChecked():
-                precio = get_field(prod, "precio_venta_minorista", 0)
-            elif self.tipo_mayorista_unit.isChecked() or self.tipo_mayorista_total.isChecked():
-                precio = get_field(prod, "precio_venta_mayorista", 0)
+            precio = get_field(prod, "precio_venta_minorista", 0)
         self.precio_spin.blockSignals(True)
         self.precio_total_spin.blockSignals(True)
         self.precio_spin.setValue(float(precio))
         self.precio_total_spin.setValue(float(precio) * self.cantidad_spin.value())
         self.precio_spin.blockSignals(False)
         self.precio_total_spin.blockSignals(False)
-        self._toggle_precio_edicion()
         self._recalcular_totales()
 
     def _toggle_precio_edicion(self):
-        # Permitir editar el campo correspondiente según el tipo de venta
-        if self.tipo_minorista.isChecked():
-            self.precio_spin.setEnabled(True)
-            self.precio_total_spin.setEnabled(False)
-        elif self.tipo_mayorista_unit.isChecked():
-            self.precio_spin.setEnabled(True)
-            self.precio_total_spin.setEnabled(False)
-        elif self.tipo_mayorista_total.isChecked():
-            self.precio_spin.setEnabled(False)
-            self.precio_total_spin.setEnabled(True)
+        # Ambos precios editables; se sincronizan en _recalcular_totales
+        self.precio_spin.setEnabled(True)
+        self.precio_total_spin.setEnabled(True)
         self._recalcular_totales()
+
 
 
     def _on_descuento_tipo_changed(self):
@@ -1136,16 +1189,18 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
     def _recalcular_totales(self):
         cantidad = self.cantidad_spin.value()
+        cantidad = 1 if cantidad <= 0 else cantidad
 
-        # --- Sincroniza precio unitario y total en modo mayorista total ---
-        if self.tipo_mayorista_total.isChecked():
-            precio_total = self.precio_total_spin.value()
+        sender = self.sender()
+        precio_unitario = self.precio_spin.value()
+        precio_total = self.precio_total_spin.value()
+
+        if sender is self.precio_total_spin:
             precio_unitario = round(precio_total / cantidad, 6) if cantidad > 0 else 0
             self.precio_spin.blockSignals(True)
             self.precio_spin.setValue(precio_unitario)
             self.precio_spin.blockSignals(False)
         else:
-            precio_unitario = self.precio_spin.value()
             precio_total = precio_unitario * cantidad
             self.precio_total_spin.blockSignals(True)
             self.precio_total_spin.setValue(precio_total)
@@ -1197,6 +1252,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         else:
             total_final = total
 
+        iva_incl = max(total - subtotal_con_descuento, 0)
+        self.compact_summary_label.setText(
+            f"Sumas: ${subtotal:.2f} | IVA inc.: ${iva_incl:.2f} | Desc.: -${descuento_monto:.2f} | "
+            f"Subtotal: ${total_final:.2f}"
+        )
         self.precio_label.setText(f"Precio U.: ${precio_unitario:.2f}")
         self.comision_label.setText(f"Comisión: ${comision_monto:.2f}")
 
@@ -1245,11 +1305,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         data = {
             "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
-            "tipo_venta": (
-                "Minorista" if self.tipo_minorista.isChecked()
-                else "Mayorista (unitario)" if self.tipo_mayorista_unit.isChecked()
-                else "Mayorista (total personalizado)"
-            ),
+            "tipo_venta": "Manual",
             "precio_total_manual": float(self.precio_total_spin.value()),
             "iva_agregado": self.iva_agregado_radio.isChecked() if hasattr(self, "iva_agregado_radio") else False,
             "venta_a_cuenta_de": self.venta_a_cuenta_de_edit.text(),
@@ -1423,13 +1479,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         lote = self.productos[idx]
         cantidad = self.cantidad_spin.value()
 
-        # --- Cálculo de precio unitario según tipo de venta ---
-        if self.tipo_mayorista_total.isChecked():
-            precio_total = self.precio_total_spin.value()
-            precio = round(precio_total / cantidad, 6) if cantidad > 0 else 0
-        else:
-            precio = self.precio_spin.value()
-            precio_total = precio * cantidad
+        # Precios siempre editables y sincronizados
+        self._recalcular_totales()
+        precio = self.precio_spin.value()
+        precio_total = self.precio_total_spin.value()
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
@@ -1522,11 +1575,15 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             btn = QPushButton("Eliminar")
             btn.setStyleSheet(
                 "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
-                "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
+                "min-width:70px; max-width:100px; min-height:14px; max-height:22px;"
             )
-
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
-            self.table.setCellWidget(i, 5, btn)
+            cell = QWidget()
+            cell_layout = QHBoxLayout(cell)
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setAlignment(Qt.AlignCenter)
+            cell_layout.addWidget(btn)
+            self.table.setCellWidget(i, 5, cell)
 
     def _actualizar_resumen(self):
         sumas = sum(i["subtotal"] for i in self.venta_items)
@@ -1534,16 +1591,15 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         subtotal = sumas - descuentos
         total = sum(i.get("total", 0) for i in self.venta_items)
 
-        self.sumas_label.setText(f"Sumas: ${sumas:.2f}")
-        self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
+        resumen = (
+            f"Sumas: ${sumas:.2f} | Subtotal: ${subtotal:.2f} | "
+            f"Desc.: -${descuentos:.2f} | Total con IVA: ${total:.2f}"
+        )
         base_ret, iva_ret = self._compute_retencion_values()
         if self.retencion_checkbox.isChecked() and iva_ret > 0:
             tasa = float(self._retencion_rate_pct())
-            self.total_label.setText(
-                f"Venta total: ${total:.2f} (Retención {tasa:.3f}%: ${iva_ret:.2f})"
-            )
-        else:
-            self.total_label.setText(f"Venta total: ${total:.2f}")
+            resumen += f" | Retención {tasa:.3f}%: ${iva_ret:.2f}"
+        self.compact_summary_label.setText(resumen)
         self._update_retencion_summary()
 
     def _retencion_rate_pct(self) -> Decimal:
@@ -3033,12 +3089,17 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         super().__init__(parent)
         self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
         self.setWindowTitle("Registrar Venta a Crédito Fiscal")
-        self.resize(1250, 740)
-        self.setMinimumSize(1150, 620)
-        main_layout = QHBoxLayout()
+        self.setMinimumSize(0, 0)
+        self.resize(0, 0)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(12, 12, 12, 12)
+        main_layout.setSpacing(16)
 
         # --- LADO IZQUIERDO ---
         left_layout = QVBoxLayout()
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(10)
         self.productos = productos
         self.venta_items = []
         self.Distribuidores = Distribuidores
@@ -3062,41 +3123,29 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.product_list = QListWidget()
         self._productos_original = list(productos)
         self._mostrar_productos(productos)
-        self.product_list.setMaximumHeight(220)
+        self.product_list.setMinimumHeight(130)
+        self.product_list.setMaximumHeight(200)
+        self.product_list.setSpacing(2)
+        self.product_list.setStyleSheet(
+            "QListWidget { border: 1px solid #d4d4d8; border-radius: 6px; }"
+            "QListWidget::item { padding: 6px 8px; margin: 2px 4px; border-radius: 4px; }"
+            "QListWidget::item:selected { background: #e5f1ff; color: #0f172a; }"
+        )
         left_layout.addWidget(self.product_list)
 
-        # Tipo de venta
-        left_layout.addWidget(QLabel("Tipo de venta:"))
-        self.tipo_minorista = QRadioButton("Minorista")
-        self.tipo_mayorista_unit = QRadioButton("Mayorista (unitario)")
-        self.tipo_mayorista_total = QRadioButton("Mayorista (total personalizado)")
-        self.tipo_minorista.setChecked(True)
-        tipo_layout = QHBoxLayout()
-        tipo_layout.addWidget(self.tipo_minorista)
-        tipo_layout.addWidget(self.tipo_mayorista_unit)
-        tipo_layout.addWidget(self.tipo_mayorista_total)
-        left_layout.addLayout(tipo_layout)
-        self.tipo_venta_group = QButtonGroup(self)
-        self.tipo_venta_group.setExclusive(True)
-        self.tipo_venta_group.addButton(self.tipo_minorista)
-        self.tipo_venta_group.addButton(self.tipo_mayorista_unit)
-        self.tipo_venta_group.addButton(self.tipo_mayorista_total)
-
-        # Cantidad
-        left_layout.addWidget(QLabel("Cantidad:"))
         self.cantidad_spin = QSpinBox()
-        self.cantidad_spin.setMinimum(1)
-        self.cantidad_spin.setMaximum(100000)
-        left_layout.addWidget(self.cantidad_spin)
+        self.cantidad_spin.setRange(1, 100000)
+        self.cantidad_spin.setFixedWidth(70)
 
-
-        # Precio unitario y total
+        # Precio unitario, total y descuento en la misma línea
         precio_layout = QHBoxLayout()
+        precio_layout.setSpacing(4)
         self.precio_spin = QDoubleSpinBox()
         self.precio_spin.setMinimum(0)
         self.precio_spin.setMaximum(1000000)
         self.precio_spin.setDecimals(2)
         self.precio_spin.setPrefix("$")
+        self.precio_spin.setMaximumWidth(110)
         precio_layout.addWidget(QLabel("Precio unitario:"))
         precio_layout.addWidget(self.precio_spin)
         self.precio_total_spin = QDoubleSpinBox()
@@ -3104,64 +3153,96 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.precio_total_spin.setMaximum(100000000)
         self.precio_total_spin.setDecimals(2)
         self.precio_total_spin.setPrefix("$")
+        self.precio_total_spin.setMaximumWidth(120)
         precio_layout.addWidget(QLabel("Precio total:"))
         precio_layout.addWidget(self.precio_total_spin)
-        left_layout.addLayout(precio_layout)
 
-        # Descuento
         descuento_layout = QHBoxLayout()
-        descuento_layout.addWidget(QLabel("Descuento:"))
+        descuento_layout.setContentsMargins(0, 0, 0, 0)
+        descuento_layout.setSpacing(3)
+        descuento_layout.addWidget(QLabel("Desc.:"))
         self.descuento_spin = QDoubleSpinBox()
         self.descuento_spin.setMinimum(0)
         self.descuento_spin.setMaximum(1000000)
         self.descuento_spin.setDecimals(2)
         self.descuento_spin.setValue(0)
+        self.descuento_spin.setMaximumWidth(80)
         descuento_layout.addWidget(self.descuento_spin)
         self.descuento_tipo_combo = QComboBox()
         self.descuento_tipo_combo.addItems(["%", "$"])
         self.descuento_tipo_combo.setCurrentText("$")
+        self.descuento_tipo_combo.setFixedWidth(56)
         descuento_layout.addWidget(self.descuento_tipo_combo)
-        left_layout.addLayout(descuento_layout)
+        precio_layout.addLayout(descuento_layout)
+        precio_layout.addStretch(1)
+        left_layout.addLayout(precio_layout)
         self.descuento_spin.valueChanged.connect(self._recalcular_totales)
         self.descuento_tipo_combo.currentIndexChanged.connect(self._on_descuento_tipo_changed)
 
         # IVA eliminado: ya no se muestran opciones para aplicar IVA
 
-        # Selector de tipo fiscal
-        tipo_fiscal_layout = QHBoxLayout()
-        tipo_fiscal_layout.addWidget(QLabel("Tipo fiscal:"))
+        # Resumen del producto actual (horizontal)
+        resumen_layout = QHBoxLayout()
+        resumen_layout.setSpacing(6)
+        self.item_sumas_label = QLabel("Sumas: $0.00")
+        self.item_total_sin_desc_label = QLabel("Subtotal: $0.00")
+        self.item_descuento_label = QLabel("Desc.: -$0.00")
+        self.item_subtotal_label = QLabel("Total con IVA: $0.00")
+        for lbl in (
+            self.item_sumas_label,
+            self.item_total_sin_desc_label,
+            self.item_descuento_label,
+            self.item_subtotal_label,
+        ):
+            lbl.setStyleSheet("padding: 6px 8px; background:#f5f7fa; border:1px solid #e1e7f0; border-radius:6px;")
+            resumen_layout.addWidget(lbl)
+        resumen_layout.addStretch(1)
+        left_layout.addLayout(resumen_layout)
+
+        acciones_layout = QHBoxLayout()
+        acciones_layout.setContentsMargins(0, 0, 0, 0)
+        acciones_layout.setSpacing(4)
+        acciones_layout.setAlignment(Qt.AlignLeft)
+        acciones_layout.addWidget(QLabel("Cantidad:"))
+        acciones_layout.addWidget(self.cantidad_spin)
+        acciones_layout.addSpacing(6)
+        acciones_layout.addWidget(QLabel("Tipo fiscal:"))
         self.tipo_fiscal_combo = QComboBox()
         self.tipo_fiscal_combo.addItems(["Venta gravada", "Venta exenta", "Venta no sujeta"])
-        tipo_fiscal_layout.addWidget(self.tipo_fiscal_combo)
-        left_layout.addLayout(tipo_fiscal_layout)
-
-        # Resumen del producto actual
-        self.item_precio_label = QLabel("Precio U. sin IVA: $0.00")
-        self.item_sumas_label = QLabel("Sumas sin IVA: $0.00")
-        self.item_total_sin_desc_label = QLabel("Total con IVA sin descuento: $0.00")
-        self.item_descuento_label = QLabel("Descuento: -$0.00")
-        self.item_subtotal_label = QLabel("Subtotal final (con IVA): $0.00")
-        left_layout.addWidget(self.item_precio_label)
-        left_layout.addWidget(self.item_sumas_label)
-        left_layout.addWidget(self.item_total_sin_desc_label)
-        left_layout.addWidget(self.item_descuento_label)
-        left_layout.addWidget(self.item_subtotal_label)
-
-        # Botón agregar a venta
+        self.tipo_fiscal_combo.setFixedWidth(110)
+        acciones_layout.addWidget(self.tipo_fiscal_combo)
+        acciones_layout.addSpacing(4)
         self.btn_agregar = QPushButton("Agregar a venta")
-        left_layout.addWidget(self.btn_agregar)
+        self.btn_agregar.setFixedWidth(110)
+        acciones_layout.addWidget(self.btn_agregar)
+        left_layout.addLayout(acciones_layout)
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
 
         # Tabla de productos agregados
-        self.table = QTableWidget(0, 6)
+        self.table = QTableWidget(0, 5)
         self.table.setHorizontalHeaderLabels([
-            "Cantidad", "Producto", "P. Unit. (IVA inc.)", "Descuento", "Total", "Eliminar"
+            "Cantidad", "Producto", "Descuento", "Total", "Eliminar"
         ])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.table.verticalHeader().setVisible(False)
+        header_cf = self.table.horizontalHeader()
+        header_cf.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        header_cf.setStretchLastSection(False)
+        header_cf.setSectionResizeMode(1, QHeaderView.Interactive)  # Producto
+        self.table.setColumnWidth(1, 170)
+        for col, width in [(0, 60), (2, 80)]:
+            header_cf.setSectionResizeMode(col, QHeaderView.ResizeToContents)
+            self.table.setColumnWidth(col, width)
+        # Total un poco más ancho y fijo para evitar recortes
+        self.table.setColumnWidth(3, 100)
+        header_cf.setSectionResizeMode(3, QHeaderView.Fixed)
+        # Dar más espacio a eliminar para que no se corte
+        self.table.setColumnWidth(4, 89)
+        header_cf.setSectionResizeMode(4, QHeaderView.Fixed)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        self.table.setMaximumHeight(260)
+        self.table.setMinimumHeight(190)
+        self.table.setMaximumHeight(270)
         left_layout.addWidget(self.table)
         self.table.cellClicked.connect(self._eliminar_fila)
 
@@ -3175,22 +3256,20 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         left_layout.addWidget(self.btn_ok)
 
         # --- LADO DERECHO: datos del cliente ---
-        right_layout = QHBoxLayout()
-        right_col1 = QVBoxLayout()
-        right_col2 = QVBoxLayout()
-        right_layout.addLayout(right_col1, 1)
-        right_layout.addLayout(right_col2, 1)
+        right_layout = QVBoxLayout()
+        right_layout.setSpacing(12)
+        right_layout.setContentsMargins(0, 0, 0, 0)
 
-        right_col1.addWidget(QLabel("Vendedor (trabajador):"))
+        right_layout.addWidget(QLabel("Vendedor (trabajador):"))
         self.vendedor_combo = QComboBox()
         self.vendedor_combo.addItem("Sin vendedor")
         for v in vendedores_trabajadores:
             self.vendedor_combo.addItem(v["nombre"])
         self.vendedores_trabajadores = vendedores_trabajadores
-        right_col1.addWidget(self.vendedor_combo)
+        right_layout.addWidget(self.vendedor_combo)
 
         self.comision_chk = QCheckBox("Aplicar comisión")
-        right_col1.addWidget(self.comision_chk)
+        right_layout.addWidget(self.comision_chk)
         com_layout = QHBoxLayout()
         com_layout.addWidget(QLabel("%:"))
         self.comision_pct_spin = QDoubleSpinBox()
@@ -3202,42 +3281,42 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
         self.comision_tipo_combo.setEnabled(False)
         com_layout.addWidget(self.comision_tipo_combo)
-        right_col1.addLayout(com_layout)
+        right_layout.addLayout(com_layout)
         self.comision_label = QLabel("Comisión: $0.00")
-        right_col1.addWidget(self.comision_label)
+        right_layout.addWidget(self.comision_label)
         self.comision_chk.stateChanged.connect(self._toggle_comision_inputs)
         self.comision_pct_spin.valueChanged.connect(self._recalcular_totales)
         self.comision_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
 
-        right_col2.addWidget(QLabel("Cliente:"))
+        right_layout.addWidget(QLabel("Cliente:"))
         self.cliente_btn = QPushButton("Seleccionar Cliente")
         self.cliente_label = QLabel("(Ningún cliente seleccionado)")
-        right_col2.addWidget(self.cliente_btn)
-        right_col2.addWidget(self.cliente_label)
+        right_layout.addWidget(self.cliente_btn)
+        right_layout.addWidget(self.cliente_label)
         self.selected_cliente = None
 
-        right_col2.addWidget(QLabel("NRC:"))
+        right_layout.addWidget(QLabel("NRC:"))
         self.nrc_edit = QLineEdit()
         self.nrc_edit.setPlaceholderText("NRC del cliente")
-        right_col2.addWidget(self.nrc_edit)
+        right_layout.addWidget(self.nrc_edit)
 
-        right_col2.addWidget(QLabel("NIT:"))
+        right_layout.addWidget(QLabel("NIT:"))
         self.nit_edit = QLineEdit()
         nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
         self.nit_edit.setValidator(nit_validator)
         self.nit_edit.setMaxLength(14)
         self.nit_edit.setPlaceholderText("NIT del cliente")
-        right_col2.addWidget(self.nit_edit)
+        right_layout.addWidget(self.nit_edit)
 
-        right_col2.addWidget(QLabel("Giro:"))
+        right_layout.addWidget(QLabel("Giro:"))
         self.giro_edit = QLineEdit()
         self.giro_edit.setPlaceholderText("Giro del cliente")
-        right_col2.addWidget(self.giro_edit)
+        right_layout.addWidget(self.giro_edit)
 
-        right_col2.addWidget(QLabel("Correo electrónico:"))
+        right_layout.addWidget(QLabel("Correo electrónico:"))
         self.email_edit = QLineEdit()
         self.email_edit.setPlaceholderText("Correo electrónico")
-        right_col2.addWidget(self.email_edit)
+        right_layout.addWidget(self.email_edit)
 
         self.retencion_group = QGroupBox("Retención de IVA")
         retencion_layout = QVBoxLayout(self.retencion_group)
@@ -3270,31 +3349,19 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
         retencion_layout.addWidget(self.retencion_base_label)
         retencion_layout.addWidget(self.retencion_iva_label)
-        right_col1.addWidget(self.retencion_group)
+        right_layout.addWidget(self.retencion_group)
         self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
         self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
         self.retencion_codigo_combo.currentIndexChanged.connect(self._update_retencion_summary)
         self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
         self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
 
-        right_col1.addStretch(1)
-
-        right_col2.addWidget(QLabel("No. Remisión:"))
-        self.no_remision_edit = QLineEdit()
-        self.no_remision_edit.setPlaceholderText("Número de remisión")
-        right_col2.addWidget(self.no_remision_edit)
-
-        right_col2.addWidget(QLabel("Orden No.:"))
-        self.orden_no_edit = QLineEdit()
-        self.orden_no_edit.setPlaceholderText("Número de orden")
-        right_col2.addWidget(self.orden_no_edit)
-
-        right_col1.addWidget(QLabel("Condición de pago:"))
+        right_layout.addWidget(QLabel("Condición de pago:"))
         self.condicion_pago_combo = QComboBox()
         self.condicion_pago_combo.addItem("Contado", 1)
         self.condicion_pago_combo.addItem("Crédito", 2)
         self.condicion_pago_combo.addItem("Otros", 3)
-        right_col1.addWidget(self.condicion_pago_combo)
+        right_layout.addWidget(self.condicion_pago_combo)
 
         self.condicion_pago_combo.currentIndexChanged.connect(
             self._update_condicion_pago_fields
@@ -3303,6 +3370,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.credit_fields_widget = QWidget()
         credit_layout = QFormLayout(self.credit_fields_widget)
         credit_layout.setContentsMargins(0, 0, 0, 0)
+        credit_layout.setSpacing(8)
 
         self.plazo_combo = QComboBox()
         self.plazo_combo.addItem("Seleccionar", "")
@@ -3331,41 +3399,70 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.referencia_edit.setPlaceholderText("Referencia (opcional)")
         credit_layout.addRow("Referencia:", self.referencia_edit)
 
-        right_col1.addWidget(self.credit_fields_widget)
+        right_layout.addWidget(self.credit_fields_widget)
 
-        right_col1.addWidget(QLabel("Estado:"))
+        right_layout.addWidget(QLabel("No. Remisión:"))
+        self.no_remision_edit = QLineEdit()
+        self.no_remision_edit.setPlaceholderText("Número de remisión")
+        right_layout.addWidget(self.no_remision_edit)
+
+        right_layout.addWidget(QLabel("Orden No.:"))
+        self.orden_no_edit = QLineEdit()
+        self.orden_no_edit.setPlaceholderText("Número de orden")
+        right_layout.addWidget(self.orden_no_edit)
+
+        right_layout.addWidget(QLabel("Estado:"))
         self.estado_combo = QComboBox()
         self.estado_combo.addItems(["Pagada", "Pendiente"])
-        right_col1.addWidget(self.estado_combo)
+        right_layout.addWidget(self.estado_combo)
 
-        right_col2.addWidget(QLabel("Venta a cuenta de:"))
+        right_layout.addWidget(QLabel("Venta a cuenta de:"))
         self.venta_a_cuenta_de_edit = QLineEdit()
         self.venta_a_cuenta_de_edit.setPlaceholderText("Venta a cuenta de")
-        right_col2.addWidget(self.venta_a_cuenta_de_edit)
-        right_col2.addWidget(QLabel("DUI/NIT:"))
+        right_layout.addWidget(self.venta_a_cuenta_de_edit)
+        right_layout.addWidget(QLabel("DUI/NIT:"))
         self.venta_documento_edit = QLineEdit()
         self.venta_documento_edit.setPlaceholderText("Documento")
-        right_col2.addWidget(self.venta_documento_edit)
+        right_layout.addWidget(self.venta_documento_edit)
 
-        right_col2.addWidget(QLabel("Fecha nota de remisión anterior:"))
+        right_layout.addWidget(QLabel("Fecha nota de remisión anterior:"))
         self.fecha_remision_anterior = QDateEdit(QDate.currentDate())
         self.fecha_remision_anterior.setCalendarPopup(True)
-        right_col2.addWidget(self.fecha_remision_anterior)
+        right_layout.addWidget(self.fecha_remision_anterior)
 
-        right_col2.addWidget(QLabel("Fecha de remisión:"))
+        right_layout.addWidget(QLabel("Fecha de remisión:"))
         self.fecha_remision = QDateEdit(QDate.currentDate())
         self.fecha_remision.setCalendarPopup(True)
-        right_col2.addWidget(self.fecha_remision)
+        right_layout.addWidget(self.fecha_remision)
 
         # Notas/observaciones
-        right_col2.addWidget(QLabel("Notas/observaciones:"))
+        right_layout.addWidget(QLabel("Notas/observaciones:"))
         self.notas_edit = QTextEdit()
         self.notas_edit.setMaximumHeight(100)
-        right_col2.addWidget(self.notas_edit)
+        right_layout.addWidget(self.notas_edit)
+        right_layout.addStretch(1)
 
-        # --- Agrega ambos layouts al principal ---
-        main_layout.addLayout(left_layout, 2)
-        main_layout.addLayout(right_layout, 1)
+        # --- Agrega ambos layouts al principal como tarjetas ---
+        card_top = QFrame()
+        card_top.setObjectName("PosCardTop")
+        card_top.setFrameShape(QFrame.StyledPanel)
+        card_top_layout = QVBoxLayout(card_top)
+        card_top_layout.setContentsMargins(16, 16, 16, 16)
+        card_top_layout.setSpacing(10)
+        card_top_layout.addWidget(QLabel("Nueva Venta / Carrito"))
+        card_top_layout.addLayout(left_layout)
+
+        card_bottom = QFrame()
+        card_bottom.setObjectName("PosCardBottom")
+        card_bottom.setFrameShape(QFrame.StyledPanel)
+        card_bottom_layout = QVBoxLayout(card_bottom)
+        card_bottom_layout.setContentsMargins(16, 16, 16, 16)
+        card_bottom_layout.setSpacing(6)
+        card_bottom_layout.addWidget(QLabel("Resumen y Pago"))
+        card_bottom_layout.addLayout(right_layout)
+
+        main_layout.addWidget(card_bottom)
+        main_layout.addWidget(card_top)
         self.setLayout(main_layout)
 
         # Estado
@@ -3374,16 +3471,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         # Conexiones adicionales
         self.cliente_btn.clicked.connect(self._abrir_selector_cliente)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_defecto)
-        self.tipo_minorista.toggled.connect(self._actualizar_precio_defecto)
-        self.tipo_mayorista_unit.toggled.connect(self._actualizar_precio_defecto)
-        self.tipo_mayorista_total.toggled.connect(self._actualizar_precio_defecto)
         self.cantidad_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_total_spin.valueChanged.connect(self._recalcular_totales)
         self.product_search.textChanged.connect(self._filtrar_productos)
-        self.tipo_minorista.toggled.connect(self._toggle_precio_edicion)
-        self.tipo_mayorista_unit.toggled.connect(self._toggle_precio_edicion)
-        self.tipo_mayorista_total.toggled.connect(self._toggle_precio_edicion)
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
 
         if productos:
@@ -3396,6 +3487,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.load_payment_data(venta_extra)
         self._autofill_remision_fields(venta_extra)
         self._update_retencion_summary()
+        self._install_no_wheel_filter()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data
@@ -3419,32 +3511,20 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                     break
         precio = 0
         if prod:
-            if self.tipo_minorista.isChecked():
-                precio = get_field(prod, "precio_venta_minorista", 0)
-            elif self.tipo_mayorista_unit.isChecked():
-                precio = get_field(prod, "precio_venta_mayorista", 0)
-            else:
-                precio = get_field(prod, "precio_venta_mayorista", 0)
+            precio = get_field(prod, "precio_venta_minorista", 0)
         self.precio_spin.blockSignals(True)
         self.precio_total_spin.blockSignals(True)
         self.precio_spin.setValue(float(precio))
         self.precio_total_spin.setValue(float(precio) * self.cantidad_spin.value())
         self.precio_spin.blockSignals(False)
         self.precio_total_spin.blockSignals(False)
-        self._toggle_precio_edicion()
         self._recalcular_totales()
 
     def _toggle_precio_edicion(self):
-        if self.tipo_minorista.isChecked():
-            self.precio_spin.setEnabled(True)
-            self.precio_total_spin.setEnabled(False)
-        elif self.tipo_mayorista_unit.isChecked():
-            self.precio_spin.setEnabled(True)
-            self.precio_total_spin.setEnabled(False)
-        elif self.tipo_mayorista_total.isChecked():
-            self.precio_spin.setEnabled(False)
-            self.precio_total_spin.setEnabled(True)
+        self.precio_spin.setEnabled(True)
+        self.precio_total_spin.setEnabled(True)
         self._recalcular_totales()
+
 
     def _on_descuento_tipo_changed(self):
         tipo = self.descuento_tipo_combo.currentText()
@@ -3455,16 +3535,20 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._recalcular_totales()
 
     def _recalcular_totales(self):
-        cantidad = Decimal(self.cantidad_spin.value())
+        cantidad = Decimal(self.cantidad_spin.value() or 0)
+        if cantidad <= 0:
+            cantidad = Decimal("1")
 
-        if self.tipo_mayorista_total.isChecked():
-            precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
+        sender = self.sender()
+        precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
+        precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
+
+        if sender is self.precio_total_spin:
             precio_unitario_con_iva = precio_total_con_iva / cantidad if cantidad > 0 else Decimal("0")
             self.precio_spin.blockSignals(True)
             self.precio_spin.setValue(float(precio_unitario_con_iva))
             self.precio_spin.blockSignals(False)
         else:
-            precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
             precio_total_con_iva = precio_unitario_con_iva * cantidad
             self.precio_total_spin.blockSignals(True)
             self.precio_total_spin.setValue(float(precio_total_con_iva))
@@ -3514,11 +3598,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         subtotal_final_disp = total_final.quantize(Decimal("0.01"))
         comision_disp = comision_monto.quantize(Decimal("0.01"))
 
-        self.item_precio_label.setText(f"Precio U. sin IVA: ${precio_unitario_sin_iva_disp:.2f}")
-        self.item_sumas_label.setText(f"Sumas sin IVA: ${sumas_disp:.2f}")
-        self.item_total_sin_desc_label.setText(f"Total con IVA sin descuento: ${total_sin_desc_disp:.2f}")
-        self.item_descuento_label.setText(f"Descuento: -${descuento_disp:.2f}")
-        self.item_subtotal_label.setText(f"Subtotal final (con IVA): ${subtotal_final_disp:.2f}")
+        self.item_sumas_label.setText(f"Sumas: ${sumas_disp:.2f}")
+        self.item_total_sin_desc_label.setText(f"Subtotal: ${total_sin_desc_disp:.2f}")
+        self.item_descuento_label.setText(f"Desc.: -${descuento_disp:.2f}")
+        self.item_subtotal_label.setText(f"Total con IVA: ${subtotal_final_disp:.2f}")
         self.comision_label.setText(f"Comisión: ${comision_disp:.2f}")
 
     def _agregar_a_venta(self):
@@ -3529,12 +3612,10 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         lote = self.productos[idx]
         cantidad = Decimal(self.cantidad_spin.value())
 
-        if self.tipo_mayorista_total.isChecked():
-            precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
-            precio_unitario_con_iva = precio_total_con_iva / cantidad if cantidad > 0 else Decimal("0")
-        else:
-            precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
-            precio_total_con_iva = precio_unitario_con_iva * cantidad
+        # Precios siempre editables y sincronizados
+        self._recalcular_totales()
+        precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
+        precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
 
         descuento_valor = Decimal(str(self.descuento_spin.value()))
         descuento_tipo = self.descuento_tipo_combo.currentText()
@@ -3614,16 +3695,20 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         for i, item in enumerate(self.venta_items):
             self.table.setItem(i, 0, QTableWidgetItem(str(item["cantidad"])))
             self.table.setItem(i, 1, QTableWidgetItem(item["producto"]))
-            self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio_con_iva']:.2f}"))
-            self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
-            self.table.setItem(i, 4, QTableWidgetItem(f"${item['total']:.2f}"))
+            self.table.setItem(i, 2, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
+            self.table.setItem(i, 3, QTableWidgetItem(f"${item['total']:.2f}"))
             btn = QPushButton("Eliminar")
             btn.setStyleSheet(
                 "background-color: #b71c1c; color: #fff; border-radius: 6px; font-size:9px;"
-                "min-width:70px; max-width:100px; min-height:10px; max-height:15px;"
+                "min-width:80px; max-width:110px; min-height:14px; max-height:22px;"
             )
             btn.clicked.connect(lambda _, row=i: self._eliminar_item(row))
-            self.table.setCellWidget(i, 5, btn)
+            cell = QWidget()
+            cell_layout = QHBoxLayout(cell)
+            cell_layout.setContentsMargins(0, 0, 0, 0)
+            cell_layout.setAlignment(Qt.AlignCenter)
+            cell_layout.addWidget(btn)
+            self.table.setCellWidget(i, 4, cell)
 
     def _actualizar_resumen(self):
         total = sum(item.get("total", 0) for item in self.venta_items)
@@ -3870,11 +3955,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         data = {
             "cliente": self.selected_cliente if self.selected_cliente else {},
             "items": self.venta_items,
-            "tipo_venta": (
-                "Minorista" if self.tipo_minorista.isChecked()
-                else "Mayorista (unitario)" if self.tipo_mayorista_unit.isChecked()
-                else "Mayorista (total personalizado)"
-            ),
+            "tipo_venta": "Manual",
             "precio_total_manual": float(self.precio_total_spin.value()),
             "iva_agregado": self.iva_agregado_radio.isChecked() if hasattr(self, "iva_agregado_radio") else False,
             "nrc": self.nrc_edit.text(),

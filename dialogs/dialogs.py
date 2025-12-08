@@ -1051,7 +1051,17 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
         top_row.addWidget(QLabel("Distribuidor:"))
-        top_row.addWidget(self.Distribuidor_combo, 1)
+        # Usa el combo del panel derecho si existe, de lo contrario crea uno local
+        if hasattr(self, "Distribuidor_combo") and self.Distribuidor_combo is not None:
+            distribuidor_combo_local = self.Distribuidor_combo
+        else:
+            distribuidor_combo_local = QComboBox()
+            if Distribuidores:
+                if isinstance(Distribuidores[0], dict):
+                    distribuidor_combo_local.addItems([d.get("nombre", "") for d in Distribuidores])
+                else:
+                    distribuidor_combo_local.addItems(Distribuidores)
+        top_row.addWidget(distribuidor_combo_local, 1)
         productos_layout.addLayout(top_row)
 
         self.product_search = QLineEdit()
@@ -1122,6 +1132,10 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         productos_layout.addLayout(grid)
 
         # Resumen compacto sin cajas
+        self.item_sumas_label = QLabel("Sumas: $0.00")
+        self.item_total_sin_desc_label = QLabel("IVA inc.: $0.00")
+        self.item_descuento_label = QLabel("Desc.: -$0.00")
+        self.item_subtotal_label = QLabel("Subtotal: $0.00")
         for lbl in (
             self.item_sumas_label,
             self.item_total_sin_desc_label,

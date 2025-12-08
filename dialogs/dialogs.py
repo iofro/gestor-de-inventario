@@ -635,6 +635,28 @@ class EstadoCuentaDialog(QDialog):
 class ProductDialogBase:
     """Mixin with shared helper methods for product selection dialogs."""
 
+    def _resolve_manager_db(self):
+        """Busca manager y db navegando padres, útil si el widget fue re-parentado."""
+        manager = getattr(self, "manager", None)
+        db = getattr(self, "db", None)
+        parent = self.parent() if hasattr(self, "parent") else None
+        chain = []
+        while parent is not None and (manager is None or db is None):
+            chain.append(type(parent).__name__)
+            manager = manager or getattr(parent, "manager", None)
+            db = db or getattr(parent, "db", None)
+            if manager and hasattr(manager, "db") and db is None:
+                db = manager.db
+            parent = parent.parent() if hasattr(parent, "parent") else None
+        logger.info(
+            "Resolver manager/db: manager=%s db=%s chain=%s self.db=%s",
+            bool(manager),
+            bool(db),
+            "->".join(chain) if chain else "(self)",
+            bool(getattr(self, "db", None)),
+        )
+        return manager, db
+
     def _mostrar_productos(self, productos):
         self.product_list.clear()
         for p in productos:
@@ -706,27 +728,155 @@ class ProductDialogBase:
                     self.Distribuidor_combo.setCurrentIndex(i)
                     break
 
+    def _restrict_retencion_to_one_percent(self) -> None:
+        """Limita la UI de retención a 1% y oculta configuraciones avanzadas."""
+        if not hasattr(self, "retencion_tasa_spin"):
+            return
+        try:
+            self.retencion_tasa_spin.blockSignals(True)
+            self.retencion_tasa_spin.setRange(1.0, 1.0)
+            self.retencion_tasa_spin.setValue(1.0)
+            self.retencion_tasa_spin.setButtonSymbols(QDoubleSpinBox.NoButtons)
+        finally:
+            self.retencion_tasa_spin.blockSignals(False)
+        combo = getattr(self, "retencion_codigo_combo", None)
+        if combo is not None:
+            if combo.count() == 0:
+                combo.addItem("1% (código 22)", "22")
+            idx = combo.findData("22")
+            if idx == -1 and combo.count() > 0:
+                idx = 0
+            if idx >= 0:
+                combo.setCurrentIndex(idx)
+            combo.setEnabled(False)
+            combo.setVisible(False)
+        for geo_combo in (
+            getattr(self, "retencion_geo_emisor_combo", None),
+            getattr(self, "retencion_geo_receptor_combo", None),
+        ):
+            if geo_combo is not None:
+                geo_combo.setEnabled(False)
+                geo_combo.setVisible(False)
+        form = getattr(self, "_retencion_form_layout", None)
+        if isinstance(form, QFormLayout):
+            for row in range(form.rowCount()):
+                for role in (QFormLayout.LabelRole, QFormLayout.FieldRole):
+                    item = form.itemAt(row, role)
+                    if item is not None and item.widget() is not None:
+                        item.widget().setVisible(False)
     def _abrir_selector_cliente(self):
         selector = ClienteSelectorDialog(self.db, self)
         if selector.exec_():
-            cli = selector.get_selected_cliente()
-            if cli:
-                nombre = get_field(cli, "nombre", "") or get_field(cli, "codigo", "")
-                nit = get_field(cli, "nit", "")
-                self.selected_cliente = cli
-                self.cliente_label.setText(f"{nombre} | NIT: {nit}")
-                for attr, key in [
-                    ("nrc_edit", "nrc"),
-                    ("nit_edit", "nit"),
-                    ("giro_edit", "giro"),
-                    ("email_edit", "email"),
-                ]:
-                    widget = getattr(self, attr, None)
-                    if widget is not None:
-                        widget.setText(get_field(cli, key, ""))
-                updater = getattr(self, "_update_retencion_group_state", None)
-                if callable(updater):
-                    updater()
+            self._set_cliente_actual(selector.get_selected_cliente())
+
+    def _abrir_crear_cliente(self):
+        # Busca manager y db de forma robusta y loguea el flujo
+        parent = self.parent()
+        manager, db = self._resolve_manager_db()
+        if manager and not getattr(self, "manager", None):
+            self.manager = manager
+        if db and not getattr(self, "db", None):
+            self.db = db
+        if manager is None or db is None:
+            logger.warning(
+                "No se pudo abrir formulario de cliente: manager=%s db=%s parent=%s",
+                manager,
+                db,
+                type(parent).__name__ if parent else None,
+            )
+            QMessageBox.warning(self, "Cliente", "No se pudo abrir el formulario de cliente.")
+            return
+        try:
+            codigo_sugerido = db.get_next_cliente_codigo()
+        except Exception:
+            codigo_sugerido = ""
+            logger.exception("No se pudo obtener codigo_sugerido de cliente, se usará vacío")
+        dialog = ClienteDialog(parent, codigo_sugerido=codigo_sugerido)
+        if dialog.exec_():
+            data = dialog.get_data()
+            try:
+                manager.add_cliente(
+                    data["nombre"],
+                    data["nrc"],
+                    data["nit"],
+                    data["dui"],
+                    data["giro"],
+                    data["codActividad"],
+                    data["telefono"],
+                    data["email"],
+                    data["direccion"],
+                    data["departamento"],
+                    data["municipio"],
+                    data["codigo"],
+                    nombreComercial=data["nombreComercial"],
+                    tipoContribuyente=data["tipoContribuyente"],
+                    razonSocial=data["razonSocial"],
+                )
+            except Exception as exc:
+                logger.exception("Error al agregar cliente desde dialogo de venta", exc_info=exc)
+                QMessageBox.warning(self, "Cliente", str(exc))
+                return
+            nuevo_cli = self._buscar_cliente_creado(manager, data)
+            logger.info("Cliente creado desde venta: encontrado=%s codigo=%s nit=%s nrc=%s",
+                        bool(nuevo_cli), data.get("codigo"), data.get("nit"), data.get("nrc"))
+            if nuevo_cli is None:
+                QMessageBox.information(
+                    self,
+                    "Cliente",
+                    "Cliente guardado, pero no se pudo seleccionar automáticamente. "
+                    "Por favor selecciónelo manualmente.",
+                )
+            else:
+                self._set_cliente_actual(nuevo_cli)
+        else:
+            logger.info("Formulario de cliente cancelado o cerrado sin guardar")
+
+    def _buscar_cliente_creado(self, manager, data):
+        clientes = getattr(manager, "_clientes", None) or []
+        codigo = data.get("codigo")
+        nit = data.get("nit")
+        nrc = data.get("nrc")
+        for cli in clientes:
+            if codigo and cli.get("codigo") == codigo:
+                return cli
+            if nit and cli.get("nit") == nit:
+                return cli
+            if nrc and cli.get("nrc") == nrc:
+                return cli
+        # Fallback a DB por si la cache no se actualizó aún
+        db = getattr(manager, "db", None)
+        if db is not None:
+            try:
+                for cli in db.get_clientes():
+                    if codigo and cli.get("codigo") == codigo:
+                        return cli
+                    if nit and cli.get("nit") == nit:
+                        return cli
+                    if nrc and cli.get("nrc") == nrc:
+                        return cli
+            except Exception as exc:
+                logger.warning("No se pudo leer clientes tras crear uno nuevo: %s", exc, exc_info=True)
+        return None
+
+    def _set_cliente_actual(self, cli):
+        if not cli:
+            return
+        nombre = get_field(cli, "nombre", "") or get_field(cli, "codigo", "")
+        nit = get_field(cli, "nit", "")
+        self.selected_cliente = cli
+        self.cliente_label.setText(f"{nombre} | NIT: {nit}")
+        for attr, key in [
+            ("nrc_edit", "nrc"),
+            ("nit_edit", "nit"),
+            ("giro_edit", "giro"),
+            ("email_edit", "email"),
+        ]:
+            widget = getattr(self, attr, None)
+            if widget is not None:
+                widget.setText(get_field(cli, key, ""))
+        updater = getattr(self, "_update_retencion_group_state", None)
+        if callable(updater):
+            updater()
 
     def _sync_credit_term_payload(self):
         """Mantiene los códigos de plazo y periodo en el formato requerido."""
@@ -769,7 +919,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         venta_extra=None,
     ):
         super().__init__(parent)
-        self.db = db or (parent.manager.db if parent and hasattr(parent, "manager") else None)
+        self.manager = getattr(parent, "manager", None)
+        self.db = db or (self.manager.db if self.manager and hasattr(self.manager, "db") else None)
         self.setWindowTitle("Registrar Venta")
         self.setMinimumSize(0, 0)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
@@ -913,22 +1064,27 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         right_layout.addWidget(self.vendedor_combo)
 
         # Comisión para el vendedor
-        self.comision_chk = QCheckBox("Aplicar comisión")
-        right_layout.addWidget(self.comision_chk)
         com_layout = QHBoxLayout()
-        com_layout.addWidget(QLabel("%:"))
+        com_layout.setContentsMargins(0, 0, 0, 0)
+        com_layout.setSpacing(8)
+        self.comision_chk = QCheckBox("Aplicar comisión")
+        com_layout.addWidget(self.comision_chk)
+        com_layout.addWidget(QLabel("%"))
         self.comision_pct_spin = QDoubleSpinBox()
         self.comision_pct_spin.setRange(0, 100)
         self.comision_pct_spin.setDecimals(2)
         self.comision_pct_spin.setEnabled(False)
+        self.comision_pct_spin.setMaximumWidth(90)
         com_layout.addWidget(self.comision_pct_spin)
         self.comision_tipo_combo = QComboBox()
         self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
         self.comision_tipo_combo.setEnabled(False)
+        self.comision_tipo_combo.setMinimumWidth(160)
         com_layout.addWidget(self.comision_tipo_combo)
-        right_layout.addLayout(com_layout)
+        com_layout.addStretch(1)
         self.comision_label = QLabel("Comisión: $0.00")
-        right_layout.addWidget(self.comision_label)
+        com_layout.addWidget(self.comision_label)
+        right_layout.addLayout(com_layout)
         self.comision_chk.stateChanged.connect(self._toggle_comision_inputs)
         self.comision_pct_spin.valueChanged.connect(self._recalcular_totales)
         self.comision_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
@@ -1005,12 +1161,23 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
         self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
 
-        right_layout.addWidget(QLabel("Condición de pago:"))
+        # Condición de pago y estado en la misma fila
+        pago_estado_layout = QGridLayout()
+        pago_estado_layout.setContentsMargins(0, 0, 0, 0)
+        pago_estado_layout.setHorizontalSpacing(8)
+        pago_estado_layout.addWidget(QLabel("Condición de pago:"), 0, 0)
         self.condicion_pago_combo = QComboBox()
         self.condicion_pago_combo.addItem("Contado", 1)
         self.condicion_pago_combo.addItem("Crédito", 2)
         self.condicion_pago_combo.addItem("Otros", 3)
-        right_layout.addWidget(self.condicion_pago_combo)
+        pago_estado_layout.addWidget(self.condicion_pago_combo, 0, 1)
+        pago_estado_layout.addWidget(QLabel("Estado:"), 0, 2)
+        self.estado_combo = QComboBox()
+        self.estado_combo.addItems(["Pagada", "Pendiente"])
+        pago_estado_layout.addWidget(self.estado_combo, 0, 3)
+        pago_estado_layout.setColumnStretch(1, 1)
+        pago_estado_layout.setColumnStretch(3, 1)
+        right_layout.addLayout(pago_estado_layout)
 
         self.condicion_pago_combo.currentIndexChanged.connect(
             self._update_condicion_pago_fields
@@ -1661,6 +1828,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 "La retención de IVA se desactivará para esta venta.\n\n"
                 f"Detalle: {exc}",
             )
+        self._restrict_retencion_to_one_percent()
         self._apply_retencion_visibility()
 
     def _compute_retencion_values(self) -> tuple[Decimal, Decimal]:
@@ -3289,39 +3457,64 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.comision_tipo_combo.currentIndexChanged.connect(self._recalcular_totales)
 
         right_layout.addWidget(QLabel("Cliente:"))
+        cliente_buttons = QHBoxLayout()
+        cliente_buttons.setContentsMargins(0, 0, 0, 0)
+        cliente_buttons.setSpacing(8)
         self.cliente_btn = QPushButton("Seleccionar Cliente")
+        cliente_buttons.addWidget(self.cliente_btn)
+        self.nuevo_cliente_btn = QPushButton("Agregar nuevo cliente")
+        cliente_buttons.addWidget(self.nuevo_cliente_btn)
+        cliente_buttons.addStretch(1)
+        right_layout.addLayout(cliente_buttons)
         self.cliente_label = QLabel("(Ningún cliente seleccionado)")
-        right_layout.addWidget(self.cliente_btn)
+        self.cliente_label.setWordWrap(True)
         right_layout.addWidget(self.cliente_label)
         self.selected_cliente = None
 
-        right_layout.addWidget(QLabel("NRC:"))
+        datos_cliente_layout = QGridLayout()
+        datos_cliente_layout.setContentsMargins(0, 0, 0, 0)
+        datos_cliente_layout.setHorizontalSpacing(8)
+        datos_cliente_layout.setVerticalSpacing(6)
+
+        datos_cliente_layout.addWidget(QLabel("NRC:"), 0, 0)
         self.nrc_edit = QLineEdit()
         self.nrc_edit.setPlaceholderText("NRC del cliente")
-        right_layout.addWidget(self.nrc_edit)
+        self.nrc_edit.setReadOnly(True)
+        self.nrc_edit.setFocusPolicy(Qt.NoFocus)
+        datos_cliente_layout.addWidget(self.nrc_edit, 0, 1)
 
-        right_layout.addWidget(QLabel("NIT:"))
+        datos_cliente_layout.addWidget(QLabel("NIT:"), 0, 2)
         self.nit_edit = QLineEdit()
         nit_validator = QRegularExpressionValidator(QRegularExpression(r"\d{0,14}"))
         self.nit_edit.setValidator(nit_validator)
         self.nit_edit.setMaxLength(14)
         self.nit_edit.setPlaceholderText("NIT del cliente")
-        right_layout.addWidget(self.nit_edit)
+        self.nit_edit.setReadOnly(True)
+        self.nit_edit.setFocusPolicy(Qt.NoFocus)
+        datos_cliente_layout.addWidget(self.nit_edit, 0, 3)
 
-        right_layout.addWidget(QLabel("Giro:"))
+        datos_cliente_layout.addWidget(QLabel("Giro:"), 1, 0)
         self.giro_edit = QLineEdit()
         self.giro_edit.setPlaceholderText("Giro del cliente")
-        right_layout.addWidget(self.giro_edit)
+        self.giro_edit.setReadOnly(True)
+        self.giro_edit.setFocusPolicy(Qt.NoFocus)
+        datos_cliente_layout.addWidget(self.giro_edit, 1, 1)
 
-        right_layout.addWidget(QLabel("Correo electrónico:"))
+        datos_cliente_layout.addWidget(QLabel("Correo electrónico:"), 1, 2)
         self.email_edit = QLineEdit()
         self.email_edit.setPlaceholderText("Correo electrónico")
-        right_layout.addWidget(self.email_edit)
+        self.email_edit.setReadOnly(True)
+        self.email_edit.setFocusPolicy(Qt.NoFocus)
+        datos_cliente_layout.addWidget(self.email_edit, 1, 3)
 
-        self.retencion_group = QGroupBox("Retención de IVA")
+        datos_cliente_layout.setColumnStretch(1, 1)
+        datos_cliente_layout.setColumnStretch(3, 1)
+        right_layout.addLayout(datos_cliente_layout)
+
+        self.retencion_group = QGroupBox("Retención de IVA (solo 1%)")
         retencion_layout = QVBoxLayout(self.retencion_group)
         retencion_layout.setContentsMargins(9, 9, 9, 9)
-        self.retencion_checkbox = QCheckBox("Aplicar retención de IVA")
+        self.retencion_checkbox = QCheckBox("Aplicar retención 1%")
         retencion_layout.addWidget(self.retencion_checkbox)
         self._retencion_catalog_ok = False
 
@@ -3343,12 +3536,14 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         ret_form.addRow("Tasa (%)", self.retencion_tasa_spin)
         ret_form.addRow("Geo emisor (01-22)", self.retencion_geo_emisor_combo)
         ret_form.addRow("Geo receptor (01-22)", self.retencion_geo_receptor_combo)
+        self._retencion_form_layout = ret_form
         retencion_layout.addLayout(ret_form)
 
         self.retencion_base_label = QLabel("Base sujeta: $0.00")
         self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
         retencion_layout.addWidget(self.retencion_base_label)
         retencion_layout.addWidget(self.retencion_iva_label)
+        self._restrict_retencion_to_one_percent()
         right_layout.addWidget(self.retencion_group)
         self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
         self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
@@ -3356,12 +3551,23 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
         self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
 
-        right_layout.addWidget(QLabel("Condición de pago:"))
+        # Condición de pago y estado en la misma fila
+        pago_estado_layout = QGridLayout()
+        pago_estado_layout.setContentsMargins(0, 0, 0, 0)
+        pago_estado_layout.setHorizontalSpacing(8)
+        pago_estado_layout.addWidget(QLabel("Condición de pago:"), 0, 0)
         self.condicion_pago_combo = QComboBox()
         self.condicion_pago_combo.addItem("Contado", 1)
         self.condicion_pago_combo.addItem("Crédito", 2)
         self.condicion_pago_combo.addItem("Otros", 3)
-        right_layout.addWidget(self.condicion_pago_combo)
+        pago_estado_layout.addWidget(self.condicion_pago_combo, 0, 1)
+        pago_estado_layout.addWidget(QLabel("Estado:"), 0, 2)
+        self.estado_combo = QComboBox()
+        self.estado_combo.addItems(["Pagada", "Pendiente"])
+        pago_estado_layout.addWidget(self.estado_combo, 0, 3)
+        pago_estado_layout.setColumnStretch(1, 1)
+        pago_estado_layout.setColumnStretch(3, 1)
+        right_layout.addLayout(pago_estado_layout)
 
         self.condicion_pago_combo.currentIndexChanged.connect(
             self._update_condicion_pago_fields
@@ -3401,45 +3607,54 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         right_layout.addWidget(self.credit_fields_widget)
 
-        right_layout.addWidget(QLabel("No. Remisión:"))
+        # No. de remisión y Orden No. en la misma fila
+        remision_layout = QGridLayout()
+        remision_layout.setContentsMargins(0, 0, 0, 0)
+        remision_layout.setHorizontalSpacing(8)
+        remision_layout.addWidget(QLabel("No. Remisión:"), 0, 0)
         self.no_remision_edit = QLineEdit()
         self.no_remision_edit.setPlaceholderText("Número de remisión")
-        right_layout.addWidget(self.no_remision_edit)
-
-        right_layout.addWidget(QLabel("Orden No.:"))
+        remision_layout.addWidget(self.no_remision_edit, 0, 1)
+        remision_layout.addWidget(QLabel("Orden No."), 0, 2)
         self.orden_no_edit = QLineEdit()
         self.orden_no_edit.setPlaceholderText("Número de orden")
-        right_layout.addWidget(self.orden_no_edit)
+        remision_layout.addWidget(self.orden_no_edit, 0, 3)
+        remision_layout.setColumnStretch(1, 1)
+        remision_layout.setColumnStretch(3, 1)
+        right_layout.addLayout(remision_layout)
 
-        right_layout.addWidget(QLabel("Estado:"))
-        self.estado_combo = QComboBox()
-        self.estado_combo.addItems(["Pagada", "Pendiente"])
-        right_layout.addWidget(self.estado_combo)
-
-        right_layout.addWidget(QLabel("Venta a cuenta de:"))
+        # Venta a cuenta de y documento en la misma fila
+        venta_tercero_layout = QGridLayout()
+        venta_tercero_layout.setContentsMargins(0, 0, 0, 0)
+        venta_tercero_layout.setHorizontalSpacing(8)
+        venta_tercero_layout.addWidget(QLabel("Venta a cuenta de:"), 0, 0)
         self.venta_a_cuenta_de_edit = QLineEdit()
         self.venta_a_cuenta_de_edit.setPlaceholderText("Venta a cuenta de")
-        right_layout.addWidget(self.venta_a_cuenta_de_edit)
-        right_layout.addWidget(QLabel("DUI/NIT:"))
+        venta_tercero_layout.addWidget(self.venta_a_cuenta_de_edit, 0, 1)
+        venta_tercero_layout.addWidget(QLabel("DUI/NIT:"), 0, 2)
         self.venta_documento_edit = QLineEdit()
         self.venta_documento_edit.setPlaceholderText("Documento")
-        right_layout.addWidget(self.venta_documento_edit)
+        venta_tercero_layout.addWidget(self.venta_documento_edit, 0, 3)
+        venta_tercero_layout.setColumnStretch(1, 1)
+        venta_tercero_layout.setColumnStretch(3, 1)
+        right_layout.addLayout(venta_tercero_layout)
 
-        right_layout.addWidget(QLabel("Fecha nota de remisión anterior:"))
+        # Fechas de remisión en una misma fila
+        fechas_layout = QGridLayout()
+        fechas_layout.setContentsMargins(0, 0, 0, 0)
+        fechas_layout.setHorizontalSpacing(8)
+        fechas_layout.addWidget(QLabel("Fecha nota de remisión anterior:"), 0, 0)
         self.fecha_remision_anterior = QDateEdit(QDate.currentDate())
         self.fecha_remision_anterior.setCalendarPopup(True)
-        right_layout.addWidget(self.fecha_remision_anterior)
-
-        right_layout.addWidget(QLabel("Fecha de remisión:"))
+        fechas_layout.addWidget(self.fecha_remision_anterior, 0, 1)
+        fechas_layout.addWidget(QLabel("Fecha de remisión:"), 0, 2)
         self.fecha_remision = QDateEdit(QDate.currentDate())
         self.fecha_remision.setCalendarPopup(True)
-        right_layout.addWidget(self.fecha_remision)
+        fechas_layout.addWidget(self.fecha_remision, 0, 3)
+        fechas_layout.setColumnStretch(1, 1)
+        fechas_layout.setColumnStretch(3, 1)
+        right_layout.addLayout(fechas_layout)
 
-        # Notas/observaciones
-        right_layout.addWidget(QLabel("Notas/observaciones:"))
-        self.notas_edit = QTextEdit()
-        self.notas_edit.setMaximumHeight(100)
-        right_layout.addWidget(self.notas_edit)
         right_layout.addStretch(1)
 
         # --- Agrega ambos layouts al principal como tarjetas ---
@@ -3470,6 +3685,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         # Conexiones adicionales
         self.cliente_btn.clicked.connect(self._abrir_selector_cliente)
+        self.nuevo_cliente_btn.clicked.connect(self._abrir_crear_cliente)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_defecto)
         self.cantidad_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_spin.valueChanged.connect(self._recalcular_totales)

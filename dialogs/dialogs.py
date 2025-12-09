@@ -17,7 +17,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
     QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout,
-    QStyledItemDelegate, QStyleOptionViewItem
+    QStyledItemDelegate, QStyleOptionViewItem, QLayout
 )
 from PyQt5.QtCore import (
     Qt,
@@ -1194,6 +1194,71 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.btn_agregar.clicked.connect(self._agregar_a_venta)
         self.table.cellClicked.connect(self._eliminar_fila)
 
+        # Resumen (sin IVA para consumidor final) y retención en el carrito
+        self.precio_label = QLabel("Precio U.: $0.00")
+        self.sumas_label = QLabel("Sumas: $0.00")
+        self.subtotal_label = QLabel("Subtotal: $0.00")
+        self.total_label = QLabel("Venta total: $0.00")
+        self.total_label.setObjectName("TotalHighlight")
+        for lbl in (self.precio_label, self.sumas_label, self.subtotal_label):
+            lbl.setStyleSheet("padding: 0; margin: 0;")
+        carrito_layout.addWidget(self.precio_label)
+        carrito_layout.addWidget(self.sumas_label)
+        carrito_layout.addWidget(self.subtotal_label)
+
+        self.retencion_group = QGroupBox("Retención de IVA")
+        retencion_layout = QVBoxLayout(self.retencion_group)
+        retencion_layout.setContentsMargins(9, 9, 9, 9)
+        self.retencion_checkbox = QCheckBox("Aplicar retención de IVA")
+        self._retencion_catalog_ok = False
+
+        self.retencion_codigo_combo = QComboBox()
+        self.retencion_tasa_spin = QDoubleSpinBox()
+        self.retencion_tasa_spin.setRange(0, 100)
+        self.retencion_tasa_spin.setDecimals(3)
+        self.retencion_tasa_spin.setSingleStep(0.1)
+        self.retencion_tasa_spin.setValue(1.0)
+        self.retencion_geo_emisor_combo = QComboBox()
+        self.retencion_geo_receptor_combo = QComboBox()
+        for code in [f"{i:02d}" for i in range(1, 23)]:
+            self.retencion_geo_emisor_combo.addItem(code, code)
+            self.retencion_geo_receptor_combo.addItem(code, code)
+
+        form = QFormLayout()
+        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
+        form.addRow("Código MH (CAT-006)", self.retencion_codigo_combo)
+        form.addRow("Tasa (%)", self.retencion_tasa_spin)
+        form.addRow("Geo emisor (01-22)", self.retencion_geo_emisor_combo)
+        form.addRow("Geo receptor (01-22)", self.retencion_geo_receptor_combo)
+        retencion_layout.addLayout(form)
+
+        self.retencion_base_label = QLabel("Base sujeta: $0.00")
+        self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
+        ret_header = QHBoxLayout()
+        ret_header.setSpacing(10)
+        ret_header.addWidget(self.retencion_checkbox)
+        ret_header.addSpacing(12)
+        ret_header.addWidget(self.retencion_base_label)
+        ret_header.addSpacing(12)
+        ret_header.addWidget(self.retencion_iva_label)
+        ret_header.addStretch(1)
+        retencion_layout.insertLayout(0, ret_header)
+        self._restrict_retencion_to_one_percent()
+        carrito_layout.addWidget(self.retencion_group)
+        self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
+        self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
+        self.retencion_codigo_combo.currentIndexChanged.connect(self._update_retencion_summary)
+        self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
+        self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
+
+        carrito_layout.addWidget(self.total_label)
+
+        # Botón para registrar la venta (debajo del total)
+        self.btn_ok = QPushButton("Registrar")
+        self.btn_ok.setProperty("variant", "primary")
+        carrito_layout.addWidget(self.btn_ok)
+        self.btn_ok.clicked.connect(self._validar_y_accept)
+
         left_layout.addWidget(productos_card)
         left_layout.addWidget(carrito_card)
 
@@ -1262,62 +1327,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         datos_layout.addWidget(self.Distribuidor_combo)
 
         pago_card, pago_layout = _card("Pago y totales")
-
-        # Resumen (sin IVA para consumidor final)
-        self.precio_label = QLabel("Precio U.: $0.00")
-        self.sumas_label = QLabel("Sumas: $0.00")
-        self.subtotal_label = QLabel("Subtotal: $0.00")
-        self.total_label = QLabel("Venta total: $0.00")
-        self.total_label.setObjectName("TotalHighlight")
-        pago_layout.addWidget(self.precio_label)
-        pago_layout.addWidget(self.sumas_label)
-        pago_layout.addWidget(self.subtotal_label)
-        pago_layout.addWidget(self.total_label)
-
-        self.retencion_group = QGroupBox("Retención de IVA")
-        retencion_layout = QVBoxLayout(self.retencion_group)
-        retencion_layout.setContentsMargins(9, 9, 9, 9)
-        self.retencion_checkbox = QCheckBox("Aplicar retención de IVA")
-        self._retencion_catalog_ok = False
-
-        self.retencion_codigo_combo = QComboBox()
-        self.retencion_tasa_spin = QDoubleSpinBox()
-        self.retencion_tasa_spin.setRange(0, 100)
-        self.retencion_tasa_spin.setDecimals(3)
-        self.retencion_tasa_spin.setSingleStep(0.1)
-        self.retencion_tasa_spin.setValue(1.0)
-        self.retencion_geo_emisor_combo = QComboBox()
-        self.retencion_geo_receptor_combo = QComboBox()
-        for code in [f"{i:02d}" for i in range(1, 23)]:
-            self.retencion_geo_emisor_combo.addItem(code, code)
-            self.retencion_geo_receptor_combo.addItem(code, code)
-
-        form = QFormLayout()
-        form.setFieldGrowthPolicy(QFormLayout.ExpandingFieldsGrow)
-        form.addRow("Código MH (CAT-006)", self.retencion_codigo_combo)
-        form.addRow("Tasa (%)", self.retencion_tasa_spin)
-        form.addRow("Geo emisor (01-22)", self.retencion_geo_emisor_combo)
-        form.addRow("Geo receptor (01-22)", self.retencion_geo_receptor_combo)
-        retencion_layout.addLayout(form)
-
-        self.retencion_base_label = QLabel("Base sujeta: $0.00")
-        self.retencion_iva_label = QLabel("IVA retenido (1%): $0.00")
-        ret_header = QHBoxLayout()
-        ret_header.setSpacing(10)
-        ret_header.addWidget(self.retencion_checkbox)
-        ret_header.addSpacing(12)
-        ret_header.addWidget(self.retencion_base_label)
-        ret_header.addSpacing(12)
-        ret_header.addWidget(self.retencion_iva_label)
-        ret_header.addStretch(1)
-        retencion_layout.insertLayout(0, ret_header)
-        self._restrict_retencion_to_one_percent()
-        pago_layout.addWidget(self.retencion_group)
-        self.retencion_checkbox.toggled.connect(self._update_retencion_summary)
-        self.retencion_tasa_spin.valueChanged.connect(self._update_retencion_summary)
-        self.retencion_codigo_combo.currentIndexChanged.connect(self._update_retencion_summary)
-        self.retencion_geo_emisor_combo.currentIndexChanged.connect(self._update_retencion_summary)
-        self.retencion_geo_receptor_combo.currentIndexChanged.connect(self._update_retencion_summary)
 
         # Condición de pago y estado en la misma fila
         pago_estado_layout = QGridLayout()
@@ -1390,11 +1399,6 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         pago_layout.addWidget(self.estado_combo)
 
         pago_layout.addStretch(1)
-        # Botón para registrar la venta
-        self.btn_ok = QPushButton("Registrar")
-        self.btn_ok.setProperty("variant", "primary")
-        pago_layout.addWidget(self.btn_ok)
-        self.btn_ok.clicked.connect(self._validar_y_accept)  
 
         right_layout.addWidget(datos_card)
         right_layout.addWidget(pago_card)
@@ -1415,12 +1419,12 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         card_bottom_layout = QVBoxLayout(card_bottom)
         card_bottom_layout.setContentsMargins(16, 16, 16, 16)
         card_bottom_layout.setSpacing(6)
-        card_bottom_layout.addWidget(QLabel("Resumen y Pago"))
+        card_bottom_layout.addWidget(QLabel("Cliente y Pago"))
         card_bottom_layout.addLayout(right_layout)
 
-        # Muestra primero la sección de productos/carrito y deja el resumen con el botón de registrar al final
-        main_layout.addWidget(card_top)
+        # Cliente y pago arriba, carrito abajo (igual a crédito fiscal)
         main_layout.addWidget(card_bottom)
+        main_layout.addWidget(card_top)
         self.setLayout(main_layout)
 
         # Creamos un diccionario que mapea nombre de producto a nombre de Distribuidor
@@ -3428,7 +3432,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._apply_card_styles()
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(12, 12, 12, 12)
-        main_layout.setSpacing(10)
+        main_layout.setSpacing(8)
+        main_layout.setSizeConstraint(QLayout.SetMinimumSize)
 
         # --- LADO IZQUIERDO ---
         left_layout = QVBoxLayout()
@@ -3658,7 +3663,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.total_label.setObjectName("TotalHighlight")
         carrito_layout.addWidget(self.total_label)
 
-        # Botón para registrar la venta
+        # Botón para registrar la venta (debajo del total)
         self.btn_ok = QPushButton("Registrar")
         self.btn_ok.setProperty("variant", "primary")
         self.btn_ok.clicked.connect(self._validar_y_accept)
@@ -3671,6 +3676,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         right_layout = QVBoxLayout()
         right_layout.setSpacing(12)
         right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSizeConstraint(QLayout.SetMinimumSize)
 
         cliente_card, cliente_layout = _card("Cliente y vendedor")
 
@@ -3864,21 +3870,27 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         card_top = QFrame()
         card_top.setObjectName("PosCardTop")
         card_top.setFrameShape(QFrame.StyledPanel)
+        card_top.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         card_top_layout = QVBoxLayout(card_top)
-        card_top_layout.setContentsMargins(16, 16, 16, 16)
-        card_top_layout.setSpacing(10)
+        card_top_layout.setContentsMargins(12, 12, 12, 12)
+        card_top_layout.setSpacing(8)
+        card_top_layout.setSizeConstraint(QLayout.SetMinimumSize)
         card_top_layout.addWidget(QLabel("Nueva Venta / Carrito"))
         card_top_layout.addLayout(left_layout)
 
         card_bottom = QFrame()
         card_bottom.setObjectName("PosCardBottom")
         card_bottom.setFrameShape(QFrame.StyledPanel)
+        card_bottom.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Maximum)
         card_bottom_layout = QVBoxLayout(card_bottom)
-        card_bottom_layout.setContentsMargins(16, 16, 16, 16)
+        card_bottom_layout.setContentsMargins(12, 12, 12, 12)
         card_bottom_layout.setSpacing(6)
-        card_bottom_layout.addWidget(QLabel("Resumen y Pago"))
+        card_bottom_layout.setSizeConstraint(QLayout.SetMinimumSize)
+        card_bottom_layout.addWidget(QLabel("Cliente y Pago"))
         card_bottom_layout.addLayout(right_layout)
 
+        # Carrito arriba, cliente/pago abajo con botón de registrar dentro del último card
+        # Clientes/pago arriba, carrito abajo
         main_layout.addWidget(card_bottom)
         main_layout.addWidget(card_top)
         self.setLayout(main_layout)

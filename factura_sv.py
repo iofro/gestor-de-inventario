@@ -938,7 +938,8 @@ def generar_factura_electronica_pdf(
 
     def table_height(rows_subset):
         table = build_table(rows_subset)
-        _, height_used = table.wrap(0, 0)
+        # Usar las mismas dimensiones que el canvas para evitar subestimar la altura real.
+        _, height_used = table.wrap(width, height)
         return height_used
 
     def groups_that_fit(max_height, groups):
@@ -955,26 +956,32 @@ def generar_factura_electronica_pdf(
                 break
         return count
 
-    available_height_last = tabla_y - (bloque_totales_y + bloque_totales_h + 20)
-    available_height_standard = tabla_y - (y_margin + 40)
-    available_height_last = max(available_height_last, 0)
-    available_height_standard = max(available_height_standard, 0)
+    # Reservamos un espacio fijo para el bloque de totales en la última página.
+    footer_reserved_height = bloque_totales_y + bloque_totales_h + 20
+    available_height_last = max(tabla_y - footer_reserved_height, 0)
+    available_height_standard = max(tabla_y - (y_margin + 40), 0)
 
     remaining_groups = [group[:] for group in row_groups]
-    table_pages_groups: list[list[tuple[list, bool, str | None]]] = []
+    table_pages_groups: list[list[tuple[list, bool]]] = []
 
     while remaining_groups:
         flat_remaining = [row for group in remaining_groups for row in group]
         if table_height(flat_remaining) <= available_height_last:
             table_pages_groups.append(flat_remaining)
             remaining_groups = []
-        else:
-            count_groups = groups_that_fit(available_height_standard, remaining_groups)
-            if count_groups <= 0:
-                count_groups = 1
-            chunk_groups = remaining_groups[:count_groups]
-            table_pages_groups.append([row for group in chunk_groups for row in group])
-            remaining_groups = remaining_groups[count_groups:]
+            break
+
+        # Página intermedia: llenamos hasta el alto disponible, pero dejamos al menos
+        # un grupo para la última página que respeta el espacio del footer.
+        count_groups = groups_that_fit(available_height_standard, remaining_groups)
+        count_groups = max(count_groups, 1)
+        if count_groups >= len(remaining_groups):
+            count_groups = len(remaining_groups) - 1
+        count_groups = max(count_groups, 1)
+
+        chunk_groups = remaining_groups[:count_groups]
+        table_pages_groups.append([row for group in chunk_groups for row in group])
+        remaining_groups = remaining_groups[count_groups:]
 
     if not table_pages_groups:
         table_pages_groups.append([])

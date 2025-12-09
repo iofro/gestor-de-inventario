@@ -462,6 +462,8 @@ class SalesTab(QWidget):
         self.pos_scroll.setFrameShape(QFrame.NoFrame)
         self.pos_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.pos_scroll.setAlignment(Qt.AlignHCenter | Qt.AlignTop)
+        self.pos_scroll.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.pos_scroll.customContextMenuRequested.connect(self._show_pos_context_menu)
 
         self.pos_stack = QStackedWidget()
         self.pos_stack.setMaximumWidth(585)
@@ -485,6 +487,7 @@ class SalesTab(QWidget):
         self.widget_cf = RegisterSaleDialog(productos_lote, distribuidores_cf, vendedores_trabajadores, self)
         self.widget_cf.setWindowFlags(Qt.Widget)
         self.widget_cf.setMaximumWidth(585)
+        self.widget_cf.venta_validada.connect(self._on_cf_venta_validada)
         self._connect_pos_cancel(self.widget_cf)
         self.pos_stack.addWidget(self.widget_cf)
 
@@ -498,6 +501,7 @@ class SalesTab(QWidget):
         self.widget_cfiscal.set_productos_data(productos_lote)
         self.widget_cfiscal.setWindowFlags(Qt.Widget)
         self.widget_cfiscal.setMaximumWidth(585)
+        self.widget_cfiscal.venta_validada.connect(self._on_cfiscal_venta_validada)
         self._connect_pos_cancel(self.widget_cfiscal)
         self.pos_stack.addWidget(self.widget_cfiscal)
 
@@ -543,6 +547,50 @@ class SalesTab(QWidget):
                 break
         if hasattr(dialog, "rejected"):
             dialog.rejected.connect(lambda: self.pos_stack.setCurrentIndex(0))
+
+    def _show_pos_context_menu(self, pos):
+        menu = QMenu(self)
+        refresh_action = menu.addAction("Actualizar inventario en POS")
+        action = menu.exec_(self.pos_scroll.mapToGlobal(pos))
+        if action == refresh_action:
+            self._refresh_pos_data()
+
+    def _refresh_pos_data(self):
+        productos_lote = self._build_productos_lote()
+        if hasattr(self, "widget_cf"):
+            self.widget_cf.set_productos_data(productos_lote)
+        if hasattr(self, "widget_cfiscal"):
+            self.widget_cfiscal.set_productos_data(productos_lote)
+
+    def _on_cf_venta_validada(self, data: dict):
+        """Recibe la venta CF validada y delega al flujo principal."""
+        if not self.main_window:
+            return
+        try:
+            distrib = self.widget_cf.Distribuidor_combo.currentText()
+        except Exception:
+            distrib = ""
+        try:
+            self.main_window._procesar_venta_consumidor_final(data, distrib)
+            if hasattr(self.widget_cf, "clear_carrito"):
+                self.widget_cf.clear_carrito()
+        except Exception as exc:
+            QMessageBox.critical(self, "Venta", str(exc))
+
+    def _on_cfiscal_venta_validada(self, data: dict):
+        """Recibe la venta CCF validada y delega al flujo principal."""
+        if not self.main_window:
+            return
+        try:
+            distrib = self.widget_cfiscal.Distribuidor_combo.currentText()
+        except Exception:
+            distrib = ""
+        try:
+            self.main_window._procesar_venta_credito_fiscal(data, distrib)
+            if hasattr(self.widget_cfiscal, "clear_carrito"):
+                self.widget_cfiscal.clear_carrito()
+        except Exception as exc:
+            QMessageBox.critical(self, "Venta a Crédito Fiscal", str(exc))
 
     def _show_pos_page(self, index: int):
         if not hasattr(self, "pos_stack"):

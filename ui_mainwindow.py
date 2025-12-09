@@ -510,14 +510,6 @@ class ModernSidebar(QFrame):
         layout.setContentsMargins(10, 20, 10, 20)
         layout.setSpacing(12)
 
-        self._main_sale_button = QPushButton("🛒 NUEVA VENTA", self)
-        self._main_sale_button.setObjectName("MainSaleButton")
-        self._main_sale_button.setCursor(Qt.PointingHandCursor)
-        self._main_sale_button.setMinimumHeight(46)
-        if parent is not None and hasattr(parent, "show_sales_dialog"):
-            self._main_sale_button.clicked.connect(parent.show_sales_dialog)
-        layout.addWidget(self._main_sale_button)
-
         for label, object_name, index in nav_items:
             self._create_btn(layout, label, object_name, index)
 
@@ -890,11 +882,13 @@ class SettingsDialog(QDialog):
                 color: #1E293B;
             }
             /* Tabla Limpia Estilo Steam */
-            QTableWidget {
+QTableWidget {
                 background-color: white;
                 alternate-background-color: #F3F4F6;
                 gridline-color: transparent;
                 border: none;
+                selection-background-color: #dbeafe;
+                selection-color: #0f172a;
             }
             QHeaderView::section {
                 background-color: white;
@@ -1908,18 +1902,6 @@ class MainWindow(QMainWindow):
             QPushButton#DangerActionButton:hover {
                 background-color: #dc2626;
             }
-            QPushButton#MainSaleButton {
-                background-color: #059669;
-                color: #ffffff;
-                border: none;
-                border-radius: 10px;
-                padding: 12px 14px;
-                font-weight: 700;
-                font-size: 15px;
-            }
-            QPushButton#MainSaleButton:hover {
-                background-color: #047857;
-            }
         """
         )
 
@@ -2495,116 +2477,8 @@ class MainWindow(QMainWindow):
         try:
             if dialog.exec_():
                 data = dialog.get_data()
-                items = data.get("items", [])
-                if not items:
-                    raise ValueError("Debe agregar al menos un producto a la venta.")
-                total = data.get("total", 0)  # <-- Usa el total calculado por el diálogo
-                fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                cliente_id = data["cliente"]["id"] if data.get("cliente") and "id" in data["cliente"] else None
-                Distribuidor_nombre = dialog.Distribuidor_combo.currentText()
-                Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == Distribuidor_nombre), None)
-                Distribuidor_id = Distribuidor["id"] if Distribuidor else None
-                vendedor_id = data.get("vendedor_id")
-                estado = data.get("estado", "Pagada")
-                extra = build_fiscal_extra(data)
-                ret_block = data.get("_ui_retencion") if isinstance(data.get("_ui_retencion"), dict) else None
-                if ret_block:
-                    extra["_ui_retencion"] = ret_block
-                payment_extra = build_payment_condition_extra(data)
-                if payment_extra:
-                    extra.update(payment_extra)
-
-                if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
-                    extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
-                    extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
-
-                choice = self._mostrar_confirmacion_venta()
-                if choice == QDialog.Rejected:
-                    return
-
-                estado = data.get("estado", "Pagada")
-                if choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
-                    estado = "Pendiente de Envío"
-                elif choice == SaleConfirmationDialog.RESULT_SAVE_LOCAL:
-                    estado = "Venta Interna"
-
-                self._log_retencion_state("SAVE", "01", ret_block, total)
-
-                venta_id = self.manager.db.add_venta(
-                    fecha,
-                    total,
-                    cliente_id=cliente_id,
-                    Distribuidor_id=Distribuidor_id,
-                    vendedor_id=vendedor_id,
-                    extra=extra or None,
-                    estado=estado,
-                )
-                # Agrega todos los productos de la venta
-                for item in items:
-                    prod = next((p for p in self.manager._products if p["id"] == item["producto_id"]), None)
-                    if not prod:
-                        continue
-                    if prod["stock"] < item["cantidad"]:
-                        raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
-                    extra_data = item.get("extra") or (
-                        {"lote_id": item.get("lote_id"), "producto_id": item.get("producto_id"), "cantidad": item.get("cantidad")}
-                        if item.get("lote_id") is not None
-                        else None
-                    )
-                    self.manager.db.add_detalle_venta(
-                        venta_id,
-                        prod["id"],
-                        item["cantidad"],
-                        item["precio"],
-                        item.get("descuento", 0),
-                        item.get("descuento_tipo", ""),
-                        item.get("iva", 0),
-                        item.get("comision_monto", 0),
-                        item.get("iva_tipo", ""),
-                        item.get("tipo_fiscal", "Gravada"),
-                        extra_data,
-                        item.get("precio_con_iva", 0),
-                        item.get("vendedor_id", vendedor_id)
-                    )
-                    if "lote_id" in item:
-                        self.manager.db.disminuir_stock_lote(item["lote_id"], item["cantidad"])
-                        self.manager.db.actualizar_stock_producto(item["producto_id"])
-                self.manager.refresh_data()
-                self.filter_products()
-                self.sales_tab.load_sales()
-                texto_base = f"Venta registrada correctamente.\nTotal: ${total:.2f}"
-                if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
-                    envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="01")
-                    try:
-                        generate_invoice_pdf(self.manager, venta_id)
-                    except Exception:
-                        logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
-                    if envio_ok:
-                        texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
-                        QMessageBox.information(self, "Venta", texto_base)
-                    else:
-                        texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
-                        QMessageBox.warning(self, "Venta", texto_base)
-                elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
-                    gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="01")
-                    if gen_ok:
-                        try:
-                            generate_invoice_pdf(self.manager, venta_id)
-                        except Exception:
-                            logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
-                        texto_base += f"\n{gen_msg}"
-                        QMessageBox.information(self, "Venta", texto_base)
-                    else:
-                        texto_base += f"\nNo se pudo generar el DTE: {gen_msg}"
-                        QMessageBox.warning(self, "Venta", texto_base)
-                else:
-                    texto_base += "\nVenta registrada localmente (sin DTE)."
-                    QMessageBox.information(self, "Venta", texto_base)
-                self._actualizar_historial()
-                self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AQUÍ
-                # Notify other tabs that the underlying data changed so they
-                # can refresh immediately.
-                self.data_changed.emit()
+                self._procesar_venta_consumidor_final(data, dialog.Distribuidor_combo.currentText())
+                dialog.clear_carrito()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta", str(e))
@@ -2635,8 +2509,402 @@ class MainWindow(QMainWindow):
                 self.filter_products()
                 self._actualizar_historial()
                 self._actualizar_inventario_actual()
+                self._refresh_pos_if_available()
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar compra", str(e))
+
+    def _procesar_venta_consumidor_final(self, data: dict, distribuidor_nombre: str | None = None):
+        """Guarda la venta CF y ejecuta el flujo de confirmación/envío."""
+        items = data.get("items", [])
+        if not items:
+            raise ValueError("Debe agregar al menos un producto a la venta.")
+        # Refresca inventario para asegurar IDs vigentes
+        self.manager.refresh_data()
+        productos_map = {}
+        code_map = {}
+        sku_map = {}
+        name_map = {}
+        try:
+            productos_all = self.manager.db.get_productos()
+        except Exception as exc:
+            logger.warning("POS.CF no se pudo leer productos completos: %s", exc)
+            productos_all = list(getattr(self.manager, "_products", []))
+        for p in productos_all:
+            try:
+                pid = int(p.get("id"))
+            except Exception:
+                pid = p.get("id")
+            productos_map[pid] = p
+            productos_map[str(pid)] = p
+            code = str(p.get("codigo") or "").strip().lower()
+            if code:
+                code_map[code] = p
+            sku = str(p.get("sku") or "").strip().lower()
+            if sku:
+                sku_map[sku] = p
+            name = str(p.get("nombre") or "").strip().lower()
+            if name:
+                name_map[name] = p
+        logger.info("POS.CF productos_map_size=%s first_ids=%s", len(productos_map), list(productos_map.keys())[:5])
+        total = data.get("total", 0)
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cliente_id = data["cliente"]["id"] if data.get("cliente") and "id" in data["cliente"] else None
+        Distribuidor = next(
+            (v for v in self.manager._Distribuidores if v["nombre"] == (distribuidor_nombre or "")),
+            None,
+        )
+        Distribuidor_id = Distribuidor["id"] if Distribuidor else None
+        vendedor_id = data.get("vendedor_id")
+        extra = build_fiscal_extra(data)
+        ret_block = data.get("_ui_retencion") if isinstance(data.get("_ui_retencion"), dict) else None
+        if ret_block:
+            extra["_ui_retencion"] = ret_block
+        payment_extra = build_payment_condition_extra(data)
+        if payment_extra:
+            extra.update(payment_extra)
+
+        if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
+            extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
+            extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
+
+        choice = self._mostrar_confirmacion_venta()
+        if choice == QDialog.Rejected:
+            return
+
+        estado = data.get("estado", "Pagada")
+        if choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+            estado = "Pendiente de Envío"
+        elif choice == SaleConfirmationDialog.RESULT_SAVE_LOCAL:
+            estado = "Venta Interna"
+
+        self._log_retencion_state("SAVE", "01", ret_block, total)
+
+        venta_id = self.manager.db.add_venta(
+            fecha,
+            total,
+            cliente_id=cliente_id,
+            Distribuidor_id=Distribuidor_id,
+            vendedor_id=vendedor_id,
+            extra=extra or None,
+            estado=estado,
+        )
+        for item in items:
+            product_id = item.get("producto_id")
+            if not product_id:
+                raise ValueError("No se pudo determinar el producto de un ítem; refresque inventario.")
+            try:
+                pid_int = int(product_id)
+            except Exception:
+                pid_int = product_id
+            prod = productos_map.get(pid_int) or productos_map.get(str(pid_int))
+            if not prod:
+                code_val = str(item.get("codigo") or "").strip().lower()
+                sku_val = str(item.get("sku") or "").strip().lower()
+                name_val = str(item.get("producto") or "").strip().lower()
+                prod = code_map.get(code_val) or sku_map.get(sku_val) or name_map.get(name_val)
+                if prod:
+                    product_id = prod.get("id")
+                    try:
+                        pid_int = int(product_id)
+                    except Exception:
+                        pid_int = product_id
+                if not prod:
+                    logger.error(
+                        "POS.CF producto_id_no_match id=%s code=%s sku=%s nombre=%s mapa_size=%s sample_keys=%s items=%s",
+                        product_id,
+                        code_val,
+                        sku_val,
+                        name_val,
+                        len(productos_map),
+                        list(productos_map.keys())[:10],
+                        items,
+                    )
+                    raise ValueError(f"El producto con id {product_id} ya no existe en inventario. Refresque la lista.")
+            if prod.get("stock", 0) < item["cantidad"]:
+                raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
+            extra_data = item.get("extra") or (
+                {"lote_id": item.get("lote_id"), "producto_id": product_id, "cantidad": item.get("cantidad")}
+                if item.get("lote_id") is not None else None
+            )
+            self.manager.db.add_detalle_venta(
+                venta_id,
+                prod["id"],
+                item["cantidad"],
+                item["precio"],
+                item.get("descuento", 0),
+                item.get("descuento_tipo", ""),
+                item.get("iva", 0),
+                item.get("comision_monto", 0),
+                item.get("iva_tipo", ""),
+                item.get("tipo_fiscal", "Gravada"),
+                extra_data,
+                item.get("precio_con_iva", 0),
+                item.get("vendedor_id", vendedor_id)
+            )
+            if prod and "lote_id" in item:
+                self.manager.db.disminuir_stock_lote(item["lote_id"], item["cantidad"])
+                self.manager.db.actualizar_stock_producto(item["producto_id"])
+
+        self.manager.refresh_data()
+        self.filter_products()
+        self.sales_tab.load_sales()
+        texto_base = f"Venta registrada correctamente.\nTotal: ${total:.2f}"
+        if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
+            envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="01")
+            try:
+                generate_invoice_pdf(self.manager, venta_id)
+            except Exception:
+                logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
+            if envio_ok:
+                self._registrar_estado_dte_ui(venta_id, "01", "enviado")
+                texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
+                QMessageBox.information(self, "Venta", texto_base)
+            else:
+                self._registrar_estado_dte_ui(venta_id, "01", "pendiente")
+                texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
+                QMessageBox.warning(self, "Venta", texto_base)
+        elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+            gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="01")
+            if gen_ok:
+                self._registrar_estado_dte_ui(venta_id, "01", "pendiente")
+                try:
+                    generate_invoice_pdf(self.manager, venta_id)
+                except Exception:
+                    logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
+                texto_base += f"\n{gen_msg}"
+                QMessageBox.information(self, "Venta", texto_base)
+            else:
+                texto_base += f"\nNo se pudo generar el DTE: {gen_msg}"
+                QMessageBox.warning(self, "Venta", texto_base)
+        else:
+            texto_base += "\nVenta registrada localmente (sin DTE)."
+            QMessageBox.information(self, "Venta", texto_base)
+        self._actualizar_historial()
+        self._actualizar_inventario_actual()
+        self.sales_tab.load_sales()
+        self._refresh_pos_if_available()
+        self.data_changed.emit()
+        self.data_changed.emit()
+
+    def _procesar_venta_credito_fiscal(self, data: dict, distribuidor_nombre: str | None = None):
+        """Guarda la venta CCF y ejecuta el flujo de confirmación/envío."""
+        logger.debug("IVA calculado en get_data: %s", data.get("iva"))
+        items = data.get("items", [])
+        if not items:
+            raise ValueError("Debe agregar al menos un producto a la venta.")
+        # Refresca inventario para asegurar IDs vigentes
+        self.manager.refresh_data()
+        productos_map = {}
+        code_map = {}
+        sku_map = {}
+        name_map = {}
+        try:
+            productos_all = self.manager.db.get_productos()
+        except Exception as exc:
+            logger.warning("POS.CCF no se pudo leer productos completos: %s", exc)
+            productos_all = list(getattr(self.manager, "_products", []))
+        for p in productos_all:
+            try:
+                pid = int(p.get("id"))
+            except Exception:
+                pid = p.get("id")
+            productos_map[pid] = p
+            productos_map[str(pid)] = p
+            code = str(p.get("codigo") or "").strip().lower()
+            if code:
+                code_map[code] = p
+            sku = str(p.get("sku") or "").strip().lower()
+            if sku:
+                sku_map[sku] = p
+            name = str(p.get("nombre") or "").strip().lower()
+            if name:
+                name_map[name] = p
+        logger.info("POS.CCF productos_map_size=%s first_ids=%s", len(productos_map), list(productos_map.keys())[:5])
+
+        sumas = data.get("sumas", 0)
+        descuentos = data.get("descuentos", 0)
+        iva = data.get("iva", 0)
+        subtotal = data.get("subtotal", 0)
+        venta_total = data.get("total", 0)
+        total_letras = monto_a_texto_sv(venta_total)
+
+        fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == (distribuidor_nombre or "")), None)
+        Distribuidor_id = Distribuidor["id"] if Distribuidor else None
+        # Normaliza IDs de cliente, distribuidor y vendedor para evitar FK inválidas
+        clientes = []
+        try:
+            clientes = self.manager.db.get_clientes()
+        except Exception:
+            clientes = list(getattr(self.manager, "_clientes", []))
+        def _valid_id(target_id, rows):
+            if not target_id:
+                return None
+            for r in rows:
+                try:
+                    rid = int(r.get("id"))
+                except Exception:
+                    rid = r.get("id")
+                if rid == target_id:
+                    return target_id
+            logger.warning("FK no encontrada; se omite id=%s", target_id)
+            return None
+
+        cliente_id = _valid_id(data["cliente"]["id"] if data.get("cliente") and "id" in data["cliente"] else None, clientes)
+        Distribuidor_id = _valid_id(Distribuidor_id, getattr(self.manager, "_Distribuidores", []))
+        vendedor_id = _valid_id(data.get("vendedor_id"), self.manager.db.get_trabajadores(solo_vendedores=True))
+
+        extra = build_fiscal_extra(data)
+        extra["total_letras"] = total_letras
+        ret_block = data.get("_ui_retencion") if isinstance(data.get("_ui_retencion"), dict) else None
+        if ret_block:
+            extra["_ui_retencion"] = ret_block
+        payment_extra = build_payment_condition_extra(data)
+        if payment_extra:
+            extra.update(payment_extra)
+
+        if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
+            extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
+            extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
+
+        choice = self._mostrar_confirmacion_venta()
+        if choice == QDialog.Rejected:
+            return
+
+        estado = data.get("estado", "Pagada")
+        if choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+            estado = "Pendiente de Envío"
+        elif choice == SaleConfirmationDialog.RESULT_SAVE_LOCAL:
+            estado = "Venta Interna"
+
+        self._log_retencion_state("SAVE", "03", ret_block, venta_total)
+
+        venta_id = self.manager.db.add_venta_credito_fiscal(
+            cliente_id=cliente_id,
+            fecha=fecha,
+            total=venta_total,
+            nrc=data.get("nrc", ""),
+            nit=data.get("nit", ""),
+            giro=data.get("giro", ""),
+            Distribuidor_id=Distribuidor_id,
+            vendedor_id=vendedor_id,
+            no_remision=data.get("no_remision", ""),
+            orden_no=data.get("orden_no", ""),
+            condicion_pago=data.get("condicion_pago", ""),
+            venta_a_cuenta_de=data.get("venta_a_cuenta_de", ""),
+            documento_venta_a_cuenta=data.get("documento_venta_a_cuenta", ""),
+            fecha_remision_anterior=data.get("fecha_remision_anterior", ""),
+            fecha_remision=data.get("fecha_remision", ""),
+            sumas=sumas,
+            descuentos=descuentos,
+            iva=iva,
+            subtotal=subtotal,
+            ventas_exentas=data.get("ventas_exentas", 0),
+            ventas_no_sujetas=data.get("ventas_no_sujetas", 0),
+            total_letras=total_letras,
+            extra=extra or None,
+            estado=estado,
+        )
+        if not venta_id:
+            raise ValueError("No se pudo registrar la venta a crédito fiscal.")
+
+        for item in items:
+            product_id = item.get("producto_id")
+            if not product_id:
+                raise ValueError("No se pudo determinar el producto de un ítem; refresque inventario.")
+            try:
+                pid_int = int(product_id)
+            except Exception:
+                pid_int = product_id
+            prod = productos_map.get(pid_int) or productos_map.get(str(pid_int))
+            if not prod:
+                code_val = str(item.get("codigo") or "").strip().lower()
+                sku_val = str(item.get("sku") or "").strip().lower()
+                name_val = str(item.get("producto") or "").strip().lower()
+                prod = code_map.get(code_val) or sku_map.get(sku_val) or name_map.get(name_val)
+                if prod:
+                    product_id = prod.get("id")
+                    try:
+                        pid_int = int(product_id)
+                    except Exception:
+                        pid_int = product_id
+                if not prod:
+                    logger.error(
+                        "POS.CCF producto_id_no_match id=%s code=%s sku=%s nombre=%s mapa_size=%s sample_keys=%s items=%s",
+                        product_id,
+                        code_val,
+                        sku_val,
+                        name_val,
+                        len(productos_map),
+                        list(productos_map.keys())[:10],
+                        items,
+                    )
+                    raise ValueError(f"El producto con id {product_id} ya no existe en inventario. Refresque la lista.")
+            if prod.get("stock", 0) < item["cantidad"]:
+                raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
+            extra_data = item.get("extra") or (
+                {"lote_id": item.get("lote_id"), "producto_id": product_id, "cantidad": item.get("cantidad")}
+                if item.get("lote_id") is not None else None
+            )
+            self.manager.db.add_detalle_venta(
+                venta_id,
+                prod["id"],
+                item["cantidad"],
+                item["precio"],
+                item.get("descuento", 0),
+                item.get("descuento_tipo", ""),
+                item.get("iva", 0),
+                item.get("comision_monto", 0),
+                item.get("iva_tipo", ""),
+                item.get("tipo_fiscal", "Gravada"),
+                extra_data,
+                item.get("precio_con_iva", 0),
+                item.get("vendedor_id", vendedor_id)
+            )
+            if prod and "lote_id" in item:
+                self.manager.db.disminuir_stock_lote(item["lote_id"], item["cantidad"])
+                self.manager.db.actualizar_stock_producto(item["producto_id"])
+
+        self.manager.refresh_data()
+        self.filter_products()
+        self.sales_tab.load_sales()
+        texto_base = f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}"
+        if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
+            envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="03")
+            try:
+                generate_invoice_pdf(self.manager, venta_id)
+            except Exception:
+                logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
+            if envio_ok:
+                self._registrar_estado_dte_ui(venta_id, "03", "enviado")
+                texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
+                QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
+            else:
+                self._registrar_estado_dte_ui(venta_id, "03", "pendiente")
+                texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
+                QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
+        elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
+            gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="03")
+            if gen_ok:
+                self._registrar_estado_dte_ui(venta_id, "03", "pendiente")
+                try:
+                    generate_invoice_pdf(self.manager, venta_id)
+                except Exception:
+                    logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
+                texto_base += f"\n{gen_msg}"
+                QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
+            else:
+                texto_base += f"\nNo se pudo generar el DTE: {gen_msg}"
+                QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
+        else:
+            texto_base += "\nVenta registrada localmente (sin DTE)."
+            QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
+
+        self._actualizar_historial()
+        self._actualizar_inventario_actual()
+        self._refresh_pos_if_available()
+        self.sales_tab.load_sales()
+        self.data_changed.emit()
 
     def registrar_venta_credito_fiscal(self):
         if not self._ensure_last_invoice_sent():
@@ -2681,150 +2949,9 @@ class MainWindow(QMainWindow):
             dialog = RegisterCreditoFiscalDialog(productos_lote, Distribuidores, vendedores_trabajadores, self)
             dialog.set_productos_data(productos_lote)
             if dialog.exec_():
-                
                 data = dialog.get_data()
-                logger.debug("IVA calculado en get_data: %s", data.get("iva"))
-                items = data.get("items", [])
-
-                if not items:
-                    raise ValueError("Debe agregar al menos un producto a la venta.")
-                
-                # --- CÁLCULOS FISCALES ---
-                sumas = data.get("sumas", 0)
-                descuentos = data.get("descuentos", 0)
-                iva = data.get("iva", 0)
-                subtotal = data.get("subtotal", 0)
-                venta_total = data.get("total", 0)
-                total_letras = monto_a_texto_sv(venta_total)
-                # ---------------------------------------------------
-
-                fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                Distribuidor_nombre = dialog.Distribuidor_combo.currentText()
-                Distribuidor = next((v for v in self.manager._Distribuidores if v["nombre"] == Distribuidor_nombre), None)
-                Distribuidor_id = Distribuidor["id"] if Distribuidor else None
-                vendedor_id = data.get("vendedor_id")
-
-                extra = build_fiscal_extra(data)
-                ret_block = data.get("_ui_retencion") if isinstance(data.get("_ui_retencion"), dict) else None
-                if ret_block:
-                    extra["_ui_retencion"] = ret_block
-                payment_extra = build_payment_condition_extra(data)
-                if payment_extra:
-                    extra.update(payment_extra)
-
-                if data.get("venta_a_cuenta_de") or data.get("documento_venta_a_cuenta"):
-                    extra["venta_a_cuenta_de"] = data.get("venta_a_cuenta_de", "")
-                    extra["documento_venta_a_cuenta"] = data.get("documento_venta_a_cuenta", "")
-
-                choice = self._mostrar_confirmacion_venta()
-                if choice == QDialog.Rejected:
-                    return
-
-                estado = data.get("estado", "Pagada")
-                if choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
-                    estado = "Pendiente de Envío"
-                elif choice == SaleConfirmationDialog.RESULT_SAVE_LOCAL:
-                    estado = "Venta Interna"
-
-                self._log_retencion_state("SAVE", "03", ret_block, venta_total)
-
-                venta_id = self.manager.db.add_venta_credito_fiscal(
-                    cliente_id=data["cliente"]["id"],
-                    fecha=fecha,
-                    total=venta_total,
-                    nrc=data.get("nrc", ""),
-                    nit=data.get("nit", ""),
-                    giro=data.get("giro", ""),
-                    Distribuidor_id=Distribuidor_id,
-                    vendedor_id=vendedor_id,
-                    no_remision=data.get("no_remision", ""),
-                    orden_no=data.get("orden_no", ""),
-                    condicion_pago=data.get("condicion_pago", ""),
-                    venta_a_cuenta_de=data.get("venta_a_cuenta_de", ""),
-                    documento_venta_a_cuenta=data.get("documento_venta_a_cuenta", ""),
-                    fecha_remision_anterior=data.get("fecha_remision_anterior", ""),
-                    fecha_remision=data.get("fecha_remision", ""),
-                    sumas=sumas,
-                    descuentos=descuentos,
-                    iva=iva,
-                    subtotal=subtotal,
-                    ventas_exentas=data.get("ventas_exentas", 0),
-                    ventas_no_sujetas=data.get("ventas_no_sujetas", 0),
-                    total_letras=total_letras,
-                    extra=extra or None,
-                    estado=estado,
-                )
-                if not venta_id:
-                    raise ValueError(
-                        "No se pudo registrar la venta a cr\xE9dito fiscal."
-                    )
-                logger.debug("IVA guardado en la venta: %s", iva)
-
-                for item in items:
-                    prod = next((p for p in self.manager._products if p["id"] == item["producto_id"]), None)
-                    if not prod:
-                        continue
-                    if prod["stock"] < item["cantidad"]:
-                        raise ValueError(f"No hay suficiente stock para el producto {prod['nombre']}.")
-                    extra_data = item.get("extra") or (
-                        {"lote_id": item.get("lote_id"), "producto_id": item.get("producto_id"), "cantidad": item.get("cantidad")}
-                        if item.get("lote_id") is not None
-                        else None
-                    )
-                    self.manager.db.add_detalle_venta(
-                        venta_id,
-                        prod["id"],
-                        item["cantidad"],
-                        item["precio"],
-                        item.get("descuento", 0),
-                        item.get("descuento_tipo", ""),
-                        item.get("iva", 0),
-                        item.get("comision_monto", 0),
-                        item.get("iva_tipo", ""),
-                        item.get("tipo_fiscal", "Gravada"),
-                        extra_data,
-                        item.get("precio_con_iva", 0),
-                        item.get("vendedor_id", vendedor_id)
-                    )
-                   
-                    if "lote_id" in item:
-                        self.manager.db.disminuir_stock_lote(item["lote_id"], item["cantidad"])
-                        self.manager.db.actualizar_stock_producto(item["producto_id"])
-                self.manager.refresh_data()
-                self.filter_products()
-                self.sales_tab.load_sales()
-                texto_base = f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}"
-                if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
-                    envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="03")
-                    try:
-                        generate_invoice_pdf(self.manager, venta_id)
-                    except Exception:
-                        logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
-                    if envio_ok:
-                        texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
-                        QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
-                    else:
-                        texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
-                        QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
-                elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
-                    gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="03")
-                    if gen_ok:
-                        try:
-                            generate_invoice_pdf(self.manager, venta_id)
-                        except Exception:
-                            logger.exception("No se pudo generar PDF de factura CF para venta_id=%s", venta_id)
-                        texto_base += f"\n{gen_msg}"
-                        QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
-                    else:
-                        texto_base += f"\nNo se pudo generar el DTE: {gen_msg}"
-                        QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
-                else:
-                    texto_base += "\nVenta registrada localmente (sin DTE)."
-                    QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
-                self._actualizar_historial()
-                self._actualizar_inventario_actual()
-                # Trigger refresh in other tabs immediately
-                self.data_changed.emit()
+                self._procesar_venta_credito_fiscal(data, dialog.Distribuidor_combo.currentText())
+                dialog.clear_carrito()
 
         except Exception as e:
             QMessageBox.critical(self, "Error al registrar venta a crédito fiscal", str(e))
@@ -2859,6 +2986,40 @@ class MainWindow(QMainWindow):
             tipo_dte,
             total_val,
         )
+
+    def _refresh_pos_if_available(self):
+        """Actualiza widgets POS (CF/CCF) con inventario reciente si existen."""
+        if hasattr(self, "sales_tab") and hasattr(self.sales_tab, "_refresh_pos_data"):
+            try:
+                self.sales_tab._refresh_pos_data()
+            except Exception as exc:  # pragma: no cover - solo log
+                logger.warning("No se pudo refrescar el POS: %s", exc)
+
+    def _registrar_estado_dte_ui(
+        self,
+        venta_id: int,
+        tipo_dte: str,
+        estado: str,
+        *,
+        codigo_generacion: str | None = None,
+        numero_control: str | None = None,
+        ambiente: str | None = None,
+    ) -> None:
+        """Guarda un registro mínimo de estado DTE para reflejarlo en la pestaña de ventas."""
+        try:
+            self.manager.db.registrar_envio_dte(
+                venta_id=venta_id,
+                modo="ui",
+                estado=estado,
+                sello="",
+                respuesta_json="",
+                codigo_lote=None,
+                codigo_generacion=codigo_generacion,
+                numero_control=numero_control,
+                ambiente=ambiente,
+            )
+        except Exception as exc:
+            logger.warning("No se pudo registrar estado DTE (venta_id=%s): %s", venta_id, exc)
 
     def _post_guardado_exitoso(self, filename):
         self.ultimo_archivo_json = filename

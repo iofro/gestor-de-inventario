@@ -30,6 +30,7 @@ from PyQt5.QtCore import (
     QSize,
     QTimer,
     QRectF,
+    pyqtSignal,
 )
 from PyQt5.QtGui import (
     QDesktopServices,
@@ -272,27 +273,79 @@ class ClienteSelectorDialog(QDialog):
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("Buscar cliente por nombre, NIT, NRC, etc.")
         layout.addWidget(self.search_bar)
-        self.lista_clientes = QListWidget()
-        self.clientes_mostrados = []
-        self._mostrar_clientes(self.db.get_clientes())
+
+        self.lista_clientes = QTableWidget(0, 4)
+        self.lista_clientes.setHorizontalHeaderLabels(["Código", "Nombre", "NIT", "DUI"])
+        self.lista_clientes.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        self.lista_clientes.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self.lista_clientes.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.lista_clientes.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.lista_clientes.verticalHeader().setVisible(False)
+        self.lista_clientes.setAlternatingRowColors(True)
+        self.lista_clientes.setStyleSheet(
+            """
+            QTableWidget {
+                gridline-color: #d0d7e2;
+            }
+            QTableWidget::item {
+                padding: 8px;
+            }
+            QTableWidget::item:selected {
+                background: #d6eaff;
+                color: #0a3a60;
+            }
+            QHeaderView::section {
+                background: #f1f5f9;
+                font-weight: 600;
+                padding: 8px 6px;
+            }
+            """
+        )
         layout.addWidget(self.lista_clientes)
+
+        btn_row = QHBoxLayout()
+        btn_row.addStretch(1)
         self.btn_ok = QPushButton("Seleccionar")
+        self.btn_ok.setCursor(Qt.PointingHandCursor)
+        self.btn_ok.setStyleSheet(
+            """
+            QPushButton {
+                background-color: #0d6efd;
+                color: white;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: 600;
+            }
+            QPushButton:hover { background-color: #0b5ed7; }
+            QPushButton:pressed { background-color: #0a58ca; }
+            """
+        )
         self.btn_ok.clicked.connect(self._handle_accept)
-        layout.addWidget(self.btn_ok)
+        btn_row.addWidget(self.btn_ok)
+        layout.addLayout(btn_row)
+
         self.setLayout(layout)
+        self._mostrar_clientes(self.db.get_clientes(""))
         self.search_bar.textChanged.connect(self._filtrar_clientes)
         self.selected_cliente = None
         self.lista_clientes.itemSelectionChanged.connect(self._seleccionar_cliente)
+        self.lista_clientes.itemDoubleClicked.connect(self._handle_accept)
+        self.resize(900, 600)
 
     def _mostrar_clientes(self, clientes):
-        self.lista_clientes.clear()
+        self.lista_clientes.setRowCount(len(clientes))
         self.clientes_mostrados = clientes[:]  # <-- Actualiza la lista de mostrados
-        for cli in clientes:
+        for row, cli in enumerate(clientes):
             codigo = get_field(cli, "codigo", "")
             nombre = get_field(cli, "nombre", "")
             nit = get_field(cli, "nit", "")
-            texto = f"{codigo} | {nombre} | NIT: {nit}"
-            self.lista_clientes.addItem(texto)
+            dui = get_field(cli, "dui", "")
+            self.lista_clientes.setItem(row, 0, QTableWidgetItem(str(codigo)))
+            self.lista_clientes.setItem(row, 1, QTableWidgetItem(str(nombre)))
+            self.lista_clientes.setItem(row, 2, QTableWidgetItem(str(nit)))
+            self.lista_clientes.setItem(row, 3, QTableWidgetItem(str(dui)))
+        if clientes:
+            self.lista_clientes.selectRow(0)
 
     def _filtrar_clientes(self, texto):
         filtrados = self.db.get_clientes(texto)
@@ -303,7 +356,7 @@ class ClienteSelectorDialog(QDialog):
         if idx >= 0:
             self.selected_cliente = self.clientes_mostrados[idx]  # <-- Usa la lista de mostrados
 
-    def _handle_accept(self):
+    def _handle_accept(self, *args):
         idx = self.lista_clientes.currentRow()
         if idx >= 0:
             self.selected_cliente = self.clientes_mostrados[idx]
@@ -772,6 +825,8 @@ QTableWidget {
     border: 1px solid #e0e0e0;
     gridline-color: transparent;
     alternate-background-color: #fafafa;
+    selection-background-color: #dbeafe;
+    selection-color: #0f172a;
 }
 QHeaderView::section {
     background: #f1f3f5;
@@ -798,14 +853,25 @@ QHeaderView::section {
         if idx < 0 or idx >= len(self.productos):
             return
         lote = self.productos[idx]
-        distribuidor_id = lote.get("Distribuidor_id")
+        target_name = None
+        if hasattr(self, "_producto_Distribuidor_map") and isinstance(lote, Mapping):
+            prod_name = get_field(lote, "nombre", "")
+            target_name = self._producto_Distribuidor_map.get(prod_name)
+        distribuidor_id = None
+        if isinstance(lote, Mapping):
+            distribuidor_id = lote.get("Distribuidor_id")
         Distribuidores = getattr(self, "Distribuidores", None)
         if Distribuidores is None and hasattr(self, "parent") and self.parent() and hasattr(self.parent(), "manager"):
             Distribuidores = getattr(self.parent().manager, "_Distribuidores", None)
         if Distribuidores:
             for i, dist in enumerate(Distribuidores):
-                if dist.get("id") == distribuidor_id:
-                    self.Distribuidor_combo.setCurrentIndex(i)
+                if isinstance(dist, Mapping) and dist.get("id") == distribuidor_id:
+                    if hasattr(self, "Distribuidor_combo"):
+                        self.Distribuidor_combo.setCurrentIndex(i)
+                    break
+                if target_name and isinstance(dist, str) and dist.strip() == target_name:
+                    if hasattr(self, "Distribuidor_combo"):
+                        self.Distribuidor_combo.setCurrentIndex(i)
                     break
 
     def _restrict_retencion_to_one_percent(self) -> None:
@@ -997,6 +1063,8 @@ QHeaderView::section {
 
 
 class RegisterSaleDialog(QDialog, ProductDialogBase):
+    venta_validada = pyqtSignal(dict)
+
     def __init__(
         self,
         productos,
@@ -1019,6 +1087,7 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         main_layout.setSpacing(16)
 
         self.productos = productos
+        self.Distribuidores = Distribuidores
         self.vendedores_trabajadores = vendedores_trabajadores
         self.venta_items = []
 
@@ -1048,21 +1117,17 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         productos_layout.setContentsMargins(12, 6, 12, 10)
         productos_layout.setSpacing(6)
 
-        # Distribuidor y búsqueda
+        # Distribuidor y búsqueda (lado de productos)
         top_row = QHBoxLayout()
         top_row.setSpacing(6)
         top_row.addWidget(QLabel("Distribuidor:"))
-        # Usa el combo del panel derecho si existe, de lo contrario crea uno local
-        if hasattr(self, "Distribuidor_combo") and self.Distribuidor_combo is not None:
-            distribuidor_combo_local = self.Distribuidor_combo
-        else:
-            distribuidor_combo_local = QComboBox()
-            if Distribuidores:
-                if isinstance(Distribuidores[0], dict):
-                    distribuidor_combo_local.addItems([d.get("nombre", "") for d in Distribuidores])
-                else:
-                    distribuidor_combo_local.addItems(Distribuidores)
-        top_row.addWidget(distribuidor_combo_local, 1)
+        self.Distribuidor_combo = QComboBox()
+        if Distribuidores:
+            if isinstance(Distribuidores[0], dict):
+                self.Distribuidor_combo.addItems([d.get("nombre", "") for d in Distribuidores])
+            else:
+                self.Distribuidor_combo.addItems(Distribuidores)
+        top_row.addWidget(self.Distribuidor_combo, 1)
         productos_layout.addLayout(top_row)
 
         self.product_search = QLineEdit()
@@ -1072,8 +1137,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.product_list = QListWidget()
         self._productos_original = list(productos)
         self._mostrar_productos(productos)
-        self.product_list.setMinimumHeight(100)
-        self.product_list.setMaximumHeight(130)
+        self.product_list.setMinimumHeight(180)
+        self.product_list.setMaximumHeight(240)
         self.product_list.setSpacing(2)
         self.product_list.setStyleSheet(
             "QListWidget { border: 1px solid #d4d4d8; border-radius: 6px; }"
@@ -1310,21 +1375,22 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         datos_layout.addWidget(self.cliente_label)
         self.selected_cliente = None
 
-        # Campo "Venta a cuenta de"
-        datos_layout.addWidget(QLabel("Venta a cuenta de:"))
+        # Campos "Venta a cuenta de" y "DUI/NIT" en la misma fila
+        venta_tercero_layout = QGridLayout()
+        venta_tercero_layout.setContentsMargins(0, 0, 0, 0)
+        venta_tercero_layout.setHorizontalSpacing(8)
+        venta_tercero_layout.setVerticalSpacing(4)
+        venta_tercero_layout.addWidget(QLabel("Venta a cuenta de:"), 0, 0)
+        venta_tercero_layout.addWidget(QLabel("DUI/NIT:"), 0, 1)
         self.venta_a_cuenta_de_edit = QLineEdit()
         self.venta_a_cuenta_de_edit.setPlaceholderText("Nombre")
-        datos_layout.addWidget(self.venta_a_cuenta_de_edit)
-        datos_layout.addWidget(QLabel("DUI/NIT:"))
+        venta_tercero_layout.addWidget(self.venta_a_cuenta_de_edit, 1, 0)
         self.venta_documento_edit = QLineEdit()
         self.venta_documento_edit.setPlaceholderText("Documento")
-        datos_layout.addWidget(self.venta_documento_edit)
-
-        # Distribuidor
-        datos_layout.addWidget(QLabel("Distribuidor:"))
-        self.Distribuidor_combo = QComboBox()
-        self.Distribuidor_combo.addItems(Distribuidores)
-        datos_layout.addWidget(self.Distribuidor_combo)
+        venta_tercero_layout.addWidget(self.venta_documento_edit, 1, 1)
+        venta_tercero_layout.setColumnStretch(0, 1)
+        venta_tercero_layout.setColumnStretch(1, 1)
+        datos_layout.addLayout(venta_tercero_layout)
 
         pago_card, pago_layout = _card("Pago y totales")
 
@@ -1383,20 +1449,21 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 
         pago_layout.addWidget(self.credit_fields_widget)
 
-        pago_layout.addWidget(QLabel("No. Remisión:"))
+        remision_layout = QGridLayout()
+        remision_layout.setContentsMargins(0, 0, 0, 0)
+        remision_layout.setHorizontalSpacing(8)
+        remision_layout.setVerticalSpacing(4)
+        remision_layout.addWidget(QLabel("No. Remisión:"), 0, 0)
+        remision_layout.addWidget(QLabel("Orden No.:"), 0, 1)
         self.no_remision_edit = QLineEdit()
         self.no_remision_edit.setPlaceholderText("Número de remisión")
-        pago_layout.addWidget(self.no_remision_edit)
-
-        pago_layout.addWidget(QLabel("Orden No.:"))
+        remision_layout.addWidget(self.no_remision_edit, 1, 0)
         self.orden_no_edit = QLineEdit()
         self.orden_no_edit.setPlaceholderText("Número de orden")
-        pago_layout.addWidget(self.orden_no_edit)
-
-        pago_layout.addWidget(QLabel("Estado:"))
-        self.estado_combo = QComboBox()
-        self.estado_combo.addItems(["Pagada", "Pendiente"])
-        pago_layout.addWidget(self.estado_combo)
+        remision_layout.addWidget(self.orden_no_edit, 1, 1)
+        remision_layout.setColumnStretch(0, 1)
+        remision_layout.setColumnStretch(1, 1)
+        pago_layout.addLayout(remision_layout)
 
         pago_layout.addStretch(1)
 
@@ -1475,7 +1542,32 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self._install_no_wheel_filter()
 
     def set_productos_data(self, productos_data):
-        self.productos_data = productos_data
+        self.productos_data = productos_data or []
+        self._productos_original = list(self.productos_data)
+        self.productos = list(self.productos_data)
+        self.product_list.clear()
+        self._mostrar_productos(self.productos_data)
+
+    def clear_carrito(self):
+        """Limpia carrito y totales para iniciar una venta desde cero."""
+        self.venta_items = []
+        self.table.setRowCount(0)
+        self.item_sumas_label.setText("Sumas: $0.00")
+        self.item_total_sin_desc_label.setText("IVA inc.: $0.00")
+        self.item_descuento_label.setText("Desc.: -$0.00")
+        self.item_subtotal_label.setText("Subtotal: $0.00")
+        self.precio_label.setText("Precio U.: $0.00")
+        self.sumas_label.setText("Sumas: $0.00")
+        self.subtotal_label.setText("Subtotal: $0.00")
+        self.total_label.setText("Venta total: $0.00")
+        self.cantidad_spin.setValue(1)
+        self.precio_spin.setValue(0)
+        self.precio_total_spin.setValue(0)
+        self.descuento_spin.setValue(0)
+        self.tipo_fiscal_combo.setCurrentIndex(0)
+        self.product_list.clearSelection()
+        self.venta_a_cuenta_de_edit.clear()
+        self.venta_documento_edit.clear()
 
     def _actualizar_precio_defecto(self):
         idx = self.product_list.currentRow()
@@ -1870,6 +1962,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "lote_id": lote["lote_id"],
             "producto_id": lote["producto_id"],
             "producto": lote["nombre"],
+            "codigo": lote.get("codigo", ""),
+            "sku": lote.get("sku", ""),
+
             "cantidad": cantidad,
             "precio": precio,  # Precio unitario con IVA; neto se calcula en DTE
             "descuento": descuento_valor,
@@ -1930,6 +2025,9 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.item_total_sin_desc_label.setText(f"Subtotal: ${subtotal:.2f}")
         self.item_descuento_label.setText(f"Desc.: -${descuentos:.2f}")
         self.item_subtotal_label.setText(f"Total con IVA: ${total:.2f}")
+        self.sumas_label.setText(f"Sumas: ${sumas:.2f}")
+        self.subtotal_label.setText(f"Subtotal: ${subtotal:.2f}")
+        self.total_label.setText(f"Venta total: ${total:.2f}")
         base_ret, iva_ret = self._compute_retencion_values()
         if self.retencion_checkbox.isChecked() and iva_ret > 0:
             tasa = float(self._retencion_rate_pct())
@@ -2086,14 +2184,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             self._actualizar_resumen()
 
     def _validar_y_accept(self):
-        if not self.product_list.currentItem():
-            QMessageBox.warning(self, "Validación", "Seleccione un producto.")
-            return
-        if self.cantidad_spin.value() <= 0:
-            QMessageBox.warning(self, "Validación", "La cantidad debe ser mayor que cero.")
-            return
-        if self.precio_spin.value() <= 0:
-            QMessageBox.warning(self, "Validación", "El precio debe ser mayor que cero.")
+        if not self.venta_items:
+            QMessageBox.warning(self, "Validación", "Agregue al menos un producto al carrito.")
             return
         condicion_operacion = self.condicion_pago_combo.currentData()
         tercero_nombre = self.venta_a_cuenta_de_edit.text().strip()
@@ -2154,6 +2246,14 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                     )
                     return
 
+        # Emitir datos al padre (modo incrustado) y cerrar
+        try:
+            self.venta_validada.emit(self.get_data())
+        except Exception:
+            # Si algo falla al preparar datos, impedir el cierre silencioso
+            logger.exception("No se pudo emitir datos de venta")
+            QMessageBox.critical(self, "Error", "No se pudo preparar los datos de la venta.")
+            return
         self.accept()
 
 class ProductDialog(QDialog):
@@ -3414,6 +3514,8 @@ class RegisterPurchaseDialog(QDialog):
         }
     
 class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
+    venta_validada = pyqtSignal(dict)
+
     def __init__(
         self,
         productos,
@@ -3579,6 +3681,7 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.btn_agregar = QPushButton("Agregar a venta")
         self.btn_agregar.setProperty("variant", "primary")
         productos_layout.addWidget(self.btn_agregar)
+        self.btn_agregar.clicked.connect(self._agregar_a_venta)
 
         carrito_card, carrito_layout = _card("Carrito")
         # Tabla de productos agregados
@@ -3921,7 +4024,29 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self._install_no_wheel_filter()
 
     def set_productos_data(self, productos_data):
-        self.productos_data = productos_data
+        self.productos_data = productos_data or []
+        self._productos_original = list(self.productos_data)
+        self.productos = list(self.productos_data)
+        self.product_list.clear()
+        self._mostrar_productos(self.productos_data)
+
+    def clear_carrito(self):
+        """Limpia carrito y totales para iniciar una venta desde cero."""
+        self.venta_items = []
+        self.table.setRowCount(0)
+        self.item_sumas_label.setText("Sumas: $0.00")
+        self.item_total_sin_desc_label.setText("Subtotal: $0.00")
+        self.item_descuento_label.setText("Desc.: -$0.00")
+        self.item_subtotal_label.setText("Total con IVA: $0.00")
+        self.total_label.setText("Total venta (con IVA): $0.00")
+        self.cantidad_spin.setValue(1)
+        self.precio_spin.setValue(0)
+        self.precio_total_spin.setValue(0)
+        self.descuento_spin.setValue(0)
+        self.tipo_fiscal_combo.setCurrentIndex(0)
+        self.product_list.clearSelection()
+        self.venta_a_cuenta_de_edit.clear()
+        self.venta_documento_edit.clear()
 
     def _actualizar_precio_defecto(self):
         idx = self.product_list.currentRow()
@@ -4091,6 +4216,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "lote_id": lote["lote_id"],
             "producto_id": lote["producto_id"],
             "producto": lote["nombre"],
+            "codigo": lote.get("codigo", ""),
+            "sku": lote.get("sku", ""),
             "cantidad": int(cantidad),
             "precio": float(precio_unitario_sin_iva.quantize(q8)),
             "precio_con_iva": float(precio_unitario_con_iva.quantize(q8)),
@@ -4332,6 +4459,12 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                     "Debe definir geocódigos emisor y receptor en el rango 01–22.",
                 )
                 return
+        try:
+            self.venta_validada.emit(self.get_data())
+        except Exception:
+            logger.exception("No se pudo emitir datos de venta CCF")
+            QMessageBox.critical(self, "Error", "No se pudo preparar los datos de la venta.")
+            return
         self.accept()
 
     def get_data(self):

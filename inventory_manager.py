@@ -300,6 +300,7 @@ class InventoryManager:
         precio_venta_minorista,
         precio_venta_mayorista,
         stock,
+        presentaciones=None,
     ):
         sku = _normalize_sku_value(sku)
         self.db.add_producto(
@@ -312,6 +313,7 @@ class InventoryManager:
             precio_venta_minorista,
             precio_venta_mayorista,
             stock,
+            presentaciones=presentaciones,
         )
         self.refresh_data()
 
@@ -327,6 +329,7 @@ class InventoryManager:
         precio_venta_minorista,
         precio_venta_mayorista,
         stock,
+        presentaciones=None,
     ):
         sku = _normalize_sku_value(sku)
         self.db.edit_producto(
@@ -340,6 +343,7 @@ class InventoryManager:
             precio_venta_minorista,
             precio_venta_mayorista,
             stock,
+            presentaciones=presentaciones,
         )
         self.refresh_data()
 

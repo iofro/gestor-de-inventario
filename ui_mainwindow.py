@@ -635,6 +635,7 @@ class SettingsDialog(QDialog):
                     try:
                         with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
                             datos = json.load(fh)
+                            logger.info("SettingsDialog load_config negocio keys=%s", list(datos.keys()))
                     except Exception:
                         datos = {}
                 negocio_widget = DatosNegocioDialog(datos, self)
@@ -706,6 +707,7 @@ class SettingsDialog(QDialog):
                     try:
                         with open(DATOS_NEGOCIO_PATH, "r", encoding="utf-8") as fh:
                             datos = json.load(fh)
+                            logger.info("SettingsDialog load_config correo keys=%s", list(datos.keys()))
                     except Exception:
                         datos = {}
                 correo_widget = EmailConfigDialog(datos, self)
@@ -1079,11 +1081,14 @@ class MainWindow(QMainWindow):
         self.manager = im.InventoryManager(self.db, enable_auto_backup=True)
         self.ultimo_archivo_json = None  # Guarda la ruta del último archivo .json usado
         self._load_last_inventory_path()
+        self._alerto_vendedores_inconsistentes = False
         self.firmador_proc = None
+        self._guest_read_only = (self.user.get("role") == "guest")
         # Contador de cambios en la base de datos para detectar si hay datos sin guardar
         self._mark_saved()
         self._setup_ui()
         self._apply_styles()
+        self._apply_guest_restrictions()
         QTimer.singleShot(0, self.showMaximized)
         if not skip_firmador_check:
             QTimer.singleShot(0, self._verificar_firmador)
@@ -1157,6 +1162,42 @@ class MainWindow(QMainWindow):
         loader.accept()
         if not ok and err:
             QMessageBox.critical(self, "Firmador", err)
+
+    def _is_guest(self) -> bool:
+        return bool(getattr(self, "_guest_read_only", False))
+
+    def _deny_guest(self) -> None:
+        QMessageBox.warning(
+            self,
+            "Permisos",
+            "Los invitados solo pueden visualizar. Cambia de usuario para realizar esta acción.",
+        )
+
+    def _apply_guest_restrictions(self) -> None:
+        if not self._is_guest():
+            return
+        btn_names = [
+            "btn_add_product",
+            "btn_edit_product",
+            "btn_delete_product",
+            "btn_register_sale",
+            "btn_register_credito_fiscal",
+            "btn_register_purchase",
+            "btn_guardar_rapido",
+            "btn_cargar_inventario",
+            "btn_add_cliente",
+            "btn_edit_cliente",
+            "btn_delete_cliente",
+            "btn_add_trabajador",
+            "btn_edit_trabajador",
+            "btn_delete_trabajador",
+            "btn_add_vendedor",
+            "btn_add_distribuidor",
+        ]
+        for name in btn_names:
+            btn = getattr(self, name, None)
+            if btn:
+                btn.setEnabled(False)
 
     def _iniciar_firmador_silencioso(self) -> tuple[bool, str | None]:
         if self.firmador_proc and self.firmador_proc.poll() is None:
@@ -1800,6 +1841,9 @@ class MainWindow(QMainWindow):
         self._actualizar_inventario_actual()  # <-- AGREGA ESTA LÍNEA AL FINAL DE _setup_ui
 
     def _abrir_settings_dialog(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         dlg = SettingsDialog(self)
         dlg.exec_()
 
@@ -2336,12 +2380,16 @@ class MainWindow(QMainWindow):
         self.cliente_search = self.search_bar_clientes
 
     def agregar_producto(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         dialog = ProductDialog(self.manager._vendedores, self.manager._Distribuidores, self)
         if dialog.exec_():
             data = dialog.get_data()
             self.manager.add_producto(
                 data["nombre"], data["codigo"], data["sku"], None, None,
-                data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], 0
+                data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], 0,
+                presentaciones=data.get("presentaciones"),
             )
             self._actualizar_arbol_vendedores()
             self._actualizar_arbol_Distribuidores()
@@ -2354,6 +2402,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Producto", "Producto agregado correctamente.")
 
     def editar_producto(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         prod = self._get_selected_product()
         if not prod:
             QMessageBox.warning(self, "Editar producto", "Seleccione un producto para editar.")
@@ -2367,12 +2418,16 @@ class MainWindow(QMainWindow):
                 prod.get("vendedor_id"),  # Mantén el vendedor original
                 prod.get("Distribuidor_id"),  # Mantén el Distribuidor original
                 data["precio_compra"], data["precio_venta_minorista"], data["precio_venta_mayorista"], data.get("stock", prod.get("stock", 0)),
+                presentaciones=data.get("presentaciones"),
             )
             self.filter_products()
             QMessageBox.information(self, "Producto", "Producto editado correctamente.")
         self.selected_row = None
 
     def eliminar_producto(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         prod = self._get_selected_product()
         if not prod:
             QMessageBox.warning(self, "Eliminar producto", "Seleccione un producto para eliminar.")
@@ -2442,6 +2497,9 @@ class MainWindow(QMainWindow):
             return False, str(exc)
 
     def registrar_venta(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         if not self._ensure_last_invoice_sent():
             return
         # Obtén los lotes con stock > 0 del inventario actual
@@ -2485,6 +2543,9 @@ class MainWindow(QMainWindow):
             self._actualizar_historial()
 
     def registrar_compra(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         productos = [dict(p) for p in self.manager._products]
         Distribuidores = [dict(v) for v in self.manager._Distribuidores]
         proveedores = [dict(v) for v in self.manager.get_vendedores_compra()]
@@ -2907,6 +2968,9 @@ class MainWindow(QMainWindow):
         self.data_changed.emit()
 
     def registrar_venta_credito_fiscal(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         if not self._ensure_last_invoice_sent():
             return
         try:
@@ -3137,6 +3201,9 @@ class MainWindow(QMainWindow):
         return True
 
     def guardar_como(self):
+        if self._is_guest():
+            self._deny_guest()
+            return False
         filename, _ = QFileDialog.getSaveFileName(
             self,
             "Guardar inventario como",
@@ -3154,6 +3221,9 @@ class MainWindow(QMainWindow):
         return True
 
     def cargar_inventario(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         filename, _ = QFileDialog.getOpenFileName(
             self,
             "Cargar inventario",
@@ -3274,6 +3344,9 @@ class MainWindow(QMainWindow):
             QMessageBox.critical(self, "Error", f"No se pudo guardar el archivo:\n{exc}")
 
     def guardar_rapido(self, *, asincrono=True, mostrar_mensajes=True):
+        if self._is_guest():
+            self._deny_guest()
+            return False
         filename = self.ultimo_archivo_json
         if not filename:
             filename, _ = QFileDialog.getSaveFileName(
@@ -3304,6 +3377,9 @@ class MainWindow(QMainWindow):
         return bool(resultado)
 
     def cargar_rapido(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         import os
         if self.ultimo_archivo_json and os.path.exists(self.ultimo_archivo_json):
             try:
@@ -3388,6 +3464,9 @@ class MainWindow(QMainWindow):
         self._next_window = nueva_ventana
 
     def nuevo_inventario(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         reply = QMessageBox.question(
             self,
             "Nuevo inventario",
@@ -3436,7 +3515,28 @@ class MainWindow(QMainWindow):
             self._actualizar_inventario_actual()
             QMessageBox.information(self, "Nuevo inventario", "Inventario limpio y listo para usar.")
 
+    def _verificar_vendedores_inconsistentes(self):
+        """Notifica si existen vendedores sin distribuidor asignado."""
+        try:
+            inconsistentes = self.manager.db.get_vendedores_sin_distribuidor()
+        except Exception:
+            logger.exception("No se pudo verificar vendedores sin distribuidor")
+            return
+        if inconsistentes:
+            if not self._alerto_vendedores_inconsistentes:
+                nombres = ", ".join(v.get("nombre", "") for v in inconsistentes if v.get("nombre"))
+                detalle = nombres or "Se encontraron vendedores sin distribuidor."
+                QMessageBox.warning(
+                    self,
+                    "Vendedores sin distribuidor",
+                    f"{detalle}\nEdite o elimine estos vendedores antes de continuar.",
+                )
+                self._alerto_vendedores_inconsistentes = True
+        else:
+            self._alerto_vendedores_inconsistentes = False
+
     def _actualizar_arbol_vendedores(self):
+        self._verificar_vendedores_inconsistentes()
         search = ""
         if hasattr(self, "vendedores_search"):
             search = (self.vendedores_search.text() or "").strip().lower()
@@ -3483,27 +3583,41 @@ class MainWindow(QMainWindow):
             self.Distribuidores_list.addItem(dist)
 
     def _agregar_vendedor(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         from dialogs import VendedorDialog
         codigo = self.manager.db.get_next_vendedor_codigo()
         dialog = VendedorDialog(self.manager._Distribuidores, self, codigo_sugerido=codigo)
         if dialog.exec_():
             data = dialog.get_data()
-            self.manager.db.add_vendedor(
-                data["nombre"],
-                descripcion=data["descripcion"],
-                Distribuidor_id=data["Distribuidor_id"],
-                codigo=data["codigo"],
-                dui=data["dui"],
-                nit=data.get("nit"),
-                is_subject_excluded=data.get("is_subject_excluded", 0),
+            try:
+                self.manager.db.add_vendedor(
+                    data["nombre"],
+                    descripcion=data["descripcion"],
+                    Distribuidor_id=data["Distribuidor_id"],
+                    codigo=data["codigo"],
+                    dui=data["dui"],
+                    nit=data.get("nit"),
+                    is_subject_excluded=data.get("is_subject_excluded", 0),
 
-            )
+                )
+            except ValueError as exc:
+                QMessageBox.warning(self, "Vendedor", str(exc))
+                return
+            except Exception as exc:
+                logger.exception("No se pudo agregar el vendedor")
+                QMessageBox.critical(self, "Vendedor", f"No se pudo agregar el vendedor: {exc}")
+                return
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor agregado correctamente.")
 
     def _editar_vendedor(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         from dialogs import VendedorDialog
         item = self.vendedores_list.currentItem()
         if item is None and self.vendedores_list.selectedItems():
@@ -3526,23 +3640,34 @@ class MainWindow(QMainWindow):
         dialog = VendedorDialog(self.manager._Distribuidores, self, vendedor=vendedor)
         if dialog.exec_():
             data = dialog.get_data()
-            self.manager.db.update_vendedor(
-                vendedor["id"],
-                data["codigo"],
-                data["nombre"],
-                data["descripcion"],
-                data["Distribuidor_id"],
-                dui=data["dui"],
-                nit=data.get("nit"),
-                is_subject_excluded=data.get("is_subject_excluded", 0),
+            try:
+                self.manager.db.update_vendedor(
+                    vendedor["id"],
+                    data["codigo"],
+                    data["nombre"],
+                    data["descripcion"],
+                    data["Distribuidor_id"],
+                    dui=data["dui"],
+                    nit=data.get("nit"),
+                    is_subject_excluded=data.get("is_subject_excluded", 0),
 
-            )
+                )
+            except ValueError as exc:
+                QMessageBox.warning(self, "Vendedor", str(exc))
+                return
+            except Exception as exc:
+                logger.exception("No se pudo editar el vendedor")
+                QMessageBox.critical(self, "Vendedor", f"No se pudo editar el vendedor: {exc}")
+                return
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
             self._actualizar_arbol_vendedores()
             QMessageBox.information(self, "Vendedor", "Vendedor editado correctamente.")
 
     def _eliminar_vendedor(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         item = self.vendedores_list.currentItem()
         if item is None and self.vendedores_list.selectedItems():
             item = self.vendedores_list.selectedItems()[0]
@@ -3550,21 +3675,26 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Eliminar vendedor", "Seleccione un vendedor para eliminar.")
             return
         vendedor_id = item.data(Qt.UserRole)
+        nombre = item.text()
         confirm = QMessageBox.question(
             self,
             "Eliminar",
-            f"¿Eliminar vendedor '{item.text()}'?",
+            f"¿Eliminar vendedor '{nombre}'?",
             QMessageBox.Yes | QMessageBox.No,
         )
         if confirm == QMessageBox.Yes:
             try:
-                self.manager.db.delete_vendedor(vendedor_id)
+                self.manager.db.delete_vendedor_completo(vendedor_id)
             except ValueError:
                 QMessageBox.warning(
                     self,
                     "Eliminar vendedor",
                     "El vendedor tiene registros asociados y no puede eliminarse.",
                 )
+                return
+            except Exception as exc:
+                logger.exception("No se pudo eliminar el vendedor")
+                QMessageBox.critical(self, "Eliminar vendedor", f"No se pudo eliminar el vendedor: {exc}")
                 return
             self.manager.refresh_data()
             self.compras_tab.refresh_filters()
@@ -3573,10 +3703,13 @@ class MainWindow(QMainWindow):
             QMessageBox.information(
                 self,
                 "Vendedor eliminado",
-                f"El vendedor '{item.text()}' ha sido eliminado.",
+                f"El vendedor '{nombre}' ha sido eliminado.",
             )
 
     def _agregar_Distribuidor(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         dialog = DistribuidorDialog(self)
         if dialog.exec_():
             data = dialog.get_data()
@@ -3587,6 +3720,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Distribuidor", "Distribuidor agregado correctamente.")
 
     def _editar_Distribuidor(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         item = self.distribuidores_list.currentItem()
         if item is None and self.distribuidores_list.selectedItems():
             item = self.distribuidores_list.selectedItems()[0]
@@ -3654,6 +3790,9 @@ class MainWindow(QMainWindow):
         dialog.exec_()
 
     def _eliminar_Distribuidor(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         item = self.distribuidores_list.currentItem()
         if item is None and self.distribuidores_list.selectedItems():
             item = self.distribuidores_list.selectedItems()[0]
@@ -3716,6 +3855,9 @@ class MainWindow(QMainWindow):
         return None
 
     def _agregar_cliente(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         codigo = self.manager.db.get_next_cliente_codigo()
         dialog = ClienteDialog(self, codigo_sugerido=codigo)
         if dialog.exec_():
@@ -3745,6 +3887,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Cliente", "Cliente agregado correctamente.")
 
     def _editar_cliente(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         cli = self._get_selected_cliente()
         if not cli:
             QMessageBox.warning(self, "Editar cliente", "Seleccione un cliente para editar.")
@@ -3778,6 +3923,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Cliente", "Cliente editado correctamente.")
 
     def _eliminar_cliente(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         cli = self._get_selected_cliente()
         if not cli:
             QMessageBox.warning(self, "Eliminar cliente", "Seleccione un cliente para eliminar.")
@@ -4496,6 +4644,9 @@ class MainWindow(QMainWindow):
         return None
 
     def _agregar_trabajador(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         from dialogs import TrabajadorDialog
         codigo = self.manager.db.get_next_trabajador_codigo()
         dialog = TrabajadorDialog(parent=self)
@@ -4507,6 +4658,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Trabajador", "Trabajador agregado correctamente.")
 
     def _editar_trabajador(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         t = self._get_selected_trabajador()
         if not t:
             QMessageBox.warning(self, "Editar trabajador", "Seleccione un trabajador para editar.")
@@ -4520,6 +4674,9 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Trabajador", "Trabajador editado correctamente.")
 
     def _eliminar_trabajador(self):
+        if self._is_guest():
+            self._deny_guest()
+            return
         t = self._get_selected_trabajador()
         if not t:
             QMessageBox.warning(self, "Eliminar trabajador", "Seleccione un trabajador para eliminar.")
@@ -4543,13 +4700,20 @@ class MainWindow(QMainWindow):
                 )
                 return
             try:
-                self.manager.db.delete_trabajador(t["id"])
+                if t.get("es_vendedor"):
+                    self.manager.db.delete_vendedor_completo(t["id"])
+                else:
+                    self.manager.db.delete_trabajador(t["id"])
             except ValueError:
                 QMessageBox.warning(
                     self,
                     "Eliminar trabajador",
-                    "El trabajador tiene ventas asociadas y no puede eliminarse.",
+                    "El trabajador tiene registros asociados y no puede eliminarse.",
                 )
+                return
+            except Exception as exc:
+                logger.exception("No se pudo eliminar el trabajador")
+                QMessageBox.critical(self, "Eliminar trabajador", f"No se pudo eliminar el trabajador: {exc}")
                 return
             self._actualizar_tabla_trabajadores()
             QMessageBox.information(

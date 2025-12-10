@@ -6,6 +6,7 @@ import sqlite3
 import logging
 import traceback
 from pathlib import Path
+import secrets
 
 # Swig-generated types from external libraries (e.g. PyMuPDF) may emit
 # warnings about missing ``__module__`` attributes. Since these wrappers
@@ -129,6 +130,51 @@ def _save_last_user(username: str) -> None:
     except OSError:
         startup_logger.debug("No se pudo guardar el último usuario utilizado")
 
+
+def _ensure_admin_recovery(db: DB, parent: QDialog | None = None):
+    """Garantiza que exista al menos un administrador, creando uno de recuperación si falta."""
+    try:
+        has_admin = db.has_any_admin()
+    except Exception:
+        startup_logger.exception("No se pudo verificar si existen administradores")
+        return
+    if has_admin:
+        return
+    # Genera credenciales de recuperación únicas
+    base_username = "admin_recuperacion"
+    username = base_username
+    existing_names = {u["username"].lower() for u in db.get_users()}
+    suffix = 1
+    while username.lower() in existing_names:
+        suffix += 1
+        username = f"{base_username}{suffix}"
+    password = secrets.token_urlsafe(8)
+    try:
+        db.add_user(username, password, "admin")
+        startup_logger.warning(
+            "No se encontraron administradores. Se creó un usuario de recuperación: %s",
+            username,
+        )
+        QMessageBox.information(
+            parent,
+            "Administrador de recuperación",
+            "No se encontró ningún usuario administrador.\n"
+            "Se creó un usuario temporal de recuperación:\n\n"
+            f"Usuario: {username}\nContraseña: {password}\n\n"
+            "Inicia sesión con estas credenciales y crea un administrador permanente.",
+        )
+    except Exception as exc:
+        startup_logger.exception("No se pudo crear el admin de recuperación")
+        try:
+            QMessageBox.critical(
+                parent,
+                "Administrador requerido",
+                "No se pudo crear un administrador de recuperación.\n"
+                f"Error: {exc}",
+            )
+        except Exception:
+            pass
+
 if __name__ == "__main__":
     migrate_datos_negocio()
     if getattr(sys, "frozen", False):
@@ -163,6 +209,7 @@ if __name__ == "__main__":
         app.setWindowIcon(QIcon(str(icon_path)))
 
     db = DB()
+    _ensure_admin_recovery(db)
     users = db.get_users()
     if not any(u["username"].lower() == "invitado" for u in users):
         db.add_user("invitado", "", "Invitado")

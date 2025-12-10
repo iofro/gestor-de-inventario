@@ -133,6 +133,23 @@ def _apply_cliente_extras(cliente: Mapping[str, Any]) -> dict[str, Any]:
     data["razonSocial"] = razon
     return data
 
+
+def _parse_presentaciones(raw_presentaciones: Any) -> list[dict[str, Any]]:
+    """Devuelve una lista de presentaciones a partir de texto o estructuras."""
+    if not raw_presentaciones:
+        return []
+    if isinstance(raw_presentaciones, list):
+        return [dict(item) for item in raw_presentaciones if isinstance(item, Mapping)]
+    if isinstance(raw_presentaciones, str):
+        try:
+            data = json.loads(raw_presentaciones)
+            if isinstance(data, list):
+                return [dict(item) for item in data if isinstance(item, Mapping)]
+        except Exception:
+            return []
+    return []
+
+
 class CommitAwareConnection(sqlite3.Connection):
     """SQLite connection that notifies listeners after write commits."""
 
@@ -514,20 +531,18 @@ class DB:
 
     def _ensure_default_users(self) -> None:
         """Create default user, admin and guest accounts if missing."""
+        self.cursor.execute("SELECT COUNT(*) FROM usuarios")
+        count = self.cursor.fetchone()[0]
+        if count:
+            return
         users = [
             ("invitado", "", "guest"),
             ("usuario", "usuario", "user"),
             ("admin", "admin", "admin"),
         ]
-        for username, password, role in users:
-            self.cursor.execute(
-                "SELECT id FROM usuarios WHERE username=?", (username,)
-            )
-            if not self.cursor.fetchone():
-                self.cursor.execute(
-                    "INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)",
-                    (username, password, role),
-                )
+        self.cursor.executemany(
+            "INSERT INTO usuarios (username, password, role) VALUES (?, ?, ?)", users
+        )
         self.conn.commit()
 
     def migrate_ventas_cliente_fk(self):
@@ -990,6 +1005,7 @@ class DB:
             ("productos", "precio_venta_minorista REAL DEFAULT 0"),
             ("productos", "precio_venta_mayorista REAL DEFAULT 0"),
             ("productos", "precio_total_mayorista REAL DEFAULT 0"),
+            ("productos", "presentaciones TEXT"),
             ("productos", "Distribuidor_id INTEGER"),
             ("ventas", "cliente_id INTEGER"),
             ("ventas", "Distribuidor_id INTEGER"),
@@ -1205,6 +1221,20 @@ class DB:
         self.cursor.execute("SELECT * FROM vendedores")
         return [dict(row) for row in self.cursor.fetchall()]
 
+    def get_vendedores_sin_distribuidor(self):
+        self.ensure_column("vendedores", "nit", "TEXT")
+        self.ensure_column("vendedores", "is_subject_excluded", "INTEGER DEFAULT 0")
+        self.cursor.execute(
+            """
+            SELECT v.id, v.nombre
+            FROM vendedores v
+            LEFT JOIN trabajadores t ON t.id = v.id
+            WHERE v.Distribuidor_id IS NULL
+              AND (t.id IS NULL OR t.es_vendedor = 0)
+            """
+        )
+        return [dict(row) for row in self.cursor.fetchall()]
+
     def get_vendedores_distribuidores(self):
         # Asegura columnas opcionales para instalaciones antiguas.
         self.ensure_column("vendedores", "nit", "TEXT")
@@ -1271,6 +1301,13 @@ class DB:
             logger.exception("Error al eliminar vendedor: %s", e)
             raise
 
+    def delete_vendedor_completo(self, vendedor_id: int) -> None:
+        """
+        Elimina completamente un vendedor de vendedores y trabajadores
+        para permitir reutilizar nombres.
+        """
+        self.delete_vendedor(vendedor_id)
+
     # CRUD PRODUCTOS
     def add_producto(
         self,
@@ -1284,6 +1321,7 @@ class DB:
         precio_venta_mayorista,
         stock,
         commit: bool = True,
+        presentaciones=None,
     ):
         """Insert a product into the database.
 
@@ -1298,9 +1336,15 @@ class DB:
         sku = _normalize_sku_value(sku)
         if isinstance(codigo, str):
             codigo = codigo.strip()
+        presentaciones_json = None
+        if presentaciones:
+            try:
+                presentaciones_json = json.dumps(presentaciones, ensure_ascii=False)
+            except Exception:
+                presentaciones_json = None
         self.cursor.execute(
-            "INSERT INTO productos (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock)
+            "INSERT INTO productos (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, presentaciones) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, presentaciones_json)
         )
         if commit:
             self.conn.commit()
@@ -1332,16 +1376,27 @@ class DB:
             query += " LIMIT ? OFFSET ?"
             params.extend([limit, offset])
         self.cursor.execute(query, params)
-        return [dict(row) for row in self.cursor.fetchall()]
+        results = []
+        for row in self.cursor.fetchall():
+            data = dict(row)
+            data["presentaciones"] = _parse_presentaciones(data.get("presentaciones"))
+            results.append(data)
+        return results
 
-    def edit_producto(self, producto_id, nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock):
+    def edit_producto(self, producto_id, nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, presentaciones=None):
         # Elimina fecha_vencimiento del método y de la consulta
         sku = _normalize_sku_value(sku)
         if isinstance(codigo, str):
             codigo = codigo.strip()
+        presentaciones_json = None
+        if presentaciones:
+            try:
+                presentaciones_json = json.dumps(presentaciones, ensure_ascii=False)
+            except Exception:
+                presentaciones_json = None
         self.cursor.execute(
-            "UPDATE productos SET nombre=?, codigo=?, sku=?, vendedor_id=?, Distribuidor_id=?, precio_compra=?, precio_venta_minorista=?, precio_venta_mayorista=?, stock=? WHERE id=?",
-            (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, producto_id)
+            "UPDATE productos SET nombre=?, codigo=?, sku=?, vendedor_id=?, Distribuidor_id=?, precio_compra=?, precio_venta_minorista=?, precio_venta_mayorista=?, stock=?, presentaciones=? WHERE id=?",
+            (nombre, codigo, sku, vendedor_id, Distribuidor_id, precio_compra, precio_venta_minorista, precio_venta_mayorista, stock, presentaciones_json, producto_id)
         )
         self.conn.commit()
 
@@ -4513,6 +4568,21 @@ class DB:
 
     def update_user(self, user_id, username, password, role):
         self.cursor.execute(
+            "SELECT role FROM usuarios WHERE id=?",
+            (user_id,),
+        )
+        row = self.cursor.fetchone()
+        current_role = row["role"] if row else None
+        if current_role == "admin" and role != "admin":
+            self.cursor.execute(
+                "SELECT COUNT(*) FROM usuarios WHERE role='admin'"
+            )
+            admin_count = self.cursor.fetchone()[0] or 0
+            if admin_count <= 1:
+                raise ValueError(
+                    "No se puede cambiar el rol: debe existir al menos un usuario administrador."
+                )
+        self.cursor.execute(
             "UPDATE usuarios SET username=?, password=?, role=? WHERE id=?",
             (username, password, role, user_id),
         )
@@ -4521,6 +4591,12 @@ class DB:
     def delete_user(self, user_id):
         self.cursor.execute("DELETE FROM usuarios WHERE id=?", (user_id,))
         self.conn.commit()
+
+    def has_any_admin(self) -> bool:
+        self.cursor.execute(
+            "SELECT 1 FROM usuarios WHERE role='admin' LIMIT 1"
+        )
+        return self.cursor.fetchone() is not None
 
     def authenticate(self, username, password):
         self.cursor.execute(

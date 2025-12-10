@@ -16,7 +16,7 @@ from PyQt5.QtWidgets import (
     QDoubleSpinBox, QPushButton, QListWidget, QListWidgetItem, QMessageBox, QCheckBox, QRadioButton, QComboBox,
     QDateEdit, QTableWidget, QTableWidgetItem, QGroupBox, QFormLayout, QButtonGroup,
     QAbstractItemView, QTextEdit, QStackedLayout, QWidget, QHeaderView, QSizePolicy,
-    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout,
+    QFileDialog, QDialogButtonBox, QListView, QFrame, QCompleter, QGridLayout, QToolButton, QScrollArea,
     QStyledItemDelegate, QStyleOptionViewItem, QLayout
 )
 from PyQt5.QtCore import (
@@ -1082,7 +1082,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._apply_card_styles()
 
-        main_layout = QVBoxLayout()
+        content_widget = QWidget()
+        main_layout = QVBoxLayout(content_widget)
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(16)
 
@@ -1492,7 +1493,17 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         # Cliente y pago arriba, carrito abajo (igual a crédito fiscal)
         main_layout.addWidget(card_bottom)
         main_layout.addWidget(card_top)
-        self.setLayout(main_layout)
+
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(content_widget)
+
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.addWidget(scroll)
+        self.setLayout(root_layout)
 
         # Creamos un diccionario que mapea nombre de producto a nombre de Distribuidor
         self._producto_Distribuidor_map = {}
@@ -2259,8 +2270,16 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
 class ProductDialog(QDialog):
     def __init__(self, vendedores, Distribuidores, parent=None, producto=None):
         super().__init__(parent)
-        self.setWindowTitle("Producto")
-        layout = QVBoxLayout()
+        self.setWindowTitle("Editar Producto" if producto else "Crear Nuevo Producto")
+        self.resize(960, 720)
+        self.presentaciones: list[dict[str, Any]] = []
+        if producto:
+            try:
+                raw_pres = producto.get("presentaciones")
+                if isinstance(raw_pres, list):
+                    self.presentaciones = [dict(p) for p in raw_pres if isinstance(p, Mapping)]
+            except Exception:
+                self.presentaciones = []
 
         # Datos básicos del producto
         self.codigo_edit = QLineEdit()
@@ -2278,29 +2297,158 @@ class ProductDialog(QDialog):
         self.precio_venta_mayorista_spin.setMaximum(1000000)
         self.precio_venta_mayorista_spin.setDecimals(2)
 
-        layout.addWidget(QLabel("Código:"))
-        layout.addWidget(self.codigo_edit)
-        layout.addWidget(QLabel("SKU:"))
-        layout.addWidget(self.sku_edit)
-        layout.addWidget(QLabel("Nombre:"))
-        layout.addWidget(self.nombre_edit)
-        layout.addWidget(QLabel("Precio de compra:"))
-        layout.addWidget(self.precio_compra_spin)
-        layout.addWidget(QLabel("Precio venta minorista:"))
-        layout.addWidget(self.precio_venta_minorista_spin)
-        layout.addWidget(QLabel("Precio venta mayorista:"))
-        layout.addWidget(self.precio_venta_mayorista_spin)
+        self.setStyleSheet(
+            """
+            QWidget { font-family: 'Inter', 'Segoe UI', sans-serif; color: #1f2937; font-size: 13px; }
+            QLabel#DialogTitle { font-size: 20px; font-weight: 700; color: #0f172a; }
+            QLabel[class="sectionHeader"] {
+                background: #e8f3ff;
+                border: 1px solid #d0e4ff;
+                border-radius: 6px;
+                padding: 10px 12px;
+                font-weight: 700;
+                color: #0a3a60;
+            }
+            QLabel[class="fieldLabel"] { font-weight: 600; margin-bottom: 2px; }
+            QLineEdit, QDoubleSpinBox {
+                border: 1px solid #d1d5db;
+                border-radius: 6px;
+                padding: 8px 10px;
+                background: white;
+            }
+            QLineEdit:focus, QDoubleSpinBox:focus {
+                border: 1px solid #0d6efd;
+                outline: none;
+            }
+            QTableWidget {
+                border: 1px solid #d1d5db;
+                border-radius: 8px;
+                gridline-color: #e5e7eb;
+                alternate-background-color: #f9fafb;
+            }
+            QHeaderView::section {
+                background: #f3f4f6;
+                font-weight: 700;
+                padding: 10px 6px;
+                border: none;
+                border-right: 1px solid #e5e7eb;
+            }
+            QTableWidget::item { padding: 10px 6px; }
+            QToolButton {
+                border: none;
+                padding: 4px 6px;
+                border-radius: 4px;
+            }
+            QPushButton[class="primary"] {
+                background: #0d6efd;
+                color: white;
+                padding: 10px 18px;
+                border-radius: 8px;
+                border: none;
+                font-weight: 600;
+            }
+            QPushButton[class="secondary"] {
+                background: #f9fafb;
+                color: #111827;
+                padding: 10px 18px;
+                border-radius: 8px;
+                border: 1px solid #d1d5db;
+                font-weight: 600;
+            }
+            QPushButton[class="ghost"] {
+                background: #f8fbff;
+                color: #0d6efd;
+                border: 1px solid #cfe2ff;
+                padding: 10px 16px;
+                border-radius: 8px;
+                font-weight: 600;
+            }
+            """
+        )
 
-        btns = QHBoxLayout()
-        self.btn_ok = QPushButton("Guardar")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(18, 18, 18, 18)
+        layout.setSpacing(16)
+
+        title = QLabel("Crear Nuevo Producto" if not producto else "Editar Producto")
+        title.setObjectName("DialogTitle")
+        layout.addWidget(title)
+
+        # Sección 1: Información básica
+        header1 = QLabel("1. Información Básica y Precios Unitarios")
+        header1.setProperty("class", "sectionHeader")
+        layout.addWidget(header1)
+
+        form_card = QFrame()
+        form_layout = QGridLayout(form_card)
+        form_layout.setHorizontalSpacing(14)
+        form_layout.setVerticalSpacing(12)
+        form_layout.setContentsMargins(6, 6, 6, 6)
+
+        def add_field(row, col, label_text, widget, colspan=1):
+            lbl = QLabel(label_text)
+            lbl.setProperty("class", "fieldLabel")
+            form_layout.addWidget(lbl, row * 2, col, 1, colspan)
+            widget.setMinimumHeight(34)
+            form_layout.addWidget(widget, row * 2 + 1, col, 1, colspan)
+
+        add_field(0, 0, "Código", self.codigo_edit)
+        add_field(0, 1, "SKU Principal", self.sku_edit)
+        add_field(1, 0, "Nombre del Producto", self.nombre_edit, colspan=2)
+        add_field(2, 0, "Precio de Compra Unitario", self.precio_compra_spin)
+        add_field(2, 1, "Precio de Venta Unitario", self.precio_venta_minorista_spin)
+        add_field(3, 0, "Precio de Venta Mayorista (opcional)", self.precio_venta_mayorista_spin, colspan=2)
+        form_layout.setColumnStretch(0, 1)
+        form_layout.setColumnStretch(1, 1)
+        layout.addWidget(form_card)
+
+        # Sección 2: Presentaciones adicionales (UI estática)
+        header2 = QLabel("2. Presentaciones Adicionales y Precios")
+        header2.setProperty("class", "sectionHeader")
+        layout.addWidget(header2)
+
+        self.presentaciones_table = QTableWidget(3, 6)
+        self.presentaciones_table.setHorizontalHeaderLabels([
+            "Nombre Presentación",
+            "Factor (Unidades Base)",
+            "Precio Compra Presentación",
+            "Precio Venta Presentación",
+            "",
+            "",
+        ])
+        self.presentaciones_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        self.presentaciones_table.verticalHeader().setVisible(False)
+        self.presentaciones_table.setAlternatingRowColors(True)
+        self.presentaciones_table.setEditTriggers(QTableWidget.NoEditTriggers)
+        self.presentaciones_table.setSelectionMode(QTableWidget.NoSelection)
+
+        layout.addWidget(self.presentaciones_table)
+
+        add_row = QHBoxLayout()
+        add_row.addStretch(1)
+        self.btn_add_presentacion = QPushButton("+ Agregar Presentación")
+        self.btn_add_presentacion.setProperty("class", "ghost")
+        add_row.addWidget(self.btn_add_presentacion)
+        add_row.addStretch(1)
+        layout.addLayout(add_row)
+
+        # Footer
+        footer = QHBoxLayout()
+        footer.addStretch(1)
         self.btn_cancel = QPushButton("Cancelar")
-        btns.addWidget(self.btn_ok)
-        btns.addWidget(self.btn_cancel)
-        layout.addLayout(btns)
+        self.btn_cancel.setProperty("class", "secondary")
+        self.btn_ok = QPushButton("Guardar")
+        self.btn_ok.setProperty("class", "primary")
+        footer.addWidget(self.btn_cancel)
+        footer.addWidget(self.btn_ok)
+        layout.addLayout(footer)
+
         self.setLayout(layout)
 
         self.btn_ok.clicked.connect(self.accept)
         self.btn_cancel.clicked.connect(self.reject)
+        self.btn_add_presentacion.clicked.connect(self._agregar_presentacion)
+        self._refrescar_presentaciones_table()
 
         if producto:
             self.nombre_edit.setText(producto.get("nombre", ""))
@@ -2309,6 +2457,7 @@ class ProductDialog(QDialog):
             self.precio_compra_spin.setValue(producto.get("precio_compra", 0))
             self.precio_venta_minorista_spin.setValue(producto.get("precio_venta_minorista", 0))
             self.precio_venta_mayorista_spin.setValue(producto.get("precio_venta_mayorista", 0))
+            self._refrescar_presentaciones_table()
 
     def _handle_scanned_code(self):
         codigo = self.codigo_edit.text().strip()
@@ -2326,6 +2475,53 @@ class ProductDialog(QDialog):
                 return True
         return super().eventFilter(obj, event)
 
+    def _refrescar_presentaciones_table(self):
+        rows = self.presentaciones or []
+        self.presentaciones_table.setRowCount(len(rows))
+        for r, item in enumerate(rows):
+            nombre = item.get("nombre", "")
+            factor = item.get("factor", "")
+            pc = item.get("precio_compra", 0)
+            pv = item.get("precio_venta", 0)
+            self.presentaciones_table.setItem(r, 0, QTableWidgetItem(str(nombre)))
+            self.presentaciones_table.setItem(r, 1, QTableWidgetItem(str(factor)))
+            self.presentaciones_table.setItem(r, 2, QTableWidgetItem(f"${float(pc):.2f}"))
+            self.presentaciones_table.setItem(r, 3, QTableWidgetItem(f"${float(pv):.2f}"))
+
+            edit_btn = QToolButton()
+            edit_btn.setText("✏")
+            edit_btn.setStyleSheet("color: #0d6efd; font-size: 16px;")
+            edit_btn.clicked.connect(lambda _, idx=r: self._editar_presentacion(idx))
+
+            delete_btn = QToolButton()
+            delete_btn.setText("🗑")
+            delete_btn.setStyleSheet("color: #d92d20; font-size: 16px;")
+            delete_btn.clicked.connect(lambda _, idx=r: self._eliminar_presentacion(idx))
+
+            self.presentaciones_table.setCellWidget(r, 4, edit_btn)
+            self.presentaciones_table.setCellWidget(r, 5, delete_btn)
+
+    def _agregar_presentacion(self):
+        dialog = PresentacionDialog(self)
+        if dialog.exec_():
+            data = dialog.get_data()
+            self.presentaciones.append(data)
+            self._refrescar_presentaciones_table()
+
+    def _editar_presentacion(self, idx: int):
+        if idx < 0 or idx >= len(self.presentaciones):
+            return
+        dialog = PresentacionDialog(self, data=self.presentaciones[idx])
+        if dialog.exec_():
+            self.presentaciones[idx] = dialog.get_data()
+            self._refrescar_presentaciones_table()
+
+    def _eliminar_presentacion(self, idx: int):
+        if idx < 0 or idx >= len(self.presentaciones):
+            return
+        del self.presentaciones[idx]
+        self._refrescar_presentaciones_table()
+
     def get_data(self):
         codigo = (self.codigo_edit.text() or "").strip()
         sku_text = (self.sku_edit.text() or "").strip()
@@ -2336,8 +2532,82 @@ class ProductDialog(QDialog):
             "sku": sku,
             "precio_compra": self.precio_compra_spin.value(),
             "precio_venta_minorista": self.precio_venta_minorista_spin.value(),
-            "precio_venta_mayorista": self.precio_venta_mayorista_spin.value()
+            "precio_venta_mayorista": self.precio_venta_mayorista_spin.value(),
+            "presentaciones": [dict(p) for p in self.presentaciones],
         }
+
+
+class PresentacionDialog(QDialog):
+    """Diálogo simple para agregar/editar una presentación de producto."""
+
+    def __init__(self, parent=None, data=None):
+        super().__init__(parent)
+        self.setWindowTitle("Editar Presentación" if data else "Agregar Presentación")
+        layout = QVBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(10)
+
+        self.nombre_edit = QLineEdit()
+        self.factor_spin = QDoubleSpinBox()
+        self.factor_spin.setRange(0.0001, 1_000_000)
+        self.factor_spin.setDecimals(4)
+        self.factor_spin.setSingleStep(1)
+        self.precio_compra_spin = QDoubleSpinBox()
+        self.precio_compra_spin.setRange(0, 1_000_000)
+        self.precio_compra_spin.setDecimals(4)
+        self.precio_venta_spin = QDoubleSpinBox()
+        self.precio_venta_spin.setRange(0, 1_000_000)
+        self.precio_venta_spin.setDecimals(4)
+
+        form = QGridLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(8)
+        form.addWidget(QLabel("Nombre Presentación"), 0, 0)
+        form.addWidget(self.nombre_edit, 1, 0, 1, 2)
+        form.addWidget(QLabel("Factor (Unidades Base)"), 2, 0)
+        form.addWidget(self.factor_spin, 3, 0)
+        form.addWidget(QLabel("Precio Compra Presentación"), 4, 0)
+        form.addWidget(self.precio_compra_spin, 5, 0)
+        form.addWidget(QLabel("Precio Venta Presentación"), 4, 1)
+        form.addWidget(self.precio_venta_spin, 5, 1)
+        layout.addLayout(form)
+
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        btn_cancel = QPushButton("Cancelar")
+        btn_save = QPushButton("Guardar")
+        btn_save.setProperty("class", "primary")
+        btns.addWidget(btn_cancel)
+        btns.addWidget(btn_save)
+        layout.addLayout(btns)
+        self.setLayout(layout)
+
+        btn_cancel.clicked.connect(self.reject)
+        btn_save.clicked.connect(self.accept)
+
+        if data:
+            self.nombre_edit.setText(str(data.get("nombre", "")))
+            try:
+                self.factor_spin.setValue(float(data.get("factor", 0)))
+            except Exception:
+                pass
+            try:
+                self.precio_compra_spin.setValue(float(data.get("precio_compra", 0)))
+            except Exception:
+                pass
+            try:
+                self.precio_venta_spin.setValue(float(data.get("precio_venta", 0)))
+            except Exception:
+                pass
+
+    def get_data(self):
+        return {
+            "nombre": self.nombre_edit.text().strip(),
+            "factor": self.factor_spin.value(),
+            "precio_compra": self.precio_compra_spin.value(),
+            "precio_venta": self.precio_venta_spin.value(),
+        }
+
 
 class RegisterPurchaseDialog(QDialog):
 
@@ -2369,6 +2639,7 @@ class RegisterPurchaseDialog(QDialog):
         self._user_selected_vendor = False
         self._suppress_vendor_signal = False
         self.setWindowTitle("Editar Compra" if self.edit_mode else "Registrar Compra")
+        self.resize(1200, 780)
 
         layout = QVBoxLayout()
 
@@ -2392,9 +2663,7 @@ class RegisterPurchaseDialog(QDialog):
         for p in self.productos:
             self._producto_vendedor_map[p["nombre"]] = p.get("vendedor_id")
 
-        # Vendedor
-        vendedor_layout = QHBoxLayout()
-        vendedor_layout.addWidget(QLabel("Vendedor:"))
+        # Crear widgets sin agregarlos aún
         self.vendedor_combo = QComboBox()
         self.vendedor_combo.setEditable(True)
         self.vendedor_combo.setInsertPolicy(QComboBox.NoInsert)
@@ -2418,97 +2687,48 @@ class RegisterPurchaseDialog(QDialog):
                     self.vendedor_combo.setCurrentIndex(idx)
 
             completer.activated[str].connect(_on_completer_activated)
-        vendedor_layout.addWidget(self.vendedor_combo)
-        layout.addLayout(vendedor_layout)
-
-        # Distribuidor (no editable)
-        Distribuidor_layout = QHBoxLayout()
-        Distribuidor_layout.addWidget(QLabel("Distribuidor:"))
         self.Distribuidor_combo = QComboBox()
         self.Distribuidor_combo.setEnabled(False)
-        Distribuidor_layout.addWidget(self.Distribuidor_combo)
-        layout.addLayout(Distribuidor_layout)
-
-        # Producto
-        producto_layout = QHBoxLayout()
-        producto_layout.addWidget(QLabel("Producto:"))
-        product_list_container = QVBoxLayout()
         self.product_search_edit = QLineEdit()
         self.product_search_edit.setPlaceholderText("Buscar producto por nombre, código o SKU...")
-        product_list_container.addWidget(self.product_search_edit)
         self.product_list = QListWidget()
-        product_list_container.addWidget(self.product_list)
-        producto_layout.addLayout(product_list_container)
-        layout.addLayout(producto_layout)
         self._refrescar_lista_productos()
 
-        # Cantidad, precio unitario y precio total
-        cantidad_layout = QHBoxLayout()
-        cantidad_layout.addWidget(QLabel("Cantidad:"))
         self.cantidad_spin = QSpinBox()
         self.cantidad_spin.setMinimum(1)
         self.cantidad_spin.setMaximum(100000)
-        cantidad_layout.addWidget(self.cantidad_spin)
-        cantidad_layout.addWidget(QLabel("Precio unitario:"))
         self.precio_unitario_spin = QDoubleSpinBox()
         self.precio_unitario_spin.setMinimum(0)
         self.precio_unitario_spin.setMaximum(1000000)
         self.precio_unitario_spin.setDecimals(8)
         self.precio_unitario_spin.setSingleStep(0.00000001)
-        cantidad_layout.addWidget(self.precio_unitario_spin)
-        cantidad_layout.addWidget(QLabel("Precio total:"))
         self.precio_total_spin = QDoubleSpinBox()
         self.precio_total_spin.setMinimum(0)
         self.precio_total_spin.setMaximum(100000000)
         self.precio_total_spin.setDecimals(8)
         self.precio_total_spin.setSingleStep(0.00000001)
-        cantidad_layout.addWidget(self.precio_total_spin)
-        cantidad_layout.addWidget(QLabel("Fecha vencimiento:"))
         self.fecha_vencimiento_edit = QDateEdit(QDate.currentDate())
         self.fecha_vencimiento_edit.setCalendarPopup(True)
-        cantidad_layout.addWidget(self.fecha_vencimiento_edit)
-        layout.addLayout(cantidad_layout)
-
-        lote_layout = QHBoxLayout()
-        lote_layout.addWidget(QLabel("Código de lote:"))
         self.codigo_lote_edit = QLineEdit()
         self.codigo_lote_edit.setPlaceholderText("Identificador del lote (opcional)")
-        lote_layout.addWidget(self.codigo_lote_edit)
-        lote_layout.addWidget(QLabel("Registro sanitario:"))
         self.registro_sanitario_edit = QLineEdit()
         self.registro_sanitario_edit.setPlaceholderText("Registro sanitario (opcional)")
-        lote_layout.addWidget(self.registro_sanitario_edit)
-        layout.addLayout(lote_layout)
-        descuento_layout = QHBoxLayout()
-        descuento_layout.addWidget(QLabel("Descuento:"))
         self.descuento_spin = QDoubleSpinBox()
         self.descuento_spin.setMinimum(0)
         self.descuento_spin.setMaximum(1000000)
         self.descuento_spin.setDecimals(2)
         self.descuento_spin.setValue(0)
-        descuento_layout.addWidget(self.descuento_spin)
-
         self.descuento_tipo_combo = QComboBox()
         self.descuento_tipo_combo.addItems(["%", "$"])
         self.descuento_tipo_combo.setCurrentText("$")
-        descuento_layout.addWidget(self.descuento_tipo_combo)
-
-        layout.addLayout(descuento_layout)
-
-        # IVA con checkbox y radios
-        iva_layout = QHBoxLayout()
         self.iva_checkbox = QCheckBox("Aplicar IVA")
         self.iva_checkbox.setChecked(False)
-        iva_layout.addWidget(self.iva_checkbox)
         self.iva_desglosado_radio = QRadioButton("IVA desglosado (restar del precio)")
         self.iva_desglosado_radio.setChecked(False)
         self.iva_desglosado_radio.setEnabled(False)
-        iva_layout.addWidget(self.iva_desglosado_radio)
         self.iva_añadido_radio = QRadioButton("IVA añadido (sumar al precio)")
         self.iva_añadido_radio.setChecked(False)
         self.iva_añadido_radio.setEnabled(False)
-        iva_layout.addWidget(self.iva_añadido_radio)
-        layout.addLayout(iva_layout)
 
         # Agrupa IVA en su propio grupo
         self.iva_group = QButtonGroup(self)
@@ -2521,34 +2741,158 @@ class RegisterPurchaseDialog(QDialog):
         self.iva_label = QLabel(f"IVA: {self._format_currency(0)}")
         self.comision_label_resumen = QLabel(f"Comisión: {self._format_currency(0)}")
         self.total_label = QLabel(f"TOTAL: {self._format_currency(0)}")
-        layout.addWidget(self.subtotal_label)
-        layout.addWidget(self.iva_label)
-        layout.addWidget(self.comision_label_resumen)
-        layout.addWidget(self.total_label)
 
         # Conexiones para IVA
         self.iva_checkbox.stateChanged.connect(self._toggle_iva_radios)
         self.iva_desglosado_radio.toggled.connect(self._actualizar_total_general)
 
         # Comisión (ahora del vendedor)
-        comision_layout = QHBoxLayout()
-        comision_layout.addWidget(QLabel("Comisión (%):"))
         self.comision_pct_spin = QDoubleSpinBox()
         self.comision_pct_spin.setRange(0, 100)
         self.comision_pct_spin.setDecimals(2)
         self.comision_pct_spin.setValue(0)
-        comision_layout.addWidget(self.comision_pct_spin)
-
-        comision_layout.addWidget(QLabel("Tipo:"))
         self.comision_tipo_combo = QComboBox()
         self.comision_tipo_combo.addItems(["Añadida al total", "Desglosada (incluida en el precio)"])
-        comision_layout.addWidget(self.comision_tipo_combo)
-
-        layout.addLayout(comision_layout)
-
-        # Botón agregar a compra
         self.btn_agregar = QPushButton("Agregar a compra")
-        layout.addWidget(self.btn_agregar)
+
+        # --- Nuevo layout tipo dashboard ---
+        top_split = QHBoxLayout()
+        top_split.setSpacing(16)
+
+        # Tarjeta izquierda
+        left_card = QFrame()
+        left_card.setObjectName("CardFrame")
+        left_card_layout = QVBoxLayout(left_card)
+        left_card_layout.setContentsMargins(16, 16, 16, 16)
+        left_card_layout.setSpacing(12)
+        left_title = QLabel("Proveedor y Costos")
+        left_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #111827;")
+        left_card_layout.addWidget(left_title)
+
+        proveedor_form = QVBoxLayout()
+
+        def _stack_field(label_text, widget):
+            container = QWidget()
+            vbox = QVBoxLayout(container)
+            vbox.setContentsMargins(0, 0, 0, 0)
+            vbox.setSpacing(4)
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet("color: #4b5563; font-weight: 600;")
+            vbox.addWidget(lbl)
+            vbox.addWidget(widget)
+            return container
+
+        proveedor_form.addWidget(_stack_field("Vendedor", self.vendedor_combo))
+        proveedor_form.addWidget(_stack_field("Distribuidor", self.Distribuidor_combo))
+
+        comision_row = QWidget()
+        comision_row_layout = QHBoxLayout(comision_row)
+        comision_row_layout.setContentsMargins(0, 0, 0, 0)
+        comision_row_layout.setSpacing(8)
+        comision_row_layout.addWidget(QLabel("Comisión (%)"))
+        comision_row_layout.addWidget(self.comision_pct_spin, 1)
+        comision_row_layout.addWidget(QLabel("Tipo"))
+        comision_row_layout.addWidget(self.comision_tipo_combo, 1)
+        proveedor_form.addWidget(comision_row)
+
+        left_card_layout.addLayout(proveedor_form)
+
+        resumen_box = QFrame()
+        resumen_box.setObjectName("SubCardFrame")
+        resumen_layout = QVBoxLayout(resumen_box)
+        resumen_layout.setContentsMargins(12, 12, 12, 12)
+        resumen_layout.setSpacing(6)
+        resumen_title = QLabel("Resumen")
+        resumen_title.setStyleSheet("font-weight: 700; color: #111827;")
+        resumen_layout.addWidget(resumen_title)
+        for lbl in (
+            self.subtotal_label,
+            self.iva_label,
+            self.comision_label_resumen,
+            self.total_label,
+        ):
+            lbl.setStyleSheet("font-size: 13px; color: #0f172a;")
+            resumen_layout.addWidget(lbl)
+        left_card_layout.addWidget(resumen_box)
+
+        self.btn_agregar.setObjectName("PrimaryAction")
+        self.btn_agregar.setMinimumHeight(44)
+        left_card_layout.addWidget(self.btn_agregar)
+        left_card_layout.addStretch(1)
+
+        # Tarjeta derecha
+        right_card = QFrame()
+        right_card.setObjectName("CardFrame")
+        right_layout = QVBoxLayout(right_card)
+        right_layout.setContentsMargins(16, 16, 16, 16)
+        right_layout.setSpacing(12)
+        right_title = QLabel("Búsqueda y Productos")
+        right_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #111827;")
+        right_layout.addWidget(right_title)
+
+        right_layout.addWidget(_stack_field("Buscar producto", self.product_search_edit))
+        right_layout.addWidget(self.product_list, 1)
+
+        grid = QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(10)
+
+        def _grid_stack(label_text, widget):
+            container = QWidget()
+            vbox = QVBoxLayout(container)
+            vbox.setContentsMargins(0, 0, 0, 0)
+            vbox.setSpacing(4)
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet("color: #4b5563; font-weight: 600;")
+            vbox.addWidget(lbl)
+            vbox.addWidget(widget)
+            return container
+
+        grid.addWidget(_grid_stack("Cantidad", self.cantidad_spin), 0, 0)
+        grid.addWidget(_grid_stack("Precio unitario", self.precio_unitario_spin), 0, 1)
+        grid.addWidget(_grid_stack("Precio total", self.precio_total_spin), 0, 2)
+        grid.addWidget(_grid_stack("Vencimiento", self.fecha_vencimiento_edit), 0, 3)
+
+        grid.addWidget(_grid_stack("Código de lote", self.codigo_lote_edit), 1, 0, 1, 2)
+        grid.addWidget(_grid_stack("Registro sanitario", self.registro_sanitario_edit), 1, 2, 1, 2)
+
+        descuento_container = QWidget()
+        desc_layout = QHBoxLayout(descuento_container)
+        desc_layout.setContentsMargins(0, 0, 0, 0)
+        desc_layout.setSpacing(6)
+        desc_layout.addWidget(self.descuento_spin)
+        desc_layout.addWidget(self.descuento_tipo_combo)
+        grid.addWidget(_grid_stack("Descuento", descuento_container), 2, 0)
+
+        iva_opts = QWidget()
+        iva_opts_layout = QVBoxLayout(iva_opts)
+        iva_opts_layout.setContentsMargins(0, 0, 0, 0)
+        iva_opts_layout.setSpacing(4)
+        iva_opts_layout.addWidget(self.iva_checkbox)
+        iva_radios = QHBoxLayout()
+        iva_radios.setContentsMargins(0, 0, 0, 0)
+        iva_radios.setSpacing(6)
+        iva_radios.addWidget(self.iva_desglosado_radio)
+        iva_radios.addWidget(self.iva_añadido_radio)
+        iva_opts_layout.addLayout(iva_radios)
+        grid.addWidget(_grid_stack("IVA", iva_opts), 2, 1, 1, 3)
+
+        right_layout.addLayout(grid)
+
+        # Intercambia posiciones: búsqueda a la izquierda, proveedor a la derecha
+        top_split.addWidget(right_card, 65)
+        top_split.addWidget(left_card, 35)
+        layout.addLayout(top_split)
+
+        # Tarjeta inferior: carrito
+        cart_card = QFrame()
+        cart_card.setObjectName("CardFrame")
+        cart_layout = QVBoxLayout(cart_card)
+        cart_layout.setContentsMargins(16, 16, 16, 16)
+        cart_layout.setSpacing(10)
+        cart_title = QLabel("Carrito de Compra")
+        cart_title.setStyleSheet("font-size: 16px; font-weight: 700; color: #111827;")
+        cart_layout.addWidget(cart_title)
 
         # En el __init__ de RegisterPurchaseDialog, donde creas la tabla:
         self.table = QTableWidget(0, 12)
@@ -2570,28 +2914,66 @@ class RegisterPurchaseDialog(QDialog):
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        layout.addWidget(self.table)
+        # Oculta columna de registro sanitario solo en UI (se sigue guardando)
+        self.table.setColumnHidden(8, True)
+        cart_layout.addWidget(self.table)
         self._edit_column = 10
         self._delete_column = 11
 
         # Total general de la compra
-        total_general_layout = QHBoxLayout()
-        self.total_general_label = QLabel(f"Total compra: {self._format_currency(0)}")
-        total_general_layout.addWidget(self.total_general_label)
-        layout.addLayout(total_general_layout)
+        layout.addWidget(cart_card)
 
         # Botón registrar compra
+        self.total_general_label = QLabel(f"Total compra: {self._format_currency(0)}")
         self.btn_registrar = QPushButton(
             "Guardar cambios" if self.edit_mode else "Registrar Compra"
         )
         self.btn_cancelar = QPushButton("Cancelar")
         botones_layout = QHBoxLayout()
+        botones_layout.addWidget(self.total_general_label)
         botones_layout.addStretch(1)
         botones_layout.addWidget(self.btn_registrar)
         botones_layout.addWidget(self.btn_cancelar)
         layout.addLayout(botones_layout)
 
         self.setLayout(layout)
+
+        # Estilos
+        self.setStyleSheet(
+            """
+            QDialog {
+                background-color: #f0f2f5;
+            }
+            QFrame#CardFrame {
+                background-color: white;
+                border: 1px solid #e5e7eb;
+                border-radius: 8px;
+            }
+            QFrame#SubCardFrame {
+                background-color: #f9fafb;
+                border: 1px solid #e5e7eb;
+                border-radius: 6px;
+            }
+            QPushButton#PrimaryAction {
+                background-color: #2563eb;
+                color: white;
+                border: none;
+                border-radius: 6px;
+                font-weight: 700;
+            }
+            QPushButton#PrimaryAction:hover {
+                background-color: #1d4ed8;
+            }
+            QListWidget::item:selected {
+                background-color: #e0f2fe;
+                color: #0f172a;
+            }
+            QListWidget::item:selected:!active {
+                background-color: #e0f2fe;
+                color: #0f172a;
+            }
+            """
+        )
 
         # --- CONEXIONES ---
         self.btn_cancelar.clicked.connect(self.reject)
@@ -3532,7 +3914,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.resize(0, 0)
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._apply_card_styles()
-        main_layout = QVBoxLayout()
+        content_widget = QWidget()
+        main_layout = QVBoxLayout(content_widget)
         main_layout.setContentsMargins(12, 12, 12, 12)
         main_layout.setSpacing(8)
         main_layout.setSizeConstraint(QLayout.SetMinimumSize)
@@ -3996,7 +4379,15 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         # Clientes/pago arriba, carrito abajo
         main_layout.addWidget(card_bottom)
         main_layout.addWidget(card_top)
-        self.setLayout(main_layout)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setWidget(content_widget)
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.addWidget(scroll)
+        self.setLayout(root_layout)
 
         # Estado
         self.productos_data = productos
@@ -5241,6 +5632,13 @@ class VendedorDialog(QDialog):
         if not nombre:
             QMessageBox.warning(self, "Datos inválidos", "El nombre no puede estar vacío.")
             return
+        if self.Distribuidor_combo.currentData() is None:
+            QMessageBox.warning(
+                self,
+                "Datos inválidos",
+                "Debe seleccionar un distribuidor antes de guardar el vendedor.",
+            )
+            return
         dui_clean = "".join(ch for ch in self.dui_edit.text() if ch.isdigit())
         nit_clean = "".join(ch for ch in self.nit_edit.text() if ch.isdigit())
         if dui_clean and len(dui_clean) != 9:
@@ -6136,6 +6534,7 @@ class DatosNegocioDialog(QDialog):
         self.btn_guardar.clicked.connect(self._on_save)
         self.btn_cancelar.clicked.connect(self.reject)
         if datos:
+            logger.info("DatosNegocioDialog load_config keys=%s", list(datos.keys()))
             self.set_data(datos)
         else:
             self._update_logo_button()
@@ -6143,11 +6542,19 @@ class DatosNegocioDialog(QDialog):
 
     def _on_save(self):
         try:
-            self.get_data()
+            data = self.get_data()
+            logger.info(
+                "DatosNegocioDialog save_config keys=%s",
+                list(data.keys()),
+            )
         except ValueError as exc:
             QMessageBox.warning(self, "Validación", str(exc))
             return
         self.accept()
+
+    def reject(self):
+        logger.info("DatosNegocioDialog cancel_config")
+        super().reject()
 
     def get_data(self):
         departamento = str(self.departamento.currentData() or "").zfill(2)
@@ -6283,6 +6690,7 @@ class EmailConfigDialog(QDialog):
         self.combo_email_provider.currentTextChanged.connect(self._update_smtp_fields)
         self._update_smtp_fields()
         if datos:
+            logger.info("EmailConfigDialog load_config keys=%s", list(datos.keys()))
             self.set_data(datos)
 
     def _update_smtp_fields(self):
@@ -6322,6 +6730,19 @@ class EmailConfigDialog(QDialog):
 
         self.email_usuario.setText(datos.get("email_usuario", ""))
         self.email_contrasena.setText(datos.get("email_contrasena", ""))
+
+    def accept(self):
+        data = self.get_data()
+        logger.info(
+            "EmailConfigDialog save_config provider=%s user=%s",
+            data.get("email_provider"),
+            data.get("email_usuario"),
+        )
+        super().accept()
+
+    def reject(self):
+        logger.info("EmailConfigDialog cancel_config")
+        super().reject()
 
 
 def prompt_auth_credentials(parent=None, user="", password=""):
@@ -7771,8 +8192,13 @@ class UserConfigDialog(QDialog):
                 return
             try:
                 self.db.update_user(user_id, username, password, role)
-            except Exception:
-                QMessageBox.warning(self, "Error", "No se pudo actualizar el usuario")
+            except ValueError as exc:
+                QMessageBox.warning(self, "Error", str(exc))
+                return
+            except Exception as exc:
+                logger.exception("No se pudo actualizar el usuario")
+                QMessageBox.critical(self, "Error", f"No se pudo actualizar el usuario: {exc}")
+                return
             self.refresh()
 
     def _delete_user(self):

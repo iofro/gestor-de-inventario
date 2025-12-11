@@ -593,6 +593,10 @@ class SettingsDialog(QDialog):
         self.setWindowTitle("Configuración del Sistema")
         self.resize(900, 600)
         self.setModal(True)
+        self.negocio_widget = None
+        self.facturacion_widget = None
+        self.correo_widget = None
+        self.usuarios_widget = None
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -642,7 +646,9 @@ class SettingsDialog(QDialog):
                 negocio_widget.setWindowFlags(Qt.Widget)
             except Exception:
                 negocio_widget = QWidget()
+            self.negocio_widget = negocio_widget
             self.content_stack.addWidget(negocio_widget)
+            self._connect_embedded_negocio()
 
             # Página 1: Facturación Electrónica (contenido embebido)
             facturacion_widget = None
@@ -689,11 +695,13 @@ class SettingsDialog(QDialog):
                 facturacion_widget.setWindowFlags(Qt.Widget)
             except Exception:
                 facturacion_widget = QWidget()
+            self.facturacion_widget = facturacion_widget
             facturacion_scroll = QScrollArea()
             facturacion_scroll.setWidgetResizable(True)
             facturacion_scroll.setFrameShape(QFrame.NoFrame)
             facturacion_scroll.setWidget(facturacion_widget)
             self.content_stack.addWidget(facturacion_scroll)
+            self._connect_embedded_facturacion()
 
             # Página 2: Configuración de Correo (contenido embebido)
             correo_widget = None
@@ -714,7 +722,9 @@ class SettingsDialog(QDialog):
                 correo_widget.setWindowFlags(Qt.Widget)
             except Exception:
                 correo_widget = QWidget()
+            self.correo_widget = correo_widget
             self.content_stack.addWidget(correo_widget)
+            self._connect_embedded_correo()
 
             # Página 3: Usuarios y Permisos (contenido embebido)
             usuarios_widget = None
@@ -728,6 +738,7 @@ class SettingsDialog(QDialog):
                 usuarios_widget.setWindowFlags(Qt.Widget)
             except Exception:
                 usuarios_widget = QWidget()
+            self.usuarios_widget = usuarios_widget
             self.content_stack.addWidget(usuarios_widget)
 
         # Página 4: Herramientas del Sistema
@@ -922,6 +933,162 @@ QTableWidget {
             }
             """
         )
+
+    def _disconnect_clicked(self, button: QPushButton) -> None:
+        try:
+            button.clicked.disconnect()
+        except Exception:
+            pass
+
+    def _connect_embedded_negocio(self) -> None:
+        widget = self.negocio_widget
+        if widget is None or not hasattr(widget, "btn_guardar"):
+            return
+        self._disconnect_clicked(widget.btn_guardar)
+        widget.btn_guardar.clicked.connect(self._handle_negocio_save)
+        if hasattr(widget, "btn_cancelar"):
+            self._disconnect_clicked(widget.btn_cancelar)
+            widget.btn_cancelar.clicked.connect(self.reject)
+
+    def _connect_embedded_facturacion(self) -> None:
+        widget = self.facturacion_widget
+        if widget is None or not hasattr(widget, "btn_guardar"):
+            return
+        self._disconnect_clicked(widget.btn_guardar)
+        widget.btn_guardar.clicked.connect(self._handle_facturacion_save)
+        if hasattr(widget, "btn_cancelar"):
+            self._disconnect_clicked(widget.btn_cancelar)
+            widget.btn_cancelar.clicked.connect(self.reject)
+
+    def _connect_embedded_correo(self) -> None:
+        widget = self.correo_widget
+        if widget is None or not hasattr(widget, "btn_guardar"):
+            return
+        self._disconnect_clicked(widget.btn_guardar)
+        widget.btn_guardar.clicked.connect(self._handle_correo_save)
+        if hasattr(widget, "btn_cancelar"):
+            self._disconnect_clicked(widget.btn_cancelar)
+            widget.btn_cancelar.clicked.connect(self.reject)
+
+    def _load_json_file(self, path: str) -> dict:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as fh:
+                    return json.load(fh)
+            except Exception:
+                return {}
+        return {}
+
+    def _handle_negocio_save(self) -> None:
+        widget = self.negocio_widget
+        if widget is None or not hasattr(widget, "get_data"):
+            return
+        try:
+            datos_nuevos = widget.get_data()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Validación", str(exc))
+            return
+        datos = self._load_json_file(DATOS_NEGOCIO_PATH)
+        config = self._load_json_file(CONFIG_NEGOCIO_PATH)
+        datos.update(datos_nuevos)
+        dir_info = datos.get("direccion") or {}
+        dir_info.setdefault("departamento", "")
+        dir_info.setdefault("municipio", "")
+        datos["direccion"] = dir_info
+        datos_changed, config_changed, tokens_reset = _sync_configs(
+            datos,
+            config,
+            nit_hint=datos_nuevos.get("nit"),
+            ambiente_hint=(datos.get("dte_api") or {}).get("ambiente"),
+        )
+        try:
+            with open(DATOS_NEGOCIO_PATH, "w", encoding="utf-8") as f:
+                json.dump(datos, f, ensure_ascii=False, indent=2)
+            if config_changed:
+                with open(CONFIG_NEGOCIO_PATH, "w", encoding="utf-8") as f:
+                    json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo guardar la configuración: {exc}")
+            return
+        if config_changed or datos_changed or tokens_reset:
+            invalidate_token_cache()
+        if tokens_reset:
+            QMessageBox.information(
+                self,
+                "Tokens reiniciados",
+                "Los tokens almacenados se limpiaron porque cambiaste el NIT o el ambiente. "
+                "Vuelve a obtener un token en Configuración > Facturación Electrónica.",
+            )
+        QMessageBox.information(self, "Datos del negocio", "Datos guardados exitosamente.")
+
+    def _handle_facturacion_save(self) -> None:
+        widget = self.facturacion_widget
+        if widget is None or not hasattr(widget, "get_data"):
+            return
+        if hasattr(widget, "validate_before_save") and not widget.validate_before_save():
+            return
+        datos = self._load_json_file(DATOS_NEGOCIO_PATH)
+        config = self._load_json_file(CONFIG_NEGOCIO_PATH)
+        try:
+            new_dte_api, new_fe, new_urls = widget.get_data()
+        except ValueError as exc:
+            QMessageBox.warning(self, "Validación", str(exc))
+            return
+        negocio_updates = getattr(widget, "get_negocio_updates", lambda: {})()
+        if isinstance(negocio_updates, Mapping):
+            datos.update(negocio_updates)
+        ambiente = new_dte_api["ambiente"]
+        datos["dte_api"] = new_dte_api
+        config["ambiente"] = ambiente
+        config.setdefault(ambiente, {})
+        config[ambiente]["firma_electronica"] = new_fe
+        config[ambiente]["auth_url"] = new_urls.get("auth_url", "")
+        config[ambiente]["recepcion_url"] = new_urls.get("recepcion_url", "")
+        if "evento_contingencia_url" in new_urls:
+            config[ambiente]["evento_contingencia_url"] = new_urls["evento_contingencia_url"]
+        if "auth" in new_urls:
+            config[ambiente]["auth"] = new_urls["auth"]
+        datos_changed, _config_changed_extra, tokens_reset = _sync_configs(
+            datos,
+            config,
+            nit_hint=new_fe.get("nit"),
+            ambiente_hint=new_dte_api.get("ambiente"),
+        )
+        try:
+            with open(DATOS_NEGOCIO_PATH, "w", encoding="utf-8") as f:
+                json.dump(datos, f, ensure_ascii=False, indent=2)
+            with open(CONFIG_NEGOCIO_PATH, "w", encoding="utf-8") as f:
+                json.dump(config, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo guardar la configuración: {exc}")
+            return
+        invalidate_token_cache()
+        if tokens_reset:
+            QMessageBox.information(
+                self,
+                "Tokens reiniciados",
+                "Los tokens almacenados se limpiaron porque cambiaste el NIT o el ambiente. "
+                "Obtén un token nuevo antes de volver a enviar DTE.",
+            )
+        QMessageBox.information(self, "Facturación electrónica", "Datos guardados exitosamente.")
+
+    def _handle_correo_save(self) -> None:
+        widget = self.correo_widget
+        if widget is None or not hasattr(widget, "get_data"):
+            return
+        datos = self._load_json_file(DATOS_NEGOCIO_PATH)
+        try:
+            datos.update(widget.get_data())
+        except Exception as exc:
+            QMessageBox.warning(self, "Validación", str(exc))
+            return
+        try:
+            with open(DATOS_NEGOCIO_PATH, "w", encoding="utf-8") as f:
+                json.dump(datos, f, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(self, "Error", f"No se pudo guardar la configuración: {exc}")
+            return
+        QMessageBox.information(self, "Configuración de correo", "Datos guardados exitosamente.")
 
 
 def redondear(valor):
@@ -4285,18 +4452,39 @@ class MainWindow(QMainWindow):
         self.inventario_actual_table.setCellWidget(row, 9, container)
 
     def _confirm_inventory_conflict(self, target: str) -> bool:
-        message = (
-            f"Editar o eliminar {target} puede causar conflictos en el inventario, "
-            "proceda solo si está seguro de que no causará conflictos con sus cambios."
+        dialog = QMessageBox(self)
+        dialog.setIcon(QMessageBox.Warning)
+        dialog.setWindowTitle("Advertencia de inventario")
+        dialog.setText(
+            "Está a punto de editar el inventario.\n"
+            "Esto puede ocasionar problemas de contabilidad; Vertex no se hace responsable "
+            "por las consecuencias. La edición queda a discreción del usuario."
         )
-        result = QMessageBox.warning(
-            self,
-            "Advertencia",
-            message,
-            QMessageBox.Ok | QMessageBox.Cancel,
-            QMessageBox.Cancel,
+        dialog.setInformativeText(
+            "Si necesita reducir inventario, puede hacerlo mediante una factura de autoconsumo."
         )
-        return result == QMessageBox.Ok
+        btn_autoconsumo = dialog.addButton(
+            "Crear una venta de autoconsumo", QMessageBox.ActionRole
+        )
+        btn_proceed = dialog.addButton(
+            "Proceder con la edición", QMessageBox.DestructiveRole
+        )
+        btn_cancel = dialog.addButton("Cancelar", QMessageBox.RejectRole)
+        dialog.setDefaultButton(btn_cancel)
+        dialog.exec_()
+
+        clicked = dialog.clickedButton()
+        if clicked == btn_autoconsumo:
+            launcher = getattr(self, "registrar_venta", None)
+            if callable(launcher):
+                try:
+                    launcher()
+                except Exception:
+                    logger.exception("No se pudo abrir la venta de autoconsumo")
+            return False
+        if clicked == btn_proceed:
+            return True
+        return False
 
     def _editar_lote_inventario_actual(self):
         row = self.inventario_actual_table.currentRow()

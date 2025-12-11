@@ -3955,10 +3955,11 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         top_row.setSpacing(6)
         top_row.addWidget(QLabel("Distribuidor:"))
         self.Distribuidor_combo = QComboBox()
-        if isinstance(Distribuidores[0], dict):
-            self.Distribuidor_combo.addItems([d.get("nombre", "") for d in Distribuidores])
-        else:
-            self.Distribuidor_combo.addItems(Distribuidores)
+        if Distribuidores:
+            if isinstance(Distribuidores[0], dict):
+                self.Distribuidor_combo.addItems([d.get("nombre", "") for d in Distribuidores])
+            else:
+                self.Distribuidor_combo.addItems(Distribuidores)
         top_row.addWidget(self.Distribuidor_combo, 1)
         productos_layout.addLayout(top_row)
 
@@ -6679,14 +6680,14 @@ class EmailConfigDialog(QDialog):
         form.addRow("Contraseña:", self.email_contrasena)
         layout.addLayout(form)
         btns = QHBoxLayout()
-        guardar = QPushButton("Guardar")
-        cancelar = QPushButton("Cancelar")
-        btns.addWidget(guardar)
-        btns.addWidget(cancelar)
+        self.btn_guardar = QPushButton("Guardar")
+        self.btn_cancelar = QPushButton("Cancelar")
+        btns.addWidget(self.btn_guardar)
+        btns.addWidget(self.btn_cancelar)
         layout.addLayout(btns)
         self.setLayout(layout)
-        guardar.clicked.connect(self.accept)
-        cancelar.clicked.connect(self.reject)
+        self.btn_guardar.clicked.connect(self.accept)
+        self.btn_cancelar.clicked.connect(self.reject)
         self.combo_email_provider.currentTextChanged.connect(self._update_smtp_fields)
         self._update_smtp_fields()
         if datos:
@@ -7000,20 +7001,20 @@ class DTEConfigDialog(QDialog):
         layout.addWidget(self.limpiar_facturas_btn)
 
         btns = QHBoxLayout()
-        guardar = QPushButton("Guardar")
-        restaurar = QPushButton("Restaurar")
-        cancelar = QPushButton("Cancelar")
-        btns.addWidget(guardar)
-        btns.addWidget(restaurar)
-        btns.addWidget(cancelar)
+        self.btn_guardar = QPushButton("Guardar")
+        self.btn_restaurar = QPushButton("Restaurar")
+        self.btn_cancelar = QPushButton("Cancelar")
+        btns.addWidget(self.btn_guardar)
+        btns.addWidget(self.btn_restaurar)
+        btns.addWidget(self.btn_cancelar)
         layout.addLayout(btns)
         self.setLayout(layout)
         self._datos_negocio_inicial = datos_negocio or {}
         self._negocio_updates: dict[str, str] = {}
-        guardar.clicked.connect(self.accept)
-        cancelar.clicked.connect(self.reject)
-        restaurar.clicked.connect(self._restore_defaults)
-        restaurar.clicked.connect(self._set_default_urls)
+        self.btn_guardar.clicked.connect(self.accept)
+        self.btn_cancelar.clicked.connect(self.reject)
+        self.btn_restaurar.clicked.connect(self._restore_defaults)
+        self.btn_restaurar.clicked.connect(self._set_default_urls)
         self.token_btn.clicked.connect(self._fetch_token)
         self.cert_btn.clicked.connect(self._select_cert)
         self.ambiente_hacienda.currentIndexChanged.connect(self._handle_ambiente_changed)
@@ -7480,7 +7481,7 @@ class DTEConfigDialog(QDialog):
             self._contingencia_motivo = data["motivo"]
             self._update_contingencia_summary()
 
-    def accept(self):
+    def validate_before_save(self) -> bool:
         if (
             self.tipo_contribuyente.currentText() == "Persona Jurídica"
             and not self.razon_social.text().strip()
@@ -7490,7 +7491,7 @@ class DTEConfigDialog(QDialog):
                 "Validación",
                 "La razón social es obligatoria para personas jurídicas.",
             )
-            return
+            return False
         if self._is_contingencia_selected():
             if self._contingencia_tipo is None:
                 QMessageBox.warning(
@@ -7498,14 +7499,19 @@ class DTEConfigDialog(QDialog):
                     "Configuración incompleta",
                     "Selecciona el tipo de contingencia antes de guardar.",
                 )
-                return
+                return False
             if self._contingencia_tipo == 5 and not self._contingencia_motivo.strip():
                 QMessageBox.warning(
                     self,
                     "Configuración incompleta",
                     "Ingresa el motivo de contingencia requerido para el tipo 5.",
                 )
-                return
+                return False
+        return True
+
+    def accept(self):
+        if not self.validate_before_save():
+            return
         super().accept()
 
 

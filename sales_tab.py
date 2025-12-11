@@ -538,6 +538,7 @@ class SalesTab(QWidget):
                             "fecha_vencimiento": detalle.get("fecha_vencimiento", ""),
                             "precio_venta_minorista": prod.get("precio_venta_minorista", 0),
                             "precio_venta_mayorista": prod.get("precio_venta_mayorista", 0),
+                            "presentaciones": prod.get("presentaciones"),
                         }
                     )
         return productos_lote

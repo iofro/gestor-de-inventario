@@ -746,6 +746,50 @@ class ProductDialogBase:
             or texto in (p.get("codigo_lote", "") or "").lower()
         ]
         self._mostrar_productos(filtrados)
+        if hasattr(self, "_actualizar_presentacion_combo"):
+            try:
+                self._actualizar_presentacion_combo()
+            except Exception:
+                logger.debug("No se pudo refrescar presentaciones tras filtrar productos", exc_info=True)
+
+    def _fill_presentaciones_combo(self, combo: QComboBox, producto: Mapping[str, Any] | None) -> None:
+        """Llena un combo con la unidad base y las presentaciones del producto."""
+        with QSignalBlocker(combo):
+            combo.clear()
+            combo.addItem("Unidad Base (x1)", 1)
+            if not producto:
+                combo.setCurrentIndex(0)
+                return
+            presentaciones = producto.get("presentaciones") or []
+            if isinstance(presentaciones, list):
+                for pres in presentaciones:
+                    try:
+                        factor = float(pres.get("factor") or 0)
+                    except Exception:
+                        continue
+                    if factor <= 0:
+                        continue
+                    nombre_raw = str(pres.get("nombre") or "").strip()
+                    label = f"{nombre_raw} (x{factor:g})" if nombre_raw else f"Presentación x{factor:g}"
+                    combo.addItem(label, factor)
+                    combo.setItemData(combo.count() - 1, pres, Qt.UserRole + 1)
+            combo.setCurrentIndex(0)
+
+    def _presentacion_factor_from_combo(self, combo: QComboBox) -> float:
+        """Devuelve el factor de conversión seleccionado (>=1)."""
+        data = combo.currentData()
+        try:
+            factor = float(data)
+        except Exception:
+            factor = 1.0
+        if factor <= 0:
+            factor = 1.0
+        return factor
+
+    def _presentacion_data_from_combo(self, combo: QComboBox) -> Mapping[str, Any]:
+        idx = combo.currentIndex()
+        data = combo.itemData(idx, Qt.UserRole + 1)
+        return data if isinstance(data, Mapping) else {}
 
     def _toggle_comision_inputs(self, state):
         enabled = self.comision_chk.isChecked()
@@ -1153,27 +1197,31 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         grid.setVerticalSpacing(4)
         grid.setHorizontalSpacing(8)
         grid.addWidget(QLabel("Cant."), 0, 0)
-        grid.addWidget(QLabel("P. Unitario"), 0, 1)
-        grid.addWidget(QLabel("P. Total"), 0, 2)
+        grid.addWidget(QLabel("Unidad/Pres."), 0, 1)
+        grid.addWidget(QLabel("P. Unitario"), 0, 2)
+        grid.addWidget(QLabel("P. Total"), 0, 3)
 
         self.cantidad_spin = QSpinBox()
         self.cantidad_spin.setMinimum(1)
         self.cantidad_spin.setMaximum(100000)
         grid.addWidget(self.cantidad_spin, 1, 0)
 
+        self.presentacion_combo = QComboBox()
+        grid.addWidget(self.presentacion_combo, 1, 1)
+
         self.precio_spin = QDoubleSpinBox()
         self.precio_spin.setMinimum(0)
         self.precio_spin.setMaximum(1000000)
         self.precio_spin.setDecimals(2)
         self.precio_spin.setPrefix("$")
-        grid.addWidget(self.precio_spin, 1, 1)
+        grid.addWidget(self.precio_spin, 1, 2)
 
         self.precio_total_spin = QDoubleSpinBox()
         self.precio_total_spin.setMinimum(0)
         self.precio_total_spin.setMaximum(100000000)
         self.precio_total_spin.setDecimals(2)
         self.precio_total_spin.setPrefix("$")
-        grid.addWidget(self.precio_total_spin, 1, 2)
+        grid.addWidget(self.precio_total_spin, 1, 3)
 
         self.descuento_spin = QDoubleSpinBox()
         self.descuento_spin.setMinimum(0)
@@ -1532,9 +1580,11 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         # Conexiones
         self.cliente_btn.clicked.connect(self._abrir_selector_cliente)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_defecto)
+        self.product_list.currentRowChanged.connect(self._actualizar_presentacion_combo)
         self.cantidad_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_total_spin.valueChanged.connect(self._recalcular_totales)
+        self.presentacion_combo.currentIndexChanged.connect(self._on_presentacion_changed)
         self.product_search.textChanged.connect(self._filtrar_productos)
 
         # --- INICIO BLOQUE NUEVO: Actualizar combo de Distribuidor en tiempo real según producto seleccionado ---
@@ -1551,6 +1601,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.load_payment_data(venta_extra)
         self._update_retencion_group_state()
         self._install_no_wheel_filter()
+        self._actualizar_presentacion_combo()
+        self._actualizar_presentacion_combo()
 
     def set_productos_data(self, productos_data):
         self.productos_data = productos_data or []
@@ -1558,6 +1610,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.productos = list(self.productos_data)
         self.product_list.clear()
         self._mostrar_productos(self.productos_data)
+        if hasattr(self, "_actualizar_presentacion_combo"):
+            self._actualizar_presentacion_combo()
 
     def clear_carrito(self):
         """Limpia carrito y totales para iniciar una venta desde cero."""
@@ -1577,6 +1631,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.descuento_spin.setValue(0)
         self.tipo_fiscal_combo.setCurrentIndex(0)
         self.product_list.clearSelection()
+        if hasattr(self, "presentacion_combo") and self.presentacion_combo.count() > 0:
+            self.presentacion_combo.setCurrentIndex(0)
         self.venta_a_cuenta_de_edit.clear()
         self.venta_documento_edit.clear()
 
@@ -1597,9 +1653,14 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
                 if nombre.startswith(nombre_prod):
                     prod = p
                     break
+        factor = self._presentacion_factor_from_combo(self.presentacion_combo)
+        pres_data = self._presentacion_data_from_combo(self.presentacion_combo)
         precio = 0
         if prod:
-            precio = get_field(prod, "precio_venta_minorista", 0)
+            base = get_field(prod, "precio_venta_minorista", 0)
+            precio = pres_data.get("precio_venta", None)
+            if precio in (None, ""):
+                precio = base * factor
         self.precio_spin.blockSignals(True)
         self.precio_total_spin.blockSignals(True)
         self.precio_spin.setValue(float(precio))
@@ -1607,6 +1668,28 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
         self.precio_spin.blockSignals(False)
         self.precio_total_spin.blockSignals(False)
         self._recalcular_totales()
+
+    def _actualizar_presentacion_combo(self):
+        prod = None
+        idx = self.product_list.currentRow()
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        self._fill_presentaciones_combo(self.presentacion_combo, prod)
+        self._on_presentacion_changed()
+
+    def _on_presentacion_changed(self):
+        self._actualizar_precio_defecto()
+
+    def _actualizar_presentacion_combo(self):
+        prod = None
+        idx = self.product_list.currentRow()
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        self._fill_presentaciones_combo(self.presentacion_combo, prod)
+        self._on_presentacion_changed()
+
+    def _on_presentacion_changed(self):
+        self._actualizar_precio_defecto()
 
     def _toggle_precio_edicion(self):
         # Ambos precios editables; se sincronizan en _recalcular_totales
@@ -1915,12 +1998,17 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             QMessageBox.warning(self, "Validación", "Seleccione un producto del inventario actual.")
             return
         lote = self.productos[idx]
-        cantidad = self.cantidad_spin.value()
+        cantidad_bultos = self.cantidad_spin.value()
 
         # Precios siempre editables y sincronizados
         self._recalcular_totales()
-        precio = self.precio_spin.value()
+        precio_presentacion = self.precio_spin.value()
         precio_total = self.precio_total_spin.value()
+
+        factor = self._presentacion_factor_from_combo(self.presentacion_combo)
+        pres_nombre = (self.presentacion_combo.currentText() or "").strip()
+        cantidad_base = cantidad_bultos * factor
+        precio_base = precio_presentacion / factor if factor else precio_presentacion
 
         descuento_valor = self.descuento_spin.value()
         descuento_tipo = self.descuento_tipo_combo.currentText()
@@ -1969,15 +2057,24 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             total_final = total
         tipo_fiscal = self.tipo_fiscal_combo.currentText()
 
+        producto_display = lote.get("nombre", "")
+        if pres_nombre and not pres_nombre.lower().startswith("unidad base"):
+            producto_display = f"{producto_display} [{pres_nombre}]"
+
         self.venta_items.append({
             "lote_id": lote["lote_id"],
             "producto_id": lote["producto_id"],
             "producto": lote["nombre"],
+            "producto_display": producto_display,
             "codigo": lote.get("codigo", ""),
             "sku": lote.get("sku", ""),
 
-            "cantidad": cantidad,
-            "precio": precio,  # Precio unitario con IVA; neto se calcula en DTE
+            "cantidad": cantidad_base,
+            "cantidad_bultos": cantidad_bultos,
+            "presentacion_factor": factor,
+            "presentacion_nombre": pres_nombre or "Unidad Base (x1)",
+            "precio": precio_base,  # Precio unitario con IVA en unidad base
+            "precio_presentacion": precio_presentacion,
             "descuento": descuento_valor,
             "descuento_tipo": descuento_tipo,
             "descuento_monto": descuento_monto,
@@ -1996,7 +2093,8 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
             "extra": {
                 "lote_id": lote.get("lote_id"),
                 "producto_id": lote.get("producto_id"),
-                "cantidad": float(cantidad),
+                "cantidad": float(cantidad_base),
+                "cantidad_presentacion": float(cantidad_bultos),
                 "codigo_lote": lote.get("codigo_lote"),
                 "registro_sanitario": lote.get("registro_sanitario"),
             },
@@ -2008,9 +2106,21 @@ class RegisterSaleDialog(QDialog, ProductDialogBase):
     def _actualizar_tabla(self):
         self.table.setRowCount(len(self.venta_items))
         for i, item in enumerate(self.venta_items):
-            self.table.setItem(i, 0, QTableWidgetItem(item["producto"]))
-            self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
-            self.table.setItem(i, 2, QTableWidgetItem(f"${item['precio']:.2f}"))
+            producto_texto = item.get("producto_display", item.get("producto", ""))
+            self.table.setItem(i, 0, QTableWidgetItem(producto_texto))
+
+            cant_bultos = item.get("cantidad_bultos", item.get("cantidad", 0))
+            pres_nombre = item.get("presentacion_nombre", "")
+            cantidad_texto = f"{cant_bultos} {pres_nombre}".strip()
+            cantidad_item = QTableWidgetItem(cantidad_texto)
+            cantidad_item.setData(Qt.UserRole, item.get("cantidad", cant_bultos))
+            self.table.setItem(i, 1, cantidad_item)
+
+            precio_pres = item.get("precio_presentacion")
+            if precio_pres is None:
+                factor = item.get("presentacion_factor", 1) or 1
+                precio_pres = (item.get("precio", 0) or 0) * factor
+            self.table.setItem(i, 2, QTableWidgetItem(f"${float(precio_pres):.2f}"))
             self.table.setItem(i, 3, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
             self.table.setItem(i, 4, QTableWidgetItem(item.get("tipo_fiscal", "")))
             btn = QPushButton("Eliminar")
@@ -2697,6 +2807,7 @@ class RegisterPurchaseDialog(QDialog):
         self.cantidad_spin = QSpinBox()
         self.cantidad_spin.setMinimum(1)
         self.cantidad_spin.setMaximum(100000)
+        self.combo_presentacion = QComboBox()
         self.precio_unitario_spin = QDoubleSpinBox()
         self.precio_unitario_spin.setMinimum(0)
         self.precio_unitario_spin.setMaximum(1000000)
@@ -2849,9 +2960,10 @@ class RegisterPurchaseDialog(QDialog):
             return container
 
         grid.addWidget(_grid_stack("Cantidad", self.cantidad_spin), 0, 0)
-        grid.addWidget(_grid_stack("Precio unitario", self.precio_unitario_spin), 0, 1)
-        grid.addWidget(_grid_stack("Precio total", self.precio_total_spin), 0, 2)
-        grid.addWidget(_grid_stack("Vencimiento", self.fecha_vencimiento_edit), 0, 3)
+        grid.addWidget(_grid_stack("Unidad/Presentación", self.combo_presentacion), 0, 1)
+        grid.addWidget(_grid_stack("Precio unitario", self.precio_unitario_spin), 0, 2)
+        grid.addWidget(_grid_stack("Precio total", self.precio_total_spin), 0, 3)
+        grid.addWidget(_grid_stack("Vencimiento", self.fecha_vencimiento_edit), 0, 4)
 
         grid.addWidget(_grid_stack("Código de lote", self.codigo_lote_edit), 1, 0, 1, 2)
         grid.addWidget(_grid_stack("Registro sanitario", self.registro_sanitario_edit), 1, 2, 1, 2)
@@ -2982,6 +3094,7 @@ class RegisterPurchaseDialog(QDialog):
         self.table.cellClicked.connect(self._eliminar_fila)
         self.product_search_edit.textChanged.connect(self._filtrar_lista_productos)
         self.product_list.currentRowChanged.connect(self._actualizar_vendedor_y_Distribuidor)
+        self.product_list.currentRowChanged.connect(self._actualizar_presentacion_combo)
         self.vendedor_combo.currentIndexChanged.connect(self._mark_vendor_user_selected)
         self.vendedor_combo.currentIndexChanged.connect(self._actualizar_Distribuidor)
         self.vendedor_combo.currentIndexChanged.connect(self._update_summary_vendor_info)
@@ -2990,6 +3103,7 @@ class RegisterPurchaseDialog(QDialog):
         self.comision_pct_spin.valueChanged.connect(self._actualizar_total_general)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_unitario_por_producto)
         self._actualizar_precio_unitario_por_producto()
+        self._actualizar_presentacion_combo()
 
         # Inicializa combos
         if productos:
@@ -3176,6 +3290,28 @@ class RegisterPurchaseDialog(QDialog):
 
         self._filtered_productos = filtrados
         self._refrescar_lista_productos(selected_id)
+
+    def _actualizar_presentacion_combo(self):
+        prod = self._get_current_producto()
+        with QSignalBlocker(self.combo_presentacion):
+            self.combo_presentacion.clear()
+            self.combo_presentacion.addItem("Unidad Base (x1)", 1)
+            if prod:
+                presentaciones = prod.get("presentaciones") or []
+                if isinstance(presentaciones, list):
+                    for pres in presentaciones:
+                        try:
+                            factor = float(pres.get("factor") or 0)
+                        except Exception:
+                            continue
+                        if factor <= 0:
+                            continue
+                        nombre_raw = str(pres.get("nombre") or "").strip()
+                        opcion_texto = (
+                            f"{nombre_raw} (x{factor:g})" if nombre_raw else f"Presentación x{factor:g}"
+                        )
+                        self.combo_presentacion.addItem(opcion_texto, factor)
+            self.combo_presentacion.setCurrentIndex(0)
 
     # --- NUEVO MÉTODO ---
     def _actualizar_precio_unitario_por_producto(self):
@@ -3414,9 +3550,14 @@ class RegisterPurchaseDialog(QDialog):
             self.compra_items.append(
                 {
                     "producto": nombre_producto,
+                    "producto_display": nombre_producto,
                     "producto_id": producto_id,
                     "cantidad": cantidad,
+                    "cantidad_base": cantidad,
+                    "presentacion_factor": 1,
+                    "presentacion_nombre": "Unidad Base (x1)",
                     "precio": precio,
+                    "precio_unitario_base": precio,
                     "subtotal": subtotal,
                     "descuento_valor": descuento_valor,
                     "descuento_pct": (descuento_monto / subtotal * 100) if subtotal else 0,
@@ -3552,6 +3693,20 @@ class RegisterPurchaseDialog(QDialog):
             QMessageBox.warning(self, "Validación", "Seleccione producto, cantidad y precio válidos.")
             return
 
+        factor_raw = self.combo_presentacion.currentData()
+        try:
+            factor = float(factor_raw)
+        except Exception:
+            factor = 1.0
+        if factor <= 0:
+            factor = 1.0
+        presentacion_nombre = (self.combo_presentacion.currentText() or "Unidad Base (x1)").strip()
+        cantidad_base = cantidad * factor
+        precio_unitario_base = precio / factor if factor else precio
+        producto_display = producto
+        if presentacion_nombre and not presentacion_nombre.lower().startswith("unidad base"):
+            producto_display = f"{producto} [{presentacion_nombre}]"
+
         producto_id = producto_info.get("id")
         subtotal = cantidad * precio
         descuento_valor = self.descuento_spin.value()
@@ -3611,9 +3766,14 @@ class RegisterPurchaseDialog(QDialog):
 
         item_data = {
             "producto": producto,
+            "producto_display": producto_display,
             "producto_id": producto_id,
             "cantidad": cantidad,
+            "cantidad_base": cantidad_base,
+            "presentacion_factor": factor,
+            "presentacion_nombre": presentacion_nombre,
             "precio": precio,
+            "precio_unitario_base": precio_unitario_base,
             "subtotal": subtotal,
             "descuento_valor": descuento_valor,
             "descuento_pct": descuento_pct,
@@ -3642,8 +3802,16 @@ class RegisterPurchaseDialog(QDialog):
     def _actualizar_tabla(self):
         self.table.setRowCount(len(self.compra_items))
         for i, item in enumerate(self.compra_items):
-            self.table.setItem(i, 0, QTableWidgetItem(item["producto"]))
-            self.table.setItem(i, 1, QTableWidgetItem(str(item["cantidad"])))
+            producto_texto = item.get("producto_display", item.get("producto", ""))
+            self.table.setItem(i, 0, QTableWidgetItem(producto_texto))
+
+            cantidad_texto = str(item.get("cantidad", 0))
+            presentacion_nombre = item.get("presentacion_nombre", "")
+            if presentacion_nombre:
+                cantidad_texto = f"{cantidad_texto} {presentacion_nombre}"
+            cantidad_item = QTableWidgetItem(cantidad_texto)
+            cantidad_item.setData(Qt.UserRole, item.get("cantidad_base", item.get("cantidad", 0)))
+            self.table.setItem(i, 1, cantidad_item)
             self.table.setItem(i, 2, QTableWidgetItem(self._format_currency(item["precio"])))
             self.table.setItem(i, 3, QTableWidgetItem(self._format_currency(item.get("subtotal", 0))))
             self.table.setItem(i, 4, QTableWidgetItem(self._format_currency(item.get("iva", 0))))
@@ -3679,6 +3847,8 @@ class RegisterPurchaseDialog(QDialog):
         self.table.clearSelection()
         self.codigo_lote_edit.clear()
         self.registro_sanitario_edit.clear()
+        if self.combo_presentacion.count() > 0:
+            self.combo_presentacion.setCurrentIndex(0)
 
     def _start_edit_item(self, row):
         if not (0 <= row < len(self.compra_items)):
@@ -3695,6 +3865,12 @@ class RegisterPurchaseDialog(QDialog):
         matching_items = self.product_list.findItems(item.get("producto", ""), Qt.MatchExactly)
         if matching_items:
             self.product_list.setCurrentItem(matching_items[0])
+
+        factor = item.get("presentacion_factor", 1)
+        with QSignalBlocker(self.combo_presentacion):
+            idx = self.combo_presentacion.findData(factor)
+            self.combo_presentacion.setCurrentIndex(idx if idx >= 0 else 0)
+
         self.cantidad_spin.setValue(int(item.get("cantidad", 0)))
         self.precio_unitario_spin.setValue(float(item.get("precio", 0)))
         self.precio_total_spin.setValue(float(item.get("cantidad", 0)) * float(item.get("precio", 0)))
@@ -3820,7 +3996,34 @@ class RegisterPurchaseDialog(QDialog):
         else:
             dte_status = "NO_APLICA"
 
+        def _cantidad_y_precio_base(item):
+            factor_raw = item.get("presentacion_factor", 1)
+            try:
+                factor_val = float(factor_raw)
+            except Exception:
+                factor_val = 1.0
+            if factor_val <= 0:
+                factor_val = 1.0
+            cantidad_bultos = item.get("cantidad", 0)
+            cantidad_base = item.get("cantidad_base")
+            if cantidad_base is None:
+                cantidad_base = cantidad_bultos * factor_val
+            precio_presentacion = item.get("precio", 0)
+            precio_base = item.get("precio_unitario_base")
+            if precio_base is None:
+                precio_base = precio_presentacion / factor_val if factor_val else precio_presentacion
+            return float(cantidad_base), float(precio_base)
+
         if self.edit_mode and self._compra_id is not None:
+            detalles_para_guardar = []
+            for item in self.compra_items:
+                cantidad_base, precio_base = _cantidad_y_precio_base(item)
+                detalle = dict(item)
+                detalle["cantidad"] = cantidad_base
+                detalle["cantidad_base"] = cantidad_base
+                detalle["precio"] = precio_base
+                detalle["precio_unitario_base"] = precio_base
+                detalles_para_guardar.append(detalle)
             self.parent().manager.db.update_compra_detallada(
                 self._compra_id,
                 {
@@ -3836,7 +4039,7 @@ class RegisterPurchaseDialog(QDialog):
                     "is_subject_excluded_purchase": is_subject_excluded_purchase,
                     "subject_excluded_dte_status": dte_status,
                 },
-                self.compra_items,
+                detalles_para_guardar,
             )
             self.accept()
             return
@@ -3857,11 +4060,12 @@ class RegisterPurchaseDialog(QDialog):
 
         for item in self.compra_items:
             producto_id = item["producto_id"]
+            cantidad_base, precio_base = _cantidad_y_precio_base(item)
             self.parent().manager.db.add_detalle_compra(
                 compra_id,
                 producto_id,
-                item.get("cantidad", 0),
-                item.get("precio", 0),
+                cantidad_base,
+                precio_base,
                 item.get("fecha_vencimiento", ""),
                 item.get("descuento_monto", 0),
                 item.get("descuento_tipo", "%"),
@@ -3873,7 +4077,7 @@ class RegisterPurchaseDialog(QDialog):
                 codigo_lote=item.get("codigo_lote", ""),
                 registro_sanitario=item.get("registro_sanitario", ""),
             )
-            self.parent().manager.aumentar_stock(producto_id, item.get("cantidad", 0))
+            self.parent().manager.aumentar_stock(producto_id, cantidad_base)
 
         self.accept()
 
@@ -3985,27 +4189,31 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         grid.setVerticalSpacing(4)
         grid.setHorizontalSpacing(8)
         grid.addWidget(QLabel("Cant."), 0, 0)
-        grid.addWidget(QLabel("P. Unitario"), 0, 1)
-        grid.addWidget(QLabel("P. Total"), 0, 2)
+        grid.addWidget(QLabel("Unidad/Pres."), 0, 1)
+        grid.addWidget(QLabel("P. Unitario"), 0, 2)
+        grid.addWidget(QLabel("P. Total"), 0, 3)
 
         self.cantidad_spin = QSpinBox()
         self.cantidad_spin.setMinimum(1)
         self.cantidad_spin.setMaximum(100000)
         grid.addWidget(self.cantidad_spin, 1, 0)
 
+        self.presentacion_combo = QComboBox()
+        grid.addWidget(self.presentacion_combo, 1, 1)
+
         self.precio_spin = QDoubleSpinBox()
         self.precio_spin.setMinimum(0)
         self.precio_spin.setMaximum(1000000)
         self.precio_spin.setDecimals(2)
         self.precio_spin.setPrefix("$")
-        grid.addWidget(self.precio_spin, 1, 1)
+        grid.addWidget(self.precio_spin, 1, 2)
 
         self.precio_total_spin = QDoubleSpinBox()
         self.precio_total_spin.setMinimum(0)
         self.precio_total_spin.setMaximum(100000000)
         self.precio_total_spin.setDecimals(2)
         self.precio_total_spin.setPrefix("$")
-        grid.addWidget(self.precio_total_spin, 1, 2)
+        grid.addWidget(self.precio_total_spin, 1, 3)
 
         self.descuento_spin = QDoubleSpinBox()
         self.descuento_spin.setMinimum(0)
@@ -4397,14 +4605,17 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.cliente_btn.clicked.connect(self._abrir_selector_cliente)
         self.nuevo_cliente_btn.clicked.connect(self._abrir_crear_cliente)
         self.product_list.currentRowChanged.connect(self._actualizar_precio_defecto)
+        self.product_list.currentRowChanged.connect(self._actualizar_presentacion_combo)
         self.cantidad_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_spin.valueChanged.connect(self._recalcular_totales)
         self.precio_total_spin.valueChanged.connect(self._recalcular_totales)
+        self.presentacion_combo.currentIndexChanged.connect(self._on_presentacion_changed)
         self.product_search.textChanged.connect(self._filtrar_productos)
         self.product_list.currentRowChanged.connect(self._actualizar_Distribuidor_por_producto)
 
         if productos:
             self.product_list.setCurrentRow(0)
+            self._actualizar_presentacion_combo()
             self._actualizar_precio_defecto()
         self._actualizar_resumen()
         self._on_descuento_tipo_changed()
@@ -4437,6 +4648,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.descuento_spin.setValue(0)
         self.tipo_fiscal_combo.setCurrentIndex(0)
         self.product_list.clearSelection()
+        if hasattr(self, "presentacion_combo") and self.presentacion_combo.count() > 0:
+            self.presentacion_combo.setCurrentIndex(0)
         self.venta_a_cuenta_de_edit.clear()
         self.venta_documento_edit.clear()
 
@@ -4457,9 +4670,14 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
                 if nombre.startswith(nombre_prod):
                     prod = p
                     break
+        factor = self._presentacion_factor_from_combo(self.presentacion_combo)
+        pres_data = self._presentacion_data_from_combo(self.presentacion_combo)
         precio = 0
         if prod:
-            precio = get_field(prod, "precio_venta_minorista", 0)
+            base = get_field(prod, "precio_venta_minorista", 0)
+            precio = pres_data.get("precio_venta", None)
+            if precio in (None, ""):
+                precio = base * factor
         self.precio_spin.blockSignals(True)
         self.precio_total_spin.blockSignals(True)
         self.precio_spin.setValue(float(precio))
@@ -4467,6 +4685,17 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
         self.precio_spin.blockSignals(False)
         self.precio_total_spin.blockSignals(False)
         self._recalcular_totales()
+
+    def _actualizar_presentacion_combo(self):
+        prod = None
+        idx = self.product_list.currentRow()
+        if 0 <= idx < len(self.productos):
+            prod = self.productos[idx]
+        self._fill_presentaciones_combo(self.presentacion_combo, prod)
+        self._on_presentacion_changed()
+
+    def _on_presentacion_changed(self):
+        self._actualizar_precio_defecto()
 
     def _toggle_precio_edicion(self):
         self.precio_spin.setEnabled(True)
@@ -4558,12 +4787,21 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             QMessageBox.warning(self, "Validación", "Seleccione un producto del inventario actual.")
             return
         lote = self.productos[idx]
-        cantidad = Decimal(self.cantidad_spin.value())
+        cantidad_bultos = Decimal(self.cantidad_spin.value() or 0)
+        if cantidad_bultos <= 0:
+            cantidad_bultos = Decimal("1")
 
         # Precios siempre editables y sincronizados
         self._recalcular_totales()
         precio_total_con_iva = Decimal(str(self.precio_total_spin.value()))
-        precio_unitario_con_iva = Decimal(str(self.precio_spin.value()))
+        precio_unitario_con_iva_bulto = Decimal(str(self.precio_spin.value()))
+
+        factor = Decimal(str(self._presentacion_factor_from_combo(self.presentacion_combo)))
+        pres_nombre = (self.presentacion_combo.currentText() or "").strip()
+        cantidad_base = (cantidad_bultos * factor).quantize(Decimal("0.00000001"))
+        if factor <= 0:
+            factor = Decimal("1")
+        precio_unitario_base_con_iva = (precio_unitario_con_iva_bulto / factor) if factor else precio_unitario_con_iva_bulto
 
         descuento_valor = Decimal(str(self.descuento_spin.value()))
         descuento_tipo = self.descuento_tipo_combo.currentText()
@@ -4593,26 +4831,35 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
 
         tipo_fiscal = self.tipo_fiscal_combo.currentText()
         if tipo_fiscal == "Venta gravada":
-            precio_unitario_sin_iva = precio_unitario_con_iva / IVA_FACTOR
-            subtotal_sin_iva = precio_unitario_sin_iva * cantidad
+            precio_unitario_sin_iva = precio_unitario_base_con_iva / IVA_FACTOR
+            subtotal_sin_iva = precio_unitario_sin_iva * cantidad_base
             subtotal_con_descuento_sin_iva = importe_con_iva_para_desglose / IVA_FACTOR
             iva = importe_con_iva_para_desglose - subtotal_con_descuento_sin_iva
         else:
-            precio_unitario_sin_iva = precio_unitario_con_iva
-            subtotal_sin_iva = precio_unitario_sin_iva * cantidad
+            precio_unitario_sin_iva = precio_unitario_base_con_iva
+            subtotal_sin_iva = precio_unitario_sin_iva * cantidad_base
             subtotal_con_descuento_sin_iva = importe_con_iva_para_desglose
             iva = Decimal("0")
+
+        producto_display = lote.get("nombre", "")
+        if pres_nombre and not pres_nombre.lower().startswith("unidad base"):
+            producto_display = f"{producto_display} [{pres_nombre}]"
 
         q8 = Decimal("0.00000001")
         self.venta_items.append({
             "lote_id": lote["lote_id"],
             "producto_id": lote["producto_id"],
             "producto": lote["nombre"],
+            "producto_display": producto_display,
             "codigo": lote.get("codigo", ""),
             "sku": lote.get("sku", ""),
-            "cantidad": int(cantidad),
+            "cantidad": float(cantidad_base),
+            "cantidad_bultos": float(cantidad_bultos),
+            "presentacion_factor": float(factor),
+            "presentacion_nombre": pres_nombre or "Unidad Base (x1)",
             "precio": float(precio_unitario_sin_iva.quantize(q8)),
-            "precio_con_iva": float(precio_unitario_con_iva.quantize(q8)),
+            "precio_con_iva": float(precio_unitario_base_con_iva.quantize(q8)),
+            "precio_presentacion": float(precio_unitario_con_iva_bulto.quantize(q8)),
             "descuento": float(descuento_valor),
             "descuento_tipo": descuento_tipo,
             "descuento_monto": float(descuento_monto.quantize(q8)),
@@ -4630,7 +4877,8 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
             "extra": {
                 "lote_id": lote.get("lote_id"),
                 "producto_id": lote.get("producto_id"),
-                "cantidad": float(cantidad),
+                "cantidad": float(cantidad_base),
+                "cantidad_presentacion": float(cantidad_bultos),
                 "codigo_lote": lote.get("codigo_lote"),
             },
         })
@@ -4643,8 +4891,15 @@ class RegisterCreditoFiscalDialog(QDialog, ProductDialogBase):
     def _actualizar_tabla(self):
         self.table.setRowCount(len(self.venta_items))
         for i, item in enumerate(self.venta_items):
-            self.table.setItem(i, 0, QTableWidgetItem(str(item["cantidad"])))
-            self.table.setItem(i, 1, QTableWidgetItem(item["producto"]))
+            cant_bultos = item.get("cantidad_bultos", item.get("cantidad", 0))
+            pres_nombre = item.get("presentacion_nombre", "")
+            cant_texto = f"{cant_bultos} {pres_nombre}".strip()
+            cant_item = QTableWidgetItem(str(cant_texto))
+            cant_item.setData(Qt.UserRole, item.get("cantidad", cant_bultos))
+            self.table.setItem(i, 0, cant_item)
+
+            producto_texto = item.get("producto_display", item.get("producto", ""))
+            self.table.setItem(i, 1, QTableWidgetItem(producto_texto))
             self.table.setItem(i, 2, QTableWidgetItem(f"{item['descuento']}{item['descuento_tipo']}"))
             self.table.setItem(i, 3, QTableWidgetItem(f"${item['total']:.2f}"))
             btn = QPushButton("Eliminar")

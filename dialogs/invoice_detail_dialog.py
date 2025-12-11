@@ -173,6 +173,9 @@ class InvoiceDetailDialog(QDialog):
         envio_state: str | None = None,
         envio_options: List[str] | None = None,
         on_envio_change: Callable[[str], str] | None = None,
+        document_state: str | None = None,
+        document_state_options: List[str] | None = None,
+        on_document_state_change: Callable[[str], str] | None = None,
         parent=None,
     ):
         super().__init__(parent)
@@ -191,6 +194,13 @@ class InvoiceDetailDialog(QDialog):
         self._save_state_button: QPushButton | None = None
         self._current_envio_value = (envio_state or "").strip()
         self._on_envio_change = on_envio_change
+        self.document_state_updated = False
+        self._doc_state_combo: QComboBox | None = None
+        self._doc_state_label: QLabel | None = None
+        self._save_doc_state_button: QPushButton | None = None
+        self._current_doc_state_value = (document_state or "").strip() or "Automático"
+        self._on_document_state_change = on_document_state_change
+        self._doc_state_dirty = False
         self.setWindowTitle("Detalle de factura")
         self.setMinimumSize(900, 600)
         self.resize(1000, 700)
@@ -292,6 +302,35 @@ class InvoiceDetailDialog(QDialog):
             envio_layout.addRow("Actualizar estado:", combo)
         layout.addLayout(envio_layout)
 
+        doc_layout = QFormLayout()
+        doc_layout.setLabelAlignment(Qt.AlignLeft)
+        doc_layout.setFormAlignment(Qt.AlignLeft)
+        self._doc_state_label = QLabel(self._current_doc_state_value or "Automático", self)
+        doc_layout.addRow("Estado de DTE:", self._doc_state_label)
+        if document_state_options:
+            doc_combo = QComboBox(self)
+            seen_doc = set()
+            for option in document_state_options:
+                text = str(option or "").strip()
+                if not text:
+                    continue
+                lowered = text.lower()
+                if lowered in seen_doc:
+                    continue
+                doc_combo.addItem(text)
+                seen_doc.add(lowered)
+            if self._current_doc_state_value:
+                idx_doc = doc_combo.findText(self._current_doc_state_value)
+                if idx_doc >= 0:
+                    doc_combo.setCurrentIndex(idx_doc)
+                else:
+                    doc_combo.addItem(self._current_doc_state_value)
+                    doc_combo.setCurrentText(self._current_doc_state_value)
+            doc_combo.currentTextChanged.connect(self._on_doc_state_combo_changed)
+            self._doc_state_combo = doc_combo
+            doc_layout.addRow("Override estado DTE:", doc_combo)
+        layout.addLayout(doc_layout)
+
         self._sync_standard_paths()
         buttons = QDialogButtonBox(QDialogButtonBox.Ok)
         buttons.button(QDialogButtonBox.Ok).setText("Cerrar")
@@ -312,6 +351,12 @@ class InvoiceDetailDialog(QDialog):
             )
             self._save_state_button.setEnabled(False)
             self._save_state_button.clicked.connect(self._save_envio_state)
+        if self._doc_state_combo is not None and callable(self._on_document_state_change):
+            self._save_doc_state_button = buttons.addButton(
+                "Guardar estado de DTE", QDialogButtonBox.ActionRole
+            )
+            self._save_doc_state_button.setEnabled(False)
+            self._save_doc_state_button.clicked.connect(self._save_document_state)
         buttons.accepted.connect(self.accept)
         layout.addWidget(buttons)
 
@@ -592,6 +637,41 @@ class InvoiceDetailDialog(QDialog):
             self, "Estado de envío", "Estado actualizado correctamente"
         )
 
+    def _on_doc_state_combo_changed(self, value: str) -> None:
+        if not self._save_doc_state_button:
+            return
+        value_norm = (value or "").strip()
+        current_norm = (self._current_doc_state_value or "").strip()
+        enabled = bool(value_norm) and value_norm != current_norm and callable(
+            self._on_document_state_change
+        )
+        self._save_doc_state_button.setEnabled(enabled)
+        self._doc_state_dirty = enabled
+
+    def _save_document_state(self) -> None:
+        if not self._doc_state_combo or not callable(self._on_document_state_change):
+            return
+        selection = self._doc_state_combo.currentText().strip()
+        try:
+            new_display = self._on_document_state_change(selection)
+        except Exception as exc:  # pragma: no cover - UI feedback
+            QMessageBox.warning(self, "Estado de DTE", str(exc))
+            return
+        display_text = str(new_display or "").strip() or "Automático"
+        self.document_state_updated = True
+        self._current_doc_state_value = display_text
+        if self._doc_state_label is not None:
+            self._doc_state_label.setText(display_text)
+        if self._doc_state_combo.findText(display_text) < 0:
+            self._doc_state_combo.addItem(display_text)
+        self._doc_state_combo.setCurrentText(display_text)
+        if self._save_doc_state_button is not None:
+            self._save_doc_state_button.setEnabled(False)
+        self._doc_state_dirty = False
+        QMessageBox.information(
+            self, "Estado de DTE", "Estado actualizado correctamente"
+        )
+
     def _determine_file_path(self) -> str | None:
         """Return the most relevant file path for the current invoice."""
 
@@ -862,4 +942,3 @@ class InvoiceDetailDialog(QDialog):
                 fecha, cliente, numero_control, doc_name
             )
         return pdf_path, json_path
-

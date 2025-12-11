@@ -462,6 +462,69 @@ def detectar_estado_factura(
     if contingencia_pendiente:
         estado = "Contingencia"
 
+    estado_manual = None
+    if cur is not None and estado.lower() != "contingencia":
+        try:
+            query = None
+            params: tuple[Any, ...] = ()
+            if codigo_generacion:
+                query = (
+                    """
+                    SELECT estado_dte_manual, estado_dte_override
+                    FROM dte_envios
+                    WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?)
+                    ORDER BY estado_dte_override DESC, id DESC LIMIT 1
+                    """
+                )
+                params = (codigo_generacion,)
+            elif numero_control:
+                query = (
+                    """
+                    SELECT estado_dte_manual, estado_dte_override
+                    FROM dte_envios
+                    WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?)
+                    ORDER BY estado_dte_override DESC, id DESC LIMIT 1
+                    """
+                )
+                params = (numero_control,)
+            elif venta_id_lookup is not None:
+                query = (
+                    """
+                    SELECT estado_dte_manual, estado_dte_override
+                    FROM dte_envios
+                    WHERE venta_id IS NOT NULL AND venta_id=?
+                    ORDER BY estado_dte_override DESC, id DESC LIMIT 1
+                    """
+                )
+                params = (venta_id_lookup,)
+
+            if query:
+                try:
+                    cur.execute(query, params)
+                    row = cur.fetchone()
+                except Exception:
+                    row = None
+                if row:
+                    try:
+                        override_flag = row["estado_dte_override"]
+                        estado_val = row["estado_dte_manual"]
+                    except Exception:
+                        override_flag = row[1] if len(row) > 1 else None
+                        estado_val = row[0] if row else None
+                    if override_flag and estado_val:
+                        lowered = str(estado_val).strip().lower()
+                        if lowered.startswith("sin venta"):
+                            estado_manual = "Sin venta"
+                        elif lowered.startswith("complet"):
+                            estado_manual = "Completa"
+                        elif lowered:
+                            estado_manual = str(estado_val).strip()
+        except Exception:
+            estado_manual = None
+
+    if estado_manual:
+        estado = estado_manual
+
     env_row = None
     try:
         if cur is not None and (codigo_generacion or numero_control):

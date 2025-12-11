@@ -5,7 +5,7 @@ from PyQt5.QtWidgets import (
     QDateEdit, QCheckBox, QTextEdit, QAbstractItemView, QHeaderView, QSizePolicy,
     QInputDialog, QFormLayout, QDialogButtonBox, QSpinBox, QFrame, QButtonGroup, QRadioButton,
     QStyledItemDelegate, QStyleOptionViewItem, QStyle, QStackedWidget, QApplication,
-    QProgressBar, QScrollArea, QGridLayout
+    QProgressBar, QScrollArea, QGridLayout, QTextEdit
 )
 from PyQt5.QtCore import Qt, QDate, QThread, pyqtSignal, QTimer, QRectF, QSize, QEvent, QModelIndex
 from PyQt5.QtGui import QColor, QPainter, QBrush, QPainterPath, QPen
@@ -58,7 +58,7 @@ from utils.facturacion_records import (
     get_facturacion_rows,
 )
 import dte
-from utils.doc_generation import generate_invoice_pdf
+from utils.doc_generation import generate_invoice_pdf, generate_ticket_pdf
 import logging
 
 logger = logging.getLogger(__name__)
@@ -1236,89 +1236,112 @@ class MainWindow(QMainWindow):
         normalized = unicodedata.normalize("NFKD", lowered)
         return "".join(ch for ch in normalized if not unicodedata.combining(ch))
 
+    def _is_ticket_sale(self, venta: Mapping[str, object] | None) -> bool:
+        """Determina si la venta debe tratarse como ticket (sin datos fiscales del cliente)."""
+        if not venta:
+            return False
+        getter_cf = getattr(self.manager.db, "get_venta_credito_fiscal", None)
+        if getter_cf:
+            try:
+                if getter_cf(venta["id"]):  # type: ignore[index]
+                    return False
+            except Exception:
+                pass
+        cid = venta.get("cliente_id") if isinstance(venta, Mapping) else None
+        if not cid:
+            return True
+        cliente = None
+        getter = getattr(self.manager.db, "get_cliente", None)
+        if getter:
+            try:
+                cliente = getter(cid)
+            except Exception:
+                cliente = None
+        if not cliente:
+            return True
+        nit = (cliente.get("nit") or "").strip() if isinstance(cliente, Mapping) else ""
+        dui = (cliente.get("dui") or "").strip() if isinstance(cliente, Mapping) else ""
+        return not nit and not dui
+
+    def _generate_sale_pdf(self, venta_id: int):
+        venta = self.manager.db.get_venta_by_id(venta_id)
+        if venta and self._is_ticket_sale(venta):
+            return generate_ticket_pdf(self.manager, venta_id)
+        return generate_invoice_pdf(self.manager, venta_id)
+
     def _get_latest_invoice_row(self):
-        manager = getattr(self, "manager", None)
-        if manager is None:
+        cur = getattr(self.manager.db, "cursor", None)
+        if cur is None:
             return None
         try:
-            rows = get_facturacion_rows(manager.db)
+            row = cur.execute(
+                """
+                SELECT e.estado, e.estado_ui, e.estado_ui_tag, e.id, e.venta_id
+                FROM dte_envios AS e
+                JOIN ventas AS v ON v.id = e.venta_id
+                ORDER BY v.id DESC, e.id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            if row:
+                return dict(row)
         except Exception:
-            logger.exception(
-                "Error al obtener registros de facturación para validar la última factura"
-            )
+            logger.exception("No se pudo obtener el último estado de envío DTE (join)")
+        try:
+            row = cur.execute(
+                """
+                SELECT estado, estado_ui, estado_ui_tag, id, venta_id
+                FROM dte_envios
+                ORDER BY id DESC
+                LIMIT 1
+                """
+            ).fetchone()
+            return dict(row) if row else None
+        except Exception:
+            logger.exception("No se pudo obtener el último estado de envío DTE")
             return None
-
-        latest_row = None
-        latest_key = None
-        allowed_tipo_labels = {"Consumidor final", "Crédito fiscal", "Ticket"}
-        for row in rows:
-            try:
-                tipo_label = canonical_tipo_label(row.get("tipo"))
-                if not tipo_label:
-                    code_value = row.get("codigo")
-                    code_str = str(code_value).zfill(2) if code_value is not None else ""
-                    if code_str:
-                        tipo_label = TIPO_DTE_DESC.get(code_str)
-                if tipo_label not in allowed_tipo_labels:
-                    continue
-                row_type = str(row.get("row_type") or "").strip().lower()
-                if row_type and row_type not in {"venta", "ticket"}:
-                    continue
-                timestamp = row.get("_parsed_fecha")
-                if isinstance(timestamp, datetime) and timestamp.tzinfo is not None:
-                    timestamp = timestamp.replace(tzinfo=None)
-                if not isinstance(timestamp, datetime):
-                    timestamp = self._parse_invoice_datetime(row.get("fecha"))
-                if timestamp is None:
-                    timestamp = datetime.min
-                venta_id = row.get("venta_id")
-                try:
-                    venta_key = int(venta_id)
-                except (TypeError, ValueError):
-                    venta_key = 0
-                rec_id = row.get("id")
-                try:
-                    rec_key = int(rec_id)
-                except (TypeError, ValueError):
-                    rec_key = 0
-                key = (timestamp, venta_key, rec_key)
-            except Exception:
-                logger.exception(
-                    "Error al procesar un registro de facturación durante la validación"
-                )
-                continue
-
-            if latest_key is None or key > latest_key:
-                latest_key = key
-                latest_row = row
-
-        return latest_row
 
     def _ensure_last_invoice_sent(self) -> bool:
+        latest_row = self._get_latest_invoice_row()
+        if latest_row:
+            estado_candidates = [
+                latest_row.get("estado"),
+                latest_row.get("estado_ui"),
+            ]
+            success_tokens = {"transmitido", "recibido", "procesado", "aceptado", "enviado"}
+            estado_ok = True
+            for candidate in estado_candidates:
+                estado_norm = str(candidate or "").strip().lower()
+                if not estado_norm:
+                    continue
+                estado_ok = any(estado_norm.startswith(tok) for tok in success_tokens)
+                break
+            if not estado_ok:
+                QMessageBox.warning(
+                    self,
+                    "Documento pendiente",
+                    "El último DTE no ha sido enviado. Envíelo manualmente y vuelva a intentar registrar una nueva venta.",
+                )
+                return False
         try:
-            latest_row = self._get_latest_invoice_row()
+            venta_row = self.manager.db.cursor.execute(
+                "SELECT id, estado FROM ventas ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            if venta_row:
+                try:
+                    estado_venta = venta_row["estado"]
+                except Exception:
+                    estado_venta = venta_row[1] if len(venta_row) > 1 else None
+                estado_norm = str(estado_venta or "").strip().lower()
+                if estado_norm and estado_norm.startswith("pendiente"):
+                    QMessageBox.warning(
+                        self,
+                        "Documento pendiente",
+                        "El último DTE no ha sido enviado. Envíelo manualmente y vuelva a intentar registrar una nueva venta.",
+                    )
+                    return False
         except Exception:
-            logger.exception(
-                "Error inesperado al validar la última factura antes de registrar una venta"
-            )
-            return True
-
-        if not latest_row:
-            return True
-
-        envio_state = str(latest_row.get("envio") or "").strip()
-        normalized = self._normalize_envio_text(envio_state)
-        if not normalized:
-            normalized = "pendiente de envio"
-
-        if normalized.startswith("pendiente") or "no enviado" in normalized or "no enviada" in normalized:
-            QMessageBox.warning(
-                self,
-                "Documento pendiente",
-                "El último ticket o factura no ha sido enviado. Envía o elimina el último documento.",
-            )
-            return False
-
+            logger.exception("No se pudo verificar estados de ventas pendientes")
         return True
 
     def generar_factura_pdf(self):
@@ -1362,6 +1385,7 @@ class MainWindow(QMainWindow):
         self.btn_delete_product = QPushButton("Eliminar Producto")
         self.btn_guardar_rapido = QPushButton("Guardar\nRápido")
         self.btn_cargar_inventario = QPushButton("Cargar Inventario")
+        self.btn_guardar_inicio = QPushButton("Guardar inventario")
 
         # Ajustes de tamaño y estilo inicial para acciones principales
         for btn in [
@@ -1369,6 +1393,7 @@ class MainWindow(QMainWindow):
             self.btn_edit_product,
             self.btn_delete_product,
             self.btn_guardar_rapido,
+            self.btn_guardar_inicio,
             self.btn_cargar_inventario,
         ]:
             btn.setMinimumHeight(46)
@@ -1384,6 +1409,7 @@ class MainWindow(QMainWindow):
                 self.btn_register_purchase,
                 self.btn_delete_product,
                 self.btn_guardar_rapido,
+                self.btn_guardar_inicio,
                 self.btn_cargar_inventario,
             ]:
                 btn.setEnabled(False)
@@ -1408,6 +1434,9 @@ class MainWindow(QMainWindow):
         self.btn_guardar_rapido.setText("Guardar rápido")
         self.btn_guardar_rapido.setObjectName("SecondaryActionButton")
         self.btn_guardar_rapido.setCursor(Qt.PointingHandCursor)
+        self.btn_guardar_inicio.setObjectName("SecondaryActionButton")
+        self.btn_guardar_inicio.setCursor(Qt.PointingHandCursor)
+        self.btn_guardar_inicio.setStyleSheet(self.btn_guardar_inicio.styleSheet() + "font-size: 15px;")
 
         self.btn_cargar_inventario.setText("Recargar")
         self.btn_cargar_inventario.setObjectName("SecondaryActionButton")
@@ -1432,7 +1461,7 @@ class MainWindow(QMainWindow):
         actions_layout = QHBoxLayout()
         actions_layout.setSpacing(15)
         actions_layout.setAlignment(Qt.AlignVCenter)
-        actions_layout.addWidget(self.btn_guardar_rapido)
+        actions_layout.addWidget(self.btn_guardar_inicio)
         actions_layout.addWidget(self.btn_cargar_inventario)
         actions_layout.addWidget(self.btn_edit_product)
         actions_layout.addWidget(self.btn_delete_product)
@@ -1785,13 +1814,17 @@ class MainWindow(QMainWindow):
             ("Estados de cuenta", "btn_nav_estado_cuenta", 8),
         ]
         bottom_items = [
-            ("Configuración", "btn_nav_config", 9),
-            ("Cerrar Sesión", "btn_nav_logout", 10),
+            ("Guardar rápido", "btn_nav_guardar", 9),
+            ("Configuración", "btn_nav_config", 10),
+            ("Cerrar Sesión", "btn_nav_logout", 11),
         ]
         self.sidebar = ModernSidebar(nav_items, bottom_items, self)
         self.sidebar.connect_to_index_change(self.tabs.setCurrentIndex)
         self.tabs.currentChanged.connect(self.sidebar.set_active_index)
         self.sidebar.set_active_index(self.tabs.currentIndex())
+        save_btn = self.sidebar.get_button("btn_nav_guardar")
+        if save_btn:
+            save_btn.clicked.connect(self.guardar_rapido)
         config_btn = self.sidebar.get_button("btn_nav_config")
         if config_btn:
             config_btn.clicked.connect(self._abrir_settings_dialog)
@@ -1819,6 +1852,7 @@ class MainWindow(QMainWindow):
 
         # Conexiones
         self.btn_guardar_rapido.clicked.connect(self.guardar_rapido)
+        self.btn_guardar_inicio.clicked.connect(self.guardar_rapido)
         self.btn_cargar_inventario.clicked.connect(self.cargar_inventario)
         self.btn_add_product.clicked.connect(self.agregar_producto)
         self.btn_edit_product.clicked.connect(self.editar_producto)
@@ -2441,8 +2475,15 @@ class MainWindow(QMainWindow):
             QMessageBox.information(self, "Producto eliminado", f"El producto '{prod['nombre']}' ha sido eliminado.")
         self.selected_row = None
 
-    def _auto_enviar_factura(self, venta_id: int, tipo_dte: str | None = None) -> tuple[bool, str]:
-        """Envía la factura asociada a la venta y devuelve (ok, detalle)."""
+    def _auto_enviar_factura(self, venta_id: int, tipo_dte: str | None = None) -> tuple[bool, str, dict]:
+        """Envía la factura asociada a la venta y devuelve (ok, detalle, meta)."""
+        preview_data = None
+        snapshot_paths: list[str] = []
+        try:
+            preview_data = dte.generar_dte_json(self.manager.db, venta_id, tipo_dte=tipo_dte)
+            snapshot_paths = list(dte._iter_snapshot_json_paths(preview_data))  # type: ignore[attr-defined]
+        except Exception:
+            snapshot_paths = []
         try:
             resp = dte.enviar_factura(self.manager.db, venta_id, tipo_dte=tipo_dte)
             estado = (
@@ -2452,10 +2493,170 @@ class MainWindow(QMainWindow):
                 or resp.get("descripcionEstadoDte")
                 or "Enviado"
             )
-            return True, str(estado)
+            estado_text = str(estado)
+            rejected = "rechaz" in estado_text.lower()
+            json_path = None
+            if rejected and preview_data:
+                for candidate in snapshot_paths:
+                    if candidate and Path(candidate).exists():
+                        json_path = candidate
+                        break
+            meta = {
+                "rejected": rejected,
+                "json_path": json_path,
+                "tipo_dte": tipo_dte,
+                "respuesta": resp,
+            }
+            return not rejected, estado_text, meta
         except Exception as exc:  # pragma: no cover - se informa al usuario
             logger.exception("Error al enviar factura automáticamente (venta_id=%s)", venta_id, exc_info=exc)
-            return False, str(exc)
+            return False, str(exc), {"rejected": False, "json_path": None, "tipo_dte": tipo_dte}
+
+    def _handle_dte_rechazo(self, venta_id: int, tipo_dte: str, estado: str, meta: dict) -> None:
+        """Ofrece editar los datos del cliente en el JSON cuando Hacienda rechaza el DTE."""
+        json_path = meta.get("json_path")
+        self._registrar_estado_dte_ui(venta_id, tipo_dte, "pendiente")
+        prompt = QMessageBox(self)
+        prompt.setIcon(QMessageBox.Warning)
+        prompt.setWindowTitle("Factura rechazada por Hacienda")
+        prompt.setText("La factura fue rechazada por Hacienda.")
+        prompt.setInformativeText(
+            "¿Deseas editar los datos del cliente en el JSON y reintentar el envío?"
+        )
+        prompt.setDetailedText(str(meta.get("respuesta") or estado))
+        prompt.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        prompt.setDefaultButton(QMessageBox.Yes)
+        if prompt.exec_() != QMessageBox.Yes:
+            return
+        if not json_path or not Path(json_path).exists():
+            QMessageBox.warning(
+                self,
+                "Archivo no encontrado",
+                "No se encontró el archivo JSON de la factura fallida para editar.",
+            )
+            return
+        warn = QMessageBox(self)
+        warn.setIcon(QMessageBox.Warning)
+        warn.setWindowTitle("ADVERTENCIA")
+        warn.setText(
+            "Este NO es un error del sistema. Hacienda rechazó el DTE por datos erróneos."
+        )
+        warn.setInformativeText(
+            "¿Deseas editar el DTE y reintentar el envío?"
+        )
+        warn.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        warn.setDefaultButton(QMessageBox.No)
+        if warn.exec_() != QMessageBox.Yes:
+            return
+        confirm = QMessageBox(self)
+        confirm.setIcon(QMessageBox.Warning)
+        confirm.setWindowTitle("Proceder con cuidado")
+        confirm.setText(
+            "Ciertos cambios pueden traer problemas con Hacienda o contabilidad."
+        )
+        confirm.setInformativeText(
+            "Proceda solo si está seguro. Vertex no se hace responsable por manipulaciones erróneas en los DTE."
+        )
+        confirm.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        confirm.setButtonText(QMessageBox.Yes, "Continuar")
+        confirm.setButtonText(QMessageBox.No, "Regresar")
+        confirm.setDefaultButton(QMessageBox.No)
+        if confirm.exec_() != QMessageBox.Yes:
+            return
+        self._editar_dte_receptor_y_reenviar(venta_id, tipo_dte, json_path)
+
+    def _editar_dte_receptor_y_reenviar(self, venta_id: int, tipo_dte: str, json_path: str) -> None:
+        """Permite editar la sección de receptor del DTE fallido y reintentar el envío."""
+        try:
+            with open(json_path, "r", encoding="utf-8") as fh:
+                dte_data = json.load(fh)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Error al leer DTE",
+                f"No se pudo leer el JSON del DTE:\n{exc}",
+            )
+            return
+
+        receptor = dte_data.get("receptor") or {}
+        editor = QDialog(self)
+        editor.setWindowTitle("Editar datos del cliente (JSON)")
+        layout = QVBoxLayout(editor)
+        layout.addWidget(QLabel("Edita únicamente los datos del cliente (objeto JSON)."))
+        text_edit = QTextEdit()
+        text_edit.setPlainText(json.dumps(receptor, ensure_ascii=False, indent=2))
+        text_edit.setLineWrapMode(QTextEdit.NoWrap)
+        layout.addWidget(text_edit)
+        btns = QHBoxLayout()
+        btns.addStretch(1)
+        btn_ok = QPushButton("Guardar y reenviar")
+        btn_cancel = QPushButton("Cancelar")
+        btns.addWidget(btn_cancel)
+        btns.addWidget(btn_ok)
+        layout.addLayout(btns)
+        btn_cancel.clicked.connect(editor.reject)
+        btn_ok.clicked.connect(editor.accept)
+
+        if editor.exec_() != QDialog.Accepted:
+            return
+
+        try:
+            nuevo_receptor = json.loads(text_edit.toPlainText() or "{}")
+            if not isinstance(nuevo_receptor, dict):
+                raise ValueError("El receptor debe ser un objeto JSON.")
+        except Exception as exc:
+            QMessageBox.warning(
+                self,
+                "JSON inválido",
+                f"No se pudo interpretar el JSON del cliente:\n{exc}",
+            )
+            return
+
+        dte_data["receptor"] = nuevo_receptor
+        try:
+            with open(json_path, "w", encoding="utf-8") as fh:
+                json.dump(dte_data, fh, ensure_ascii=False, indent=2)
+        except Exception as exc:
+            QMessageBox.critical(
+                self,
+                "Error al guardar",
+                f"No se pudo escribir el JSON actualizado:\n{exc}",
+            )
+            return
+
+        try:
+            resp = dte._enviar_documento(self.manager.db, venta_id, dte_data)  # type: ignore[attr-defined]
+            estado = (
+                resp.get("estado")
+                or resp.get("estadoDte")
+                or resp.get("descripcionEstado")
+                or resp.get("descripcionEstadoDte")
+                or "Enviado"
+            )
+            estado_text = str(estado)
+            rejected = "rechaz" in estado_text.lower()
+            if rejected:
+                QMessageBox.warning(
+                    self,
+                    "Factura aún rechazada",
+                    f"La factura sigue siendo rechazada.\nDetalle: {estado_text}",
+                )
+                self._registrar_estado_dte_ui(venta_id, tipo_dte, "pendiente")
+            else:
+                self._registrar_estado_dte_ui(venta_id, tipo_dte, "enviado")
+                QMessageBox.information(
+                    self,
+                    "Factura reenviada",
+                    f"La factura se envió nuevamente.\nEstado: {estado_text}",
+                )
+        except Exception as exc:
+            logger.exception("No se pudo reenviar el DTE tras editar receptor")
+            QMessageBox.critical(
+                self,
+                "Reenvío fallido",
+                f"No se pudo reenviar la factura tras editar el cliente:\n{exc}",
+            )
+            self._registrar_estado_dte_ui(venta_id, tipo_dte, "pendiente")
 
     def _mostrar_confirmacion_venta(self) -> int:
         dialog = SaleConfirmationDialog(self)
@@ -2711,9 +2912,9 @@ class MainWindow(QMainWindow):
         self.sales_tab.load_sales()
         texto_base = f"Venta registrada correctamente.\nTotal: ${total:.2f}"
         if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
-            envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="01")
+            envio_ok, envio_msg, envio_meta = self._auto_enviar_factura(venta_id, tipo_dte="01")
             try:
-                generate_invoice_pdf(self.manager, venta_id)
+                self._generate_sale_pdf(venta_id)
             except Exception:
                 logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
             if envio_ok:
@@ -2721,15 +2922,18 @@ class MainWindow(QMainWindow):
                 texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
                 QMessageBox.information(self, "Venta", texto_base)
             else:
-                self._registrar_estado_dte_ui(venta_id, "01", "pendiente")
-                texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
-                QMessageBox.warning(self, "Venta", texto_base)
+                if envio_meta.get("rejected"):
+                    self._handle_dte_rechazo(venta_id, "01", envio_msg, envio_meta)
+                else:
+                    self._registrar_estado_dte_ui(venta_id, "01", "pendiente")
+                    texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
+                    QMessageBox.warning(self, "Venta", texto_base)
         elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
             gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="01")
             if gen_ok:
                 self._registrar_estado_dte_ui(venta_id, "01", "pendiente")
                 try:
-                    generate_invoice_pdf(self.manager, venta_id)
+                    self._generate_sale_pdf(venta_id)
                 except Exception:
                     logger.exception("No se pudo generar PDF de factura para venta_id=%s", venta_id)
                 texto_base += f"\n{gen_msg}"
@@ -2931,7 +3135,7 @@ class MainWindow(QMainWindow):
         self.sales_tab.load_sales()
         texto_base = f"Venta registrada correctamente.\nTotal: ${venta_total:.2f}"
         if choice == SaleConfirmationDialog.RESULT_SEND_DTE:
-            envio_ok, envio_msg = self._auto_enviar_factura(venta_id, tipo_dte="03")
+            envio_ok, envio_msg, envio_meta = self._auto_enviar_factura(venta_id, tipo_dte="03")
             try:
                 generate_invoice_pdf(self.manager, venta_id)
             except Exception:
@@ -2941,9 +3145,12 @@ class MainWindow(QMainWindow):
                 texto_base += f"\nFactura enviada automáticamente (estado: {envio_msg})."
                 QMessageBox.information(self, "Venta a Crédito Fiscal", texto_base)
             else:
-                self._registrar_estado_dte_ui(venta_id, "03", "pendiente")
-                texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
-                QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
+                if envio_meta.get("rejected"):
+                    self._handle_dte_rechazo(venta_id, "03", envio_msg, envio_meta)
+                else:
+                    self._registrar_estado_dte_ui(venta_id, "03", "pendiente")
+                    texto_base += f"\nNo se pudo enviar la factura automáticamente: {envio_msg}"
+                    QMessageBox.warning(self, "Venta a Crédito Fiscal", texto_base)
         elif choice == SaleConfirmationDialog.RESULT_SAVE_DTE:
             gen_ok, gen_msg = self._generar_dte_sin_enviar(venta_id, tipo_dte="03")
             if gen_ok:

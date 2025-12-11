@@ -378,6 +378,11 @@ class SalesTab(QWidget):
         self.btn_guardar_dte_manual.setMinimumHeight(34)
         self.btn_guardar_dte_manual.clicked.connect(self._guardar_dte_manual)
         actions_row.addWidget(self.btn_guardar_dte_manual)
+        self.btn_eliminar_venta = QPushButton("Eliminar venta y restaurar inventario")
+        self.btn_eliminar_venta.setObjectName("DangerActionButton")
+        self.btn_eliminar_venta.setMinimumHeight(34)
+        self.btn_eliminar_venta.clicked.connect(self._eliminar_venta_y_restaurar)
+        actions_row.addWidget(self.btn_eliminar_venta)
         left_layout.addLayout(actions_row)
 
         main_layout.addWidget(left_card, 3)
@@ -396,12 +401,12 @@ class SalesTab(QWidget):
         self.btn_cf = QPushButton("Venta Consumidor Final")
         self.btn_cf.setObjectName("PrimaryActionButton")
         self.btn_cf.setMinimumHeight(46)
-        self.btn_cf.clicked.connect(lambda: self._show_pos_page(1))
+        self.btn_cf.clicked.connect(self._abrir_venta_cf)
 
         self.btn_cfiscal = QPushButton("Venta Crédito Fiscal")
         self.btn_cfiscal.setObjectName("SecondaryActionButton")
         self.btn_cfiscal.setMinimumHeight(46)
-        self.btn_cfiscal.clicked.connect(lambda: self._show_pos_page(2))
+        self.btn_cfiscal.clicked.connect(self._abrir_venta_cfiscal)
 
         right_layout.addWidget(self.btn_cf)
         right_layout.addWidget(self.btn_cfiscal)
@@ -615,9 +620,15 @@ class SalesTab(QWidget):
                 self._clear_layout(child_layout)
 
     def _abrir_venta_cf(self):
+        if self.main_window and hasattr(self.main_window, "_ensure_last_invoice_sent"):
+            if not self.main_window._ensure_last_invoice_sent():
+                return
         self._show_pos_page(1)
 
     def _abrir_venta_cfiscal(self):
+        if self.main_window and hasattr(self.main_window, "_ensure_last_invoice_sent"):
+            if not self.main_window._ensure_last_invoice_sent():
+                return
         self._show_pos_page(2)
 
     def _setup_stats_tab(self):
@@ -1411,6 +1422,34 @@ class SalesTab(QWidget):
             QMessageBox.warning(self, "Guardar DTE", "No se pudo identificar la venta seleccionada.")
             return
 
+        # Enforce orden y bloqueos: no permitir nuevos DTE si hay pendientes sin enviar
+        estados = self._get_ventas_dte_estado()
+        success_states = {"transmitido", "recibido", "procesado", "aceptado"}
+        pendientes_envio = [
+            r for r in estados if r["estado"] and str(r["estado"]).strip().lower() not in success_states
+        ]
+        if pendientes_envio:
+            bloqueante = pendientes_envio[0]
+            QMessageBox.warning(
+                self,
+                "DTE pendiente",
+                "Hay facturas con DTE generados pero NO enviados.\n"
+                f"Primero envíe la venta ID {bloqueante['id']} (fecha {bloqueante['fecha']}).",
+            )
+            return
+
+        sin_dte = [r for r in estados if r["estado"] is None]
+        if sin_dte:
+            primera = sin_dte[0]
+            if venta_id != primera["id"]:
+                QMessageBox.warning(
+                    self,
+                    "Orden de guardado",
+                    "Guarde los DTE en orden de fecha y generación.\n"
+                    f"Primero guarde la venta ID {primera['id']} (fecha {primera['fecha']}).",
+                )
+                return
+
         tipo_dte = "03" if self.manager.db.get_venta_credito_fiscal(venta_id) else "01"
         ok = False
         msg = ""
@@ -1466,6 +1505,64 @@ class SalesTab(QWidget):
         else:
             QMessageBox.warning(self, "Guardar DTE", f"No se pudo generar el DTE: {msg}")
         self.load_sales()
+
+    def _eliminar_venta_y_restaurar(self):
+        if self.sales_table.currentRow() < 0:
+            QMessageBox.warning(self, "Eliminar venta", "Seleccione una venta del historial.")
+            return
+        row = self.sales_table.currentRow()
+        venta_id = self._venta_id_from_row(row)
+        if venta_id is None:
+            QMessageBox.warning(self, "Eliminar venta", "No se pudo identificar la venta seleccionada.")
+            return
+        confirm = QMessageBox.question(
+            self,
+            "Eliminar venta",
+            "¿Eliminar la venta y restaurar el inventario? Esto eliminará los registros DTE asociados.",
+            QMessageBox.Yes | QMessageBox.No,
+        )
+        if confirm != QMessageBox.Yes:
+            return
+        ok = False
+        try:
+            ok = self.manager.db.delete_venta(venta_id)
+        except Exception as exc:
+            logger.exception("No se pudo eliminar la venta %s", venta_id)
+            QMessageBox.critical(self, "Eliminar venta", f"No se pudo eliminar la venta: {exc}")
+            return
+        if ok:
+            try:
+                self.manager.refresh_data()
+                self.load_sales()
+            except Exception:
+                logger.exception("Error al refrescar tras eliminar venta")
+            QMessageBox.information(
+                self,
+                "Venta eliminada",
+                "La venta se eliminó y el inventario fue restaurado al estado previo.",
+            )
+        else:
+            QMessageBox.warning(
+                self,
+                "Eliminar venta",
+                "No se pudo eliminar la venta. Verifique los registros e intente nuevamente.",
+            )
+
+    def _get_ventas_dte_estado(self):
+        """Devuelve ventas ordenadas por fecha con el estado de envío DTE más reciente."""
+        try:
+            rows = self.manager.db.cursor.execute(
+                """
+                SELECT v.id, v.fecha,
+                    (SELECT estado FROM dte_envios de WHERE de.venta_id=v.id ORDER BY de.id DESC LIMIT 1) AS estado
+                FROM ventas v
+                ORDER BY datetime(v.fecha) ASC, v.id ASC
+                """
+            ).fetchall()
+        except Exception:
+            logger.exception("No se pudo obtener estados DTE de ventas")
+            return []
+        return [dict(row) for row in rows]
 
     def _clear_preview_files(self):
         """Remove temporary preview image without deleting stored PDFs."""

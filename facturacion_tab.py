@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Any, List, Mapping, Optional, Tuple
 from copy import deepcopy
 from pprint import pformat
-from collections import Counter
+from collections import Counter, defaultdict
 
 from ticket_pdf import generar_ticket_personalizado
 from factura_sv import (
@@ -2091,6 +2091,12 @@ class FacturacionTab(QWidget):
         self._refresh_timer.setInterval(10000)  # 10 seconds
         self._refresh_timer.timeout.connect(self.refresh_and_reload)
         self._refresh_timer.start()
+        # Limpieza periódica de duplicados de facturas PDF
+        self._dupe_timer = QTimer(self)
+        self._dupe_timer.setSingleShot(True)
+        self._dupe_timer.timeout.connect(self._run_dupe_check)
+        self._dupe_check_stage = "initial"
+        self._schedule_dupe_check(10000)
 
     def _setup_ui(self):
         root_layout = QVBoxLayout(self)
@@ -3130,6 +3136,56 @@ class FacturacionTab(QWidget):
 
         return self._format_envio_state(stored_base, stored_tag, None)
 
+    def _update_invoice_document_state(
+        self,
+        entry: Mapping[str, Any] | None,
+        factura_info: Mapping[str, Any] | None,
+        factura_json: Mapping[str, Any] | None,
+        new_state: str,
+    ) -> str:
+        manager = getattr(self, "manager", None)
+        db = getattr(manager, "db", None) if manager else None
+        if db is None:
+            raise ValueError("Base de datos no disponible")
+
+        state_text = str(new_state or "").strip()
+        if not state_text:
+            state_text = "Automático"
+
+        lowered = state_text.lower()
+        if lowered.startswith("auto"):
+            stored_state = None
+        elif lowered.startswith("sin venta"):
+            stored_state = "Sin venta"
+        elif lowered.startswith("complet"):
+            stored_state = "Completa"
+        else:
+            raise ValueError("Seleccione un estado de DTE válido")
+
+        venta_id = None
+        numero_control = None
+        codigo_generacion = None
+        if isinstance(factura_info, Mapping):
+            venta_id = factura_info.get("venta_id")
+            numero_control = factura_info.get("numero_control") or factura_info.get("control")
+        if isinstance(entry, Mapping):
+            venta_id = venta_id or entry.get("venta_id")
+            numero_control = numero_control or entry.get("numero_control") or entry.get("control")
+
+        ident = factura_json.get("identificacion") if isinstance(factura_json, Mapping) else None
+        if isinstance(ident, Mapping):
+            numero_control = numero_control or ident.get("numeroControl")
+            codigo_generacion = ident.get("codigoGeneracion")
+
+        db.set_dte_estado_documento(
+            venta_id=venta_id,
+            numero_control=numero_control,
+            codigo_generacion=codigo_generacion,
+            estado=stored_state,
+        )
+
+        return stored_state or "Automático"
+
     def _get_invoices_from_db(self):
         """Return invoice entries stored in the database.
 
@@ -3147,6 +3203,162 @@ class FacturacionTab(QWidget):
         self.manager.refresh_data()
         self.refresh_filters()
         self.load_invoices()
+
+    def _schedule_dupe_check(self, interval_ms: int) -> None:
+        try:
+            self._dupe_timer.stop()
+        except Exception:
+            pass
+        self._dupe_timer.start(max(0, int(interval_ms)))
+
+    def _clean_invoice_duplicates(self) -> bool:
+        """Detecta duplicados de DTE por nombre base (PDF/JSON) y elimina extras."""
+
+        manager = getattr(self, "manager", None)
+        db = getattr(manager, "db", None) if manager else None
+        if db is None:
+            return False
+        cur = getattr(db, "cursor", None)
+        if cur is None:
+            return False
+        try:
+            fact_rows = cur.execute("SELECT id, ruta FROM facturas_pdf").fetchall()
+        except Exception:
+            logger.exception("No se pudo leer facturas_pdf para deduplicar")
+            return False
+        try:
+            ticket_rows = cur.execute("SELECT id, ruta FROM tickets_pdf").fetchall()
+        except Exception:
+            ticket_rows = []
+
+        def _stem(value) -> str:
+            try:
+                base = Path(value).stem.lower()
+            except Exception:
+                base = str(value).lower()
+            for suffix in (
+                "_ticket",
+                "-ticket",
+                "_consumidorfinal",
+                "-consumidorfinal",
+                "_creditofiscal",
+                "-creditofiscal",
+                "_factura",
+                "-factura",
+            ):
+                if base.endswith(suffix):
+                    base = base[: -len(suffix)]
+                    break
+            base = re.sub(r"(^|_)consumidor_?final(_)?", r"\1", base)
+            base = base.strip("_-")
+            return base
+
+        grupos: dict[str, list[tuple[str, int, str]]] = defaultdict(list)
+        for row in fact_rows:
+            try:
+                rid = row["id"]
+                ruta = row["ruta"]
+            except Exception:
+                try:
+                    rid = row[0]
+                    ruta = row[1] if len(row) > 1 else None
+                except Exception:
+                    continue
+            if not ruta:
+                continue
+            grupos[_stem(ruta)].append(("factura", rid, ruta))
+        for row in ticket_rows:
+            try:
+                rid = row["id"]
+                ruta = row["ruta"]
+            except Exception:
+                try:
+                    rid = row[0]
+                    ruta = row[1] if len(row) > 1 else None
+                except Exception:
+                    continue
+            if not ruta:
+                continue
+            grupos[_stem(ruta)].append(("ticket", rid, ruta))
+
+        removed = False
+        for stem, items in grupos.items():
+            if len(items) <= 1:
+                continue
+            ordered = sorted(items, key=lambda x: x[1])
+            has_ticket = any(kind == "ticket" for kind, _, _ in ordered)
+            keep_kind, keep_id, _ = (
+                next((kind, rid, ruta) for kind, rid, ruta in ordered if kind == "ticket")
+                if has_ticket
+                else ordered[0]
+            )
+            dup_facturas = [rid for kind, rid, _ in ordered if kind == "factura" and rid != keep_id]
+            dup_tickets = [rid for kind, rid, _ in ordered if kind == "ticket" and rid != keep_id]
+            try:
+                if dup_facturas:
+                    cur.execute(
+                        f"DELETE FROM facturas_pdf WHERE id IN ({','.join('?' for _ in dup_facturas)})",
+                        tuple(dup_facturas),
+                    )
+                if dup_tickets:
+                    cur.execute(
+                        f"DELETE FROM tickets_pdf WHERE id IN ({','.join('?' for _ in dup_tickets)})",
+                        tuple(dup_tickets),
+                    )
+                if dup_facturas or dup_tickets:
+                    logger.info(
+                        "Facturación: eliminados duplicados base=%s; se conserva %s id=%s; removidos facturas=%s tickets=%s",
+                        stem,
+                        keep_kind,
+                        keep_id,
+                        dup_facturas,
+                        dup_tickets,
+                    )
+                    removed = True
+            except Exception:
+                logger.debug(
+                    "No se pudieron eliminar duplicados de facturas para %s", stem, exc_info=True
+                )
+        if removed:
+            try:
+                db.conn.commit()
+            except Exception:
+                logger.debug("Commit fallido tras limpiar duplicados", exc_info=True)
+        return removed
+
+    def _run_dupe_check(self) -> None:
+        if not self.isVisible():
+            self._dupe_check_stage = getattr(self, "_dupe_check_stage", "steady") or "steady"
+            self._schedule_dupe_check(600_000)  # 10 minutos
+            return
+        try:
+            removed = self._clean_invoice_duplicates()
+        except Exception:
+            logger.debug("Error al limpiar duplicados en chequeo periódico", exc_info=True)
+            removed = False
+
+        if removed:
+            try:
+                self.refresh_and_reload()
+            except Exception:
+                logger.exception("No se pudo refrescar luego de eliminar duplicados")
+            self._dupe_check_stage = "post_cleanup"
+            self._schedule_dupe_check(120_000)  # 2 minutos
+            return
+
+        stage = getattr(self, "_dupe_check_stage", "initial") or "initial"
+        if stage == "initial":
+            self._dupe_check_stage = "five"
+            self._schedule_dupe_check(300_000)  # 5 minutos
+        elif stage == "five":
+            self._dupe_check_stage = "steady"
+            self._schedule_dupe_check(600_000)  # 10 minutos
+        elif stage == "post_cleanup":
+            self._dupe_check_stage = "steady"
+            self._schedule_dupe_check(600_000)  # 10 minutos
+        else:
+            self._dupe_check_stage = "steady"
+            self._schedule_dupe_check(600_000)  # 10 minutos
 
     def load_invoices(self):
         # Remember which invoice is currently selected so that automatic
@@ -5860,8 +6072,26 @@ class FacturacionTab(QWidget):
             current_envio = entry.get("envio")
         envio_options = self._get_available_envio_states(current_envio)
 
+        estado_manual_doc = None
+        if self.manager and getattr(self.manager, "db", None):
+            try:
+                estado_manual_doc = self.manager.db.get_dte_estado_documento(
+                    venta_id=factura.get("venta_id"),
+                    numero_control=ident.get("numeroControl"),
+                    codigo_generacion=ident.get("codigoGeneracion"),
+                )
+            except Exception:
+                estado_manual_doc = None
+        estado_doc_actual = estado_manual_doc or (entry.get("estado") if isinstance(entry, Mapping) else None)
+        estado_doc_options = ["Automático", "Completa", "Sin venta"]
+
         def _apply_envio_change(selected_state: str) -> str:
             return self._update_invoice_envio_state(entry, factura, data, selected_state)
+
+        def _apply_document_state(selected_state: str) -> str:
+            return self._update_invoice_document_state(
+                entry, factura, data, selected_state
+            )
 
         dlg = InvoiceDetailDialog(
             items,
@@ -5874,10 +6104,13 @@ class FacturacionTab(QWidget):
             envio_state=current_envio,
             envio_options=envio_options,
             on_envio_change=_apply_envio_change if envio_options else None,
+            document_state=estado_doc_actual,
+            document_state_options=estado_doc_options,
+            on_document_state_change=_apply_document_state,
             parent=self,
         )
         dlg.exec_()
-        if getattr(dlg, "anulacion_result", None) or getattr(dlg, "envio_updated", False):
+        if getattr(dlg, "anulacion_result", None) or getattr(dlg, "envio_updated", False) or getattr(dlg, "document_state_updated", False):
             self.refresh_and_reload()
 
     def _anular_dte(self, factura, data):

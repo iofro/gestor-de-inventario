@@ -977,6 +977,8 @@ class DB:
         self.ensure_column("dte_envios", "estado_ui", "TEXT")
         self.ensure_column("dte_envios", "estado_ui_tag", "TEXT")
         self.ensure_column("dte_envios", "estado_ui_manual", "INTEGER DEFAULT 0")
+        self.ensure_column("dte_envios", "estado_dte_manual", "TEXT")
+        self.ensure_column("dte_envios", "estado_dte_override", "INTEGER DEFAULT 0")
         self.conn.commit()
         self._ensure_retenciones_cr_table()
 
@@ -2711,6 +2713,105 @@ class DB:
         if row:
             return row["id"]
 
+        def _normalized_root(path_val: str | os.PathLike) -> str:
+            try:
+                base = Path(path_val).stem.lower()
+            except Exception:
+                base = str(path_val).lower()
+            for suffix in (
+                "_ticket",
+                "-ticket",
+                "_consumidorfinal",
+                "-consumidorfinal",
+                "_creditofiscal",
+                "-creditofiscal",
+                "_factura",
+                "-factura",
+            ):
+                if base.endswith(suffix):
+                    base = base[: -len(suffix)]
+                    break
+            base = re.sub(r"(^|_)consumidor_?final(_)?", r"\1", base)
+            base = base.strip("_-")
+            return base
+
+        target_root = _normalized_root(final_path)
+        # Evita duplicados por nombre base (mismo DTE, distinta extensión o sufijo).
+        try:
+            existentes = self.cursor.execute("SELECT id, ruta FROM facturas_pdf").fetchall()
+        except Exception:
+            existentes = []
+        for existente in existentes:
+            try:
+                ex_id = existente["id"]
+                ex_ruta = existente["ruta"]
+            except Exception:
+                try:
+                    ex_id = existente[0]
+                    ex_ruta = existente[1]
+                except Exception:
+                    continue
+            if _normalized_root(ex_ruta) == target_root:
+                return ex_id
+        # Si ya existe un ticket con el mismo root, evita insertar la factura.
+        try:
+            trow = self.cursor.execute("SELECT id, ruta FROM tickets_pdf").fetchall()
+        except Exception:
+            trow = []
+        for t in trow:
+            try:
+                t_ruta = t["ruta"]
+            except Exception:
+                try:
+                    t_ruta = t[1]
+                except Exception:
+                    continue
+            if _normalized_root(t_ruta) == target_root:
+                return None
+
+        def _normalize_stem(path: str | os.PathLike) -> str:
+            try:
+                return Path(path).stem.lower()
+            except Exception:
+                return str(path).lower()
+
+        target_stem = _normalize_stem(final_path)
+        # Avoid duplications with same stem (mismos códigos/fecha)
+        try:
+            existentes = self.cursor.execute(
+                "SELECT id, ruta FROM facturas_pdf"
+            ).fetchall()
+        except Exception:
+            existentes = []
+        keep_id = None
+        dupe_ids: list[int] = []
+        for existente in existentes:
+            try:
+                ex_id = existente["id"]
+                ex_ruta = existente["ruta"]
+            except Exception:
+                try:
+                    ex_id = existente[0]
+                    ex_ruta = existente[1]
+                except Exception:
+                    continue
+            if _normalize_stem(ex_ruta) == target_stem:
+                if keep_id is None:
+                    keep_id = ex_id
+                else:
+                    dupe_ids.append(ex_id)
+        if keep_id is not None:
+            if dupe_ids:
+                try:
+                    self.cursor.execute(
+                        f"DELETE FROM facturas_pdf WHERE id IN ({','.join('?' for _ in dupe_ids)})",
+                        tuple(dupe_ids),
+                    )
+                    self.conn.commit()
+                except Exception:
+                    logger.debug("No se pudo limpiar facturas duplicadas", exc_info=True)
+            return keep_id
+
         fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         self.cursor.execute(
             "INSERT INTO facturas_pdf (venta_id, tipo, ruta, fecha_creacion) VALUES (?, ?, ?, ?)",
@@ -4356,6 +4457,178 @@ class DB:
                 tag_val,
             )
         return True
+
+    def set_dte_estado_documento(
+        self,
+        *,
+        venta_id: int | None = None,
+        numero_control: str | None = None,
+        codigo_generacion: str | None = None,
+        estado: str | None = None,
+    ) -> bool:
+        """Establece o limpia un override manual para el estado del DTE."""
+
+        estado_raw = str(estado).strip() if isinstance(estado, str) else None
+        if estado_raw:
+            lowered = estado_raw.lower()
+            if lowered.startswith("sin venta"):
+                estado_val = "Sin venta"
+            elif lowered.startswith("complet"):
+                estado_val = "Completa"
+            else:
+                raise ValueError(
+                    "Estado de DTE inválido. Use 'Completa' o 'Sin venta' o deje en blanco para automático."
+                )
+            override_flag = 1
+        else:
+            estado_val = None
+            override_flag = 0
+
+        codigo_generacion_val = None
+        if isinstance(codigo_generacion, str):
+            codigo_generacion_val = codigo_generacion.strip().upper() or None
+
+        numero_control_val = None
+        if isinstance(numero_control, str):
+            numero_control_val = numero_control.strip().upper() or None
+
+        if codigo_generacion_val is None and numero_control_val is None and venta_id is None:
+            raise ValueError("No se pudo identificar el DTE para actualizar su estado.")
+
+        with self.lock:
+            self.ensure_column("dte_envios", "estado_dte_manual", "TEXT")
+            self.ensure_column("dte_envios", "estado_dte_override", "INTEGER DEFAULT 0")
+
+            query = None
+            params: tuple[Any, ...] = ()
+            if codigo_generacion_val:
+                query = (
+                    "SELECT id FROM dte_envios "
+                    "WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?) "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+                params = (codigo_generacion_val,)
+            elif numero_control_val:
+                query = (
+                    "SELECT id FROM dte_envios "
+                    "WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?) "
+                    "ORDER BY id DESC LIMIT 1"
+                )
+                params = (numero_control_val,)
+            else:
+                query = "SELECT id FROM dte_envios WHERE venta_id=? ORDER BY id DESC LIMIT 1"
+                params = (venta_id,)
+
+            row = self.cursor.execute(query, params).fetchone() if query else None
+
+            if not row and estado_val is None:
+                # Nothing to clear
+                return False
+
+            if not row:
+                insert_data: dict[str, Any] = {
+                    "fecha_hora": datetime.now(timezone.utc).isoformat(),
+                    "modo": "manual",
+                    "estado_dte_manual": estado_val,
+                    "estado_dte_override": override_flag,
+                }
+                if venta_id is not None:
+                    insert_data["venta_id"] = venta_id
+                if codigo_generacion_val:
+                    insert_data["codigo_generacion"] = codigo_generacion_val
+                if numero_control_val:
+                    insert_data["numero_control"] = numero_control_val
+
+                columns = ", ".join(insert_data.keys())
+                placeholders = ", ".join("?" for _ in insert_data)
+                self.cursor.execute(
+                    f"INSERT INTO dte_envios ({columns}) VALUES ({placeholders})",
+                    tuple(insert_data.values()),
+                )
+                self.conn.commit()
+                return True
+
+            envio_id = row["id"] if isinstance(row, sqlite3.Row) else row[0]
+            self.cursor.execute(
+                "UPDATE dte_envios SET estado_dte_manual=?, estado_dte_override=? WHERE id=?",
+                (estado_val, override_flag, envio_id),
+            )
+            self.conn.commit()
+            return True
+
+    def get_dte_estado_documento(
+        self,
+        *,
+        venta_id: int | None = None,
+        numero_control: str | None = None,
+        codigo_generacion: str | None = None,
+    ) -> str | None:
+        """Devuelve el estado manual del DTE si existe."""
+
+        codigo_generacion_val = None
+        if isinstance(codigo_generacion, str):
+            codigo_generacion_val = codigo_generacion.strip().upper() or None
+
+        numero_control_val = None
+        if isinstance(numero_control, str):
+            numero_control_val = numero_control.strip().upper() or None
+
+        with self.lock:
+            try:
+                self.ensure_column("dte_envios", "estado_dte_manual", "TEXT")
+                self.ensure_column("dte_envios", "estado_dte_override", "INTEGER DEFAULT 0")
+            except Exception:
+                return None
+
+            query = None
+            params: tuple[Any, ...] = ()
+            if codigo_generacion_val:
+                query = (
+                    "SELECT estado_dte_manual, estado_dte_override FROM dte_envios "
+                    "WHERE codigo_generacion IS NOT NULL AND UPPER(codigo_generacion)=UPPER(?) "
+                    "ORDER BY estado_dte_override DESC, id DESC LIMIT 1"
+                )
+                params = (codigo_generacion_val,)
+            elif numero_control_val:
+                query = (
+                    "SELECT estado_dte_manual, estado_dte_override FROM dte_envios "
+                    "WHERE numero_control IS NOT NULL AND UPPER(numero_control)=UPPER(?) "
+                    "ORDER BY estado_dte_override DESC, id DESC LIMIT 1"
+                )
+                params = (numero_control_val,)
+            elif venta_id is not None:
+                query = (
+                    "SELECT estado_dte_manual, estado_dte_override FROM dte_envios "
+                    "WHERE venta_id IS NOT NULL AND venta_id=? "
+                    "ORDER BY estado_dte_override DESC, id DESC LIMIT 1"
+                )
+                params = (venta_id,)
+
+            if not query:
+                return None
+
+            row = self.cursor.execute(query, params).fetchone()
+            if not row:
+                return None
+
+            estado_val = row["estado_dte_manual"] if isinstance(row, sqlite3.Row) else row[0]
+            override_flag = row["estado_dte_override"] if isinstance(row, sqlite3.Row) else (
+                row[1] if len(row) > 1 else 0
+            )
+
+            if not override_flag:
+                return None
+            if not estado_val:
+                return None
+            texto = str(estado_val).strip()
+            if not texto:
+                return None
+            lowered = texto.lower()
+            if lowered.startswith("sin venta"):
+                return "Sin venta"
+            if lowered.startswith("complet"):
+                return "Completa"
+            return texto
 
     def get_envio_fecha_emision(self, venta_id):
         """Devuelve la fecha del último envío para ``venta_id`` en formato ``DD/MM/AAAA``."""

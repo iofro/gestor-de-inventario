@@ -529,11 +529,26 @@ def log_venta_vs_dte(manager, venta_id):
             d2(tot_pf_dte),
         )
 
+from utils.facturacion_records import is_ticket_sale
+
+
 def generate_invoice_pdf(manager, venta_id):
     """Generate and store the invoice PDF for the given sale."""
     venta = next((v for v in manager.db.get_ventas() if v["id"] == venta_id), None)
     if not venta:
         return None
+
+    # Si la venta es de tipo ticket (sin datos fiscales de cliente), generar ticket y
+    # eliminar facturas PDF asociadas para evitar duplicados.
+    try:
+        if is_ticket_sale(manager.db, venta):
+            try:
+                manager.db.delete_factura_pdf(venta_id)
+            except Exception:
+                logger.debug("No se pudo limpiar facturas previas para venta_id=%s", venta_id, exc_info=True)
+            return generate_ticket_pdf(manager, venta_id)
+    except Exception:
+        logger.debug("No se pudo evaluar si la venta es ticket; continuando con factura", exc_info=True)
 
     _set_last_cr_result(manager, None)
 
@@ -1225,7 +1240,13 @@ def generate_ticket_pdf(manager, venta_id, out_path: str | None = None):
     cliente = None
     if venta.get("cliente_id"):
         cliente = next((c for c in manager._clientes if c["id"] == venta["cliente_id"]), None)
+
     cliente_nombre = cliente.get("nombre") if cliente else ""
+    try:
+        if is_ticket_sale(manager.db, venta):
+            cliente_nombre = ""
+    except Exception:
+        pass
 
     filename, json_path = get_document_paths(
         venta.get("fecha"), cliente_nombre, venta_id, "Ticket"
@@ -1301,5 +1322,9 @@ def generate_ticket_pdf(manager, venta_id, out_path: str | None = None):
         return _handle_ticket_runtime_error(exc)
     if not os.path.exists(json_path):
         raise IOError(f"No se pudo guardar JSON en {json_path}")
+    try:
+        manager.db.delete_factura_pdf(venta_id)
+    except Exception:
+        logger.debug("No se pudo limpiar facturas previas antes de registrar ticket", exc_info=True)
     manager.db.add_ticket_pdf(venta_id, filename)
     return filename

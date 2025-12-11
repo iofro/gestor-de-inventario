@@ -7302,6 +7302,41 @@ class DTEConfigDialog(QDialog):
         )
         if reply != QMessageBox.Yes:
             return
+
+        warning_box = QMessageBox(self)
+        warning_box.setWindowTitle("Advertencia crítica")
+        warning_box.setIcon(QMessageBox.Warning)
+        warning_box.setText(
+            "<span style='color:#b91c1c; font-weight:700;'>"
+            "Esta función está creada solo para el ambiente de pruebas."
+            "</span>"
+        )
+        warning_box.setInformativeText(
+            "Proceda con extrema precaución: elimine facturas solo si necesita "
+            "terminar pruebas y restaurar el sistema antes de producción."
+        )
+        btn_continuar = warning_box.addButton("Continuar", QMessageBox.YesRole)
+        btn_cancelar = warning_box.addButton("Cancelar", QMessageBox.NoRole)
+        warning_box.setDefaultButton(btn_cancelar)
+        warning_box.exec_()
+        if warning_box.clickedButton() is not btn_continuar:
+            return
+
+        final_box = QMessageBox(self)
+        final_box.setWindowTitle("Confirmación final")
+        final_box.setIcon(QMessageBox.Critical)
+        final_box.setText("¿Está totalmente seguro de que desea continuar?")
+        btn_si = final_box.addButton("Sí", QMessageBox.YesRole)
+        btn_no = final_box.addButton("No", QMessageBox.NoRole)
+        try:
+            btn_no.setStyleSheet("color: #16a34a; font-weight: 700;")
+            btn_si.setStyleSheet("color: #b91c1c; font-weight: 700;")
+        except Exception:
+            pass
+        final_box.setDefaultButton(btn_no)
+        final_box.exec_()
+        if final_box.clickedButton() is not btn_si:
+            return
         try:
             self._clear_sales_and_invoices()
         except Exception as exc:

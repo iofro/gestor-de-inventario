@@ -339,9 +339,10 @@ class SalesTab(QWidget):
 
         left_layout.addLayout(filters_layout)
 
-        self.sales_table = QTableWidget(0, 5)
+        self.sales_table = QTableWidget(0, 6)
         self.sales_table.setHorizontalHeaderLabels([
             "DTE",
+            "Tipo",
             "Cliente",
             "Fecha",
             "Total",
@@ -361,19 +362,23 @@ class SalesTab(QWidget):
         header.setStretchLastSection(True)
         header.setDefaultAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         header.setFixedHeight(44)
-        header.setSectionResizeMode(2, QHeaderView.ResizeToContents)
-        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)
-        self.sales_table.setColumnWidth(2, 90)
+        header.setSectionResizeMode(3, QHeaderView.ResizeToContents)  # Fecha
+        header.setSectionResizeMode(4, QHeaderView.ResizeToContents)  # Total
         self.sales_table.setColumnWidth(3, 90)
+        self.sales_table.setColumnWidth(4, 90)
         self.dte_delegate = DteStatusDelegate(self.sales_table)
         self.status_delegate = StatusDelegate(self.sales_table)
         self.sales_table.setItemDelegateForColumn(0, self.dte_delegate)
-        self.sales_table.setItemDelegateForColumn(4, self.status_delegate)
+        self.sales_table.setItemDelegateForColumn(5, self.status_delegate)
         self.sales_table.itemSelectionChanged.connect(self.show_sale)
         left_layout.addWidget(self.sales_table)
 
         actions_row = QHBoxLayout()
         actions_row.addStretch(1)
+        self.btn_ver_info = QPushButton("Ver información")
+        self.btn_ver_info.setMinimumHeight(34)
+        self.btn_ver_info.clicked.connect(self.show_sale_details)
+        actions_row.addWidget(self.btn_ver_info)
         self.btn_guardar_dte_manual = QPushButton("Guardar DTE manualmente")
         self.btn_guardar_dte_manual.setMinimumHeight(34)
         self.btn_guardar_dte_manual.clicked.connect(self._guardar_dte_manual)
@@ -1182,6 +1187,15 @@ class SalesTab(QWidget):
         ventas = self.manager.db.get_ventas(sincronizada=1)
         search = self.search_bar.text().lower()
         cliente_filter = self.client_filter.text().lower()
+        credit_ids = set()
+        try:
+            cursor = getattr(self.manager.db, "cursor", None)
+            if cursor is not None:
+                credit_ids = {
+                    row[0] for row in cursor.execute("SELECT venta_id FROM ventas_credito_fiscal").fetchall()
+                }
+        except Exception:
+            credit_ids = set()
         if self.date_filter_cb.isChecked():
             d_from = self.date_from.date().toPyDate()
             d_to = self.date_to.date().toPyDate()
@@ -1226,11 +1240,13 @@ class SalesTab(QWidget):
             dte_item.setData(Qt.UserRole, venta.get("id"))
             dte_item.setTextAlignment(Qt.AlignCenter)
             self.sales_table.setItem(row, 0, dte_item)
-            self.sales_table.setItem(row, 1, QTableWidgetItem(cli))
-            self.sales_table.setItem(row, 2, QTableWidgetItem(venta.get("fecha", "")))
-            self.sales_table.setItem(row, 3, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
+            tipo_text = "Crédito Fiscal" if venta.get("id") in credit_ids else "Consumidor Final"
+            self.sales_table.setItem(row, 1, QTableWidgetItem(tipo_text))
+            self.sales_table.setItem(row, 2, QTableWidgetItem(cli))
+            self.sales_table.setItem(row, 3, QTableWidgetItem(venta.get("fecha", "")))
+            self.sales_table.setItem(row, 4, QTableWidgetItem(f"${venta.get('total', 0):.2f}"))
             estado = venta.get("estado", "Pendiente")
-            self.sales_table.setItem(row, 4, QTableWidgetItem(estado))
+            self.sales_table.setItem(row, 5, QTableWidgetItem(estado))
         self.sales_table.clearSelection()
         self.show_sale(clear=True)
         self._stats_dirty = True

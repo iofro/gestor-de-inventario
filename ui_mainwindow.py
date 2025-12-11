@@ -588,6 +588,8 @@ class ModernSidebar(QFrame):
 class SettingsDialog(QDialog):
     """Contenedor de configuración con sidebar y contenido apilado."""
 
+    config_saved = pyqtSignal(str)
+
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWindowTitle("Configuración del Sistema")
@@ -1019,7 +1021,8 @@ QTableWidget {
                 "Los tokens almacenados se limpiaron porque cambiaste el NIT o el ambiente. "
                 "Vuelve a obtener un token en Configuración > Facturación Electrónica.",
             )
-        QMessageBox.information(self, "Datos del negocio", "Datos guardados exitosamente.")
+            QMessageBox.information(self, "Datos del negocio", "Datos guardados exitosamente.")
+        self.config_saved.emit("negocio")
 
     def _handle_facturacion_save(self) -> None:
         widget = self.facturacion_widget
@@ -1071,6 +1074,7 @@ QTableWidget {
                 "Obtén un token nuevo antes de volver a enviar DTE.",
             )
         QMessageBox.information(self, "Facturación electrónica", "Datos guardados exitosamente.")
+        self.config_saved.emit("facturacion")
 
     def _handle_correo_save(self) -> None:
         widget = self.correo_widget
@@ -1089,6 +1093,7 @@ QTableWidget {
             QMessageBox.critical(self, "Error", f"No se pudo guardar la configuración: {exc}")
             return
         QMessageBox.information(self, "Configuración de correo", "Datos guardados exitosamente.")
+        self.config_saved.emit("correo")
 
 
 def redondear(valor):
@@ -1477,6 +1482,7 @@ class MainWindow(QMainWindow):
             ]
             success_tokens = {"transmitido", "recibido", "procesado", "aceptado", "enviado"}
             estado_ok = True
+            estado_norm = ""
             for candidate in estado_candidates:
                 estado_norm = str(candidate or "").strip().lower()
                 if not estado_norm:
@@ -1484,12 +1490,18 @@ class MainWindow(QMainWindow):
                 estado_ok = any(estado_norm.startswith(tok) for tok in success_tokens)
                 break
             if not estado_ok:
-                QMessageBox.warning(
+                resp = QMessageBox.question(
                     self,
                     "Documento pendiente",
-                    "El último DTE no ha sido enviado. Envíelo manualmente y vuelva a intentar registrar una nueva venta.",
+                    (
+                        "El último DTE no ha sido enviado (estado: "
+                        f"{estado_norm or 'pendiente'}). ¿Deseas continuar de todos modos?\n\n"
+                        "Recomendado: envía o corrige ese DTE antes de registrar una nueva venta."
+                    ),
+                    QMessageBox.Yes | QMessageBox.No,
                 )
-                return False
+                if resp != QMessageBox.Yes:
+                    return False
         try:
             venta_row = self.manager.db.cursor.execute(
                 "SELECT id, estado FROM ventas ORDER BY id DESC LIMIT 1"
@@ -1501,12 +1513,17 @@ class MainWindow(QMainWindow):
                     estado_venta = venta_row[1] if len(venta_row) > 1 else None
                 estado_norm = str(estado_venta or "").strip().lower()
                 if estado_norm and estado_norm.startswith("pendiente"):
-                    QMessageBox.warning(
+                    resp = QMessageBox.question(
                         self,
                         "Documento pendiente",
-                        "El último DTE no ha sido enviado. Envíelo manualmente y vuelva a intentar registrar una nueva venta.",
+                        (
+                            "La última venta sigue en estado pendiente. ¿Deseas continuar de todos modos?\n\n"
+                            "Recomendado: envía o corrige ese DTE antes de registrar una nueva venta."
+                        ),
+                        QMessageBox.Yes | QMessageBox.No,
                     )
-                    return False
+                    if resp != QMessageBox.Yes:
+                        return False
         except Exception:
             logger.exception("No se pudo verificar estados de ventas pendientes")
         return True
@@ -2046,7 +2063,59 @@ class MainWindow(QMainWindow):
             self._deny_guest()
             return
         dlg = SettingsDialog(self)
+        try:
+            dlg.config_saved.connect(self._on_config_saved)
+        except Exception:
+            logger.exception("No se pudo conectar señal de config guardada")
         dlg.exec_()
+        # Refresca la vista aunque el diálogo no emita señal (ej. usuarios/permisos)
+        try:
+            self._on_config_saved("settings_close")
+        except Exception:
+            logger.exception("No se pudo refrescar tras cerrar configuración")
+
+    def _on_config_saved(self, section: str | None = None) -> None:
+        """Refresca datos y vistas tras guardar cualquier configuración."""
+        logger.info("Refrescando datos tras guardar configuración: %s", section)
+        try:
+            self.manager.refresh_data()
+        except Exception:
+            logger.exception("No se pudo refrescar datos del manager después de guardar config")
+        try:
+            self._actualizar_arbol_vendedores()
+        except Exception:
+            logger.exception("No se pudo refrescar árbol de vendedores")
+        try:
+            self._actualizar_arbol_Distribuidores()
+        except Exception:
+            logger.exception("No se pudo refrescar árbol de distribuidores")
+        try:
+            self.filter_products()
+        except Exception:
+            logger.exception("No se pudo refrescar listado de productos")
+        try:
+            self._actualizar_inventario_actual()
+        except Exception:
+            logger.exception("No se pudo refrescar inventario actual")
+        try:
+            self._actualizar_tabla_clientes()
+        except Exception:
+            logger.exception("No se pudo refrescar tabla de clientes")
+        if hasattr(self, "compras_tab") and hasattr(self.compras_tab, "load_purchases"):
+            try:
+                self.compras_tab.load_purchases()
+            except Exception:
+                logger.exception("No se pudo refrescar pestaña de compras tras guardar config")
+        if hasattr(self, "sales_tab") and hasattr(self.sales_tab, "load_sales"):
+            try:
+                self.sales_tab.load_sales()
+            except Exception:
+                logger.exception("No se pudo refrescar pestaña de ventas tras guardar config")
+        self._refresh_pos_if_available()
+        try:
+            self.data_changed.emit()
+        except Exception:
+            logger.exception("No se pudo emitir data_changed tras guardar config")
 
     def _apply_styles(self):
         self.setStyleSheet(

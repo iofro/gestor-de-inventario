@@ -51,6 +51,18 @@ class LoginDialog(QDialog):
         card_layout.setContentsMargins(40, 36, 40, 36)
         card_layout.setSpacing(16)
 
+        close_row = QHBoxLayout()
+        close_row.setContentsMargins(0, 0, 0, 0)
+        close_row.setSpacing(0)
+        close_row.addStretch(1)
+        self.btn_close = QToolButton()
+        self.btn_close.setObjectName("CloseButton")
+        self.btn_close.setText("✕")
+        self.btn_close.setCursor(Qt.PointingHandCursor)
+        self.btn_close.clicked.connect(self.reject)
+        close_row.addWidget(self.btn_close, 0, Qt.AlignRight)
+        card_layout.addLayout(close_row)
+
         self.brand_label = QLabel("INVENTARIO PRO")
         self.brand_label.setObjectName("BrandLabel")
         self.brand_label.setAlignment(Qt.AlignCenter)
@@ -96,12 +108,21 @@ class LoginDialog(QDialog):
         card_layout.addWidget(password_row)
         card_layout.addSpacing(20)
 
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(10)
+        self.btn_cancel = QPushButton("Cancelar")
+        self.btn_cancel.setObjectName("SecondaryButton")
+        self.btn_cancel.setMinimumHeight(48)
+        self.btn_cancel.setCursor(Qt.PointingHandCursor)
+        self.btn_cancel.clicked.connect(self.reject)
         self.btn_login = QPushButton("Entrar")
         self.btn_login.setObjectName("PrimaryButton")
         self.btn_login.setMinimumHeight(50)
         self.btn_login.setCursor(Qt.PointingHandCursor)
         self.btn_login.clicked.connect(self.accept)
-        card_layout.addWidget(self.btn_login)
+        buttons_row.addWidget(self.btn_cancel)
+        buttons_row.addWidget(self.btn_login)
+        card_layout.addLayout(buttons_row)
 
         card_layout.addSpacing(10)
 
@@ -194,6 +215,31 @@ QPushButton#PrimaryButton:hover {
 }
 QPushButton#PrimaryButton:pressed {
     background-color: #1E40AF;
+}
+QPushButton#SecondaryButton {
+    background-color: #FFFFFF;
+    color: #0F172A;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 14px;
+    font-size: 15px;
+    font-weight: 600;
+}
+QPushButton#SecondaryButton:hover {
+    background-color: #F8FAFC;
+    border: 1px solid #94A3B8;
+}
+
+QToolButton#CloseButton {
+    background: transparent;
+    border: none;
+    color: #9CA3AF;
+    font-size: 16px;
+    font-weight: 700;
+    padding: 4px;
+}
+QToolButton#CloseButton:hover {
+    color: #EF4444;
 }
 
 /* Botón de mostrar contraseña */
